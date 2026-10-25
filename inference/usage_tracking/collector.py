@@ -38,6 +38,7 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
 )
+from inference.core.interfaces.http.api_key_resolution import header_api_key
 from inference.core.logger import logger
 from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
@@ -178,6 +179,7 @@ class UsageCollector:
             except Exception as exc:
                 logger.debug("Unable to create instance of SQLiteQueue, %s", exc)
         self._queue_lock = Lock()
+        self._enqueue_lock = Lock()
 
         self._system_info_lock = Lock()
         self._system_info: Dict[str, Any] = {}
@@ -188,6 +190,7 @@ class UsageCollector:
                 Tuple[
                     ResourceCategory,
                     ResourceID,
+                    bool,
                     bool,
                     str,
                     Optional[str],
@@ -403,6 +406,12 @@ class UsageCollector:
             usage_key = f"{usage_key}:error_type={error_type}"
             if error_status_code is not None:
                 usage_key = f"{usage_key}:error_status_code={error_status_code}"
+        source_tags = [
+            (resource_details or {}).get("source"),
+            (resource_details or {}).get("source_info"),
+        ]
+        if any(tag is not None for tag in source_tags):
+            usage_key = f"{usage_key}:source_tags={sha256_hash(json.dumps(source_tags), length=64)}"
         if stream_session_id:
             usage_key = f"{usage_key}:{stream_session_id}"
         return usage_key
@@ -440,6 +449,9 @@ class UsageCollector:
             )
             return
         resource_details = self._normalize_error_metadata(resource_details)
+        # Origins belong to the current call, not the persistent metadata cache.
+        resource_details.pop("source", None)
+        resource_details.pop("source_info", None)
 
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
@@ -559,7 +571,11 @@ class UsageCollector:
         )
         if not resource_id and provided_resource_details:
             resource_id = UsageCollector._calculate_resource_hash(
-                resource_details=provided_resource_details
+                resource_details={
+                    key: value
+                    for key, value in provided_resource_details.items()
+                    if key not in {"source", "source_info"}
+                }
             )
         resource_details_key = self._resource_details_key(
             category=category,
@@ -727,11 +743,15 @@ class UsageCollector:
         self._enqueue_usage_payload()
 
     def _enqueue_usage_payload(self):
-        if not self._usage:
-            return
-        with UsageCollector._lock:
-            self._enqueue_payload(payload=self._usage)
-            self._usage = self.empty_usage_dict(exec_session_id=self._exec_session_id)
+        with self._enqueue_lock:
+            if not self._usage:
+                return
+            with UsageCollector._lock:
+                payload = self._usage
+                self._usage = self.empty_usage_dict(
+                    exec_session_id=self._exec_session_id
+                )
+            self._enqueue_payload(payload=payload)
 
     def _usage_sender(self):
         while True:
@@ -856,6 +876,9 @@ class UsageCollector:
             resource_id = usage_workflow_id
             workflow_resource_details["is_preview"] = usage_workflow_preview
             resource_details = {**resource_details, **workflow_resource_details}
+            source_tag = usage_source_tags.get().get("source")
+            if source_tag:
+                resource_details["source"] = source_tag
         elif category == "model":
             model_id = get_model_id_from_kwargs(func_kwargs)
             if model_id:
@@ -962,8 +985,20 @@ class UsageCollector:
                 and func_kwargs["kwargs"]["api_key"]
             ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
+            if not usage_api_key:
+                # `Authorization: Bearer` key lives only in the request-scoped
+                # ContextVar - routes that keep the resolved key in a local
+                # variable never expose it through any bound parameter.
+                usage_api_key = header_api_key.get() or ""
 
-        roboflow_service_name = func_kwargs.get("source_info") or source_info
+        # Only the explicit legacy parameter can override service identity;
+        # inherited source_info identifies the caller's feature.
+        roboflow_service_name = func_kwargs.get("source_info")
+        request = func_kwargs.get("request")
+        query_params = getattr(request, "query_params", {})
+        if query_params.get("source_info_origin") == "context":
+            roboflow_service_name = None
+
         roboflow_internal_secret = func_kwargs.get("service_secret")
 
         return {

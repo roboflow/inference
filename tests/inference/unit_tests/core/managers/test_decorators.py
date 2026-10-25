@@ -1,6 +1,6 @@
 from queue import Queue
 from threading import Event, Lock, Thread, current_thread
-from typing import Callable, List
+from typing import Callable, List, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,6 +18,7 @@ from inference.core.managers.model_load_collector import (
     current_request_path,
     request_model_ids,
 )
+from inference.core.models.embeddings import model_cache_key
 
 MODEL_ID = "some/1"
 ALIAS_ID = "alias/1"
@@ -160,6 +161,32 @@ def test_fixed_size_cache_skips_online_authorization_in_offline_mode() -> None:
     assert "some/1" in model_manager.models()
 
 
+def test_nested_decorators_refresh_native_embedding_model_cache() -> None:
+    embedding_key = model_cache_key("some/1", ["image_embeddings"], "logits")
+    model = MagicMock()
+    result = {"embeddings": object(), "embedding_info": {"output_type": "logits"}}
+    model.run_tensor_native_embeddings.return_value = result
+    base_manager = ModelManager(model_registry=MagicMock())
+    base_manager._models = {embedding_key: model, "other/1": MagicMock()}
+    decorator = WithFixedSizeCache(
+        LockedLoadModelManagerDecorator(base_manager), max_size=2
+    )
+    images = [object()]
+
+    actual = decorator.run_tensor_native_embeddings(
+        model_id=embedding_key,
+        images=images,
+        output_type="logits",
+        input_color_format="rgb",
+    )
+
+    assert actual is result
+    assert list(decorator._key_queue) == ["other/1", embedding_key]
+    model.run_tensor_native_embeddings.assert_called_once_with(
+        images=images, output_type="logits", input_color_format="rgb"
+    )
+
+
 def test_nested_decorators_record_request_metadata_for_warm_model() -> None:
     base_manager = ModelManager(model_registry=MagicMock())
     base_manager._models = {"some/1": MagicMock()}
@@ -193,10 +220,23 @@ def test_nested_decorators_record_request_metadata_for_warm_model() -> None:
         ),
     ],
 )
+@pytest.mark.parametrize("alias", [None, ALIAS_ID])
+@pytest.mark.parametrize(
+    "capabilities,output_type",
+    [
+        (None, "feature_vector"),
+        (["image_embeddings"], "feature_vector"),
+        (["image_embeddings"], "logits"),
+    ],
+)
 def test_warm_add_preserves_an_established_remove_mutation_order(
     monkeypatch: pytest.MonkeyPatch,
     decorate: Callable[[ModelManager], ModelManagerDecorator],
+    alias: Optional[str],
+    capabilities: Optional[List[str]],
+    output_type: str,
 ) -> None:
+    resolved_id = model_cache_key(alias or MODEL_ID, capabilities, output_type)
     removal_started = Event()
     removal_finished = Event()
     allow_removal_to_finish = Event()
@@ -214,6 +254,9 @@ def test_warm_add_preserves_an_established_remove_mutation_order(
     class ReplacementModel:
         task_type = "replacement"
 
+        def infer_embeddings_from_request(self, request):
+            return None
+
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -221,7 +264,7 @@ def test_warm_add_preserves_an_established_remove_mutation_order(
     model_registry.get_model.return_value = ReplacementModel
     base_manager = ModelManager(
         model_registry=model_registry,
-        models={MODEL_ID: LoadedModel()},
+        models={resolved_id: LoadedModel()},
     )
     manager = decorate(base_manager)
     original_record_request_metadata = base_manager.record_request_metadata
@@ -247,12 +290,18 @@ def test_warm_add_preserves_an_established_remove_mutation_order(
 
     def remove_model() -> None:
         try:
-            manager.remove(MODEL_ID)
+            manager.remove(resolved_id)
         finally:
             removal_finished.set()
 
     def add_model() -> None:
-        manager.add_model(MODEL_ID, "api-key")
+        manager.add_model(
+            MODEL_ID,
+            "api-key",
+            model_id_alias=alias,
+            required_capabilities=capabilities,
+            output_type=output_type,
+        )
         add_returned.set()
 
     threads = [
@@ -282,11 +331,11 @@ def test_warm_add_preserves_an_established_remove_mutation_order(
     assert add_errors == []
     assert removal_finished.is_set()
     assert add_returned.is_set()
-    assert isinstance(base_manager.models()[MODEL_ID], ReplacementModel)
+    assert isinstance(base_manager.models()[resolved_id], ReplacementModel)
     assert model_registry.get_model.call_count == 1
-    _assert_quiescent_model_entry(base_manager, MODEL_ID)
+    _assert_quiescent_model_entry(base_manager, resolved_id)
     if isinstance(manager, WithFixedSizeCache):
-        assert list(manager._key_queue) == [MODEL_ID]
+        assert list(manager._key_queue) == [resolved_id]
 
 
 @pytest.mark.parametrize("operation", ["remove", "evict"])
@@ -567,3 +616,56 @@ def test_fixed_size_cache_eviction_and_reload_keep_registry_and_queue_consistent
     assert model_registry.get_model.call_count == 2
     assert set(base_manager._model_lock_entries) == set(base_manager.models())
     assert all(entry.users == 0 for entry in base_manager._model_lock_entries.values())
+
+
+@pytest.mark.parametrize("disk_cache_cleanup", [True, False])
+def test_fixed_size_cache_clear_passes_disk_cache_cleanup_to_models(
+    disk_cache_cleanup: bool,
+) -> None:
+    # given
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+
+    # when
+    with patch.object(fixed_size_cache, "DISK_CACHE_CLEANUP", disk_cache_cleanup):
+        decorator.clear()
+
+    # then
+    model.clear_cache.assert_called_once_with(delete_from_disk=disk_cache_cleanup)
+    assert model_manager.models() == {}
+
+
+@pytest.mark.parametrize("alias", [None, ALIAS_ID])
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_warm_embedding_decorator_uses_registration_key(
+    alias: Optional[str], output_type: str
+) -> None:
+    capabilities = ["image_embeddings"]
+    resolved_id = model_cache_key(alias or MODEL_ID, capabilities, output_type)
+    manager = ModelManager(
+        model_registry=MagicMock(), models={resolved_id: MagicMock()}
+    )
+    decorator = ModelManagerDecorator(manager)
+    ids = RequestModelIds()
+    token = request_model_ids.set(ids)
+    try:
+        with patch.object(manager, "add_model", wraps=manager.add_model) as add_model:
+            with patch.object(
+                manager, "_acquire_model_lock", wraps=manager._acquire_model_lock
+            ) as acquire:
+                decorator.add_model(
+                    MODEL_ID,
+                    "key",
+                    model_id_alias=alias,
+                    required_capabilities=capabilities,
+                    output_type=output_type,
+                )
+        add_model.assert_not_called()
+        acquire.assert_called_once_with(model_id=resolved_id)
+        assert ids.get_ids() == {resolved_id}
+        assert set(manager._model_lock_entries) == {resolved_id}
+        assert manager._model_lock_entries[resolved_id].users == 0
+    finally:
+        request_model_ids.reset(token)

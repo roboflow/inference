@@ -1,5 +1,6 @@
 from .clip import *
 from .doctr import *
+from .embeddings import *
 from .groundingdino import *
 from .inference import *
 from .owlv2 import *

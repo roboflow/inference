@@ -10,6 +10,7 @@ from inference_sdk.config import (  # noqa: F401
     ALL_ROBOFLOW_API_URLS,
     WORKFLOW_RUN_RETRIES_ENABLED,
     outbound_service_secret,
+    usage_source_tags,
 )
 from inference_sdk.http.errors import (
     InvalidParameterError,
@@ -135,6 +136,9 @@ class InferenceConfiguration:
         format: The format for the inference.
         mask_decode_mode: The mask decode mode for the inference.
         tradeoff_factor: The tradeoff factor for the inference.
+        allow_reduced_mask_resolution: Return boxes, polygon points and RLE masks
+            on the selected mask grid with inference_models. Defaults to False.
+            Legacy backend behavior is unchanged.
         max_candidates: The maximum number of candidates for the inference.
         max_detections: The maximum number of detections for the inference.
         iou_threshold: The intersection over union threshold for the inference.
@@ -159,6 +163,7 @@ class InferenceConfiguration:
     class_agnostic_nms: Optional[bool] = None
     class_filter: Optional[List[str]] = None
     fix_batch_size: Optional[bool] = None
+    include_anomaly_map: Optional[bool] = None
     visualize_predictions: bool = False
     visualize_labels: Optional[bool] = None
     output_visualisation_format: VisualisationResponseFormat = (
@@ -182,6 +187,8 @@ class InferenceConfiguration:
     # and emits a one-time recommendation to move to the header transport.
     # Pass "legacy" explicitly to keep the old behaviour silently.
     api_key_transport: Optional[Union[str, ApiKeyTransport]] = None
+
+    allow_reduced_mask_resolution: bool = False
 
     def __post_init__(self) -> None:
         # Normalise the transport to the enum so the client can rely on
@@ -229,6 +236,30 @@ class InferenceConfiguration:
         raise ModelTaskTypeNotSupportedError(
             f"Model task {task_type} is not supported by API v1 client."
         )
+
+    def to_source_parameters(self, *, include_origin: bool = False) -> Dict[str, str]:
+        """Resolve usage attribution for an outgoing request.
+
+        The request's context overrides block defaults, matching the collector's
+        in-process attribution. Outside that context, explicit SDK configuration
+        is preserved.
+
+        Args:
+            include_origin (bool): Include query-only provenance so the legacy
+                route distinguishes inherited tags from direct service identity.
+
+        Returns:
+            Dict[str, str]: Configured source tags merged with request-origin tags.
+        """
+        parameters = remove_empty_values(
+            {"source": self.source, "source_info": self.source_info}
+        )
+        inherited_tags = usage_source_tags.get()
+        parameters.update(inherited_tags)
+        if include_origin and inherited_tags.get("source_info"):
+            parameters["source_info_origin"] = "context"
+
+        return parameters
 
     def to_billing_query_parameters(self) -> Optional[Dict[str, Any]]:
         """Extract the usage-billing query-string parameters.
@@ -293,10 +324,12 @@ class InferenceConfiguration:
             ("source", "source"),
             ("source_info", "source_info"),
         ]
-        return get_non_empty_attributes(
+        parameters = get_non_empty_attributes(
             source_object=self,
             specification=parameters_specs,
         )
+        parameters.update(self.to_source_parameters())
+        return parameters
 
     def to_keypoints_detection_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to keypoints detection parameters.
@@ -318,6 +351,7 @@ class InferenceConfiguration:
         parameters_specs = [
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
+            ("allow_reduced_mask_resolution", "allow_reduced_mask_resolution"),
             ("response_mask_format", "response_mask_format"),
         ]
         for internal_name, external_name in parameters_specs:
@@ -331,6 +365,7 @@ class InferenceConfiguration:
             Dict[str, Any]: The classification parameters.
         """
         parameters_specs = [
+            ("include_anomaly_map", "include_anomaly_map"),
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
             ("disable_preproc_grayscale", "disable_preproc_grayscale"),
@@ -343,10 +378,12 @@ class InferenceConfiguration:
             ("source_info", "source_info"),
             ("active_learning_target_dataset", "active_learning_target_dataset"),
         ]
-        return get_non_empty_attributes(
+        parameters = get_non_empty_attributes(
             source_object=self,
             specification=parameters_specs,
         )
+        parameters.update(self.to_source_parameters())
+        return parameters
 
     def to_legacy_call_parameters(self) -> Dict[str, Any]:
         """Convert the current configuration to legacy call parameters.
@@ -365,6 +402,7 @@ class InferenceConfiguration:
             ("visualize_labels", "labels"),
             ("mask_decode_mode", "mask_decode_mode"),
             ("tradeoff_factor", "tradeoff_factor"),
+            ("allow_reduced_mask_resolution", "allow_reduced_mask_resolution"),
             ("max_detections", "max_detections"),
             ("iou_threshold", "overlap"),
             ("stroke_width", "stroke"),
@@ -377,6 +415,8 @@ class InferenceConfiguration:
             ("source", "source"),
             ("source_info", "source_info"),
             ("response_mask_format", "response_mask_format"),
+            # The legacy route reads it as a query parameter (see `legacy_infer_from_request`).
+            ("include_anomaly_map", "include_anomaly_map"),
         ]
         parameters = get_non_empty_attributes(
             source_object=self,
@@ -385,6 +425,7 @@ class InferenceConfiguration:
         billing_parameters = self.to_billing_query_parameters()
         if billing_parameters:
             parameters.update(billing_parameters)
+        parameters.update(self.to_source_parameters(include_origin=True))
         return parameters
 
 

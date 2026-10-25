@@ -27,3 +27,10 @@ paths:
     ignore:
       - 'unexpected key "background"'
       - 'step must run script with "run" section or run action with "uses" section'
+
+  # GitHub supports queue: max, but actionlint 1.7.12 does not yet parse it.
+  # check_workflow_concurrency.py validates the queue value and cancellation
+  # combination. Keep the waiver specific to this key in this one workflow.
+  .github/workflows/maintainer-review-slack.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'

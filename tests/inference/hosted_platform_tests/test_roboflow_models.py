@@ -218,6 +218,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected(
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
 
 
@@ -287,6 +288,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
     assert isinstance(
         response["visualization"], np.ndarray
@@ -475,6 +477,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected(
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
 
 
@@ -544,6 +547,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
         "predictions",
         "time",
         "inference_id",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
     assert isinstance(
         response["visualization"], np.ndarray
@@ -733,6 +737,7 @@ def test_infer_from_classification_model_when_valid_response_expected(
         "inference_id",
         "predicted_classes",
         "time",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
 
 
@@ -803,6 +808,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
         "predictions",
         "predicted_classes",
         "time",
+        "resolved_model",
     }, "Expected all required keys to be provided in response"
     assert isinstance(
         response["visualization"], np.ndarray

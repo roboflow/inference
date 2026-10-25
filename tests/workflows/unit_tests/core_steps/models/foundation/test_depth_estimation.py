@@ -38,12 +38,10 @@ _TENSOR_ONLY = pytest.mark.skipif(
 @pytest.fixture
 def mock_model_manager():
     mock = MagicMock()
-    mock.infer_from_request_sync.return_value = MagicMock(
-        response={
-            "normalized_depth": np.zeros((480, 640)),
-            "image": MagicMock(numpy_image=np.zeros((480, 640, 3), dtype=np.uint8)),
-        }
-    )
+    mock.run_depth_estimation.return_value = {
+        "normalized_depth": np.zeros((480, 640)),
+        "image": MagicMock(numpy_image=np.zeros((480, 640, 3), dtype=np.uint8)),
+    }
     return mock
 
 
@@ -92,7 +90,7 @@ def test_run_locally(mock_model_manager, mock_workflow_image_data):
 
     assert len(result) == 1
     mock_model_manager.add_model.assert_called_once()
-    mock_model_manager.infer_from_request_sync.assert_called_once()
+    mock_model_manager.run_depth_estimation.assert_called_once()
 
 
 @patch(
@@ -167,7 +165,7 @@ def test_run_locally_with_yolo26_depth_variant(
     mock_model_manager.add_model.assert_called_once_with(
         model_id="yolo26n-depth-768", api_key="test_key"
     )
-    mock_model_manager.infer_from_request_sync.assert_called_once()
+    mock_model_manager.run_depth_estimation.assert_called_once()
 
 
 @pytest.fixture

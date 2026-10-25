@@ -8,10 +8,15 @@ from PIL import Image
 from inference_models.entities import ImageDimensions
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
+    Contrast,
+    ContrastType,
     ImagePreProcessing,
     NetworkInputDefinition,
     ResizeMode,
     TrainingInputSize,
+)
+from inference_models.models.common.roboflow.pre_processing import (
+    apply_histogram_equalization_to_torch_image,
 )
 from inference_models.models.rfdetr.pre_processing import (
     _needs_two_step_resize,
@@ -187,7 +192,7 @@ def test_one_step_stretch_with_bgr_input_matches_rgb_reference() -> None:
         dataset_version_dims=None,
     )
     rng = np.random.default_rng(seed=7)
-    rgb_image = rng.integers(0, 256, size=(64, 64, 3), dtype=np.uint8)
+    rgb_image = rng.integers(0, 256, size=(160, 200, 3), dtype=np.uint8)
     bgr_image = rgb_image[:, :, ::-1].copy()
 
     actual_tensor, _ = pre_process_network_input(
@@ -388,3 +393,35 @@ def test_batched_input_produces_per_image_metadata() -> None:
     torch.testing.assert_close(
         batch_tensor[1], expected_b.squeeze(0), atol=1e-6, rtol=0
     )
+
+
+def test_float_tensor_with_histogram_equalization_is_scaled_back_to_unit_range() -> (
+    None
+):
+    image_pre_processing = ImagePreProcessing(
+        contrast=Contrast(enabled=True, type=ContrastType.HISTOGRAM_EQUALIZATION)
+    )
+    network_input = _build_network_input(
+        training_h=64,
+        training_w=64,
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_dims=None,
+    )
+    rng = np.random.default_rng(seed=42)
+    image = torch.from_numpy(rng.random((3, 64, 64), dtype=np.float32))
+
+    actual_tensor, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    equalized = apply_histogram_equalization_to_torch_image(image.unsqueeze(0))
+    expected = TF.resize(equalized.float() / 255, (64, 64), antialias=True)
+    expected = TF.normalize(
+        expected, mean=list(_IMAGENET_MEAN), std=list(_IMAGENET_STD)
+    )
+    assert actual_tensor.is_floating_point()
+    torch.testing.assert_close(actual_tensor, expected, atol=1e-6, rtol=0)

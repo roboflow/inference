@@ -1,9 +1,11 @@
 from typing import Any, List, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from inference.core.entities.responses.inference import InferenceResponse
 
 
-class SamEmbeddingResponse(BaseModel):
+class SamEmbeddingResponse(InferenceResponse):
     """SAM embedding response.
 
     Attributes:
@@ -20,7 +22,7 @@ class SamEmbeddingResponse(BaseModel):
     )
 
 
-class SamSegmentationResponse(BaseModel):
+class SamSegmentationResponse(InferenceResponse):
     """SAM segmentation response.
 
     Attributes:

@@ -4,8 +4,20 @@ permissions:
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   workflow_dispatch:
     inputs:
       python-version:
@@ -17,12 +29,9 @@ on:
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
 
 concurrency:
-  # One live run per workflow per ref. A newer push to the same PR, or a newer
-  # merge to main, cancels the older run. Manual dispatches get their own group
-  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
-  # runs. Release runs are keyed by the tag ref and are never cancelled.
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
@@ -33,12 +42,15 @@ jobs:
   build-dev-test:
     needs: call_is_mergeable
     if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    # I/O-bound workflow integration tests. Measured on Depot over 2,360 jobs on the
+    # 16c/64GB machine: ~15% average CPU and ~12.8GB peak RAM. 8c/32GB keeps the peak
+    # at ~40% of memory; 4c/16GB would leave only ~3GB headroom.
     runs-on:
-      labels: depot-ubuntu-22.04-16
+      labels: depot-ubuntu-22.04-8
       group: public-depot
     strategy:
       matrix:
-        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12"]' || format('["{0}"]', github.event.inputs.python-version)) }}
+        python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12","3.13"]' || format('["{0}"]', github.event.inputs.python-version)) }}
     timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout
@@ -52,9 +64,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-integration-tests-workflows-tensor-native-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 🚧 Install GDAL
         run: sudo apt-get update && sudo apt-get install -y libgdal-dev
       - name: 📦 Install dependencies
@@ -62,6 +72,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
+          pip install --no-deps ./inference_models
+      - name: 🔤 Cache Workflows font assets
+        uses: actions/cache@v5
+        with:
+          path: workflows/roboflow_workflows/core_steps/visualizations/common/fonts/assets
+          key: workflows-fonts-${{ hashFiles('workflows/roboflow_workflows/core_steps/visualizations/common/fonts/registry.py') }}
+      - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
+        run: |
+          make create_workflows_wheel create_streamvision_wheel
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Integration Tests of Workflows (tensor-native)
         # Tensor-native path only: ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with
         # USE_INFERENCE_MODELS, which defaults to True on Linux runners, so it is not set here.

@@ -1,10 +1,10 @@
 import json
 import urllib.parse
-from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import backoff
 import requests
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from requests import Response, Timeout
 
 from inference_models.configuration import (
@@ -35,9 +35,11 @@ from inference_models.errors import (
 )
 from inference_models.logger import LOGGER
 from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.runtime_introspection.core import get_coreml_runtime_version
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    MemoryProfile,
     ModelDependency,
     ModelMetadata,
     ModelPackageMetadata,
@@ -86,6 +88,19 @@ class RoboflowModelPackageV1(BaseModel):
     recommended_parameters: Optional[RecommendedParameters] = Field(
         alias="recommendedParameters", default=None
     )
+    memory_profile: MemoryProfile = Field(
+        alias="memoryProfile", default_factory=MemoryProfile
+    )
+
+    @field_validator("memory_profile", mode="before")
+    @classmethod
+    def _drop_malformed_memory_profile(cls, value: Any) -> MemoryProfile:
+        try:
+            memory_profile = MemoryProfile.model_validate(value)
+        except ValidationError:
+            return MemoryProfile()
+
+        return memory_profile
 
 
 class RoboflowModelDependencyV1(BaseModel):
@@ -110,7 +125,21 @@ class RoboflowModelMetadata(BaseModel):
     recommended_parameters: Optional[RecommendedParameters] = Field(
         alias="recommendedParameters", default=None
     )
+    model_latency_ms: Optional[float] = Field(alias="modelLatencyMs", default=None)
     next_page: Optional[str] = Field(alias="nextPage", default=None)
+
+    @field_validator("model_latency_ms", mode="before")
+    @classmethod
+    def _drop_non_numeric_latency(cls, value: Any) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+
+        try:
+            latency_ms = float(value)
+        except OverflowError:
+            return None
+
+        return latency_ms
 
 
 def get_roboflow_model(
@@ -286,6 +315,10 @@ def get_one_page_of_model_metadata(
     query = {
         "modelId": model_id,
     }
+    if get_coreml_runtime_version() is not None:
+        # The API lists Core ML packages only on request: they run on macOS alone, and releases
+        # that predate them warn about every package type they cannot parse.
+        query["includeCoreMLPackages"] = "true"
     headers = {}
     if api_key and api_key != LOCAL_API_KEY:
         headers = {"Authorization": f"Bearer {api_key}"}
@@ -507,6 +540,7 @@ def parse_onnx_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -597,6 +631,7 @@ def parse_trt_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -631,6 +666,7 @@ def parse_torch_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -657,6 +693,7 @@ def parse_hf_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -676,6 +713,7 @@ def parse_ultralytics_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -725,7 +763,74 @@ def parse_torch_script_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
         torch_script_package_details=torch_script_package_details,
+    )
+
+
+class CoreMLModelPackageV1(BaseModel):
+    type: Literal["coreml-model-package-v1"] = Field(
+        description="Manifest type of a native Core ML (.mlpackage) model package.",
+        examples=["coreml-model-package-v1"],
+    )
+    backend_type: Literal["coreml"] = Field(
+        alias="backendType",
+        description="Backend that runs the package.",
+        examples=["coreml"],
+    )
+    dynamic_batch_size: bool = Field(
+        alias="dynamicBatchSize",
+        default=False,
+        description="Whether the model accepts a variable batch size.",
+        examples=[False],
+    )
+    static_batch_size: Optional[int] = Field(
+        alias="staticBatchSize",
+        default=None,
+        description="Fixed batch size the model was exported for, when the batch size is not dynamic.",
+        examples=[1],
+    )
+    quantization: Quantization = Field(
+        description="Numeric precision of the model's weights and compute.",
+        examples=["fp16"],
+    )
+
+
+def parse_coreml_model_package(
+    metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
+) -> ModelPackageMetadata:
+    """Parse a ``coreml-model-package-v1`` package listed by the Roboflow API.
+
+    Args:
+        metadata (RoboflowModelPackageV1): Package entry returned by the weights endpoint.
+        proxy_url_builder (ProxyUrlBuilder): Optional rewriter for artefact download URLs.
+
+    Returns:
+        ModelPackageMetadata: Package metadata with the ``coreml`` backend.
+
+    Raises:
+        ModelMetadataConsistencyError: If the batch size settings are inconsistent.
+    """
+    parsed_manifest = CoreMLModelPackageV1.model_validate(metadata.package_manifest)
+    validate_batch_settings(
+        dynamic_batch_size=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+    )
+    package_artefacts = parse_package_artefacts(
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
+    )
+    return ModelPackageMetadata(
+        package_id=metadata.package_id,
+        backend=BackendType.COREML,
+        quantization=parsed_manifest.quantization,
+        dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+        package_artefacts=package_artefacts,
+        trusted_source=metadata.trusted_source,
+        model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
     )
 
 
@@ -782,4 +887,5 @@ MODEL_PACKAGE_PARSERS: Dict[
     "hf-model-package-v1": parse_hf_model_package,
     "ultralytics-model-package-v1": parse_ultralytics_model_package,
     "torch-script-model-package-v1": parse_torch_script_model_package,
+    "coreml-model-package-v1": parse_coreml_model_package,
 }

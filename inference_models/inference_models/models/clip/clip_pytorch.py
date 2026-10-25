@@ -10,7 +10,10 @@ from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ColorFormat
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
-from inference_models.models.clip.preprocessing import create_clip_preprocessor
+from inference_models.models.clip.preprocessing import (
+    create_clip_preprocessor,
+    tokenize_texts,
+)
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.torch import torchscript_global_lock
 
@@ -84,7 +87,7 @@ class ClipTorch(TextImageEmbeddingModel):
     ) -> torch.Tensor:
         if isinstance(texts, str):
             texts = [texts]
-        text_tokens = self._tokenizer(texts).to(self._device)
+        text_tokens = tokenize_texts(texts, self._tokenizer).to(self._device)
         if text_tokens.shape[0] <= self._max_batch_size:
             return self._model.encode_text(text_tokens)
         results = []

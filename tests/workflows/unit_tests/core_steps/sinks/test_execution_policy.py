@@ -29,6 +29,26 @@ def _load_sink_blocks():
 
 SINK_BLOCKS = _load_sink_blocks()
 
+ROBOFLOW_PLATFORM_SINK_TYPES = {
+    "roboflow_core/roboflow_dataset_upload@v1",
+    "roboflow_core/roboflow_dataset_upload@v2",
+    "roboflow_core/roboflow_custom_metadata@v1",
+    "roboflow_core/model_monitoring_inference_aggregator@v1",
+    "roboflow_core/asset_library_attributes@v1",
+    "roboflow_core/roboflow_vision_events@v1",
+    "roboflow_core/vision_event_bundle@v1",
+}
+
+
+def test_roboflow_platform_sinks_are_in_the_policy_inventory() -> None:
+    covered = {
+        block.get_manifest().model_fields["type"].annotation.__args__[0]
+        for block in SINK_BLOCKS
+    }
+    assert ROBOFLOW_PLATFORM_SINK_TYPES <= covered, (
+        ROBOFLOW_PLATFORM_SINK_TYPES - covered
+    )
+
 
 def test_sink_disabling_defaults_to_false() -> None:
     assert REGISTERED_INITIALIZERS["disable_sinks"] is False

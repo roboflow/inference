@@ -25,6 +25,7 @@ from inference_models.weights_providers.entities import (
     BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    MemoryProfile,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
@@ -1198,6 +1199,44 @@ def test_get_one_page_of_model_metadata_excludes_auth_header_when_local_api_key(
 
     # then
     assert "Authorization" not in requests_mock.last_request.headers
+
+
+@pytest.mark.parametrize(
+    "coremltools_version, expected_query_value",
+    [(Version("9.0"), ["true"]), (None, None)],
+)
+def test_get_one_page_of_model_metadata_asks_for_coreml_packages_only_when_coreml_runs(
+    requests_mock: Mocker,
+    coremltools_version: Optional[Version],
+    expected_query_value: Optional[List[str]],
+) -> None:
+    # given
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "rfdetr",
+                "taskType": "object-detection",
+                "modelPackages": [],
+            }
+        },
+    )
+
+    # when
+    with patch.object(
+        roboflow_module,
+        "get_coreml_runtime_version",
+        return_value=coremltools_version,
+    ):
+        _ = get_one_page_of_model_metadata(model_id="my-model", api_key="some")
+
+    # then
+    assert (
+        requests_mock.last_request.qs.get("includecoremlpackages")
+        == expected_query_value
+    )
 
 
 def test_get_one_page_of_model_metadata_rejects_offline_mode(
@@ -2526,3 +2565,230 @@ def _dummy_proxy_url_builder(
     url: str, query: Optional[Dict[str, Union[str, List[str]]]]
 ) -> str:
     return f"{DUMMY_PROXY_PREFIX}{url}"
+
+
+def test_parse_coreml_model_package_when_valid_manifest_provided() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 1,
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="weights.mlpackage.zip",
+                downloadUrl="https://dummy.com",
+                md5Hash="some",
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.COREML,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=False,
+        static_batch_size=1,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://dummy.com",
+                file_handle="weights.mlpackage.zip",
+                md5_hash="some",
+            ),
+        ],
+        trusted_source=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "onnx",
+            "quantization": "fp16",
+            "staticBatchSize": 1,
+        },
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+        },
+    ],
+)
+def test_parse_coreml_model_package_when_invalid_manifest_provided(
+    manifest: dict,
+) -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest=manifest,
+        packageFiles=[],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    "raw_latency, expected",
+    [
+        (12.5, 12.5),
+        (7, 7.0),
+        (None, None),
+        (True, None),
+        ("fast", None),
+        ({}, None),
+        pytest.param(10**400, None, id="int-too-large-for-float"),
+    ],
+)
+def test_roboflow_model_metadata_parses_model_latency_ms(
+    raw_latency: object, expected: object
+) -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolo-nas",
+            "modelPackages": [],
+            "modelLatencyMs": raw_latency,
+        }
+    )
+
+    # then
+    assert result.model_latency_ms == expected
+
+
+def test_roboflow_model_metadata_leaves_model_latency_ms_unset_when_absent() -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [],
+        }
+    )
+
+    # then
+    assert result.model_latency_ms is None
+
+
+def _metadata_with_memory_profile(memory_profile: object) -> RoboflowModelMetadata:
+    return RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [
+                {
+                    "type": "external-model-package-v1",
+                    "packageId": "my-package-id",
+                    "packageManifest": {
+                        "type": "onnx-model-package-v1",
+                        "backendType": "onnx",
+                        "quantization": "fp32",
+                        "dynamicBatchSize": True,
+                        "opset": 19,
+                    },
+                    "packageFiles": [
+                        {
+                            "fileHandle": "some",
+                            "downloadUrl": "https://dummy.com",
+                            "md5Hash": "some",
+                        }
+                    ],
+                    "memoryProfile": memory_profile,
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_memory_profile",
+    [
+        None,
+        "bad",
+        [],
+        5,
+        {"peakVramMb": None},
+        {"peakVramMb": "bad"},
+        {"peakVramMb": [1, 2]},
+        {"peakVramMb": {"bad": 1024}},
+        {"peakVramMb": {"1": "lots"}},
+        {"peakVramMb": {"1": float("inf")}},
+        {"peakVramMb": {"1": {"nested": [1]}}},
+    ],
+)
+def test_roboflow_model_metadata_keeps_package_typed_when_memory_profile_is_malformed(
+    raw_memory_profile: object,
+) -> None:
+    # when
+    result = _metadata_with_memory_profile(memory_profile=raw_memory_profile)
+    parsed_package = parse_model_package_metadata(metadata=result.model_packages[0])
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert result.model_packages[0].memory_profile == MemoryProfile()
+    assert parsed_package is not None
+    assert parsed_package.backend is BackendType.ONNX
+    assert parsed_package.memory_profile == MemoryProfile()
+    assert parsed_package.memory_profile.vram_for_batch(1) is None
+
+
+def test_roboflow_model_metadata_keeps_valid_memory_profile_with_string_keys() -> None:
+    # when
+    result = _metadata_with_memory_profile(
+        memory_profile=json.loads('{"peakVramMb": {"1": 1024, "8": 4096}}')
+    )
+    parsed_package = parse_model_package_metadata(metadata=result.model_packages[0])
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert parsed_package is not None
+    assert parsed_package.memory_profile == MemoryProfile(
+        peak_vram_mb={1: 1024, 8: 4096}
+    )
+    assert parsed_package.memory_profile.vram_for_batch(4) == 4096
+
+
+def test_roboflow_model_metadata_keeps_package_typed_when_memory_profile_is_absent() -> (
+    None
+):
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [
+                {
+                    "type": "external-model-package-v1",
+                    "packageId": "my-package-id",
+                    "packageManifest": {"type": "onnx-model-package-v1"},
+                    "packageFiles": [],
+                }
+            ],
+        }
+    )
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert result.model_packages[0].memory_profile == MemoryProfile()

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
+from packaging.version import Version
 
 from inference_models import ClassificationPrediction
 from inference_models.errors import (
@@ -33,6 +34,7 @@ from inference_models.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCache,
     AutoResolutionCacheEntry,
 )
+from inference_models.errors import InvalidParameterError
 from inference_models.models.auto_loaders.core import (
     attempt_loading_matching_model_packages,
     attempt_loading_model_from_local_storage,
@@ -45,13 +47,20 @@ from inference_models.models.auto_loaders.core import (
     initialize_model,
     load_class_from_path,
     parse_model_config,
+    resolve_preloaded_dependency,
     resolve_recommended_parameters,
 )
 from inference_models.models.auto_loaders.entities import (
     MODEL_CONFIG_FILE_NAME,
     BackendType,
     InferenceModelConfig,
+    SuppliedDependency,
 )
+from inference_models.weights_providers.entities import (
+    ModelDependency,
+    RecommendedParameters,
+)
+from inference_models.runtime_introspection.core import RuntimeXRayResult
 from inference_models.weights_providers import core as weights_providers_core
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
@@ -2846,6 +2855,80 @@ def test_create_symlinks_to_shared_blobs_when_hooks_not_provided(
     assert _read_file(result["initially_broken.txt"]) == "b"
 
 
+def test_resolve_preloaded_dependency_when_none_supplied() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+
+    assert resolve_preloaded_dependency(dependency, None) is None
+    assert resolve_preloaded_dependency(dependency, {}) is None
+
+
+def test_resolve_preloaded_dependency_when_dependency_not_supplied() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {"other": SuppliedDependency(model_id="x", model_package_id="y", instance=object())}
+
+    assert resolve_preloaded_dependency(dependency, supplied) is None
+
+
+def test_resolve_preloaded_dependency_when_identity_matches() -> None:
+    instance = object()
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id="pkg-1", instance=instance
+        )
+    }
+
+    assert resolve_preloaded_dependency(dependency, supplied) is instance
+
+
+def test_resolve_preloaded_dependency_when_metadata_package_unset_and_supplied_package_none() -> None:
+    instance = object()
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id=None)
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id=None, instance=instance
+        )
+    }
+
+    assert resolve_preloaded_dependency(dependency, supplied) is instance
+
+
+def test_resolve_preloaded_dependency_when_metadata_package_unset_but_supplied_concrete() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id=None)
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id="pkg-a", instance=object()
+        )
+    }
+
+    with pytest.raises(InvalidParameterError):
+        resolve_preloaded_dependency(dependency, supplied)
+
+
+def test_resolve_preloaded_dependency_when_model_id_mismatches() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="other-base", model_package_id="pkg-1", instance=object()
+        )
+    }
+
+    with pytest.raises(InvalidParameterError):
+        resolve_preloaded_dependency(dependency, supplied)
+
+
+def test_resolve_preloaded_dependency_when_package_id_mismatches() -> None:
+    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    supplied = {
+        "feature_extractor": SuppliedDependency(
+            model_id="owlv2", model_package_id="pkg-2", instance=object()
+        )
+    }
+
+    with pytest.raises(InvalidParameterError):
+        resolve_preloaded_dependency(dependency, supplied)
+
+
 def _create_file(path: str, content: str) -> None:
     parent_dir = os.path.dirname(path)
     os.makedirs(parent_dir, exist_ok=True)
@@ -4204,4 +4287,49 @@ def test_matching_package_loader_forwards_artifact_cache() -> None:
     assert (
         initialize.call_args.kwargs["content_addressed_artifact_cache"]
         is artifact_cache
+    )
+
+
+def _runtime_x_ray(coremltools_version=None) -> RuntimeXRayResult:
+    return RuntimeXRayResult(
+        gpu_available=False,
+        gpu_devices=[],
+        gpu_devices_cc=[],
+        driver_version=None,
+        cuda_version=None,
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=None,
+        os_version="darwin",
+        torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.22.1"),
+        available_onnx_execution_providers={"CPUExecutionProvider"},
+        hf_transformers_available=False,
+        trt_python_package_available=False,
+        coremltools_version=coremltools_version,
+    )
+
+
+def test_runtime_compatibility_content_without_core_ml_keeps_its_existing_keys() -> (
+    None
+):
+    content = core._runtime_compatibility_content(runtime_x_ray=_runtime_x_ray())
+
+    assert "coremltools_version" not in content
+    assert content["version"] == 1
+
+
+def test_runtime_compatibility_content_changes_once_core_ml_can_run() -> None:
+    without_core_ml = core._runtime_compatibility_content(
+        runtime_x_ray=_runtime_x_ray()
+    )
+    with_core_ml = core._runtime_compatibility_content(
+        runtime_x_ray=_runtime_x_ray(coremltools_version=Version("9.0"))
+    )
+
+    assert with_core_ml["coremltools_version"] == "9.0"
+    assert {k: v for k, v in with_core_ml.items() if k != "coremltools_version"} == (
+        without_core_ml
     )

@@ -28,6 +28,11 @@ COPY requirements/requirements.cpu.txt \
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+
+# Keep later pip installs (including wheel builds) on the CPU variants.
+COPY requirements/requirements.torch-cpu.txt /requirements.torch-cpu.txt
+ARG PIP_CONSTRAINT=/requirements.torch-cpu.txt
+RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu -r /requirements.torch-cpu.txt
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.cpu.txt \
@@ -39,14 +44,27 @@ RUN pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-FROM scratch
-COPY --from=base / /
+# Build & install roboflow-workflows from source. The wheel pulls in every
+# runtime dep (openai/anthropic/boto3/…) that source-only images cannot get
+# from `requirements/*.txt`, and embeds the checksum-verified font assets so
+# no download runs at container start.
+COPY workflows workflows
+COPY stream_vision stream_vision
+RUN pip3 install uv \
+    && python3 workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && cd stream_vision \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && pip3 install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]" \
+    && rm -rf ~/.cache/pip
 
 WORKDIR /app
 
 COPY inference inference
-COPY build_scripts build_scripts
-RUN python3 build_scripts/download_fonts.py
 ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli

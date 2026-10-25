@@ -2,8 +2,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from inference.core.entities.responses.inference import InferenceResponse
 
-class Sam3EmbeddingResponse(BaseModel):
+
+class Sam3EmbeddingResponse(InferenceResponse):
     image_id: str = Field(description="Image id embeddings are cached to")
     time: float = Field(
         description="The time in seconds it took to produce the embeddings including preprocessing"
@@ -33,7 +35,7 @@ class Sam3PromptResult(BaseModel):
     predictions: List[Sam3SegmentationPrediction] = Field()
 
 
-class Sam3SegmentationResponse(BaseModel):
+class Sam3SegmentationResponse(InferenceResponse):
     prompt_results: List[Sam3PromptResult] = Field()
     time: float = Field(
         description="The time in seconds it took to produce the segmentation including preprocessing"

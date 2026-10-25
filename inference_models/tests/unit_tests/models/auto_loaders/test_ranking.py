@@ -2819,3 +2819,34 @@ def test_rank_model_packages_when_nms_fused_should_be_ordered_correctly_when_nms
 
     # then
     assert [r.package_id for r in result] == ["my-package-id-2", "my-package-id-1"]
+
+
+def test_rank_model_packages_prefers_coreml_over_other_backends() -> None:
+    # given
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="onnx",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP32,
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="coreml",
+            backend=BackendType.COREML,
+            quantization=Quantization.FP16,
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+        ModelPackageMetadata(
+            package_id="torch",
+            backend=BackendType.TORCH,
+            quantization=Quantization.FP32,
+            package_artefacts=[],
+        ),
+    ]
+
+    # when
+    result = rank_model_packages(model_packages=model_packages)
+
+    # then
+    assert [e.package_id for e in result] == ["coreml", "onnx", "torch"]

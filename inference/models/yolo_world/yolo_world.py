@@ -82,7 +82,9 @@ class YOLOWorld(RoboflowCoreModel):
         Perform inference based on the details provided in the request, and return the associated responses.
         """
         with self._state_lock:
-            return self.infer(**request.dict())
+            response = self.infer(**request.dict())
+            self._attach_resolved_model_metadata(response)
+            return response
 
     @usage_collector("model")
     def infer(

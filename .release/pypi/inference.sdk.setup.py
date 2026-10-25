@@ -59,7 +59,19 @@ setuptools.setup(
             "development",
             "development.*",
             "inference_models",
-            "inference_models.*"
+            "inference_models.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
+            "inference_model_manager",
+            "inference_model_manager.*",
+            "inference_server",
+            "inference_server.*"
         ),
     ),
     install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),
@@ -81,5 +93,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10,<3.13"
+    python_requires=">=3.10,<3.14",
 )

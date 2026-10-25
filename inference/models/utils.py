@@ -28,6 +28,7 @@ from inference.core.env import (
     SAM3_3D_OBJECTS_ENABLED,
     SMOLVLM2_ENABLED,
     USE_INFERENCE_MODELS,
+    VJEPA2_1_ENABLED,
 )
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -79,6 +80,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("classification", "vit"): VitClassification,
     ("classification", "dinov3"): DinoV3Classification,
     ("classification", "dinov3_probe"): DinoV3Classification,
+    ("classification", "resnet"): ResNetClassification,
     ("classification", "resnet18"): ResNetClassification,
     ("classification", "resnet34"): ResNetClassification,
     ("classification", "resnet50"): ResNetClassification,
@@ -498,6 +500,17 @@ except:
     )
 
 try:
+    if VJEPA2_1_ENABLED and USE_INFERENCE_MODELS:
+        from inference.core.models.inference_models_adapters import (
+            InferenceModelsActionRecognitionAdapter,
+        )
+
+        ROBOFLOW_MODEL_TYPES[("action-recognition", "vjepa2-1-vitb-384")] = (
+            InferenceModelsActionRecognitionAdapter
+        )
+        ROBOFLOW_MODEL_TYPES[("action-recognition", "vjepa2_1")] = (
+            InferenceModelsActionRecognitionAdapter
+        )
     # Cosmos 3 Edge has no legacy implementation — it is served exclusively
     # through the inference_models bridge adapter.
     if COSMOS3_ENABLED and USE_INFERENCE_MODELS:
@@ -1189,6 +1202,22 @@ if USE_INFERENCE_MODELS:
             InferenceModelsSemanticSegmentationAdapter
         )
 
+    # RF-DETR semantic segmentation is inference_models-only (no legacy implementation),
+    # so we add entries directly rather than swapping existing ones.
+    for variant in [
+        "rfdetr",
+        "rfdetr-sem-nano",
+        "rfdetr-sem-small",
+        "rfdetr-sem-medium",
+        "rfdetr-sem-large",
+        "rfdetr-sem-xlarge",
+        "rfdetr-sem-2xlarge",
+        "rfdetr-nas-sem",
+    ]:
+        ROBOFLOW_MODEL_TYPES[("semantic-segmentation", variant)] = (
+            InferenceModelsSemanticSegmentationAdapter
+        )
+
     # YOLO26 depth estimation is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     if DEPTH_ESTIMATION_ENABLED:
@@ -1213,6 +1242,23 @@ if USE_INFERENCE_MODELS:
     ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (
         InferenceModelsKeyPointsDetectionAdapter
     )
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-two-stage")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-stage2")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+
+    # PatchCore and FoundAD anomaly detection are inference_models-only
+    # (no legacy implementation), so we add entries directly.
+    from inference.core.models.inference_models_adapters import (
+        InferenceModelsAnomalyDetectionAdapter,
+    )
+
+    for variant in ["patchcore", "foundad"]:
+        ROBOFLOW_MODEL_TYPES[("classification", variant)] = (
+            InferenceModelsAnomalyDetectionAdapter
+        )
 
     # YOLOLite is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.

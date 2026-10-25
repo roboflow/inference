@@ -239,6 +239,7 @@ def test_mergeable_branch_ref_is_encoded_data_without_network(tmp_path):
         tmp_path,
         "check_if_branch_is_mergeable.yml",
         "Check if branch contains all commits from main via GitHub CLI",
+        EVENT_NAME="pull_request",
         SOURCE_BRANCH=branch,
         TARGET_REPO="roboflow/inference",
         SOURCE_OWNER="roboflow",
@@ -250,3 +251,28 @@ def test_mergeable_branch_ref_is_encoded_data_without_network(tmp_path):
     assert "fix%2F%24" in capture.read_text()
     assert "touch%20sentinel" in capture.read_text()
     assert not (tmp_path / "sentinel").exists()
+
+
+def test_mergeable_check_is_skipped_for_manual_runs(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    gh = fake_bin / "gh"
+    gh.write_text(
+        '#!/bin/sh\nprintf \'%s\' "$2" > "$CAPTURE_PATH"\nprintf \'%s\\n\' \'{"status":"diverged"}\'\n'
+    )
+    gh.chmod(0o755)
+    capture = tmp_path / "url"
+    result, output, _ = run_step(
+        tmp_path,
+        "check_if_branch_is_mergeable.yml",
+        "Check if branch contains all commits from main via GitHub CLI",
+        EVENT_NAME="workflow_dispatch",
+        SOURCE_BRANCH="fast-track/some-feature",
+        TARGET_REPO="roboflow/inference",
+        SOURCE_OWNER="roboflow",
+        PATH=f"{fake_bin}:/usr/bin:/bin:/opt/homebrew/bin",
+        CAPTURE_PATH=str(capture),
+    )
+    assert result.returncode == 0, result.stderr
+    assert not output
+    assert not capture.exists()

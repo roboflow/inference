@@ -4,19 +4,19 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.workflows.execution_engine.constants import (
+from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     ROOT_PARENT_ID_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import (
+from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
     VideoMetadata,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     _compute_code_hash,
     _deserialize_msgpack_result,
     deserialize_for_modal_remote_execution,

@@ -19,6 +19,7 @@ Run it twice on the same clip to A/B the data path:
 If the tensor run now matches (or beats) the numpy run here, while the live pipeline
 showed tensor at half the FPS, the gap is the per-frame numpy->GPU conversion.
 """
+
 import argparse
 import os
 import sys
@@ -41,6 +42,22 @@ from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     MAX_ACTIVE_MODELS,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
+)
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
@@ -113,7 +130,9 @@ def parse_args() -> argparse.Namespace:
 def build_model_manager() -> ModelManager:
     # Same construction as tests/workflows/integration_tests/conftest.py::model_manager.
     registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
-    return WithFixedSizeCache(ModelManager(model_registry=registry), max_size=MAX_ACTIVE_MODELS)
+    return WithFixedSizeCache(
+        ModelManager(model_registry=registry), max_size=MAX_ACTIVE_MODELS
+    )
 
 
 def decode_frames(video_path: str, count: int) -> List[np.ndarray]:
@@ -139,7 +158,10 @@ def to_gpu_tensor(bgr_hwc: np.ndarray, device: torch.device) -> torch.Tensor:
 
 
 def _cuda_sync_if_needed() -> None:
-    if ENABLE_TENSOR_DATA_REPRESENTATION and WORKFLOWS_IMAGE_TENSOR_DEVICE.type == "cuda":
+    if (
+        ENABLE_TENSOR_DATA_REPRESENTATION
+        and WORKFLOWS_IMAGE_TENSOR_DEVICE.type == "cuda"
+    ):
         torch.cuda.synchronize()
 
 
@@ -167,7 +189,10 @@ def main() -> None:
         f"WORKFLOWS_IMAGE_TENSOR_DEVICE = {WORKFLOWS_IMAGE_TENSOR_DEVICE} | "
         f"ENABLE_TENSOR_DATA_REPRESENTATION = {ENABLE_TENSOR_DATA_REPRESENTATION}"
     )
-    if ENABLE_TENSOR_DATA_REPRESENTATION and WORKFLOWS_IMAGE_TENSOR_DEVICE.type != "cuda":
+    if (
+        ENABLE_TENSOR_DATA_REPRESENTATION
+        and WORKFLOWS_IMAGE_TENSOR_DEVICE.type != "cuda"
+    ):
         print(
             "WARNING: tensor mode is on but the tensor device is not CUDA — frames live on "
             f"'{WORKFLOWS_IMAGE_TENSOR_DEVICE}', so the model will still copy to GPU itself."
@@ -193,14 +218,26 @@ def main() -> None:
         )
 
     model_manager = build_model_manager()
+    # The server services a direct caller must bind; `examples/
+    # run_perspective_correction.py` documents what each one buys. The observer
+    # is billed work the engine used to do internally, so it belongs inside the
+    # measured loop, as it was before.
+    init_parameters = {
+        "workflows_core.model_manager": ModelManagerModelsProvider(model_manager),
+        "workflows_core.api_key": args.api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+    }
+    install_workflows_platform_bindings(init_parameters)
+    bind_image_codec(init_parameters)
+    init_parameters.setdefault(
+        "workflows_core.configuration", server_workflows_configuration()
+    )
     engine = ExecutionEngine.init(
         workflow_definition=workflow,
-        init_parameters={
-            "workflows_core.model_manager": model_manager,
-            "workflows_core.api_key": args.api_key,
-            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        },
+        init_parameters=init_parameters,
         workflow_id=args.workflow_id,
+        step_error_handler=resolve_step_error_handler(),
     )
 
     extra_params = {"model_id": args.model_id} if args.model_id else {}
@@ -237,13 +274,17 @@ def main() -> None:
     runs_per_s = args.engine_runs / elapsed if elapsed > 0 else 0.0
     frames_per_s = total_frames / elapsed if elapsed > 0 else 0.0
     print("\n=== Summary ===")
-    print(f"data representation : {'TENSOR' if ENABLE_TENSOR_DATA_REPRESENTATION else 'NUMPY'}")
+    print(
+        f"data representation : {'TENSOR' if ENABLE_TENSOR_DATA_REPRESENTATION else 'NUMPY'}"
+    )
     print(f"pre-decoded frames  : {n}")
     print(f"batch size          : {batch_size}")
     print(f"engine runs (timed) : {args.engine_runs}")
     print(f"frames processed    : {total_frames}")
     print(f"elapsed             : {elapsed:.3f} s")
-    print(f"throughput          : {frames_per_s:.1f} frames/s ({runs_per_s:.1f} runs/s)")
+    print(
+        f"throughput          : {frames_per_s:.1f} frames/s ({runs_per_s:.1f} runs/s)"
+    )
     print(f"per-run latency     : {elapsed / args.engine_runs * 1000:.3f} ms")
     print(f"per-frame latency   : {elapsed / total_frames * 1000:.3f} ms")
 

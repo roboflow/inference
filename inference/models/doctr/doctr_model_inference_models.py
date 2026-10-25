@@ -82,12 +82,14 @@ class InferenceModelsDocTRAdapter(Model):
     ) -> Union[OCRInferenceResponse, List]:
         if type(request.image) is list:
             response = []
-            request_copy = copy.copy(request)
+            request_copy = copy(request)
             for image in request.image:
                 request_copy.image = image
                 response.append(self.single_request(request=request_copy))
-            return response
-        return self.single_request(request)
+        else:
+            response = self.single_request(request)
+        self._attach_resolved_model_metadata(response)
+        return response
 
     def single_request(self, request: DoctrOCRInferenceRequest) -> OCRInferenceResponse:
         t1 = perf_counter()

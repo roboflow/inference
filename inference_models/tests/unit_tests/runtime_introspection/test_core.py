@@ -1,4 +1,7 @@
+import sys
 from subprocess import CompletedProcess
+from types import ModuleType, SimpleNamespace
+from typing import Optional
 from unittest import mock
 from unittest.mock import MagicMock, mock_open
 
@@ -438,6 +441,51 @@ def test_get_trt_version_when_libnvifer_not_found_and_trt_can_be_imported(
     assert result == Version("10.2.0.1")
 
 
+def _fake_trt_module(name: str, version: str) -> ModuleType:
+    module = ModuleType(name)
+    module.__version__ = version
+    return module
+
+
+@pytest.mark.parametrize(
+    "full_runtime_version, expected_version",
+    [("10.2.0.1", Version("10.2.0.1")), (None, Version("10.1.0.5"))],
+)
+@mock.patch.object(core, "subprocess")
+def test_get_trt_version_prefers_full_runtime_over_lean_runtime(
+    subprocess_mock: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    full_runtime_version: Optional[str],
+    expected_version: Version,
+) -> None:
+    # given
+    subprocess_mock.run.return_value = CompletedProcess(
+        args=(),
+        returncode=1,
+    )
+    full_runtime = (
+        _fake_trt_module("tensorrt", full_runtime_version)
+        if full_runtime_version is not None
+        else None
+    )
+    monkeypatch.setitem(sys.modules, "tensorrt", full_runtime)
+    monkeypatch.setitem(
+        sys.modules, "tensorrt_lean", _fake_trt_module("tensorrt_lean", "10.1.0.5")
+    )
+    get_trt_version.cache_clear()
+    get_trt_version_from_libnvinfer.cache_clear()
+
+    # when
+    try:
+        result = get_trt_version()
+    finally:
+        get_trt_version.cache_clear()
+        get_trt_version_from_libnvinfer.cache_clear()
+
+    # then
+    assert result == expected_version
+
+
 @mock.patch.object(core, "subprocess")
 def test_get_trt_version_from_libnvinfer_when_output_cannot_be_parsed(
     subprocess_mock: MagicMock,
@@ -857,6 +905,26 @@ def test_is_trt_python_package_available_when_trt_can_be_imported() -> None:
     assert result is True
 
 
+def test_is_trt_python_package_available_when_only_lean_runtime_is_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    monkeypatch.setitem(sys.modules, "tensorrt", None)
+    monkeypatch.setitem(
+        sys.modules, "tensorrt_lean", _fake_trt_module("tensorrt_lean", "10.1.0.5")
+    )
+    is_trt_python_package_available.cache_clear()
+
+    # when
+    try:
+        result = is_trt_python_package_available()
+    finally:
+        is_trt_python_package_available.cache_clear()
+
+    # then
+    assert result is True
+
+
 def test_is_torch_available_available_when_trt_cannot_be_imported() -> None:
     # given
     is_torch_available.cache_clear()
@@ -928,6 +996,20 @@ def test_get_onnxruntime_info_when_onnxruntime_not_available() -> None:
 
     # then
     assert result is None
+
+
+def test_get_onnxruntime_info_when_onnxruntime_is_incomplete_raises() -> None:
+    # given
+    get_onnxruntime_info.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            import_mock.return_value = ModuleType("onnxruntime")
+
+            # when
+            with pytest.raises(AttributeError):
+                get_onnxruntime_info()
+    finally:
+        get_onnxruntime_info.cache_clear()
 
 
 def test_get_onnxruntime_info_when_onnxruntime_available() -> None:
@@ -1103,3 +1185,73 @@ def test_ensure_jetson_l4t_declared_for_jetson_hardware_when_valid_configuration
         gpu_devices=["some"],
         l4t_version=None,
     )
+
+
+COREML_WHEEL_FILES = [
+    SimpleNamespace(name="__init__.py"),
+    SimpleNamespace(name="libcoremlpython.so"),
+    SimpleNamespace(name="libmilstoragepython.so"),
+]
+
+
+def _coreml_runtime_version(
+    system: str = "Darwin",
+    machine: str = "arm64",
+    mac_version: str = "14.5",
+    files=COREML_WHEEL_FILES,
+    version_side_effect=None,
+):
+    core.get_coreml_runtime_version.cache_clear()
+    try:
+        with mock.patch.object(
+            core.platform, "system", return_value=system
+        ), mock.patch.object(
+            core.platform, "machine", return_value=machine
+        ), mock.patch.object(
+            core.platform, "mac_ver", return_value=(mac_version, ("", "", ""), "")
+        ), mock.patch.object(
+            core.importlib_metadata, "files", return_value=files
+        ), mock.patch.object(
+            core.importlib_metadata,
+            "version",
+            return_value="9.0",
+            side_effect=version_side_effect,
+        ):
+            return core.get_coreml_runtime_version()
+    finally:
+        core.get_coreml_runtime_version.cache_clear()
+
+
+def test_get_coreml_runtime_version_on_apple_silicon_with_coremltools() -> None:
+    assert _coreml_runtime_version() == Version("9.0")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"system": "Linux", "machine": "x86_64"},
+        {"system": "Linux", "machine": "aarch64"},
+        {"machine": "x86_64"},
+        {"mac_version": "12.7"},
+        {"mac_version": "not-a-version"},
+        {"files": [SimpleNamespace(name="__init__.py")]},
+        {"files": None},
+        {
+            "version_side_effect": core.importlib_metadata.PackageNotFoundError(
+                "coremltools"
+            )
+        },
+    ],
+    ids=[
+        "linux",
+        "linux-arm",
+        "intel-mac",
+        "macos-12",
+        "unparseable-macos-version",
+        "no-core-ml-runtime-bindings",
+        "no-package-files",
+        "coremltools-missing",
+    ],
+)
+def test_get_coreml_runtime_version_when_core_ml_cannot_run(overrides: dict) -> None:
+    assert _coreml_runtime_version(**overrides) is None

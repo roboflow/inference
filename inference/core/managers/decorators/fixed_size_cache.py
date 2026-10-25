@@ -22,6 +22,7 @@ from inference.core.managers.base import Model, ModelManager, acquire_with_timeo
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.model_load_collector import request_model_ids
+from inference.core.models.embeddings import model_cache_key
 from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
@@ -59,6 +60,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
         endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
         countinference: Optional[bool] = None,
         service_secret: Optional[str] = None,
+        required_capabilities: Optional[List[str]] = None,
+        output_type: str = "feature_vector",
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -82,6 +85,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
+        queue_id = model_cache_key(queue_id, required_capabilities, output_type)
         ids_collector = request_model_ids.get(None)
         if ids_collector is not None:
             ids_collector.add(queue_id)
@@ -102,14 +106,26 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 endpoint_type=endpoint_type,
                 countinference=countinference,
                 service_secret=service_secret,
+                **(
+                    {
+                        "required_capabilities": required_capabilities,
+                        "output_type": output_type,
+                    }
+                    if required_capabilities
+                    else {}
+                ),
             )
         finally:
             self._synchronize_model_queue(model_id=queue_id)
 
     def clear(self) -> None:
-        """Removes all models from the manager."""
+        """Removes all models from the manager.
+
+        Cached weights are deleted from disk only when ``DISK_CACHE_CLEANUP``
+        is enabled, so a persistent model cache survives ``/model/clear``.
+        """
         for model_id in list(self.keys()):
-            self.remove(model_id)
+            self.remove(model_id, delete_from_disk=DISK_CACHE_CLEANUP)
 
     def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         try:
@@ -152,6 +168,21 @@ class WithFixedSizeCache(ModelManagerDecorator):
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
         self._refresh_model_position_in_a_queue(model_id=model_id)
         return super().run_tensor_native_inference(model_id, **kwargs)
+
+    def run_tensor_native_embeddings(self, model_id: str, **kwargs) -> dict:
+        """Generate embeddings and keep the active model in the cache.
+
+        Args:
+            model_id: Capability-specific model registration key.
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+        """
+        self._refresh_model_position_in_a_queue(model_id=model_id)
+        result = super().run_tensor_native_embeddings(model_id, **kwargs)
+
+        return result
 
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request and updates the cache.

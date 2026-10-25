@@ -178,3 +178,8 @@ def test_instance_segmentation_dc_can_carry_async_response_context() -> None:
 
     assert get_async_response_future(response) is response_future
     assert get_async_response_context_id(response) == "context-1"
+
+
+def test_response_dc_to_dict_method_matches_the_module_function() -> None:
+    dc_response = _dc_response(predictions=[])
+    assert dc_response.to_dict() == _is_response_dc_to_dict(dc_response)

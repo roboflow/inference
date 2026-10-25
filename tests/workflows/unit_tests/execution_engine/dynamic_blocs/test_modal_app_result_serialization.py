@@ -21,12 +21,12 @@ import json
 import msgpack
 import numpy as np
 
-from inference.core.workflows.execution_engine.entities.base import (
+from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
 )
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     serialize_for_modal_remote_execution,
     serialize_inputs_for_msgpack,
 )

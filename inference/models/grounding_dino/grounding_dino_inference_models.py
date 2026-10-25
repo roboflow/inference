@@ -95,6 +95,7 @@ class InferenceModelsGroundingDINOAdapter(Model):
         Perform inference based on the details provided in the request, and return the associated responses.
         """
         result = self.infer(**request.dict())
+        self._attach_resolved_model_metadata(result)
         return result
 
     @usage_collector("model")
@@ -130,8 +131,8 @@ class InferenceModelsGroundingDINOAdapter(Model):
         detections = self._model.infer(
             images=image,
             classes=text,
-            box_threshold=box_threshold,
-            text_threshold=text_threshold,
+            box_confidence=box_threshold,
+            text_confidence=text_threshold,
             class_agnostic_nms=class_agnostic_nms,
         )[0]
         t2 = perf_counter() - t1

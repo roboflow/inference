@@ -1,4 +1,5 @@
 import os
+import shutil
 import threading
 import time
 from dataclasses import dataclass
@@ -20,6 +21,10 @@ RECENT_THRESHOLD_DAYS = 1
 WARM_THRESHOLD_DAYS = 7
 STALE_THRESHOLD_DAYS = 30
 MIN_PURGE_INTERVAL_MINUTES = 15
+# CoreML compiled-model cache written inside model packages by inference_models. onnxruntime reuses a cached
+# compiled model whenever its directory exists, without validating the contents, so deleting individual files
+# from it would break the next model load. It is listed and purged only as a whole directory.
+COREML_CACHE_DIR = "coreml_cache"
 
 
 @dataclass(frozen=True)
@@ -162,6 +167,13 @@ def list_files(path: str) -> List[FileInfo]:
         ]
     results = []
     for directory_path, directory_names, file_names in os.walk(path, followlinks=False):
+        if COREML_CACHE_DIR in directory_names:
+            directory_names.remove(COREML_CACHE_DIR)
+            coreml_cache_info = describe_directory(
+                path=os.path.join(directory_path, COREML_CACHE_DIR)
+            )
+            if coreml_cache_info is not None:
+                results.append(coreml_cache_info)
         for file_name in file_names:
             file_path = os.path.join(directory_path, file_name)
             if os.path.islink(file_path) or file_path.endswith(LOCK_POSTFIX):
@@ -178,6 +190,32 @@ def list_files(path: str) -> List[FileInfo]:
                 )
             )
     return results
+
+
+def describe_directory(path: str) -> Optional[FileInfo]:
+    """Summarize a directory as a single purge unit (total size, latest modification)."""
+    if os.path.islink(path):
+        return None
+    total_bytes = 0
+    latest_mtime = None
+    for directory_path, _, file_names in os.walk(path, followlinks=False):
+        for file_name in file_names:
+            file_path = os.path.join(directory_path, file_name)
+            if os.path.islink(file_path):
+                continue
+            try:
+                stat = os.stat(file_path)
+            except OSError:
+                continue
+            total_bytes += stat.st_size
+            latest_mtime = max(latest_mtime or stat.st_mtime, stat.st_mtime)
+    if latest_mtime is None:
+        return None
+    return FileInfo(
+        path=path,
+        size_mb=total_bytes / BYTES_IN_MB,
+        modified_at=datetime.fromtimestamp(latest_mtime),
+    )
 
 
 def summarize_disk_size(files_info: List[FileInfo]) -> float:
@@ -240,7 +278,10 @@ def purge_files(files: List[FileInfo], file_lock_acquire_timeout: int = 3) -> fl
             file_name = os.path.basename(file_absolute_path)
             lock_path = os.path.join(file_directory, f".{file_name}{LOCK_POSTFIX}")
             with FileLock(lock_path, timeout=file_lock_acquire_timeout):
-                os.remove(file.path)
+                if os.path.isdir(file.path) and not os.path.islink(file.path):
+                    shutil.rmtree(file.path)
+                else:
+                    os.remove(file.path)
             result += file.size_mb
         except FileNotFoundError:
             pass

@@ -1,89 +1,15 @@
-from typing import List, Optional, Union
+from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import Field, validator
 
 from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
 )
 from inference.core.env import SAM3_MAX_PROMPT_BATCH_SIZE
-
-
-class Sam3Prompt(BaseModel):
-    """Unified prompt that can contain text and/or geometry.
-
-    Absolute pixel coordinates are used for boxes. Labels accept 0/1 or booleans.
-    """
-
-    type: Optional[str] = Field(
-        default=None,
-        description="Optional hint: 'text' or 'visual'. 'visual' requires at least one box.",
-    )
-    text: Optional[str] = Field(
-        default=None,
-        description="Concept to segment as a short noun phrase (e.g. 'person'). "
-        "All matching instances are returned. Can be combined with exemplar boxes in the same prompt.",
-    )
-
-    output_prob_thresh: Optional[float] = Field(
-        default=None,
-        description="Score threshold for this prompt's outputs. Overrides request-level threshold if set.",
-    )
-
-    # Absolute-coordinate boxes (preferred) in pixels.
-    # XYWH absolute pixels
-    class Box(BaseModel):
-        x: float
-        y: float
-        width: float
-        height: float
-
-    # XYXY absolute pixels
-    class BoxXYXY(BaseModel):
-        x0: float
-        y0: float
-        x1: float
-        y1: float
-
-    # Single unified boxes field; each entry can be XYWH or XYXY
-    boxes: Optional[List[Union[Box, BoxXYXY]]] = Field(
-        default=None,
-        description="Exemplar boxes in absolute pixels, as XYWH entries "
-        "({x, y, width, height}, top-left anchored) or XYXY entries ({x0, y0, x1, y1}). "
-        "Each box marks an example object; the model segments every instance matching "
-        "the exemplars (and text, if provided), not just the boxed objects. "
-        "Requires box_labels.",
-    )
-    box_labels: Optional[List[Union[int, bool]]] = Field(
-        default=None,
-        description="Per-box exemplar labels, one per entry in boxes: "
-        "1/true marks a positive exemplar (segment objects like this), "
-        "0/false marks a negative exemplar (exclude objects like this). "
-        "Required when boxes is set.",
-    )
-
-    @validator("boxes", always=True)
-    def _validate_visual_boxes(cls, boxes, values):
-        prompt_type = values.get("type")
-        if prompt_type == "visual":
-            if not boxes or len(boxes) == 0:
-                raise ValueError("Visual prompt requires at least one box")
-        return boxes
-
-    @validator("box_labels", always=True)
-    def _validate_box_labels(cls, labels, values):
-        boxes = values.get("boxes")
-        if labels is None:
-            return labels
-        if boxes is None or len(labels) != len(boxes):
-            raise ValueError("box_labels must match boxes length when provided")
-        return labels
-
-    @validator("output_prob_thresh")
-    def _validate_output_prob_thresh(cls, v):
-        if v is not None and (v < 0.0 or v > 1.0):
-            raise ValueError("output_prob_thresh must be between 0.0 and 1.0")
-        return v
+from inference.core.workflows.core_steps.models.foundation.segment_anything_common.prompts import (  # noqa: F401
+    Sam3Prompt,
+)
 
 
 class Sam3InferenceRequest(BaseRequest):

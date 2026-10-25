@@ -51,7 +51,10 @@ from inference_models.models.yolonas.nms import run_yolonas_nms_for_object_detec
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt as trt
+    except ImportError:
+        import tensorrt_lean as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running YOLO-NAS model with TRT backend on GPU requires pycuda installation, which is brought with "
@@ -254,7 +257,10 @@ class YOLONasForObjectDetectionTRT(
                     stream=self._inference_stream,
                     trt_cuda_graph_cache=cache,
                 )
-                return torch.cat(results, dim=-1)
+                with torch.cuda.stream(self._inference_stream):
+                    concatenated = torch.cat(results, dim=-1)
+                self._inference_stream.synchronize()
+                return concatenated
 
     def post_process(
         self,

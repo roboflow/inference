@@ -87,6 +87,7 @@ def test_infer_from_ocr_model_when_valid_input_given(
         "result",
         "time",
         "parent_id",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 
@@ -111,6 +112,7 @@ def test_infer_from_easy_ocr_model_when_valid_input_given(
         "result",
         "time",
         "parent_id",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 
@@ -296,6 +298,7 @@ def test_infer_from_clip_model_when_valid_input_given(
         "parent_id",
         "inference_id",
         "frame_id",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 
@@ -379,6 +382,7 @@ def test_infer_from_yolo_world_model_when_valid_input_given(
         "predictions",
         "image",
         "time",
+        "resolved_model",
     }, "Expected all fields to be present in output"
 
 

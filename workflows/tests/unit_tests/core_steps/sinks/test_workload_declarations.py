@@ -1,0 +1,480 @@
+"""Workload declarations of the sink blocks.
+
+Sinks are where the portable view differs most from the legacy one:
+``get_restrictions()`` evaluates this host's flags and returns human notes,
+while ``get_actual_restrictions(ignore_environment_restrictions=True)`` must
+return every branch, each with the flag pinned in its condition, so a caller
+can answer the question for a DIFFERENT deployment than the one being asked.
+"""
+
+from typing import Any, List
+
+import pytest
+import roboflow_workflows.core_steps.sinks.local_file.v1 as local_file_module
+import roboflow_workflows.enterprise_blocks.sinks.postgresql.v1 as postgresql_module
+from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.workload_presets import (
+    COOLDOWN_ACTUAL_RESTRICTION,
+)
+from roboflow_workflows.core_steps.sinks.local_file.v1 import (
+    BlockManifest as LocalFileManifest,
+)
+from roboflow_workflows.core_steps.sinks.onvif_movement.v1 import (
+    BlockManifest as OnvifManifest,
+)
+from roboflow_workflows.core_steps.sinks.s3.v1 import BlockManifest as S3Manifest
+from roboflow_workflows.core_steps.sinks.webhook.v1 import (
+    BlockManifest as WebhookManifest,
+)
+from roboflow_workflows.enterprise_blocks.sinks.postgresql.v1 import (
+    POSTGRESQL_HOSTED_PLATFORM_RESTRICTION,
+)
+from roboflow_workflows.enterprise_blocks.sinks.postgresql.v1 import (
+    BlockManifest as PostgreSQLManifest,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RestrictionMetadata,
+    Runtime,
+    Severity,
+    WorkOperation,
+    restriction_metadata_of,
+    unresolved_selector_problem,
+)
+from roboflow_workflows.execution_engine.introspection.workload import (
+    describe_workflow_workload,
+)
+
+from tests.unit_tests.workload_declaration_helpers import (
+    portable_restrictions,
+    portable_restrictions_discovery,
+)
+
+LOCAL_STORAGE_FLAG = "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE"
+HOSTED_RESTRICTION_CODE = "unavailable_on_hosted_platform"
+FIRE_AND_FORGET_CODE = "fire_and_forget_hides_persistence_failures"
+HOSTED_PLATFORM_FLAGS = ("GCP_SERVERLESS", "LAMBDA")
+POSTGRESQL_FIRE_AND_FORGET_VALUES = [True, False, "$inputs.fire_and_forget"]
+
+
+def _local_file() -> LocalFileManifest:
+    return LocalFileManifest(
+        type="roboflow_core/local_file_sink@v1",
+        name="file_sink",
+        content="$steps.formatter.output",
+        file_type="csv",
+        output_mode="append_log",
+        target_directory="/tmp/workflow-output",
+        file_name_prefix="results",
+    )
+
+
+def _s3() -> S3Manifest:
+    return S3Manifest(
+        type="roboflow_core/s3_sink@v1",
+        name="s3_sink",
+        content="$steps.formatter.output",
+        output_mode="append_log",
+        bucket_name="bucket",
+    )
+
+
+def _webhook() -> WebhookManifest:
+    return WebhookManifest(
+        type="roboflow_core/webhook_sink@v1",
+        name="webhook",
+        url="https://example.com/hook",
+        method="POST",
+    )
+
+
+def _onvif() -> OnvifManifest:
+    return OnvifManifest(
+        type="roboflow_core/onvif_sink@v1",
+        name="ptz",
+        predictions="$steps.model.predictions",
+        camera_ip="192.168.0.10",
+        camera_port=80,
+        camera_username="user",
+        camera_password="secret",
+    )
+
+
+def test_local_file_sink_declares_a_storage_write() -> None:
+    assert _local_file().discover_work_operations() == [WorkOperation.STORAGE_WRITE]
+
+
+def test_local_file_sink_declares_both_branches_of_the_storage_flag() -> None:
+    by_code = {
+        restriction.code: restriction
+        for restriction in portable_restrictions(_local_file())
+    }
+    assert by_code["local_storage_access_disabled"].severity is Severity.HARD
+    assert by_code["local_storage_access_disabled"].when.configuration_equals == {
+        LOCAL_STORAGE_FLAG: False
+    }
+    assert set(by_code["local_storage_access_disabled"].when.runtimes) == {
+        Runtime.HOSTED_SERVERLESS,
+        Runtime.DEDICATED_DEPLOYMENT,
+    }
+    volume = by_code["writes_to_deployment_volume_not_retrievable"]
+    assert volume.severity is Severity.SOFT
+    assert volume.when.runtimes == [Runtime.DEDICATED_DEPLOYMENT]
+    assert volume.when.configuration_equals == {LOCAL_STORAGE_FLAG: True}
+    ephemeral = by_code["ephemeral_container_disk_loses_writes"]
+    assert ephemeral.when.runtimes == [Runtime.HOSTED_SERVERLESS]
+    assert ephemeral.when.configuration_equals == {LOCAL_STORAGE_FLAG: True}
+
+
+def test_local_file_declaration_is_independent_of_this_host_flag(monkeypatch) -> None:
+    """The legacy hook branches on the flag; the portable one must not."""
+    manifest = _local_file()
+    monkeypatch.setattr(local_file_module, LOCAL_STORAGE_FLAG, True, raising=False)
+    with_storage = portable_restrictions(manifest)
+    legacy_with_storage = LocalFileManifest.get_restrictions()
+    monkeypatch.setattr(local_file_module, LOCAL_STORAGE_FLAG, False, raising=False)
+    without_storage = portable_restrictions(manifest)
+    legacy_without_storage = LocalFileManifest.get_restrictions()
+    assert with_storage == without_storage
+    # the legacy API keeps its environment-dependent behaviour untouched
+    assert legacy_with_storage != legacy_without_storage
+
+
+def test_s3_sink_declares_storage_and_transport() -> None:
+    manifest = _s3()
+    assert manifest.discover_work_operations() == [
+        WorkOperation.STORAGE_WRITE,
+        WorkOperation.EXTERNAL_REQUEST,
+    ]
+    restrictions = portable_restrictions(manifest)
+    assert [restriction.code for restriction in restrictions] == [
+        "s3_append_buffer_resets_on_stateless_http"
+    ]
+    # state is lost wherever the model runs, so no step-execution-mode filter
+    assert restrictions[0].when.step_execution_modes is None
+    assert set(restrictions[0].when.runtimes) == {
+        Runtime.HOSTED_SERVERLESS,
+        Runtime.DEDICATED_DEPLOYMENT,
+    }
+
+
+def test_a_notification_sink_declares_the_cooldown_caveat() -> None:
+    manifest = _webhook()
+    assert manifest.discover_work_operations() == [WorkOperation.EXTERNAL_REQUEST]
+    assert portable_restrictions(manifest) == [
+        restriction_metadata_of(COOLDOWN_ACTUAL_RESTRICTION)
+    ]
+
+
+def test_onvif_sink_declares_the_lan_requirement() -> None:
+    manifest = _onvif()
+    assert manifest.discover_work_operations() == [WorkOperation.EXTERNAL_REQUEST]
+    restrictions = portable_restrictions(manifest)
+    assert [restriction.code for restriction in restrictions] == [
+        "requires_lan_access_to_device"
+    ]
+    assert restrictions[0].severity is Severity.HARD
+    assert set(restrictions[0].when.runtimes) == {
+        Runtime.HOSTED_SERVERLESS,
+        Runtime.DEDICATED_DEPLOYMENT,
+    }
+    # the legacy note and the portable code describe the same two runtimes
+    legacy = OnvifManifest.get_restrictions()
+    assert len(legacy) == 1
+    assert legacy[0].severity is Severity.HARD
+    assert set(legacy[0].applies_to_runtimes) == set(restrictions[0].when.runtimes)
+
+
+def test_a_local_write_is_not_declared_as_an_external_request() -> None:
+    """Local storage and network transport are different costs."""
+    assert (
+        WorkOperation.EXTERNAL_REQUEST not in _local_file().discover_work_operations()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Codex round-001 F003 / F004: a caveat that only applies in one MODE must not
+# be declared unconditionally, and a mode supplied at run time must not be
+# answered with a complete declaration in either direction.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "output_mode, expected",
+    [
+        ("append_log", ["s3_append_buffer_resets_on_stateless_http"]),
+        ("separate_files", []),
+    ],
+)
+def test_s3_append_caveat_follows_the_literal_output_mode(
+    output_mode: str, expected: List[str]
+) -> None:
+    manifest = S3Manifest(
+        type="roboflow_core/s3_sink@v1",
+        name="s3_sink",
+        content="$steps.formatter.output",
+        output_mode=output_mode,
+        bucket_name="bucket",
+    )
+    declared = portable_restrictions(manifest)
+    assert isinstance(declared, list), "a literal mode is fully knowable"
+    assert [restriction.code for restriction in declared] == expected
+
+
+def test_s3_output_mode_cannot_hold_a_selector() -> None:
+    """Why the S3 hook needs no selector branch.
+
+    `output_mode` is a plain `Literal`, so an unresolved value cannot reach the
+    hook. If the field is ever widened to accept a selector this test fails and
+    the incomplete-discovery branch has to be added, exactly as for
+    `fire_and_forget` below.
+    """
+    with pytest.raises(ValidationError):
+        S3Manifest(
+            type="roboflow_core/s3_sink@v1",
+            name="s3_sink",
+            content="$steps.formatter.output",
+            output_mode="$inputs.output_mode",
+            bucket_name="bucket",
+        )
+
+
+def _postgresql(fire_and_forget: Any) -> PostgreSQLManifest:
+    return PostgreSQLManifest(
+        type="roboflow_core/postgresql_sink@v1",
+        name="database",
+        host="example.invalid",
+        database="db",
+        username="user",
+        table_name="events",
+        data={"value": 1},
+        fire_and_forget=fire_and_forget,
+    )
+
+
+def _assert_postgresql_hosted_restriction(restriction: RestrictionMetadata) -> None:
+    """The hosted gate is HARD and conditioned on the target runtime only."""
+    assert restriction.code == HOSTED_RESTRICTION_CODE
+    assert restriction.severity is Severity.HARD
+    assert restriction.when.runtimes == [Runtime.HOSTED_SERVERLESS]
+    assert restriction.when.step_execution_modes is None
+    assert restriction.when.input_modes is None
+    # the runtime axis carries the condition; no host flag is named
+    assert restriction.when.configuration_equals == {}
+
+
+@pytest.mark.parametrize(
+    "fire_and_forget, expected",
+    [
+        (True, [FIRE_AND_FORGET_CODE, HOSTED_RESTRICTION_CODE]),
+        (False, [HOSTED_RESTRICTION_CODE]),
+    ],
+)
+def test_postgresql_caveat_follows_the_literal_fire_and_forget(
+    fire_and_forget: bool, expected: List[str]
+) -> None:
+    declared = portable_restrictions_discovery(_postgresql(fire_and_forget))
+    assert declared.complete is True, "a literal switch is fully knowable"
+    assert declared.unknown_reasons == []
+    assert [restriction.code for restriction in declared.items] == expected
+
+
+@pytest.mark.parametrize("fire_and_forget", POSTGRESQL_FIRE_AND_FORGET_VALUES)
+def test_postgresql_declares_the_hosted_gate_in_every_branch(
+    fire_and_forget: Any,
+) -> None:
+    """`run()` fails on the hosted platform before `fire_and_forget` is read."""
+    declared = portable_restrictions(_postgresql(fire_and_forget))
+    hard = [
+        restriction for restriction in declared if restriction.severity is Severity.HARD
+    ]
+    assert len(hard) == 1
+    _assert_postgresql_hosted_restriction(hard[0])
+    assert hard[0] == restriction_metadata_of(POSTGRESQL_HOSTED_PLATFORM_RESTRICTION)
+
+
+@pytest.mark.parametrize(
+    "gcp_serverless, lambda_runtime",
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_postgresql_declaration_ignores_this_host_hosted_platform_flags(
+    monkeypatch: pytest.MonkeyPatch, gcp_serverless: bool, lambda_runtime: bool
+) -> None:
+    """`run()` branches on the flags; the declaration must not.
+
+    The flags are patched as module CONSTANTS, which is what the block imports
+    and what `run()` genuinely reads.
+    """
+    baseline = [
+        portable_restrictions_discovery(_postgresql(value))
+        for value in POSTGRESQL_FIRE_AND_FORGET_VALUES
+    ]
+    for flag, value in zip(HOSTED_PLATFORM_FLAGS, (gcp_serverless, lambda_runtime)):
+        assert hasattr(postgresql_module, flag), flag
+        monkeypatch.setattr(postgresql_module, flag, value)
+    assert [
+        portable_restrictions_discovery(_postgresql(value))
+        for value in POSTGRESQL_FIRE_AND_FORGET_VALUES
+    ] == baseline
+
+
+def test_postgresql_reports_a_selector_as_unknown_not_as_absence() -> None:
+    """A runtime value means the caveat MAY apply.
+
+    Declaring it would be as wrong as declaring its absence, so nothing is
+    claimed complete and the reason names the field and the step. The hosted
+    gate does not depend on the value and stays declared.
+    """
+    declared = portable_restrictions_discovery(_postgresql("$inputs.fire_and_forget"))
+    assert isinstance(declared, Discovery)
+    assert declared.complete is False
+    assert declared.items == [
+        restriction_metadata_of(POSTGRESQL_HOSTED_PLATFORM_RESTRICTION)
+    ]
+    assert declared.unknown_reasons == [
+        unresolved_selector_problem(
+            node_id="$steps.database",
+            declaration="restrictions",
+            field="fire_and_forget",
+            selector="$inputs.fire_and_forget",
+        )
+    ]
+
+
+def test_the_legacy_postgresql_and_s3_declarations_stay_mode_blind() -> None:
+    """`get_restrictions()` is a classmethod and stays mode-blind.
+
+    F003/F004 changed only the portable hooks. The legacy API keeps returning
+    its unconditional notes, whatever the manifest says: S3 its append note,
+    PostgreSQL its fire-and-forget note plus the hosted gate.
+    """
+    for manifest_class, expected_count in (
+        (S3Manifest, 1),
+        (PostgreSQLManifest, 2),
+    ):
+        legacy = manifest_class.get_restrictions()
+        assert len(legacy) == expected_count
+        assert all(restriction.note for restriction in legacy)
+
+
+def test_the_legacy_postgresql_declaration_carries_the_hosted_gate() -> None:
+    """The editor sees the same hosted gate as the portable declaration.
+
+    The legacy fire-and-forget note is kept unconditionally, because the
+    classmethod cannot see the manifest's `fire_and_forget` value.
+    """
+    legacy = {
+        restriction.code: restriction
+        for restriction in PostgreSQLManifest.get_restrictions()
+    }
+    assert set(legacy) == {FIRE_AND_FORGET_CODE, HOSTED_RESTRICTION_CODE}
+    hosted = legacy[HOSTED_RESTRICTION_CODE]
+    assert hosted.severity is Severity.HARD
+    assert hosted.applies_to_runtimes == [Runtime.HOSTED_SERVERLESS]
+    assert hosted.applies_to_step_execution_modes is None
+    assert hosted.applies_to_input_modes is None
+    assert hosted.applies_to_configuration is None
+    assert "hosted platform" in hosted.note
+    fire_and_forget = legacy[FIRE_AND_FORGET_CODE]
+    assert fire_and_forget.severity is Severity.SOFT
+    assert fire_and_forget.applies_to_runtimes == [Runtime.INFERENCE_PIPELINE]
+    # the default manifest (`fire_and_forget=True`) is the branch the legacy
+    # list describes: both carry the same codes and severities
+    portable = portable_restrictions(_postgresql(True))
+    portable_codes = {
+        (restriction.code, restriction.severity) for restriction in portable
+    }
+    legacy_codes = {
+        (code, restriction.severity) for code, restriction in legacy.items()
+    }
+    assert portable_codes == legacy_codes
+
+
+# Adopted from the Codex round-001 reviewer reproducers, through the public
+# introspection API.
+@pytest.mark.parametrize("output_mode", ["append_log", "separate_files"])
+def test_s3_append_restriction_through_the_public_api(output_mode: str) -> None:
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowParameter",
+                "name": "content",
+                "default_value": "record",
+            }
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/s3_sink@v1",
+                "name": "sink",
+                "content": "$inputs.content",
+                "output_mode": output_mode,
+                "bucket_name": "test-bucket",
+            }
+        ],
+        "outputs": [],
+    }
+    restrictions = describe_workflow_workload(definition).steps[0].restrictions
+    assert restrictions.complete
+    codes = {restriction.code for restriction in restrictions.items}
+    assert ("s3_append_buffer_resets_on_stateless_http" in codes) is (
+        output_mode == "append_log"
+    )
+
+
+@pytest.mark.parametrize("fire_and_forget", POSTGRESQL_FIRE_AND_FORGET_VALUES)
+def test_postgresql_restriction_through_the_public_api(fire_and_forget) -> None:
+    from roboflow_workflows.execution_engine.introspection import blocks_loader
+
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowParameter",
+                "name": "fire_and_forget",
+                "default_value": True,
+            }
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/postgresql_sink@v1",
+                "name": "sink",
+                "host": "example.invalid",
+                "database": "db",
+                "username": "user",
+                "table_name": "events",
+                "data": {"value": 1},
+                "fire_and_forget": fire_and_forget,
+            }
+        ],
+        "outputs": [],
+    }
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv(
+            "WORKFLOWS_PLUGINS", "roboflow_workflows.enterprise_blocks.loader"
+        )
+        blocks_loader.clear_caches()
+        try:
+            restrictions = describe_workflow_workload(definition).steps[0].restrictions
+        finally:
+            blocks_loader.clear_caches()
+    by_code = {restriction.code: restriction for restriction in restrictions.items}
+    # the hard restriction holds whatever the switch turns out to be
+    _assert_postgresql_hosted_restriction(by_code[HOSTED_RESTRICTION_CODE])
+    if isinstance(fire_and_forget, bool):
+        assert restrictions.complete
+        assert restrictions.unknown_reasons == []
+        assert (FIRE_AND_FORGET_CODE in by_code) is fire_and_forget
+        assert len(by_code) == 1 + int(fire_and_forget)
+    else:
+        # the input's default_value is True; the declaration must NOT adopt it
+        assert not restrictions.complete
+        assert list(by_code) == [HOSTED_RESTRICTION_CODE]
+        assert restrictions.unknown_reasons == [
+            unresolved_selector_problem(
+                node_id="$steps.sink",
+                declaration="restrictions",
+                field="fire_and_forget",
+                selector="$inputs.fire_and_forget",
+            )
+        ]

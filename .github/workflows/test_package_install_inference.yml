@@ -25,12 +25,12 @@ jobs:
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
-      labels: depot-ubuntu-22.04-8
+      labels: depot-ubuntu-22.04-4
       group: public-depot
     timeout-minutes: 10
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -49,11 +49,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-package-install-inference-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 📦 Installing `inference` package...
-        run: pip install ./dist/inference-*-py3-none-any.whl
+        run: |
+          pip install --find-links dist/ ./dist/inference-*-py3-none-any.whl ./dist/inference_sdk-*-py3-none-any.whl ./dist/inference_models-*-py3-none-any.whl "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
+          # Dependencies were resolved above; now replace any same-version
+          # build-environment installs with the exact checkout artifacts.
+          pip install --force-reinstall --no-deps ./dist/roboflow_workflows-*.whl ./dist/inference_sdk-*.whl ./dist/inference_models-*.whl ./dist/streamvision-*.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |

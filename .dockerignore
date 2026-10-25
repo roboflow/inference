@@ -10,6 +10,7 @@ npm-debug.log
 .coverage.*
 .env
 .aws
+gha-creds-*.json
 
 # Python (inference)
 __pycache__
@@ -19,6 +20,7 @@ __pycache__
 .Python
 env
 .venv
+stream_vision/.venv
 pip-log.txt
 pip-delete-this-directory.txt
 .tox

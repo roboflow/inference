@@ -33,6 +33,7 @@ class PreprocessRequest:
     image_pre_processing: ImagePreProcessing
     network_input: NetworkInputDefinition
     pre_processing_overrides: Optional[PreProcessingOverrides]
+    image_size_wh: Optional[Union[int, Tuple[int, int]]] = None
 
 
 @dataclass(frozen=True)

@@ -30,8 +30,8 @@ _install_lock = threading.Lock()
 
 
 WEBEXEC_MODAL_APP_NAME = os.environ.get("WEBEXEC_MODAL_APP_NAME", "webexec")
-WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD", "aws")
-WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us-east-1")
+WEBEXEC_MODAL_CLOUD = os.environ.get("WEBEXEC_MODAL_CLOUD") or None
+WEBEXEC_MODAL_REGION = os.environ.get("WEBEXEC_MODAL_REGION", "us") or None
 WEBEXEC_MODAL_ROUTING_REGION = os.environ.get("WEBEXEC_MODAL_ROUTING_REGION")
 
 # Hard cap on how long one websocket connection is served before this side
@@ -444,8 +444,6 @@ _executor_decorator_kwargs = {
     "timeout": 700,
     "enable_memory_snapshot": True,  # Enable memory snapshotting for faster cold starts
     "scaledown_window": 60,
-    "cloud": WEBEXEC_MODAL_CLOUD,
-    "region": WEBEXEC_MODAL_REGION,
     "buffer_containers": 1,
     "env": {
         "WEBEXEC_WS_MAX_CONNECTION_SECONDS": str(WEBEXEC_WS_MAX_CONNECTION_SECONDS),
@@ -453,6 +451,10 @@ _executor_decorator_kwargs = {
         "WEBEXEC_WS_MAX_REQUEST_BYTES": str(WEBEXEC_WS_MAX_REQUEST_BYTES),
     },
 }
+if WEBEXEC_MODAL_CLOUD:
+    _executor_decorator_kwargs["cloud"] = WEBEXEC_MODAL_CLOUD
+if WEBEXEC_MODAL_REGION:
+    _executor_decorator_kwargs["region"] = WEBEXEC_MODAL_REGION
 if WEBEXEC_MODAL_ROUTING_REGION:
     _executor_decorator_kwargs["routing_region"] = WEBEXEC_MODAL_ROUTING_REGION
 
@@ -628,6 +630,11 @@ import os
 import requests
 import cv2
 import shapely
+# The pinned Modal image uses the Inference server distribution, and
+# releases predating the workflows split do NOT ship the roboflow_workflows
+# distribution. Import from the compat namespace so the same scaffolding
+# works on both old images (real inference.core.workflows) and new ones
+# (compat shim re-exporting from roboflow_workflows).
 from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData
 from inference.core.workflows.prototypes.block import BlockResult
 {tensor_native_imports}

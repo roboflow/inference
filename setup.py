@@ -1,7 +1,7 @@
 import setuptools
 from setuptools import find_packages
 
-with open("README.md", "r", encoding='utf-8') as fh:
+with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
@@ -33,15 +33,23 @@ setuptools.setup(
             "tests.*",
             "development",
             "development.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
+            "inference_model_manager",
+            "inference_model_manager.*",
+            "inference_server",
+            "inference_server.*",
         ),
     ),
     package_data={
         "inference.models.perception_encoder.vision_encoder": [
             "bpe_simple_vocab_16e6.txt.gz"
-        ],
-        "inference.core.workflows.core_steps.visualizations.common.fonts": [
-            "assets/*/*",
-            "README.md",
         ],
     },
     entry_points={
@@ -65,16 +73,20 @@ setuptools.setup(
             "requirements/requirements.test.unit.txt",
             "requirements/requirements.test.integration.txt",
             "requirements/requirements.transformers.txt",
+            "requirements/requirements.workflows.txt",
+            "requirements/requirements.streamvision.txt",
         ]
     ),
     extras_require={
         "sam": read_requirements("requirements/requirements.sam.txt"),
-        "cloud-storage": read_requirements("requirements/requirements.cloud_storage.txt"),
+        "cloud-storage": read_requirements(
+            "requirements/requirements.cloud_storage.txt"
+        ),
     },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10,<3.14",
 )

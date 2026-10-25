@@ -25,6 +25,7 @@ from inference_sdk.config import (
     EXECUTION_ID_HEADER,
     InferenceSDKGuidanceWarning,
     execution_id,
+    usage_source_tags,
 )
 from inference_sdk.http.entities import (
     ACTION_RECOGNITION_TASK,
@@ -47,6 +48,7 @@ from inference_sdk.http.errors import (
     FeatureDeprecatedError,
     HTTPCallErrorError,
     HTTPClientError,
+    HTTPServerConnectionError,
     InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
@@ -60,6 +62,7 @@ from inference_sdk.http.utils.aliases import (
     resolve_ocr_path,
     resolve_roboflow_model_alias,
 )
+from inference_sdk.http.utils.anomaly_maps import decode_anomaly_detection_result
 from inference_sdk.http.utils.depth_maps import (
     decode_depth_estimation_result,
     warn_depth_map_json_format_deprecated,
@@ -87,6 +90,7 @@ from inference_sdk.http.utils.post_processing import (
     decode_workflow_outputs,
     filter_model_descriptions,
     response_contains_jpeg_image,
+    split_image_embeddings,
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
@@ -163,6 +167,20 @@ def _collect_processing_time_from_response(
 
 
 def wrap_errors(function: callable) -> callable:
+    """Translate synchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Client operation to wrap.
+
+    Returns:
+        callable: Operation preserving HTTP status and connection error categories.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails, including after retries.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If retries fail for another reason.
+    """
+
     def decorate(*args, **kwargs) -> Any:
         try:
             return function(*args, **kwargs)
@@ -174,6 +192,15 @@ def wrap_errors(function: callable) -> callable:
                     status_code=error.status_code,
                     api_message=None,
                 ) from error
+            if isinstance(
+                error.inner_error,
+                (ConnectionError, requests.exceptions.ConnectionError),
+            ):
+                raise HTTPServerConnectionError(
+                    "Error with server connection: "
+                    f"{deduct_api_key_from_string(str(error.inner_error))}"
+                ) from error
+
             raise HTTPClientError(
                 f"Original request failed and retry did not succeed. Details: {error}"
             ) from error
@@ -194,7 +221,7 @@ def wrap_errors(function: callable) -> callable:
                 api_message=api_message,
             ) from error
         except (ConnectionError, requests.exceptions.ConnectionError) as error:
-            raise HTTPClientError(
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
@@ -202,6 +229,20 @@ def wrap_errors(function: callable) -> callable:
 
 
 def wrap_errors_async(function: callable) -> callable:
+    """Translate asynchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Async client operation to wrap.
+
+    Returns:
+        callable: Operation distinguishing connection failures from server timeouts.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If the request times out while communicating with the server.
+    """
+
     async def decorate(*args, **kwargs) -> Any:
         try:
             return await function(*args, **kwargs)
@@ -211,8 +252,13 @@ def wrap_errors_async(function: callable) -> callable:
                 status_code=error.status,
                 api_message=deduct_api_key_from_string(error.message),
             ) from error
-        except ClientConnectionError as error:
+        except aiohttp.ServerTimeoutError as error:
+            # Includes read timeouts, which do not imply an unreachable server.
             raise HTTPClientError(
+                f"Server request timed out: {deduct_api_key_from_string(str(error))}"
+            ) from error
+        except ClientConnectionError as error:
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
@@ -594,6 +640,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -732,6 +779,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -766,6 +814,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
@@ -882,6 +933,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
@@ -1367,6 +1421,98 @@ class InferenceHTTPClient:
         )
         result = combine_clip_embeddings(embeddings=result)
         return unwrap_single_element_list(result)
+
+    @wrap_errors
+    def get_image_embeddings(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Get classifier features or logits with embedding-space metadata.
+
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
+        """
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload=self._image_embedding_payload(output_type=output_type),
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
+
+    @wrap_errors_async
+    async def get_image_embeddings_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Get classifier features or logits asynchronously.
+
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
+        """
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload=self._image_embedding_payload(output_type=output_type),
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
+
+    def _image_embedding_payload(self, *, output_type: str) -> dict:
+        preprocessing = {
+            name: value
+            for name, value in self.__inference_configuration.to_classification_parameters().items()
+            if name.startswith("disable_preproc_")
+        }
+        payload = {
+            **preprocessing,
+            **self.__inference_configuration.to_source_parameters(),
+            "output_type": output_type,
+        }
+
+        return payload
 
     @wrap_errors_async
     async def get_clip_image_embeddings_async(
@@ -2905,7 +3051,7 @@ class InferenceHTTPClient:
         source_buffer_consumption_strategy: Optional[
             BufferConsumptionStrategy
         ] = "EAGER",
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         batch_collection_timeout: Optional[float] = None,
         results_buffer_size: int = 64,
     ) -> dict:
@@ -3318,12 +3464,13 @@ class InferenceHTTPClient:
         return {"api_key": self.__api_key}
 
     def __initialise_payload(self) -> dict:
+        payload = self.__inference_configuration.to_source_parameters()
         if (
             self.__client_mode is not HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
         ):
-            return {"api_key": self.__api_key}
-        return {}
+            payload["api_key"] = self.__api_key
+        return payload
 
     def __wrap_url_with_api_key(self, url: str) -> str:
         # The one URL seam every hand-built request method routes through, so
@@ -3332,6 +3479,10 @@ class InferenceHTTPClient:
         # send time) - the standard v0/v1 `infer()` methods serialize those
         # through `InferenceConfiguration` instead, and never call this.
         query_params: Dict[str, Any] = {}
+        if usage_source_tags.get():
+            query_params.update(
+                self.__inference_configuration.to_source_parameters(include_origin=True)
+            )
         if (
             self.__client_mode is HTTPClientMode.V0
             and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER

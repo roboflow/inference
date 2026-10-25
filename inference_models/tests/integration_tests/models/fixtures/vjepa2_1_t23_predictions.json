@@ -1,0 +1,98 @@
+{
+  "model_id": "kaiplace/voight-kampff-2-2-vjepa2-1-vitb-384-t23",
+  "source_video": "synthetic-086-first-window-h264-v1.mp4",
+  "video_sha256": "756ef238463fd8e083a3d57a6f89a17aca114141b55538fc9a7150283e0bf282",
+  "weights_sha256": "ee8e1271a16a56914cd1ae10e73cbdfc1437ef419f5b82721f302f0d1e678522",
+  "reference_commit": "8c6683a0f2debc693653aa72e9f29e80041df84f",
+  "reference_repository": "roboflow/roboflow-train",
+  "reference_model": "src.vjepa2_1.model.VJepaModel",
+  "sampling": "First 4 frames decoded sequentially from the 4 fps H.264 clip",
+  "preprocessing": "PIL bilinear resize to 256x256, RGB / 255, recorded normalization",
+  "reference_device": "cpu",
+  "reference_dtype": "float32",
+  "torch_version": "2.10.0",
+  "sample_fps": 4.0,
+  "frame_count": 4,
+  "frame_side": 256,
+  "tokens": 512,
+  "prediction_count": 108,
+  "predictions": [
+    {
+      "index": 0,
+      "class_name": "cube.color_rainbow",
+      "start_frame": 0.0,
+      "end_frame": 3.9946999549865723,
+      "confidence": 0.46172741055488586
+    },
+    {
+      "index": 3,
+      "class_name": "cube.rotating_clockwise",
+      "start_frame": 0.0,
+      "end_frame": 3.989314317703247,
+      "confidence": 0.17341306805610657
+    },
+    {
+      "index": 13,
+      "class_name": "tetrahedron.rotating_counterclockwise",
+      "start_frame": 0.008090168237686157,
+      "end_frame": 3.9690310955047607,
+      "confidence": 0.07284390926361084
+    },
+    {
+      "index": 26,
+      "class_name": "torus.static_scale",
+      "start_frame": 0.004255235195159912,
+      "end_frame": 3.991095542907715,
+      "confidence": 0.07101142406463623
+    },
+    {
+      "index": 30,
+      "class_name": "cube.rotating_clockwise",
+      "start_frame": 0.0,
+      "end_frame": 3.9920456409454346,
+      "confidence": 0.15744194388389587
+    },
+    {
+      "index": 40,
+      "class_name": "tetrahedron.rotating_counterclockwise",
+      "start_frame": 0.06885266304016113,
+      "end_frame": 3.952913284301758,
+      "confidence": 0.0772845596075058
+    },
+    {
+      "index": 53,
+      "class_name": "torus.static_scale",
+      "start_frame": 0.011179685592651367,
+      "end_frame": 3.9888362884521484,
+      "confidence": 0.057090874761343
+    },
+    {
+      "index": 67,
+      "class_name": "tetrahedron.rotating_counterclockwise",
+      "start_frame": 0.07485842704772949,
+      "end_frame": 3.963930606842041,
+      "confidence": 0.09231412410736084
+    },
+    {
+      "index": 81,
+      "class_name": "cube.color_rainbow",
+      "start_frame": 0.0070726871490478516,
+      "end_frame": 4.0,
+      "confidence": 0.48866403102874756
+    },
+    {
+      "index": 94,
+      "class_name": "tetrahedron.rotating_counterclockwise",
+      "start_frame": 0.059305429458618164,
+      "end_frame": 3.995197057723999,
+      "confidence": 0.09297201782464981
+    },
+    {
+      "index": 107,
+      "class_name": "torus.static_scale",
+      "start_frame": 0.008877754211425781,
+      "end_frame": 4.0,
+      "confidence": 0.09753523021936417
+    }
+  ]
+}

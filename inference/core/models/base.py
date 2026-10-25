@@ -5,7 +5,11 @@ import numpy as np
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.entities.responses.inference import (
+    InferenceResponse,
+    InstanceSegmentationInferenceResponseDC,
+    ResolvedModel,
+)
 from inference.core.env import USE_INFERENCE_MODELS
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.telemetry import set_span_attribute, start_span
@@ -51,6 +55,20 @@ class BaseInference:
         return postprocessed
 
     def run_tensor_native_inference(self, **kwargs) -> Any:
+        raise NotImplementedError
+
+    def run_tensor_native_embeddings(self, **kwargs) -> dict:
+        """Generate native embeddings when implemented by a classifier.
+
+        Args:
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+
+        Raises:
+            NotImplementedError: If this model has no tensor-embedding operation.
+        """
         raise NotImplementedError
 
     def preprocess(
@@ -105,6 +123,31 @@ class Model(BaseInference):
         log(m): Print the given message.
         clear_cache(): Clears any cache if necessary.
     """
+
+    @property
+    def resolved_model(self) -> Any:
+        model = getattr(self, "_model", None)
+        if USE_INFERENCE_MODELS and model is not None:
+            return getattr(model, "resolved_model", None)
+        model_id = getattr(self, "endpoint", None) or getattr(self, "model_id", None)
+        return ResolvedModel(model_id=model_id) if model_id is not None else None
+
+    def _attach_resolved_model_metadata(self, responses: Any) -> None:
+        metadata = self.resolved_model
+        if metadata is None:
+            return
+        resolved_model = ResolvedModel(
+            model_id=metadata.model_id,
+            model_package_id=metadata.model_package_id,
+            backend=metadata.backend,
+            quantization=metadata.quantization,
+        )
+        responses = responses if isinstance(responses, list) else [responses]
+        for response in responses:
+            if isinstance(
+                response, (InferenceResponse, InstanceSegmentationInferenceResponseDC)
+            ):
+                response.resolved_model = resolved_model
 
     def log(self, m):
         """Prints the given message.
@@ -181,6 +224,7 @@ class Model(BaseInference):
         if not isinstance(request.image, list) and len(responses) > 0:
             responses = responses[0]
 
+        self._attach_resolved_model_metadata(responses)
         return responses
 
     def make_response(

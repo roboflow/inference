@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
@@ -84,8 +85,10 @@ class DeviceCompatibility:
     reliably observable target property.
     """
 
-    device_kind: Literal["cpu", "gpu"]
+    device_kind: Literal["cpu", "gpu", "any"]
     minimum_compute_capability: Optional[Tuple[int, int]] = None
+    host_architectures: Tuple[str, ...] = ()
+    device_types: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -177,6 +180,8 @@ class OptimizationMetadata:
             "target": {
                 "device_kind": self.target.device_kind,
                 "minimum_compute_capability": self.target.minimum_compute_capability,
+                "host_architectures": list(self.target.host_architectures),
+                "device_types": list(self.target.device_types),
             },
             "inputs": {
                 "scenarios": list(self.inputs.scenarios),
@@ -211,6 +216,7 @@ class ExecutionContext:
     current_stream: Optional[Any] = None
     compute_capability: Optional[Tuple[int, int]] = None
     runtime_components: Mapping[str, bool] = field(default_factory=immutable_mapping)
+    host_architecture: str = field(default_factory=lambda: platform.machine().lower())
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -231,15 +237,29 @@ def metadata_compatibility(
     paths can adopt capability reporting incrementally.
 
     Args:
-        metadata: Implementation compatibility metadata.
-        context: Runtime target and available-component context.
+        metadata (OptimizationMetadata): Implementation compatibility metadata.
+        context (ExecutionContext): Runtime target and available-component context.
 
     Returns:
         Compatibility result with actionable static-runtime reasons.
     """
     reasons = []
     target = metadata.target
-    if target.device_kind != context.device_kind:
+    if (
+        target.device_types
+        and context.device.split(":", 1)[0] not in target.device_types
+    ):
+        reasons.append(
+            f"device {context.device!r} requires one of {target.device_types}"
+        )
+    if (
+        target.host_architectures
+        and context.host_architecture not in target.host_architectures
+    ):
+        reasons.append(
+            f"host architecture {context.host_architecture!r} is unsupported; requires {target.host_architectures}"
+        )
+    if target.device_kind != "any" and target.device_kind != context.device_kind:
         reasons.append(
             f"requires device_kind={target.device_kind!r}, "
             f"received {context.device_kind!r}"

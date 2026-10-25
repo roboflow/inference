@@ -3,10 +3,78 @@ import time
 
 import requests
 from packaging import version as packaging_version
+from roboflow_workflows.prototypes.image_codec import set_default_image_codec_factory
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
+from inference.core.exceptions import InvalidNumpyInput
+
+# Must be installed before any import of streamvision.stream.environment.
+from inference.core.interfaces.streams_configuration import (
+    install_streams_configuration,
+)
+
+# Hand the Workflows module its configuration before anything can READ it.
+# The invariant: `install_workflows_configuration()` runs before any import
+# of `roboflow_workflows.environment` (the constants facade) or any
+# other configuration-consuming workflows module, so `core_steps/loader.py`'s
+# import-time tensor branches and every facade constant see the server's
+# values. A few configuration-independent workflows modules are already on
+# the bootstrap path above this point (`inference.core.env` ->
+# `utils/environment.py` -> `core/exceptions.py` ->
+# `workflows/prototypes/platform_errors.py`, and the builder's own import of
+# `workflows/configuration.py`); they must stay configuration-independent -
+# none of them may import the facade. `inference.core.interfaces
+# .workflows_configuration` imports only `inference.core.env` (already fully
+# imported above) and `roboflow_workflows.configuration`, so this adds
+# no import weight.
+from inference.core.interfaces.workflows_configuration import (
+    install_workflows_configuration,
+)
 from inference.core.logger import logger
 from inference.core.version import __version__
+
+
+def _resolve_workflows_image_codec():
+    from inference.core.interfaces.workflows_image_codec import resolve_image_codec
+
+    return resolve_image_codec()
+
+
+def _resolve_platform_blocks_client():
+    from inference.core.interfaces.roboflow_platform_client import (
+        SERVER_PLATFORM_CLIENT,
+    )
+
+    return SERVER_PLATFORM_CLIENT
+
+
+def _invalid_registration_image_error(message: str) -> InvalidNumpyInput:
+    error = InvalidNumpyInput(
+        message=message,
+        public_message="Image width and height must both be greater than zero.",
+    )
+    return error
+
+
+def _install_roboflow_platform_blocks_defaults() -> None:
+    from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.active_learning import (
+        set_invalid_image_error_factory,
+    )
+    from roboflow_workflows.prototypes.platform_client import (
+        set_platform_blocks_client_factory,
+    )
+
+    set_platform_blocks_client_factory(_resolve_platform_blocks_client)
+    set_invalid_image_error_factory(_invalid_registration_image_error)
+
+
+install_workflows_configuration()
+install_streams_configuration()
+# Direct WorkflowImageData callers need the same guarded loader as the server.
+# Resolve it on first use so startup does not import the server image utilities
+# and callers can still bind an explicit codec before loading an image.
+set_default_image_codec_factory(_resolve_workflows_image_codec)
+_install_roboflow_platform_blocks_defaults()
 
 latest_release = None
 last_checked = 0

@@ -128,27 +128,34 @@ class InferenceModelsSAM3InteractiveAdapter(Model):
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())
-            return Sam2EmbeddingResponse(time=perf_counter() - t1, image_id=image_id)
+            response = Sam2EmbeddingResponse(
+                time=perf_counter() - t1, image_id=image_id
+            )
+            self._attach_resolved_model_metadata(response)
+            return response
         if isinstance(request, Sam2SegmentationRequest):
             masks, scores, low_res_logits = self.segment_image(**request.dict())
             if request.format == "json" or request.format == "polygon":
-                return _build_polygon_response(
+                response = _build_polygon_response(
                     masks=masks,
                     scores=scores,
                     inference_start_timestamp=t1,
                 )
-            if request.format == "rle":
-                return _build_rle_response(
+            elif request.format == "rle":
+                response = _build_rle_response(
                     masks=masks,
                     scores=scores,
                     inference_start_timestamp=t1,
                 )
-            if request.format == "binary":
+            elif request.format == "binary":
                 buf = BytesIO()
                 np.savez_compressed(buf, masks=masks, low_res_masks=low_res_logits)
                 buf.seek(0)
                 return buf.getvalue()
-            raise ValueError(f"Invalid format {request.format}")
+            else:
+                raise ValueError(f"Invalid format {request.format}")
+            self._attach_resolved_model_metadata(response)
+            return response
         raise ValueError(f"Invalid request type {type(request)}")
 
     def preproc_image(self, image: InferenceRequestImage):
