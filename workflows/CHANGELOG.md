@@ -16,6 +16,56 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.13`
+
+Bundled execution engine: `1.17.0`.
+
+### Changed
+
+- Require the stable `inference-models>=0.39.5` and `inference-sdk>=1.8.1`
+  releases, and refresh the Workflows lockfile to match these minimum versions.
+
+### Execution engine
+
+- Update the engine compatibility version to `1.17.0` and align the integration
+  and hosted-platform version assertions with the published `0.2.13rc1` package.
+
+- Workflow syntax errors no longer repeat the raw input of the step that failed
+  validation. The rendered `pydantic` error (the `inner_error_message` of an HTTP
+  `WorkflowSyntaxError` response, and the traceback the server logs) used to
+  include each failing step's literal field values, secrets such as a `password`
+  or credentials in a URL included. The same holds wherever a block manifest is
+  validated directly, such as the input and output discovery behind
+  `/workflows/describe_interface`: `WorkflowBlockManifest` now sets
+  `hide_input_in_errors`, and every block inherits it. Error messages, locations
+  and `blocks_errors` are unchanged.
+- When a block fails to initialise during compilation, the blocks initialised
+  before it are closed (each failure to close is logged) before the error is
+  raised, instead of keeping their threads or connections until garbage
+  collection.
+- `ExecutionEngine.close()` releases what the workflow's blocks hold between runs:
+  it calls `close()` on every initialised block that defines one (for example the
+  background connections of the OPC UA Reader, MQTT Reader and Kafka Consumer). A
+  block that fails to close is logged and does not stop the others; repeated calls
+  are safe. `streamvision` calls it when an `InferencePipeline` is joined, so a
+  stopped pipeline that is still referenced no longer keeps those connections
+  until it is garbage collected.
+
+### Added
+
+- OPC UA Reader enterprise block (`roboflow_enterprise/opc_reader@v1`): subscribes to one variable on an OPC UA server and returns its latest `value` on every run, with `is_new`, `error_status` and `error_message`. The variable is located like in the OPC UA Writer (`hierarchical` browse path or `direct` string NodeId, which also covers the Roboflow edge OPC UA server's `Folder.Tag` string NodeIds; pass its namespace by URI, since the index differs between servers).
+  - The first run connects, reads the value and creates an OPC UA subscription (`publishing_interval_ms`, default 100); later runs return the latest pushed value from memory and never wait for the server, so the block suits 30-60 fps video. Only the first run waits, up to `timeout` (at most 60 s), and it settles only once the subscription has delivered its initial value. `publishing_interval_ms` is bounded to 10–60000.
+  - While the connection is down, runs repeat the last value with `error_status` set and the block reconnects and re-subscribes in the background with exponential backoff; the outage is logged once at its start and once on recovery. A value whose OPC UA quality is not Good is returned with `error_status` set and the status name. A crashed server is reported after up to `timeout` plus about 2 s (about 4 s with the defaults): the OPC UA client's 1 s watchdog, its request timeout, and the block's 1 s subscription check. A server that keeps dropping sessions or subscriptions is re-approached with exponential backoff (0.5 s doubling to 10 s), which only starts over once a connection has stayed up for 10 s.
+  - Credentials go in `user_name` and `password` (a `url` containing `user:password@` is rejected, since the `url` field is not masked in the editor like `password`; use a secret selector for `password` to keep it out of the workflow definition). A `url` that does not validate is never echoed: errors use fixed messages, and logs show only the scheme, host and port. Rejected credentials are reported and not retried, and the block's thread then ends; an unknown namespace or node is retried every 10 s; a server at its session limit is retried after the OPC UA Writer's jittered session-exhaustion backoff. Sessions request the writer's 60 s session timeout (`OPC_SESSION_TIMEOUT_SECONDS`) and are closed when the pipeline running the workflow is joined after it ends, when the block is closed or garbage collected, or when the interpreter exits.
+  - Each block instance holds its own session, separate from the OPC UA Writer's pool. Over the HTTP API every request builds a fresh instance, so each request opens a session, reads the current value and closes it. Not available on the Roboflow hosted platform.
+
+### Fixed
+
+- OPC UA Reader waits for the subscription's final server-revised publishing interval when awaiting its initial notification, including a second revision during `ModifySubscription`, so a server that revises the interval upward does not cause repeated reconnects before the first value arrives. The first workflow run still returns within its configured `timeout` while the subscription continues waiting in the background.
+- Buffer block outputs retain their per-frame list contents when later frames update the buffer, including batched workflows and padded histories.
+- `DetectionsPropertyExtract` reads Supervision tracker IDs from their native field, so `tracker_id` extraction works on tracked detections in NumPy mode. Properties that live alongside each detection (`tracker_id`, `time_in_zone`, Bounding Rectangle `width` and the other non built-in properties) return an empty list on empty detections in both NumPy and tensor modes instead of raising. Requesting such a property on nonempty detections that do not carry it now raises an operation error naming the property and asking for the upstream block that supplies it; NumPy mode previously raised a bare `KeyError`, and tensor mode now uses the same message.
+- Detections Stitch (`roboflow_core/detections_stitch@v1`) with `overlap_filtering_strategy` set to `none` no longer encodes masks as compact masks and decodes them again: every mask survives, so each crop's masks are copied straight into the single dense output array (only each mask's bounding box is written). Outputs are unchanged. Measured with `supervision` 0.30.6, median block latency against the compact-mask stitch: 300 masks from twelve 640x640 crops onto 1920x1012 19 ms -> 12 ms; 48 salt-and-pepper masks from four 256x256 crops onto 640x480 14 ms -> 0.7 ms; 24 masks from four 100x100 crops onto 300x200 0.5 ms -> 0.2 ms. Peak memory stays at the size of the output. Crops whose masks already arrive as `CompactMask` are decoded one crop at a time on every filtering strategy, instead of all up front.
+
 ## `0.2.12`
 
 Bundled execution engine: `1.16.1`.
