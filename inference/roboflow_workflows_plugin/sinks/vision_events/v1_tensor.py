@@ -1,4 +1,6 @@
 import logging
+import math
+import numbers
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -120,6 +122,10 @@ ALL_DATA_SCHEMAS_RELEVANT = {
         ],
     },
 }
+
+# The cloud's bound on an event value (+/-$100M per event in USD). The local
+# event store applies the same bound and rejects the whole event past it.
+MAX_ABS_VALUE_BASE_UNITS = 10_000_000_000
 
 SHORT_DESCRIPTION = "Send vision events to the Roboflow Vision Events API."
 
@@ -289,6 +295,22 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": ALL_DATA_SCHEMAS_RELEVANT,
         },
+    )
+
+    # --- Event value (shared across schemas) ---
+    value_base_units: Optional[
+        Union[Selector(kind=[INTEGER_KIND, FLOAT_KIND]), int]
+    ] = Field(
+        default=None,
+        title="Event Value",
+        description="What this event is worth, in base units of the use case's "
+        "currency, e.g. cents for USD (1999 = $19.99). The currency always comes "
+        "from the use case. Leave empty to use the use case's default value, if it "
+        "has one. Negative values record a cost. Fractional values are rounded to "
+        "the nearest base unit, and values outside -10,000,000,000 to "
+        "10,000,000,000 are ignored.",
+        examples=[1999, "$steps.expression.output"],
+        json_schema_extra={"relevant_for": ALL_DATA_SCHEMAS_RELEVANT},
     )
 
     # --- Quality Check fields ---
@@ -550,6 +572,9 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         custom_value: Optional[str] = None,
         related_event_id: Optional[str] = None,
         feedback: Optional[str] = None,
+        # Appended last on purpose: inserting it earlier would silently
+        # rebind any positional caller's arguments.
+        value_base_units: Optional[Union[int, float]] = None,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -592,6 +617,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
             related_event_id=related_event_id,
             feedback=feedback,
         )
+        value_base_units = _normalize_value_base_units(value_base_units)
 
         if write_to_event_store:
             task = partial(
@@ -604,6 +630,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 solution=solution,
                 event_data=event_data,
                 custom_metadata=custom_metadata,
+                value_base_units=value_base_units,
             )
         else:
             if self._api_key is None:
@@ -624,6 +651,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 solution=solution,
                 event_data=event_data,
                 custom_metadata=custom_metadata,
+                value_base_units=value_base_units,
             )
 
         self._last_event_fired = datetime.now()
@@ -698,6 +726,40 @@ def _build_event_data(
     return {k: v for k, v in data.items() if v is not None}
 
 
+def _normalize_value_base_units(value_base_units: Any) -> Optional[int]:
+    """Coerce the event value to a whole number of base units, or None to omit it.
+
+    Selector-resolved values bypass manifest validation, so any real number is
+    accepted (numpy scalars too, which the JSON encoder would reject) and a
+    fractional amount is rounded to the nearest base unit. Anything else, or an
+    amount past ``MAX_ABS_VALUE_BASE_UNITS``, is dropped with a warning instead
+    of failing the event: cloud ingestion drops such a value and keeps the
+    event, while the local event store would reject the whole event.
+    """
+    if value_base_units is None:
+        return None
+
+    normalized: Optional[int] = None
+    if not isinstance(value_base_units, bool):
+        if isinstance(value_base_units, numbers.Integral):
+            normalized = int(value_base_units)
+        elif isinstance(value_base_units, numbers.Real) and math.isfinite(
+            value_base_units
+        ):
+            normalized = int(round(value_base_units))
+    if normalized is not None and abs(normalized) <= MAX_ABS_VALUE_BASE_UNITS:
+        return normalized
+
+    logger.warning(
+        "Ignoring value_base_units %r: expected a finite number of base units "
+        "between -%d and %d.",
+        value_base_units,
+        MAX_ABS_VALUE_BASE_UNITS,
+        MAX_ABS_VALUE_BASE_UNITS,
+    )
+    return None
+
+
 def _convert_predictions_to_annotations(
     prediction: Optional[TensorNativePrediction],
 ) -> Dict[str, List[dict]]:
@@ -751,6 +813,7 @@ def _execute_vision_event(
     solution: str,
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    value_base_units: Optional[int] = None,
 ) -> Tuple[bool, str, str]:
     try:
         # Step 1: Convert predictions to vision events annotation format
@@ -783,6 +846,7 @@ def _execute_vision_event(
             images=images_payload,
             event_data=event_data,
             custom_metadata=custom_metadata,
+            value_base_units=value_base_units,
         )
 
         error_status, message = _send_event(api_base_url, api_key, payload)
@@ -808,6 +872,7 @@ def _execute_local_event(
     solution: str,
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    value_base_units: Optional[int] = None,
 ) -> Tuple[bool, str, str]:
     """Send an event to a local Event Ingestion Service (v2 API).
 
@@ -842,6 +907,8 @@ def _execute_local_event(
         }
         if custom_metadata:
             payload["custom_metadata"] = custom_metadata
+        if value_base_units is not None:
+            payload["value_base_units"] = value_base_units
         if images_payload:
             payload["displayImagePosition"] = 0
 
@@ -1098,6 +1165,7 @@ def _build_event_payload(
     images: List[dict],
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    value_base_units: Optional[int] = None,
 ) -> dict:
     """Build the full event payload for the Vision Events API."""
     event_id = str(uuid4())
@@ -1115,6 +1183,8 @@ def _build_event_payload(
         payload["eventData"] = event_data
     if custom_metadata:
         payload["customMetadata"] = custom_metadata
+    if value_base_units is not None:
+        payload["valueBaseUnits"] = value_base_units
     # Output image is at position 0 (first in images array), always display it
     if len(images) > 0:
         payload["displayImagePosition"] = 0
