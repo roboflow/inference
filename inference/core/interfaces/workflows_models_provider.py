@@ -159,7 +159,11 @@ class ModelManagerModelsProvider:
         disable_active_learning: Optional[bool] = None,
         active_learning_target_dataset: Optional[str] = None,
         inference_kwargs: Optional[Dict[str, Any]] = None,
+        include_anomaly_map: bool = False,
     ) -> List[dict]:
+        # Set only when asked, so the request a classification block builds is
+        # field-for-field what it was before the anomaly block existed.
+        anomaly_arguments = {"include_anomaly_map": True} if include_anomaly_map else {}
         request = ClassificationInferenceRequest(
             api_key=api_key,
             model_id=model_id,
@@ -168,6 +172,7 @@ class ModelManagerModelsProvider:
             disable_active_learning=disable_active_learning,
             source=_WORKFLOW_SOURCE,
             active_learning_target_dataset=active_learning_target_dataset,
+            **anomaly_arguments,
         )
         return self._dump(
             self._infer(model_id=model_id, request=request, **(inference_kwargs or {}))

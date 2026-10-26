@@ -14,10 +14,21 @@ on:
           - all
           - "true"
           - "false"
+      image_digest:
+        description: "Immutable amd64 digest; mutually exclusive with image_tag"
+        type: string
+        default: ""
       image_tag:
         description: "Prebuilt roboflow/roboflow-inference-server-cpu tag to test (e.g. 1.6.2-post3-rc1). Empty = build the image from this ref."
         type: string
         default: ""
+      server-image:
+        description: "Server under test: legacy inference image or the new inference_server image"
+        type: choice
+        default: legacy
+        options:
+          - legacy
+          - new
   workflow_call:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 15-minute in-job image build is skipped.
@@ -25,9 +36,44 @@ on:
       use-inference-models:
         type: string
         default: all
+      image_digest:
+        description: "Immutable amd64 digest; mutually exclusive with image_tag"
+        type: string
+        default: ""
       image_tag:
         type: string
         default: ""
+      private_image:
+        description: "Saved CI image from Depot Registry; requires image_digest and depot_project"
+        type: boolean
+        default: false
+      depot_project:
+        description: "Depot project holding the saved image; set by the orchestrator"
+        type: string
+        default: ""
+    secrets:
+      API_KEY:
+        required: false
+      ASL_INSTANCE_SEGMENTATION_API_KEY:
+        required: false
+      ASL_POLY_INSTANCE_SEG_API_KEY:
+        required: false
+      BCCD_FAVZ3_API_KEY:
+        required: false
+      BCCD_I4NYM_API_KEY:
+        required: false
+      CATS_AND_DOGS_SMNPL_API_KEY:
+        required: false
+      COINS_XAZ9I_API_KEY:
+        required: false
+      MELEE_API_KEY:
+        required: false
+      YOLONAS_TEST_API_KEY:
+        required: false
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -41,51 +87,97 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ !github.event.act }}
+    # The repository context identifies the caller of a reusable workflow.
+    if: >-
+      ${{ github.repository == 'roboflow/inference'
+          && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+          && !github.event.act
+          && (github.event_name != 'push' || inputs.private_image)
+          && (!inputs.private_image || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
     runs-on:
       group: group8core
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SERVER_IMAGE: ${{ github.event.inputs.server-image || 'legacy' }}
+      INFERENCE_SERVER_REPO: ${{ github.event.inputs.server-image == 'new' && 'inference-server-experimental' || 'roboflow-inference-server-cpu' }}
+      PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py --ignore=tests/inference/integration_tests/yolo_world_test.py --deselect tests/inference/integration_tests/test_workflow_endpoints.py::test_compilation_endpoint_when_compilation_succeeds_with_custom_block' || '' }}
+      MODEL_MODE: ${{ matrix.use-inference-models }}
+      IMAGE_FAMILY: cpu
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+      PRIVATE_IMAGE: ${{ inputs.private_image || false }}
+      DEPOT_PROJECT_ID: ${{ inputs.depot_project }}
+      INFERENCE_TEST_CONTAINER: ci-cpu-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
+      INFERENCE_TEST_BIND: 127.0.0.1::9101
     strategy:
+      fail-fast: true
       matrix:
-        use-inference-models: ${{ fromJSON((inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', inputs.use-inference-models)) }}
+        use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
     timeout-minutes: 60
 
     steps:
+      - name: Checkout candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate image inputs before authentication
+        env:
+          CI_IMAGE_ACTION: validate
+        run: python3 .github/scripts/ci_image.py
+      - name: Set up Depot CLI
+        if: ${{ inputs.private_image }}
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        if: ${{ !inputs.private_image }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref }}
 
       - name: 🦾 Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.code_analysis.txt
       - name: 🔨 Build and Push Test Docker
-        if: ${{ inputs.image_tag == '' }}
+        if: ${{ env.SERVER_IMAGE == 'legacy' && inputs.image_tag == '' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
           docker pull roboflow/roboflow-inference-server-cpu:test
           docker build -t roboflow/roboflow-inference-server-cpu:test -f docker/dockerfiles/Dockerfile.onnx.cpu .
           docker push roboflow/roboflow-inference-server-cpu:test
-      - name: 📥 Pull prebuilt image ${{ inputs.image_tag }}
-        if: ${{ inputs.image_tag != '' }}
+      - name: Pull and verify prebuilt amd64 image
+        if: ${{ (inputs.image_tag != '' || inputs.image_digest != '') && !inputs.private_image }}
         env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
+          CI_IMAGE_ACTION: pull
+        run: python3 .github/scripts/ci_image.py
+      # OIDC mints a one-hour read-only pull token inside a temporary Docker
+      # configuration that is gone before any test step runs.
+      - name: Pull and verify the saved CI image, then remove pull credentials
+        if: ${{ inputs.private_image }}
+        env:
+          CI_DEPOT_ACTION: pull
+        run: python3 .github/scripts/depot_ci_image.py
+
+      - name: 🔨 Build Test Docker - inference_server
+        if: ${{ env.SERVER_IMAGE == 'new' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
-          docker pull "roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}"
-          docker tag "roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}" roboflow/roboflow-inference-server-cpu:test
-          echo "Image under test: roboflow/roboflow-inference-server-cpu:${IMAGE_TAG}" >> "$GITHUB_STEP_SUMMARY"
-      - name: 🔋 Start Test Docker
-        run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-cpu make start_test_docker_cpu
-      - name: 🧪 Integration Tests of inference server [x86 CPU]
-        run: |
-          USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python -m pytest tests/inference/integration_tests
-          make stop_test_docker
+          docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.cpu .
+      - name: Run shared CPU server test stages
+        uses: ./.github/actions/server-tests-cpu
+        with:
+          verify_runtime: ${{ inputs.private_image }}
+          API_KEY: ${{ secrets.API_KEY }}
+          ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          BCCD_FAVZ3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          BCCD_I4NYM_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          CATS_AND_DOGS_SMNPL_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}

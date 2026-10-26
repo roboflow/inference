@@ -5007,7 +5007,7 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
     requests_mock: Mocker,
 ) -> None:
     # given
-    requests_mock.get(
+    workflow_request = requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={
             "workflow": {
@@ -5131,7 +5131,7 @@ def test_get_workflow_specification_with_version_id_uses_separate_cache(
     requests_mock: Mocker,
 ) -> None:
     # given
-    requests_mock.get(
+    workflow_request = requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         json={
             "workflow": {
@@ -5371,6 +5371,46 @@ def test_get_from_url_when_no_retires_possible(
     # when
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
         _ = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+
+@pytest.mark.parametrize("retry_connections", [False, True])
+def test_get_from_url_retries_interrupted_body(
+    requests_mock: Mocker, monkeypatch, retry_connections: bool
+) -> None:
+    monkeypatch.setattr(
+        roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", retry_connections
+    )
+    monkeypatch.setattr(roboflow_api, "MD5_VERIFICATION_ENABLED", False)
+    url = wrap_url(f"{API_BASE_URL}/weights")
+    requests_mock.get(
+        url,
+        response_list=[
+            {"exc": requests.exceptions.ChunkedEncodingError("incomplete body")},
+            {"content": b"complete weights"},
+        ],
+    )
+
+    response = get_from_url(url, json_response=False)
+
+    assert response.content == b"complete weights"
+    assert requests_mock.call_count == 2
+
+
+def test_get_from_url_stops_retrying_interrupted_body(
+    requests_mock: Mocker, monkeypatch
+) -> None:
+    monkeypatch.setattr(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+    url = wrap_url(f"{API_BASE_URL}/weights")
+    requests_mock.get(
+        url, exc=requests.exceptions.ChunkedEncodingError("incomplete body")
+    )
+
+    with pytest.raises(requests.exceptions.ChunkedEncodingError):
+        get_from_url(url, json_response=False)
+
+    assert (
+        requests_mock.call_count == roboflow_api.TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES
+    )
 
 
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)

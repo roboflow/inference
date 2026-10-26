@@ -39,6 +39,7 @@ from roboflow_workflows.execution_engine.v1.compiler.validator import (
     validate_workflow_specification,
 )
 from roboflow_workflows.execution_engine.v1.debugger.core import dump_execution_graph
+from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_scaffolding
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
     compile_dynamic_blocks,
     ensure_dynamic_blocks_allowed,
@@ -110,14 +111,15 @@ def _is_resolver_dependent(
 ) -> bool:
     """True when compiling this definition consults an injected resolver.
 
-    Compilation resolves inner-workflow references and compiles dynamic blocks;
-    both consult resolvers, and `COMPILATION_CACHE` keys on neither them nor the
-    api key. Rather than invent a lifetime-safe context, such definitions simply
-    are not cached - they are the rare case, and the cache exists for the plain
-    ones. This also removes the authentication-context hazard for exactly the
-    definitions where it mattered.
+    Compilation consults resolvers for Modal-mode dynamic blocks (workspace
+    validation) and for unresolved inner-workflow references. `COMPILATION_CACHE`
+    keys on neither the resolvers nor the api key, so such definitions bypass it.
+    Local dynamic blocks consult no resolver and are cached.
     """
-    if dynamic_blocks_definitions:
+    if (
+        dynamic_blocks_definitions
+        and block_scaffolding.WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE == "modal"
+    ):
         return True
     return workflow_definition_contains_unresolved_inner_workflow_reference(
         workflow_definition=workflow_definition
