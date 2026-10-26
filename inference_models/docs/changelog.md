@@ -1,5 +1,15 @@
 # Changelog
 
+## `0.39.6`
+
+### Changed
+
+- Security maintenance release, no functional change. Dependency floors move to the first release that fixes each advisory and the lockfile is refreshed to match:
+  - `GitPython>=3.2.1` (was `>=3.1.59`): GHSA-83vg-56qc-22m7, a submodule `.git` path was validated only after cloning into it (remote code execution). Lockfile: 3.1.62 -> 3.2.1.
+  - `onnx>=1.22.0` (was `>=1.21.0`) in every `onnx-*` extra: GHSA-hwpq-hmq9-wj77 (null dereference in the Upsample version-converter adapter) and GHSA-p893-rvq9-2xf9 (heap over-read in the Gemm version-converter adapter). Lockfile: 1.21.0 -> 1.23.2.
+  - `setuptools>=84.1.0` (was `>=83.0.0`): GHSA-xmj3-9gf7-h52w, Windows path escape through `namespace_packages.txt` during legacy wheel installation. Lockfile: 83.0.0 -> 84.2.1.
+  - `nbconvert>=7.17.2` (was `>=7.17.1`) in the `docs` group: GHSA-pjvx-prjx-h659, arbitrary file write through cell output filenames when exporting to Markdown. Lockfile: 7.17.1 -> 7.17.2.
+
 ## `0.39.5`
 
 ### Added
