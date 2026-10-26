@@ -1571,6 +1571,7 @@ class AutoModel:
         preloaded_model_dependencies: Optional[Dict[str, SuppliedDependency]] = None,
         disabled_backends: Optional[Iterable[str]] = None,
         allow_vllm_proxy: bool = False,
+        _admission=None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a computer vision model with automatic backend selection.
@@ -1727,6 +1728,8 @@ class AutoModel:
                 fetched before the auto-resolution cache is consulted. Forwarded to
                 dependency models. Default: False.
 
+            _admission: Internal process-manager preparation or exact-candidate mode.
+                Public callers should use the ordinary loading interface.
             **kwargs: Additional model-specific parameters passed to the model's
                 `from_pretrained()` method. Varies by model type. For image embeddings,
                 output_type selects "feature_vector" (default) or "logits" and determines
@@ -1807,6 +1810,21 @@ class AutoModel:
             - `AutoModel.describe_compute_environment()`: Check available backends
             - `AutoModel.list_available_models()`: List all registered models
         """
+        if _admission is not None:
+            from inference_models.models.auto_loaders.admission import (
+                AdmissionCandidate,
+                PreparedPackages,
+            )
+
+            if _admission != "prepare" and not isinstance(
+                _admission, AdmissionCandidate
+            ):
+                raise ValueError("Invalid internal admission mode")
+            if OFFLINE_MODE or allow_vllm_proxy or preloaded_model_dependencies:
+                raise NotImplementedError(
+                    "Admission currently supports online dedicated models only"
+                )
+
         if OFFLINE_MODE and OFFLINE_MODE_WARM_UP:
             raise ModelRetrievalError(
                 message=(
@@ -1828,6 +1846,10 @@ class AutoModel:
         if not isinstance(model_id_or_path, str):
             _validate_remote_model_id(model_id=model_id_or_path)
         model_path_exists = os.path.exists(model_id_or_path)
+        if _admission is not None and model_path_exists:
+            raise NotImplementedError(
+                "Direct local paths are outside template admission"
+            )
         if backend is None and disabled_backends and not model_path_exists:
             excluded_backends = set(disabled_backends)
             backend = sorted(
@@ -2001,11 +2023,15 @@ class AutoModel:
                     "api_key": api_key,
                 }
             )
-            model_from_access_manager = model_access_manager.retrieve_model_instance(
-                model_id=model_id_or_path,
-                package_id=model_package_id,
-                api_key=api_key,
-                loading_parameter_digest=auto_negotiation_hash,
+            model_from_access_manager = (
+                None
+                if _admission is not None
+                else model_access_manager.retrieve_model_instance(
+                    model_id=model_id_or_path,
+                    package_id=model_package_id,
+                    api_key=api_key,
+                    loading_parameter_digest=auto_negotiation_hash,
+                )
             )
             if model_from_access_manager:
                 # The access manager is the authority for instances it serves;
@@ -2068,7 +2094,11 @@ class AutoModel:
                         model_id_or_path,
                         error,
                     )
-            model_from_cache = attempt_cached_load(auto_negotiation_hash)
+            model_from_cache = (
+                None
+                if _admission is not None
+                else attempt_cached_load(auto_negotiation_hash)
+            )
             if model_from_cache:
                 if warm_up_metadata is not None:
                     cached_entry = auto_resolution_cache.retrieve(
@@ -2128,6 +2158,18 @@ class AutoModel:
                         alias=model_id_or_path,
                         model_id=model_metadata.model_id,
                     )
+                if _admission is not None:
+                    if model_metadata.model_dependencies:
+                        raise NotImplementedError(
+                            "Composite/shared models require a separate admission contract"
+                        )
+                    if (
+                        isinstance(_admission, AdmissionCandidate)
+                        and model_metadata.model_id != _admission.model_id
+                    ):
+                        raise ValueError(
+                            "Provider resolved a different model than the admitted candidate"
+                        )
                 model_dependencies = model_metadata.model_dependencies or []
                 for model_dependency in model_dependencies:
                     model_access_manager.on_model_dependency_discovered(
@@ -2162,11 +2204,15 @@ class AutoModel:
                 )
                 raise
             # here we verify if de-aliasing or access confirmation from auth master changed something
-            model_from_access_manager = model_access_manager.retrieve_model_instance(
-                model_id=model_id_or_path,
-                package_id=model_package_id,
-                api_key=api_key,
-                loading_parameter_digest=auto_negotiation_hash,
+            model_from_access_manager = (
+                None
+                if _admission is not None
+                else model_access_manager.retrieve_model_instance(
+                    model_id=model_id_or_path,
+                    package_id=model_package_id,
+                    api_key=api_key,
+                    loading_parameter_digest=auto_negotiation_hash,
+                )
             )
             if model_from_access_manager:
                 # The access manager is the authority for instances it serves;
@@ -2181,7 +2227,11 @@ class AutoModel:
                 model_architecture=model_metadata.model_architecture,
                 task_type=model_metadata.task_type,
                 model_packages=model_metadata.model_packages,
-                requested_model_package_id=model_package_id,
+                requested_model_package_id=(
+                    model_package_id
+                    if _admission is None or _admission == "prepare"
+                    else _admission.package_id
+                ),
                 requested_backends=backend,
                 requested_batch_size=batch_size,
                 requested_quantization=quantization,
@@ -2192,7 +2242,40 @@ class AutoModel:
                 nms_fusion_preferences=nms_fusion_preferences,
                 verbose=verbose,
                 required_capabilities=required_capabilities,
+                require_compatible_explicit_package=_admission is not None,
             )
+            if _admission == "prepare":
+                # Preserve a verified cached preference, but always authorize and
+                # compatibility-filter it before a new process is admitted.
+                cached = (
+                    auto_resolution_cache.retrieve(
+                        auto_negotiation_hash=auto_negotiation_hash
+                    )
+                    if use_auto_resolution_cache
+                    else None
+                )
+                if (
+                    cached is not None
+                    and cached.model_id == model_id_or_path
+                    and cached.canonical_model_id == model_metadata.model_id
+                    and _verified_auto_cache_package_dir(cache_entry=cached) is not None
+                ):
+                    matching_model_packages = sorted(
+                        matching_model_packages,
+                        key=lambda package: package.package_id
+                        != cached.model_package_id,
+                    )
+                if max_package_loading_attempts is not None:
+                    matching_model_packages = matching_model_packages[
+                        :max_package_loading_attempts
+                    ]
+                prepared = PreparedPackages(
+                    metadata=model_metadata,
+                    candidates=tuple(matching_model_packages),
+                    runtime=runtime_x_ray,
+                    model_init_kwargs=dict(model_init_kwargs),
+                )
+                return prepared
             model_dependencies_instances = {}
             model_dependencies_directories = {}
             dependency_models_params = dependency_models_params or {}
@@ -2272,6 +2355,49 @@ class AutoModel:
                 selected_package_dirs.append(model_dir)
                 if point_model_directory:
                     point_model_directory(model_dir)
+
+            if _admission is not None:
+                if (
+                    len(matching_model_packages) != 1
+                    or matching_model_packages[0].package_id != _admission.package_id
+                ):
+                    raise ValueError("Admitted candidate is no longer compatible")
+                try:
+                    model = load_model_package_candidate(
+                        matching_model_packages[0],
+                        model_id=model_metadata.model_id,
+                        requested_model_id=model_id_or_path,
+                        model_architecture=model_metadata.model_architecture,
+                        task_type=model_metadata.task_type,
+                        model_init_kwargs=model_init_kwargs,
+                        model_access_manager=model_access_manager,
+                        auto_resolution_cache=auto_resolution_cache,
+                        auto_negotiation_hash=auto_negotiation_hash,
+                        api_key=api_key,
+                        model_dependencies=None,
+                        model_dependencies_instances={},
+                        model_dependencies_directories={},
+                        recommended_parameters=model_metadata.recommended_parameters,
+                        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                        verbose=verbose,
+                        verify_hash_while_download=verify_hash_while_download,
+                        download_files_without_hash=download_files_without_hash,
+                        use_auto_resolution_cache=use_auto_resolution_cache,
+                        point_model_directory=_warm_up_point_model_directory,
+                        content_addressed_artifact_cache=content_addressed_artifact_cache,
+                    )
+                except Exception as error:
+                    # Match the ordinary loader's initialization-fallback boundary.
+                    # Keep the original exception; transport only this classification.
+                    error._admission_candidate_failed = True
+                    raise
+                if warm_up_metadata is not None and selected_package_dirs:
+                    _maybe_record_warm_up_load(
+                        warm_up_metadata=warm_up_metadata,
+                        requested_model_id=model_id_or_path,
+                        proven_package_id=_admission.package_id,
+                    )
+                return model
 
             model = attempt_loading_matching_model_packages(
                 model_id=model_metadata.model_id,
