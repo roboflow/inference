@@ -309,9 +309,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="What this event is worth, in base units of the use case's "
         "currency, e.g. cents for USD (1999 = $19.99). The currency always comes "
         "from the use case. Leave empty to use the use case's default value, if it "
-        "has one. Negative values record a cost. Fractional values are rounded to "
-        "the nearest base unit, and values outside -10,000,000,000 to "
-        "10,000,000,000 are ignored.",
+        "has one. Negative values record a cost. A typed value or workflow input "
+        "must be a whole number; a value from another step is rounded to the "
+        "nearest base unit. Values outside -10,000,000,000 to 10,000,000,000 are "
+        "ignored.",
         examples=[1999, "$steps.expression.output"],
         json_schema_extra={"relevant_for": ALL_DATA_SCHEMAS_RELEVANT},
     )
@@ -741,12 +742,13 @@ def _build_event_data(
 def _normalize_value_base_units(value_base_units: Any) -> Optional[int]:
     """Coerce the event value to a whole number of base units, or None to omit it.
 
-    Selector-resolved values bypass manifest validation, so any real number is
-    accepted (numpy scalars too, which the JSON encoder would reject) and a
-    fractional amount is rounded to the nearest base unit. Anything else, or an
-    amount past ``MAX_ABS_VALUE_BASE_UNITS``, is dropped with a warning instead
-    of failing the event: cloud ingestion drops such a value and keeps the
-    event, while the local event store would reject the whole event.
+    Literals and workflow inputs are validated against the manifest, so they are
+    already whole numbers. Step outputs bypass that validation, so any real
+    number is accepted (numpy scalars too, which the JSON encoder would reject)
+    and a fractional amount is rounded to the nearest base unit. Anything else,
+    or an amount past ``MAX_ABS_VALUE_BASE_UNITS``, is dropped with a warning
+    instead of failing the event: cloud ingestion drops such a value and keeps
+    the event, while the local event store would reject the whole event.
     """
     if value_base_units is None:
         return None
