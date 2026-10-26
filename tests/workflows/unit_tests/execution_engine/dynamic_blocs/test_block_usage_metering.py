@@ -238,10 +238,23 @@ def test_two_blocks_with_the_same_code_share_a_resource_id():
     )
 
 
+def _with_passthrough_state(execute_remote):
+    """Adapt a legacy `execute_remote` fake to the state-carrying entry point."""
+
+    def execute_remote_with_state(**kwargs):
+        block_state = kwargs.pop("block_state")
+        return execute_remote(**kwargs), block_state
+
+    return execute_remote_with_state
+
+
 def _run_modal_block(execute_remote, unique_identifier):
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, unique_identifier)
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
+    executor_instance.execute_remote_with_state.side_effect = _with_passthrough_state(
+        execute_remote
+    )
     block = block_class(
         api_key="workflow-api-key",
         workspace_resolver=_StubWorkspaceResolver(),
@@ -335,6 +348,9 @@ def _run_modal_block_expecting_error(execute_remote, unique_identifier, expected
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, unique_identifier)
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
+    executor_instance.execute_remote_with_state.side_effect = _with_passthrough_state(
+        execute_remote
+    )
     block = block_class(
         api_key="workflow-api-key",
         workspace_resolver=_StubWorkspaceResolver(),
@@ -402,7 +418,10 @@ def test_modal_client_wall_clock_excludes_executor_acquisition(
     @contextmanager
     def slow_acquire(workspace_id):
         clock.advance(30.0)
-        yield mock.MagicMock(execute_remote=execute_remote)
+        yield mock.MagicMock(
+            execute_remote=execute_remote,
+            execute_remote_with_state=_with_passthrough_state(execute_remote),
+        )
 
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-modal-acquire")
     block = block_class(
@@ -489,6 +508,9 @@ def test_modal_user_code_error_is_billed_the_runtime_the_sandbox_reported(
     block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "metered-modal-user-error")
     executor_instance = mock.MagicMock()
     executor_instance.execute_remote.side_effect = execute_remote
+    executor_instance.execute_remote_with_state.side_effect = _with_passthrough_state(
+        execute_remote
+    )
     block = block_class(
         api_key="workflow-api-key",
         workspace_resolver=_StubWorkspaceResolver(),
@@ -711,6 +733,7 @@ def test_remote_block_emits_a_row_from_the_executors_own_publication(
     response = {
         "success": True,
         "result": json.dumps({"result": 8}),
+        "block_state": "{}",
         "execution_time_seconds": 0.6,
     }
 

@@ -26,7 +26,7 @@ import threading
 import time as _time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, NamedTuple, Optional
+from typing import Any, Dict, NamedTuple, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import numpy as np
@@ -58,6 +58,10 @@ from roboflow_workflows.execution_engine.entities.base import ParentOrigin
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import (
     BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
     record_block_duration,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
+    BLOCK_STATE_MAX_BYTES,
+    validate_block_state,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import PythonCode
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.error_utils import (
@@ -269,6 +273,87 @@ def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
             parts.fragment,
         )
     )
+
+
+def _ensure_block_state_within_cap(
+    serialized_size: int, *, block_type_name: str
+) -> None:
+    if serialized_size <= BLOCK_STATE_MAX_BYTES:
+        return
+
+    raise DynamicBlockError(
+        public_message=(
+            f"Custom Python block `{block_type_name}` keeps {serialized_size} "
+            f"bytes of state on `self`, over the {BLOCK_STATE_MAX_BYTES} byte "
+            "limit for remote execution. State is shipped to the sandbox and "
+            "back on every call; keep large buffers out of `self`."
+        ),
+        context="modal_executor | block_state_size",
+    )
+
+
+def _serialize_block_state_json(
+    block_state: Optional[Dict[str, Any]], *, block_type_name: str
+) -> Optional[str]:
+    """JSON-encode ``self`` state for the HTTP transport; ``None`` passes through."""
+    if block_state is None:
+        return None
+
+    validate_block_state(block_state)
+    block_state_json = serialize_for_modal_remote_execution(block_state)
+    _ensure_block_state_within_cap(
+        len(block_state_json), block_type_name=block_type_name
+    )
+
+    return block_state_json
+
+
+def _missing_echoed_block_state_error(block_type_name: str) -> DynamicBlockError:
+    error = DynamicBlockError(
+        public_message=(
+            f"The Modal webexec server did not return `block_state` for custom "
+            f"Python block `{block_type_name}`. The server is older than this "
+            "client and would reset `self` on every call; upgrade the webexec "
+            "deployment before running blocks that keep state on `self`."
+        ),
+        context="modal_executor | block_state_unsupported",
+    )
+
+    return error
+
+
+def _read_echoed_block_state_json(
+    result: Dict[str, Any],
+    *,
+    block_state: Optional[Dict[str, Any]],
+    block_type_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Decode the state echoed by the HTTP transport, or ``None`` if none was sent."""
+    if block_state is None:
+        return None
+    if "block_state" not in result:
+        raise _missing_echoed_block_state_error(block_type_name)
+
+    echoed_state = deserialize_for_modal_remote_execution(result["block_state"])
+
+    return echoed_state
+
+
+def _read_echoed_block_state_msgpack(
+    result: Dict[str, Any],
+    *,
+    block_state: Optional[Dict[str, Any]],
+    block_type_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Decode the state echoed by the websocket transport, or ``None`` if none was sent."""
+    if block_state is None:
+        return None
+    if "block_state" not in result:
+        raise _missing_echoed_block_state_error(block_type_name)
+
+    echoed_state = _deserialize_msgpack_result(result["block_state"])
+
+    return echoed_state
 
 
 def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
@@ -582,6 +667,65 @@ class ModalExecutor:
         workspace_id: Optional[str] = None,
         workflow_context: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
+        block_result, _ = self._execute_http(
+            block_type_name=block_type_name,
+            python_code=python_code,
+            inputs=inputs,
+            workspace_id=workspace_id,
+            workflow_context=workflow_context,
+            block_state=None,
+        )
+
+        return block_result
+
+    def execute_remote_with_state(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace_id: Optional[str] = None,
+        workflow_context: Optional[Dict[str, Any]] = None,
+        *,
+        block_state: Dict[str, Any],
+    ) -> Tuple[BlockResult, Dict[str, Any]]:
+        """Run the block remotely, carrying its ``self`` state both ways.
+
+        Args:
+            block_type_name: Block type, for error messages.
+            python_code: The block's code and function names.
+            inputs: The ``run`` keyword arguments.
+            workspace_id: Workspace the sandbox runs under.
+            workflow_context: Context exposed to the block via
+                ``self.get_workflow_context()``.
+            block_state: The block instance's user attributes before the call.
+
+        Returns:
+            The block result and the user attributes after the call.
+
+        Raises:
+            DynamicBlockError: If the state cannot be transported, exceeds the
+                size cap, or the server does not echo it back.
+        """
+        block_result, echoed_state = self._execute_http(
+            block_type_name=block_type_name,
+            python_code=python_code,
+            inputs=inputs,
+            workspace_id=workspace_id,
+            workflow_context=workflow_context,
+            block_state=block_state,
+        )
+
+        return block_result, echoed_state
+
+    def _execute_http(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace_id: Optional[str],
+        workflow_context: Optional[Dict[str, Any]],
+        block_state: Optional[Dict[str, Any]],
+    ) -> Tuple[BlockResult, Optional[Dict[str, Any]]]:
         if not MODAL_AVAILABLE:
             raise DynamicBlockError(
                 public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
@@ -594,6 +738,9 @@ class ModalExecutor:
             endpoint_url = self._get_endpoint_url(workspace)
 
             inputs_json = serialize_for_modal_remote_execution(inputs)
+            block_state_json = _serialize_block_state_json(
+                block_state, block_type_name=block_type_name
+            )
 
             code_hash = _compute_code_hash(
                 python_code.run_function_code or "",
@@ -629,6 +776,7 @@ class ModalExecutor:
                 code_hash=code_hash,
                 send_full_code=send_full_code,
                 workflow_context=workflow_context or {},
+                block_state_json=block_state_json,
             )
 
             if (
@@ -646,6 +794,7 @@ class ModalExecutor:
                     code_hash=code_hash,
                     send_full_code=True,
                     workflow_context=workflow_context or {},
+                    block_state_json=block_state_json,
                 )
 
             # Published before the failure branch below raises, so an errored
@@ -699,9 +848,13 @@ class ModalExecutor:
                 sys.stderr.write(stderr)
                 sys.stderr.flush()
 
-            # Get the result and deserialize from JSON
             json_result = result.get("result", "{}")
-            return deserialize_for_modal_remote_execution(json_result)
+            block_result = deserialize_for_modal_remote_execution(json_result)
+            echoed_state = _read_echoed_block_state_json(
+                result, block_state=block_state, block_type_name=block_type_name
+            )
+
+            return block_result, echoed_state
 
         except requests.exceptions.RequestException as e:
             raise DynamicBlockError(
@@ -717,11 +870,14 @@ class ModalExecutor:
         code_hash: str,
         send_full_code: bool,
         workflow_context: Dict[str, Any],
+        block_state_json: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Build the gzip-JSON request and POST it. Returns the parsed JSON.
 
         When ``send_full_code`` is False we omit ``code_str`` and ``imports``;
         the server uses ``code_hash`` to locate its cached compiled namespace.
+        ``block_state_json`` is sent only when the caller carries ``self``
+        state; its presence is what makes the server seed and echo it.
         """
         request_payload: Dict[str, Any] = {
             "code_hash": code_hash,
@@ -729,6 +885,8 @@ class ModalExecutor:
             "inputs_json": inputs_json,
             "workflow_context": workflow_context,
         }
+        if block_state_json is not None:
+            request_payload["block_state_json"] = block_state_json
         if send_full_code:
             request_payload["code_str"] = python_code.run_function_code
             request_payload["imports"] = python_code.imports or []
@@ -1612,6 +1770,52 @@ class WebSocketModalExecutor:
         workspace_id: Optional[str] = None,
         workflow_context: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
+        block_result, _ = self._execute_remote(
+            block_type_name=block_type_name,
+            python_code=python_code,
+            inputs=inputs,
+            workspace_id=workspace_id,
+            workflow_context=workflow_context,
+            block_state=None,
+        )
+
+        return block_result
+
+    def execute_remote_with_state(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace_id: Optional[str] = None,
+        workflow_context: Optional[Dict[str, Any]] = None,
+        *,
+        block_state: Dict[str, Any],
+    ) -> Tuple[BlockResult, Dict[str, Any]]:
+        """Run the block remotely, carrying its ``self`` state both ways.
+
+        See :meth:`ModalExecutor.execute_remote_with_state`; this is the
+        websocket counterpart with the same contract.
+        """
+        block_result, echoed_state = self._execute_remote(
+            block_type_name=block_type_name,
+            python_code=python_code,
+            inputs=inputs,
+            workspace_id=workspace_id,
+            workflow_context=workflow_context,
+            block_state=block_state,
+        )
+
+        return block_result, echoed_state
+
+    def _execute_remote(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace_id: Optional[str],
+        workflow_context: Optional[Dict[str, Any]],
+        block_state: Optional[Dict[str, Any]],
+    ) -> Tuple[BlockResult, Optional[Dict[str, Any]]]:
         if not MODAL_AVAILABLE:
             raise DynamicBlockError(
                 public_message="Modal credentials not configured. Please set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables.",
@@ -1651,13 +1855,14 @@ class WebSocketModalExecutor:
             )
 
         try:
-            return self._execute_ws(
+            block_result, echoed_state = self._execute_ws(
                 block_type_name,
                 python_code,
                 inputs,
                 workspace,
                 msgpack,
                 workflow_context or {},
+                block_state=block_state,
             )
         except WebexecSessionLostError as error:
             raise DynamicBlockError(
@@ -1669,6 +1874,8 @@ class WebSocketModalExecutor:
                 ),
                 context="modal_executor | websocket_session_lost",
             ) from error
+
+        return block_result, echoed_state
 
     def _send_recv_with_retry(
         self,
@@ -1948,10 +2155,14 @@ class WebSocketModalExecutor:
         workspace: str,
         msgpack: Any,
         workflow_context: Dict[str, Any],
-    ) -> BlockResult:
+        block_state: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[BlockResult, Optional[Dict[str, Any]]]:
         t0 = _time.monotonic()
 
         packed_inputs = serialize_inputs_for_msgpack(inputs)
+        packed_state = self._pack_block_state(
+            block_state, block_type_name=block_type_name, msgpack=msgpack
+        )
         t_ser = _time.monotonic()
 
         code_hash = _compute_code_hash(
@@ -1974,6 +2185,7 @@ class WebSocketModalExecutor:
             msgpack=msgpack,
             workflow_context=workflow_context,
             request_id=request_id,
+            block_state=packed_state,
         )
         t_pack = _time.monotonic()
 
@@ -2010,6 +2222,7 @@ class WebSocketModalExecutor:
                 msgpack=msgpack,
                 workflow_context=workflow_context,
                 request_id=retry_request_id,
+                block_state=packed_state,
             )
             resp_bytes = self._send_recv_with_retry(
                 retry_frame, workspace, request_id=retry_request_id
@@ -2060,7 +2273,32 @@ class WebSocketModalExecutor:
             sys.stderr.write(stderr)
             sys.stderr.flush()
 
-        return _deserialize_msgpack_result(result.get("result", {}))
+        block_result = _deserialize_msgpack_result(result.get("result", {}))
+        echoed_state = _read_echoed_block_state_msgpack(
+            result, block_state=block_state, block_type_name=block_type_name
+        )
+
+        return block_result, echoed_state
+
+    @staticmethod
+    def _pack_block_state(
+        block_state: Optional[Dict[str, Any]],
+        *,
+        block_type_name: str,
+        msgpack: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """Validate and msgpack-prepare ``self`` state; ``None`` passes through."""
+        if block_state is None:
+            return None
+
+        validate_block_state(block_state)
+        packed_state = serialize_inputs_for_msgpack(block_state)
+        _ensure_block_state_within_cap(
+            len(msgpack.packb(packed_state, use_bin_type=True)),
+            block_type_name=block_type_name,
+        )
+
+        return packed_state
 
     def _unpack_response(self, resp_bytes: bytes, msgpack: Any) -> dict:
         """Decode a response frame, failing as a transport error.
@@ -2173,11 +2411,14 @@ class WebSocketModalExecutor:
         msgpack: Any,
         workflow_context: Dict[str, Any],
         request_id: Optional[str] = None,
+        block_state: Optional[Dict[str, Any]] = None,
     ) -> bytes:
         """Pack a msgpack frame, optionally omitting ``code_str``/``imports``.
 
         When ``send_full_code`` is False the server resolves the compiled
         namespace through its per-container cache keyed by ``code_hash``.
+        ``block_state`` is included only when the caller carries ``self``
+        state; its presence is what makes the server seed and echo it.
         """
         payload: Dict[str, Any] = {
             "code_hash": code_hash,
@@ -2187,6 +2428,8 @@ class WebSocketModalExecutor:
         }
         if request_id is not None:
             payload["request_id"] = request_id
+        if block_state is not None:
+            payload["block_state"] = block_state
         if send_full_code:
             payload["code_str"] = python_code.run_function_code
             payload["imports"] = python_code.imports or []
@@ -2318,6 +2561,35 @@ class PooledWebSocketModalExecutor:
             )
         finally:
             self._release_executor(index)
+
+    def execute_remote_with_state(
+        self,
+        block_type_name: str,
+        python_code: PythonCode,
+        inputs: Dict[str, Any],
+        workspace_id: Optional[str] = None,
+        workflow_context: Optional[Dict[str, Any]] = None,
+        *,
+        block_state: Dict[str, Any],
+    ) -> Tuple[BlockResult, Dict[str, Any]]:
+        """Run on the least-busy socket, carrying ``self`` state both ways.
+
+        See :meth:`ModalExecutor.execute_remote_with_state` for the contract.
+        """
+        index, executor = self._acquire_executor()
+        try:
+            block_result, echoed_state = executor.execute_remote_with_state(
+                block_type_name=block_type_name,
+                python_code=python_code,
+                inputs=inputs,
+                workspace_id=workspace_id or self.workspace_id,
+                workflow_context=workflow_context,
+                block_state=block_state,
+            )
+        finally:
+            self._release_executor(index)
+
+        return block_result, echoed_state
 
 
 def get_modal_executor(workspace_id: Optional[str] = None) -> Any:

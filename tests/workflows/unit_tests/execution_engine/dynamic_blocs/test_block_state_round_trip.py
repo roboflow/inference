@@ -1,0 +1,691 @@
+"""Custom Python ``self`` state survives remote (Modal) execution.
+
+Under ``WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal`` the sandbox used to build
+a throwaway ``self`` for every call, so a block that wrote
+``self.has_first_frame = True`` on frame 1 saw a bare object again on frame 2.
+The engine-side block instance lives for the whole run, so it now owns the
+state: every call ships the block's user attributes to the sandbox, which
+seeds ``self`` with them and echoes the mutated set back.
+
+The server half of these tests loads the real ``modal/modal_app.py`` through
+the shared harness in ``conftest.py``; the client half drives the real
+executors with the network call stubbed, and the end-to-end test wires the
+engine-side block through the real HTTP handler in-process.
+"""
+
+import asyncio
+import json
+from contextlib import contextmanager
+from datetime import datetime
+from types import SimpleNamespace
+
+import msgpack
+import numpy as np
+import pytest
+import supervision as sv
+from roboflow_workflows.errors import DynamicBlockError
+from roboflow_workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_scaffolding
+from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
+    modal_executor as client,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
+    BLOCK_STATE_MAX_BYTES,
+    apply_block_state,
+    collect_block_state,
+    validate_block_state,
+)
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+    deserialize_for_modal_remote_execution,
+    serialize_for_modal_remote_execution,
+    serialize_inputs_for_msgpack,
+)
+
+from .conftest import build_ws_app
+
+FIRST_FRAME_CODE = (
+    "def run(self, image):\n"
+    "    if not hasattr(self, '_ffc_calls'):\n"
+    "        self._ffc_calls = 0\n"
+    "    self._ffc_calls += 1\n"
+    "    if hasattr(self, 'has_first_frame'):\n"
+    "        is_first = False\n"
+    "    else:\n"
+    "        self.has_first_frame = True\n"
+    "        is_first = True\n"
+    "    return {'is_first_frame': is_first, 'calls': self._ffc_calls}\n"
+)
+
+
+# --------------------------------------------------------------------------- #
+# engine side: which attributes are state, and how they are written back
+# --------------------------------------------------------------------------- #
+
+
+def _engine_block(**user_attributes):
+    block = SimpleNamespace(
+        _api_key="key",
+        _workspace_resolver=object(),
+        _execution_observer=object(),
+        _manifest_description=None,
+        _init_results={},
+        _workflow_step_name="first_frame",
+        _workflow_step_type="FirstFrameCheck",
+        _workflow_step_selector="$steps.first_frame",
+    )
+    for name, value in user_attributes.items():
+        setattr(block, name, value)
+    return block
+
+
+def test_collect_block_state_keeps_user_attributes_including_underscored_ones():
+    # Lou's block counts calls in ``self._ffc_calls``: a leading underscore is
+    # not an engine marker, only the engine's own attribute names are.
+    block = _engine_block(has_first_frame=True, _ffc_calls=3)
+
+    state = collect_block_state(block)
+
+    assert state == {"has_first_frame": True, "_ffc_calls": 3}
+
+
+def test_collect_block_state_is_empty_for_a_fresh_block():
+    assert collect_block_state(_engine_block()) == {}
+
+
+def test_apply_block_state_replaces_user_attributes_and_keeps_engine_ones():
+    block = _engine_block(stale="gone", counter=1)
+
+    apply_block_state(block, {"counter": 2, "fresh": "new"})
+
+    assert block.counter == 2
+    assert block.fresh == "new"
+    assert not hasattr(block, "stale"), "attributes the sandbox deleted must go"
+    assert block._workflow_step_name == "first_frame"
+    assert block._api_key == "key"
+
+
+def test_validate_block_state_accepts_transportable_values():
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 1, 1]], dtype=np.float32),
+        class_id=np.array([0]),
+        confidence=np.array([0.5], dtype=np.float32),
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"),
+        numpy_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    state = {
+        "flag": True,
+        "count": 3,
+        "ratio": 0.5,
+        "name": "x",
+        "nothing": None,
+        "raw": b"\x00",
+        "when": datetime(2026, 10, 26),
+        "array": np.zeros((2,)),
+        "scalar": np.int64(4),
+        "history": [1, (2, 3), {"nested": [None]}],
+        "detections": detections,
+        "image": image,
+    }
+
+    validate_block_state(state)
+
+
+def test_validate_block_state_names_the_offending_attribute():
+    class Tracker:
+        pass
+
+    with pytest.raises(DynamicBlockError) as error:
+        validate_block_state({"history": [1, {"tracker": Tracker()}]})
+
+    message = str(error.value)
+    assert "history[1]['tracker']" in message
+    assert "Tracker" in message
+
+
+def test_validate_block_state_rejects_non_string_keys():
+    with pytest.raises(DynamicBlockError) as error:
+        validate_block_state({"lookup": {1: "a"}})
+
+    assert "lookup" in str(error.value)
+
+
+# --------------------------------------------------------------------------- #
+# server side, HTTP transport
+# --------------------------------------------------------------------------- #
+
+
+class _FakeRequest:
+    def __init__(self, payload: dict):
+        self._body = json.dumps(payload).encode()
+        self.headers = {}
+
+    async def body(self) -> bytes:
+        return self._body
+
+
+def _http_executor(modal_app):
+    executor = modal_app.Executor.__new__(modal_app.Executor)
+    executor._code_namespaces = {}
+    executor._shared_globals = {}
+    return executor
+
+
+def _run_http(executor, code: str, inputs: dict, block_state=None) -> dict:
+    payload = {
+        "code_str": code,
+        "imports": [],
+        "run_function_name": "run",
+        "inputs_json": serialize_for_modal_remote_execution(inputs),
+    }
+    if block_state is not None:
+        payload["block_state_json"] = serialize_for_modal_remote_execution(block_state)
+    response = asyncio.run(executor.execute_block(_FakeRequest(payload)))
+    return response
+
+
+def test_http_server_seeds_self_from_block_state_and_echoes_the_mutated_state(
+    modal_app,
+):
+    executor = _http_executor(modal_app)
+
+    first = _run_http(executor, FIRST_FRAME_CODE, {"image": 1}, block_state={})
+    assert first["success"] is True, first.get("error")
+    assert json.loads(first["result"]) == {"is_first_frame": True, "calls": 1}
+    state = deserialize_for_modal_remote_execution(first["block_state"])
+    assert state == {"has_first_frame": True, "_ffc_calls": 1}
+
+    second = _run_http(executor, FIRST_FRAME_CODE, {"image": 2}, block_state=state)
+    assert second["success"] is True, second.get("error")
+    assert json.loads(second["result"]) == {"is_first_frame": False, "calls": 2}
+    assert deserialize_for_modal_remote_execution(second["block_state"]) == {
+        "has_first_frame": True,
+        "_ffc_calls": 2,
+    }
+
+
+def test_http_server_omits_block_state_for_a_client_that_sent_none(modal_app):
+    # Pre-upgrade clients never send state and must get the old response shape.
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, FIRST_FRAME_CODE, {"image": 1})
+
+    assert response["success"] is True, response.get("error")
+    assert "block_state" not in response
+
+
+def test_http_server_reports_a_non_transportable_self_attribute(modal_app):
+    executor = _http_executor(modal_app)
+    code = (
+        "class Tracker:\n"
+        "    pass\n"
+        "def run(self, image):\n"
+        "    self.tracker = Tracker()\n"
+        "    return {'ok': True}\n"
+    )
+
+    response = _run_http(executor, code, {"image": 1}, block_state={})
+
+    assert response["success"] is False
+    assert response["error_type"] == "BlockStateSerializationError"
+    assert "tracker" in response["error"]
+    assert "Tracker" in response["error"]
+
+
+def test_http_server_round_trips_an_ndarray_attribute(modal_app):
+    executor = _http_executor(modal_app)
+    code = (
+        "import numpy as np\n"
+        "def run(self, image):\n"
+        "    self.history = np.append(getattr(self, 'history', np.array([])), image)\n"
+        "    return {'n': int(self.history.size)}\n"
+    )
+
+    first = _run_http(executor, code, {"image": 1.0}, block_state={})
+    state = deserialize_for_modal_remote_execution(first["block_state"])
+    second = _run_http(executor, code, {"image": 2.0}, block_state=state)
+
+    assert json.loads(second["result"]) == {"n": 2}
+    history = deserialize_for_modal_remote_execution(second["block_state"])["history"]
+    assert isinstance(history, np.ndarray)
+    assert history.tolist() == [1.0, 2.0]
+
+
+# --------------------------------------------------------------------------- #
+# server side, websocket transport
+# --------------------------------------------------------------------------- #
+
+
+def _run_ws(executor, modal_app, code: str, inputs: dict, block_state=None) -> dict:
+    kwargs = {}
+    if block_state is not None:
+        kwargs["block_state"] = modal_app.Executor._deserialize_msgpack_inputs(
+            serialize_inputs_for_msgpack(block_state)
+        )
+    response = modal_app.Executor._run_user_code_ws(
+        executor,
+        code,
+        [],
+        "run",
+        modal_app.Executor._deserialize_msgpack_inputs(
+            serialize_inputs_for_msgpack(inputs)
+        ),
+        "",
+        {},
+        **kwargs,
+    )
+    return response
+
+
+def test_ws_server_seeds_self_from_block_state_and_echoes_the_mutated_state(
+    modal_app,
+):
+    executor = _http_executor(modal_app)
+
+    first = _run_ws(executor, modal_app, FIRST_FRAME_CODE, {"image": 1}, {})
+    assert first["success"] is True, first.get("error")
+    assert first["result"] == {"is_first_frame": True, "calls": 1}
+    state = client._deserialize_msgpack_result(first["block_state"])
+    assert state == {"has_first_frame": True, "_ffc_calls": 1}
+
+    second = _run_ws(executor, modal_app, FIRST_FRAME_CODE, {"image": 2}, state)
+    assert second["result"] == {"is_first_frame": False, "calls": 2}
+    assert client._deserialize_msgpack_result(second["block_state"]) == {
+        "has_first_frame": True,
+        "_ffc_calls": 2,
+    }
+
+
+def test_ws_server_omits_block_state_for_a_client_that_sent_none(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(executor, modal_app, FIRST_FRAME_CODE, {"image": 1})
+
+    assert response["success"] is True, response.get("error")
+    assert "block_state" not in response
+
+
+def test_ws_server_reports_a_non_transportable_self_attribute(modal_app):
+    executor = _http_executor(modal_app)
+    code = (
+        "class Tracker:\n"
+        "    pass\n"
+        "def run(self, image):\n"
+        "    self.tracker = Tracker()\n"
+        "    return {'ok': True}\n"
+    )
+
+    response = _run_ws(executor, modal_app, code, {"image": 1}, {})
+
+    assert response["success"] is False
+    assert response["error_type"] == "BlockStateSerializationError"
+    assert "tracker" in response["error"]
+
+
+def test_ws_frame_block_state_is_read_by_the_server(modal_app):
+    # The wire key the client packs must be the key the server reads, all the
+    # way through the real websocket handler.
+    from fastapi.testclient import TestClient
+
+    seen = {}
+
+    def run_user_code(
+        self,
+        code_str,
+        imports,
+        run_function_name,
+        inputs,
+        client_code_hash,
+        workflow_context,
+        block_state=None,
+    ):
+        seen["block_state"] = block_state
+        return {"success": True, "result": {}, "block_state": {"n": 2}}
+
+    _, app = build_ws_app(modal_app, run_user_code)
+    frame = client.WebSocketModalExecutor._build_ws_frame(
+        python_code=SimpleNamespace(
+            run_function_code="def run(self, x):\n    return x\n",
+            run_function_name="run",
+            imports=[],
+        ),
+        packed_inputs={"x": 1},
+        code_hash="hash-1",
+        send_full_code=True,
+        msgpack=msgpack,
+        workflow_context={},
+        request_id="req-1",
+        block_state={"n": 1},
+    )
+
+    with TestClient(app).websocket_connect("/ws") as ws:
+        ws.send_bytes(frame)
+        response = msgpack.unpackb(ws.receive_bytes(), raw=False)
+
+    assert seen == {"block_state": {"n": 1}}
+    assert response["block_state"] == {"n": 2}
+
+
+# --------------------------------------------------------------------------- #
+# client side executors
+# --------------------------------------------------------------------------- #
+
+
+def _python_code(code: str = FIRST_FRAME_CODE):
+    return SimpleNamespace(
+        run_function_code=code,
+        run_function_name="run",
+        imports=[],
+    )
+
+
+def _ws_executor():
+    executor = client.WebSocketModalExecutor(workspace_id="test-ws")
+    executor._server = client._ServerInfo(
+        proto=2, idle_timeout=10.0, container_id="container-1"
+    )
+    return executor
+
+
+def test_ws_client_sends_block_state_and_returns_the_echoed_state(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    executor = _ws_executor()
+    sent = []
+
+    def fake_send_recv(frame_bytes, workspace, request_id=None):
+        sent.append(msgpack.unpackb(frame_bytes, raw=False))
+        return msgpack.packb(
+            {
+                "success": True,
+                "result": {"is_first_frame": False},
+                "block_state": {"has_first_frame": True, "_ffc_calls": 2},
+                "request_id": request_id,
+            },
+            use_bin_type=True,
+        )
+
+    executor._send_recv_with_retry = fake_send_recv
+
+    result, state = executor.execute_remote_with_state(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+        block_state={"has_first_frame": True, "_ffc_calls": 1},
+    )
+
+    assert sent[0]["block_state"] == {"has_first_frame": True, "_ffc_calls": 1}
+    assert result == {"is_first_frame": False}
+    assert state == {"has_first_frame": True, "_ffc_calls": 2}
+
+
+def test_ws_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
+    # A pre-upgrade container ignores ``block_state`` and answers without it.
+    # Silently continuing would reset ``self`` on every frame — the bug this
+    # feature fixes — so the client refuses.
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    executor = _ws_executor()
+    executor._send_recv_with_retry = lambda frame_bytes, workspace, request_id=None: (
+        msgpack.packb(
+            {"success": True, "result": {}, "request_id": request_id},
+            use_bin_type=True,
+        )
+    )
+
+    with pytest.raises(DynamicBlockError) as error:
+        executor.execute_remote_with_state(
+            block_type_name="FirstFrameCheck",
+            python_code=_python_code(),
+            inputs={"image": 1},
+            workspace_id="test-ws",
+            workflow_context={},
+            block_state={},
+        )
+
+    assert "block_state" in str(error.value)
+
+
+def test_ws_client_execute_remote_without_state_sends_no_state_key(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    executor = _ws_executor()
+    sent = []
+
+    def fake_send_recv(frame_bytes, workspace, request_id=None):
+        sent.append(msgpack.unpackb(frame_bytes, raw=False))
+        return msgpack.packb(
+            {"success": True, "result": {"ok": 1}, "request_id": request_id},
+            use_bin_type=True,
+        )
+
+    executor._send_recv_with_retry = fake_send_recv
+
+    result = executor.execute_remote(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+    )
+
+    assert result == {"ok": 1}
+    assert "block_state" not in sent[0]
+
+
+def test_http_client_sends_block_state_and_returns_the_echoed_state(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    executor = client.ModalExecutor(workspace_id="test-ws")
+    executor._get_endpoint_url = lambda workspace: "http://modal.test/execute"
+    sent = []
+
+    def fake_post(
+        endpoint_url,
+        python_code,
+        inputs_json,
+        code_hash,
+        send_full_code,
+        workflow_context,
+        block_state_json=None,
+    ):
+        sent.append(block_state_json)
+        return {
+            "success": True,
+            "result": json.dumps({"is_first_frame": False}),
+            "block_state": serialize_for_modal_remote_execution(
+                {"has_first_frame": True, "_ffc_calls": 2}
+            ),
+        }
+
+    executor._post_execute = fake_post
+
+    result, state = executor.execute_remote_with_state(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+        block_state={"has_first_frame": True, "_ffc_calls": 1},
+    )
+
+    assert json.loads(sent[0]) == {"has_first_frame": True, "_ffc_calls": 1}
+    assert result == {"is_first_frame": False}
+    assert state == {"has_first_frame": True, "_ffc_calls": 2}
+
+
+def test_http_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    executor = client.ModalExecutor(workspace_id="test-ws")
+    executor._get_endpoint_url = lambda workspace: "http://modal.test/execute"
+    executor._post_execute = lambda **kwargs: {"success": True, "result": "{}"}
+
+    with pytest.raises(DynamicBlockError) as error:
+        executor.execute_remote_with_state(
+            block_type_name="FirstFrameCheck",
+            python_code=_python_code(),
+            inputs={"image": 1},
+            workspace_id="test-ws",
+            workflow_context={},
+            block_state={},
+        )
+
+    assert "block_state" in str(error.value)
+
+
+def test_client_refuses_state_over_the_size_cap(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    executor = _ws_executor()
+    executor._send_recv_with_retry = lambda *args, **kwargs: pytest.fail(
+        "oversized state must be refused before it reaches the wire"
+    )
+    oversized = {"buffer": np.zeros((BLOCK_STATE_MAX_BYTES,), dtype=np.uint8)}
+
+    with pytest.raises(DynamicBlockError) as error:
+        executor.execute_remote_with_state(
+            block_type_name="FirstFrameCheck",
+            python_code=_python_code(),
+            inputs={"image": 1},
+            workspace_id="test-ws",
+            workflow_context={},
+            block_state=oversized,
+        )
+
+    assert "buffer" in str(error.value) or "self" in str(error.value)
+
+
+def test_pooled_ws_executor_delegates_execute_remote_with_state(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    pooled = client.PooledWebSocketModalExecutor(workspace_id="test-ws")
+    inner = pooled._executors[0]
+    inner._server = client._ServerInfo(
+        proto=2, idle_timeout=10.0, container_id="container-1"
+    )
+    inner._send_recv_with_retry = lambda frame_bytes, workspace, request_id=None: (
+        msgpack.packb(
+            {
+                "success": True,
+                "result": {},
+                "block_state": {"n": 1},
+                "request_id": request_id,
+            },
+            use_bin_type=True,
+        )
+    )
+
+    _, state = pooled.execute_remote_with_state(
+        block_type_name="B",
+        python_code=_python_code(),
+        inputs={},
+        workflow_context={},
+        block_state={},
+    )
+
+    assert state == {"n": 1}
+
+
+# --------------------------------------------------------------------------- #
+# end to end: engine-side block instance through the real HTTP handler
+# --------------------------------------------------------------------------- #
+
+
+class _InProcessHttpExecutor:
+    """The engine's executor, with the POST replaced by a direct call into the
+    real ``modal_app.Executor.execute_block`` handler."""
+
+    def __init__(self, modal_app):
+        self._server = _http_executor(modal_app)
+        self._client = client.ModalExecutor(workspace_id="test-ws")
+        self._client._get_endpoint_url = lambda workspace: "http://modal.test"
+        self._client._post_execute = self._post
+
+    def _post(self, **payload):
+        request = {
+            "code_hash": payload["code_hash"],
+            "run_function_name": payload["python_code"].run_function_name,
+            "inputs_json": payload["inputs_json"],
+            "workflow_context": payload["workflow_context"],
+            "code_str": payload["python_code"].run_function_code,
+            "imports": payload["python_code"].imports or [],
+        }
+        if payload.get("block_state_json") is not None:
+            request["block_state_json"] = payload["block_state_json"]
+        return asyncio.run(self._server.execute_block(_FakeRequest(request)))
+
+    def execute_remote_with_state(self, **kwargs):
+        return self._client.execute_remote_with_state(**kwargs)
+
+    def execute_remote(self, **kwargs):
+        return self._client.execute_remote(**kwargs)
+
+
+def _build_first_frame_block(monkeypatch, modal_app):
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
+        compile_dynamic_blocks,
+    )
+
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    monkeypatch.setattr(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    )
+    monkeypatch.setattr(client, "validate_code_in_modal", lambda *a, **k: None)
+    executor = _InProcessHttpExecutor(modal_app)
+
+    @contextmanager
+    def acquire(workspace_id):
+        yield executor
+
+    monkeypatch.setattr(block_scaffolding, "_acquire_modal_executor", acquire)
+
+    definition = {
+        "type": "DynamicBlockDefinition",
+        "manifest": {
+            "type": "ManifestDescription",
+            "block_type": "FirstFrameCheck",
+            "inputs": {
+                "image": {
+                    "type": "DynamicInputDefinition",
+                    "selector_types": ["input_parameter"],
+                }
+            },
+            "outputs": {
+                "is_first_frame": {"type": "DynamicOutputDefinition", "kind": []},
+                "calls": {"type": "DynamicOutputDefinition", "kind": []},
+            },
+        },
+        "code": {"type": "PythonCode", "run_function_code": FIRST_FRAME_CODE},
+    }
+    specification = compile_dynamic_blocks([definition])[0]
+    block = specification.block_class(
+        api_key="key",
+        workspace_resolver=SimpleNamespace(resolve_workspace=lambda key: "test-ws"),
+    )
+    block._workflow_step_name = "first_frame"
+    block._workflow_step_type = "FirstFrameCheck"
+    block._workflow_step_selector = "$steps.first_frame"
+    return block
+
+
+def test_block_instance_keeps_self_state_across_remote_calls(monkeypatch, modal_app):
+    block = _build_first_frame_block(monkeypatch, modal_app)
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["is_first_frame"] for r in results] == [True, False, False]
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert block.has_first_frame is True
+    assert block._ffc_calls == 3
+
+
+def test_block_instance_surfaces_a_non_transportable_attribute_as_a_code_error(
+    monkeypatch, modal_app
+):
+    block = _build_first_frame_block(monkeypatch, modal_app)
+    block.tracker = object()
+
+    with pytest.raises(DynamicBlockError) as error:
+        block.run(image=1)
+
+    assert "tracker" in str(error.value)

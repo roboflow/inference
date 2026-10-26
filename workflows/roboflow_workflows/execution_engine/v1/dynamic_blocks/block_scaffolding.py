@@ -31,6 +31,10 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import
     peek_block_duration,
     record_block_duration,
 )
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
+    apply_block_state,
+    collect_block_state,
+)
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.debug_logs import (
     get_active_collector,
 )
@@ -448,15 +452,22 @@ def assembly_custom_python_block(
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
+            # The sandbox cannot keep this instance, so its user attributes
+            # travel with every call and the mutated set comes back: that is
+            # what makes `self.x = ...` on frame 1 visible on frame 2 under
+            # remote execution, exactly as it is in local mode.
+            block_state = collect_block_state(self)
+
             with _acquire_modal_executor(workspace_id) as executor:
                 started_at = time.monotonic()
                 try:
-                    remote_result = executor.execute_remote(
+                    remote_result, echoed_state = executor.execute_remote_with_state(
                         block_type_name=block_type_name,
                         python_code=python_code,
                         inputs=kwargs,
                         workspace_id=workspace_id,
                         workflow_context=self.get_workflow_context(),
+                        block_state=block_state,
                     )
                 finally:
                     # `sys.exc_info()` rather than binding the exception to a
@@ -467,6 +478,8 @@ def assembly_custom_python_block(
                         time.monotonic() - started_at,
                         error=sys.exc_info()[1],
                     )
+            apply_block_state(self, echoed_state)
+
             return convert_block_result_to_native(
                 result=remote_result,
                 manifest_description=self._manifest_description,
