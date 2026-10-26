@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. Selector values are rounded to whole base units; values that are not finite numbers or fall outside ±10,000,000,000 are dropped with a warning and the event is still recorded. Left empty, the use case's default value applies.
+
 ## `0.2.14`
 
 Bundled execution engine: `1.17.0`.
