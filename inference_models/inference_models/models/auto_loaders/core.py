@@ -2863,6 +2863,131 @@ def _prepare_library_model_init_kwargs(
     return {**model_init_kwargs, "local_files_only": True}
 
 
+def load_model_package_candidate(
+    model_package: ModelPackageMetadata,
+    *,
+    model_id: str,
+    model_architecture: ModelArchitecture,
+    task_type: Optional[TaskType],
+    model_init_kwargs: dict,
+    model_access_manager: ModelAccessManager,
+    auto_resolution_cache: AutoResolutionCache,
+    auto_negotiation_hash: str,
+    api_key: Optional[str],
+    model_dependencies: Optional[List[ModelDependency]],
+    model_dependencies_instances: Dict[str, AnyModel],
+    model_dependencies_directories: Dict[str, str],
+    recommended_parameters: Optional[RecommendedParameters] = None,
+    model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
+    verbose: bool = True,
+    verify_hash_while_download: bool = True,
+    download_files_without_hash: bool = False,
+    use_auto_resolution_cache: bool = True,
+    point_model_directory: Optional[Callable[[str], None]] = None,
+    requested_model_id: Optional[str] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
+) -> AnyModel:
+    """Load exactly one previously selected package without package fallback.
+
+    This is an internal integration primitive for process managers. The caller
+    must obtain authorized provider metadata and negotiate compatibility before
+    admission, then pass the admitted candidate and effective constructor
+    settings unchanged. This function does not negotiate, estimate memory, or
+    grant admission. It retains the ordinary loader's download, integrity,
+    materialization, and access-manager callbacks. Initialization errors propagate
+    unchanged so a manager can clean up the worker before admitting a fallback.
+
+    Args:
+        model_package: The single authorized, negotiated package to initialize.
+        model_id: Provider-resolved canonical model identifier.
+        model_architecture: Architecture from the same provider metadata.
+        task_type: Task from the same provider metadata.
+        model_init_kwargs: Effective constructor settings used for admission.
+        model_access_manager: Owner of file and model lifecycle callbacks.
+        auto_resolution_cache: Existing resolution-cache implementation.
+        auto_negotiation_hash: Existing resolution request cache key.
+        api_key: Credential used for authorized package retrieval.
+        model_dependencies: Dependency metadata, if supported by the caller.
+        model_dependencies_instances: Already loaded dependency instances.
+        model_dependencies_directories: Existing dependency artifact directories.
+        recommended_parameters: Model-level recommended inference parameters.
+        model_download_file_lock_acquire_timeout: Download lock timeout in seconds.
+        verbose: Whether to emit progress information.
+        verify_hash_while_download: Whether to verify artifact hashes on download.
+        download_files_without_hash: Whether unhashed downloads are permitted.
+        use_auto_resolution_cache: Whether to record the normal resolution cache.
+        point_model_directory: Optional callback receiving the package directory.
+        requested_model_id: Original requested identifier or alias.
+        content_addressed_artifact_cache: Optional existing artifact cache.
+
+    Returns:
+        The initialized model for this candidate.
+
+    Raises:
+        Exception: The original initialization or lifecycle callback error. No
+            alternative candidate is attempted by this function.
+    """
+    if requested_model_id is None:
+        requested_model_id = model_id
+
+    access_identifiers = AccessIdentifiers(
+        model_id=model_id,
+        package_id=model_package.package_id,
+        api_key=api_key,
+    )
+    verbose_info(
+        message=f"Attempt to load model package: {model_package.get_summary()}",
+        verbose_requested=verbose,
+    )
+    model, model_package_cache_dir = initialize_model(
+        model_id=model_id,
+        requested_model_id=requested_model_id,
+        model_architecture=model_architecture,
+        task_type=task_type,
+        model_package=model_package,
+        model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        model_init_kwargs=dict(model_init_kwargs),
+        auto_resolution_cache=auto_resolution_cache,
+        auto_negotiation_hash=auto_negotiation_hash,
+        model_dependencies=model_dependencies,
+        model_dependencies_instances=model_dependencies_instances,
+        model_dependencies_directories=model_dependencies_directories,
+        recommended_parameters=recommended_parameters,
+        verify_hash_while_download=verify_hash_while_download,
+        download_files_without_hash=download_files_without_hash,
+        content_addressed_artifact_cache=content_addressed_artifact_cache,
+        on_file_created=partial(
+            model_access_manager.on_file_created,
+            access_identifiers=access_identifiers,
+        ),
+        on_file_renamed=partial(
+            model_access_manager.on_file_renamed,
+            access_identifiers=access_identifiers,
+        ),
+        on_symlink_created=partial(
+            model_access_manager.on_symlink_created,
+            access_identifiers=access_identifiers,
+        ),
+        on_symlink_deleted=model_access_manager.on_symlink_deleted,
+        use_auto_resolution_cache=use_auto_resolution_cache,
+        api_key=api_key,
+    )
+    LOGGER.info(
+        "Loaded model %s with backend %s (package %s)",
+        model_id,
+        model_package.backend.value,
+        model_package.package_id,
+    )
+    model_access_manager.on_model_loaded(
+        model=model,
+        access_identifiers=access_identifiers,
+        model_storage_path=model_package_cache_dir,
+    )
+    if point_model_directory:
+        point_model_directory(model_package_cache_dir)
+    return model
+
+
 def attempt_loading_matching_model_packages(
     model_id: str,
     model_architecture: ModelArchitecture,
@@ -2899,62 +3024,30 @@ def attempt_loading_matching_model_packages(
         )
     failed_load_attempts: List[Tuple[str, Exception]] = []
     for idx, model_package in enumerate(matching_model_packages):
-        access_identifiers = AccessIdentifiers(
-            model_id=model_id,
-            package_id=model_package.package_id,
-            api_key=api_key,
-        )
-        verbose_info(
-            message=f"Attempt to load model package: {model_package.get_summary()}",
-            verbose_requested=verbose,
-        )
         try:
-            model, model_package_cache_dir = initialize_model(
+            model = load_model_package_candidate(
+                model_package,
                 model_id=model_id,
                 requested_model_id=requested_model_id,
                 model_architecture=model_architecture,
                 task_type=task_type,
-                model_package=model_package,
-                model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-                model_init_kwargs=dict(model_init_kwargs),
+                model_init_kwargs=model_init_kwargs,
+                model_access_manager=model_access_manager,
                 auto_resolution_cache=auto_resolution_cache,
                 auto_negotiation_hash=auto_negotiation_hash,
+                api_key=api_key,
                 model_dependencies=model_dependencies,
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
                 recommended_parameters=recommended_parameters,
+                model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                verbose=verbose,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
-                content_addressed_artifact_cache=content_addressed_artifact_cache,
-                on_file_created=partial(
-                    model_access_manager.on_file_created,
-                    access_identifiers=access_identifiers,
-                ),
-                on_file_renamed=partial(
-                    model_access_manager.on_file_renamed,
-                    access_identifiers=access_identifiers,
-                ),
-                on_symlink_created=partial(
-                    model_access_manager.on_symlink_created,
-                    access_identifiers=access_identifiers,
-                ),
-                on_symlink_deleted=model_access_manager.on_symlink_deleted,
                 use_auto_resolution_cache=use_auto_resolution_cache,
-                api_key=api_key,
+                point_model_directory=point_model_directory,
+                content_addressed_artifact_cache=content_addressed_artifact_cache,
             )
-            LOGGER.info(
-                "Loaded model %s with backend %s (package %s)",
-                model_id,
-                model_package.backend.value,
-                model_package.package_id,
-            )
-            model_access_manager.on_model_loaded(
-                model=model,
-                access_identifiers=access_identifiers,
-                model_storage_path=model_package_cache_dir,
-            )
-            if point_model_directory:
-                point_model_directory(model_package_cache_dir)
             return model
         except Exception as error:
             LOGGER.warning(
