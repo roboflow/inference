@@ -100,6 +100,91 @@ def _safe_unpackb(raw: bytes) -> Any:
     )
 
 
+class BlockStateSerializationError(Exception):
+    """A value the block left on ``self`` cannot be sent back to the engine.
+
+    Reported as its own error type, without a user-code line number: the
+    block ran fine, it is the state hand-back that failed.
+    """
+
+
+def _check_block_state_transportable(state: Dict[str, Any]) -> None:
+    """Refuse ``self`` state the result serializers would silently stringify.
+
+    Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``
+    (kept inline like the serializers above, since the sandbox image does not
+    ship the engine package). Accepted: None, bool/int/float/str/bytes,
+    datetime, numpy arrays and scalars, sv.Detections, WorkflowImageData,
+    VideoMetadata, lists/tuples and string-keyed dicts of those.
+    """
+    from datetime import datetime
+
+    import numpy as np
+    import supervision as sv
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        VideoMetadata,
+        WorkflowImageData,
+    )
+
+    def _check(value: Any, path: str) -> None:
+        if value is None or isinstance(value, (bool, int, float, str, bytes)):
+            return
+        if isinstance(value, (datetime, np.ndarray, np.generic)):
+            return
+        if isinstance(value, (sv.Detections, WorkflowImageData, VideoMetadata)):
+            return
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    raise BlockStateSerializationError(
+                        f"Custom Python block state `self.{path}` has a "
+                        f"non-string key {key!r}; only string keys can be "
+                        "carried across remote execution."
+                    )
+                _check(item, f"{path}[{key!r}]")
+            return
+        if isinstance(value, (list, tuple)):
+            for index, item in enumerate(value):
+                _check(item, f"{path}[{index}]")
+            return
+        raise BlockStateSerializationError(
+            f"Custom Python block state `self.{path}` holds a "
+            f"{type(value).__name__}, which cannot be carried across remote "
+            "execution. Attributes set on `self` must be JSON-like values, "
+            "numpy arrays, datetimes, sv.Detections, images or video "
+            "metadata; keep other objects out of `self` or derive them per "
+            "call."
+        )
+
+    for name, value in state.items():
+        _check(value, name)
+
+
+class _BlockSelf:
+    """The ``self`` a remote ``run(self, ...)`` receives.
+
+    Seeded with the user attributes the engine-side instance carried into
+    this call; whatever the function leaves in ``__dict__`` is echoed back.
+    """
+
+    def __init__(self, workflow_context: Dict[str, Any], state: Optional[dict]):
+        self.__dict__.update(state or {})
+        # Kept off ``__dict__`` so it is never echoed as state.
+        object.__setattr__(self, "_BlockSelf__workflow_context", workflow_context)
+
+    def get_workflow_context(self) -> Dict[str, Any]:
+        return dict(self.__workflow_context)
+
+    def user_state(self) -> Dict[str, Any]:
+        state = {
+            name: value
+            for name, value in self.__dict__.items()
+            if name != "_BlockSelf__workflow_context"
+        }
+        return state
+
+
 class _InputsDecodeError(Exception):
     """A request's inputs could not be decoded, so user code never ran.
 
@@ -686,6 +771,9 @@ from datetime import datetime
         inputs_json = request.get("inputs_json", "{}")
         client_code_hash = request.get("code_hash")
         workflow_context = request.get("workflow_context") or {}
+        # Present (possibly as an empty map) only for clients that carry the
+        # block's ``self`` state; those expect it echoed back on success.
+        block_state_json = request.get("block_state_json")
 
         # Resolve the effective code hash. Two request modes are supported:
         #   1. Full code: ``code_str`` is present -> compute hash, compile if new.
@@ -919,6 +1007,11 @@ from datetime import datetime
                 return inputs
 
             inputs = deserialize_for_modal_remote_execution(inputs_json)
+            block_state = (
+                deserialize_for_modal_remote_execution(block_state_json)
+                if block_state_json is not None
+                else None
+            )
 
             # Call the user function
             if run_function_name not in namespace:
@@ -939,16 +1032,13 @@ from datetime import datetime
             # and the network round trip.
             execution_time_seconds = None
             started_at = time.perf_counter()
+            block_self = None
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
-                    # If function expects 'self' as first param, create a simple object to pass
+                    # If function expects 'self' as first param, pass a
+                    # stand-in seeded with the engine-side instance's state.
                     if params and params[0] == "self":
-
-                        class BlockSelf:
-                            def get_workflow_context(self) -> Dict[str, Any]:
-                                return dict(workflow_context)
-
-                        block_self = BlockSelf()
+                        block_self = _BlockSelf(workflow_context, block_state)
                         result = user_function(block_self, **inputs)
                     else:
                         result = user_function(**inputs)
@@ -956,13 +1046,33 @@ from datetime import datetime
 
                 json_result = serialize_for_modal_remote_execution(result)
 
-                return {
+                response = {
                     "success": True,
                     "result": json_result,
                     "stdout": stdout_buf.getvalue() or None,
                     "stderr": stderr_buf.getvalue() or None,
                     "execution_time_seconds": execution_time_seconds,
                 }
+                if block_state is not None:
+                    echoed_state = (
+                        block_self.user_state() if block_self else block_state
+                    )
+                    try:
+                        _check_block_state_transportable(echoed_state)
+                    except BlockStateSerializationError as error:
+                        return {
+                            "success": False,
+                            "error": str(error),
+                            "error_type": "BlockStateSerializationError",
+                            "stdout": stdout_buf.getvalue() or None,
+                            "stderr": stderr_buf.getvalue() or None,
+                            "execution_time_seconds": execution_time_seconds,
+                        }
+                    response["block_state"] = serialize_for_modal_remote_execution(
+                        echoed_state
+                    )
+
+                return response
             except Exception as e:
                 # Taken before anything else in this handler, and only when the
                 # user function did not already report: serializing its result
@@ -1020,12 +1130,17 @@ from datetime import datetime
         inputs: dict,
         client_code_hash: str = "",
         workflow_context: Optional[Dict[str, Any]] = None,
+        block_state: Optional[dict] = None,
     ) -> Dict[str, Any]:
         """Execute user code for the WebSocket transport.
 
         When ``code_str`` is empty but ``client_code_hash`` is provided, look up
         a previously cached namespace on this container. On cache miss we return
         ``UnknownCodeHash`` so the client resends the full code once.
+
+        ``block_state`` (possibly an empty dict) is present only for clients
+        that carry the block's ``self`` state; the response then echoes the
+        state the function left on ``self`` under ``block_state``.
         """
         if code_str:
             code_hash = executor._get_code_hash(code_str, imports)
@@ -1080,27 +1195,41 @@ from datetime import datetime
         # network round trip.
         execution_time_seconds = None
         started_at = time.perf_counter()
+        block_self = None
         try:
             with capture_output() as (stdout_buf, stderr_buf):
                 if params and params[0] == "self":
-
-                    class BlockSelf:
-                        def get_workflow_context(self) -> Dict[str, Any]:
-                            return dict(_workflow_context)
-
-                    block_self = BlockSelf()
+                    block_self = _BlockSelf(_workflow_context, block_state)
                     result = user_function(block_self, **inputs)
                 else:
                     result = user_function(**inputs)
                 execution_time_seconds = time.perf_counter() - started_at
 
-            return {
+            response = {
                 "success": True,
                 "result": result,
                 "stdout": stdout_buf.getvalue() or None,
                 "stderr": stderr_buf.getvalue() or None,
                 "execution_time_seconds": execution_time_seconds,
             }
+            if block_state is not None:
+                echoed_state = block_self.user_state() if block_self else block_state
+                try:
+                    _check_block_state_transportable(echoed_state)
+                except BlockStateSerializationError as error:
+                    return {
+                        "success": False,
+                        "error": str(error),
+                        "error_type": "BlockStateSerializationError",
+                        "stdout": stdout_buf.getvalue() or None,
+                        "stderr": stderr_buf.getvalue() or None,
+                        "execution_time_seconds": execution_time_seconds,
+                    }
+                response["block_state"] = Executor._serialize_msgpack_result(
+                    echoed_state
+                )
+
+            return response
         except Exception as e:
             # See the HTTP path: taken first, and only when the user function
             # did not already report, so both branches measure the same span.
@@ -1427,6 +1556,8 @@ from datetime import datetime
             inputs_raw = request.get("inputs", {})
             client_code_hash = request.get("code_hash", "")
             workflow_context = request.get("workflow_context") or {}
+            carries_block_state = "block_state" in request
+            block_state_raw = request.get("block_state") or {}
 
             # ``decode_failed`` is ONE of two positive proofs that the user's
             # code did not run (the other is ``never_ran``, set for control
@@ -1464,10 +1595,21 @@ from datetime import datetime
                 nonlocal started_running, decode_failed, never_ran
                 try:
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                    block_state = (
+                        Executor._deserialize_msgpack_inputs(block_state_raw)
+                        if carries_block_state
+                        else None
+                    )
                 except Exception as error:
                     decode_failed = True
                     raise _InputsDecodeError(str(error)) from error
                 started_running = True
+                # Keyword, and only when carried: stubs of this hook in tests
+                # predate the parameter, and its absence is the signal that
+                # the client does not expect state back.
+                state_kwargs = (
+                    {"block_state": block_state} if carries_block_state else {}
+                )
                 resp = Executor._run_user_code_ws(
                     executor_self,
                     code_str,
@@ -1476,6 +1618,7 @@ from datetime import datetime
                     inputs,
                     client_code_hash,
                     workflow_context,
+                    **state_kwargs,
                 )
                 # Control responses returned BEFORE the user's function is
                 # looked up: the block provably did not run, so its executed

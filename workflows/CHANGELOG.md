@@ -16,6 +16,23 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Custom Python `self` state under remote execution** — Attributes a
+  Custom Python block sets on `self` (for example a first-frame flag or a
+  per-run counter) now persist between calls when the block runs in the
+  Modal sandbox (`WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal`), matching
+  local execution. Previously the sandbox rebuilt an empty `self` on every
+  call, so such blocks took their "first call" branch on every frame of a
+  video. The engine-side block instance owns the state and carries it to
+  the sandbox and back on each call, so it survives container recycling
+  and never leaks between workflow runs. Values kept on `self` must be
+  transportable (JSON-like values, numpy arrays and scalars, datetimes,
+  `sv.Detections`, images, video metadata); other objects raise a
+  `DynamicBlockError` naming the attribute, and serialized state is capped
+  at 1 MiB per call. Requires a webexec deployment built from this version:
+  an older server is rejected loudly instead of silently resetting `self`.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.
