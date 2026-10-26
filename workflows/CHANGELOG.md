@@ -16,12 +16,27 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.14`
+
+Bundled execution engine: `1.17.0`.
+
+### Changed
+
+- Security maintenance release, no block or engine change. The Workflows lockfile is refreshed for three advisories in transitive dependencies: `certifi` 2026.7.22 -> 2026.10.23 (GHSA-6q48-6c7w-9gw2, bundled emSign root CAs whose intermediate CA keys were compromised), `GitPython` 3.1.62 -> 3.2.1 (GHSA-83vg-56qc-22m7, remote code execution through a submodule `.git` path) and `setuptools` 84.0.0 -> 84.2.1 (GHSA-xmj3-9gf7-h52w, Windows path escape during legacy wheel installation). Declared dependency ranges are unchanged.
+
+## `0.2.13`
+
+Bundled execution engine: `1.17.0`.
+
 ### Changed
 
 - Require the stable `inference-models>=0.39.5` and `inference-sdk>=1.8.1`
   releases, and refresh the Workflows lockfile to match these minimum versions.
 
 ### Execution engine
+
+- Update the engine compatibility version to `1.17.0` and align the integration
+  and hosted-platform version assertions with the published `0.2.13rc1` package.
 
 - Workflow syntax errors no longer repeat the raw input of the step that failed
   validation. The rendered `pydantic` error (the `inner_error_message` of an HTTP
