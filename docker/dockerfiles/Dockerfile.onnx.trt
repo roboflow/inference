@@ -79,12 +79,15 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install runtime dependencies
 ADD https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb /tmp/cuda-keyring.deb
+# ca-certificates >= 20260816 distrusts emSign ECC Root CA - G3 (eMudhra key compromise,
+# LP: #2171507); the version check stops a cached layer or stale mirror shipping an older store
 RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; apt-get clean; \
     dpkg -i /tmp/cuda-keyring.deb || true; \
     rm -f /tmp/cuda-keyring.deb; \
     apt-get update -y; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        ca-certificates \
         libxext6 \
         libopencv-dev \
         uvicorn \
@@ -95,6 +98,7 @@ RUN set -eux; \
         wget \
         rustc \
         cargo; \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816; \
     rm -rf /var/lib/apt/lists/*; \
 # apt's uvicorn drags in python3-h11 0.13.0 (CVE-2025-43859); the served process uses
 # pip's h11 from /usr/local, but scanners flag the apt copy - upgrade it in place in the
