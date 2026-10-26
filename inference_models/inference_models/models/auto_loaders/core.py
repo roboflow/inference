@@ -795,6 +795,19 @@ def _md5_file(path: str) -> str:
     return _hash_regular_file(path=path, algorithm="md5")
 
 
+def _is_shared_blob_link(package_path: str, expected_blob: str) -> bool:
+    """Accept symlinks and hardlinks only to the expected regular shared blob."""
+    if os.path.islink(expected_blob) or not os.path.isfile(expected_blob):
+        return False
+
+    try:
+        same_file = os.path.samefile(package_path, expected_blob)
+    except OSError:
+        return False
+
+    return same_file
+
+
 def _materialize_package_artifact_identities(
     package_dir: str,
     declarations: List[dict],
@@ -814,10 +827,9 @@ def _materialize_package_artifact_identities(
         if declaration["storage"] == "shared_blob":
             expected_blob = os.path.join(shared_blobs_dir, md5_hash)
             if (
-                not os.path.islink(package_path)
-                or os.path.islink(expected_blob)
-                or not os.path.isfile(expected_blob)
-                or os.path.realpath(package_path) != os.path.realpath(expected_blob)
+                not _is_shared_blob_link(
+                    package_path=package_path, expected_blob=expected_blob
+                )
                 or _md5_file(path=expected_blob) != md5_hash
             ):
                 raise CorruptedModelPackageError(
@@ -3538,6 +3550,25 @@ def handle_symlink_creation(
     on_symlink_created: Optional[Callable[[str, str], None]] = None,
     on_symlink_deleted: Optional[Callable[[str], None]] = None,
 ) -> None:
+    """Create a shared-file link without replacing an existing regular file.
+
+    Use a hardlink when Windows denies the symbolic-link privilege. Hardlink
+    creation still requires both files to reside on a compatible filesystem.
+
+    Args:
+        target_path (str): Path to the existing shared blob.
+        link_name (str): Destination path inside the model package.
+        model_download_file_lock_acquire_timeout (int): Per-link lock timeout
+            in seconds.
+        on_symlink_created (Optional[Callable[[str, str], None]]): Callback
+            receiving the target and destination after either link is created.
+        on_symlink_deleted (Optional[Callable[[str], None]]): Callback receiving
+            the destination after an existing symbolic link is removed.
+
+    Raises:
+        OSError: If link creation fails for a reason other than a concurrent
+            creator, including an unavailable hardlink fallback.
+    """
     link_dir, link_file_name = os.path.split(os.path.abspath(link_name))
     os.makedirs(link_dir, exist_ok=True)
     lock_path = os.path.join(link_dir, f".{link_file_name}.lock")
@@ -3554,7 +3585,15 @@ def handle_symlink_creation(
             )
             return
         try:
-            os.symlink(target_path, link_name)
+            try:
+                os.symlink(target_path, link_name)
+            except OSError as error:
+                if getattr(error, "winerror", None) != 1314:
+                    raise
+
+                # NTFS hardlinks do not require the Windows symlink privilege.
+                os.link(target_path, link_name)
+
             if on_symlink_created:
                 on_symlink_created(target_path, link_name)
         except FileExistsError:
