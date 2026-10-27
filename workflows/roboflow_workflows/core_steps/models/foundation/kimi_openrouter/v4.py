@@ -23,6 +23,7 @@ from roboflow_workflows.core_steps.common.vlm_decoding import (
     actual_vlm_prediction_outputs,
     decode_vlm_output,
     describe_vlm_prediction_outputs,
+    extract_detection_entries,
     extract_json,
     get_detection_box_format,
 )
@@ -138,8 +139,6 @@ globally discontinued.
 
 Object detection requests a JSON list of `label`, `box_2d` in
 `[x_min, y_min, x_max, y_max]` order normalized to 0–1000, and `confidence`.
-This coordinate contract scored highest for both models in our 100-image format
-comparison. Small differences between the leading formats remain uncertain.
 
 Kimi K2.6 uses `reasoning_enabled` (on/off). Kimi K3.1 Pro uses
 `reasoning_effort`: `none`, `low`, `high`, or `max` (default `high`).
@@ -149,8 +148,7 @@ Requests are pinned to the official Moonshot AI provider, without fallback.
 Managed keys require a Roboflow proxy that forwards provider routing and reasoning.
 
 Decoded detections follow the shared block convention: unknown labels are kept
-with `class_id=-1` (the benchmark instead excluded those labels from scoring),
-and out-of-range coordinates are clamped. Model confidence is preserved.
+with `class_id=-1`, and out-of-range coordinates are clamped. Model confidence is preserved.
 
 The output contract is unchanged from v3:
 
@@ -634,17 +632,22 @@ def _detection_with_confidence(raw_output: str) -> str:
     # The legacy XYXY decoder intentionally replaces confidence with 1.0.
     # Reuse its coordinate converter, then the shared named decoder to retain
     # Kimi's requested confidence without changing any shipped format behavior.
-    error, entries = extract_json(raw_output)
-    if error or not isinstance(entries, list):
+    error, parsed_data = extract_json(raw_output)
+    if error:
+        return "invalid detection JSON"
+
+    try:
+        entries = extract_detection_entries(parsed_data)
+    except ValueError:
         return "invalid detection JSON"
 
     converter = get_detection_box_format(DETECTION_BOX_FORMAT)
     detections = []
     for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-
-        box = converter.to_pixel_xyxy(entry=entry, image_width=1, image_height=1)
+        try:
+            box = converter.to_pixel_xyxy(entry=entry, image_width=1, image_height=1)
+        except (ValueError, TypeError, OverflowError):
+            return "invalid detection boxes"
         if box is None:
             continue
 

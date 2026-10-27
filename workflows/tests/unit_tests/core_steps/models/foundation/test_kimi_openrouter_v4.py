@@ -157,3 +157,22 @@ def test_reasoning_rejection_is_not_retried_without_setting(route):
 def test_malformed_entries_do_not_crash_workflow(answer):
     result, _ = _run(answer)
     assert result["error_status"]
+
+
+@pytest.mark.parametrize("shape", ["list", "wrapper", "single"])
+def test_shared_detection_response_shapes_preserve_coordinates_and_confidence(shape):
+    entry = {"label": "cat", "box_2d": [100, 250, 500, 750], "confidence": 0.7}
+    answer = {"list": [entry], "wrapper": {"detections": [entry]}, "single": entry}[
+        shape
+    ]
+    result, _ = _run(json.dumps(answer))
+    assert not result["error_status"]
+    np.testing.assert_array_equal(
+        detection_boxes(result["predictions"]), [[80, 100, 400, 300]]
+    )
+    np.testing.assert_allclose(detection_confidences(result["predictions"]), [0.7])
+
+
+def test_overflowing_coordinate_returns_error_instead_of_crashing_workflow():
+    result, _ = _run(json.dumps([{"label": "cat", "box_2d": [10**400, 250, 500, 750]}]))
+    assert result["error_status"]
