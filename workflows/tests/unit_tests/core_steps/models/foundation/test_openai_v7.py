@@ -225,6 +225,23 @@ def test_get_actual_outputs_narrows_predictions(
     assert "output" in outputs
 
 
+def test_manifest_accepts_gpt_6_1_terra() -> None:
+    # when
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/open_ai@v7",
+            "name": "open_ai",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": ["cat"],
+            "model_version": "gpt-6.1-terra",
+        }
+    )
+
+    # then
+    assert manifest.model_version == "gpt-6.1-terra"
+
+
 def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     # given
     manifest = BlockManifest.model_validate(
@@ -254,6 +271,7 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     "model_version, expected_format",
     [
         ("gpt-6-astra", "xyxy_absolute"),
+        ("gpt-6.1-terra", "xyxy_absolute"),
         ("gpt-5.6-sol", "xyxy_absolute"),
         ("gpt-4o", "xyxy_absolute"),
         ("gpt-5.1", "named_normalized"),
