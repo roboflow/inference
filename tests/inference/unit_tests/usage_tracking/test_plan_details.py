@@ -73,6 +73,7 @@ def _plan_details_without_sqlite() -> PlanDetails:
     )
 
 
+
 @mock.patch("inference.usage_tracking.plan_details.requests.get")
 def test_cold_rate_limit_returns_the_unavailable_plan_and_retries(get_mock):
     # given
@@ -88,17 +89,21 @@ def test_cold_rate_limit_returns_the_unavailable_plan_and_retries(get_mock):
     assert plan["is_billed"] is True
     assert plan["over_quota"] is False
     assert plan["ts"] == plan_details._ts_default
+    # the stale default timestamp makes a cold lookup refresh twice
+    assert get_mock.call_count == 2
 
     # when the endpoint recovers
     get_mock.return_value = mock.Mock(status_code=200)
     get_mock.return_value.json.return_value = {"is_enterprise": True}
     recovered = plan_details.get_api_key_plan(api_key="fixture-key")
-    plan_details.get_api_key_plan(api_key="fixture-key")
 
     # then
-    assert get_mock.call_count == 2
+    assert get_mock.call_count == 3
+    assert recovered["is_enterprise"] is True
     assert recovered["over_quota"] is False
     assert recovered["ts"] != plan_details._ts_default
+    assert plan_details.get_api_key_plan(api_key="fixture-key") == recovered
+    assert get_mock.call_count == 3
 
 
 @mock.patch("inference.usage_tracking.plan_details.requests.get")
@@ -108,6 +113,7 @@ def test_rate_limit_keeps_a_cached_plan(get_mock):
     get_mock.return_value.json.return_value = {"is_enterprise": True}
     plan_details = _plan_details_without_sqlite()
     plan = dict(plan_details.get_api_key_plan(api_key="fixture-key"))
+    assert get_mock.call_count == 1
 
     # when
     get_mock.return_value = mock.Mock(status_code=429)
@@ -115,6 +121,7 @@ def test_rate_limit_keeps_a_cached_plan(get_mock):
 
     # then
     assert refreshed == plan
+    assert get_mock.call_count == 2
     assert plan_details.get_api_key_plan(api_key="fixture-key") == plan
     assert get_mock.call_count == 2
 
@@ -126,12 +133,14 @@ def test_rejected_new_credentials_are_denied_and_retried(get_mock, status_code):
     get_mock.return_value = mock.Mock(status_code=status_code)
     plan_details = _plan_details_without_sqlite()
 
-    # when
-    plan = plan_details.get_api_key_plan(api_key="fixture-key")
-    plan_details.get_api_key_plan(api_key="fixture-key")
+    for expected_calls in (2, 3):
+        # when
+        plan = plan_details.get_api_key_plan(api_key="fixture-key")
 
-    # then
-    assert plan["is_enterprise"] is False
-    assert plan["over_quota"] is True
-    assert plan["ts"] == plan_details._ts_default
-    assert get_mock.call_count == 2
+        # then
+        assert plan["is_enterprise"] is False
+        assert plan["is_pro"] is False
+        assert plan["is_billed"] is False
+        assert plan["over_quota"] is True
+        assert plan["ts"] == plan_details._ts_default
+        assert get_mock.call_count == expected_calls
