@@ -1,4 +1,7 @@
 import sqlite3
+from unittest import mock
+
+import pytest
 
 from inference.core.utils.sqlite_wrapper import SQLiteWrapper
 from inference.usage_tracking.plan_details import PlanDetails
@@ -60,3 +63,75 @@ def test_load_from_cache():
 
     # then
     assert plan_details.api_keys_plans == {"fake1": row1, "fake2": row2}
+
+
+def _plan_details_without_sqlite() -> PlanDetails:
+    return PlanDetails(
+        api_plan_endpoint_url="https://plans.example.invalid/details",
+        webrtc_plans_endpoint_url="https://webrtc.example.invalid/plans",
+        sqlite_cache_enabled=False,
+    )
+
+
+@mock.patch("inference.usage_tracking.plan_details.requests.get")
+def test_cold_rate_limit_returns_the_unavailable_plan_and_retries(get_mock):
+    # given
+    get_mock.return_value = mock.Mock(status_code=429)
+    plan_details = _plan_details_without_sqlite()
+
+    # when
+    plan = plan_details.get_api_key_plan(api_key="fixture-key")
+
+    # then
+    assert plan["is_enterprise"] is True
+    assert plan["is_pro"] is True
+    assert plan["is_billed"] is True
+    assert plan["over_quota"] is False
+    assert plan["ts"] == plan_details._ts_default
+
+    # when the endpoint recovers
+    get_mock.return_value = mock.Mock(status_code=200)
+    get_mock.return_value.json.return_value = {"is_enterprise": True}
+    recovered = plan_details.get_api_key_plan(api_key="fixture-key")
+    plan_details.get_api_key_plan(api_key="fixture-key")
+
+    # then
+    assert get_mock.call_count == 2
+    assert recovered["over_quota"] is False
+    assert recovered["ts"] != plan_details._ts_default
+
+
+@mock.patch("inference.usage_tracking.plan_details.requests.get")
+def test_rate_limit_keeps_a_cached_plan(get_mock):
+    # given
+    get_mock.return_value = mock.Mock(status_code=200)
+    get_mock.return_value.json.return_value = {"is_enterprise": True}
+    plan_details = _plan_details_without_sqlite()
+    plan = dict(plan_details.get_api_key_plan(api_key="fixture-key"))
+
+    # when
+    get_mock.return_value = mock.Mock(status_code=429)
+    refreshed = plan_details.refresh_api_key_plan_cache(api_key="fixture-key")
+
+    # then
+    assert refreshed == plan
+    assert plan_details.get_api_key_plan(api_key="fixture-key") == plan
+    assert get_mock.call_count == 2
+
+
+@pytest.mark.parametrize("status_code", [401, 403])
+@mock.patch("inference.usage_tracking.plan_details.requests.get")
+def test_rejected_new_credentials_are_denied_and_retried(get_mock, status_code):
+    # given
+    get_mock.return_value = mock.Mock(status_code=status_code)
+    plan_details = _plan_details_without_sqlite()
+
+    # when
+    plan = plan_details.get_api_key_plan(api_key="fixture-key")
+    plan_details.get_api_key_plan(api_key="fixture-key")
+
+    # then
+    assert plan["is_enterprise"] is False
+    assert plan["over_quota"] is True
+    assert plan["ts"] == plan_details._ts_default
+    assert get_mock.call_count == 2

@@ -149,8 +149,12 @@ class PlanDetails(SQLiteWrapper):
                 logger.debug(
                     "Got %s from %s", response.status_code, self._api_plan_endpoint_url
                 )
+                # A 429 says nothing about the plan or the credential: keep the
+                # unavailable-plan defaults and a stale timestamp so the next
+                # lookup retries.
                 if (
                     400 <= response.status_code < 500
+                    and response.status_code != 429
                     and api_key_hash not in self.api_keys_plans
                 ):
                     api_key_plan[self._is_enterprise_col_name] = False
