@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 from functools import partial
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Protocol, Type, Union
 
@@ -60,6 +61,7 @@ MAX_BATCH_UPDATES = 1000
 WORKSPACE_NAME_CACHE_EXPIRE = 900  # 15 min
 SKIPPED_EMPTY_UPDATE_MESSAGE = "Skipped because no attributes or tags were provided"
 UPDATE_SUCCESS_MESSAGE = "Image attributes update submitted"
+INVALID_METADATA_KEY_CHARACTERS = re.compile(r"[^A-Za-z0-9_.]")
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -350,6 +352,15 @@ def _normalize_to_per_row(value: Any, n: int) -> List[Any]:
     return [value] * n
 
 
+def normalize_metadata_key(key: str) -> str:
+    # The API rejects the whole image update if any key fails
+    # ^[a-zA-Z0-9_][a-zA-Z0-9_.]*$, so coerce keys instead of dropping everything.
+    normalized_key = INVALID_METADATA_KEY_CHARACTERS.sub("_", key)
+    if normalized_key.startswith("."):
+        normalized_key = f"_{normalized_key}"
+    return normalized_key
+
+
 def build_effective_updates(
     source_ids: Batch[str],
     metadata: Optional[Union[Dict[str, Any], Batch[Optional[Dict[str, Any]]]]],
@@ -374,7 +385,9 @@ def build_effective_updates(
 
         merged = updates_by_source_id.setdefault(source, {"imageId": source})
         if image_metadata:
-            merged.setdefault("metadata", {}).update(image_metadata)
+            merged.setdefault("metadata", {}).update(
+                {normalize_metadata_key(k): v for k, v in image_metadata.items()}
+            )
         if image_tags:
             combined = [*merged.get("addTags", []), *image_tags]
             merged["addTags"] = list(dict.fromkeys(reversed(combined)))[::-1]

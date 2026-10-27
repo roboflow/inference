@@ -316,6 +316,30 @@ def test_normalize_to_per_row_list_with_batch_values() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "key, expected_key",
+    [
+        ("counts_per_class.traffic light", "counts_per_class.traffic_light"),
+        ("counts_per_class.a\\.b", "counts_per_class.a_.b"),
+        ("counts_per_class/person", "counts_per_class_person"),
+        (".hidden", "_.hidden"),
+        ("already_valid.key_1", "already_valid.key_1"),
+    ],
+)
+def test_build_effective_updates_normalizes_metadata_keys(
+    key: str, expected_key: str
+) -> None:
+    effective = build_effective_updates(
+        source_ids=make_batch(["img-1"]),
+        metadata={key: 1},
+        tags=["My Tag/1"],
+    )
+
+    assert effective.updates == [
+        {"imageId": "img-1", "metadata": {expected_key: 1}, "addTags": ["My Tag/1"]}
+    ]
+
+
 def test_build_effective_updates_resolves_batch_values_in_metadata_and_tags() -> None:
     effective = build_effective_updates(
         source_ids=make_batch(["img-1", "img-2"]),

@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- `roboflow_core/asset_library_attributes@v1` normalizes metadata keys before sending them: characters outside `[A-Za-z0-9_.]` become `_`, and a leading `.` gets a `_` prefix. Before, one invalid key (for example a class name with a space) made the API reject every attribute for that image.
+
 ## `0.2.14`
 
 Bundled execution engine: `1.17.0`.
