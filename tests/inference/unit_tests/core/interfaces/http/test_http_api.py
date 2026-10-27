@@ -748,6 +748,108 @@ def test_startup_preload_uses_same_alias_registry_key_as_live_requests(
     model_manager.pin_model.assert_called_once_with("florence-2-base")
 
 
+def test_startup_preload_pins_before_loading(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", "preload-key")
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        deadline = time.monotonic() + 1
+        response = client.get("/readiness")
+        while response.status_code != 200 and time.monotonic() < deadline:
+            time.sleep(0.01)
+            response = client.get("/readiness")
+
+    assert response.status_code == 200
+    call_names = [mock_call[0] for mock_call in model_manager.mock_calls]
+    assert call_names.index("pin_model") < call_names.index("add_model")
+
+
+def test_startup_preload_pins_model_that_failed_to_load(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", "preload-key")
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.add_model.side_effect = RuntimeError("boom")
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        deadline = time.monotonic() + 1
+        response = client.get("/readiness")
+        while response.status_code != 200 and time.monotonic() < deadline:
+            time.sleep(0.01)
+            response = client.get("/readiness")
+
+    assert response.status_code == 200
+    model_manager.pin_model.assert_called_once_with("florence-2-base")
+
+
+def test_startup_preload_does_not_pin_unpinned_model(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", None)
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", "preload-key")
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        deadline = time.monotonic() + 1
+        response = client.get("/readiness")
+        while response.status_code != 200 and time.monotonic() < deadline:
+            time.sleep(0.01)
+            response = client.get("/readiness")
+
+    assert response.status_code == 200
+    model_manager.add_model.assert_called_once()
+    model_manager.pin_model.assert_not_called()
+
+
 def test_serverless_auth_middleware_allows_authorized_key_and_caches(
     monkeypatch,
 ) -> None:
