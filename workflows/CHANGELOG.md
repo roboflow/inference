@@ -21,6 +21,14 @@ for contributor and maintainer responsibilities.
 - OpenAI block (`open_ai@v7`): add GPT-6.1 Terra (`gpt-6.1-terra`) with
   `none` through `max` reasoning effort and the existing structured absolute-pixel
   detection prompt.
+- Add Muse Spark Open to `meta_vlm@v3` via OpenRouter, with minimal, low,
+  medium, high, and xhigh reasoning and the existing normalized 0–1000
+  detection format.
+
+### Changed
+
+- Remove duplicated model lists and counts from `meta_vlm@v3` descriptions;
+  available models are defined by the registry-backed dropdown.
 
 ## `0.2.13`
 
