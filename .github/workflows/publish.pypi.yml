@@ -1,34 +1,112 @@
-name: Publish Wheels to PyPi
+name: PyPI build comparison (no publishing)
 on:
-  release:
-    types: [created]
   workflow_dispatch:
-
+    inputs:
+      trial:
+        description: Cache condition and repetition
+        required: true
+        type: choice
+        options: [cold, warm-1, warm-2]
 permissions:
   contents: read
-  id-token: write
-
 jobs:
   build:
+    name: ${{ inputs.trial }} / ${{ matrix.variant }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.12"]
+        variant: [old, lightweight]
+    env:
+      SOURCE_DATE_EPOCH: "1793097524"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_CONSTRAINT: /tmp/pypi-benchmark-build-constraints.txt
     steps:
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v6
-      - name: 🐍 Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v6
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: 🛞 Create Wheels
-        # Packaging tools are small; avoid restoring/saving the runtime pip cache.
+          ref: e02909cd12cf1eb30b84c32f39bb940822de68ee
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Set identical packaging tool versions
         run: |
-          make create_pypi_wheels
-      - name: 🚀 Publish to PyPi
-        uses: pypa/gh-action-pypi-publish@release/v1
+          printf '%s\n' 'pip==26.2.2' 'setuptools==84.2.1' 'wheel==0.45.1' > "$PIP_CONSTRAINT"
+          rm -rf "$HOME/.cache/pip"
+          python --version
+      - name: Restore old runtime cache (save runs after the build)
+        if: matrix.variant == 'old'
+        uses: actions/cache@v5
         with:
-          packages-dir: dist/pypi/
+          path: ~/.cache/pip
+          key: ${{ inputs.trial == 'cold' && format('pypi-build-benchmark-cold-{0}', github.run_id) || format('{0}-pip-3.12-{1}', runner.os, hashFiles('requirements/**')) }}
+          restore-keys: ${{ inputs.trial != 'cold' && format('{0}-pip-3.12-', runner.os) || '' }}
+      - name: Build packages
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -o pipefail
+          if [ "$VARIANT" = old ]; then
+            /usr/bin/time -v make create_wheels 2>&1 | tee "$RUNNER_TEMP/pypi-build.log"
+          else
+            /usr/bin/time -v make create_pypi_wheels 2>&1 | tee "$RUNNER_TEMP/pypi-build.log"
+          fi
+      - name: Select the six publishable wheels
+        id: wheels
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          if [ "$VARIANT" = old ]; then
+            rm -f dist/roboflow_workflows-*.whl dist/roboflow_workflows-*.tar.gz dist/inference_models-*.whl dist/streamvision-*.whl dist/streamvision-*.tar.gz
+            echo 'path=dist/' >> "$GITHUB_OUTPUT"
+          else
+            echo 'path=dist/pypi/' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload wheels for comparison (not to PyPI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-${{ inputs.trial }}-${{ matrix.variant }}
+          path: ${{ steps.wheels.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ inputs.trial }}-${{ matrix.variant }}
+          path: ${{ runner.temp }}/pypi-build.log
+          if-no-files-found: ignore
+          retention-days: 7
+  compare:
+    name: Compare wheel contents
+    needs: build
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pypi-${{ inputs.trial }}-*
+          path: wheels
+      - name: Compare every file in all six wheels
+        env:
+          TRIAL: ${{ inputs.trial }}
+        run: |
+          python3 - <<'PYCODE'
+          import os
+          import pathlib
+          import zipfile
+          root = pathlib.Path("wheels")
+          trial = os.environ["TRIAL"]
+          old = {p.name: p for p in (root / f"pypi-{trial}-old").rglob("*.whl")}
+          new = {p.name: p for p in (root / f"pypi-{trial}-lightweight").rglob("*.whl")}
+          assert len(old) == len(new) == 6 and old.keys() == new.keys(), (old.keys(), new.keys())
+          for name in sorted(old):
+              with zipfile.ZipFile(old[name]) as a, zipfile.ZipFile(new[name]) as b:
+                  assert set(a.namelist()) == set(b.namelist()), name
+                  changes = [p for p in a.namelist() if a.read(p) != b.read(p)]
+                  assert not changes, (name, changes)
+              print(f"IDENTICAL: {name}")
+          PYCODE
