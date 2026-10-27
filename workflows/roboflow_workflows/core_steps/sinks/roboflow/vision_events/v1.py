@@ -12,7 +12,14 @@ from uuid import uuid4
 import numpy as np
 import requests
 import supervision as sv
-from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
+from pydantic import (
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    TypeAdapter,
+    ValidationError,
+)
 from roboflow_workflows.core_steps.common.keypoints import real_keypoints_count
 from roboflow_workflows.core_steps.common.serializers import mask_to_polygon
 from roboflow_workflows.core_steps.common.workload_presets import (
@@ -105,6 +112,11 @@ ALL_DATA_SCHEMAS_RELEVANT = {
 # The cloud's bound on an event value (+/-$100M per event in USD). The local
 # event store applies the same bound and rejects the whole event past it.
 MAX_ABS_VALUE_BASE_UNITS = 10_000_000_000
+
+# Parses a string event value with the manifest's own lax ``int`` rule, so a
+# workflow input such as "1999" that passed input validation is sent, not
+# dropped (the block receives the raw input, not the validated one).
+_WHOLE_NUMBER_STRING = TypeAdapter(int)
 
 SHORT_DESCRIPTION = "Send vision events to the Roboflow Vision Events API."
 
@@ -735,18 +747,25 @@ def _normalize_value_base_units(value_base_units: Any) -> Optional[int]:
     """Coerce the event value to a whole number of base units, or None to omit it.
 
     Literals and workflow inputs are validated against the manifest, so they are
-    already whole numbers. Step outputs bypass that validation, so any real
-    number is accepted (numpy scalars too, which the JSON encoder would reject)
-    and a fractional amount is rounded to the nearest base unit. Anything else,
-    or an amount past ``MAX_ABS_VALUE_BASE_UNITS``, is dropped with a warning
-    instead of failing the event: cloud ingestion drops such a value and keeps
-    the event, while the local event store would reject the whole event.
+    whole numbers, but a workflow input arrives raw and may still be a string
+    such as "1999"; strings are parsed with the manifest's own rule. Step
+    outputs bypass that validation, so any real number is accepted (numpy
+    scalars too, which the JSON encoder would reject) and a fractional amount is
+    rounded to the nearest base unit. Anything else, or an amount past
+    ``MAX_ABS_VALUE_BASE_UNITS``, is dropped with a warning instead of failing
+    the event: cloud ingestion drops such a value and keeps the event, while the
+    local event store would reject the whole event.
     """
     if value_base_units is None:
         return None
 
     normalized: Optional[int] = None
-    if not isinstance(value_base_units, bool):
+    if isinstance(value_base_units, str):
+        try:
+            normalized = _WHOLE_NUMBER_STRING.validate_python(value_base_units)
+        except ValidationError:
+            normalized = None
+    elif not isinstance(value_base_units, bool):
         if isinstance(value_base_units, numbers.Integral):
             normalized = int(value_base_units)
         elif isinstance(value_base_units, numbers.Real) and math.isfinite(

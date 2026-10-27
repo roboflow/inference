@@ -169,9 +169,12 @@ def _init_engine(workflow: dict, model_manager: ModelManager) -> ExecutionEngine
     )
 
 
+# A string input such as "1999" passes input validation, so it must be sent too.
+@pytest.mark.parametrize("event_value", [1999, 1999.0, "1999"])
 def test_workflow_sends_whole_number_event_value_input_as_int(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    event_value,
 ) -> None:
     # given
     execution_engine = _init_engine(WORKFLOW_WITH_EVENT_VALUE_INPUT, model_manager)
@@ -179,7 +182,7 @@ def test_workflow_sends_whole_number_event_value_input_as_int(
     # when
     with mock.patch.object(requests, "post", side_effect=_route_requests) as post:
         result = execution_engine.run(
-            runtime_parameters={"image": dogs_image, "event_value": 1999.0}
+            runtime_parameters={"image": dogs_image, "event_value": event_value}
         )
 
     # then
