@@ -249,9 +249,9 @@ class OWLv2HF(
         classes: List[str],
         **kwargs,
     ) -> Owlv2ObjectDetectionOutput:
-        input_ids = self._processor(text=[classes], return_tensors="pt")[
-            "input_ids"
-        ].to(self._device)
+        input_ids = self._processor(
+            text=[classes] * pre_processed_images.shape[0], return_tensors="pt"
+        )["input_ids"].to(self._device)
         with self._lock, torch.inference_mode():
             return self._model(input_ids=input_ids, pixel_values=pre_processed_images)
 

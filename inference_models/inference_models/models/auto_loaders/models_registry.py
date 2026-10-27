@@ -723,6 +723,14 @@ REGISTERED_MODELS: Dict[
         class_name="FoundADForAnomalyDetectionTorch",
     ),
     (
+        "owlv2-custom",
+        OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_models.models.owlv2.owlv2_custom_hf",
+        class_name="OWLv2CustomHF",
+    ),
+    (
         "owlv2",
         OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
         BackendType.HF,
