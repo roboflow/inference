@@ -243,6 +243,13 @@ def adjust_prediction_to_client_scaling_factor(
 
     if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction
+    if prediction.get("task_type") == "oriented-object-detection":
+        for row in prediction["predictions"]:
+            if "obb" in row:
+                row["obb"] = [v / scaling_factor for v in row["obb"][:4]] + [
+                    row["obb"][4]
+                ]
+        return prediction
     if "points" in prediction["predictions"][0]:
         prediction["predictions"] = (
             adjust_prediction_with_bbox_and_points_to_client_scaling_factor(

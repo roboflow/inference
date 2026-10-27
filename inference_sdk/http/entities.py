@@ -27,6 +27,7 @@ DEFAULT_IMAGE_EXTENSIONS = ["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]
 TaskType = str
 CLASSIFICATION_TASK = "classification"
 OBJECT_DETECTION_TASK = "object-detection"
+ORIENTED_OBJECT_DETECTION_TASK = "oriented-object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 KEYPOINTS_DETECTION_TASK = "keypoint-detection"
 ACTION_RECOGNITION_TASK = "action-recognition"
@@ -225,7 +226,7 @@ class InferenceConfiguration:
         """
         if client_mode is HTTPClientMode.V0:
             return self.to_legacy_call_parameters()
-        if task_type == OBJECT_DETECTION_TASK:
+        if task_type in {OBJECT_DETECTION_TASK, ORIENTED_OBJECT_DETECTION_TASK}:
             return self.to_object_detection_parameters()
         if task_type == INSTANCE_SEGMENTATION_TASK:
             return self.to_instance_segmentation_parameters()
