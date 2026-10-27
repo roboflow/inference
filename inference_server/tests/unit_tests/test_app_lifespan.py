@@ -991,6 +991,110 @@ async def test_pinned_preload_gives_up_after_max_wait(monkeypatch, caplog):
     assert messages[-1].endswith(" s; serving without it")
 
 
+def _timed_preload_env(monkeypatch, app_mod, load_durations):
+    import asyncio as real_asyncio
+    from types import SimpleNamespace
+
+    clock = {"now": 0.0}
+    sleeps = []
+    timeouts = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        clock["now"] += seconds
+
+    class _AsyncioStandIn:
+        sleep = staticmethod(fake_sleep)
+
+        def __getattr__(self, name):
+            return getattr(real_asyncio, name)
+
+    class _Proxy:
+        async def load(self, mid, api_key="", timeout_s=None, pinned=True):
+            timeouts.append((mid, timeout_s))
+            await real_asyncio.sleep(0)
+            clock["now"] += load_durations.pop(0)
+            return ("error", 5)
+
+    monkeypatch.setattr(
+        app_mod, "time", SimpleNamespace(monotonic=lambda: clock["now"])
+    )
+    monkeypatch.setattr(app_mod, "asyncio", _AsyncioStandIn())
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_MAX_WAIT_S", 300.0)
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_RETRY_S", 15.0)
+
+    return _Proxy(), sleeps, timeouts
+
+
+def _app_messages(caplog):
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "inference_server.app"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pinned_preload_does_not_retry_past_deadline(monkeypatch, caplog):
+    import logging
+    from types import SimpleNamespace
+
+    from inference_server import app as app_mod
+
+    proxy, sleeps, timeouts = _timed_preload_env(monkeypatch, app_mod, [290.0])
+    state = SimpleNamespace(preload_finished=False)
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.app"):
+        await app_mod._preload_models(state, proxy, [], [("ds/2", "k")])
+
+    assert timeouts == [("ds/2", 300.0)]
+    assert sleeps == []
+    assert state.preload_finished is True
+    assert (
+        _app_messages(caplog)[-1]
+        == "Preload of 'ds/2' gave up after 290 s; serving without it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_pinned_preload_retry_wait_is_capped_to_remaining_budget(
+    monkeypatch, caplog
+):
+    import logging
+    from types import SimpleNamespace
+
+    from inference_server import app as app_mod
+
+    proxy, sleeps, timeouts = _timed_preload_env(monkeypatch, app_mod, [100.0, 185.0])
+    state = SimpleNamespace(preload_finished=False)
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.app"):
+        await app_mod._preload_models(state, proxy, [], [("ds/2", "k")])
+
+    assert [timeout for _, timeout in timeouts] == [300.0, 185.0]
+    assert sleeps == [15.0]
+    assert state.preload_finished is True
+    assert _app_messages(caplog)[-1].endswith("gave up after 300 s; serving without it")
+
+
+@pytest.mark.asyncio
+async def test_pinned_preload_slot_wait_counts_against_budget(monkeypatch):
+    from types import SimpleNamespace
+
+    from inference_server import app as app_mod
+
+    proxy, sleeps, timeouts = _timed_preload_env(monkeypatch, app_mod, [300.0, 0.0])
+    monkeypatch.setattr(app_mod, "_PRELOAD_CONCURRENCY", 1)
+    state = SimpleNamespace(preload_finished=False)
+
+    await app_mod._preload_models(state, proxy, [], [("ds/2", "k"), ("ds/3", "k")])
+
+    assert sorted(timeout for _, timeout in timeouts) == [0.0, 300.0]
+    assert len(timeouts) == 2
+    assert sleeps == []
+    assert state.preload_finished is True
+
+
 @pytest.mark.asyncio
 async def test_optional_preload_failure_is_not_retried(monkeypatch):
     from types import SimpleNamespace

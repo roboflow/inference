@@ -101,6 +101,7 @@ _LEGACY_ERROR_HANDLING_ENABLED = (
 
 
 _PRELOAD_CONCURRENCY = 2
+_PRELOAD_LOAD_TIMEOUT_S = 300.0
 _PINNED_PRELOAD_RETRY_S = 15.0
 _PINNED_PRELOAD_MAX_WAIT_S = _cfg.PINNED_PRELOAD_MAX_WAIT_S
 
@@ -115,13 +116,17 @@ async def _preload_models(
     loads.update({mid: (api_key, True) for mid, api_key in pinned})
     semaphore = asyncio.Semaphore(_PRELOAD_CONCURRENCY)
 
-    async def _load_once(mid, api_key, is_pinned) -> bool:
+    async def _load_once(mid, api_key, is_pinned, deadline) -> bool:
         async with semaphore:
+            timeout_s = _PRELOAD_LOAD_TIMEOUT_S
+            if deadline is not None:
+                timeout_s = max(0.0, min(timeout_s, deadline - time.monotonic()))
+
             try:
                 result = await proxy.load(
                     registry_id_for(mid),
                     api_key=api_key or None,
-                    timeout_s=300.0,
+                    timeout_s=timeout_s,
                     pinned=is_pinned,
                 )
             except Exception:
@@ -142,15 +147,16 @@ async def _preload_models(
 
     async def _one(mid, api_key, is_pinned):
         started = time.monotonic()
-        while not await _load_once(mid, api_key, is_pinned):
+        deadline = started + _PINNED_PRELOAD_MAX_WAIT_S if is_pinned else None
+        while not await _load_once(mid, api_key, is_pinned, deadline):
             if not is_pinned:
                 return
-            elapsed = time.monotonic() - started
-            if elapsed >= _PINNED_PRELOAD_MAX_WAIT_S:
+            remaining = deadline - time.monotonic()
+            if remaining <= _PINNED_PRELOAD_RETRY_S:
                 logger.error(
                     "Preload of '%s' gave up after %.0f s; serving without it",
                     mid,
-                    elapsed,
+                    time.monotonic() - started,
                 )
                 return
             await asyncio.sleep(_PINNED_PRELOAD_RETRY_S)
