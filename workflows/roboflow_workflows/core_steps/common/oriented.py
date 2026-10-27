@@ -114,6 +114,12 @@ def native_obb_from_inference(response):
         else np.empty((0, 4))
     )
     height, width = response["image"]["height"], response["image"]["width"]
+    parent_ids = [row.get("parent_id") for row in rows]
+    if any(value is not None for value in parent_ids) and any(
+        not isinstance(value, str) or not value for value in parent_ids
+    ):
+        raise ValueError("Native OBB parent identity must be provided for every row")
+
     result = sv.Detections(
         xyxy=bounds,
         class_id=np.asarray(ids, dtype=int),
@@ -132,6 +138,9 @@ def native_obb_from_inference(response):
             "image_dimensions": [height, width],
         },
     )
+    if parent_ids and all(parent_ids):
+        result.data["parent_id"] = np.asarray(parent_ids, dtype=str)
+
     return result
 
 

@@ -403,6 +403,10 @@ else:
     from roboflow_workflows.core_steps.fusion.detections_consensus.v1_tensor import (
         DetectionsConsensusBlockV1,
     )
+from roboflow_workflows.core_steps.fusion.detections_consensus.v2 import (
+    DetectionsConsensusBlockV2,
+)
+
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.fusion.detections_list_rollup.v1 import (
         DetectionsListRollUpBlockV1,
@@ -1852,6 +1856,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
+        DetectionsConsensusBlockV2,
         DetectionsDifferenceBlockV1,
         DetectionsStitchBlockV1,
         OverlapAnalysisBlockV1,

@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Opt-in Detections Consensus v2 ports mask/rotated overlap voting from contributor PR #2420 and preserves a winning native OBB contributor, front, identity and frozen class policy through NumPy and tensor transport. Ordinary tensor inputs remain explicitly unsupported by v2.
+
 ### Fixed
 
 - Reject native oriented detections in query-language `DetectionsShift` and `DetectionsOffset` before mutation; these AABB-only operations are excluded from native kind compatibility.
