@@ -193,7 +193,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     detections_merge_coordinates_aggregation: AggregationMode = Field(
         default=AggregationMode.AVERAGE,
-        description="Aggregation mode for merging bounding box coordinates of overlapping detections. 'average' computes mean coordinates from all matching boxes (balanced approach), 'max' takes the largest box (most inclusive), 'min' takes the smallest box (most conservative). This mode only applies to bounding boxes; mask aggregation uses detections_merge_mask_aggregation instead.",
+        description="Aggregation mode for merging bounding box coordinates of overlapping detections. 'average' computes mean coordinates from all matching boxes (balanced approach), 'max' takes the largest box (most inclusive), 'min' takes the smallest box (most conservative). For native OBB contributors, geometry and front are retained together from the highest-confidence contributor of the aggregated output class (stable source-order tie); this setting does not refit native OBBs. This mode only applies to ordinary bounding boxes; mask aggregation uses detections_merge_mask_aggregation instead.",
         examples=["min", "max"],
     )
     detections_merge_mask_aggregation: MaskAggregationMode = Field(
@@ -432,6 +432,17 @@ def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> flo
     cross-source pairs in a consensus run do not overlap at all, which keeps
     the geometry comparison limited to actual match candidates.
     """
+    native_a = bool(np.any(detection_a.data.get("native_obb", False)))
+    native_b = bool(np.any(detection_b.data.get("native_obb", False)))
+    if native_a or native_b:
+        if not (native_a and native_b):
+            raise ValueError("Native OBB consensus cannot mix ordinary detections")
+        for detection in (detection_a, detection_b):
+            if (
+                ORIENTED_BOX_COORDINATES not in detection.data
+                or "heading" not in detection.data
+            ):
+                raise ValueError("Native OBB overlap requires corners and heading")
     box_iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
     if math.isnan(box_iou) or box_iou == 0.0:
         return 0.0
@@ -636,6 +647,46 @@ def merge_detections(
     class_name, class_id = AGGREGATION_MODE2CLASS_SELECTOR[confidence_aggregation_mode](
         detections
     )
+    native = detections.data.get("native_obb")
+    if native is not None and np.any(native):
+        if not np.all(native):
+            raise ValueError("Native OBB consensus cannot mix ordinary detections")
+        if (
+            ORIENTED_BOX_COORDINATES not in detections.data
+            or "heading" not in detections.data
+        ):
+            raise ValueError("Native OBB consensus requires corners and heading")
+        selected_class = (detections.class_id == class_id) & (
+            detections["class_name"] == class_name
+        )
+        class_indices = np.flatnonzero(selected_class)
+        headings = detections.data["heading"][class_indices]
+        if headings.dtype != np.bool_:
+            raise ValueError("Native OBB consensus heading must be boolean")
+        if len(set(headings.tolist())) != 1:
+            raise ValueError("Conflicting native class heading capabilities")
+        # The aggregated class chooses the eligible contributors. Geometry and
+        # front are an atomic winner: highest confidence, stable source-order tie.
+        # Averaging/refitting corners would require a separate direction policy.
+        winner_index = class_indices[np.argmax(detections.confidence[class_indices])]
+        winner = detections[int(winner_index)]
+        corners = np.asarray(winner.data[ORIENTED_BOX_COORDINATES], dtype=np.float64)
+        if corners.shape != (1, 4, 2) or not np.isfinite(corners).all():
+            raise ValueError("Malformed native OBB contributor corners")
+        winner.xyxy = np.concatenate((corners.min(1), corners.max(1)), axis=1)
+        winner.confidence = np.array(
+            [
+                aggregate_field_values(
+                    detections=detections,
+                    field="confidence",
+                    aggregation_mode=confidence_aggregation_mode,
+                )
+            ],
+            dtype=np.float64,
+        )
+        winner.data[PREDICTION_TYPE_KEY] = np.array(["oriented-object-detection"])
+        return winner
+
     if detections.mask is not None:
         mask = np.array(
             [AGGREGATION_MODE2MASKS_AGGREGATOR[mask_aggregation_mode](detections)]
