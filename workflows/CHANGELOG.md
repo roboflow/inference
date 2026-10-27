@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- Add Kimi OpenRouter v4 with Kimi K3.1 Pro, K2.6 reasoning controls, and XYXY 0–1000 detection decoding; retain v1–v3 compatibility.
+
 ## `0.2.14`
 
 Bundled execution engine: `1.17.0`.

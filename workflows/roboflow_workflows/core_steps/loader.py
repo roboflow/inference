@@ -587,6 +587,9 @@ from roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v2 import (
 from roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v3 import (
     KimiOpenrouterBlockV3,
 )
+from roboflow_workflows.core_steps.models.foundation.kimi_openrouter.v4 import (
+    KimiOpenrouterBlockV4,
+)
 from roboflow_workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
 )
@@ -2002,6 +2005,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         KimiOpenRouterBlockV1,
         KimiOpenrouterBlockV2,
         KimiOpenrouterBlockV3,
+        KimiOpenrouterBlockV4,
         OpenRouterBlockV1,
         OpenRouterBlockV2,
         OpenRouterBlockV3,
