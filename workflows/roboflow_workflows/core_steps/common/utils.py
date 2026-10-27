@@ -24,6 +24,7 @@ from roboflow_workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
     validate_keypoints_padding,
 )
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.errors import RuntimeInputError
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -552,7 +553,10 @@ def scale_sv_detections(
     xyxy = detections_copy.xyxy.astype(np.float64, copy=True)
     xyxy[:, [0, 2]] *= scale_x
     xyxy[:, [1, 3]] *= scale_y
-    if ORIENTED_BOX_COORDINATES in detections_copy.data:
+    if (
+        detections_copy.metadata.get(NATIVE_OBB)
+        and ORIENTED_BOX_COORDINATES in detections_copy.data
+    ):
         corners = detections_copy.data[ORIENTED_BOX_COORDINATES].astype(
             np.float64, copy=True
         )

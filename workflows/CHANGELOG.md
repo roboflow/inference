@@ -20,7 +20,13 @@ for contributor and maintainer responsibilities.
 
 - Opt-in Detections Consensus v2 ports mask/rotated overlap voting from contributor PR #2420 and preserves a winning native OBB contributor, front, identity and frozen class policy through NumPy and tensor transport. Ordinary tensor inputs remain explicitly unsupported by v2.
 
+### Changed
+
+- Native OBB requires `inference-models>=0.39.7` and `inference-sdk>=1.8.4`; existing Supervision `<0.31.0` support is retained. Package `0.2.15` must follow those dependency releases.
+
 ### Fixed
+
+- Keep legacy oriented-corner scaling and perspective rounding unchanged; float corner transport is specific to native OBB metadata.
 
 - Reject native oriented detections in query-language `DetectionsShift` and `DetectionsOffset` before mutation; these AABB-only operations are excluded from native kind compatibility.
 

@@ -353,3 +353,42 @@ def test_query_geometry_operations_preserve_ordinary_detection_behavior(
 
     np.testing.assert_array_equal(result.xyxy, expected)
     np.testing.assert_array_equal(transport.xyxy, [[10, 20, 30, 40]])
+
+
+def test_legacy_corner_scaling_keeps_existing_rounded_aabb_contract():
+    """Native float geometry does not change unmarked legacy corner carriers."""
+    corners = np.array([[[1.1, 2.2], [11.3, 2.2], [11.3, 12.4], [1.1, 12.4]]])
+    source = sv.Detections(
+        xyxy=np.array([[1.1, 2.2, 11.3, 12.4]]), data={"xyxyxyxy": corners}
+    )
+
+    result = scale_sv_detections(source, 2, update_scaling_metadata=False)
+
+    np.testing.assert_array_equal(result.xyxy, [[2, 4, 23, 25]])
+    np.testing.assert_array_equal(result.data["xyxyxyxy"], corners)
+
+
+def test_legacy_perspective_corners_keep_rounding_and_dtype():
+    """The existing oriented carrier retains its float32 rounded corners."""
+    from roboflow_workflows.core_steps.transformations.perspective_correction.v1 import (
+        correct_detections,
+    )
+    from roboflow_workflows.core_steps.transformations.perspective_correction.v1_tensor import (
+        _correct_oriented_box_in_metadata,
+    )
+
+    corners = np.array([[[1.1, 2.2], [11.3, 2.2], [11.3, 12.4], [1.1, 12.4]]])
+    matrix = np.array([[1.0, 0.0, 0.25], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
+    source = sv.Detections(
+        xyxy=np.array([[1.1, 2.2, 11.3, 12.4]]), data={"xyxyxyxy": corners}
+    )
+    expected = np.around(corners + [0.25, 0.5]).astype(np.float32)
+
+    result = correct_detections(source, matrix, 100, 100)
+    entry = {"xyxyxyxy": corners[0]}
+    _correct_oriented_box_in_metadata(entry, matrix)
+
+    np.testing.assert_array_equal(result.data["xyxyxyxy"], expected)
+    assert result.data["xyxyxyxy"].dtype == np.float32
+    np.testing.assert_array_equal(entry["xyxyxyxy"], expected[0])
+    assert entry["xyxyxyxy"].dtype == np.float32

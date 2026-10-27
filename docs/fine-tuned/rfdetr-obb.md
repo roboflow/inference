@@ -90,3 +90,49 @@ workspace admission checks; ordinary AABB upload paths are not advertised for OB
 No model package release, cloud/GPU run, deployment or feature activation is part of
 these local validation results. Existing authorized model reads remain independent
 of the platform's default-off gate for new OBB authoring/jobs.
+
+
+## Package and worker release gate
+
+This feature is pending release. The registry versions below are forward
+requirements, not evidence of a published or deployed native provider:
+
+| Distribution | Required version | Consumer |
+| --- | --- | --- |
+| `inference-sdk` | `1.8.4` | Remote native task dispatch in Workflows and model evaluation |
+| `inference-models` | `0.39.7` | Native RF-DETR ONNX registry/runtime |
+| `roboflow-workflows` | `0.2.15` | Canonical native response entities, blocks and consensus v2 |
+| `inference`, `inference-cpu`, `inference-gpu`, `inference-core` | `1.8.4` | HTTP server and model adapters |
+
+Release in this order:
+
+1. Build and publish SDK `1.8.4` with the independent
+   `Publish inference-sdk to PyPI` workflow, and models `0.39.7` with
+   `Publish Inference Models Wheels to PyPi`. Both manual workflows default to
+   build-only; publishing requires an explicit operator action. Neither depends
+   on a new Workflows registry wheel.
+2. After both wheels exist on the registry, run `cd workflows && uv lock`,
+   commit the generated lock, and verify a fresh constrained installation.
+   Until then this consumer draft is blocked: the retained lock records the
+   previous real releases and must not be used as evidence of native support.
+   No fabricated registry hashes or vendored wheels substitute for this gate.
+   Regenerate/check `inference_models/uv.lock` for the new package version too.
+3. Publish Workflows `0.2.15`; verify the wheel contains
+   `core_steps/common/oriented_entities.py` and a clean ordinary server import
+   succeeds with the new dependency set. New root wheels require this exact
+   Workflows version, so the resolver rejects pairing them with older Workflows.
+4. Publish the root `1.8.4` packages and build server images. Full CPU/GPU builds
+   explicitly install their checkout models wheel. Slim builds resolve the new
+   models registry pin. Verify the installed model registry and exercise a CPU
+   ONNX fixture in every actual deployed image; a successful source import alone
+   is insufficient. Check US/EU deployment targets separately.
+5. Deploy compatible serving and queue workers before enabling platform native
+   producers. Native custom Auto Label jobs use the direct HTTP endpoint and
+   require no queue SDK/Supervision upgrade. An unavailable endpoint or a
+   non-native response fails the job; it never falls back to ordinary detection.
+   Native Workflow Auto Label admission is a separate unsupported path.
+
+Python Supervision's native parser/NMM feature is independent. Its development
+version is outside the platform's existing `<0.31.0` cap; the server/Workflows
+native carrier constructs compatible `Detections` directly and does not require
+that upgrade. Existing ordinary/legacy task discriminators remain valid.

@@ -5,6 +5,7 @@ import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.execution_engine.constants import (
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
 )
@@ -757,9 +758,12 @@ def correct_detections(
                 ),
                 m=perspective_transformer,
             ).reshape(-1, 2)
-            detection[ORIENTED_BOX_COORDINATES] = np.array(
-                [corrected_obb.astype(np.float64)]
+            corrected_corners = (
+                corrected_obb.astype(np.float64)
+                if detection.metadata.get(NATIVE_OBB)
+                else np.around(corrected_obb).astype(np.float32)
             )
+            detection[ORIENTED_BOX_COORDINATES] = np.array([corrected_corners])
         corrected_detections.append(detection)
     return sv.Detections.merge(corrected_detections)
 
