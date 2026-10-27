@@ -22,6 +22,11 @@ for contributor and maintainer responsibilities.
   medium, high, and xhigh reasoning and the existing normalized 0–1000
   detection format.
 
+### Changed
+
+- Remove duplicated model lists and counts from `meta_vlm@v3` descriptions;
+  available models are defined by the registry-backed dropdown.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.

@@ -5,7 +5,7 @@ answer: ``predictions``, ``error_status`` and ``inference_id`` outputs sit
 next to the raw ``output`` string, so no separate "VLM as Detector" /
 "VLM as Classifier" step is needed.
 
-OpenRouter-only. Six Muse models, using the vlm-exam request contract:
+Muse models served via OpenRouter, using the vlm-exam request contract:
 image-first user message, no system role, reasoning always on, and the
 shared ``named_0_1000`` detection contract (flat ``x_min`` / ``y_min`` /
 ``x_max`` / ``y_max`` integers normalized to 0-1000). Llama Vision stays
@@ -422,8 +422,7 @@ RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
 LONG_DESCRIPTION = f"""
 Run Meta Muse vision-language models via [OpenRouter](https://openrouter.ai/).
 
-Supported models: Muse Spark Open, Muse Spark 1.1, Muse Spark 1.2,
-Muse Spark 1.3, Muse Glimmer, and Muse Wonder (the default).
+Select a model from the `model_version` dropdown.
 Llama 3.2 Vision stays on its own block.
 
 You can specify arbitrary text prompts or predefined ones. The block supports:
@@ -496,12 +495,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_version: Union[Selector(kind=[STRING_KIND]), ModelVersion] = Field(
         default=DEFAULT_MODEL_VERSION,
-        description=(
-            "Muse model to run. Spark Open, Spark 1.1, Spark 1.2, Spark 1.3, "
-            "Glimmer, and Wonder are the image-capable Muse chat models on "
-            "OpenRouter. Wonder is the default."
-        ),
-        examples=[DEFAULT_MODEL_VERSION, "Muse Spark 1.3"],
+        description="Model to be used",
+        examples=[DEFAULT_MODEL_VERSION],
         json_schema_extra={
             "values_metadata": MODEL_VERSION_METADATA,
         },
