@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- Reject native oriented detections in query-language `DetectionsShift` and `DetectionsOffset` before mutation; these AABB-only operations are excluded from native kind compatibility.
+
 ## `0.2.14`
 
 Bundled execution engine: `1.17.0`.

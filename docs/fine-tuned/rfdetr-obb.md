@@ -66,6 +66,8 @@ without integer rounding.
 
 The existing Detections Merge block fits a union AABB and is not compatible with
 this native kind. Row combination concatenates detections without refitting them.
+Query-language `DetectionsShift` and `DetectionsOffset` are also excluded and reject
+native inputs at execution, because their geometry operations only update AABBs.
 Consensus is not enabled for native outputs in this change. The open geometry-aware
 consensus PR #2420 matches corners with rotated IoU, but its merge currently drops
 native geometry/front; it needs a compatible followup before native adoption.
@@ -80,6 +82,7 @@ workspace admission checks; ordinary AABB upload paths are not advertised for OB
 | Server request consumer | Implemented; AutoModel loading, native request lifecycle and original-coordinate response tested locally |
 | Current Inference SDK | Native task route/configuration and resizing contract covered locally; no hosted request executed |
 | Local Workflow model, transport and visualization | Implemented; NumPy/tensor semantic and coordinate tests |
+| Query-language `DetectionsShift` / `DetectionsOffset` | Excluded; native NumPy/tensor inputs reject before geometry mutation |
 | Hosted production serving | Requires compatible package releases, trained artifact registration and serving deployment; no hosted/cloud run claimed |
 | CUDA, TensorRT, CoreML, browser inferencejs | Excluded from this initial backend registration |
 | Legacy `roboflow-python` `version.model` | Excluded; current Inference SDK support does not add legacy task dispatch |

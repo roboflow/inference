@@ -261,3 +261,95 @@ def test_declared_kind_deserialization_uses_current_carrier(monkeypatch, tensor)
     assert serialise_native_obb(value)["predictions"][0]["obb"] == pytest.approx(
         response()["predictions"][0]["obb"]
     )
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"type": "DetectionsShift", "shift_x": 30, "shift_y": 20},
+        {"type": "DetectionsOffset", "offset_x": 20, "offset_y": 10},
+    ],
+)
+@pytest.mark.parametrize("marker", ["both", "image", "rows", "empty"])
+def test_query_geometry_operations_reject_native_without_mutation(
+    monkeypatch, tensor, operation, marker
+):
+    """Reject native geometry through the dispatcher before changing either view."""
+    from roboflow_workflows.core_steps.common.query_language.errors import (
+        InvalidInputTypeError,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.core import (
+        execute_operations,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.detections import (
+        base,
+    )
+
+    original = response()
+    if marker == "empty":
+        original["predictions"] = []
+    transport = native_obb_from_inference(original)
+    if marker == "rows":
+        del transport.metadata["native_obb"]
+    elif marker == "image":
+        del transport.data["native_obb"]
+    if tensor:
+        transport = native_obb_to_tensor(transport)
+    monkeypatch.setattr(base, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    before_bounds = np.asarray(transport.xyxy).copy()
+    before_serialized = serialise_native_obb(transport)
+
+    with pytest.raises(InvalidInputTypeError, match="native oriented detections"):
+        execute_operations(transport, operations=[operation])
+
+    np.testing.assert_array_equal(transport.xyxy, before_bounds)
+    assert serialise_native_obb(transport) == before_serialized
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize(
+    "operation, expected",
+    [
+        (
+            {"type": "DetectionsShift", "shift_x": 30, "shift_y": 20},
+            [[40, 40, 60, 60]],
+        ),
+        (
+            {"type": "DetectionsOffset", "offset_x": 20, "offset_y": 10},
+            [[0, 15, 40, 45]],
+        ),
+    ],
+)
+def test_query_geometry_operations_preserve_ordinary_detection_behavior(
+    monkeypatch, tensor, operation, expected
+):
+    """Keep ordinary AABB shift/offset results and input-copy behavior intact."""
+    from roboflow_workflows.core_steps.common.query_language.operations.core import (
+        execute_operations,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.detections import (
+        base,
+    )
+
+    transport = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40]], dtype=float),
+        class_id=np.array([7]),
+        confidence=np.array([0.9]),
+    )
+    if tensor:
+        import torch
+
+        from inference_models.models.base.object_detection import Detections
+
+        transport = Detections(
+            xyxy=torch.as_tensor(transport.xyxy),
+            class_id=torch.as_tensor(transport.class_id),
+            confidence=torch.as_tensor(transport.confidence),
+        )
+    monkeypatch.setattr(base, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+
+    result = execute_operations(transport, operations=[operation])
+
+    np.testing.assert_array_equal(result.xyxy, expected)
+    np.testing.assert_array_equal(transport.xyxy, [[10, 20, 30, 40]])
