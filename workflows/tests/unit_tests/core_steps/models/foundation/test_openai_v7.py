@@ -253,6 +253,7 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
 @pytest.mark.parametrize(
     "model_version, expected_format",
     [
+        ("gpt-6.1-terra", "xyxy_absolute"),
         ("gpt-6-astra", "xyxy_absolute"),
         ("gpt-5.6-sol", "xyxy_absolute"),
         ("gpt-4o", "xyxy_absolute"),
@@ -374,6 +375,7 @@ def test_detection_upload_dimensions_only_apply_to_absolute_formats() -> None:
     "model_version, raw_output",
     [
         ("gpt-4o", PLAIN_ABSOLUTE_OUTPUT),
+        ("gpt-6.1-terra", STRUCTURED_ABSOLUTE_OUTPUT),
         ("gpt-5.6-sol", STRUCTURED_ABSOLUTE_OUTPUT),
         ("gpt-5.1", NORMALIZED_LEGACY_OUTPUT),
     ],
@@ -770,3 +772,31 @@ def test_run_hands_the_service_tier_to_every_request() -> None:
         )
 
     assert mock_execute.call_args[1]["service_tier"] == "ultrafast"
+
+
+@pytest.mark.parametrize("effort", ["none", "low", "medium", "high", "xhigh", "max"])
+@patch("roboflow_workflows.core_steps.models.foundation.openai.v7._get_openai_client")
+def test_terra_reasoning_is_validated_and_forwarded_to_responses(
+    mock_get_client: Mock, effort: str
+) -> None:
+    manifest = _segmentation_manifest(
+        model_version="gpt-6.1-terra", reasoning_effort=effort
+    )
+    client = MagicMock()
+    client.responses.create.return_value.status = "completed"
+    client.responses.create.return_value.output_text = "[]"
+    mock_get_client.return_value = client
+
+    _execute_direct_openai_request(
+        openai_api_key="sk-test",
+        instructions=None,
+        input_content=[{"role": "user", "content": []}],
+        model_version=manifest.model_version,
+        reasoning_effort=manifest.reasoning_effort,
+        max_tokens=None,
+        temperature=None,
+    )
+
+    payload = client.responses.create.call_args.kwargs
+    assert payload["model"] == "gpt-6.1-terra"
+    assert payload["reasoning"] == {"effort": effort}
