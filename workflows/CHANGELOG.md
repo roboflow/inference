@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.13.post1`
+
+Bundled execution engine: `1.17.0`.
+
 ### Added
 
 - OpenAI block (`open_ai@v7`): add GPT-6.1 Terra (`gpt-6.1-terra`) with
