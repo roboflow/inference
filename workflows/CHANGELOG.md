@@ -16,6 +16,12 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- OpenAI block (`open_ai@v7`): add GPT-6.1 Terra (`gpt-6.1-terra`) with
+  `none` through `max` reasoning effort and the existing structured absolute-pixel
+  detection prompt.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.
