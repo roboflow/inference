@@ -85,8 +85,8 @@ without a code change here:
 | `PORT` | `9001` | HTTP port (`__main__` dev runner) |
 | `NUM_WORKERS` | `1` | uvicorn worker processes (`__main__` dev runner) |
 | `INFERENCE_GATEWAY` | `direct` | Gateway resolved by `gateway_resolver.resolve_gateway()` |
-| `INFERENCE_PRELOAD_MODELS` | | Comma-separated model IDs loaded unpinned at server startup, two at a time; an entry may carry its own key as `model_id:api_key`. `/readiness` and `/v2/server/ready` report not-ready until the startup loads have finished, whether or not they succeeded |
-| `PINNED_MODELS` | | Comma-separated model IDs loaded at startup like `INFERENCE_PRELOAD_MODELS` but pinned against eviction; same `model_id:api_key` form |
+| `INFERENCE_PRELOAD_MODELS` | | Comma-separated model IDs loaded unpinned at server startup, two at a time; an entry may carry its own key as `model_id:api_key`. `/readiness` and `/v2/server/ready` report not-ready until the startup loads have finished, whether or not these unpinned loads succeeded |
+| `PINNED_MODELS` | | Comma-separated model IDs loaded at startup like `INFERENCE_PRELOAD_MODELS` but pinned against eviction; same `model_id:api_key` form; a failed pinned load is retried every 15 s and both readiness routes stay not-ready until every pinned model is loaded |
 | `PRELOAD_HF_IDS` | | Comma-separated OWLv2 Hugging Face IDs loaded unpinned at startup as `owlv2/<name>` (the part after the last `/`); readiness does not wait for them |
 | `INFERENCE_DECODER` | `imagecodecs` | Image decoder of the serving workers. `imagecodecs` is CPU decode and matches the legacy server's predictions; `nvjpeg` is opt-in GPU decode and currently changes predictions relative to the legacy server, so parity-gated deployments must not set it |
 | `INFERENCE_LOAD_WAIT_S` | `10.0` | Seconds `ensure_loaded()` waits before reporting a load timeout |

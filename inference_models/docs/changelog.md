@@ -48,6 +48,10 @@
 - TensorRT models fall back to `tensorrt_lean` when `tensorrt` is not installed.
 - Boolean environment variables also accept `1/0`, `t/f`, `yes/no`, `y/n`, `on/off` and
   surrounding whitespace. An empty value is still rejected.
+- `FILE_LOCK_ACQUIRE_TIMEOUT` (`INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT`) defaults to
+  600 seconds instead of 20, so a model whose weights package is being downloaded by
+  another process waits for that download instead of failing on the package
+  materialization lock.
 
 ### Fixed
 

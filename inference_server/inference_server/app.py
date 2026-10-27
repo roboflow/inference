@@ -100,6 +100,7 @@ _LEGACY_ERROR_HANDLING_ENABLED = (
 
 
 _PRELOAD_CONCURRENCY = 2
+_PINNED_PRELOAD_RETRY_S = 15.0
 
 
 async def _preload_models(
@@ -112,7 +113,7 @@ async def _preload_models(
     loads.update({mid: (api_key, True) for mid, api_key in pinned})
     semaphore = asyncio.Semaphore(_PRELOAD_CONCURRENCY)
 
-    async def _one(mid, api_key, is_pinned):
+    async def _load_once(mid, api_key, is_pinned) -> bool:
         async with semaphore:
             try:
                 result = await proxy.load(
@@ -123,17 +124,25 @@ async def _preload_models(
                 )
             except Exception:
                 logger.error("Preload of '%s' failed", mid, exc_info=True)
-                return
+                return False
 
         if result and result[0] == "ok":
             logger.info("Preload of '%s': %s", mid, result)
             bridge = getattr(state, "legacy_bridge", None)
             if bridge is not None:
                 bridge.register_preloaded(mid)
-        else:
-            logger.error(
-                "Preload of '%s' failed: %s", mid, result[:2] if result else result
-            )
+            return True
+
+        logger.error(
+            "Preload of '%s' failed: %s", mid, result[:2] if result else result
+        )
+        return False
+
+    async def _one(mid, api_key, is_pinned):
+        while not await _load_once(mid, api_key, is_pinned):
+            if not is_pinned:
+                return
+            await asyncio.sleep(_PINNED_PRELOAD_RETRY_S)
 
     try:
         await asyncio.gather(

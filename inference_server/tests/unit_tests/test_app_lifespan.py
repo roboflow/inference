@@ -908,3 +908,74 @@ class TestVllmRequestIdProvider:
             assert lifespan_env.get_request_id() is None
         finally:
             correlation_id.reset(token)
+
+
+def _scripted_proxy(outcomes, state, seen_finished):
+    class _Proxy:
+        def __init__(self):
+            self.calls = []
+
+        async def load(self, mid, api_key="", timeout_s=None, pinned=True):
+            self.calls.append((mid, pinned))
+            seen_finished.append(state.preload_finished)
+            outcome = outcomes[len(self.calls) - 1]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+    return _Proxy()
+
+
+@pytest.mark.asyncio
+async def test_pinned_preload_retries_until_loaded(monkeypatch):
+    from types import SimpleNamespace
+
+    from inference_server import app as app_mod
+
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_RETRY_S", 0)
+    registered = []
+    state = SimpleNamespace(
+        preload_finished=False,
+        legacy_bridge=SimpleNamespace(register_preloaded=registered.append),
+    )
+    seen_finished = []
+    proxy = _scripted_proxy([("error", 5), ("error", 5), ("ok",)], state, seen_finished)
+
+    await app_mod._preload_models(state, proxy, [], [("ds/2", "k")])
+
+    assert proxy.calls == [("ds/2", True)] * 3
+    assert seen_finished == [False, False, False]
+    assert state.preload_finished is True
+    assert registered == ["ds/2"]
+
+
+@pytest.mark.asyncio
+async def test_pinned_preload_retries_after_load_exception(monkeypatch):
+    from types import SimpleNamespace
+
+    from inference_server import app as app_mod
+
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_RETRY_S", 0)
+    state = SimpleNamespace(preload_finished=False)
+    proxy = _scripted_proxy([RuntimeError("boom"), ("ok",)], state, [])
+
+    await app_mod._preload_models(state, proxy, [], [("ds/2", "k")])
+
+    assert len(proxy.calls) == 2
+    assert state.preload_finished is True
+
+
+@pytest.mark.asyncio
+async def test_optional_preload_failure_is_not_retried(monkeypatch):
+    from types import SimpleNamespace
+
+    from inference_server import app as app_mod
+
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_RETRY_S", 0)
+    state = SimpleNamespace(preload_finished=False)
+    proxy = _scripted_proxy([("error", 5), ("ok",)], state, [])
+
+    await app_mod._preload_models(state, proxy, [("ds/1", "k")], [])
+
+    assert proxy.calls == [("ds/1", False)]
+    assert state.preload_finished is True
