@@ -68,9 +68,15 @@ The existing Detections Merge block fits a union AABB and is not compatible with
 this native kind. Row combination concatenates detections without refitting them.
 Query-language `DetectionsShift` and `DetectionsOffset` are also excluded and reject
 native inputs at execution, because their geometry operations only update AABBs.
-Consensus is not enabled for native outputs in this change. The open geometry-aware
-consensus PR #2420 matches corners with rotated IoU, but its merge currently drops
-native geometry/front; it needs a compatible followup before native adoption.
+Opt-in `roboflow_core/detections_consensus@v2` compares native footprints using
+rotated IoU and retains the highest-confidence contributor of the selected class,
+including its ordered geometry, front and identity. It reuses v1 voting and class
+selection, with configured confidence aggregation. Its geometry overlap code ports
+Agis Kounelis's [PR #2420](https://github.com/roboflow/inference/pull/2420) at
+`ee7fe5288255df1c8401877feda3ddaca0118eef`. Frozen class policies survive consensus
+and combination, including empty outputs; incompatible policies or mixed tasks
+raise errors. Ordinary tensor inputs remain unsupported by v2; v1 retains its
+existing behavior.
 Dataset writeback and annotation acceptance need the platform's native adapters and
 workspace admission checks; ordinary AABB upload paths are not advertised for OBB.
 
@@ -90,7 +96,6 @@ workspace admission checks; ordinary AABB upload paths are not advertised for OB
 No model package release, cloud/GPU run, deployment or feature activation is part of
 these local validation results. Existing authorized model reads remain independent
 of the platform's default-off gate for new OBB authoring/jobs.
-
 
 ## Package and worker release gate
 
