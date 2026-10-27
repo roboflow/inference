@@ -43,6 +43,7 @@ _DETECTION_PARAMS = frozenset(
     }
 )
 _COLOR_FORMAT_PARAM = frozenset({"input_color_format"})
+_PER_IMAGE_LIST_FIELDS = frozenset({"images_metadata"})
 
 NATIVE_PARAMS: Dict[str, frozenset] = {
     "object-detection": _DETECTION_PARAMS | _COLOR_FORMAT_PARAM,
@@ -244,6 +245,12 @@ def _batched_prediction(predictions: List[Any]) -> Any:
             values[field.name] = torch.cat(
                 [getattr(prediction, field.name) for prediction in predictions], dim=0
             )
+        elif field.name in _PER_IMAGE_LIST_FIELDS and value is not None:
+            values[field.name] = [
+                entry
+                for prediction in predictions
+                for entry in (getattr(prediction, field.name) or [])
+            ]
         else:
             values[field.name] = value
     return type(first)(**values)

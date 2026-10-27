@@ -1,5 +1,8 @@
 name: Build Windows Installer (CPU)
 
+permissions:
+  contents: read
+
 on:
   release:
     types: [published]
@@ -12,7 +15,7 @@ on:
 jobs:
   build_windows:
     runs-on: Windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 120
     permissions:
       contents: write
     steps:
@@ -26,6 +29,10 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
+
+      - name: Create isolated freezer environment
+        shell: pwsh
+        run: ./app_bundles/windows/create_build_env.ps1
 
       - name: Determine Version
         id: determine_version
@@ -70,22 +77,7 @@ jobs:
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          # Inno Setup ships preinstalled on windows-2022 runner images; install via
-          # Chocolatey only if missing (jrsoftware.org no longer serves direct downloads).
-          $innoPath = "C:\Program Files (x86)\Inno Setup 6"
-          if (-not (Test-Path (Join-Path $innoPath "ISCC.exe"))) {
-            echo "Inno Setup not found, installing via Chocolatey..."
-            choco install innosetup -y --no-progress
-            if ($LASTEXITCODE -ne 0) { Write-Error "Failed to install Inno Setup via Chocolatey"; exit 1 }
-          }
-          if (-not (Test-Path (Join-Path $innoPath "ISCC.exe"))) {
-            Write-Error "ISCC.exe not found at $innoPath after installation."
-            exit 1
-          }
-          echo "Adding Inno Setup directory to PATH: $innoPath"
-          Add-Content -Path $env:GITHUB_PATH -Value $innoPath
-          echo "Inno Setup available and added to PATH."
-
+          ./app_bundles/windows/install_inno.ps1
 
       - name: Install DigiCert Client tools
         id: install_digicert_tools # Renamed for clarity
@@ -212,12 +204,8 @@ jobs:
       - name: Install inference and dependencies from local wheels
         shell: bash # Using bash for wildcard expansion in pip install
         run: |
-          pip install -U --index-url https://download.pytorch.org/whl/cpu torch torchvision 
-          WHEEL_FILE=$(ls dist/inference-*.whl)
-          echo "Found CPU wheel: $WHEEL_FILE"
-          pip install --find-links=./dist/ dist/roboflow_workflows-*.whl dist/streamvision-*.whl dist/inference_sdk-*.whl "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,grounding-dino]"
-          echo "--- Installed inference details ---"
-          pip show inference
+          python -m pip install click
+          python app_bundles/windows/install_dependencies.py --flavor cpu
           
 
       - name: Install PyInstaller and other build dependencies
@@ -235,9 +223,16 @@ jobs:
         working-directory: ./app_bundles/windows
         env:
           BUILD_VERSION: ${{ steps.determine_version.outputs.installer_version_out }} # Use output from new Determine Version step
-        run: python build.py
+        run: |
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python packaging_checks.py --flavor cpu
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python build.py
 
-
+      - name: Validate frozen Windows application
+        shell: pwsh
+        run: python app_bundles/windows/smoke_test.py --flavor cpu --exe app_bundles/windows/dist/inference/inference.exe
       - name: Sign Windows Installer with DigiCert
         shell: cmd
         env:
