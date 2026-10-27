@@ -73,7 +73,6 @@ def _plan_details_without_sqlite() -> PlanDetails:
     )
 
 
-
 @mock.patch("inference.usage_tracking.plan_details.requests.get")
 def test_cold_rate_limit_returns_the_unavailable_plan_and_retries(get_mock):
     # given
