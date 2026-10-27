@@ -61,6 +61,7 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
     BLOCK_STATE_MAX_BYTES,
+    normalize_block_state,
     validate_block_state,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import PythonCode
@@ -300,7 +301,8 @@ def _serialize_block_state_json(
         return None
 
     validate_block_state(block_state)
-    block_state_json = serialize_for_modal_remote_execution(block_state)
+    normalized_state = normalize_block_state(block_state)
+    block_state_json = serialize_for_modal_remote_execution(normalized_state)
     _ensure_block_state_within_cap(
         len(block_state_json), block_type_name=block_type_name
     )
@@ -2292,7 +2294,8 @@ class WebSocketModalExecutor:
             return None
 
         validate_block_state(block_state)
-        packed_state = serialize_inputs_for_msgpack(block_state)
+        normalized_state = normalize_block_state(block_state)
+        packed_state = serialize_inputs_for_msgpack(normalized_state)
         _ensure_block_state_within_cap(
             len(msgpack.packb(packed_state, use_bin_type=True)),
             block_type_name=block_type_name,

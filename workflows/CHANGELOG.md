@@ -27,11 +27,15 @@ for contributor and maintainer responsibilities.
   video. The engine-side block instance owns the state and carries it to
   the sandbox and back on each call, so it survives container recycling
   and never leaks between workflow runs. Values kept on `self` must be
-  transportable (JSON-like values, numpy arrays and scalars, datetimes,
-  `sv.Detections`, images, video metadata); other objects raise a
-  `DynamicBlockError` naming the attribute, and serialized state is capped
-  at 1 MiB per call. Requires a webexec deployment built from this version:
-  an older server is rejected loudly instead of silently resetting `self`.
+  transportable (JSON-like values, numpy arrays, datetimes,
+  `sv.Detections`, images, video metadata); numpy bool/int/float scalars
+  and tuples are carried too, and come back as Python scalars and lists.
+  Other objects are refused with an error naming the attribute, as are
+  attribute names the engine or the block class owns (the echo is user
+  output and is never allowed to overwrite engine attributes), and
+  serialized state is capped at 1 MiB per call. Requires a webexec
+  deployment built from this version: an older server is rejected loudly
+  instead of silently resetting `self`.
 
 ## `0.2.14`
 

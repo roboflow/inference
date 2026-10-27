@@ -127,6 +127,8 @@ def test_validate_block_state_accepts_transportable_values():
         "when": datetime(2026, 10, 26),
         "array": np.zeros((2,)),
         "scalar": np.int64(4),
+        "flag_scalar": np.bool_(True),
+        "ratio_scalar": np.float32(0.25),
         "history": [1, (2, 3), {"nested": [None]}],
         "detections": detections,
         "image": image,
@@ -621,7 +623,7 @@ class _InProcessHttpExecutor:
         return self._client.execute_remote(**kwargs)
 
 
-def _build_first_frame_block(monkeypatch, modal_app):
+def _build_first_frame_block(monkeypatch, modal_app, code=FIRST_FRAME_CODE):
     from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
         compile_dynamic_blocks,
     )
@@ -655,7 +657,7 @@ def _build_first_frame_block(monkeypatch, modal_app):
                 "calls": {"type": "DynamicOutputDefinition", "kind": []},
             },
         },
-        "code": {"type": "PythonCode", "run_function_code": FIRST_FRAME_CODE},
+        "code": {"type": "PythonCode", "run_function_code": code},
     }
     specification = compile_dynamic_blocks([definition])[0]
     block = specification.block_class(
@@ -689,3 +691,235 @@ def test_block_instance_surfaces_a_non_transportable_attribute_as_a_code_error(
         block.run(image=1)
 
     assert "tracker" in str(error.value)
+
+
+# --------------------------------------------------------------------------- #
+# review round 1: the echo is user output and must not reach engine attributes
+# --------------------------------------------------------------------------- #
+
+
+class _ScaffoldedBlock:
+    """Shape of a compiled dynamic block: usage metadata lives on the class."""
+
+    _usage_block_kind = "custom_python"
+
+    def __init__(self):
+        self._api_key = "key"
+        self._workflow_step_name = "first_frame"
+
+
+@pytest.mark.parametrize(
+    "echoed_state, offending_name",
+    [
+        ({"_api_key": "junk"}, "_api_key"),
+        ({"_workspace_resolver": None}, "_workspace_resolver"),
+        ({"__dict__": {"counter": 9}}, "__dict__"),
+        ({"__class__": object}, "__class__"),
+        ({"_usage_block_kind": "x"}, "_usage_block_kind"),
+        ({"run": "shadowed"}, "run"),
+    ],
+)
+def test_apply_block_state_refuses_reserved_names_and_leaves_the_block_untouched(
+    echoed_state, offending_name
+):
+    _ScaffoldedBlock.run = lambda self: None
+    block = _ScaffoldedBlock()
+    block.counter = 1
+    block.stale = "kept until a valid echo replaces it"
+    state_before = dict(vars(block))
+
+    with pytest.raises(DynamicBlockError) as error:
+        apply_block_state(block, {"counter": 2, **echoed_state})
+
+    assert offending_name in str(error.value)
+    assert vars(block) == state_before, "a refused echo must not partially apply"
+    assert type(block)._usage_block_kind == "custom_python"
+    assert block._api_key == "key"
+
+
+def test_apply_block_state_refuses_non_string_keys():
+    block = _engine_block(counter=1)
+
+    with pytest.raises(DynamicBlockError):
+        apply_block_state(block, {1: "a"})
+
+    assert block.counter == 1
+
+
+def test_apply_block_state_keeps_a_user_attribute_named_like_a_base_attribute():
+    # Regression guard for the filter: a user name that is NOT on the class
+    # and NOT an engine attribute still applies, underscore or not.
+    block = _ScaffoldedBlock()
+
+    apply_block_state(block, {"_calls": 2, "has_first_frame": True})
+
+    assert block._calls == 2
+    assert block.has_first_frame is True
+    assert block._api_key == "key"
+
+
+RESERVED_NAME_CODE = (
+    "def run(self, image):\n" "    self._api_key = 'junk'\n" "    return {'ok': True}\n"
+)
+
+
+def test_http_server_refuses_to_echo_an_engine_attribute_name(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, RESERVED_NAME_CODE, {"image": 1}, block_state={})
+
+    assert response["success"] is False
+    assert response["error_type"] == "BlockStateSerializationError"
+    assert "_api_key" in response["error"]
+
+
+def test_ws_server_refuses_to_echo_an_engine_attribute_name(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(executor, modal_app, RESERVED_NAME_CODE, {"image": 1}, {})
+
+    assert response["success"] is False
+    assert response["error_type"] == "BlockStateSerializationError"
+    assert "_api_key" in response["error"]
+
+
+SHADOW_USAGE_CODE = (
+    "def run(self, image):\n"
+    "    self._usage_block_kind = 'x'\n"
+    "    return {'is_first_frame': True, 'calls': 1}\n"
+)
+
+
+def test_block_instance_cannot_shadow_class_attributes_from_the_sandbox(
+    monkeypatch, modal_app
+):
+    block = _build_first_frame_block(monkeypatch, modal_app, code=SHADOW_USAGE_CODE)
+    kind_before = type(block)._usage_block_kind
+
+    with pytest.raises(DynamicBlockError) as error:
+        block.run(image=1)
+
+    assert "_usage_block_kind" in str(error.value)
+    assert "_usage_block_kind" not in vars(block)
+    assert block._usage_block_kind == kind_before
+
+
+# --------------------------------------------------------------------------- #
+# review round 1: numpy scalars and tuples must survive both transports
+# --------------------------------------------------------------------------- #
+
+
+def test_validate_block_state_rejects_numpy_scalars_without_a_python_equivalent():
+    with pytest.raises(DynamicBlockError) as error:
+        validate_block_state({"stamp": np.datetime64("2026-10-27")})
+
+    assert "stamp" in str(error.value)
+
+
+NUMPY_SCALAR_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    self.seen = np.bool_(False)\n"
+    "    self.score = np.float32(0.5)\n"
+    "    self.n = np.int64(3)\n"
+    "    return {'ok': True}\n"
+)
+
+
+def _assert_python_scalars(state):
+    assert state["seen"] is False, state
+    assert type(state["score"]) is float and state["score"] == 0.5
+    assert type(state["n"]) is int and state["n"] == 3
+
+
+def test_http_server_echoes_numpy_scalars_as_python_scalars(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, NUMPY_SCALAR_CODE, {"image": 1}, block_state={})
+
+    assert response["success"] is True, response.get("error")
+    _assert_python_scalars(
+        deserialize_for_modal_remote_execution(response["block_state"])
+    )
+
+
+def test_ws_server_echoes_numpy_scalars_as_python_scalars(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(executor, modal_app, NUMPY_SCALAR_CODE, {"image": 1}, {})
+
+    assert response["success"] is True, response.get("error")
+    _assert_python_scalars(client._deserialize_msgpack_result(response["block_state"]))
+
+
+def test_http_client_sends_numpy_scalars_as_python_scalars():
+    state = {"seen": np.bool_(False), "score": np.float32(0.5), "n": np.int64(3)}
+
+    block_state_json = client._serialize_block_state_json(state, block_type_name="b")
+
+    _assert_python_scalars(json.loads(block_state_json))
+
+
+def test_ws_client_packs_numpy_scalars_as_python_scalars():
+    state = {"seen": np.bool_(False), "score": np.float32(0.5), "n": np.int64(3)}
+
+    packed = client.WebSocketModalExecutor._pack_block_state(
+        state, block_type_name="b", msgpack=msgpack
+    )
+
+    _assert_python_scalars(msgpack.unpackb(msgpack.packb(packed, use_bin_type=True)))
+
+
+def _detections():
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 1, 1]], dtype=np.float32),
+        class_id=np.array([0]),
+        confidence=np.array([0.5], dtype=np.float32),
+        data={
+            "class_name": np.array(["cat"]),
+            "detection_id": np.array(["d0"]),
+            "image_dimensions": np.array([[20, 30]]),
+            "parent_id": np.array(["frame-1"]),
+            "root_parent_id": np.array(["root-frame"]),
+        },
+    )
+    return detections
+
+
+def test_http_client_carries_a_tuple_holding_detections_as_a_list():
+    block_state_json = client._serialize_block_state_json(
+        {"prev": (_detections(), 1)}, block_type_name="b"
+    )
+
+    prev = deserialize_for_modal_remote_execution(block_state_json)["prev"]
+
+    assert isinstance(prev, list)
+    assert isinstance(prev[0], sv.Detections)
+    assert prev[1] == 1
+
+
+def test_http_server_echoes_a_tuple_holding_detections_as_a_list(modal_app):
+    executor = _http_executor(modal_app)
+    code = (
+        "def run(self, image):\n"
+        "    self.prev = (self.prev[0], self.prev[1] + 1)\n"
+        "    return {'n': len(self.prev[0])}\n"
+    )
+    seeded = client._serialize_block_state_json(
+        {"prev": (_detections(), 1)}, block_type_name="b"
+    )
+    payload = {
+        "code_str": code,
+        "imports": [],
+        "run_function_name": "run",
+        "inputs_json": serialize_for_modal_remote_execution({"image": 1}),
+        "block_state_json": seeded,
+    }
+
+    response = asyncio.run(executor.execute_block(_FakeRequest(payload)))
+
+    assert response["success"] is True, response.get("error")
+    prev = deserialize_for_modal_remote_execution(response["block_state"])["prev"]
+    assert isinstance(prev, list)
+    assert isinstance(prev[0], sv.Detections)
+    assert prev[1] == 2

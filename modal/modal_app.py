@@ -108,14 +108,34 @@ class BlockStateSerializationError(Exception):
     """
 
 
+# Names the engine sets on a block instance; the engine refuses them (and any
+# name its block class defines) when applying the echo, this mirror refuses the
+# obvious ones here so the author gets the error without a round trip. Keep in
+# sync with ``block_state.ENGINE_ATTRIBUTE_NAMES``.
+_ENGINE_ATTRIBUTE_NAMES = frozenset(
+    {
+        "_api_key",
+        "_workspace_resolver",
+        "_execution_observer",
+        "_manifest_description",
+        "_init_results",
+        "_workflow_step_name",
+        "_workflow_step_type",
+        "_workflow_step_selector",
+    }
+)
+
+
 def _check_block_state_transportable(state: Dict[str, Any]) -> None:
     """Refuse ``self`` state the result serializers would silently stringify.
 
     Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``
-    (kept inline like the serializers above, since the sandbox image does not
-    ship the engine package). Accepted: None, bool/int/float/str/bytes,
-    datetime, numpy arrays and scalars, sv.Detections, WorkflowImageData,
-    VideoMetadata, lists/tuples and string-keyed dicts of those.
+    (kept inline like the serializers above, so the sandbox does not depend on
+    the engine package it may or may not ship). Accepted: None,
+    bool/int/float/str/bytes, datetime, numpy arrays and bool/int/float
+    scalars, sv.Detections, WorkflowImageData, VideoMetadata, lists/tuples and
+    string-keyed dicts of those. Attribute names the engine owns, and dunders,
+    are refused: the echo is written onto the engine-side instance.
     """
     from datetime import datetime
 
@@ -130,7 +150,9 @@ def _check_block_state_transportable(state: Dict[str, Any]) -> None:
     def _check(value: Any, path: str) -> None:
         if value is None or isinstance(value, (bool, int, float, str, bytes)):
             return
-        if isinstance(value, (datetime, np.ndarray, np.generic)):
+        if isinstance(value, (datetime, np.ndarray)):
+            return
+        if isinstance(value, (np.bool_, np.integer, np.floating)):
             return
         if isinstance(value, (sv.Detections, WorkflowImageData, VideoMetadata)):
             return
@@ -152,13 +174,45 @@ def _check_block_state_transportable(state: Dict[str, Any]) -> None:
             f"Custom Python block state `self.{path}` holds a "
             f"{type(value).__name__}, which cannot be carried across remote "
             "execution. Attributes set on `self` must be JSON-like values, "
-            "numpy arrays, datetimes, sv.Detections, images or video "
-            "metadata; keep other objects out of `self` or derive them per "
-            "call."
+            "numpy arrays or bool/int/float scalars, datetimes, "
+            "sv.Detections, images or video metadata; keep other objects out "
+            "of `self` or derive them per call."
         )
 
     for name, value in state.items():
+        is_dunder = (
+            isinstance(name, str) and name.startswith("__") and name.endswith("__")
+        )
+        if not isinstance(name, str) or is_dunder or name in _ENGINE_ATTRIBUTE_NAMES:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{name}` collides with an "
+                "attribute the block or the engine owns; pick another name "
+                "for state kept on `self`."
+            )
         _check(value, name)
+
+
+def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Replace values the transports cannot carry as-is, mirroring the engine.
+
+    numpy bool/int/float scalars become Python scalars (the JSON encoder
+    rejects them and the msgpack one would stringify ``np.bool_``) and tuples
+    become lists (the JSON patcher only recurses into lists, so a tuple
+    holding detections or an image would be stringified). Run after
+    ``_check_block_state_transportable``.
+    """
+    import numpy as np
+
+    def _normalize(value: Any) -> Any:
+        if isinstance(value, (np.bool_, np.integer, np.floating)):
+            return value.item()
+        if isinstance(value, dict):
+            return {key: _normalize(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_normalize(item) for item in value]
+        return value
+
+    return {name: _normalize(value) for name, value in state.items()}
 
 
 class _BlockSelf:
@@ -1069,7 +1123,7 @@ from datetime import datetime
                             "execution_time_seconds": execution_time_seconds,
                         }
                     response["block_state"] = serialize_for_modal_remote_execution(
-                        echoed_state
+                        _normalize_block_state(echoed_state)
                     )
 
                 return response
@@ -1226,7 +1280,7 @@ from datetime import datetime
                         "execution_time_seconds": execution_time_seconds,
                     }
                 response["block_state"] = Executor._serialize_msgpack_result(
-                    echoed_state
+                    _normalize_block_state(echoed_state)
                 )
 
             return response

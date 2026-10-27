@@ -14,10 +14,20 @@ and echoes the mutated set back, and the engine writes it onto the instance.
 State therefore has to cross a serialization boundary. The transportable
 types are the ones the existing input/result serializers already understand
 (scalars, strings, bytes, lists, string-keyed dicts, ``datetime``, numpy
-arrays and scalars, ``sv.Detections``, ``WorkflowImageData``,
-``VideoMetadata``). Anything else — a tracker object, an open file, a model —
-is refused with the attribute path, instead of being stringified by the
-generic encoder and silently corrupting the block's next frame.
+arrays, ``sv.Detections``, ``WorkflowImageData``, ``VideoMetadata``), plus
+numpy bool/int/float scalars and tuples, which the transports do not carry as
+such: ``normalize_block_state`` turns them into Python scalars and lists
+before serialization on either side, so a block reads back ``False`` for the
+``np.bool_`` it stored and a list for its tuple. Anything else — a tracker
+object, an open file, a model — is refused with the attribute path, instead
+of being stringified by the generic encoder and silently corrupting the
+block's next frame.
+
+The echo is the output of user code, so the engine treats it as untrusted
+input: ``apply_block_state`` refuses names the engine owns, dunders, and
+names defined on the block class (usage metadata, ``run``) before it touches
+the instance, and the sandbox refuses the first two up front so the author
+gets the error without a round trip.
 """
 
 from datetime import datetime
@@ -72,18 +82,97 @@ def apply_block_state(block: Any, state: Dict[str, Any]) -> None:
 
     Attributes absent from ``state`` are removed, so a ``del self.x`` in the
     sandbox takes effect on the engine side too. Engine attributes are left
-    untouched.
+    untouched. The whole echo is checked before anything is written, so a
+    refused echo leaves the instance exactly as it was.
 
     Args:
         block: The engine-side dynamic block instance.
         state: The user attributes echoed back by the sandbox.
-    """
-    for name in list(vars(block)):
-        if name not in ENGINE_ATTRIBUTE_NAMES:
-            delattr(block, name)
 
-    for name, value in state.items():
-        setattr(block, name, value)
+    Raises:
+        DynamicBlockError: If ``state`` carries a key that is not a string,
+            is an attribute the engine owns, is a dunder, or is defined on the
+            block's class; user code could otherwise overwrite usage metadata
+            or the block's methods from the sandbox.
+    """
+    for name in state:
+        _ensure_state_name_allowed(name, block=block)
+
+    instance_attributes = vars(block)
+    engine_attributes = {
+        name: value
+        for name, value in instance_attributes.items()
+        if name in ENGINE_ATTRIBUTE_NAMES
+    }
+    instance_attributes.clear()
+    instance_attributes.update(engine_attributes)
+    instance_attributes.update(state)
+
+
+def _ensure_state_name_allowed(name: Any, *, block: Any) -> None:
+    if not isinstance(name, str):
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block state echoed a non-string attribute "
+                f"name {name!r}; attributes on `self` must have string names."
+            ),
+            context="dynamic_block | block_state_apply",
+        )
+    if is_reserved_state_name(name) or hasattr(type(block), name):
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block state `self.{name}` collides with an "
+                "attribute the block or the engine owns; pick another name "
+                "for state kept on `self`."
+            ),
+            context="dynamic_block | block_state_apply",
+        )
+
+
+def is_reserved_state_name(name: str) -> bool:
+    """Tell whether ``name`` may never be set on ``self`` from the sandbox.
+
+    Args:
+        name: An attribute name echoed by the sandbox.
+
+    Returns:
+        ``True`` for engine-owned attributes and dunders, which the sandbox
+        mirrors so the author sees the refusal without a round trip.
+    """
+    is_dunder = name.startswith("__") and name.endswith("__")
+    is_reserved = is_dunder or name in ENGINE_ATTRIBUTE_NAMES
+
+    return is_reserved
+
+
+def normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Return ``state`` with values the transports cannot carry as-is replaced.
+
+    numpy bool/int/float scalars become Python scalars and tuples become
+    lists, recursively; everything else is passed through unchanged. Applied
+    after validation on both ends of the round trip, so the block always
+    reads back the same Python types whichever transport carried them.
+
+    Args:
+        state: Validated user attributes about to be serialized.
+
+    Returns:
+        A new dict with the same keys.
+    """
+    normalized_state = {name: _normalize_value(value) for name, value in state.items()}
+
+    return normalized_state
+
+
+def _normalize_value(value: Any) -> Any:
+    if isinstance(value, (np.bool_, np.integer, np.floating)):
+        return value.item()
+    if isinstance(value, dict):
+        return {key: _normalize_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_value(item) for item in value]
+
+    return value
 
 
 def validate_block_state(state: Dict[str, Any]) -> None:
@@ -103,7 +192,9 @@ def validate_block_state(state: Dict[str, Any]) -> None:
 def _validate_value(value: Any, *, path: str) -> None:
     if value is None or isinstance(value, (bool, int, float, str, bytes)):
         return
-    if isinstance(value, (datetime, np.ndarray, np.generic)):
+    if isinstance(value, (datetime, np.ndarray)):
+        return
+    if isinstance(value, (np.bool_, np.integer, np.floating)):
         return
     if _is_transportable_workflow_object(value):
         return
@@ -130,9 +221,9 @@ def _validate_value(value: Any, *, path: str) -> None:
             f"Custom Python block state `self.{path}` holds a "
             f"{type(value).__name__}, which cannot be carried across remote "
             "execution. Attributes set on `self` must be JSON-like values, "
-            "numpy arrays, datetimes, sv.Detections, images or video "
-            "metadata; keep other objects out of `self` or derive them per "
-            "call."
+            "numpy arrays or bool/int/float scalars, datetimes, "
+            "sv.Detections, images or video metadata; keep other objects out "
+            "of `self` or derive them per call."
         ),
         context="dynamic_block | block_state_validation",
     )
