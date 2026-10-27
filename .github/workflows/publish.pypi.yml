@@ -3,6 +3,18 @@ on:
   release:
     types: [created]
   workflow_dispatch:
+    inputs:
+      package:
+        description: "Build all root packages or only the SDK"
+        type: choice
+        default: all
+        options:
+          - all
+          - sdk
+      publish:
+        description: "Publish built packages (false builds only)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,11 +44,36 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 🛞 Create Wheels
+        env:
+          PACKAGE_SELECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.package || 'all' }}
         run: |
-          make create_wheels
-      - name: 🧹 Remove independently published artifacts
-        # SDK, models, Workflows and streamvision each have an independent
-        # publisher. Keep one publisher per distribution.
-        run: rm -f dist/roboflow_workflows-*.whl dist/roboflow_workflows-*.tar.gz dist/inference_models-*.whl dist/inference_sdk-*.whl dist/streamvision-*.whl dist/streamvision-*.tar.gz
-      - name: 🚀 Publish to PyPi
+          if [ "$PACKAGE_SELECTION" = "sdk" ]; then
+            python -m pip install setuptools wheel
+            make create_sdk_wheel
+          else
+            make create_wheels
+          fi
+      - name: 🧹 Separate SDK and independently published artifacts
+        # Keep SDK publication in this existing trusted workflow. Its isolated
+        # build can precede Workflows without resolving the consumer lock.
+        run: |
+          mkdir -p sdk-dist
+          mv dist/inference_sdk-*.whl sdk-dist/
+          rm -f dist/roboflow_workflows-*.whl dist/roboflow_workflows-*.tar.gz dist/inference_models-*.whl dist/streamvision-*.whl dist/streamvision-*.tar.gz
+      - name: 📤 Upload built wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: inference-wheels
+          path: |
+            dist/*.whl
+            sdk-dist/*.whl
+      - name: 🚀 Publish SDK to PyPI
+        if: ${{ github.event_name == 'release' || inputs.publish == true }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk-dist/
+          # A dependency bootstrap may publish the SDK before the root release.
+          skip-existing: true
+      - name: 🚀 Publish root packages to PyPI
+        if: ${{ github.event_name == 'release' || (inputs.publish == true && inputs.package != 'sdk') }}
         uses: pypa/gh-action-pypi-publish@release/v1
