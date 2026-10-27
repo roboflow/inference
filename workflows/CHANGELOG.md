@@ -35,6 +35,8 @@ Bundled execution engine: `1.17.0`.
 
 ### Execution engine
 
+- Add native `oriented_object_detection_prediction` with original-image float geometry and frozen class heading semantics. Native model, visualization, row filters, combination, crop offsets and serialization retain ordered fronts in NumPy and tensor carriers. Projective transforms retain ordered quadrilaterals instead of silently fitting new rectangle annotations.
+
 - Update the engine compatibility version to `1.17.0` and align the integration
   and hosted-platform version assertions with the published `0.2.13rc1` package.
 

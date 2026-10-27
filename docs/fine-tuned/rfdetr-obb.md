@@ -1,0 +1,89 @@
+# Native RF-DETR oriented object detection
+
+This implementation adds the `oriented-object-detection` task for an exported
+RF-DETR OBB model. It does not register the artifact as ordinary object detection.
+
+## Artifact and geometry contract
+
+An ONNX model package contains `weights.onnx`, `inference_config.json`,
+`obb_metadata.json`, and the registry-generated `model_config.json`. The registry
+identity is architecture `rfdetr`, task `oriented-object-detection`, backend `onnx`.
+The model variant is `rfdetr-obb-preview-2xl`.
+
+The graph emits raw `dets[B,Q,5]`, `labels[B,Q,C]`, and `heading[B,Q,4]` before
+selection. `dets` contains normalized center and ordered side lengths, followed by
+a clockwise-radian angle. `labels` contains class logits; output zero is background.
+Metadata maps each foreground output column to its native category ID and frozen
+class name/heading capability. Zero-area padded query slots are discarded before
+selection. Nonfinite graph values and missing heading outputs are errors.
+
+For a directed class, heading side `k` adds `k*pi/2` to the raw angle and swaps
+width/height iff `k` is odd. This preserves the exact footprint and designates the
+predicted front. Undirected classes retain the raw ordered rectangle axis.
+No independent front vector is persisted.
+
+The model uses the `rfdetr-obb-letterbox-v1` preprocessing contract: uniform scale
+`S/max(width,height)`, continuous centered padding, PIL affine bilinear sampling,
+RGB padding 114, division by 255 and ImageNet normalization. Centers and both sides
+use that same scale; angles remain unchanged. The runtime requires the artifact's
+explicit preprocessing metadata and rejects incompatible policies. Roboflow static
+crop, grayscale and contrast preprocessing from `inference_config.json` runs before
+this model normalization. The inverse includes the static-crop offset. Returned
+geometry remains floating point in original input-image coordinates.
+
+This requires the compatible model export and trainer artifact producer. Older
+mean-scale/rounded-resize OBB artifacts are incompatible and are rejected.
+
+## Response and SDK
+
+`POST /infer/oriented_object_detection` accepts the shared image/confidence request
+fields. Each prediction contains `obb: [cx, cy, width, height, theta]`, `class_id`,
+`class`, `confidence`, `heading`, and `detection_id`. The response includes
+`task_type: "oriented-object-detection"` and frozen `class_heading` semantics.
+Detection IDs identify query/category rows within each input result and remain
+stable through Workflow transport. Bounding AABBs and corners are compatibility
+views derived from native geometry.
+
+The current Inference SDK in API v1 mode routes the native task to this endpoint. It disables
+client resizing for this task so a second rounded resize cannot alter the native
+shape before the server's declared preprocessing. Select API v1 explicitly when connecting to a hosted URL that otherwise defaults to the legacy API v0 client; API v0 client downsizing is not part of the advertised native path.
+
+## Workflows
+
+`roboflow_core/roboflow_oriented_object_detection_model@v1` produces the separate
+`oriented_object_detection_prediction` kind. Numeric confidence, class filtering,
+row selection, row combination, dynamic crop offsets, original-coordinate output,
+serialization, and `roboflow_core/oriented_box_visualization@v1` retain the ordered
+footprint and class front. The visualization highlights the native front edge for
+directed classes. NumPy and tensor carriers retain the same semantic fields.
+
+Inside Workflows, ordered corners carry geometry/front through coordinate changes.
+A general affine/perspective warp can produce a quadrilateral: serialization then
+emits `geometry_type: "quadrilateral"` and ordered `corners`, without inventing an
+OBB fit. Such results require an explicit rectangle-fit policy before use as native
+rectangle annotations. Isotropic scaling and crop offsets preserve native tuples
+without integer rounding.
+
+The existing Detections Merge block fits a union AABB and is not compatible with
+this native kind. Row combination concatenates detections without refitting them.
+Consensus is not enabled for native outputs in this change. The open geometry-aware
+consensus PR #2420 matches corners with rotated IoU, but its merge currently drops
+native geometry/front; it needs a compatible followup before native adoption.
+Dataset writeback and annotation acceptance need the platform's native adapters and
+workspace admission checks; ordinary AABB upload paths are not advertised for OBB.
+
+## Validation and deployment matrix
+
+| Target | Implementation and validation |
+| --- | --- |
+| Local CPU ONNX model package | Implemented; synthetic ONNX graphs and an actual random-initialized 64px RF-DETR export executed through the installed consumer |
+| Server request consumer | Implemented; AutoModel loading, native request lifecycle and original-coordinate response tested locally |
+| Current Inference SDK | Native task route/configuration and resizing contract covered locally; no hosted request executed |
+| Local Workflow model, transport and visualization | Implemented; NumPy/tensor semantic and coordinate tests |
+| Hosted production serving | Requires compatible package releases, trained artifact registration and serving deployment; no hosted/cloud run claimed |
+| CUDA, TensorRT, CoreML, browser inferencejs | Excluded from this initial backend registration |
+| Legacy `roboflow-python` `version.model` | Excluded; current Inference SDK support does not add legacy task dispatch |
+
+No model package release, cloud/GPU run, deployment or feature activation is part of
+these local validation results. Existing authorized model reads remain independent
+of the platform's default-off gate for new OBB authoring/jobs.

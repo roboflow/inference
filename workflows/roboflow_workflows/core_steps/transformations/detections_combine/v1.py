@@ -8,6 +8,7 @@ from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -82,6 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
     prediction_one: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
@@ -91,6 +93,7 @@ class BlockManifest(WorkflowBlockManifest):
     prediction_two: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
@@ -105,6 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],
             ),
@@ -139,4 +143,22 @@ class DetectionsCombineBlockV1(WorkflowBlock):
         prediction_one: sv.Detections,
         prediction_two: sv.Detections,
     ) -> BlockResult:
-        return {"predictions": sv.Detections.merge([prediction_one, prediction_two])}
+        from roboflow_workflows.core_steps.common.oriented import merge_native_semantics
+
+        class_heading = merge_native_semantics(prediction_one, prediction_two)
+        if class_heading is not None:
+            from dataclasses import replace
+
+            prediction_one = replace(
+                prediction_one,
+                metadata={**prediction_one.metadata, "class_heading": class_heading},
+            )
+            prediction_two = replace(
+                prediction_two,
+                metadata={**prediction_two.metadata, "class_heading": class_heading},
+            )
+        result = sv.Detections.merge([prediction_one, prediction_two])
+        if class_heading is not None:
+            result.metadata["class_heading"] = class_heading
+            result.metadata["native_obb"] = True
+        return {"predictions": result}

@@ -188,7 +188,18 @@ def convert_inference_detections_batch_to_sv_detections(
     for p in predictions:
         width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
         raw_predictions = filter_out_invalid_polygons(predictions=p[predictions_key])
-        detections = sv.Detections.from_inference({**p, "predictions": raw_predictions})
+        if p.get("task_type") == "oriented-object-detection":
+            from roboflow_workflows.core_steps.common.oriented import (
+                native_obb_from_inference,
+            )
+
+            detections = native_obb_from_inference(
+                {**p, "predictions": raw_predictions}
+            )
+        else:
+            detections = sv.Detections.from_inference(
+                {**p, "predictions": raw_predictions}
+            )
         parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
         detection_ids = [_get_or_create_detection_id(d) for d in raw_predictions]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
@@ -541,7 +552,15 @@ def scale_sv_detections(
     xyxy = detections_copy.xyxy.astype(np.float64, copy=True)
     xyxy[:, [0, 2]] *= scale_x
     xyxy[:, [1, 3]] *= scale_y
-    detections_copy.xyxy = xyxy.round()
+    if ORIENTED_BOX_COORDINATES in detections_copy.data:
+        corners = detections_copy.data[ORIENTED_BOX_COORDINATES].astype(
+            np.float64, copy=True
+        )
+        corners *= np.asarray([scale_x, scale_y])
+        detections_copy.data[ORIENTED_BOX_COORDINATES] = corners
+        detections_copy.xyxy = np.concatenate((corners.min(1), corners.max(1)), axis=1)
+    else:
+        detections_copy.xyxy = xyxy.round()
 
     if keypoints_key in detections_copy.data:
         for i in range(len(detections_copy[keypoints_key])):

@@ -20,6 +20,7 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
 from roboflow_workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -90,6 +91,7 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
@@ -121,6 +123,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],

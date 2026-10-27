@@ -1,3 +1,7 @@
+from roboflow_workflows.execution_engine.entities.types import (
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
+)
+
 """Tensor-native sibling of ``roboflow_core/dynamic_crop@v1``.
 
 Consumes a native detection prediction (``Detections`` / ``InstanceDetections`` /
@@ -133,6 +137,7 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
@@ -194,6 +199,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],

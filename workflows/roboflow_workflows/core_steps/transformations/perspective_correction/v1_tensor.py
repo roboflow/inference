@@ -982,7 +982,7 @@ def _correct_oriented_box_in_metadata(
         src=np.array([np.asarray(oriented_box)], dtype=np.float32),
         m=perspective_transformer,
     ).reshape(-1, 2)
-    entry[ORIENTED_BOX_COORDINATES] = np.around(corrected_obb).astype(np.float32)
+    entry[ORIENTED_BOX_COORDINATES] = corrected_obb.astype(np.float64)
 
 
 def _correct_native_detections(

@@ -5,6 +5,14 @@ from roboflow_workflows.configuration import get_configuration
 from roboflow_workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
+from roboflow_workflows.core_steps.common.oriented import (
+    deserialize_native_obb,
+    serialise_native_obb,
+)
+from roboflow_workflows.core_steps.models.roboflow.oriented_object_detection.v1 import (
+    NativeOBBVisualizationBlockV1,
+    RoboflowOrientedObjectDetectionModelBlockV1,
+)
 from roboflow_workflows.environment import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
@@ -16,6 +24,9 @@ from roboflow_workflows.environment import (
     WORKFLOW_DISABLED_BLOCK_TYPES,
     WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     WORKFLOWS_STEP_EXECUTION_MODE,
+)
+from roboflow_workflows.execution_engine.entities.types import (
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
 )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -278,6 +289,7 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     TENSOR_NATIVE_QR_CODE_DETECTION_KIND,
     TENSOR_NATIVE_RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_SEMANTIC_SEGMENTATION_PREDICTION_KIND,
@@ -1612,6 +1624,7 @@ REGISTERED_INITIALIZERS = {
 }
 
 KINDS_SERIALIZERS = {
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND.name: serialise_native_obb,
     IMAGE_KIND.name: serialise_image,
     VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
     ACTION_RECOGNITION_PREDICTION_KIND.name: serialize_action_recognition_prediction_kind,
@@ -1660,6 +1673,7 @@ if ENABLE_TENSOR_DATA_REPRESENTATION:
     # swap above already selects serializers_tensor.serialize_wildcard_kind, whose
     # native arms serialise native values routed to `*` outputs to the standard dicts.
 KINDS_DESERIALIZERS = {
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_native_obb,
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
     ACTION_RECOGNITION_PREDICTION_KIND.name: deserialize_action_recognition_prediction_kind,
@@ -1770,6 +1784,8 @@ def _should_filter_block(block_class: Type[WorkflowBlock]) -> bool:
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     blocks = [
+        RoboflowOrientedObjectDetectionModelBlockV1,
+        NativeOBBVisualizationBlockV1,
         AbsoluteStaticCropBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
@@ -2034,6 +2050,11 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
 
 def load_kinds() -> List[Kind]:
     return [
+        (
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND
+            if not ENABLE_TENSOR_DATA_REPRESENTATION
+            else TENSOR_NATIVE_ORIENTED_OBJECT_DETECTION_PREDICTION_KIND
+        ),
         WILDCARD_KIND,
         IMAGE_KIND,
         VIDEO_METADATA_KIND,

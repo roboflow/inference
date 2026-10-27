@@ -265,6 +265,12 @@ def deserialize_detections_kind(
             f"detections, but dictionary misses required keys.",
             context="workflow_execution | runtime_input_validation",
         )
+    if detections.get("task_type") == "oriented-object-detection":
+        from roboflow_workflows.core_steps.common.oriented import (
+            native_obb_from_inference,
+        )
+
+        return native_obb_from_inference(detections)
     raw_predictions = filter_out_invalid_polygons(predictions=detections["predictions"])
     parsed_detections = sv.Detections.from_inference(
         {**detections, "predictions": raw_predictions}

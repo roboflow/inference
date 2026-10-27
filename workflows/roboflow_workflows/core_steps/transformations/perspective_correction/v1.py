@@ -758,7 +758,7 @@ def correct_detections(
                 m=perspective_transformer,
             ).reshape(-1, 2)
             detection[ORIENTED_BOX_COORDINATES] = np.array(
-                [np.around(corrected_obb).astype(np.float32)]
+                [corrected_obb.astype(np.float64)]
             )
         corrected_detections.append(detection)
     return sv.Detections.merge(corrected_detections)
