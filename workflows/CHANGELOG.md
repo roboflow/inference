@@ -16,6 +16,12 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Add Muse Spark Open to `meta_vlm@v3` via OpenRouter, with minimal, low,
+  medium, high, and xhigh reasoning and the existing normalized 0–1000
+  detection format.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.
