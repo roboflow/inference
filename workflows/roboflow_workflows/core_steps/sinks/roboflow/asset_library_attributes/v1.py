@@ -352,10 +352,10 @@ def _normalize_to_per_row(value: Any, n: int) -> List[Any]:
     return [value] * n
 
 
-def normalize_metadata_key(key: str) -> str:
+def normalize_metadata_key(key: Any) -> str:
     # The API rejects the whole image update if any key fails
     # ^[a-zA-Z0-9_][a-zA-Z0-9_.]*$, so coerce keys instead of dropping everything.
-    normalized_key = INVALID_METADATA_KEY_CHARACTERS.sub("_", key)
+    normalized_key = INVALID_METADATA_KEY_CHARACTERS.sub("_", str(key))
     if normalized_key.startswith("."):
         normalized_key = f"_{normalized_key}"
     return normalized_key

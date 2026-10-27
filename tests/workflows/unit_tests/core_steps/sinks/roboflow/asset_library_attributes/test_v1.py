@@ -324,10 +324,11 @@ def test_normalize_to_per_row_list_with_batch_values() -> None:
         ("counts_per_class/person", "counts_per_class_person"),
         (".hidden", "_.hidden"),
         ("already_valid.key_1", "already_valid.key_1"),
+        (3, "3"),
     ],
 )
 def test_build_effective_updates_normalizes_metadata_keys(
-    key: str, expected_key: str
+    key: Any, expected_key: str
 ) -> None:
     effective = build_effective_updates(
         source_ids=make_batch(["img-1"]),
