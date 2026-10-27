@@ -966,6 +966,32 @@ async def test_pinned_preload_retries_after_load_exception(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_pinned_preload_gives_up_after_max_wait(monkeypatch, caplog):
+    import logging
+    from types import SimpleNamespace
+
+    from inference_server import app as app_mod
+
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_RETRY_S", 0)
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_MAX_WAIT_S", 0.0)
+    state = SimpleNamespace(preload_finished=False)
+    proxy = _scripted_proxy([("error", 5)] * 5, state, [])
+
+    with caplog.at_level(logging.DEBUG, logger="inference_server.app"):
+        await app_mod._preload_models(state, proxy, [], [("ds/2", "k")])
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "inference_server.app"
+    ]
+    assert len(proxy.calls) == 1
+    assert state.preload_finished is True
+    assert messages[-1].startswith("Preload of 'ds/2' gave up after ")
+    assert messages[-1].endswith(" s; serving without it")
+
+
+@pytest.mark.asyncio
 async def test_optional_preload_failure_is_not_retried(monkeypatch):
     from types import SimpleNamespace
 

@@ -200,6 +200,25 @@ def test_readiness_not_ready_until_failed_pinned_preload_succeeds(
     assert len([call for call in gw.calls if call[:2] == ("load", "ds/2")]) >= 3
 
 
+def test_readiness_ready_after_pinned_preload_gives_up(legacy_client, monkeypatch):
+    from inference_server import app as app_mod
+
+    class _FailingGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            self.calls.append(("load", model_id, api_key))
+            return ("error", 3)
+
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_RETRY_S", 0.01)
+    monkeypatch.setattr(app_mod, "_PINNED_PRELOAD_MAX_WAIT_S", 0.0)
+    monkeypatch.setenv("PINNED_MODELS", "ds/2")
+    gw = _FailingGateway()
+    c = legacy_client(gw)
+
+    assert _wait_for_status(c, "/readiness", 200).json() == {"status": "ready"}
+    assert _wait_for_status(c, "/v2/server/ready", 200).json() == {"ready": True}
+    assert len([call for call in gw.calls if call[:2] == ("load", "ds/2")]) == 1
+
+
 def test_shutdown_cancels_retrying_pinned_preload(legacy_client, monkeypatch):
     import time
 

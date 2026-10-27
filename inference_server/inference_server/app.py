@@ -16,6 +16,7 @@ import importlib.util
 import logging
 import multiprocessing
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial
@@ -101,6 +102,7 @@ _LEGACY_ERROR_HANDLING_ENABLED = (
 
 _PRELOAD_CONCURRENCY = 2
 _PINNED_PRELOAD_RETRY_S = 15.0
+_PINNED_PRELOAD_MAX_WAIT_S = _cfg.PINNED_PRELOAD_MAX_WAIT_S
 
 
 async def _preload_models(
@@ -139,8 +141,17 @@ async def _preload_models(
         return False
 
     async def _one(mid, api_key, is_pinned):
+        started = time.monotonic()
         while not await _load_once(mid, api_key, is_pinned):
             if not is_pinned:
+                return
+            elapsed = time.monotonic() - started
+            if elapsed >= _PINNED_PRELOAD_MAX_WAIT_S:
+                logger.error(
+                    "Preload of '%s' gave up after %.0f s; serving without it",
+                    mid,
+                    elapsed,
+                )
                 return
             await asyncio.sleep(_PINNED_PRELOAD_RETRY_S)
 
