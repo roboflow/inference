@@ -1,5 +1,5 @@
 {
-  "source_revision": "3f976fe6421d0e4a6d8c53c4622d49d3b4b2f734",
+  "source_revision": "492ad33483f6a3f596abab0fb2ac493354adb1ff",
   "cases": {
     "adapters=False,proxy=False": {
       "inference.models:DinoV3Classification": [
@@ -3123,6 +3123,10 @@
         ],
         [
           "semantic-segmentation",
+          "rfdetr-nas-sem"
+        ],
+        [
+          "semantic-segmentation",
           "rfdetr-sem-2xlarge"
         ],
         [
@@ -4412,6 +4416,10 @@
         [
           "semantic-segmentation",
           "rfdetr"
+        ],
+        [
+          "semantic-segmentation",
+          "rfdetr-nas-sem"
         ],
         [
           "semantic-segmentation",
