@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import random
 import time
@@ -29,6 +30,7 @@ from streamvision.camera.exceptions import (
     EndOfStreamError,
     StreamOperationNotAllowedError,
 )
+from streamvision.camera.fourcc import parse_fourcc
 from streamvision.camera.source_reference_sanitizer import (
     redact_credentials_in_text,
     sanitize_source_reference,
@@ -188,6 +190,29 @@ class CV2VideoFrameProducer(VideoFrameProducer):
             fps=fps,
             timestamp_created=timestamp_created,
         )
+
+    def _verify_camera_mode(self, properties: Dict[str, Union[float, str]]) -> None:
+        for name, requested in properties.items():
+            name = name.lower()
+            if name not in {"fourcc", "frame_width", "frame_height", "fps"}:
+                continue
+
+            expected = parse_fourcc(requested) if name == "fourcc" else requested
+            effective = self.stream.get(getattr(cv2, "CAP_PROP_" + name.upper()))
+            # UVC commonly reports rounded NTSC rates rather than exact fractions.
+            tolerance = 0.001 if name == "fps" else 0
+            try:
+                matches = expected is not None and math.isclose(
+                    float(expected), float(effective), rel_tol=0, abs_tol=tolerance
+                )
+            except (TypeError, ValueError, OverflowError):
+                matches = False
+            if not matches:
+                raise ValueError(
+                    f"cv2 camera mode mismatch: {name}: requested {requested!r}, "
+                    f"effective {effective!r}. Native capture is unavailable and "
+                    "the CPU fallback cannot honor the requested camera mode."
+                )
 
     def release(self):
         self.stream.release()
@@ -787,6 +812,12 @@ class VideoSource:
                 classification_text=underlying_error,
             )
         self._video.initialize_source_properties(self._video_source_properties)
+        if (
+            type(self._video) is CV2VideoFrameProducer
+            and ENABLE_TENSOR_DATA_REPRESENTATION
+            and _consumes_camera_on_jetson(video=self._stream_reference)
+        ):
+            self._video._verify_camera_mode(self._video_source_properties)
         self._source_properties = self._video.discover_source_properties()
 
     def _interrupt_video(self) -> None:
