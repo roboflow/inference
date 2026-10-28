@@ -93,6 +93,7 @@ def _with_materialized_packages_only(
         model_architecture=model_metadata.model_architecture,
         model_packages=materialized,
         task_type=model_metadata.task_type,
+        oriented_box_metadata=model_metadata.oriented_box_metadata,
         model_variant=model_metadata.model_variant,
         model_dependencies=model_metadata.model_dependencies,
         recommended_parameters=model_metadata.recommended_parameters,

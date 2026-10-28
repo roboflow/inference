@@ -1,79 +1,35 @@
 """Native RF-DETR OBB ONNX consumer. Angles are clockwise image-space radians."""
 
-import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import List
 
 import numpy as np
 import torch
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from inference_models.entities import ImageDimensions
 from inference_models.models.base.object_detection import (
     Detections,
     ObjectDetectionModel,
 )
+from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.onnx import create_onnx_inference_session
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
     ImagePreProcessing,
+    ResizeMode,
+    align_training_input_size_with_model,
+    ensure_input_size_within_limit,
+    parse_class_names_file,
+    parse_inference_config,
+)
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
 )
 from inference_models.models.common.roboflow.pre_processing import (
     apply_pre_processing_to_numpy_image,
 )
-
-
-class OrientedClass(BaseModel):
-    """Frozen class identity and heading semantics from the training artifact."""
-
-    model_config = ConfigDict(extra="forbid")
-    categoryId: int = Field(gt=0, description="Native dataset category identifier.")
-    outputIndex: int = Field(
-        gt=0, description="Class-logit column; zero is background."
-    )
-    name: str = Field(min_length=1, description="Frozen class name.")
-    heading: StrictBool = Field(description="Whether the class has semantic front.")
-
-
-class OrientedMetadata(BaseModel):
-    """Required semantic contract; an ordinary detection package is never accepted."""
-
-    schemaVersion: int = Field(description="OBB artifact schema version.")
-    taskType: str = Field(description="Native model task identity.")
-    annotationFormat: str = Field(description="Native annotation geometry format.")
-    transformPolicy: str = Field(description="Native shape/front transform policy.")
-    classHeading: dict[str, StrictBool] = Field(description="Frozen class heading map.")
-    classes: List[OrientedClass] = Field(
-        min_length=1, description="Model output mapping."
-    )
-    versionSchema: dict = Field(
-        description="Frozen generated-version annotation schema."
-    )
-    resolvedRecipe: dict = Field(description="Resolved training recipe.")
-    modelRevision: str = Field(
-        pattern=r"^[0-9a-f]{40}$", description="Exact trained model commit SHA."
-    )
-    preprocessing: dict = Field(
-        description="Frozen model normalization and letterbox contract."
-    )
-
-    @model_validator(mode="after")
-    def _check_contract(self):
-        if (
-            self.schemaVersion,
-            self.taskType,
-            self.annotationFormat,
-            self.transformPolicy,
-        ) != (1, "oriented-object-detection", "oriented-box-v1", "obb-front-axis-v1"):
-            raise ValueError("Unsupported native OBB artifact contract")
-        for key in ("categoryId", "outputIndex", "name"):
-            values = [getattr(c, key) for c in self.classes]
-            if len(set(values)) != len(values):
-                raise ValueError(f"Duplicate OBB class {key}")
-        if any(self.classHeading.get(c.name) is not c.heading for c in self.classes):
-            raise ValueError("classHeading disagrees with frozen classes")
-        return self
+from inference_models.models.rfdetr.class_remapping import prepare_class_remapping
 
 
 @dataclass
@@ -120,7 +76,7 @@ def _corners(obb):
 
 @dataclass(frozen=True)
 class OrientedPreprocessingMetadata:
-    """The continuous uniform letterbox transform used by the trained model."""
+    """Realized integer letterbox transform used by the trained model."""
 
     original_size: ImageDimensions
     scale_width: float
@@ -137,15 +93,15 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
 
     CPU ONNX is the advertised initial backend. Other backends require their own
     validation before registration. Model preprocessing is the training Letterbox:
-    uniform max-side scale, continuous centered padding and unchanged angle.
+    rounded max-side resize, integer centered padding and unchanged angle.
     """
 
     @classmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs):
-        """Load an exported native artifact with mandatory frozen semantics.
+        """Load a standard RF-DETR package with Core-owned frozen class semantics.
 
         Args:
-            model_name_or_path: Local package directory containing weights.onnx and obb_metadata.json.
+            model_name_or_path: Local package directory with standard RF-DETR ONNX files.
             **kwargs: Shared loader options; onnx_execution_providers can select CPU only.
 
         Returns:
@@ -154,43 +110,74 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         Raises:
             ValueError: For unsupported backend, malformed outputs or missing metadata.
         """
-        import onnxruntime as ort
-
-        directory = Path(model_name_or_path)
-        metadata = OrientedMetadata.model_validate_json(
-            (directory / "obb_metadata.json").read_text()
-        )
+        raw_metadata = kwargs.get("oriented_box_metadata")
+        if raw_metadata is None:
+            raise ValueError("Native OBB requires frozen orientedBoxMetadata from Core")
+        metadata = OrientedBoxMetadata.model_validate(raw_metadata)
         providers = kwargs.get("onnx_execution_providers") or ["CPUExecutionProvider"]
         if providers != ["CPUExecutionProvider"]:
             raise ValueError("Native OBB currently supports CPUExecutionProvider only")
+        package = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=["class_names.txt", "inference_config.json", "weights.onnx"],
+        )
+        class_names = parse_class_names_file(package["class_names.txt"])
         maximum = kwargs.get("rf_detr_max_input_resolution")
-        if maximum is not None:
-            maximum = min(maximum) if isinstance(maximum, tuple) else maximum
-            if metadata.preprocessing.get("inputSize", 0) > maximum:
-                raise ValueError("Native OBB input resolution exceeds configured limit")
-        session = ort.InferenceSession(
-            str(directory / "weights.onnx"), providers=providers
+        config = parse_inference_config(
+            config_path=package["inference_config.json"],
+            allowed_resize_modes={ResizeMode.LETTERBOX},
+            max_allowed_input_size=maximum,
         )
-        config = json.loads((directory / "inference_config.json").read_text())
-        image_pre_processing = ImagePreProcessing.model_validate(
-            config["image_pre_processing"]
-        )
-        if config.get("class_names_operations"):
-            raise ValueError(
-                "Native OBB class remapping requires a new frozen artifact schema"
+        indices = list(range(len(class_names)))
+        if config.class_names_operations:
+            class_names, remapping = prepare_class_remapping(
+                class_names=class_names,
+                class_names_operations=config.class_names_operations,
+                device=torch.device("cpu"),
             )
+            indices = remapping.remaining_class_ids.tolist()
+        if not class_names or any(
+            name not in metadata.classHeading for name in class_names
+        ):
+            raise ValueError(
+                "Native OBB class names disagree with frozen class heading policy"
+            )
+        session = create_onnx_inference_session(
+            model_path=package["weights.onnx"], providers=providers
+        )
         model = cls(
             session=session,
             metadata=metadata,
-            image_pre_processing=image_pre_processing,
+            class_names=class_names,
+            output_indices=indices,
+            image_pre_processing=config.image_pre_processing,
         )
+        config = align_training_input_size_with_model(
+            config,
+            model_input_height=model.resolution,
+            model_input_width=model.resolution,
+        )
+        ensure_input_size_within_limit(
+            inference_config=config, max_allowed_input_size=maximum
+        )
+        network = config.network_input
+        if (
+            network.color_mode != ColorMode.RGB
+            or network.input_channels != 3
+            or network.padding_value != 114
+            or network.scaling_factor != 255
+            or network.normalization != ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ):
+            raise ValueError("Native OBB package preprocessing differs from training")
         return model
 
     def __init__(
         self,
         *,
         session,
-        metadata: OrientedMetadata,
+        metadata: OrientedBoxMetadata,
+        class_names: List[str],
+        output_indices: List[int],
         image_pre_processing: ImagePreProcessing,
     ):
         self._session = session
@@ -205,23 +192,6 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         if not isinstance(shape[2], int) or shape[2] != shape[3]:
             raise ValueError("OBB ONNX requires a static square input size")
         self.resolution = shape[2]
-        expected = {
-            "type": "rfdetr-obb-letterbox-v1",
-            "inputSize": self.resolution,
-            "paddingValue": 114,
-            "scale": "uniform-max-side",
-            "paddingOffset": "continuous-centered",
-            "interpolation": "pillow-bilinear-affine",
-            "angle": "unchanged",
-            "colorMode": "rgb",
-            "scalingFactor": 255,
-            "mean": [0.485, 0.456, 0.406],
-            "std": [0.229, 0.224, 0.225],
-        }
-        if metadata.preprocessing != expected:
-            raise ValueError(
-                "Native OBB preprocessing metadata is incompatible with this runtime"
-            )
         outputs = {o.name: o.shape for o in session.get_outputs()}
         if set(outputs) != {"dets", "labels", "heading"} or any(
             len(s) != 3 for s in outputs.values()
@@ -233,10 +203,11 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             raise ValueError("Invalid OBB output geometry or heading shape")
         if (
             not isinstance(outputs["labels"][-1], int)
-            or max(c.outputIndex for c in metadata.classes) >= outputs["labels"][-1]
+            or max(output_indices) >= outputs["labels"][-1]
         ):
             raise ValueError("OBB output class mapping exceeds labels dimension")
-        self._class_names = [c.name for c in metadata.classes]
+        self._class_names = class_names
+        self._output_indices = output_indices
 
     @property
     def class_names(self):
@@ -244,7 +215,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         return self._class_names
 
     def pre_process(self, images, **kwargs):
-        """Apply the same continuous letterbox and ImageNet normalization as training.
+        """Apply the same rounded letterbox and ImageNet normalization as training.
 
         Args:
             images: RGB uint8 HWC NumPy images or CHW tensors; lists/batches accepted.
@@ -278,14 +249,14 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             h, w = image.shape[:2]
             size = self.resolution
             scale = size / max(h, w)
-            left, top = (size - w * scale) / 2, (size - h * scale) / 2
-            canvas = Image.fromarray(image).transform(
-                (size, size),
-                Image.Transform.AFFINE,
-                (1 / scale, 0, -left / scale, 0, 1 / scale, -top / scale),
-                resample=Image.Resampling.BILINEAR,
-                fillcolor=(114, 114, 114),
+            resized_width = max(1, round(w * scale))
+            resized_height = max(1, round(h * scale))
+            left, top = (size - resized_width) // 2, (size - resized_height) // 2
+            resized = Image.fromarray(image).resize(
+                (resized_width, resized_height), resample=Image.Resampling.BILINEAR
             )
+            canvas = Image.new("RGB", (size, size), (114, 114, 114))
+            canvas.paste(resized, (left, top))
             array = np.asarray(canvas).astype(np.float32) / 255.0
             array = (
                 array - np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -296,8 +267,8 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
                     original_size=ImageDimensions(
                         height=original_height, width=original_width
                     ),
-                    scale_width=scale,
-                    scale_height=scale,
+                    scale_width=resized_width / w,
+                    scale_height=resized_height / h,
                     pad_left=left,
                     pad_top=top,
                     inference_size=ImageDimensions(height=size, width=size),
@@ -377,7 +348,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         cap = 300 if cap is None else cap
         if not isinstance(cap, int) or cap < 0:
             raise ValueError("Native OBB max_detections must be a nonnegative integer")
-        indices = torch.tensor([c.outputIndex for c in self.metadata.classes])
+        indices = torch.tensor(self._output_indices)
         results = []
         for image_boxes, image_logits, image_heading, meta in zip(
             boxes, logits, headings, pre_processing_meta
@@ -395,7 +366,8 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             chosen = image_boxes[query].clone().float()
             sides = image_heading[query].argmax(-1)
             directed = torch.tensor(
-                [self.metadata.classes[int(c)].heading for c in cls], dtype=torch.bool
+                [self.metadata.classHeading[self._class_names[int(c)]] for c in cls],
+                dtype=torch.bool,
             )
             sides = torch.where(directed, sides, 0)
             swap = sides % 2 == 1
@@ -410,7 +382,9 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             chosen[:, 1] = (
                 chosen[:, 1] - meta.pad_top
             ) / meta.scale_height + meta.crop_offset_y
-            chosen[:, 2:4] /= meta.scale_width
+            # Training scales ordered sides by the mean of the realized resize
+            # ratios, while centers use each axis's own ratio.
+            chosen[:, 2:4] /= (meta.scale_width + meta.scale_height) / 2
             corners = _corners(chosen)
             bounds = torch.cat((corners.amin(1), corners.amax(1)), dim=-1)
             results.append(
@@ -426,16 +400,13 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
                     xyxy=bounds,
                     confidence=flat[selected],
                     class_id=torch.tensor(
-                        [self.metadata.classes[int(c)].categoryId for c in cls],
+                        cls.tolist(),
                         dtype=torch.int32,
                     ),
                     obb=chosen,
                     heading=directed,
-                    detection_id=[
-                        f"q{int(q)}:c{self.metadata.classes[int(c)].categoryId}"
-                        for q, c in zip(query, cls)
-                    ],
-                    class_names=[self.metadata.classes[int(c)].name for c in cls],
+                    detection_id=[f"q{int(q)}:c{int(c)}" for q, c in zip(query, cls)],
+                    class_names=[self._class_names[int(c)] for c in cls],
                 )
             )
         return results

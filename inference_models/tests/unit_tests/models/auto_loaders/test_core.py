@@ -34,7 +34,6 @@ from inference_models.models.auto_loaders.auto_resolution_cache import (
     AutoResolutionCache,
     AutoResolutionCacheEntry,
 )
-from inference_models.errors import InvalidParameterError
 from inference_models.models.auto_loaders.core import (
     attempt_loading_matching_model_packages,
     attempt_loading_model_from_local_storage,
@@ -55,10 +54,6 @@ from inference_models.models.auto_loaders.entities import (
     BackendType,
     InferenceModelConfig,
     SuppliedDependency,
-)
-from inference_models.weights_providers.entities import (
-    ModelDependency,
-    RecommendedParameters,
 )
 from inference_models.runtime_introspection.core import RuntimeXRayResult
 from inference_models.weights_providers import core as weights_providers_core
@@ -1004,6 +999,12 @@ def test_dump_model_config_for_offline_use_preserves_legacy_positional_slots(
 
 
 def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> None:
+    def legacy_parameters(function):
+        parameters = inspect.signature(function).parameters
+        assert list(parameters)[-1] == "oriented_box_metadata"
+        assert parameters["oriented_box_metadata"].default is None
+        return list(parameters)[:-1]
+
     assert list(inspect.signature(dump_model_config_for_offline_use).parameters)[
         :7
     ] == [
@@ -1015,18 +1016,16 @@ def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> 
         "on_file_created",
         "model_id",
     ]
-    assert list(inspect.signature(initialize_model).parameters)[-3:] == [
+    assert legacy_parameters(initialize_model)[-3:] == [
         "requested_model_id",
         "api_key",
         "content_addressed_artifact_cache",
     ]
-    assert list(inspect.signature(attempt_loading_matching_model_packages).parameters)[
-        -2:
-    ] == [
+    assert legacy_parameters(attempt_loading_matching_model_packages)[-2:] == [
         "requested_model_id",
         "content_addressed_artifact_cache",
     ]
-    assert list(inspect.signature(dump_auto_resolution_cache).parameters)[-2:] == [
+    assert legacy_parameters(dump_auto_resolution_cache)[-2:] == [
         "canonical_model_id",
         "api_key",
     ]
@@ -2856,22 +2855,32 @@ def test_create_symlinks_to_shared_blobs_when_hooks_not_provided(
 
 
 def test_resolve_preloaded_dependency_when_none_supplied() -> None:
-    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    dependency = ModelDependency(
+        name="feature_extractor", model_id="owlv2", model_package_id="pkg-1"
+    )
 
     assert resolve_preloaded_dependency(dependency, None) is None
     assert resolve_preloaded_dependency(dependency, {}) is None
 
 
 def test_resolve_preloaded_dependency_when_dependency_not_supplied() -> None:
-    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
-    supplied = {"other": SuppliedDependency(model_id="x", model_package_id="y", instance=object())}
+    dependency = ModelDependency(
+        name="feature_extractor", model_id="owlv2", model_package_id="pkg-1"
+    )
+    supplied = {
+        "other": SuppliedDependency(
+            model_id="x", model_package_id="y", instance=object()
+        )
+    }
 
     assert resolve_preloaded_dependency(dependency, supplied) is None
 
 
 def test_resolve_preloaded_dependency_when_identity_matches() -> None:
     instance = object()
-    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    dependency = ModelDependency(
+        name="feature_extractor", model_id="owlv2", model_package_id="pkg-1"
+    )
     supplied = {
         "feature_extractor": SuppliedDependency(
             model_id="owlv2", model_package_id="pkg-1", instance=instance
@@ -2881,9 +2890,13 @@ def test_resolve_preloaded_dependency_when_identity_matches() -> None:
     assert resolve_preloaded_dependency(dependency, supplied) is instance
 
 
-def test_resolve_preloaded_dependency_when_metadata_package_unset_and_supplied_package_none() -> None:
+def test_resolve_preloaded_dependency_when_metadata_package_unset_and_supplied_package_none() -> (
+    None
+):
     instance = object()
-    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id=None)
+    dependency = ModelDependency(
+        name="feature_extractor", model_id="owlv2", model_package_id=None
+    )
     supplied = {
         "feature_extractor": SuppliedDependency(
             model_id="owlv2", model_package_id=None, instance=instance
@@ -2893,8 +2906,12 @@ def test_resolve_preloaded_dependency_when_metadata_package_unset_and_supplied_p
     assert resolve_preloaded_dependency(dependency, supplied) is instance
 
 
-def test_resolve_preloaded_dependency_when_metadata_package_unset_but_supplied_concrete() -> None:
-    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id=None)
+def test_resolve_preloaded_dependency_when_metadata_package_unset_but_supplied_concrete() -> (
+    None
+):
+    dependency = ModelDependency(
+        name="feature_extractor", model_id="owlv2", model_package_id=None
+    )
     supplied = {
         "feature_extractor": SuppliedDependency(
             model_id="owlv2", model_package_id="pkg-a", instance=object()
@@ -2906,7 +2923,9 @@ def test_resolve_preloaded_dependency_when_metadata_package_unset_but_supplied_c
 
 
 def test_resolve_preloaded_dependency_when_model_id_mismatches() -> None:
-    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    dependency = ModelDependency(
+        name="feature_extractor", model_id="owlv2", model_package_id="pkg-1"
+    )
     supplied = {
         "feature_extractor": SuppliedDependency(
             model_id="other-base", model_package_id="pkg-1", instance=object()
@@ -2918,7 +2937,9 @@ def test_resolve_preloaded_dependency_when_model_id_mismatches() -> None:
 
 
 def test_resolve_preloaded_dependency_when_package_id_mismatches() -> None:
-    dependency = ModelDependency(name="feature_extractor", model_id="owlv2", model_package_id="pkg-1")
+    dependency = ModelDependency(
+        name="feature_extractor", model_id="owlv2", model_package_id="pkg-1"
+    )
     supplied = {
         "feature_extractor": SuppliedDependency(
             model_id="owlv2", model_package_id="pkg-2", instance=object()

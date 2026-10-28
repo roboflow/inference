@@ -21,6 +21,9 @@ from inference_models.models.auto_loaders.entities import (
     ModelArchitecture,
     TaskType,
 )
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 from inference_models.utils.file_system import read_json
 from inference_models.weights_providers.entities import (
     ModelDependency,
@@ -49,6 +52,7 @@ class AutoResolutionCacheEntry(BaseModel):
     created_at: datetime
     model_features: Optional[dict] = Field(default=None)
     recommended_parameters: Optional[RecommendedParameters] = Field(default=None)
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = Field(default=None)
     trusted_source: Optional[bool] = Field(default=None)
 
 

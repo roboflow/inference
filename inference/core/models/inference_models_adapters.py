@@ -2614,8 +2614,6 @@ class InferenceModelsOrientedObjectDetectionAdapter(
         super().__init__(model_id=model_id, api_key=api_key, **kwargs)
         self.task_type = "oriented-object-detection"
         self.img_size_h = self.img_size_w = self._model.resolution
-        if self._model.metadata.taskType != self.task_type:
-            raise ValueError("A native OBB artifact is required")
 
     def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
         """Serialize native tuples without converting them into axis-aligned boxes.

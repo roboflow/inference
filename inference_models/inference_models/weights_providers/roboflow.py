@@ -16,6 +16,9 @@ from inference_models.configuration import (
     ROBOFLOW_API_KEY,
     SECURE_GATEWAY,
 )
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 from inference_models.utils.secure_gateway import validate_secure_gateway_url
 
 LOCAL_API_KEY = "local"
@@ -116,6 +119,11 @@ class RoboflowModelMetadata(BaseModel):
     model_architecture: str = Field(alias="modelArchitecture")
     model_variant: Optional[str] = Field(alias="modelVariant", default=None)
     task_type: Optional[str] = Field(alias="taskType", default=None)
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = Field(
+        alias="orientedBoxMetadata",
+        default=None,
+        description="Frozen Core class heading semantics for native oriented boxes.",
+    )
     model_dependencies: Optional[List[RoboflowModelDependencyV1]] = Field(
         alias="modelDependencies", default=None
     )
@@ -195,6 +203,7 @@ def get_roboflow_model(
         model_architecture=model_metadata.model_architecture,
         model_packages=parsed_model_packages,
         task_type=model_metadata.task_type,
+        oriented_box_metadata=model_metadata.oriented_box_metadata,
         model_variant=model_metadata.model_variant,
         model_dependencies=model_dependencies,
         recommended_parameters=model_metadata.recommended_parameters,

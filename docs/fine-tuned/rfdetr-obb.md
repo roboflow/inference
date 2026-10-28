@@ -5,34 +5,49 @@ RF-DETR OBB model. It does not register the artifact as ordinary object detectio
 
 ## Artifact and geometry contract
 
-An ONNX model package contains `weights.onnx`, `inference_config.json`,
-`obb_metadata.json`, and the registry-generated `model_config.json`. The registry
-identity is architecture `rfdetr`, task `oriented-object-detection`, backend `onnx`.
-The model variant is `rfdetr-obb-preview-2xl`.
+The producer registers a standard RF-DETR ONNX package containing `weights.onnx`,
+`class_names.txt`, and `inference_config.json`. The loader generates
+`model_config.json` for its cache and offline loading. The registry identity is
+architecture `rfdetr`, task `oriented-object-detection`, backend `onnx`, with model
+variant `rfdetr-obb-preview-2xl`. The registry also accepts the producer's
+`obb-detection` task alias; responses use `oriented-object-detection`.
+
+The model metadata response supplies `orientedBoxMetadata` with a `classHeading`
+map and nonnegative `classHeadingRevision`, taken from the model's frozen dataset
+version. This field is optional for other tasks and required by the native OBB
+loader. It follows the model through cached and offline loads. The runtime does
+not infer class heading capability from the graph's heading head.
 
 The graph emits raw `dets[B,Q,5]`, `labels[B,Q,C]`, and `heading[B,Q,4]` before
 selection. `dets` contains normalized center and ordered side lengths, followed by
 a clockwise-radian angle. `labels` contains class logits; output zero is background.
-Metadata maps each foreground output column to its native category ID and frozen
-class name/heading capability. Zero-area padded query slots are discarded before
-selection. Nonfinite graph values and missing heading outputs are errors.
+`class_names.txt` identifies output columns, and the package's standard
+`class_names_operations` removes the background class. Response class IDs are
+zero-based indices after that remapping, rather than COCO category IDs. Frozen
+class heading policy is matched by class name. Zero-area padded query slots are
+discarded before selection. Nonfinite graph values and missing heading outputs
+are errors.
 
 For a directed class, heading side `k` adds `k*pi/2` to the raw angle and swaps
 width/height iff `k` is odd. This preserves the exact footprint and designates the
 predicted front. Undirected classes retain the raw ordered rectangle axis.
 No independent front vector is persisted.
 
-The model uses the `rfdetr-obb-letterbox-v1` preprocessing contract: uniform scale
-`S/max(width,height)`, continuous centered padding, PIL affine bilinear sampling,
-RGB padding 114, division by 255 and ImageNet normalization. Centers and both sides
-use that same scale; angles remain unchanged. The runtime requires the artifact's
-explicit preprocessing metadata and rejects incompatible policies. Roboflow static
-crop, grayscale and contrast preprocessing from `inference_config.json` runs before
-this model normalization. The inverse includes the static-crop offset. Returned
-geometry remains floating point in original input-image coordinates.
+The package declares letterbox resizing, RGB padding 114, division by 255 and
+ImageNet normalization. For an image of width `w`, height `h` and square model
+input size `S`, the runtime resizes to `round(w*S/max(w,h))` by
+`round(h*S/max(w,h))`, with each dimension at least one pixel. Pillow bilinear
+resizing and integer centered padding match the producer's training transform.
 
-This requires the compatible model export and trainer artifact producer. Older
-mean-scale/rounded-resize OBB artifacts are incompatible and are rejected.
+Rounding can make the realized width and height ratios differ. The inverse maps
+centers using their respective ratios and ordered sides using the mean of those
+two ratios, matching the training-target transform; angles remain unchanged.
+The producer's current postprocessing uses a continuous max-side inverse.
+Comparison with that postprocessing and validation against trained weights remain
+pending. Roboflow static crop, grayscale and contrast preprocessing from
+`inference_config.json` runs before model normalization. The inverse includes the
+static-crop offset. Returned geometry remains floating point in original
+input-image coordinates.
 
 ## Response and SDK
 
@@ -40,7 +55,7 @@ mean-scale/rounded-resize OBB artifacts are incompatible and are rejected.
 fields. Each prediction contains `obb: [cx, cy, width, height, theta]`, `class_id`,
 `class`, `confidence`, `heading`, and `detection_id`. The response includes
 `task_type: "oriented-object-detection"` and frozen `class_heading` semantics.
-Detection IDs identify query/category rows within each input result and remain
+Detection IDs identify query/class rows within each input result and remain
 stable through Workflow transport. Bounding AABBs and corners are compatibility
 views derived from native geometry.
 
@@ -84,17 +99,19 @@ workspace admission checks; ordinary AABB upload paths are not advertised for OB
 
 | Target | Implementation and validation |
 | --- | --- |
-| Local CPU ONNX model package | Implemented; synthetic ONNX graphs and an actual random-initialized 64px RF-DETR export executed through the installed consumer |
-| Server request consumer | Implemented; AutoModel loading, native request lifecycle and original-coordinate response tested locally |
-| Current Inference SDK | Native task route/configuration and resizing contract covered locally; no hosted request executed |
+| Local CPU ONNX model package | Implemented; synthetic three-output ONNX fixtures use the standard producer package files and frozen class metadata; pinned producer letterbox pixels and target geometry tested across five image shapes |
+| Server request consumer | Implemented; metadata retrieval, AutoModel loading, cache/offline reloads, native request lifecycle and original-coordinate response tested locally with synthetic fixtures |
+| Current Inference SDK | Native route exercised through the request adapter and SDK with a synthetic ONNX fixture; its response passes native preview and evaluation parsers; no hosted request executed |
 | Local Workflow model, transport and visualization | Implemented; NumPy/tensor semantic and coordinate tests |
 | Query-language `DetectionsShift` / `DetectionsOffset` | Excluded; native NumPy/tensor inputs reject before geometry mutation |
 | Hosted production serving | Requires compatible package releases, trained artifact registration and serving deployment; no hosted/cloud run claimed |
 | CUDA, TensorRT, CoreML, browser inferencejs | Excluded from this initial backend registration |
 | Legacy `roboflow-python` `version.model` | Excluded; current Inference SDK support does not add legacy task dispatch |
 
-No model package release, cloud/GPU run, deployment or feature activation is part of
-these local validation results. Existing authorized model reads remain independent
+Synthetic fixtures establish package and transport compatibility; they do not
+establish trained-model accuracy or an end-to-end platform training run. No model
+package release, cloud/GPU run, deployment or feature activation is part of these
+local validation results. Existing authorized model reads remain independent
 of the platform's default-off gate for new OBB authoring/jobs.
 
 ## Package and worker release gate

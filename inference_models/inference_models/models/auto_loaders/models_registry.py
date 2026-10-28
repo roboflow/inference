@@ -388,6 +388,10 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr.rfdetr_oriented_object_detection_onnx",
         class_name="RFDetrForOrientedObjectDetectionONNX",
     ),
+    ("rfdetr", "obb-detection", BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr.rfdetr_oriented_object_detection_onnx",
+        class_name="RFDetrForOrientedObjectDetectionONNX",
+    ),
     ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TRT): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.rfdetr.rfdetr_object_detection_trt",
