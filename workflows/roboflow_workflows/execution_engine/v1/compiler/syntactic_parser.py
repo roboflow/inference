@@ -2,12 +2,15 @@ from functools import lru_cache
 from typing import Dict, List, Optional, Tuple, Type, Union
 
 import pydantic
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 from roboflow_workflows.errors import WorkflowBlockError, WorkflowSyntaxError
 from roboflow_workflows.execution_engine.entities.base import InputType, JsonField
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     _get_env_configuration_state,
     load_workflow_blocks,
+)
+from roboflow_workflows.execution_engine.introspection.manifest_cache import (
+    is_dynamic_manifest,
 )
 from roboflow_workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
@@ -101,26 +104,46 @@ def parse_workflow_definition(
 def build_workflow_definition_entity(
     available_blocks: List[BlockSpecification],
 ) -> Type[BaseModel]:
-    cache_key = WORKFLOW_DEFINITION_ENTITIES_CACHE.get_hash_key(
-        available_blocks=available_blocks
+    """Build the workflow validation model without caching dynamic manifests.
+
+    Args:
+        available_blocks: Block classes and manifests available to the workflow.
+
+    Returns:
+        Pydantic model that validates the workflow definition.
+    """
+    cacheable = not any(
+        is_dynamic_manifest(block.manifest_class) for block in available_blocks
     )
-    cached_value = WORKFLOW_DEFINITION_ENTITIES_CACHE.get(key=cache_key)
-    if cached_value is not None:
-        return cached_value
+    if cacheable:
+        cache_key = WORKFLOW_DEFINITION_ENTITIES_CACHE.get_hash_key(
+            available_blocks=available_blocks
+        )
+        cached_value = WORKFLOW_DEFINITION_ENTITIES_CACHE.get(key=cache_key)
+        if cached_value is not None:
+            return cached_value
+
     steps_manifests = tuple(block.manifest_class for block in available_blocks)
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
     entity = create_model(
         "WorkflowSpecificationV1",
+        # Rendered validation errors would otherwise repeat each failing step's raw
+        # input, secrets in literal fields included (passwords, credentials in a URL),
+        # into server logs and the `inner_error_message` of API responses. Messages
+        # and error locations are unaffected.
+        __config__=ConfigDict(hide_input_in_errors=True),
         version=(str, ...),
         inputs=(List[InputType], ...),
         steps=(List[block_type], ...),
         outputs=(List[JsonField], ...),
     )
-    WORKFLOW_DEFINITION_ENTITIES_CACHE.cache(
-        key=cache_key,
-        value=entity,
-    )
+    if cacheable:
+        WORKFLOW_DEFINITION_ENTITIES_CACHE.cache(
+            key=cache_key,
+            value=entity,
+        )
+
     return entity
 
 

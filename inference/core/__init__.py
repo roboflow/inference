@@ -6,6 +6,7 @@ from packaging import version as packaging_version
 from roboflow_workflows.prototypes.image_codec import set_default_image_codec_factory
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
+from inference.core.exceptions import InvalidNumpyInput
 
 # Must be installed before any import of streamvision.stream.environment.
 from inference.core.interfaces.streams_configuration import (
@@ -39,12 +40,41 @@ def _resolve_workflows_image_codec():
     return resolve_image_codec()
 
 
+def _resolve_platform_blocks_client():
+    from inference.core.interfaces.roboflow_platform_client import (
+        SERVER_PLATFORM_CLIENT,
+    )
+
+    return SERVER_PLATFORM_CLIENT
+
+
+def _invalid_registration_image_error(message: str) -> InvalidNumpyInput:
+    error = InvalidNumpyInput(
+        message=message,
+        public_message="Image width and height must both be greater than zero.",
+    )
+    return error
+
+
+def _install_roboflow_platform_blocks_defaults() -> None:
+    from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.active_learning import (
+        set_invalid_image_error_factory,
+    )
+    from roboflow_workflows.prototypes.platform_client import (
+        set_platform_blocks_client_factory,
+    )
+
+    set_platform_blocks_client_factory(_resolve_platform_blocks_client)
+    set_invalid_image_error_factory(_invalid_registration_image_error)
+
+
 install_workflows_configuration()
 install_streams_configuration()
 # Direct WorkflowImageData callers need the same guarded loader as the server.
 # Resolve it on first use so startup does not import the server image utilities
 # and callers can still bind an explicit codec before loading an image.
 set_default_image_codec_factory(_resolve_workflows_image_codec)
+_install_roboflow_platform_blocks_defaults()
 
 latest_release = None
 last_checked = 0

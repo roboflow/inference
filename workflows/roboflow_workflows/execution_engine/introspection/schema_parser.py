@@ -1,7 +1,6 @@
 import itertools
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
-from functools import lru_cache
 from typing import Dict, Optional, Set, Type
 
 from roboflow_workflows.execution_engine.entities.types import (
@@ -16,6 +15,9 @@ from roboflow_workflows.execution_engine.introspection.entities import (
     PrimitiveTypeDefinition,
     ReferenceDefinition,
     SelectorDefinition,
+)
+from roboflow_workflows.execution_engine.introspection.manifest_cache import (
+    cache_static_manifest,
 )
 from roboflow_workflows.prototypes.block import WorkflowBlockManifest
 
@@ -58,10 +60,18 @@ def clear_cache() -> None:
     parse_block_manifest.cache_clear()
 
 
-@lru_cache(maxsize=10000)
+@cache_static_manifest(maxsize=10000)
 def parse_block_manifest(
     manifest_type: Type[WorkflowBlockManifest],
 ) -> BlockManifestMetadata:
+    """Parse a block's input definitions, caching only static manifest classes.
+
+    Args:
+        manifest_type: Built-in, plugin or dynamically generated manifest class.
+
+    Returns:
+        Primitive input and selector metadata used by the compiler.
+    """
     # Import here to avoid circular dependency
     from roboflow_workflows.execution_engine.introspection.blocks_loader import (
         _cached_model_json_schema,
@@ -79,7 +89,7 @@ def parse_block_manifest(
     inputs_enforcing_auto_batch_casting = set(
         manifest_type.get_parameters_enforcing_auto_batch_casting()
     )
-    return parse_block_manifest_schema(
+    metadata = parse_block_manifest_schema(
         schema=schema,
         inputs_dimensionality_offsets=inputs_dimensionality_offsets,
         dimensionality_reference_property=dimensionality_reference_property,
@@ -87,6 +97,8 @@ def parse_block_manifest(
         inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
         inputs_enforcing_auto_batch_casting=inputs_enforcing_auto_batch_casting,
     )
+
+    return metadata
 
 
 def parse_block_manifest_schema(
