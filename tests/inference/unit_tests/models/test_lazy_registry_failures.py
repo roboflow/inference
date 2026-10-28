@@ -1,6 +1,8 @@
 """Regressions for optional availability and registry serialization."""
 
+import gc
 import warnings
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock
 
@@ -8,6 +10,59 @@ import pytest
 
 from inference.core.registries import lazy
 from inference.core.warnings import ModelDependencyMissing
+
+
+@pytest.mark.parametrize("optional", [False, True])
+def test_cached_failure_does_not_retain_completed_request(monkeypatch, optional):
+    def import_model(path):
+        raise ImportError("missing dependency")
+
+    class RequestPayload:
+        pass
+
+    monkeypatch.setattr(lazy.importlib, "import_module", import_model)
+    reference = lazy._LazyModelClass("missing:Model", optional=optional)
+    registry = lazy._LazyModelRegistry({"model": reference})
+
+    def request():
+        payload = RequestPayload()
+        payload_ref = weakref.ref(payload)
+        try:
+            registry["model"]
+        except (ImportError, KeyError):
+            pass
+
+        return payload_ref
+
+    for _ in range(3):
+        payload_ref = request()
+        gc.collect()
+        assert payload_ref() is None
+
+
+def test_uncopyable_import_error_preserves_original_contract(monkeypatch):
+    class ImportFailure(ImportError):
+        def __init__(self, message, *, code):
+            super().__init__(message)
+            self.code = code
+
+    calls = []
+
+    def import_model(path):
+        calls.append(path)
+        raise ImportFailure("dependency unavailable", code=42)
+
+    monkeypatch.setattr(lazy.importlib, "import_module", import_model)
+    reference = lazy._LazyModelClass("missing:Model")
+    registry = lazy._LazyModelRegistry({"model": reference})
+
+    for _ in range(2):
+        with pytest.raises(ImportFailure, match="dependency unavailable") as caught:
+            registry["model"]
+        assert caught.value.code == 42
+
+    assert calls == ["missing", "missing"]
+    assert reference._failure is None
 
 
 @pytest.mark.parametrize("concurrent", [False, True])

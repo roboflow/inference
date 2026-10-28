@@ -1,5 +1,6 @@
 """Import model implementations only when their registry entries are requested."""
 
+import copy
 import importlib
 import warnings
 from collections.abc import Iterator, MutableMapping
@@ -8,6 +9,24 @@ from threading import RLock
 from typing import Any, Optional
 
 from inference.core.warnings import InferenceModelsStackMissing
+
+
+def _copy_failure(error: Exception) -> Optional[Exception]:
+    # Never raise the cached object: traceback frames retain completed requests.
+    # Some third-party exceptions cannot be copied without constructor state.
+    # Preserve those errors unchanged and retry imports instead of caching them.
+    try:
+        failure = copy.copy(error)
+        if failure is error or type(failure) is not type(error):
+            return None
+
+        failure.__traceback__ = None
+        failure.__cause__ = None
+        failure.__context__ = None
+    except Exception:
+        return None
+
+    return failure
 
 
 @dataclass
@@ -35,7 +54,11 @@ class _LazyModelClass:
     def _resolve(self) -> Any:
         with self._lock:
             if self._failure is not None:
-                raise self._failure.with_traceback(None)
+                failure = _copy_failure(self._failure)
+                if failure is not None:
+                    raise failure
+
+                self._failure = None
 
             if self._resolved is None:
                 try:
@@ -43,7 +66,7 @@ class _LazyModelClass:
                     module = importlib.import_module(module_path)
                     self._resolved = getattr(module, class_name)
                 except Exception as error:
-                    self._failure = error
+                    self._failure = _copy_failure(error)
                     raise
 
         return self._resolved
