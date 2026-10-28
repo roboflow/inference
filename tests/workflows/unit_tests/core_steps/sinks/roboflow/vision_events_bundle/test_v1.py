@@ -1042,6 +1042,38 @@ def test_manifest_accepts_value_base_units() -> None:
     assert manifest.value_base_units == "$steps.expression.output"
 
 
+@pytest.mark.parametrize("value", [True, False])
+def test_manifest_rejects_boolean_value_base_units(value) -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/vision_event_bundle@v1",
+                "name": "bundle_step",
+                "target_directory": "/data/bundles",
+                "event_type": "quality_check",
+                "value_base_units": value,
+            }
+        )
+
+
+def test_sync_write_omits_value_base_units_for_operator_feedback(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(
+        block,
+        str(tmp_path),
+        event_type="operator_feedback",
+        qc_result=None,
+        related_event_id="evt-0",
+        feedback="correct",
+        value_base_units=1999,
+    )
+
+    assert result["error_status"] is False
+    payload, _ = _read_bundle(result["bundle_path"])
+    assert "valueBaseUnits" not in payload
+
+
 @pytest.mark.parametrize("value, expected", [(1999, 1999), (-250, -250), (19.6, 20)])
 def test_sync_write_includes_value_base_units(tmp_path, value, expected) -> None:
     block = _make_block(tmp_path)
@@ -1067,7 +1099,7 @@ def test_sync_write_drops_non_numeric_value_base_units(tmp_path) -> None:
 
 @_TENSOR_ONLY
 def test_sync_write_includes_value_base_units_tensor_native(tmp_path) -> None:
-    from inference.roboflow_workflows_plugin.sinks.vision_events_bundle.v1_tensor import (
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
         VisionEventBundleSinkBlockV1 as TensorVisionEventBundleSinkBlockV1,
     )
 

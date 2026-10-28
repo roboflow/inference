@@ -196,7 +196,7 @@ def test_workflow_sends_whole_number_event_value_input_as_int(
     assert type(sent_value) is int
 
 
-@pytest.mark.parametrize("event_value", [12.6, 19.99 * 100, "lots"])
+@pytest.mark.parametrize("event_value", [12.6, 19.99 * 100, "lots", True])
 def test_workflow_rejects_event_value_input_that_is_not_a_whole_number(
     model_manager: ModelManager,
     dogs_image: np.ndarray,

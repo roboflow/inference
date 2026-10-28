@@ -1455,6 +1455,20 @@ def test_manifest_value_base_units_rejects_fractional_literal() -> None:
         )
 
 
+@pytest.mark.parametrize("value", [True, False])
+def test_manifest_value_base_units_rejects_boolean_literal(value) -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/roboflow_vision_events@v1",
+                "name": "test_step",
+                "event_type": "quality_check",
+                "solution": "my-solution",
+                "value_base_units": value,
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "value, expected",
     [
@@ -1517,7 +1531,7 @@ def test_build_event_payload_omits_unset_value_base_units() -> None:
     assert "valueBaseUnits" not in payload
 
 
-@patch("inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_event")
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_event")
 def test_execute_vision_event_sends_value_base_units(mock_send: MagicMock) -> None:
     mock_send.return_value = (False, "Vision event sent successfully")
 
@@ -1538,7 +1552,7 @@ def test_execute_vision_event_sends_value_base_units(mock_send: MagicMock) -> No
     assert sent_payload["valueBaseUnits"] == -250
 
 
-@patch("inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event")
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_local_event")
 def test_execute_local_event_sends_value_base_units(mock_send: MagicMock) -> None:
     mock_send.return_value = (False, "ok", "")
 
@@ -1560,7 +1574,7 @@ def test_execute_local_event_sends_value_base_units(mock_send: MagicMock) -> Non
     assert "valueBaseUnits" not in payload
 
 
-@patch("inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event")
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_local_event")
 def test_execute_local_event_omits_unset_value_base_units(
     mock_send: MagicMock,
 ) -> None:
@@ -1616,6 +1630,39 @@ def test_run_passes_normalized_value_base_units(
     assert mock_execute.call_args.kwargs["value_base_units"] == expected
 
 
+@pytest.mark.parametrize(
+    "write_to_event_store, patched_function",
+    [(False, "_execute_vision_event"), (True, "_execute_local_event")],
+)
+def test_run_omits_value_base_units_for_operator_feedback(
+    write_to_event_store, patched_function
+) -> None:
+    block = RoboflowVisionEventsBlockV1(
+        api_key="test-key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    with patch.object(v1, patched_function) as mock_execute:
+        mock_execute.return_value = (False, "ok", "evt-1")
+        block.run(
+            input_image=None,
+            output_image=None,
+            predictions=None,
+            event_type="operator_feedback",
+            solution="my-solution",
+            custom_metadata={},
+            fire_and_forget=False,
+            disable_sink=False,
+            cooldown_seconds=0,
+            write_to_event_store=write_to_event_store,
+            related_event_id="evt-0",
+            feedback="correct",
+            value_base_units=1999,
+        )
+
+    assert mock_execute.call_args.kwargs["value_base_units"] is None
+
+
 _TENSOR_ONLY = pytest.mark.skipif(
     not __import__(
         "inference.core.env", fromlist=["ENABLE_TENSOR_DATA_REPRESENTATION"]
@@ -1627,7 +1674,7 @@ _TENSOR_ONLY = pytest.mark.skipif(
 @_TENSOR_ONLY
 @pytest.mark.parametrize("write_to_event_store", [False, True])
 def test_tensor_native_run_sends_value_base_units(write_to_event_store) -> None:
-    from inference.roboflow_workflows_plugin.sinks.vision_events import v1_tensor
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events import v1_tensor
 
     block = v1_tensor.RoboflowVisionEventsBlockV1(
         api_key="test-key",

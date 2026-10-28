@@ -495,6 +495,15 @@ class BlockManifest(WorkflowBlockManifest):
             validate_bundle_file_name(value)
         return value
 
+    @field_validator("value_base_units", mode="before")
+    @classmethod
+    def reject_boolean_value_base_units(cls, value: Any) -> Any:
+        # Lax int validation would turn true/false into 1/0 and record a value (or
+        # replace the use case default with 0) instead of rejecting the mistake.
+        if isinstance(value, bool):
+            raise ValueError("value_base_units must be a number, not true or false")
+        return value
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -737,7 +746,13 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
             related_event_id=related_event_id,
             feedback=feedback,
         )
-        value_base_units = _normalize_value_base_units(value_base_units)
+        # Operator feedback never carries a value. The cloud and the local event store
+        # drop one too, but omitting it here holds for every destination and version.
+        value_base_units = (
+            None
+            if event_type == "operator_feedback"
+            else _normalize_value_base_units(value_base_units)
+        )
         task = partial(
             _write_event_bundle,
             target_directory=target_directory,
