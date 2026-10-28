@@ -203,6 +203,7 @@ class ModelManagerGateway:
         # reload to reuse instead of falling back to anonymous defaults.
         self._load_context: dict[str, tuple[str, str]] = {}
         self._load_failures: dict[str, tuple] = {}
+        self._pinned_ids: set[str] = set()
         self._shutting_down = False
 
     # ------------------------------------------------------------------
@@ -283,6 +284,8 @@ class ModelManagerGateway:
         device: Optional[str],
         pinned: bool = False,
     ) -> Optional[asyncio.Future]:
+        pinned = pinned or key in self._pinned_ids
+
         future = self._pending_loads.get(key)
         if future is not None and not future.done():
             return future
@@ -457,6 +460,7 @@ class ModelManagerGateway:
             )
             return failure or ("ok",)
 
+        self._pinned_ids.add(model_id)
         failure = await self._pinned_load(model_id, api_key, effective_timeout)
         if failure is not None:
             return failure
@@ -482,6 +486,7 @@ class ModelManagerGateway:
 
     async def unload(self, model_id: str) -> tuple:
         self._load_failures.pop(model_id, None)
+        self._pinned_ids.discard(model_id)
         try:
             await asyncio.get_running_loop().run_in_executor(
                 self._model_executor, lambda: self.manager.unload(model_id)
