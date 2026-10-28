@@ -815,6 +815,7 @@ class VideoSource:
         if (
             type(self._video) is CV2VideoFrameProducer
             and ENABLE_TENSOR_DATA_REPRESENTATION
+            and not callable(self._stream_reference)
             and _consumes_camera_on_jetson(video=self._stream_reference)
         ):
             self._video._verify_camera_mode(self._video_source_properties)

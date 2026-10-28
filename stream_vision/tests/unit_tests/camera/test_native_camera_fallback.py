@@ -43,6 +43,19 @@ def test_native_camera_fallback_accepts_requested_mode(monkeypatch, failure_stag
     source._release_video()
 
 
+def test_callable_cv2_factory_starts_with_tensor_mode_enabled(monkeypatch):
+    _, source, _ = _fallback_source(monkeypatch, failure_stage="construction")
+    source._stream_reference = lambda: video_source.CV2VideoFrameProducer(0)
+    source._video_source_properties = {}
+
+    source.start()
+    source._stream_consumption_thread.join(timeout=2)
+
+    assert source.describe_source().state is video_source.StreamState.RUNNING
+    source.terminate(wait_on_frames_consumption=False)
+    source._release_video()
+
+
 def _fallback_source(
     monkeypatch, *, failure_stage, wrong_property=None, accepts_set=True
 ):
