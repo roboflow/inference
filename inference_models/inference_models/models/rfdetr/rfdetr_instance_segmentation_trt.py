@@ -1,9 +1,9 @@
 import threading
-from typing import List, Optional, Set, Tuple, Union
+from dataclasses import replace
+from typing import Any, List, Mapping, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
-
 from inference_models import (
     InstanceDetections,
     InstanceSegmentationMaskFormat,
@@ -55,18 +55,34 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
+from inference_models.models.optimization.contracts import ExecutionContext
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.optimization.runtime_components import (
+    get_runtime_components,
+)
 from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
-    post_process_instance_segmentation_results_to_rle_masks,
     post_process_instance_segmentation_results_to_grid,
+    post_process_instance_segmentation_results_to_rle_masks,
 )
-from inference_models.models.rfdetr.pre_processing import pre_process_network_input
-from inference_models.models.rfdetr.triton_preprocess_runtime import (
-    FastPreprocessRuntime,
+from inference_models.models.rfdetr.optimization.contracts import PreprocessRequest
+from inference_models.models.rfdetr.optimization.execution_plan import (
+    RFDetrExecutionPlan,
+    _normalize_execution_plan_argument,
+)
+from inference_models.models.rfdetr.optimization.preprocessor_selection import (
+    PreprocessorSelector,
+)
+from inference_models.models.rfdetr.optimization.readiness import (
+    PreprocessReadinessTracker,
+)
+from inference_models.models.rfdetr.optimization.segmentation_preprocessing import (
+    _build_segmentation_preprocessor_registry,
+    _resolve_segmentation_plan,
 )
 from inference_models.weights_providers.entities import RecommendedParameters
 
@@ -121,8 +137,36 @@ class RFDetrForInstanceSegmentationTRT(
         default_trt_cuda_graph_cache_size: int = 8,
         rf_detr_max_input_resolution: Optional[Union[int, Tuple[int, int]]] = None,
         recommended_parameters: Optional[RecommendedParameters] = None,
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
         **kwargs,
     ) -> "RFDetrForInstanceSegmentationTRT":
+        """Load a segmentation TensorRT model with selectable preprocessing.
+
+        Args:
+            model_name_or_path: Local model package directory.
+            device: CUDA inference device.
+            engine_host_code_allowed: Permit execution of engine host code.
+            trt_cuda_graph_cache: Optional caller-owned graph cache.
+            default_trt_cuda_graph_cache_size: Capacity of the default graph cache.
+            rf_detr_max_input_resolution: Optional maximum network resolution.
+            recommended_parameters: Model-specific recommended parameters.
+            execution_plan: Typed RF-DETR plan or canonical serialized mapping.
+                Only preprocessing is selectable; other stages retain base behavior.
+                An explicit plan overrides environment selections.
+            **kwargs: Compatible loader arguments, including the deprecated
+                rfdetr_execution_plan alias (cannot be combined with a plan).
+
+        Returns:
+            Loaded segmentation model.
+
+        Raises:
+            ModelRuntimeError: If the device or selected implementation is unsupported.
+            ValueError: If the plan selects an unsupported non-preprocessing stage.
+        """
+        execution_plan = _normalize_execution_plan_argument(
+            execution_plan=execution_plan,
+            kwargs=kwargs,
+        )
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message=f"TRT engine only runs on CUDA device - {device} device detected.",
@@ -207,6 +251,7 @@ class RFDetrForInstanceSegmentationTRT(
             execution_context=execution_context,
             trt_cuda_graph_cache=trt_cuda_graph_cache,
             recommended_parameters=recommended_parameters,
+            execution_plan=execution_plan,
         )
 
     def __init__(
@@ -223,6 +268,7 @@ class RFDetrForInstanceSegmentationTRT(
         execution_context: trt.IExecutionContext,
         trt_cuda_graph_cache: Optional[TRTCudaGraphCache],
         recommended_parameters=None,
+        execution_plan: Optional[Union[RFDetrExecutionPlan, Mapping[str, Any]]] = None,
     ):
         self._engine = engine
         self._input_name = input_name
@@ -230,7 +276,11 @@ class RFDetrForInstanceSegmentationTRT(
         self._inference_config = inference_config
         self._class_names = class_names
         self._classes_re_mapping = classes_re_mapping
-        self._device = device
+        self._device = (
+            torch.device("cuda", torch.cuda.current_device())
+            if device.type == "cuda" and device.index is None
+            else device
+        )
         self._cuda_context = cuda_context
         self._execution_context = execution_context
         self._trt_config = trt_config
@@ -240,12 +290,34 @@ class RFDetrForInstanceSegmentationTRT(
         self._thread_local_storage = threading.local()
         self.recommended_parameters = recommended_parameters
         self._stream_pipeline_enabled = get_rfdetr_pipeline_depth() > 1
-        self._fast_preprocess_enabled = INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED
         if self._stream_pipeline_enabled:
             self._pre_process_cuda_stream = torch.cuda.Stream(device=self._device)
             self._post_process_cuda_stream = torch.cuda.Stream(device=self._device)
-        if self._fast_preprocess_enabled:
-            self._fast_preprocess_runtime = FastPreprocessRuntime(device=self._device)
+        self._rfdetr_execution_plan = _resolve_segmentation_plan(
+            execution_plan,
+            legacy_enabled=INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
+        )
+        self._preprocess_readiness = PreprocessReadinessTracker()
+        self._preprocess_context = ExecutionContext(
+            device_kind="gpu",
+            device=str(self._device),
+            current_stream=None,
+            compute_capability=torch.cuda.get_device_capability(self._device),
+            runtime_components=get_runtime_components(),
+        )
+        registry = _build_segmentation_preprocessor_registry(device=self._device)
+        self._preprocessor_selector = PreprocessorSelector(
+            registry=registry,
+            context=self._preprocess_context,
+            image_pre_processing=inference_config.image_pre_processing,
+            network_input=inference_config.network_input,
+        )
+        selection = self._preprocessor_selector.resolve_model(
+            requested_id=self._rfdetr_execution_plan.preprocessor_id,
+            allow_fallback=self._rfdetr_execution_plan.allow_compatibility_fallback,
+        )
+        self._preprocessor = selection.implementation
+        self._preprocessor_model_fallback_reason = selection.fallback_reason
 
     @property
     def class_names(self) -> List[str]:
@@ -259,45 +331,149 @@ class RFDetrForInstanceSegmentationTRT(
     def supports_stream_pipeline(self) -> bool:
         return self._trt_cuda_graph_cache is not None
 
+    @property
+    def preprocessor_implementation_id(self) -> str:
+        """Return the model-selected preprocessor ID."""
+        return self._preprocessor.metadata.implementation_id
+
+    @property
+    def preprocessor_implementation_metadata(self):
+        """Return typed metadata for the model-selected preprocessor."""
+        return self._preprocessor.metadata
+
+    @property
+    def last_preprocessor_selection(self):
+        """Return this thread's last completed preprocessing route, or None."""
+        return getattr(self._thread_local_storage, "preprocessor_selection", None)
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
         pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+        independent_stage_execution: bool = True,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        fast = None
-        if self._fast_preprocess_enabled:
-            fast = self._fast_preprocess_runtime.try_preprocess(
-                images=images,
-                input_color_format=input_color_format,
-                image_size=image_size,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                stream=self._pre_process_stream,
+        """Preprocess through the selected implementation and preserve readiness.
+
+        Args:
+            images: Single image or image batch.
+            input_color_format: Caller channel order.
+            image_size: Optional reference-path resize override, in width/height order.
+            pre_processing_overrides: Request transformation overrides.
+            independent_stage_execution: Synchronize output before return when True.
+                Otherwise pass this exact tensor to this model's forward method.
+            **kwargs: Additional inference arguments accepted for compatibility.
+
+        Returns:
+            Per-call FP32 input tensor and image transformation metadata.
+
+        Raises:
+            ModelRuntimeError: If selection or a recognized runtime failure cannot
+                fall back under the requested execution plan.
+        """
+        stream = self._pre_process_stream
+        # Caller-owned CUDA inputs must be ready on the caller's current stream.
+        # Wait once before either implementation reads them; record their lifetime.
+        stream.wait_stream(torch.cuda.current_stream(self._device))
+        items = images if isinstance(images, list) else [images]
+        for image in items:
+            if isinstance(image, torch.Tensor) and image.device == stream.device:
+                image.record_stream(stream)
+        request = PreprocessRequest(
+            images=images,
+            input_color_format=input_color_format,
+            image_size_wh=image_size,
+            image_pre_processing=self._inference_config.image_pre_processing,
+            network_input=self._inference_config.network_input,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        context = replace(self._preprocess_context, current_stream=stream)
+        selector = self._preprocessor_selector
+        plan = self._rfdetr_execution_plan
+        selection = selector.resolve_request(
+            implementation=self._preprocessor,
+            request=request,
+            context=context,
+            allow_fallback=plan.allow_compatibility_fallback,
+        )
+        allow_runtime = (
+            plan.allow_compatibility_fallback and plan.allow_runtime_failure_fallback
+        )
+        try:
+            selection = selector.resolve_runtime_fallback(
+                selection=selection,
+                request=request,
+                context=context,
+                allow_fallback=allow_runtime,
             )
-        if fast is not None:
-            self._fast_preproc_event = fast.ready_event
-            return fast.tensor, fast.metadata
-        with torch.cuda.stream(self._pre_process_stream):
-            pre_processed_images, pre_processing_meta = pre_process_network_input(
-                images=images,
-                image_pre_processing=self._inference_config.image_pre_processing,
-                network_input=self._inference_config.network_input,
-                target_device=self._device,
-                input_color_format=input_color_format,
-                image_size_wh=image_size,
-                pre_processing_overrides=pre_processing_overrides,
+            attempted = set()
+            while True:
+                attempted.add(selection.effective_id)
+                try:
+                    result = selection.implementation.preprocess(
+                        request=request, context=context
+                    )
+                    break
+                except RecoverableStageExecutionError:
+                    # Drain any partial submissions before fallback reuses storage.
+                    stream.synchronize()
+                    if not allow_runtime:
+                        raise
+
+                    fallback = selector.resolve_runtime_fallback(
+                        selection=selection,
+                        request=request,
+                        context=context,
+                        allow_fallback=True,
+                    )
+                    if fallback.effective_id in attempted:
+                        raise
+
+                    selection = fallback
+        except RecoverableStageExecutionError as error:
+            raise ModelRuntimeError(
+                message=str(error),
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
+            ) from error
+
+        fallback_reason = (
+            selection.fallback_reason or self._preprocessor_model_fallback_reason
+        )
+        tensor = result.tensor
+        tensor.record_stream(stream)
+        event = result.ready_event
+        if event is None:
+            event = torch.cuda.Event()
+            event.record(stream)
+        if independent_stage_execution:
+            event.synchronize()
+        else:
+            self._preprocess_readiness.record(
+                tensor,
+                ready_event=event,
+                input_kind=result.input_kind,
+                implementation_id=result.implementation_id,
+                fallback_reason=fallback_reason,
             )
-        self._pre_process_stream.synchronize()
+        self._thread_local_storage.preprocessor_selection = {
+            "requested_id": plan.preprocessor_id,
+            "effective_id": result.implementation_id,
+            "fallback_reason": fallback_reason,
+            "input_kind": result.input_kind,
+        }
         if self._stream_pipeline_enabled:
-            setattr(
-                pre_processed_images,
-                "_pre_processing_meta",
-                pre_processing_meta,
-            )
-        return pre_processed_images, pre_processing_meta
+            tensor._pre_processing_meta = result.metadata
+
+        return tensor, result.metadata
+
+    def _await_preprocessing(self, tensor):
+        # Called under the engine lock by both forward entry points.
+        readiness = self._preprocess_readiness.consume(tensor)
+        if readiness is not None and readiness.ready_event is not None:
+            self._inference_stream.wait_event(readiness.ready_event)
+        tensor.record_stream(self._inference_stream)
 
     def forward(
         self,
@@ -306,14 +482,8 @@ class RFDetrForInstanceSegmentationTRT(
         **kwargs,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         cache = self._trt_cuda_graph_cache if not disable_cuda_graphs else None
-        preproc_event = getattr(self, "_fast_preproc_event", None)
-        if preproc_event is not None:
-            # The Triton preprocess fast path runs on a separate CUDA stream.
-            # TensorRT consumes that tensor on `_inference_stream`, so record an
-            # explicit stream dependency instead of synchronizing the host.
-            self._inference_stream.wait_event(preproc_event)
-            self._fast_preproc_event = None
         with self._lock:
+            self._await_preprocessing(pre_processed_images)
             with use_cuda_context(context=self._cuda_context):
                 detections, labels, masks = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,
@@ -340,11 +510,8 @@ class RFDetrForInstanceSegmentationTRT(
                 pre_processed_images, pre_processing_meta, **kwargs
             )
 
-        preproc_event = getattr(self, "_fast_preproc_event", None)
-        if preproc_event is not None:
-            self._inference_stream.wait_event(preproc_event)
-            self._fast_preproc_event = None
         with self._lock:
+            self._await_preprocessing(pre_processed_images)
             with use_cuda_context(context=self._cuda_context):
                 raw = infer_from_trt_engine(
                     pre_processed_images=pre_processed_images,

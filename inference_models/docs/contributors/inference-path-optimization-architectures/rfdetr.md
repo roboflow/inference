@@ -6,7 +6,44 @@ first. This document maps that reusable architecture to RF-DETR object detection
 on TensorRT, Torch and ONNX. The diagrams below show the TensorRT implementation;
 Torch/ONNX use the same selection and readiness contracts through `backend_path.py`
 and `backend_stages.py`, preserving their own forward and postprocessing callbacks.
-Instance segmentation is not migrated yet.
+Instance segmentation TensorRT supports the same preprocessing selector and
+`execution_plan` configuration. Its engine, scheduler and mask postprocessing
+remain the existing segmentation implementations. Explicit non-base IDs for
+those stages are rejected; `auto` resolves to their existing base behavior.
+
+For segmentation, an omitted plan keeps preprocessing on `base`, unless
+`INFERENCE_MODELS_RFDETR_PREPROCESSOR` explicitly selects another implementation.
+The legacy `INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED=True` now selects
+`triton-universal-v1` when the newer preprocessor environment variable is absent;
+its supported uint8 stretch contract is retained while batching and tensor inputs
+use the reusable universal runtime. An explicit plan overrides both environment
+settings. Pass `RFDetrExecutionPlan(preprocessor_id="triton-universal-v1",
+postprocessor_id="base", allow_compatibility_fallback=False,
+allow_runtime_failure_fallback=False)` for an attributable strict selection.
+
+Uint8 inputs use the PIL-exact fixed-point resize, including CUDA uint8 inputs
+without the legacy CPU round trip. Segmentation opts into a 3x256 FP32 lookup
+of the exact CPU torchvision byte conversion and normalization results in the
+existing vertical kernel. This avoids changing floating-point rounding through
+algebraic fusion. Tables are cached under the runtime lock and their CUDA
+lifetimes are recorded on the consuming stream. Object detection and legacy
+callers retain the default fused normalization arithmetic. Floating tensors are eligible only when
+already FP32 on the model device, preserving reference resize dtype and device.
+Other float inputs, custom image sizes, incompatible transforms and heterogeneous
+batches follow the existing selector fallback chain when permitted, or raise in
+strict mode. Unknown runtime errors propagate; only classified recoverable
+failures enter runtime fallback when both fallback flags permit it.
+
+Segmentation exposes `preprocessor_implementation_id`, typed
+`preprocessor_implementation_metadata`, and thread-local
+`last_preprocessor_selection` (`requested_id`, `effective_id`, `fallback_reason`,
+`input_kind`). `pre_process()` returns ready output by default. With
+`independent_stage_execution=False`, pass its exact returned tensor to the same
+model's `forward()` or `forward_async()`; readiness is tracked by tensor identity
+and consumed under the engine lock. CUDA sources must be ready on the caller's
+current stream; preprocessing waits on it and records source lifetimes. The
+engine stream records the prepared tensor's lifetime. The universal runtime owns
+its existing staging/scratch lock and per-call output allocation.
 
 All three backend loaders accept the canonical `execution_plan` argument as a
 typed `RFDetrExecutionPlan` or its serialized mapping. Torch checkpoint loading
