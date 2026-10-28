@@ -393,6 +393,26 @@ def test_model_add_registry_remove_clear(legacy_client, fake_stat):
     assert c.get("/clear_cache").json() == "Cache Cleared"
 
 
+def test_clear_returns_empty_registry(legacy_client, fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    class _DirectoryGateway(FakeGateway):
+        async def unload(self, model_id):
+            self.calls.append(("unload", model_id))
+            self.loaded[model_id] = {
+                "state": "unloaded",
+                "loaded": False,
+                "loading": False,
+            }
+            return ("ok",)
+
+    gw = _DirectoryGateway(model_info={"ds/1": {"actions": {"infer": {}}}})
+    c = legacy_client(gw)
+    c.post("/model/add", json={"model_id": "ds/1", "api_key": "k"})
+    assert c.post("/model/clear").json()["models"] == []
+    assert c.get("/model/registry").json()["models"] == []
+
+
 def test_registry_lists_models_loaded_via_v2(legacy_client, fake_stat):
     gw = FakeGateway(
         model_info={"other/2": {"model_mro_names": ["ClassificationModel"]}}

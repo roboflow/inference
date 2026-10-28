@@ -10,8 +10,8 @@ from inference_models import Detections, ObjectDetectionModel
 from inference_models.configuration import (
     DEFAULT_DEVICE,
     INFERENCE_MODELS_DEFAULT_CONFIDENCE,
-    INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_OWLV2_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
     INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
 )
 from inference_models.entities import ImageDimensions
