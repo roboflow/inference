@@ -674,6 +674,48 @@ def test_serverless_auth_middleware_logs_request_received_with_execution_id(
     )
 
 
+def test_serverless_auth_middleware_uses_short_success_cache_when_workspace_has_credit_cap(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    current_time = 1_000.0
+    monkeypatch.setattr(http_api.time, "time", lambda: current_time)
+    interface, _, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            workspace_db_id="workspace-db-id",
+            under_cap=True,
+            has_credit_cap=True,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        first = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        second = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+        current_time += http_api.SHORT_AUTH_CACHE_TTL_SECONDS + 1
+        third = client.post(
+            "/infer/lmm/florence-2-base",
+            params={"api_key": "query-api-key"},
+            json=_make_inference_request(),
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 200
+    assert usage_check_mock.await_count == 2
+
+
 def test_serverless_auth_middleware_skips_request_received_log_when_api_logging_disabled(
     monkeypatch,
 ) -> None:
