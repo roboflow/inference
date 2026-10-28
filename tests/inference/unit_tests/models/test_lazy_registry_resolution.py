@@ -34,7 +34,11 @@ def test_every_registry_key_imports_its_real_class(
     """
     from inference import models
     from inference.core import env
-    from inference.core.registries.lazy import _LazyModelRegistry
+    from inference.core.registries.lazy import (
+        _AdapterModelClass,
+        _LazyModelClass,
+        _LazyModelRegistry,
+    )
     from inference.models import utils, vllm_proxy
 
     inventory = json.loads(
@@ -95,6 +99,15 @@ def test_every_registry_key_imports_its_real_class(
         for key in keys
     }
     available = {}
+    unavailable_required = {}
+
+    def record_required_failure(key, error):
+        entry = registry._entries[key]
+        while isinstance(entry, _AdapterModelClass):
+            entry = entry.fallback
+        if isinstance(entry, _LazyModelClass) and not entry.optional:
+            unavailable_required[key] = type(error)
+
     for key, path in expected.items():
         module_path, class_name = path.split(":", 1)
         try:
@@ -105,21 +118,28 @@ def test_every_registry_key_imports_its_real_class(
 
             fallback = fallback_paths.get(key) if use_adapters else None
             if fallback is None or fallback == path:
+                record_required_failure(key, error)
                 continue
 
             module_path, class_name = fallback.split(":", 1)
             try:
                 getattr(importlib.import_module(module_path), class_name)
-            except (ImportError, AttributeError):
+            except (ImportError, AttributeError) as fallback_error:
+                record_required_failure(key, fallback_error)
                 continue
 
             path = fallback
         available[key] = path
 
     expected = available
-    assert set(registry) == set(expected)
+    assert set(registry) == set(expected) | set(unavailable_required)
     failures = []
     for key in registry:
+        if key in unavailable_required:
+            with pytest.raises(unavailable_required[key]):
+                registry[key]
+            continue
+
         try:
             model_class = registry[key]
             module_path, class_name = expected[key].split(":", 1)
@@ -294,11 +314,15 @@ def test_sam3_visual_segmentation_fixture_in_fresh_process():
     assert process.returncode == 0, process.stdout + process.stderr
 
 
-def test_real_registry_probe_with_missing_optional_models(monkeypatch):
+@pytest.mark.parametrize("missing_required", [False, True])
+def test_real_registry_probe_with_missing_optional_models(
+    monkeypatch, missing_required
+):
     """Exercise real registry coverage without the SAM and YOLO World extras.
 
     Args:
         monkeypatch: Pytest patch fixture.
+        missing_required: Also remove a required adapter implementation.
     """
     from inference import models
 
@@ -311,11 +335,17 @@ def test_real_registry_probe_with_missing_optional_models(monkeypatch):
             return getattr(models, name)
 
     def _import(module_path, package=None):
+        if (
+            missing_required
+            and module_path == "inference.models.qwen3_5vl.qwen3_5vl_inference_models"
+        ):
+            raise ModuleNotFoundError("Required adapter dependency is unavailable")
+
         if module_path == "inference.models":
             return _PartialModels()
         return real_import(module_path, package=package)
 
     monkeypatch.setattr(importlib, "import_module", _import)
     test_every_registry_key_imports_its_real_class(
-        monkeypatch, use_adapters=False, use_proxy=False, sam3_enabled=False
+        monkeypatch, use_adapters=missing_required, use_proxy=False, sam3_enabled=False
     )
