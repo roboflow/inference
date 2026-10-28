@@ -71,6 +71,49 @@ _SECRET_VALUE = re.compile(
 )
 
 
+def is_loaded_model_entry(entry: dict) -> bool:
+    """Tell whether one ``stats()["models"]`` entry describes a live model.
+
+    Args:
+        entry (dict): A single model entry as the gateway ``stats()`` reports it.
+
+    Returns:
+        True when the model is loaded or still loading, False otherwise,
+        including for a malformed entry.
+    """
+    if not isinstance(entry, dict):
+        return False
+
+    if entry.get("loaded") or entry.get("loading"):
+        return True
+
+    is_loaded = "loaded" not in entry and entry.get("state") not in (
+        "unloaded",
+        "not_loaded",
+    )
+
+    return is_loaded
+
+
+def loaded_model_entries(models: dict) -> dict:
+    """Keep the entries of a ``stats()["models"]`` dict that are loaded or loading.
+
+    Args:
+        models (dict): Entries keyed by model id, as the gateway ``stats()``
+            reports them.
+
+    Returns:
+        The entries whose model is loaded or still loading, in the original order.
+    """
+    loaded_entries = {
+        model_id: entry
+        for model_id, entry in models.items()
+        if is_loaded_model_entry(entry)
+    }
+
+    return loaded_entries
+
+
 class ReloadAfterEvictionError(RuntimeError):
     pass
 
