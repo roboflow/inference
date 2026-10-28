@@ -116,7 +116,11 @@ def test_every_registry_key_imports_its_real_class(
             if sam3_enabled and key[1] in {"sam3", "sam3-large", "sam3-3d-objects"}:
                 pytest.fail(f"Full SAM3 extras unavailable for {key}: {error}")
 
-            fallback = fallback_paths.get(key) if use_adapters else None
+            fallback = (
+                fallback_paths.get(key)
+                if isinstance(registry._entries[key], _AdapterModelClass)
+                else None
+            )
             if fallback is None or fallback == path:
                 record_required_failure(key, error)
                 continue

@@ -931,7 +931,9 @@ def get_roboflow_model(*args, **kwargs):
 
 
 if USE_INFERENCE_MODELS:
-    # Select adapters without importing their implementations
+    # Generic adapters are required: a broken requested backend must raise when
+    # resolved, never silently select a legacy implementation. Model-specific
+    # adapters below retain only their established fallback behavior.
     InferenceModelsClassificationAdapter = _LazyModelClass(
         "inference.core.models.inference_models_adapters:"
         "InferenceModelsClassificationAdapter"
@@ -958,46 +960,46 @@ if USE_INFERENCE_MODELS:
     tasks_and_variants = list(ROBOFLOW_MODEL_TYPES._entries)
     for task, variant in tasks_and_variants:
         if task == "object-detection" and variant.startswith("rfdetr"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsObjectDetectionAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsObjectDetectionAdapter
             )
         elif task == "object-detection" and variant.startswith("yolov"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsObjectDetectionAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsObjectDetectionAdapter
             )
         elif task == "object-detection" and variant.startswith("yolo26"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsObjectDetectionAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsObjectDetectionAdapter
             )
         elif task == "object-detection" and (
             variant.startswith("yolo_nas") or variant.startswith("yolonas")
         ):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsObjectDetectionAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsObjectDetectionAdapter
             )
         elif task == "instance-segmentation" and variant.startswith("rfdetr"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsInstanceSegmentationAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsInstanceSegmentationAdapter
             )
         elif task == "instance-segmentation" and variant.startswith("yolov"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsInstanceSegmentationAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsInstanceSegmentationAdapter
             )
         elif task == "instance-segmentation" and variant.startswith("yolo26"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsInstanceSegmentationAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsInstanceSegmentationAdapter
             )
         elif task == "instance-segmentation" and variant.startswith("yolact"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsInstanceSegmentationAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsInstanceSegmentationAdapter
             )
         elif task == "keypoint-detection" and variant.startswith("yolov"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsKeyPointsDetectionAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsKeyPointsDetectionAdapter
             )
         elif task == "keypoint-detection" and variant.startswith("yolo26"):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsKeyPointsDetectionAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsKeyPointsDetectionAdapter
             )
         elif task == "classification" and (
             variant.startswith("yolov")
@@ -1005,9 +1007,7 @@ if USE_INFERENCE_MODELS:
             or variant.startswith("resnet")
             or variant.startswith("vit")
         ):
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsClassificationAdapter
-            )
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsClassificationAdapter
         elif variant.startswith("paligemma-") or variant.startswith("paligemma2-"):
             InferenceModelsPaligemmaAdapter = _LazyModelClass(
                 "inference.models.paligemma.paligemma_inference_models:"
@@ -1294,11 +1294,11 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsPerceptionEncoderAdapter,
             )
         elif task == "semantic-segmentation" and variant == "deeplabv3plus":
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, variant), InferenceModelsSemanticSegmentationAdapter
+            ROBOFLOW_MODEL_TYPES[(task, variant)] = (
+                InferenceModelsSemanticSegmentationAdapter
             )
-            ROBOFLOW_MODEL_TYPES.set_adapter(
-                (task, "deep-lab-v3-plus"), InferenceModelsSemanticSegmentationAdapter
+            ROBOFLOW_MODEL_TYPES[(task, "deep-lab-v3-plus")] = (
+                InferenceModelsSemanticSegmentationAdapter
             )
 
     # Exact (taskType, modelArchitecture) tuples returned by

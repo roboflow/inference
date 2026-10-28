@@ -125,6 +125,57 @@ def test_adapter_failure_falls_back_and_caches_legacy_class(monkeypatch):
     importer.assert_called_once_with("example")
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        ("object-detection", "rfdetr-base"),
+        ("object-detection", "yolov8n"),
+        ("object-detection", "yolo26n"),
+        ("object-detection", "yolo_nas_s"),
+        ("instance-segmentation", "rfdetr-seg-preview"),
+        ("instance-segmentation", "yolov8n-seg"),
+        ("instance-segmentation", "yolo26n-seg"),
+        ("keypoint-detection", "yolov8n-pose"),
+        ("keypoint-detection", "yolo26n-pose"),
+        ("classification", "resnet50"),
+        ("classification", "dinov3"),
+        ("classification", "yolov8n"),
+        ("semantic-segmentation", "deeplabv3plus"),
+        ("semantic-segmentation", "deep-lab-v3-plus"),
+    ],
+)
+def test_broken_generic_adapter_never_selects_legacy_backend(monkeypatch, key):
+    """Fail the requested backend without substituting a legacy implementation.
+
+    Args:
+        monkeypatch: Pytest patch fixture.
+        key: Registry alias backed by a required generic adapter.
+    """
+    from inference.models import vllm_proxy
+
+    monkeypatch.setattr(env, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(vllm_proxy, "VLLM_PROXY_ENABLED", False)
+    registry = runpy.run_path(utils.__file__)["ROBOFLOW_MODEL_TYPES"]
+    legacy_imports = []
+
+    class LegacyModule:
+        def __getattr__(self, name):
+            return type(name, (), {})
+
+    def import_model(module_path):
+        if module_path == "inference.core.models.inference_models_adapters":
+            raise ImportError("broken requested backend")
+        legacy_imports.append(module_path)
+        return LegacyModule()
+
+    monkeypatch.setattr(lazy.importlib, "import_module", import_model)
+    assert key in registry
+    for _ in range(2):
+        with pytest.raises(ImportError, match="broken requested backend"):
+            registry[key]
+    assert not legacy_imports
+
+
 def test_required_import_failures_and_interrupts_are_not_hidden(monkeypatch):
     """Preserve required import failures and process interruption.
 
@@ -224,7 +275,9 @@ def test_complete_registry_matches_original_inventory(
         ].items()
         for key in keys
     }
-    assert set(registry) == set(expected)
+    assert set(registry) == set(
+        expected
+    ), "Regenerate registry_inventory.json: python tests/inference/unit_tests/models/generate_registry_inventory.py"
     for key in registry:
         assert registry[key].registry_path == expected[key]
 
@@ -262,7 +315,9 @@ def test_every_inventory_key_has_a_lazy_reference(monkeypatch, use_adapters, use
         for key in keys
     }
     # Inspect unresolved entries: public iteration probes optional availability.
-    assert set(registry._entries) == expected
+    assert (
+        set(registry._entries) == expected
+    ), "Regenerate registry_inventory.json: python tests/inference/unit_tests/models/generate_registry_inventory.py"
     for key, reference in registry._entries.items():
         assert isinstance(
             reference, (lazy._LazyModelClass, lazy._AdapterModelClass)
@@ -288,7 +343,7 @@ def test_every_inventory_key_has_a_lazy_reference(monkeypatch, use_adapters, use
 def test_disabled_optional_flags_do_not_register_keys(
     monkeypatch, flag, use_adapters, use_proxy
 ):
-    """Exclude the historical keys controlled by each disabled flag.
+    """Exclude the keys controlled by each disabled model flag.
 
     Args:
         monkeypatch: Pytest patch fixture.
@@ -298,30 +353,26 @@ def test_disabled_optional_flags_do_not_register_keys(
     """
     from inference.models import vllm_proxy
     from tests.inference.unit_tests.models.generate_registry_inventory import (
-        _original_registry,
+        _registry_paths,
     )
 
     inventory = json.loads(
         Path(__file__).with_name("registry_inventory.json").read_text()
     )
     flags = dict.fromkeys(inventory["flags"], True)
-    enabled = _original_registry(
+    enabled = _registry_paths(
         flags=flags, use_adapters=use_adapters, use_proxy=use_proxy
     )
     flags[flag] = False
-    disabled = _original_registry(
+    disabled = _registry_paths(
         flags=flags, use_adapters=use_adapters, use_proxy=use_proxy
     )
     excluded = set(enabled) - set(disabled)
-    # Some families exist only with inference-models enabled.
+    # A removed guard must not make both current-source evaluations agree.
+    # Some families have no legacy backend, but every model flag affects the
+    # adapter-enabled inventory.
     if not excluded:
-        assert not use_adapters and flag in {
-            "COSMOS3_ENABLED",
-            "QWEN_3_5_ENABLED",
-            "QWEN_3_8_ENABLED",
-            "GLM_OCR_ENABLED",
-            "VJEPA2_1_ENABLED",
-        }
+        assert not use_adapters, f"{flag} no longer controls any registry keys"
         return
 
     for name, value in flags.items():
@@ -421,21 +472,17 @@ print(json.dumps([name for name in sys.modules
     assert json.loads(process.stdout.strip().splitlines()[-1]) == []
 
 
-def test_registry_inventory_has_reproducible_provenance():
-    """Require a real source commit for the historical registry snapshot."""
-    inventory = json.loads(
-        Path(__file__).with_name("registry_inventory.json").read_text()
-    )
-    assert len(inventory["source_revision"]) == 40
-    process = subprocess.run(
-        ["git", "cat-file", "-t", inventory["source_revision"]],
-        capture_output=True,
-        text=True,
-    )
-    assert process.returncode == 0, process.stderr
-    assert process.stdout.strip() == "commit"
+def test_registry_inventory_matches_current_registration():
+    """Require a reviewed snapshot that contributors can regenerate without history."""
     from tests.inference.unit_tests.models.generate_registry_inventory import (
+        REGENERATE_COMMAND,
         _generate_inventory,
     )
 
-    assert _generate_inventory(inventory["flags"]) == inventory
+    inventory = json.loads(
+        Path(__file__).with_name("registry_inventory.json").read_text()
+    )
+    assert _generate_inventory() == inventory, (
+        f"Registry registration changed. Run `{REGENERATE_COMMAND}` and review "
+        "the generated JSON diff with the model change."
+    )

@@ -1,5 +1,5 @@
 {
-  "source_revision": "492ad33483f6a3f596abab0fb2ac493354adb1ff",
+  "source": "inference/models/utils.py",
   "cases": {
     "adapters=False,proxy=False": {
       "inference.models:DinoV3Classification": [
@@ -4538,6 +4538,7 @@
     "CORE_MODEL_SAM_ENABLED": true,
     "CORE_MODEL_TROCR_ENABLED": true,
     "CORE_MODEL_YOLO_WORLD_ENABLED": true,
+    "CORE_MODELS_ENABLED": true,
     "COSMOS3_ENABLED": true,
     "DEPTH_ESTIMATION_ENABLED": true,
     "FLORENCE2_ENABLED": true,
@@ -4550,7 +4551,6 @@
     "QWEN_3_ENABLED": true,
     "SAM3_3D_OBJECTS_ENABLED": false,
     "SMOLVLM2_ENABLED": true,
-    "CORE_MODELS_ENABLED": true,
     "VJEPA2_1_ENABLED": true
   }
 }
