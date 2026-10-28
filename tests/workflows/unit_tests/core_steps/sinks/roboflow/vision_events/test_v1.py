@@ -4,9 +4,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import supervision as sv
-
-from inference.roboflow_workflows_plugin.sinks.vision_events import v1
-from inference.roboflow_workflows_plugin.sinks.vision_events.v1 import (
+from roboflow_workflows.core_steps.sinks.roboflow.vision_events import v1
+from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1 import (
     BlockManifest,
     RoboflowVisionEventsBlockV1,
     _build_event_data,
@@ -21,6 +20,8 @@ from inference.roboflow_workflows_plugin.sinks.vision_events.v1 import (
     _send_local_event,
     _upload_image,
 )
+from roboflow_workflows.prototypes.platform_client import OFFLINE_PLATFORM_CLIENT
+
 from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
@@ -416,9 +417,7 @@ def test_build_event_payload_minimal() -> None:
 # === Image Upload (mocked) ===
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_upload_image_success(mock_post: MagicMock) -> None:
     mock_response = MagicMock()
     mock_response.json.return_value = {
@@ -430,7 +429,12 @@ def test_upload_image_success(mock_post: MagicMock) -> None:
     mock_post.return_value = mock_response
 
     image = _make_workflow_image()
-    source_id, url = _upload_image("https://api.roboflow.com", "test-key", image)
+    source_id, url = _upload_image(
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        image_data=image,
+        platform_client=OFFLINE_PLATFORM_CLIENT,
+    )
 
     assert source_id == "src-123"
     assert url == "https://example.com/img.jpg"
@@ -441,9 +445,7 @@ def test_upload_image_success(mock_post: MagicMock) -> None:
     assert call_kwargs[1]["headers"]["Authorization"] == "Bearer test-key"
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_upload_image_failure(mock_post: MagicMock) -> None:
     import requests
 
@@ -457,7 +459,12 @@ def test_upload_image_failure(mock_post: MagicMock) -> None:
 
     image = _make_workflow_image()
     with pytest.raises(requests.exceptions.HTTPError):
-        _upload_image("https://api.roboflow.com", "test-key", image)
+        _upload_image(
+            api_base_url="https://api.roboflow.com",
+            api_key="test-key",
+            image_data=image,
+            platform_client=OFFLINE_PLATFORM_CLIENT,
+        )
 
 
 # === Block run() Tests ===
@@ -505,7 +512,7 @@ def test_run_disabled() -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_fire_and_forget_background_tasks(mock_execute: MagicMock) -> None:
     background_tasks = MagicMock()
@@ -532,7 +539,7 @@ def test_run_fire_and_forget_background_tasks(mock_execute: MagicMock) -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_fire_and_forget_thread_pool(mock_execute: MagicMock) -> None:
     thread_pool = MagicMock()
@@ -559,7 +566,7 @@ def test_run_fire_and_forget_thread_pool(mock_execute: MagicMock) -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_synchronous(mock_execute: MagicMock) -> None:
     mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
@@ -636,7 +643,7 @@ def test_convert_predictions_to_annotations_none() -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_local_event"
 )
 def test_run_write_to_event_store_does_not_require_api_key(
     mock_execute: MagicMock,
@@ -671,7 +678,7 @@ def test_run_write_to_event_store_does_not_require_api_key(
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_local_event"
 )
 def test_run_write_to_event_store_passes_url(mock_execute: MagicMock) -> None:
     mock_execute.return_value = (False, "ok", "")
@@ -697,7 +704,7 @@ def test_run_write_to_event_store_passes_url(mock_execute: MagicMock) -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_local_event"
 )
 def test_execute_local_event_builds_v2_payload(mock_send: MagicMock) -> None:
     mock_send.return_value = (False, "ok", "evt-local-42")
@@ -738,7 +745,7 @@ def test_execute_local_event_builds_v2_payload(mock_send: MagicMock) -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_local_event"
 )
 def test_execute_local_event_no_images(mock_send: MagicMock) -> None:
     mock_send.return_value = (False, "ok", "")
@@ -761,7 +768,7 @@ def test_execute_local_event_no_images(mock_send: MagicMock) -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_local_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_local_event"
 )
 def test_execute_local_event_operator_feedback(mock_send: MagicMock) -> None:
     """operator_feedback is a valid schema in the local event store (v2 API)."""
@@ -786,9 +793,7 @@ def test_execute_local_event_operator_feedback(mock_send: MagicMock) -> None:
     }
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_event"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_event")
 def test_execute_vision_event_returns_generated_event_id(
     mock_send: MagicMock,
 ) -> None:
@@ -798,6 +803,7 @@ def test_execute_vision_event_returns_generated_event_id(
     error_status, _, event_id = _execute_vision_event(
         api_base_url="https://api.roboflow.com",
         api_key="test-key",
+        platform_client=OFFLINE_PLATFORM_CLIENT,
         input_image=None,
         output_image=None,
         prediction=None,
@@ -814,15 +820,14 @@ def test_execute_vision_event_returns_generated_event_id(
     assert event_id == sent_payload["eventId"]
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._send_event"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._send_event")
 def test_execute_vision_event_no_event_id_on_error(mock_send: MagicMock) -> None:
     mock_send.return_value = (True, "boom")
 
     error_status, _, event_id = _execute_vision_event(
         api_base_url="https://api.roboflow.com",
         api_key="test-key",
+        platform_client=OFFLINE_PLATFORM_CLIENT,
         input_image=None,
         output_image=None,
         prediction=None,
@@ -836,9 +841,7 @@ def test_execute_vision_event_no_event_id_on_error(mock_send: MagicMock) -> None
     assert event_id == ""
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_send_local_event_success_no_api_key(mock_post: MagicMock) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 201
@@ -861,9 +864,7 @@ def test_send_local_event_success_no_api_key(mock_post: MagicMock) -> None:
     assert mock_post.call_args.kwargs["json"] == {"a": 1}
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_send_local_event_sets_api_key_header(mock_post: MagicMock) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 201
@@ -877,9 +878,7 @@ def test_send_local_event_sets_api_key_header(mock_post: MagicMock) -> None:
     assert headers["X-API-Key"] == "secret-key"
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_send_local_event_backpressure_529(mock_post: MagicMock) -> None:
     """529 from the Event Ingestion Service is surfaced as a clear backpressure message."""
     mock_response = MagicMock()
@@ -900,9 +899,7 @@ def test_send_local_event_backpressure_529(mock_post: MagicMock) -> None:
     assert "Device storage full" in message
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_send_local_event_http_error(mock_post: MagicMock) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 400
@@ -918,9 +915,7 @@ def test_send_local_event_http_error(mock_post: MagicMock) -> None:
     assert "bad request" in message
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_send_local_event_timeout(mock_post: MagicMock) -> None:
     import requests
 
@@ -1057,7 +1052,7 @@ def test_manifest_declares_cooldown_restriction() -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_throttles_second_event_within_cooldown(mock_execute: MagicMock) -> None:
     mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
@@ -1090,7 +1085,7 @@ def test_run_throttles_second_event_within_cooldown(mock_execute: MagicMock) -> 
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_sends_again_once_cooldown_expires(mock_execute: MagicMock) -> None:
     """The cooldown window reopens after cooldown_seconds, and throttled calls
@@ -1129,7 +1124,7 @@ def test_run_sends_again_once_cooldown_expires(mock_execute: MagicMock) -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_throttled_call_does_not_refresh_cooldown_timestamp(
     mock_execute: MagicMock,
@@ -1162,7 +1157,7 @@ def test_run_throttled_call_does_not_refresh_cooldown_timestamp(
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_cooldown_zero_disables_rate_limiting(mock_execute: MagicMock) -> None:
     mock_execute.return_value = (False, "Vision event sent successfully", "evt-123")
@@ -1192,7 +1187,7 @@ def test_run_cooldown_zero_disables_rate_limiting(mock_execute: MagicMock) -> No
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_local_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_local_event"
 )
 def test_run_cooldown_applies_to_local_event_store(mock_execute: MagicMock) -> None:
     mock_execute.return_value = (
@@ -1227,7 +1222,7 @@ def test_run_cooldown_applies_to_local_event_store(mock_execute: MagicMock) -> N
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_throttled_when_disabled_does_not_start_cooldown(
     mock_execute: MagicMock,
@@ -1272,7 +1267,7 @@ def test_manifest_cooldown_rejects_negative_values(cooldown_seconds) -> None:
 
 
 @patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1._execute_vision_event"
+    "roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1._execute_vision_event"
 )
 def test_run_negative_cooldown_treated_as_disabled(mock_execute: MagicMock) -> None:
     """Selector-resolved negative values bypass manifest validation; the block
@@ -1306,15 +1301,21 @@ def test_run_negative_cooldown_treated_as_disabled(mock_execute: MagicMock) -> N
 # === Roboflow API authentication ===
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+def _headers_client(headers: dict) -> MagicMock:
+    """A platform client whose header builder returns `headers`."""
+    platform_client = MagicMock()
+    platform_client.build_api_headers.return_value = dict(headers)
+    platform_client.wrap_url.side_effect = lambda url: url
+    return platform_client
+
+
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_upload_image_sends_shared_roboflow_api_headers(mock_post: MagicMock) -> None:
     """Batch processing authenticates with a header injected by the shared builder.
 
     Its API key is a placeholder, so the request only authenticates if the
-    block goes through `build_roboflow_api_headers()` like the rest of the
-    Roboflow API callers.
+    block goes through the platform client's `build_api_headers()` like the
+    rest of the Roboflow API callers.
     """
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -1322,12 +1323,13 @@ def test_upload_image_sends_shared_roboflow_api_headers(mock_post: MagicMock) ->
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
-    with patch.object(
-        v1,
-        "build_roboflow_api_headers",
-        return_value={"x-temporary-auth-token": "batch-token"},
-    ):
-        _upload_image("https://api.roboflow.com", "test-key", _make_workflow_image())
+    platform_client = _headers_client({"x-temporary-auth-token": "batch-token"})
+    _upload_image(
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        image_data=_make_workflow_image(),
+        platform_client=platform_client,
+    )
 
     assert mock_post.call_args[1]["headers"] == {
         "x-temporary-auth-token": "batch-token",
@@ -1335,26 +1337,26 @@ def test_upload_image_sends_shared_roboflow_api_headers(mock_post: MagicMock) ->
     }
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_send_event_sends_shared_roboflow_api_headers(mock_post: MagicMock) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
-    with patch.object(
-        v1,
-        "build_roboflow_api_headers",
-        return_value={
+    platform_client = _headers_client(
+        {
             "x-temporary-auth-token": "batch-token",
             "Content-Type": "application/json",
-        },
-    ) as build_headers_mock:
-        error_status, _ = _send_event(
-            "https://api.roboflow.com", "test-key", {"eventId": "evt-1"}
-        )
+        }
+    )
+    build_headers_mock = platform_client.build_api_headers
+    error_status, _ = _send_event(
+        api_base_url="https://api.roboflow.com",
+        api_key="test-key",
+        payload={"eventId": "evt-1"},
+        platform_client=platform_client,
+    )
 
     assert error_status is False
     # Content-Type is passed through the builder rather than bolted on after,
@@ -1365,9 +1367,7 @@ def test_send_event_sends_shared_roboflow_api_headers(mock_post: MagicMock) -> N
     assert mock_post.call_args[1]["headers"]["x-temporary-auth-token"] == "batch-token"
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_configured_authorization_header_is_not_overridden(
     mock_post: MagicMock,
 ) -> None:
@@ -1377,12 +1377,14 @@ def test_configured_authorization_header_is_not_overridden(
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
-    with patch.object(
-        v1,
-        "build_roboflow_api_headers",
-        return_value={"Authorization": "Bearer configured-credential"},
-    ):
-        _send_event("https://api.roboflow.com", "dummy-workspace", {"eventId": "e"})
+    _send_event(
+        api_base_url="https://api.roboflow.com",
+        api_key="dummy-workspace",
+        payload={"eventId": "e"},
+        platform_client=_headers_client(
+            {"Authorization": "Bearer configured-credential"}
+        ),
+    )
 
     assert (
         mock_post.call_args[1]["headers"]["Authorization"]
@@ -1390,9 +1392,7 @@ def test_configured_authorization_header_is_not_overridden(
     )
 
 
-@patch(
-    "inference.roboflow_workflows_plugin.sinks.vision_events.v1.requests.post"
-)
+@patch("roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1.requests.post")
 def test_api_key_is_not_placed_in_request_url(mock_post: MagicMock) -> None:
     """Query strings reach proxy, gateway, and access logs; the key stays in a header."""
     mock_response = MagicMock()
@@ -1400,7 +1400,12 @@ def test_api_key_is_not_placed_in_request_url(mock_post: MagicMock) -> None:
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
-    _send_event("https://api.roboflow.com", "my-secret-key", {"eventId": "evt-1"})
+    _send_event(
+        api_base_url="https://api.roboflow.com",
+        api_key="my-secret-key",
+        payload={"eventId": "evt-1"},
+        platform_client=OFFLINE_PLATFORM_CLIENT,
+    )
 
     url = mock_post.call_args[0][0]
     assert url == "https://api.roboflow.com/vision-events"

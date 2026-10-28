@@ -1399,6 +1399,7 @@ if USE_INFERENCE_MODELS:
         "rfdetr-sem-large",
         "rfdetr-sem-xlarge",
         "rfdetr-sem-2xlarge",
+        "rfdetr-nas-sem",
     ]:
         ROBOFLOW_MODEL_TYPES[("semantic-segmentation", variant)] = (
             InferenceModelsSemanticSegmentationAdapter
