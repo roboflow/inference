@@ -1,6 +1,6 @@
 import cv2
 import pytest
-from streamvision.camera import video_source
+from streamvision.camera import discoverability, video_source
 from streamvision.camera.fourcc import parse_fourcc
 
 
@@ -94,15 +94,15 @@ def _fallback_source(
     monkeypatch.setattr(video_source.cv2, "VideoCapture", lambda *args: capture)
     monkeypatch.setattr(video_source, "RUNS_ON_JETSON", True)
     monkeypatch.setattr(video_source, "ENABLE_TENSOR_DATA_REPRESENTATION", True)
-    monkeypatch.setattr(
-        video_source,
-        "_build_default_producer",
-        lambda *args, **kwargs: (
-            Native()
-            if failure_stage == "negotiation"
-            else video_source.CV2VideoFrameProducer(0)
-        ),
-    )
+
+    def build_hardware(*args, **kwargs):
+        if failure_stage == "construction":
+            raise RuntimeError("native construction failed")
+
+        return Native()
+
+    monkeypatch.setattr(discoverability, "build_hw_producer", build_hardware)
+    monkeypatch.setattr(discoverability, "available_producers", lambda **kwargs: {})
     monkeypatch.setattr(
         video_source.VideoSource,
         "_consume_video",
