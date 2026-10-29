@@ -364,7 +364,6 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
                 {"classes": {"type": "list[str]", "required": False}},
                 _K_OD,
                 _P_FLOAT_CONFIDENCE,
-                _K_PREPROC,
             ),
             "validate_images_required",
             "serialize_detections_compact",
