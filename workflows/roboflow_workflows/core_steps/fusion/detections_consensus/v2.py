@@ -6,7 +6,7 @@ one highest-confidence contributor of the class chosen by that aggregation.
 
 import math
 from functools import lru_cache
-from typing import List, Literal
+from typing import Callable, List, Literal, Optional, Tuple
 
 import numpy as np
 import supervision as sv
@@ -24,6 +24,7 @@ from roboflow_workflows.core_steps.fusion.detections_consensus.v1 import (
     MaskAggregationMode,
 )
 from roboflow_workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
+from roboflow_workflows.execution_engine.constants import DETECTION_ID_KEY
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
@@ -37,6 +38,8 @@ from roboflow_workflows.execution_engine.entities.types import (
 )
 from shapely.geometry import Polygon
 from supervision.config import ORIENTED_BOX_COORDINATES
+
+_MaskGeometry = Tuple[np.ndarray, Tuple[int, int, int, int], int]
 
 _SOURCE_ORDER = "_consensus_source_order"
 _NATIVE_KIND = (
@@ -184,7 +187,9 @@ class DetectionsConsensusBlockV2(v1.DetectionsConsensusBlockV1):
 
         result = v1.agree_on_consensus_for_all_detections_sources(
             detections_from_sources=sources,
-            _iou_calculator=calculate_iou,
+            _iou_calculator=(
+                calculate_iou if any(native) else _make_mask_iou_calculator(sources)
+            ),
             _detection_merger=merge_detections,
             **kwargs,
         )
@@ -205,6 +210,75 @@ def _is_native(detection):
     return bool(detection.metadata.get(NATIVE_OBB)) or bool(
         np.any(detection.data.get(NATIVE_OBB, False))
     )
+
+
+def _make_mask_iou_calculator(
+    sources: List[sv.Detections],
+) -> Callable[[sv.Detections, sv.Detections], float]:
+    """Keep lazily derived foreground geometry within one consensus call."""
+    masked_sources = [
+        source for source in sources if len(source) and source.mask is not None
+    ]
+    if len(masked_sources) < 2 or any(
+        not isinstance(source.mask, np.ndarray) for source in masked_sources
+    ):
+        return calculate_iou
+    if len({source.mask.shape[1:] for source in masked_sources}) != 1:
+        return calculate_iou
+
+    identities = []
+    for source in masked_sources:
+        source_ids = source.data.get(DETECTION_ID_KEY)
+        if source_ids is None or any(
+            not isinstance(value, str) for value in source_ids
+        ):
+            return calculate_iou
+        identities.extend(source_ids)
+    # v1 does not require unique input IDs; aliases must not share cached geometry.
+    if len(set(identities)) != len(identities):
+        return calculate_iou
+
+    geometry: Optional[dict[str, _MaskGeometry]] = None
+
+    def _calculate_pair_iou(
+        detection_a: sv.Detections, detection_b: sv.Detections
+    ) -> float:
+        if detection_a.mask is None or detection_b.mask is None:
+            return calculate_iou(detection_a, detection_b)
+
+        nonlocal geometry
+        if geometry is None:
+            geometry = {}
+            for source in masked_sources:
+                boxes = sv.mask_to_xyxy(source.mask)
+                for identity, mask, box in zip(
+                    source.data[DETECTION_ID_KEY], source.mask, boxes
+                ):
+                    x_min, y_min, x_max, y_max = map(int, box)
+                    # Supervision bounds are inclusive; extraction windows are half-open.
+                    x_max += 1
+                    y_max += 1
+                    area = int(np.count_nonzero(mask[y_min:y_max, x_min:x_max]))
+                    geometry[identity] = (mask, (x_min, y_min, x_max, y_max), area)
+
+        mask_a, bounds_a, area_a = geometry[detection_a.data[DETECTION_ID_KEY][0]]
+        mask_b, bounds_b, area_b = geometry[detection_b.data[DETECTION_ID_KEY][0]]
+        if not area_a or not area_b:
+            return 0.0
+
+        x_min, y_min = max(bounds_a[0], bounds_b[0]), max(bounds_a[1], bounds_b[1])
+        x_max, y_max = min(bounds_a[2], bounds_b[2]), min(bounds_a[3], bounds_b[3])
+        intersection = int(
+            np.count_nonzero(
+                np.logical_and(
+                    mask_a[y_min:y_max, x_min:x_max], mask_b[y_min:y_max, x_min:x_max]
+                )
+            )
+        )
+        union = area_a + area_b - intersection
+        return float(intersection) / float(union)
+
+    return _calculate_pair_iou
 
 
 def _mask_pair_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
