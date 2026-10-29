@@ -666,6 +666,7 @@ def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     assert few_shot.default is False
     assert few_shot.method == "infer_with_reference_examples"
     assert zero_shot.params["classes"]["required"] is False
+    assert zero_shot.params["confidence"] == {"type": "float", "required": False}
     assert test_registry.validate(model, "infer", {"images": "image"}) == {
         "images": "image"
     }
