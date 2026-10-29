@@ -4,8 +4,30 @@ import numpy as np
 import pytest
 import torch
 
+from inference.core.managers.base import ModelManager
 from inference.models.owlv2 import owlv2_inference_models, rf_instant_inference_models
 from inference_models import Detections
+
+
+@pytest.mark.parametrize("saved_labels", [["leaf", "flower"], None])
+def test_model_manager_reads_saved_owlv2_labels(saved_labels):
+    native = owlv2_inference_models.OWLv2HF.__new__(owlv2_inference_models.OWLv2HF)
+    native._class_names = saved_labels
+    with patch.object(
+        owlv2_inference_models,
+        "Owlv2AdapterSingleton",
+        return_value=MagicMock(model=native),
+    ):
+        adapter = owlv2_inference_models.InferenceModelsOwlV2Adapter(
+            model_id="uploaded/1", api_key="test-key"
+        )
+    manager = ModelManager(
+        model_registry=MagicMock(),
+        models={"uploaded/1": adapter},
+        content_addressed_artifact_cache=MagicMock(),
+    )
+    assert manager.get_class_names("uploaded/1") == (saved_labels or [])
+    assert not hasattr(native, "class_names")
 
 
 @pytest.mark.parametrize("training_data", [None, []])
