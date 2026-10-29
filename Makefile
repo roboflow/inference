@@ -1,4 +1,4 @@
-.PHONY: style check_code_quality download_fonts create_workflows_wheel create_streamvision_wheel create_models_wheel create_isolation_wheels create_sdk_wheel
+.PHONY: style check_code_quality download_fonts create_workflows_wheel create_streamvision_wheel create_models_wheel create_isolation_wheels create_pypi_wheels create_sdk_wheel
 
 serve:
 	SKIP_CODEGEN=1 python -m zensical serve
@@ -73,6 +73,17 @@ create_isolation_wheels: create_workflows_wheel create_models_wheel create_strea
 	python .release/pypi/inference.sdk.setup.py bdist_wheel
 	rm -rf build/*
 
+# PyPI owns only these six distributions. Runtime dependencies are recorded by
+# the setup scripts, not needed to build wheels. Keep create_wheels unchanged
+# for Docker and other callers that also need the standalone package artifacts.
+create_pypi_wheels:
+	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+	rm -rf dist/pypi
+	set -e; for script in inference.core inference.cpu inference.gpu inference inference.sdk inference.cli; do \
+		rm -rf build/*; \
+		${PYTHON} .release/pypi/$$script.setup.py bdist_wheel --dist-dir dist/pypi; \
+	done
+
 create_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
@@ -103,7 +114,7 @@ create_wheels_for_gpu_notebook: create_workflows_wheel create_models_wheel creat
 
 create_sdk_wheel:
 	rm -rf build/*
-	python .release/pypi/inference.sdk.setup.py bdist_wheel
+	${PYTHON} .release/pypi/inference.sdk.setup.py bdist_wheel --dist-dir dist/pypi
 
 create_inference_cli_whl:
 	${PYTHON} -m pip install --upgrade pip

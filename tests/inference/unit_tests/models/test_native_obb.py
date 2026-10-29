@@ -284,38 +284,6 @@ def test_auto_loader_and_request_consumer(tmp_path, monkeypatch):
     assert "x" not in row.model_dump()
 
 
-def test_sdk_uses_native_route_and_skips_client_resize():
-    from inference_sdk.http.client import (
-        NEW_INFERENCE_ENDPOINTS,
-        _determine_client_downsizing_parameters,
-    )
-    from inference_sdk.http.entities import (
-        HTTPClientMode,
-        InferenceConfiguration,
-        ModelDescription,
-    )
-
-    assert (
-        NEW_INFERENCE_ENDPOINTS["oriented-object-detection"]
-        == "/infer/oriented_object_detection"
-    )
-    description = ModelDescription(
-        model_id="native/1",
-        task_type="oriented-object-detection",
-        batch_size=1,
-        input_height=64,
-        input_width=64,
-    )
-    assert _determine_client_downsizing_parameters(False, description, 1024) == (
-        None,
-        None,
-    )
-    params = InferenceConfiguration(confidence_threshold=0.25).to_api_call_parameters(
-        HTTPClientMode.V1, "oriented-object-detection"
-    )
-    assert params["confidence"] == 0.25
-
-
 def test_static_crop_preprocessing_is_inverted_before_response(tmp_path):
     package(tmp_path)
     (tmp_path / "inference_config.json").write_text(
@@ -550,6 +518,7 @@ def test_core_metadata_and_standard_train_package_survive_cache_and_offline(
 
     def infer_request(request, context):
         payload = request.json()
+        assert payload["confidence"] == 0.5
         payload["disable_active_learning"] = True
         parsed = OrientedObjectDetectionInferenceRequest.model_validate(payload)
         response = adapter.infer_from_request(parsed)
@@ -561,11 +530,23 @@ def test_core_metadata_and_standard_train_package_survive_cache_and_offline(
     client = InferenceHTTPClient(
         api_url=server_url, api_key="fixture-key"
     ).select_api_v1()
-    client.configure(InferenceConfiguration(confidence_threshold=0.5))
+    client.configure(
+        InferenceConfiguration(
+            confidence_threshold=0.5, client_downsizing_disabled=False
+        )
+    )
     response = client.infer(image, model_id="native/1")
     assert response["task_type"] == "oriented-object-detection"
+    assert response["image"] == {"width": 73, "height": 35}
     assert response["class_heading"] == metadata()["classHeading"]
     assert response["predictions"][0]["obb"] == pytest.approx(expected.obb[0].tolist())
+    batch = client.infer([image, image], model_id="native/1")
+    assert len(batch) == 2
+    assert all(item["image"] == response["image"] for item in batch)
+    assert all(
+        item["predictions"][0]["obb"] == pytest.approx(expected.obb[0].tolist())
+        for item in batch
+    )
     if os.environ.get("OBB_SMOKE_RESPONSE"):
         Path(os.environ["OBB_SMOKE_RESPONSE"]).write_text(json.dumps(response))
 

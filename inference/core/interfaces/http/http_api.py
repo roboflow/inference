@@ -3132,6 +3132,13 @@ class HttpInterface(BaseInterface):
                     logger.info(
                         f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
                     )
+                    if (
+                        PINNED_MODELS
+                        and model_id in PINNED_MODELS
+                        and hasattr(self.model_manager, "pin_model")
+                    ):
+                        self.model_manager.pin_model(loaded_model_id)
+
                     try:
                         self.model_manager.add_model(
                             de_aliased,
@@ -3149,14 +3156,6 @@ class HttpInterface(BaseInterface):
                         with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
                         return
-
-                    # Pin if this model is in PINNED_MODELS
-                    if (
-                        PINNED_MODELS
-                        and model_id in PINNED_MODELS
-                        and hasattr(self.model_manager, "pin_model")
-                    ):
-                        self.model_manager.pin_model(loaded_model_id)
 
                 all_models = list(
                     dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))

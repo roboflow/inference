@@ -91,8 +91,6 @@ def native_obb_from_inference(response):
         elif row.get("geometry_type") == "quadrilateral":
             polygon = np.asarray(row["corners"], dtype=float)
             _rectangle(polygon)
-            if polygon.shape != (4, 2) or not np.isfinite(polygon).all():
-                raise ValueError("Malformed native OBB quadrilateral")
         else:
             raise ValueError("Native geometry is required")
         if not isinstance(row.get("detection_id"), str) or not row["detection_id"]:

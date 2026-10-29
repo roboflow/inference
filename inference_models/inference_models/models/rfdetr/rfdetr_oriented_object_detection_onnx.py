@@ -224,9 +224,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         Returns:
             Float32 BCHW array and exact per-image inverse transform metadata.
         """
-        if isinstance(images, torch.Tensor):
-            images = list(images) if images.ndim == 4 else [images]
-        elif isinstance(images, np.ndarray):
+        if isinstance(images, (torch.Tensor, np.ndarray)):
             images = list(images) if images.ndim == 4 else [images]
         if not len(images):
             raise ValueError("Native OBB requires a nonempty image batch")
@@ -276,11 +274,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
                     crop_offset_y=crop.offset_y,
                 )
             )
-        batch = (
-            np.stack(arrays)
-            if arrays
-            else np.empty((0, 3, self.resolution, self.resolution), dtype=np.float32)
-        )
+        batch = np.stack(arrays)
         return batch, metas
 
     def forward(self, pre_processed_images, **kwargs):
@@ -399,10 +393,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
                     },
                     xyxy=bounds,
                     confidence=flat[selected],
-                    class_id=torch.tensor(
-                        cls.tolist(),
-                        dtype=torch.int32,
-                    ),
+                    class_id=cls.to(device="cpu", dtype=torch.int32),
                     obb=chosen,
                     heading=directed,
                     detection_id=[f"q{int(q)}:c{int(c)}" for q, c in zip(query, cls)],

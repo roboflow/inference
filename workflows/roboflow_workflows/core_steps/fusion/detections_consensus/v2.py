@@ -22,8 +22,6 @@ from roboflow_workflows.core_steps.fusion.detections_consensus import v1
 from roboflow_workflows.core_steps.fusion.detections_consensus.v1 import (
     AggregationMode,
     MaskAggregationMode,
-    get_intersection_mask,
-    get_union_mask,
 )
 from roboflow_workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition

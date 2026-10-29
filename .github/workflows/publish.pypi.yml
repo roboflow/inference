@@ -36,36 +36,28 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 🛞 Create Wheels
         env:
           PACKAGE_SELECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.package || 'all' }}
         run: |
           if [ "$PACKAGE_SELECTION" = "sdk" ]; then
-            python -m pip install setuptools wheel
+            python -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
             make create_sdk_wheel
           else
-            make create_wheels
+            make create_pypi_wheels
           fi
-      - name: 🧹 Separate SDK and independently published artifacts
+      - name: 🧹 Separate SDK publication
         # Keep SDK publication in this existing trusted workflow. Its isolated
         # build can precede Workflows without resolving the consumer lock.
         run: |
           mkdir -p sdk-dist
-          mv dist/inference_sdk-*.whl sdk-dist/
-          rm -f dist/roboflow_workflows-*.whl dist/roboflow_workflows-*.tar.gz dist/inference_models-*.whl dist/streamvision-*.whl dist/streamvision-*.tar.gz
+          mv dist/pypi/inference_sdk-*.whl sdk-dist/
       - name: 📤 Upload built wheels
         uses: actions/upload-artifact@v4
         with:
           name: inference-wheels
           path: |
-            dist/*.whl
+            dist/pypi/*.whl
             sdk-dist/*.whl
       - name: 🚀 Publish SDK to PyPI
         if: ${{ github.event_name == 'release' || inputs.publish == true }}
@@ -77,3 +69,5 @@ jobs:
       - name: 🚀 Publish root packages to PyPI
         if: ${{ github.event_name == 'release' || (inputs.publish == true && inputs.package != 'sdk') }}
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/pypi/
