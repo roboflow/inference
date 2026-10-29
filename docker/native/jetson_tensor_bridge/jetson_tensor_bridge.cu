@@ -658,9 +658,7 @@ bool read_bus_error(
         write_error(
             error,
             error_capacity,
-            "%s: %s",
-            GST_MESSAGE_SRC(message) != nullptr
-                ? GST_OBJECT_NAME(GST_MESSAGE_SRC(message)) : "pipeline",
+            "%s",
             gst_error != nullptr ? gst_error->message : "GStreamer pipeline error");
         if (gst_error != nullptr) {
             g_error_free(gst_error);
@@ -1509,9 +1507,7 @@ RfJetsonPipeline* rf_jetson_pipeline_create(
     const GstStateChangeReturn state_status =
         gst_element_set_state(pipeline, GST_STATE_PLAYING);
     if (state_status == GST_STATE_CHANGE_FAILURE) {
-        if (!read_bus_error(handle, error, error_capacity)) {
-            write_error(error, error_capacity, "GStreamer could not enter PLAYING state");
-        }
+        write_error(error, error_capacity, "GStreamer could not enter PLAYING state");
         // A failed PLAYING transition can leave elements in READY/PAUSED with
         // running task threads; GStreamer refuses to dispose a non-NULL
         // pipeline, so reset it before dropping the reference.
