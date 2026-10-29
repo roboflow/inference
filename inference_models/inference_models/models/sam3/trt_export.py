@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import time
 from contextlib import contextmanager
 from importlib.metadata import version
 from pathlib import Path
@@ -131,6 +132,19 @@ def file_sha256(path: Path) -> str:
 
 
 def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
+    """Export the native SAM3 components and record their export durations.
+
+    Args:
+        model_package (Path): Existing package with weights and native tokenizer.
+        output_dir (Path): Empty destination for ONNX files and their manifest.
+
+    Returns:
+        Dict: Package provenance, shape constraints, and export durations.
+
+    Raises:
+        ValueError: If the SAM3 version or destination is unsupported.
+        RuntimeError: If CUDA is unavailable or ONNX export fails.
+    """
     from inference_models.models.sam3.sam3_torch import SAM3Torch
 
     if version("sam3") != "0.1.4":
@@ -157,6 +171,7 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
     vision = SAM3VisionExport(model).eval()
     text = SAM3TextExport(model).eval()
     decoder = SAM3DecoderExport(model).to(device).eval()
+    export_seconds = {}
     with torch.no_grad(), torch.autocast("cuda", enabled=False), sdpa_kernel(
         SDPBackend.MATH
     ), sam3_onnx_rope(model):
@@ -176,6 +191,7 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
             ),
         )
         for name, wrapper, inputs, input_names, output_names in exports:
+            started = time.perf_counter()
             torch.onnx.export(
                 wrapper,
                 inputs,
@@ -186,6 +202,7 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
                 dynamo=False,
                 external_data=True,
             )
+            export_seconds[name] = time.perf_counter() - started
 
     manifest = {
         "schema_version": 1,
@@ -195,6 +212,7 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
         "text_length": TEXT_LENGTH,
         "batch_size": 1,
         "prompt_mode": "text_only",
+        "export_wall_seconds": export_seconds,
         "weights_sha256": file_sha256(model_package / "weights.pt"),
         "tokenizer_sha256": file_sha256(model_package / "bpe_simple_vocab_16e6.txt.gz"),
     }

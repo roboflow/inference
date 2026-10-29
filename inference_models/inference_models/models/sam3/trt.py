@@ -1,6 +1,7 @@
 """Experimental TensorRT build and execution for native SAM3 text prompts."""
 
 import json
+import time
 from pathlib import Path
 from threading import RLock
 from typing import Dict
@@ -40,6 +41,21 @@ def build_sam3_engines(
     fp16: bool = False,
     workspace_gib: int = 8,
 ) -> Dict:
+    """Build static TensorRT engines with detailed inspection metadata.
+
+    Args:
+        export_dir (Path): Directory with native ONNX exports and their manifest.
+        engine_dir (Path): Empty destination for engines and build measurements.
+        fp16 (bool): Enable FP16 tactics while retaining FP32 Softmax.
+        workspace_gib (int): Builder workspace limit in GiB per engine.
+
+    Returns:
+        Dict: Engine provenance, checksums, and per-engine build durations.
+
+    Raises:
+        ValueError: If the manifest, destination, or shapes are unsupported.
+        RuntimeError: If TensorRT cannot parse or build an engine.
+    """
     trt = _tensorrt()
     manifest = json.loads((export_dir / "export.json").read_text())
     if manifest["schema_version"] != 1:
@@ -54,7 +70,9 @@ def build_sam3_engines(
     engine_dir.mkdir(parents=True, exist_ok=True)
     logger = trt.Logger(trt.Logger.WARNING)
     engines = {}
+    build_seconds = {}
     for part in PARTS:
+        started = time.perf_counter()
         builder = trt.Builder(logger)
         network = builder.create_network(
             1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
@@ -72,6 +90,7 @@ def build_sam3_engines(
                     f"Expected static, nonempty input: {tensor.name} {tensor.shape}"
                 )
         configuration = builder.create_builder_config()
+        configuration.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
         configuration.set_memory_pool_limit(
             trt.MemoryPoolType.WORKSPACE, workspace_gib << 30
         )
@@ -91,11 +110,14 @@ def build_sam3_engines(
         path = engine_dir / f"{part}.engine"
         path.write_bytes(bytes(serialized))
         engines[part] = file_sha256(path)
+        build_seconds[part] = time.perf_counter() - started
 
     manifest.update(
         environment=_environment(),
         precision="fp16" if fp16 else "fp32",
+        profiling_verbosity="detailed",
         engines_sha256=engines,
+        build_wall_seconds=build_seconds,
     )
     (engine_dir / "engines.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
@@ -111,6 +133,8 @@ class _TensorRTEngine:
         self.context = self.engine.create_execution_context()
         if self.context is None:
             raise RuntimeError(f"Cannot create TensorRT execution context for {path}")
+        # Detailed NVTX annotations distort enqueue latency during normal timing.
+        self.context.nvtx_verbosity = trt.ProfilingVerbosity.NONE
         self.names = [
             self.engine.get_tensor_name(i) for i in range(self.engine.num_io_tensors)
         ]
