@@ -1120,7 +1120,6 @@ if USE_INFERENCE_MODELS:
     ROBOFLOW_MODEL_TYPES.update(
         {
             ("object-detection", "rfdetr"): InferenceModelsObjectDetectionAdapter,
-            ("object-detection", "owlv2-custom"): InferenceModelsObjectDetectionAdapter,
             ("object-detection", "yolo26"): InferenceModelsObjectDetectionAdapter,
             ("object-detection", "yololite"): InferenceModelsObjectDetectionAdapter,
             ("object-detection", "yolonas"): InferenceModelsObjectDetectionAdapter,

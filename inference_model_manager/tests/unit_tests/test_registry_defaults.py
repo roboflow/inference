@@ -665,6 +665,16 @@ def test_owlv2_few_shot_registers_alongside_zero_shot_default(monkeypatch):
     assert few_shot is not None
     assert few_shot.default is False
     assert few_shot.method == "infer_with_reference_examples"
+    assert zero_shot.params["classes"]["required"] is False
+    assert test_registry.validate(model, "infer", {"images": "image"}) == {
+        "images": "image"
+    }
+    explicit = {"images": "image", "classes": ["leaf"]}
+    assert test_registry.validate(model, "infer", explicit) == explicit
+    with pytest.raises(ValueError, match="classes"):
+        test_registry.validate(
+            OpenVocabularyObjectDetectionModel(), "infer", {"images": "image"}
+        )
 
 
 def test_classification_declares_include_anomaly_map():
