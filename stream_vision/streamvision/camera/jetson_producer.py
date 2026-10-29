@@ -480,6 +480,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         self._native_pipeline_factory = NativeJetsonTensorPipeline
         self._device_id = device_id
         self._native_pipeline = None
+        self._mjpeg_primary_error = None
         self._closed = False
         self._eos = False
         # VideoSource supplies capture properties after construction. Do not
@@ -489,11 +490,39 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
 
     def _ensure_native_pipeline(self) -> None:
         if self._native_pipeline is None:
-            self._native_pipeline = self._native_pipeline_factory(
-                self._pipeline,
-                device_id=self._device_id,
-                lossless_handoff=not _is_live_source(self._source_ref),
-            )
+            try:
+                self._native_pipeline = self._native_pipeline_factory(
+                    self._pipeline,
+                    device_id=self._device_id,
+                    lossless_handoff=not _is_live_source(self._source_ref),
+                )
+            except RuntimeError as error:
+                self._retry_mjpeg_pipeline(error)
+
+    def _retry_mjpeg_pipeline(self, error: RuntimeError) -> None:
+        if self._mjpeg_primary_error is not None:
+            raise RuntimeError(
+                f"Jetson MJPEG decoder startup failed: {self._mjpeg_primary_error}; "
+                f"alternate JPEG decoder failed: {error}"
+            ) from error
+
+        jpeg_decoder = " ! jpegparse ! nvv4l2decoder mjpeg=1 ! "
+        if not _is_v4l2_source(self._source_ref) or jpeg_decoder not in self._pipeline:
+            raise error
+
+        # Retain only the message, not an exception traceback holding this
+        # producer alive. The failed bridge must release the camera first.
+        self._mjpeg_primary_error = str(error)
+        if self._native_pipeline is not None:
+            self._native_pipeline.close()
+            self._native_pipeline = None
+        # Preserve camera caps and require accelerated JPEG output in NVMM.
+        self._pipeline = self._pipeline.replace(
+            jpeg_decoder,
+            " ! jpegparse ! nvjpegdec ! video/x-raw(memory:NVMM) ! ",
+            1,
+        )
+        self._ensure_native_pipeline()
 
     @property
     def pipeline(self) -> str:
@@ -511,9 +540,19 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         if self._prerolled_frame_pending:
             self._prerolled_frame_pending = False
             return True
-        grabbed = self._native_pipeline.grab(timeout_ns=self._grab_timeout_ns)
+        while True:
+            try:
+                grabbed = self._native_pipeline.grab(timeout_ns=self._grab_timeout_ns)
+                break
+            except RuntimeError as error:
+                if self._decoder_validated:
+                    raise
+                # Only the initial MJPEG decoder can be retried; an alternate
+                # decoder error is raised with both startup diagnostics.
+                self._retry_mjpeg_pipeline(error)
         if grabbed and not self._decoder_validated:
             self._validate_hardware_decoder()
+            self._mjpeg_primary_error = None
         if not grabbed:
             self._eos = True
         return grabbed
@@ -551,6 +590,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
                 self._native_pipeline.close()
                 self._native_pipeline = None
             self._pipeline = pipeline
+            self._mjpeg_primary_error = None
             self._decoder_validated = False
             self._prerolled_frame_pending = False
             self._cached_source_properties = None

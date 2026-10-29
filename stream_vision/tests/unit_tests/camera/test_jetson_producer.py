@@ -59,6 +59,7 @@ def _native_producer(
     producer._capture = None
     producer._output_tensor = output_tensor
     producer._decoder_validated = True
+    producer._mjpeg_primary_error = None
     producer._prerolled_frame_pending = False
     producer._cached_source_properties = None
     producer._grab_timeout_ns = 5_000_000_000
@@ -483,6 +484,109 @@ def _camera_producer_with_fake_bridge(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
 
     return JetsonVideoFrameProducer(0, tensor_device="cuda:0"), opened
+
+
+@pytest.mark.parametrize("failure_stage", ["constructor", "first_grab"])
+@pytest.mark.parametrize("width,height,fps", [(640, 480, 30), (1280, 720, 15)])
+def test_mjpeg_retries_native_jpeg_decoder_with_the_requested_mode(
+    monkeypatch, width, height, fps, failure_stage
+):
+    producer, _ = _camera_producer_with_fake_bridge(monkeypatch)
+    attempts = []
+    native = _NativePipeline(factories={"nvjpegdec"})
+    failed = _NativePipeline(factories={"nvv4l2decoder"})
+    failed.closed = False
+
+    def fail_grab(**kwargs):
+        raise RuntimeError("Error getting capabilities for decoder device")
+
+    def close_failed():
+        failed.closed = True
+
+    failed.grab = fail_grab
+    failed.close = close_failed
+
+    def open_pipeline(pipeline, **kwargs):
+        attempts.append(pipeline)
+        if "nvv4l2decoder" in pipeline:
+            if failure_stage == "first_grab":
+                return failed
+            raise RuntimeError("Error getting capabilities for decoder device")
+        if failure_stage == "first_grab":
+            assert failed.closed
+        return native
+
+    producer._native_pipeline_factory = open_pipeline
+    producer.initialize_source_properties(
+        {"fourcc": "MJPG", "frame_width": width, "frame_height": height, "fps": fps}
+    )
+    assert producer.grab()
+    assert producer._decoder_validated
+    assert len(attempts) == 2
+    for pipeline in attempts:
+        assert f"image/jpeg,width={width},height={height},framerate={fps}/1" in pipeline
+        assert "video/x-raw(memory:NVMM),format=RGBA ! appsink" in pipeline
+    assert "jpegparse ! nvjpegdec ! video/x-raw(memory:NVMM) !" in attempts[1]
+    assert producer.pipeline == attempts[1]
+    assert producer._native_pipeline is native
+
+
+@pytest.mark.parametrize("failure_stage", ["constructor", "first_grab"])
+def test_mjpeg_reports_both_native_decoder_failures(monkeypatch, failure_stage):
+    producer, _ = _camera_producer_with_fake_bridge(monkeypatch)
+    attempts = []
+
+    def open_pipeline(pipeline, **kwargs):
+        attempts.append(pipeline)
+        decoder = "nvv4l2decoder" if "nvv4l2decoder" in pipeline else "nvjpegdec"
+        if failure_stage == "first_grab":
+            pipeline = _NativePipeline(factories={decoder})
+
+            def fail_grab(**kwargs):
+                raise RuntimeError(f"{decoder} cannot open")
+
+            pipeline.grab = fail_grab
+            pipeline.close = lambda: None
+            return pipeline
+        raise RuntimeError(f"{decoder} cannot open")
+
+    producer._native_pipeline_factory = open_pipeline
+    with pytest.raises(
+        RuntimeError, match="nvv4l2decoder cannot open.*nvjpegdec cannot open"
+    ):
+        producer.initialize_source_properties({"fourcc": "MJPG"})
+        producer.grab()
+    assert len(attempts) == 2
+
+
+def test_mjpeg_error_after_capture_starts_does_not_reopen_the_camera(monkeypatch):
+    producer, opened = _camera_producer_with_fake_bridge(monkeypatch)
+    producer.initialize_source_properties({"fourcc": "MJPG"})
+    assert producer.grab()
+
+    def fail_grab(**kwargs):
+        raise RuntimeError("Camera disconnected")
+
+    opened[0].grab = fail_grab
+    with pytest.raises(RuntimeError, match="Camera disconnected"):
+        producer.grab()
+    assert len(opened) == 1
+    assert not opened[0].closed
+
+
+@pytest.mark.parametrize("fourcc", ["YUYV", "H264"])
+def test_non_jpeg_camera_startup_error_is_not_retried(monkeypatch, fourcc):
+    producer, _ = _camera_producer_with_fake_bridge(monkeypatch)
+    attempts = []
+
+    def open_pipeline(pipeline, **kwargs):
+        attempts.append(pipeline)
+        raise RuntimeError("Camera cannot open")
+
+    producer._native_pipeline_factory = open_pipeline
+    with pytest.raises(RuntimeError, match="Camera cannot open"):
+        producer.initialize_source_properties({"fourcc": fourcc})
+    assert len(attempts) == 1
 
 
 def test_camera_is_opened_only_after_requested_properties_are_applied(monkeypatch):

@@ -6,6 +6,8 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Fixed
 
+- Explicit Jetson USB MJPEG capture retries the accelerated JPEG decoder with the same camera caps and NVMM output when the V4L2 decoder cannot start. If both native decoders fail, startup preserves both errors for the verified OpenCV fallback.
+
 - Jetson USB camera capture honors requested format, dimensions and frame rate before startup, including automatic format selection and rounded NTSC rates. Bridge diagnostics are safe before deferred capture starts and after release.
 - When tensor-native Jetson USB capture falls back to OpenCV, startup fails with an error state if the effective camera format, dimensions or frame rate differ from the requested mode, including drivers that silently ignore property writes.
 
