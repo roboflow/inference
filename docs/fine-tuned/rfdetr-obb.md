@@ -55,9 +55,9 @@ input-image coordinates.
 fields. Each prediction contains `obb: [cx, cy, width, height, theta]`, `class_id`,
 `class`, `confidence`, `heading`, and `detection_id`. The response includes
 `task_type: "oriented-object-detection"` and frozen `class_heading` semantics.
-Detection IDs identify query/class rows within each input result and remain
-stable through Workflow transport. Bounding AABBs and corners are compatibility
-views derived from native geometry.
+Detection IDs use a fresh namespace for each input result, so repeated calls and
+separate models produce distinct IDs. IDs remain stable through Workflow transport.
+Bounding AABBs and corners are compatibility views derived from native geometry.
 
 The current Inference SDK in API v1 mode routes the native task to this endpoint. It disables
 client resizing for this task so a second rounded resize cannot alter the native

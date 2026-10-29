@@ -571,13 +571,11 @@ class DetectionsRename(OperationDefinition):
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
-                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
             "output_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
-                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],

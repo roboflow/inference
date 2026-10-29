@@ -185,22 +185,31 @@ def convert_inference_detections_batch_to_sv_detections(
     predictions_key: str = "predictions",
     image_key: str = "image",
 ) -> List[sv.Detections]:
+    """Convert ordinary inference responses to Supervision detections.
+
+    Args:
+        predictions: Batch of ordinary inference response dictionaries.
+        predictions_key: Response key containing prediction rows.
+        image_key: Response key containing image dimensions.
+
+    Returns:
+        Detection carriers with identities and image dimensions.
+
+    Raises:
+        ValueError: If a response requires the dedicated native OBB kind and block.
+    """
     batch_of_detections: List[sv.Detections] = []
     for p in predictions:
         width, height = p[image_key][WIDTH_KEY], p[image_key][HEIGHT_KEY]
         raw_predictions = filter_out_invalid_polygons(predictions=p[predictions_key])
         if p.get("task_type") == "oriented-object-detection":
-            from roboflow_workflows.core_steps.common.oriented import (
-                native_obb_from_inference,
+            raise ValueError(
+                "Native oriented detections require the "
+                "oriented_object_detection_prediction kind and the "
+                "Oriented Object Detection model block."
             )
 
-            detections = native_obb_from_inference(
-                {**p, "predictions": raw_predictions}
-            )
-        else:
-            detections = sv.Detections.from_inference(
-                {**p, "predictions": raw_predictions}
-            )
+        detections = sv.Detections.from_inference({**p, "predictions": raw_predictions})
         parent_ids = [d.get(PARENT_ID_KEY, "") for d in raw_predictions]
         detection_ids = [_get_or_create_detection_id(d) for d in raw_predictions]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)

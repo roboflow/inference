@@ -208,31 +208,11 @@ def _is_native(detection):
 
 
 def _mask_pair_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> float:
-    """Exact mask IoU for a pair of single detections, restricted to
-    bounding-box windows.
-
-    A detection's mask is contained in its bounding box (boxes are derived
-    from masks across the platform), so the intersection can only live inside
-    the boxes' overlap window and each mask's area inside its own box window.
-    This keeps the cost proportional to the box sizes instead of the full
-    frame; results match the full-frame computation exactly.
-    """
-    ax1, ay1, ax2, ay2 = detection_a.xyxy[0]
-    bx1, by1, bx2, by2 = detection_b.xyxy[0]
-    ix1, iy1 = int(max(ax1, bx1)), int(max(ay1, by1))
-    ix2, iy2 = int(min(ax2, bx2)) + 1, int(min(ay2, by2)) + 1
-    if ix1 >= ix2 or iy1 >= iy2:
-        return 0.0
-    intersection = np.logical_and(
-        detection_a.mask[0, iy1:iy2, ix1:ix2],
-        detection_b.mask[0, iy1:iy2, ix1:ix2],
-    ).sum()
-    if intersection == 0:
-        return 0.0
-    area_a = detection_a.mask[0, int(ay1) : int(ay2) + 1, int(ax1) : int(ax2) + 1].sum()
-    area_b = detection_b.mask[0, int(by1) : int(by2) + 1, int(bx1) : int(bx2) + 1].sum()
-    union = area_a + area_b - intersection
-    if union <= 0:
+    """Compare full foreground masks; detector boxes may not contain them."""
+    mask_a, mask_b = detection_a.mask[0], detection_b.mask[0]
+    intersection = np.logical_and(mask_a, mask_b).sum()
+    union = np.logical_or(mask_a, mask_b).sum()
+    if union == 0:
         return 0.0
     return float(intersection) / float(union)
 
@@ -262,11 +242,8 @@ def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> flo
     ``xyxy``, which over-matches detections whose boxes overlap even though
     their masks or rotated bodies do not.
 
-    The box IoU is always computed first and acts as a gate: a mask lives
-    inside its bounding box and oriented-box corners live inside their
-    ``xyxy``, so disjoint boxes imply zero mask / oriented-box IoU. Most
-    cross-source pairs in a consensus run do not overlap at all, which keeps
-    the geometry comparison limited to actual match candidates.
+    Mask pixels can extend beyond detector boxes, so masks are compared before
+    the box gate. Oriented corners are contained in their axis-aligned bounds.
 
     Args:
         detection_a: One detection in the shared image frame.
@@ -289,11 +266,11 @@ def calculate_iou(detection_a: sv.Detections, detection_b: sv.Detections) -> flo
                 or "heading" not in detection.data
             ):
                 raise ValueError("Native OBB overlap requires corners and heading")
+    if not native_a and detection_a.mask is not None and detection_b.mask is not None:
+        return _mask_pair_iou(detection_a, detection_b)
     box_iou = float(sv.box_iou_batch(detection_a.xyxy, detection_b.xyxy)[0][0])
     if math.isnan(box_iou) or box_iou == 0.0:
         return 0.0
-    if not native_a and detection_a.mask is not None and detection_b.mask is not None:
-        return _mask_pair_iou(detection_a, detection_b)
     if (
         ORIENTED_BOX_COORDINATES in detection_a.data
         and ORIENTED_BOX_COORDINATES in detection_b.data

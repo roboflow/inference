@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from typing import List
+from uuid import uuid4
 
 import numpy as np
 import torch
@@ -316,7 +317,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             **kwargs: confidence (default .5), max_detections (default 300).
 
         Returns:
-            Native boxes with category identity, class semantics and stable query IDs.
+            Native boxes with category identity, class semantics and unique detection IDs.
 
         Raises:
             ValueError: If graph values, row alignment or heading are malformed.
@@ -381,6 +382,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             chosen[:, 2:4] /= (meta.scale_width + meta.scale_height) / 2
             corners = _corners(chosen)
             bounds = torch.cat((corners.amin(1), corners.amax(1)), dim=-1)
+            result_id = uuid4().hex
             results.append(
                 OrientedDetections(
                     image_metadata={
@@ -396,7 +398,9 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
                     class_id=cls.to(device="cpu", dtype=torch.int32),
                     obb=chosen,
                     heading=directed,
-                    detection_id=[f"q{int(q)}:c{int(c)}" for q, c in zip(query, cls)],
+                    detection_id=[
+                        f"{result_id}:q{int(q)}:c{int(c)}" for q, c in zip(query, cls)
+                    ],
                     class_names=[self._class_names[int(c)] for c in cls],
                 )
             )

@@ -86,7 +86,6 @@ def test_all_front_sides_preserve_footprint_and_directed_squares(tmp_path, side,
     ]  # remapped class identity, never background output0
     assert result.class_names == ["plane"]
     assert result.heading.tolist() == [True]
-    assert result.detection_id == ["q0:c0"]
     scale = (64 / 73 + 31 / 35) / 2
     center = [36.5, (32 - 16) / (31 / 35)]
     expected = torch.tensor([[*center, wh[0] * 64 / scale, wh[1] * 64 / scale, 0.3]])
@@ -102,6 +101,24 @@ def test_all_front_sides_preserve_footprint_and_directed_squares(tmp_path, side,
     )
     assert result.obb[0, :2].tolist() == pytest.approx([36.5, 16 / (31 / 35)])
     assert result.xyxy.dtype.is_floating_point
+
+
+def test_detection_ids_are_unique_across_images_calls_and_models(tmp_path):
+    model = package(tmp_path)
+    image = np.zeros((35, 73, 3), np.uint8)
+    results = [
+        *model([image, image], confidence=0),
+        *model(image, confidence=0),
+        *package(tmp_path)(image, confidence=0),
+    ]
+    ids = [identity for result in results for identity in result.detection_id]
+    assert len(ids) == 8
+    assert all(ids)
+    assert len(set(ids)) == len(ids)
+    for result in results:
+        assert (
+            result.to_supervision().data["detection_id"].tolist() == result.detection_id
+        )
 
 
 def test_realized_preprocessing_matches_model_similarity_on_odd_image(tmp_path):
@@ -280,7 +297,6 @@ def test_auto_loader_and_request_consumer(tmp_path, monkeypatch):
     assert row.class_id == 0 and row.heading
     assert row.obb[:2] == pytest.approx([36.5, 16 / (31 / 35)])
     assert row.obb[4] == pytest.approx(0.3 - math.pi / 2, abs=1e-6)
-    assert row.detection_id == "q0:c0"
     assert "x" not in row.model_dump()
 
 
@@ -351,10 +367,13 @@ def test_workflow_block_executes_installed_onnx_request_and_native_transport(
             pass
 
         def infer_from_request_sync(self, model_id, request, **kwargs):
-            return adapter.infer_from_request(request)
+            response = adapter.infer_from_request(request)
+            self.detection_id = response[0].predictions[0].detection_id
+            return response
 
+    manager = LocalManager()
     block = v1.RoboflowOrientedObjectDetectionModelBlockV1(
-        ModelManagerModelsProvider(LocalManager()), None, StepExecutionMode.LOCAL
+        ModelManagerModelsProvider(manager), None, StepExecutionMode.LOCAL
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="image0"),
@@ -379,6 +398,7 @@ def test_workflow_block_executes_installed_onnx_request_and_native_transport(
         ],
         abs=1e-5,
     )
+    assert native["predictions"][0]["detection_id"] == manager.detection_id
     assert native["predictions"][0]["parent_id"] == "image0"
     assert native["predictions"][0]["heading"]
 

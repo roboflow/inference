@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- Add native `oriented_object_detection_prediction` with original-image float geometry and frozen class heading semantics. Native model, visualization, row filters, combination, crop offsets and serialization retain ordered fronts in NumPy and tensor carriers. Projective transforms retain ordered quadrilaterals instead of silently fitting new rectangle annotations.
+
 ### Added
 
 - Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.
@@ -30,7 +34,13 @@ for contributor and maintainer responsibilities.
 
 - Keep legacy oriented-corner scaling and perspective rounding unchanged; float corner transport is specific to native OBB metadata.
 
-- Reject native oriented detections in query-language `DetectionsShift` and `DetectionsOffset` before mutation; these AABB-only operations are excluded from native kind compatibility.
+- Reject native oriented detections at ordinary detection conversion and input boundaries; use the dedicated native kind and model block.
+
+- Reject native oriented detections in query-language `DetectionsShift`, `DetectionsOffset`, and `DetectionsRename` before mutation; these operations are excluded from native kind compatibility.
+
+- Clip native Dynamic Crop extraction windows to image boundaries while retaining the complete ordered geometry relative to the visible crop.
+
+- Detections Consensus v2 compares complete segmentation masks even when foreground extends beyond the detector boxes.
 
 ## `0.2.14`
 
@@ -50,8 +60,6 @@ Bundled execution engine: `1.17.0`.
   releases, and refresh the Workflows lockfile to match these minimum versions.
 
 ### Execution engine
-
-- Add native `oriented_object_detection_prediction` with original-image float geometry and frozen class heading semantics. Native model, visualization, row filters, combination, crop offsets and serialization retain ordered fronts in NumPy and tensor carriers. Projective transforms retain ordered quadrilaterals instead of silently fitting new rectangle annotations.
 
 - Update the engine compatibility version to `1.17.0` and align the integration
   and hosted-platform version assertions with the published `0.2.13rc1` package.

@@ -1,7 +1,3 @@
-from roboflow_workflows.execution_engine.entities.types import (
-    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
-)
-
 """Tensor-native sibling of ``roboflow_core/dynamic_crop@v1``.
 
 Consumes a native detection prediction (``Detections`` / ``InstanceDetections`` /
@@ -41,6 +37,7 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
     Selector,

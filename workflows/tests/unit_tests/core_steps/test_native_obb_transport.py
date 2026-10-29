@@ -269,6 +269,10 @@ def test_declared_kind_deserialization_uses_current_carrier(monkeypatch, tensor)
     [
         {"type": "DetectionsShift", "shift_x": 30, "shift_y": 20},
         {"type": "DetectionsOffset", "offset_x": 20, "offset_y": 10},
+        {
+            "type": "DetectionsRename",
+            "class_map": {"plane": "aircraft", "stone": "rock"},
+        },
     ],
 )
 @pytest.mark.parametrize("marker", ["both", "image", "rows", "empty"])
@@ -392,3 +396,217 @@ def test_legacy_perspective_corners_keep_rounding_and_dtype():
     assert result.data["xyxyxyxy"].dtype == np.float32
     np.testing.assert_array_equal(entry["xyxyxyxy"], expected[0])
     assert entry["xyxyxyxy"].dtype == np.float32
+
+
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        "converter",
+        "serialized",
+        "carrier",
+        "tensor_serialized",
+        "tensor_carrier",
+        "tensor_rle_serialized",
+        "tensor_rle_carrier",
+    ],
+)
+def test_ordinary_detection_boundaries_reject_native_payloads(empty, boundary):
+    from roboflow_workflows.core_steps.common.deserializers import (
+        deserialize_detections_kind,
+    )
+    from roboflow_workflows.core_steps.common.utils import (
+        convert_inference_detections_batch_to_sv_detections,
+    )
+    from roboflow_workflows.errors import RuntimeInputError
+
+    payload = response()
+    if empty:
+        payload["predictions"] = []
+    error = ValueError if boundary == "converter" else RuntimeInputError
+    with pytest.raises(error, match="oriented_object_detection_prediction"):
+        if boundary == "converter":
+            convert_inference_detections_batch_to_sv_detections([payload])
+        elif boundary.startswith("tensor"):
+            from roboflow_workflows.core_steps.common.deserializers_tensor import (
+                deserialize_detections_kind as deserialize_tensor,
+            )
+
+            if "rle" in boundary:
+                from roboflow_workflows.core_steps.common.deserializers_tensor import (
+                    deserialize_rle_detections_kind as deserialize_tensor,
+                )
+            value = (
+                native_obb_to_tensor(native_obb_from_inference(payload))
+                if boundary.endswith("carrier")
+                else payload
+            )
+            deserialize_tensor("detections", value)
+        else:
+            value = (
+                native_obb_from_inference(payload) if boundary == "carrier" else payload
+            )
+            deserialize_detections_kind("detections", value)
+
+
+def test_ordinary_detection_boundaries_preserve_aabb_predictions():
+    from roboflow_workflows.core_steps.common.deserializers import (
+        deserialize_detections_kind,
+    )
+    from roboflow_workflows.core_steps.common.utils import (
+        convert_inference_detections_batch_to_sv_detections,
+    )
+
+    payload = dict(
+        image=dict(width=100, height=80),
+        predictions=[
+            dict(
+                x=20,
+                y=30,
+                width=10,
+                height=20,
+                confidence=0.9,
+                class_id=7,
+                detection_id="ordinary",
+                **{"class": "plane"}
+            )
+        ],
+    )
+    for value in (
+        convert_inference_detections_batch_to_sv_detections([payload])[0],
+        deserialize_detections_kind("detections", payload),
+    ):
+        np.testing.assert_array_equal(value.xyxy, [[15, 20, 25, 40]])
+        assert value["detection_id"].tolist() == ["ordinary"]
+        assert deserialize_detections_kind("detections", value) is value
+
+    from roboflow_workflows.core_steps.common.deserializers_tensor import (
+        deserialize_detections_kind as deserialize_tensor,
+    )
+
+    tensor_value = deserialize_tensor("detections", payload)
+    np.testing.assert_array_equal(tensor_value.xyxy.cpu(), [[15, 20, 25, 40]])
+    assert tensor_value.bboxes_metadata[0]["detection_id"] == "ordinary"
+    tensor_value.bboxes_metadata = [None]
+    assert deserialize_tensor("detections", tensor_value) is tensor_value
+
+    from roboflow_workflows.core_steps.common.deserializers_tensor import (
+        deserialize_rle_detections_kind as deserialize_rle_tensor,
+    )
+
+    payload["predictions"][0]["rle_mask"] = {"size": [80, 100], "counts": [8000]}
+    rle_value = deserialize_rle_tensor("detections", payload)
+    np.testing.assert_array_equal(rle_value.xyxy.cpu(), [[15, 20, 25, 40]])
+    assert rle_value.mask.to_coco_rle_masks() == [{"size": [80, 100], "counts": [8000]}]
+    assert deserialize_rle_tensor("detections", rle_value) is rle_value
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize(
+    "obb, window",
+    [
+        ([5, 50, 30, 20, 0], (0, 40, 20, 60)),
+        ([50, 5, 20, 30, 0], (40, 0, 60, 20)),
+        ([95, 95, 30, 30, 0], (80, 80, 100, 100)),
+        ([-50, 50, 30, 20, 0], None),
+    ],
+)
+def test_native_crop_clips_pixels_and_origin_without_clipping_ordered_front(
+    tensor, obb, window
+):
+    from roboflow_workflows.core_steps.transformations.dynamic_crop import v1, v1_tensor
+    from roboflow_workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    payload = response()
+    payload["image"] = dict(width=100, height=100)
+    payload["predictions"] = payload["predictions"][:1]
+    payload["predictions"][0]["obb"] = obb
+    prediction = native_obb_from_inference(payload)
+    image_data = np.arange(100 * 100 * 3, dtype=np.uint8).reshape(100, 100, 3)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image0"), numpy_image=image_data
+    )
+    if tensor:
+        result = v1_tensor.crop_image(
+            image, native_obb_to_tensor(prediction), 0, "black"
+        )[0]
+    else:
+        result = v1.crop_image(image, prediction, 0, "black")[0]
+    if window is None:
+        assert result == {"crops": None, "predictions": None}
+        return
+
+    x1, y1, x2, y2 = window
+    crop = result["crops"]
+    np.testing.assert_array_equal(crop.numpy_image, image_data[y1:y2, x1:x2])
+    assert crop.parent_metadata.parent_id == "plane0"
+    assert crop.parent_metadata.origin_coordinates.left_top_x == x1
+    assert crop.parent_metadata.origin_coordinates.left_top_y == y1
+    row = serialise_native_obb(result["predictions"])["predictions"][0]
+    assert row["obb"] == pytest.approx([obb[0] - x1, obb[1] - y1, *obb[2:]])
+    assert row["heading"] is True
+    assert row["detection_id"] == "plane0"
+    assert (
+        serialise_native_obb(result["predictions"])["class_heading"]
+        == payload["class_heading"]
+    )
+
+
+@pytest.mark.parametrize(
+    "tensor, row_metadata", [(False, None), (True, None), (True, {"class": "plane"})]
+)
+def test_query_rename_preserves_ordinary_classes_and_ids(
+    monkeypatch, tensor, row_metadata
+):
+    from roboflow_workflows.core_steps.common.query_language.operations.core import (
+        execute_operations,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.detections import (
+        base,
+    )
+
+    transport = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40]], dtype=float),
+        class_id=np.array([7]),
+        confidence=np.array([0.9]),
+        data={"class_name": np.array(["plane"])},
+    )
+    if tensor:
+        import torch
+
+        from inference_models.models.base.object_detection import Detections
+
+        transport = Detections(
+            xyxy=torch.as_tensor(transport.xyxy),
+            class_id=torch.as_tensor(transport.class_id),
+            confidence=torch.as_tensor(transport.confidence),
+            bboxes_metadata=[row_metadata],
+            image_metadata={"class_names": {7: "plane"}},
+        )
+    monkeypatch.setattr(base, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    result = execute_operations(
+        transport,
+        operations=[{"type": "DetectionsRename", "class_map": {"plane": "aircraft"}}],
+    )
+    names = (
+        result.image_metadata["class_names"][int(result.class_id[0])]
+        if tensor
+        else result["class_name"][0]
+    )
+    assert names == "aircraft"
+    assert int(result.class_id[0]) == 0
+
+
+def test_query_rename_declaration_excludes_native_kind():
+    from roboflow_workflows.core_steps.common.query_language.entities.operations import (
+        DetectionsRename,
+    )
+
+    schema = DetectionsRename.model_json_schema()
+    for kinds in (schema["input_kind"], schema["output_kind"]):
+        names = [kind.name for kind in kinds]
+        assert "object_detection_prediction" in names
+        assert "oriented_object_detection_prediction" not in names

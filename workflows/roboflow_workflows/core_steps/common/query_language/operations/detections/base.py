@@ -1579,8 +1579,8 @@ def filter_detections(
     )
 
 
-def _reject_native_obb_geometry_operation(value: Any, *, operation_name: str) -> None:
-    """Reject native markers before an AABB-only operation can split geometry views."""
+def _reject_native_obb_operation(value: Any, *, operation_name: str) -> None:
+    """Reject operations that cannot preserve native geometry or frozen classes."""
     if _is_key_point_prediction(value):
         value = value[1]
 
@@ -1590,7 +1590,7 @@ def _reject_native_obb_geometry_operation(value: Any, *, operation_name: str) ->
         )
     elif isinstance(value, TENSOR_NATIVE_DETECTIONS_TYPES):
         is_native = bool((value.image_metadata or {}).get(NATIVE_OBB)) or any(
-            row.get(NATIVE_OBB, False) for row in (value.bboxes_metadata or [])
+            (row or {}).get(NATIVE_OBB, False) for row in (value.bboxes_metadata or [])
         )
     else:
         return
@@ -1598,7 +1598,7 @@ def _reject_native_obb_geometry_operation(value: Any, *, operation_name: str) ->
     if is_native:
         raise InvalidInputTypeError(
             public_message=f"Executing {operation_name}(...) does not support native "
-            "oriented detections because it only transforms axis-aligned bounds.",
+            "oriented detections with frozen geometry and class semantics.",
             context="step_execution | roboflow_query_language_evaluation",
         )
 
@@ -1620,7 +1620,7 @@ def offset_detections(
     Raises:
         InvalidInputTypeError: If detections are native oriented or unsupported.
     """
-    _reject_native_obb_geometry_operation(value, operation_name="offset_detections")
+    _reject_native_obb_operation(value, operation_name="offset_detections")
 
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         return _offset_detections_tensor_native(
@@ -1648,7 +1648,7 @@ def shift_detections(
     Raises:
         InvalidInputTypeError: If detections are native oriented or unsupported.
     """
-    _reject_native_obb_geometry_operation(value, operation_name="shift_detections")
+    _reject_native_obb_operation(value, operation_name="shift_detections")
 
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         return _shift_detections_tensor_native(
@@ -1683,6 +1683,24 @@ def rename_detections(
     global_parameters: Dict[str, Any],
     **kwargs,
 ) -> Union[sv.Detections, TensorNativeDetections]:
+    """Rename ordinary detection classes using the configured mapping.
+
+    Args:
+        detections: Ordinary NumPy or tensor detections.
+        class_map: Name replacements or the parameter supplying them.
+        strict: Whether every observed class must appear in the mapping.
+        new_classes_id_offset: Starting ID for remapped classes in non-strict mode.
+        global_parameters: Runtime parameters resolving named configuration values.
+        **kwargs: Additional operation execution context.
+
+    Returns:
+        Copied detections with remapped names and class IDs.
+
+    Raises:
+        InvalidInputTypeError: If detections carry native frozen class semantics.
+    """
+    _reject_native_obb_operation(detections, operation_name="rename_detections")
+
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         return _rename_detections_tensor_native(
             detections=detections,

@@ -288,6 +288,8 @@ requires-dist = [
 
 
 [tool.uv]
+# Older uv can reuse Jetson Torch metadata for the plain PyPI wheel.
+required-version = ">=0.10.10"
 conflicts = [
   [
     { extra = "torch-cpu" },
