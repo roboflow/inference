@@ -19,7 +19,7 @@ import time
 import traceback
 from contextlib import contextmanager
 from io import StringIO
-from typing import Any, Dict, Generator, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 from starlette.requests import Request
 
@@ -103,15 +103,23 @@ def _safe_unpackb(raw: bytes) -> Any:
 class BlockStateSerializationError(Exception):
     """A value the block left on ``self`` cannot be sent back to the engine.
 
-    Reported as its own error type, without a user-code line number: the
-    block ran fine, it is the state hand-back that failed.
+    Raised per attribute by ``_check_block_state_value`` and caught by
+    ``_partition_block_state``, which leaves that attribute out of the echo
+    with a warning instead of failing the call: the block ran fine, and a
+    value that is not carried is simply rebuilt on the next call, as every
+    attribute was before state was carried at all.
     """
 
 
+# Mirrors ``block_state.BLOCK_STATE_MAX_BYTES``: state rides every call in
+# both directions, so an attribute over this is left out rather than shipped.
+_BLOCK_STATE_MAX_BYTES = 1024 * 1024
+
+
 # Names the engine sets on a block instance; the engine refuses them (and any
-# name its block class defines) when applying the echo, this mirror refuses the
-# obvious ones here so the author gets the error without a round trip. Keep in
-# sync with ``block_state.ENGINE_ATTRIBUTE_NAMES``.
+# name its block class defines) when applying the echo, this mirror leaves the
+# obvious ones out of the echo here, with a warning, so the author hears about
+# it without a round trip. Keep in sync with ``block_state.ENGINE_ATTRIBUTE_NAMES``.
 _ENGINE_ATTRIBUTE_NAMES = frozenset(
     {
         "_api_key",
@@ -126,16 +134,15 @@ _ENGINE_ATTRIBUTE_NAMES = frozenset(
 )
 
 
-def _check_block_state_transportable(state: Dict[str, Any]) -> None:
-    """Refuse ``self`` state the result serializers would silently stringify.
+def _check_block_state_value(value: Any, path: str) -> None:
+    """Raise unless ``value`` can cross the boundary without being stringified.
 
     Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``
     (kept inline like the serializers above, so the sandbox does not depend on
     the engine package it may or may not ship). Accepted: None,
     bool/int/float/str/bytes, datetime, numpy arrays and bool/int/float
     scalars, sv.Detections, WorkflowImageData, VideoMetadata, lists/tuples and
-    string-keyed dicts of those. Attribute names the engine owns, and dunders,
-    are refused: the echo is written onto the engine-side instance.
+    string-keyed dicts of those.
     """
     from datetime import datetime
 
@@ -173,23 +180,98 @@ def _check_block_state_transportable(state: Dict[str, Any]) -> None:
         raise BlockStateSerializationError(
             f"Custom Python block state `self.{path}` holds a "
             f"{type(value).__name__}, which cannot be carried across remote "
-            "execution. Attributes set on `self` must be JSON-like values, "
-            "numpy arrays or bool/int/float scalars, datetimes, "
-            "sv.Detections, images or video metadata; keep other objects out "
-            "of `self` or derive them per call."
+            "execution. Only JSON-like values, numpy arrays or bool/int/float "
+            "scalars, datetimes, sv.Detections, images and video metadata "
+            "persist between calls; other objects are rebuilt on every call."
         )
 
+    _check(value, path)
+
+
+def _partition_block_state(
+    state: Dict[str, Any], measure: Callable[[Dict[str, Any]], int]
+) -> Tuple[Dict[str, Any], List[Tuple[str, str]]]:
+    """Split the echo into what is carried and what is dropped, with reasons.
+
+    Mirrors ``block_state.partition_block_state``. Dropped: names the engine
+    owns and dunders (the echo is written onto the engine-side instance),
+    values ``_check_block_state_value`` refuses, and attributes whose own
+    serialized size is over ``_BLOCK_STATE_MAX_BYTES``; if the rest is still
+    over the cap, the largest attributes go until it fits. Carried values
+    are normalized and ready for the transport's serializer.
+    """
+    carried: Dict[str, Any] = {}
+    sizes: Dict[str, int] = {}
+    dropped: List[Tuple[str, str]] = []
     for name, value in state.items():
         is_dunder = (
             isinstance(name, str) and name.startswith("__") and name.endswith("__")
         )
         if not isinstance(name, str) or is_dunder or name in _ENGINE_ATTRIBUTE_NAMES:
-            raise BlockStateSerializationError(
-                f"Custom Python block state `self.{name}` collides with an "
-                "attribute the block or the engine owns; pick another name "
-                "for state kept on `self`."
+            dropped.append(
+                (
+                    str(name),
+                    "the name collides with an attribute the engine owns; pick "
+                    "another name for state kept on `self`",
+                )
             )
-        _check(value, name)
+            continue
+        try:
+            _check_block_state_value(value, name)
+        except BlockStateSerializationError as error:
+            dropped.append((name, str(error)))
+            continue
+        normalized_value = _normalize_block_state({name: value})[name]
+        size = measure({name: normalized_value})
+        if size > _BLOCK_STATE_MAX_BYTES:
+            dropped.append(
+                (
+                    name,
+                    f"it serializes to {size} bytes, over the "
+                    f"{_BLOCK_STATE_MAX_BYTES} byte limit for remote execution; "
+                    "state is shipped to the sandbox and back on every call",
+                )
+            )
+            continue
+        carried[name] = normalized_value
+        sizes[name] = size
+    total = sum(sizes.values())
+    for name in sorted(sizes, key=sizes.get, reverse=True):
+        if total <= _BLOCK_STATE_MAX_BYTES:
+            break
+        del carried[name]
+        dropped.append(
+            (
+                name,
+                f"the state kept on `self` is {total} bytes in total, over the "
+                f"{_BLOCK_STATE_MAX_BYTES} byte limit for remote execution",
+            )
+        )
+        total -= sizes[name]
+
+    return carried, dropped
+
+
+def _warn_dropped_block_state(
+    executor: Any, code_hash: str, dropped: List[Tuple[str, str]], stderr_buf: Any
+) -> None:
+    """Tell the author once per container and code hash which attributes were dropped.
+
+    Written to the captured stderr, which the engine relays to its own stderr
+    next to the block's prints. Once per (code hash, attribute) on this
+    container: the same block drops the same attribute on every call, and a
+    line per frame would bury the block's own output.
+    """
+    warned = executor.__dict__.setdefault("_block_state_drop_warnings", set())
+    for name, reason in dropped:
+        key = (code_hash, name)
+        if key in warned:
+            continue
+        warned.add(key)
+        stderr_buf.write(
+            f"Custom Python block state `self.{name}` is not carried across "
+            f"remote execution and is rebuilt on every call: {reason}\n"
+        )
 
 
 def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -198,8 +280,8 @@ def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
     numpy bool/int/float scalars become Python scalars (the JSON encoder
     rejects them and the msgpack one would stringify ``np.bool_``) and tuples
     become lists (the JSON patcher only recurses into lists, so a tuple
-    holding detections or an image would be stringified). Run after
-    ``_check_block_state_transportable``.
+    holding detections or an image would be stringified). Run on values
+    ``_check_block_state_value`` accepted.
     """
     import numpy as np
 
@@ -1111,19 +1193,16 @@ from datetime import datetime
                     echoed_state = (
                         block_self.user_state() if block_self else block_state
                     )
-                    try:
-                        _check_block_state_transportable(echoed_state)
-                    except BlockStateSerializationError as error:
-                        return {
-                            "success": False,
-                            "error": str(error),
-                            "error_type": "BlockStateSerializationError",
-                            "stdout": stdout_buf.getvalue() or None,
-                            "stderr": stderr_buf.getvalue() or None,
-                            "execution_time_seconds": execution_time_seconds,
-                        }
+                    carried_state, dropped = _partition_block_state(
+                        echoed_state,
+                        measure=lambda attribute: len(
+                            serialize_for_modal_remote_execution(attribute)
+                        ),
+                    )
+                    _warn_dropped_block_state(self, code_hash, dropped, stderr_buf)
+                    response["stderr"] = stderr_buf.getvalue() or None
                     response["block_state"] = serialize_for_modal_remote_execution(
-                        _normalize_block_state(echoed_state)
+                        carried_state
                     )
 
                 return response
@@ -1267,20 +1346,22 @@ from datetime import datetime
                 "execution_time_seconds": execution_time_seconds,
             }
             if block_state is not None:
+                import msgpack
+
                 echoed_state = block_self.user_state() if block_self else block_state
-                try:
-                    _check_block_state_transportable(echoed_state)
-                except BlockStateSerializationError as error:
-                    return {
-                        "success": False,
-                        "error": str(error),
-                        "error_type": "BlockStateSerializationError",
-                        "stdout": stdout_buf.getvalue() or None,
-                        "stderr": stderr_buf.getvalue() or None,
-                        "execution_time_seconds": execution_time_seconds,
-                    }
+                carried_state, dropped = _partition_block_state(
+                    echoed_state,
+                    measure=lambda attribute: len(
+                        msgpack.packb(
+                            Executor._serialize_msgpack_result(attribute),
+                            use_bin_type=True,
+                        )
+                    ),
+                )
+                _warn_dropped_block_state(executor, code_hash, dropped, stderr_buf)
+                response["stderr"] = stderr_buf.getvalue() or None
                 response["block_state"] = Executor._serialize_msgpack_result(
-                    _normalize_block_state(echoed_state)
+                    carried_state
                 )
 
             return response

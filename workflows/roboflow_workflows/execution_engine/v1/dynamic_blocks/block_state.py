@@ -19,19 +19,25 @@ numpy bool/int/float scalars and tuples, which the transports do not carry as
 such: ``normalize_block_state`` turns them into Python scalars and lists
 before serialization on either side, so a block reads back ``False`` for the
 ``np.bool_`` it stored and a list for its tuple. Anything else — a tracker
-object, an open file, a model — is refused with the attribute path, instead
-of being stringified by the generic encoder and silently corrupting the
-block's next frame.
+object, an annotator, a model — is left out of the round trip, as is an
+attribute whose serialized form is over ``BLOCK_STATE_MAX_BYTES``:
+``partition_block_state`` drops it with a warning naming the attribute and
+the reason, so the block rebuilds it on the next call exactly as it did
+before state was carried at all. Blocks that cache such objects on ``self``
+behind ``hasattr`` keep working; only the transportable attributes persist.
+Dropping instead of refusing is deliberate: a hard error here would turn
+blocks that run on hosted today into failures after the fact, and the
+generic encoder stringifying the value would corrupt the block's next frame.
 
 The echo is the output of user code, so the engine treats it as untrusted
 input: ``apply_block_state`` refuses names the engine owns, dunders, and
 names defined on the block class (usage metadata, ``run``) before it touches
-the instance, and the sandbox refuses the first two up front so the author
-gets the error without a round trip.
+the instance, and the sandbox leaves the first two out of the echo up front,
+with the same warning as for a non-transportable value.
 """
 
 from datetime import datetime
-from typing import Any, Dict, FrozenSet
+from typing import Any, Callable, Dict, FrozenSet, List, Tuple
 
 import numpy as np
 from roboflow_workflows.errors import DynamicBlockError
@@ -55,8 +61,12 @@ ENGINE_ATTRIBUTE_NAMES: FrozenSet[str] = frozenset(
 
 # Serialized ceiling per call. State rides every frame in both directions,
 # so a block keeping frame buffers on ``self`` would pay for them twice per
-# frame; refusing early keeps that a visible error instead of a slow stream.
+# frame; an attribute over the cap is left out with a warning instead of
+# slowing the whole stream down.
 BLOCK_STATE_MAX_BYTES = 1024 * 1024
+
+# One dropped attribute: its name and the reason it is not carried.
+DroppedAttribute = Tuple[str, str]
 
 
 def collect_block_state(block: Any) -> Dict[str, Any]:
@@ -175,6 +185,101 @@ def _normalize_value(value: Any) -> Any:
     return value
 
 
+def partition_block_state(
+    state: Dict[str, Any], *, measure: Callable[[Dict[str, Any]], int]
+) -> Tuple[Dict[str, Any], List[DroppedAttribute]]:
+    """Split ``self`` state into what the transport carries and what it drops.
+
+    An attribute is dropped when its name is reserved (engine-owned, dunder
+    or not a string), when its value is not transportable, or when its own
+    serialized size is over ``BLOCK_STATE_MAX_BYTES``. If the carried set is
+    still over the cap, the largest attributes are dropped until it fits.
+    Carried values are normalized (``normalize_block_state``) and ready to
+    serialize.
+
+    Args:
+        state: User attributes about to be serialized.
+        measure: Serialized size in bytes of a one-attribute dict, in the
+            transport's own encoding.
+
+    Returns:
+        The carried state and the dropped attributes, each with the reason
+        the caller should surface to the block's author.
+    """
+    carried: Dict[str, Any] = {}
+    sizes: Dict[str, int] = {}
+    dropped: List[DroppedAttribute] = []
+    for name, value in state.items():
+        if not isinstance(name, str) or is_reserved_state_name(name):
+            dropped.append(
+                (
+                    str(name),
+                    "the name collides with an attribute the engine owns; pick "
+                    "another name for state kept on `self`",
+                )
+            )
+            continue
+        try:
+            _validate_value(value, path=name)
+        except DynamicBlockError as error:
+            dropped.append((name, str(error)))
+            continue
+        normalized_value = _normalize_value(value)
+        size = measure({name: normalized_value})
+        if size > BLOCK_STATE_MAX_BYTES:
+            dropped.append((name, _over_cap_reason(size)))
+            continue
+        carried[name] = normalized_value
+        sizes[name] = size
+    total = sum(sizes.values())
+    for name in sorted(sizes, key=sizes.get, reverse=True):
+        if total <= BLOCK_STATE_MAX_BYTES:
+            break
+        total -= sizes[name]
+        del carried[name]
+        dropped.append(
+            (
+                name,
+                f"the state kept on `self` is {total + sizes[name]} bytes in "
+                f"total, over the {BLOCK_STATE_MAX_BYTES} byte limit for remote "
+                "execution",
+            )
+        )
+
+    return carried, dropped
+
+
+def _over_cap_reason(size: int) -> str:
+    reason = (
+        f"it serializes to {size} bytes, over the {BLOCK_STATE_MAX_BYTES} byte "
+        "limit for remote execution; state is shipped to the sandbox and back "
+        "on every call"
+    )
+
+    return reason
+
+
+def describe_dropped_block_state(
+    block_type_name: str, dropped: List[DroppedAttribute]
+) -> List[str]:
+    """One warning line per dropped attribute, for logs or the block's stderr.
+
+    Args:
+        block_type_name: The dynamic block's type, for the message.
+        dropped: As returned by ``partition_block_state``.
+
+    Returns:
+        Messages telling the author the attribute is rebuilt on every call.
+    """
+    messages = [
+        f"Custom Python block `{block_type_name}` state `self.{name}` is not "
+        f"carried across remote execution and is rebuilt on every call: {reason}"
+        for name, reason in dropped
+    ]
+
+    return messages
+
+
 def validate_block_state(state: Dict[str, Any]) -> None:
     """Raise unless every value in ``state`` can cross the remote boundary.
 
@@ -220,10 +325,9 @@ def _validate_value(value: Any, *, path: str) -> None:
         public_message=(
             f"Custom Python block state `self.{path}` holds a "
             f"{type(value).__name__}, which cannot be carried across remote "
-            "execution. Attributes set on `self` must be JSON-like values, "
-            "numpy arrays or bool/int/float scalars, datetimes, "
-            "sv.Detections, images or video metadata; keep other objects out "
-            "of `self` or derive them per call."
+            "execution. Only JSON-like values, numpy arrays or bool/int/float "
+            "scalars, datetimes, sv.Detections, images and video metadata "
+            "persist between calls; other objects are rebuilt on every call."
         ),
         context="dynamic_block | block_state_validation",
     )

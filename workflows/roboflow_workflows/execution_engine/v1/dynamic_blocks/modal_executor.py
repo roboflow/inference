@@ -60,9 +60,8 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import
     record_block_duration,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
-    BLOCK_STATE_MAX_BYTES,
-    normalize_block_state,
-    validate_block_state,
+    describe_dropped_block_state,
+    partition_block_state,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import PythonCode
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.error_utils import (
@@ -276,36 +275,29 @@ def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
     )
 
 
-def _ensure_block_state_within_cap(
-    serialized_size: int, *, block_type_name: str
-) -> None:
-    if serialized_size <= BLOCK_STATE_MAX_BYTES:
-        return
-
-    raise DynamicBlockError(
-        public_message=(
-            f"Custom Python block `{block_type_name}` keeps {serialized_size} "
-            f"bytes of state on `self`, over the {BLOCK_STATE_MAX_BYTES} byte "
-            "limit for remote execution. State is shipped to the sandbox and "
-            "back on every call; keep large buffers out of `self`."
-        ),
-        context="modal_executor | block_state_size",
-    )
+def _warn_dropped_block_state(block_type_name: str, dropped: list) -> None:
+    for message in describe_dropped_block_state(block_type_name, dropped):
+        logger.warning(message)
 
 
 def _serialize_block_state_json(
     block_state: Optional[Dict[str, Any]], *, block_type_name: str
 ) -> Optional[str]:
-    """JSON-encode ``self`` state for the HTTP transport; ``None`` passes through."""
+    """JSON-encode ``self`` state for the HTTP transport; ``None`` passes through.
+
+    Attributes the transport cannot carry are left out with a warning (see
+    ``partition_block_state``); in practice the state here came back from the
+    sandbox, which already applied the same rule.
+    """
     if block_state is None:
         return None
 
-    validate_block_state(block_state)
-    normalized_state = normalize_block_state(block_state)
-    block_state_json = serialize_for_modal_remote_execution(normalized_state)
-    _ensure_block_state_within_cap(
-        len(block_state_json), block_type_name=block_type_name
+    carried_state, dropped = partition_block_state(
+        block_state,
+        measure=lambda attribute: len(serialize_for_modal_remote_execution(attribute)),
     )
+    _warn_dropped_block_state(block_type_name, dropped)
+    block_state_json = serialize_for_modal_remote_execution(carried_state)
 
     return block_state_json
 
@@ -2289,17 +2281,24 @@ class WebSocketModalExecutor:
         block_type_name: str,
         msgpack: Any,
     ) -> Optional[Dict[str, Any]]:
-        """Validate and msgpack-prepare ``self`` state; ``None`` passes through."""
+        """msgpack-prepare ``self`` state; ``None`` passes through.
+
+        Attributes the transport cannot carry are left out with a warning
+        (see ``partition_block_state``).
+        """
         if block_state is None:
             return None
 
-        validate_block_state(block_state)
-        normalized_state = normalize_block_state(block_state)
-        packed_state = serialize_inputs_for_msgpack(normalized_state)
-        _ensure_block_state_within_cap(
-            len(msgpack.packb(packed_state, use_bin_type=True)),
-            block_type_name=block_type_name,
+        carried_state, dropped = partition_block_state(
+            block_state,
+            measure=lambda attribute: len(
+                msgpack.packb(
+                    serialize_inputs_for_msgpack(attribute), use_bin_type=True
+                )
+            ),
         )
+        _warn_dropped_block_state(block_type_name, dropped)
+        packed_state = serialize_inputs_for_msgpack(carried_state)
 
         return packed_state
 

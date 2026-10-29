@@ -220,22 +220,63 @@ def test_http_server_omits_block_state_for_a_client_that_sent_none(modal_app):
     assert "block_state" not in response
 
 
-def test_http_server_reports_a_non_transportable_self_attribute(modal_app):
+TRACKER_CODE = (
+    "class Tracker:\n"
+    "    pass\n"
+    "def run(self, image):\n"
+    "    self.tracker = Tracker()\n"
+    "    self.count = getattr(self, 'count', 0) + 1\n"
+    "    return {'ok': True}\n"
+)
+
+OVERSIZED_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    f"    self.buffer = np.zeros(({BLOCK_STATE_MAX_BYTES},), dtype=np.uint8)\n"
+    "    self.count = getattr(self, 'count', 0) + 1\n"
+    "    return {'ok': True}\n"
+)
+
+
+def test_http_server_drops_a_non_transportable_self_attribute_and_warns(modal_app):
     executor = _http_executor(modal_app)
-    code = (
-        "class Tracker:\n"
-        "    pass\n"
-        "def run(self, image):\n"
-        "    self.tracker = Tracker()\n"
-        "    return {'ok': True}\n"
-    )
 
-    response = _run_http(executor, code, {"image": 1}, block_state={})
+    response = _run_http(executor, TRACKER_CODE, {"image": 1}, block_state={})
 
-    assert response["success"] is False
-    assert response["error_type"] == "BlockStateSerializationError"
-    assert "tracker" in response["error"]
-    assert "Tracker" in response["error"]
+    assert response["success"] is True
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {
+        "count": 1
+    }
+    assert "self.tracker" in response["stderr"]
+    assert "Tracker" in response["stderr"]
+    assert "not carried" in response["stderr"]
+
+
+def test_http_server_warns_about_a_dropped_attribute_once_per_container(modal_app):
+    executor = _http_executor(modal_app)
+
+    first = _run_http(executor, TRACKER_CODE, {"image": 1}, block_state={})
+    second = _run_http(executor, TRACKER_CODE, {"image": 1}, block_state={"count": 1})
+
+    assert "self.tracker" in first["stderr"]
+    assert second["success"] is True
+    assert "self.tracker" not in (second["stderr"] or "")
+    assert deserialize_for_modal_remote_execution(second["block_state"]) == {"count": 2}
+
+
+def test_http_server_drops_an_attribute_over_the_size_cap_and_keeps_the_rest(
+    modal_app,
+):
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, OVERSIZED_CODE, {"image": 1}, block_state={})
+
+    assert response["success"] is True
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {
+        "count": 1
+    }
+    assert "self.buffer" in response["stderr"]
+    assert "limit" in response["stderr"]
 
 
 def test_http_server_round_trips_an_ndarray_attribute(modal_app):
@@ -311,21 +352,41 @@ def test_ws_server_omits_block_state_for_a_client_that_sent_none(modal_app):
     assert "block_state" not in response
 
 
-def test_ws_server_reports_a_non_transportable_self_attribute(modal_app):
+def test_ws_server_drops_a_non_transportable_self_attribute_and_warns(modal_app):
     executor = _http_executor(modal_app)
-    code = (
-        "class Tracker:\n"
-        "    pass\n"
-        "def run(self, image):\n"
-        "    self.tracker = Tracker()\n"
-        "    return {'ok': True}\n"
-    )
 
-    response = _run_ws(executor, modal_app, code, {"image": 1}, {})
+    response = _run_ws(executor, modal_app, TRACKER_CODE, {"image": 1}, {})
 
-    assert response["success"] is False
-    assert response["error_type"] == "BlockStateSerializationError"
-    assert "tracker" in response["error"]
+    assert response["success"] is True
+    assert response["block_state"] == {"count": 1}
+    assert "self.tracker" in response["stderr"]
+    assert "Tracker" in response["stderr"]
+    assert "not carried" in response["stderr"]
+
+
+def test_ws_server_warns_about_a_dropped_attribute_once_per_container(modal_app):
+    executor = _http_executor(modal_app)
+
+    first = _run_ws(executor, modal_app, TRACKER_CODE, {"image": 1}, {})
+    second = _run_ws(executor, modal_app, TRACKER_CODE, {"image": 1}, {"count": 1})
+
+    assert "self.tracker" in first["stderr"]
+    assert second["success"] is True
+    assert "self.tracker" not in (second["stderr"] or "")
+    assert second["block_state"] == {"count": 2}
+
+
+def test_ws_server_drops_an_attribute_over_the_size_cap_and_keeps_the_rest(
+    modal_app,
+):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(executor, modal_app, OVERSIZED_CODE, {"image": 1}, {})
+
+    assert response["success"] is True
+    assert response["block_state"] == {"count": 1}
+    assert "self.buffer" in response["stderr"]
+    assert "limit" in response["stderr"]
 
 
 def test_ws_frame_block_state_is_read_by_the_server(modal_app):
@@ -537,25 +598,64 @@ def test_http_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
     assert "block_state" in str(error.value)
 
 
-def test_client_refuses_state_over_the_size_cap(monkeypatch):
-    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
-    executor = _ws_executor()
-    executor._send_recv_with_retry = lambda *args, **kwargs: pytest.fail(
-        "oversized state must be refused before it reaches the wire"
+def _capture_client_warnings(monkeypatch) -> list:
+    warned = []
+    monkeypatch.setattr(
+        client.logger,
+        "warning",
+        lambda message, *args, **kwargs: warned.append(
+            message % args if args else message
+        ),
     )
-    oversized = {"buffer": np.zeros((BLOCK_STATE_MAX_BYTES,), dtype=np.uint8)}
+    return warned
 
-    with pytest.raises(DynamicBlockError) as error:
-        executor.execute_remote_with_state(
-            block_type_name="FirstFrameCheck",
-            python_code=_python_code(),
-            inputs={"image": 1},
-            workspace_id="test-ws",
-            workflow_context={},
-            block_state=oversized,
+
+def test_ws_client_drops_state_over_the_size_cap_with_a_warning(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    warned = _capture_client_warnings(monkeypatch)
+    executor = _ws_executor()
+    sent = []
+
+    def fake_send_recv(frame_bytes, workspace, request_id=None):
+        sent.append(msgpack.unpackb(frame_bytes, raw=False))
+        return msgpack.packb(
+            {
+                "success": True,
+                "result": {"is_first_frame": True},
+                "block_state": {"count": 1},
+                "request_id": request_id,
+            },
+            use_bin_type=True,
         )
 
-    assert "buffer" in str(error.value) or "self" in str(error.value)
+    executor._send_recv_with_retry = fake_send_recv
+    oversized = {
+        "buffer": np.zeros((BLOCK_STATE_MAX_BYTES,), dtype=np.uint8),
+        "count": 1,
+    }
+
+    executor.execute_remote_with_state(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+        block_state=oversized,
+    )
+
+    assert sent[0]["block_state"] == {"count": 1}
+    assert any("buffer" in message and "limit" in message for message in warned)
+
+
+def test_http_client_drops_a_non_transportable_attribute_with_a_warning(monkeypatch):
+    warned = _capture_client_warnings(monkeypatch)
+
+    block_state_json = client._serialize_block_state_json(
+        {"tracker": object(), "count": 1}, block_type_name="FirstFrameCheck"
+    )
+
+    assert json.loads(block_state_json) == {"count": 1}
+    assert any("tracker" in message and "object" in message for message in warned)
 
 
 def test_pooled_ws_executor_delegates_execute_remote_with_state(monkeypatch):
@@ -681,16 +781,45 @@ def test_block_instance_keeps_self_state_across_remote_calls(monkeypatch, modal_
     assert block._ffc_calls == 3
 
 
-def test_block_instance_surfaces_a_non_transportable_attribute_as_a_code_error(
+def test_block_instance_drops_an_engine_side_non_transportable_attribute(
     monkeypatch, modal_app
 ):
+    warned = _capture_client_warnings(monkeypatch)
     block = _build_first_frame_block(monkeypatch, modal_app)
     block.tracker = object()
 
-    with pytest.raises(DynamicBlockError) as error:
-        block.run(image=1)
+    result = block.run(image=1)
 
-    assert "tracker" in str(error.value)
+    assert result["is_first_frame"] is True
+    assert not hasattr(block, "tracker")
+    assert any("tracker" in message for message in warned)
+
+
+CACHED_HELPER_CODE = (
+    "class Helper:\n"
+    "    pass\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'helper'):\n"
+    "        self.helper = Helper()\n"
+    "    self._ffc_calls = getattr(self, '_ffc_calls', 0) + 1\n"
+    "    return {'is_first_frame': self._ffc_calls == 1, 'calls': self._ffc_calls}\n"
+)
+
+
+def test_block_instance_keeps_working_when_it_caches_a_non_transportable_object(
+    monkeypatch, modal_app, capsys
+):
+    block = _build_first_frame_block(monkeypatch, modal_app, code=CACHED_HELPER_CODE)
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["is_first_frame"] for r in results] == [True, False, False]
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert block._ffc_calls == 3
+    assert not hasattr(block, "helper")
+    relayed_stderr = capsys.readouterr().err
+    assert "self.helper" in relayed_stderr
+    assert "Helper" in relayed_stderr
 
 
 # --------------------------------------------------------------------------- #
@@ -763,24 +892,24 @@ RESERVED_NAME_CODE = (
 )
 
 
-def test_http_server_refuses_to_echo_an_engine_attribute_name(modal_app):
+def test_http_server_drops_an_engine_attribute_name_from_the_echo(modal_app):
     executor = _http_executor(modal_app)
 
     response = _run_http(executor, RESERVED_NAME_CODE, {"image": 1}, block_state={})
 
-    assert response["success"] is False
-    assert response["error_type"] == "BlockStateSerializationError"
-    assert "_api_key" in response["error"]
+    assert response["success"] is True
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {}
+    assert "self._api_key" in response["stderr"]
 
 
-def test_ws_server_refuses_to_echo_an_engine_attribute_name(modal_app):
+def test_ws_server_drops_an_engine_attribute_name_from_the_echo(modal_app):
     executor = _http_executor(modal_app)
 
     response = _run_ws(executor, modal_app, RESERVED_NAME_CODE, {"image": 1}, {})
 
-    assert response["success"] is False
-    assert response["error_type"] == "BlockStateSerializationError"
-    assert "_api_key" in response["error"]
+    assert response["success"] is True
+    assert response["block_state"] == {}
+    assert "self._api_key" in response["stderr"]
 
 
 SHADOW_USAGE_CODE = (

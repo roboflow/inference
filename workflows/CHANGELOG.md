@@ -30,16 +30,18 @@ for contributor and maintainer responsibilities.
   call, so such blocks took their "first call" branch on every frame of a
   video. The engine-side block instance owns the state and carries it to
   the sandbox and back on each call, so it survives container recycling
-  and never leaks between workflow runs. Values kept on `self` must be
-  transportable (JSON-like values, numpy arrays, datetimes,
-  `sv.Detections`, images, video metadata); numpy bool/int/float scalars
-  and tuples are carried too, and come back as Python scalars and lists.
-  Other objects are refused with an error naming the attribute, as are
-  attribute names the engine or the block class owns (the echo is user
-  output and is never allowed to overwrite engine attributes), and
-  serialized state is capped at 1 MiB per call. Requires a webexec
-  deployment built from this version: an older server is rejected loudly
-  instead of silently resetting `self`.
+  and never leaks between workflow runs. What persists is the transportable
+  state: JSON-like values, numpy arrays, datetimes, `sv.Detections`, images
+  and video metadata, plus numpy bool/int/float scalars and tuples, which
+  come back as Python scalars and lists. Any other object kept on `self`
+  (an annotator, a tracker, a helper instance), an attribute whose
+  serialized form is over 1 MiB, and attribute names the engine or the
+  block class owns are left out of the round trip with a warning naming the
+  attribute on the block's stderr, so they are rebuilt on every call exactly
+  as every attribute was before. Existing hosted blocks that cache such
+  objects on `self` keep working unchanged. Requires a webexec deployment
+  built from this version: an older server is rejected loudly instead of
+  silently resetting `self`.
 
 ## `0.2.14`
 
