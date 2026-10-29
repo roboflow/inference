@@ -81,14 +81,9 @@ def test_all_images_receive_all_prompts_and_preserve_color(package):
 
 
 def test_per_class_thresholds_precede_suppression_and_limit(package):
-    processor = SimpleNamespace(
-        post_process_grounded_object_detection=lambda **kwargs: [
-            {
-                "boxes": torch.tensor([[0.0, 0.0, 10.0, 10.0], [0.0, 0.0, 10.0, 10.0]]),
-                "scores": torch.tensor([0.9, 0.8]),
-                "labels": torch.tensor([0, 1]),
-            }
-        ]
+    outputs = SimpleNamespace(
+        logits=torch.logit(torch.tensor([[[0.9, 0.1], [0.1, 0.8]]])),
+        pred_boxes=torch.tensor([[[0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]]]),
     )
     model = OWLv2HF.from_pretrained(
         str(package),
@@ -97,10 +92,9 @@ def test_per_class_thresholds_precede_suppression_and_limit(package):
             confidence=0.5, per_class_confidence={"label-a": 0.95, "label-b": 0.5}
         ),
     )
-    model._processor = processor
     metadata = [ImageDimensions(height=16, width=16)]
     detections = model.post_process(
-        None,
+        outputs,
         metadata,
         confidence="best",
         class_names=["label-a", "label-b"],
@@ -109,6 +103,38 @@ def test_per_class_thresholds_precede_suppression_and_limit(package):
     )
     assert detections[0].class_id.tolist() == [1]
     assert detections[0].confidence.tolist() == pytest.approx([0.8])
+
+
+@pytest.mark.parametrize("confidence", [0.5, "best"])
+def test_confidence_filter_excludes_exact_threshold_with_real_processor(
+    package, confidence
+):
+    model = OWLv2HF.from_pretrained(
+        str(package),
+        device=torch.device("cpu"),
+        recommended_parameters=RecommendedParameters(
+            confidence=0.5, per_class_confidence={"label-a": 0.5, "label-b": 0.25}
+        ),
+    )
+    outputs = SimpleNamespace(
+        logits=torch.tensor([[[0.0, -1.0], [0.5, -1.0], [-1.0, -0.5]]]),
+        pred_boxes=torch.tensor(
+            [[[0.2, 0.2, 0.1, 0.1], [0.5, 0.5, 0.1, 0.1], [0.8, 0.8, 0.1, 0.1]]]
+        ),
+    )
+    detections = model.post_process(
+        outputs,
+        [ImageDimensions(height=100, width=100)],
+        confidence=confidence,
+        class_names=["label-a", "label-b"],
+    )[0]
+    if confidence == "best":
+        assert detections.class_id.tolist() == [0, 1]
+    else:
+        assert detections.class_id.tolist() == [0]
+    assert detections.confidence[0].item() == pytest.approx(
+        torch.sigmoid(torch.tensor(0.5)).item()
+    )
 
 
 def test_package_without_saved_prompts_keeps_explicit_queries(package):

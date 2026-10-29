@@ -337,16 +337,11 @@ class OWLv2HF(
                 recommended_parameters=self.recommended_parameters,
                 default_confidence=INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
             ).get_threshold(class_names)
-        minimum = (
-            float(threshold.min().item())
-            if isinstance(threshold, torch.Tensor)
-            else threshold
-        )
         target_sizes = [(dim.height, dim.width) for dim in pre_processing_meta]
         post_processed_outputs = self._processor.post_process_grounded_object_detection(
             outputs=model_results,
             target_sizes=target_sizes,
-            threshold=minimum,
+            threshold=float("-inf"),
         )
         results = []
         for i in range(len(post_processed_outputs)):
@@ -356,13 +351,13 @@ class OWLv2HF(
                 post_processed_outputs[i]["labels"],
             )
             if isinstance(threshold, torch.Tensor):
-                valid = (
-                    scores
-                    >= threshold.to(device=scores.device, dtype=scores.dtype)[
-                        labels.long()
-                    ]
-                )
-                boxes, scores, labels = boxes[valid], scores[valid], labels[valid]
+                score_thresholds = threshold.to(
+                    device=scores.device, dtype=scores.dtype
+                )[labels.long()]
+            else:
+                score_thresholds = threshold
+            valid = scores > score_thresholds
+            boxes, scores, labels = boxes[valid], scores[valid], labels[valid]
             nms_class_ids = torch.zeros_like(labels) if class_agnostic_nms else labels
             keep = torchvision.ops.batched_nms(
                 boxes, scores, nms_class_ids, iou_threshold
