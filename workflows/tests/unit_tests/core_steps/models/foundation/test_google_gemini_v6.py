@@ -6,10 +6,12 @@ in ``test_google_gemini_v5.py``; this file covers the v6 delta:
 the block from Gemini's native ``yxyx_0_1000`` boxes.
 """
 
+import base64
 import json
 from typing import List, Optional
 from unittest.mock import patch
 
+import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
@@ -489,3 +491,136 @@ def test_segmentation_runtime_rejects_resolved_other_model() -> None:
             image=_build_image(),
             classes=["ring"],
         )
+
+
+def _reference_example(box_class: str = "cat") -> dict:
+    image = np.full((100, 200, 3), 255, dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", image)
+    return {
+        "image": {
+            "type": "base64",
+            "value": base64.b64encode(encoded.tobytes()).decode("ascii"),
+        },
+        "boxes": [{"x": 50, "y": 50, "width": 40, "height": 20, "class": box_class}],
+    }
+
+
+def _run_detection_with_mock(reference_examples: Optional[list]) -> tuple:
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(DETECTION_OUTPUT, 11, 3)]
+        results = block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat", "dog"],
+            model_version="gemini-4-argon",
+            max_tokens=16384,
+            temperature=None,
+            thinking_level="low",
+            google_code_execution=None,
+            max_concurrent_requests=None,
+            api_key="rf_key:account",
+            reference_examples=reference_examples,
+        )
+    parts = mock_execute.call_args[1]["gemini_prompts"][0]["contents"]["parts"]
+    return results[0], parts
+
+
+@pytest.mark.parametrize(
+    "reference_examples", [[_reference_example()], "$inputs.reference_examples"]
+)
+def test_manifest_accepts_reference_examples(reference_examples) -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/google_gemini@v6",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": ["cat", "dog"],
+            "reference_examples": reference_examples,
+        }
+    )
+
+    # then
+    assert result.reference_examples == reference_examples
+
+
+def test_manifest_rejects_reference_examples_for_other_tasks() -> None:
+    with pytest.raises(ValueError, match="only supported for the object-detection"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "classification",
+                "classes": ["cat", "dog"],
+                "reference_examples": [_reference_example()],
+            }
+        )
+
+
+def test_manifest_rejects_reference_examples_with_unknown_labels() -> None:
+    with pytest.raises(ValueError, match=r"does not have: \['bird'\]"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": ["cat", "dog"],
+                "reference_examples": [_reference_example(box_class="bird")],
+            }
+        )
+
+
+def test_run_sends_boxed_reference_images_before_the_target() -> None:
+    # when
+    result, parts = _run_detection_with_mock([_reference_example()])
+
+    # then
+    assert parts[0]["text"].startswith("Reference examples: other images")
+    assert parts[1] == {"text": "Reference image 1:"}
+    assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[3] == {"text": "Target image:"}
+    assert parts[4]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[5]["text"].startswith("Detect all objects in the target image. ")
+    assert parts[5]["text"].endswith(
+        "The reference images are not part of the task: return detections for "
+        "the target image only."
+    )
+    assert len(parts) == 6
+    assert detection_boxes(result["predictions"])[0] == EXPECTED_XYXY
+
+
+@pytest.mark.parametrize("reference_examples", [None, []])
+def test_run_without_reference_examples_keeps_the_request(reference_examples) -> None:
+    # when
+    _, parts = _run_detection_with_mock(reference_examples)
+
+    # then
+    assert len(parts) == 2
+    assert "inline_data" in parts[0]
+    assert parts[1]["text"].startswith("Detect all objects in this image. ")
+
+
+def test_run_rejects_resolved_reference_examples_for_other_tasks() -> None:
+    with pytest.raises(ValueError, match="only supported for the object-detection"):
+        block = GoogleGeminiBlockV6(api_key="rf-key")
+        with patch(EXECUTE_REQUESTS_SEAM):
+            block.run(
+                images=Batch(content=[_build_image()], indices=[(0,)]),
+                task_type="classification",
+                prompt=None,
+                output_structure=None,
+                classes=["cat", "dog"],
+                model_version="gemini-4-argon",
+                max_tokens=None,
+                temperature=None,
+                thinking_level=None,
+                google_code_execution=None,
+                max_concurrent_requests=None,
+                reference_examples=[_reference_example()],
+            )
