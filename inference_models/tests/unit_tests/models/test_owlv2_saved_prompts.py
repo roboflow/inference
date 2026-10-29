@@ -137,6 +137,29 @@ def test_confidence_filter_excludes_exact_threshold_with_real_processor(
     )
 
 
+@pytest.mark.parametrize("confidence", [0, 0.0, 1, 1.0])
+@pytest.mark.parametrize("classes", [None, ["a", "b"]])
+def test_saved_label_numeric_confidence_overrides_recommendation(
+    package, monkeypatch, confidence, classes
+):
+    model = OWLv2HF.from_pretrained(
+        str(package),
+        device=torch.device("cpu"),
+        recommended_parameters=RecommendedParameters(confidence=0.5),
+    )
+    outputs = SimpleNamespace(
+        logits=torch.logit(torch.tensor([[[0.9, 0.1], [0.1, 0.8]]])),
+        pred_boxes=torch.tensor([[[0.2, 0.2, 0.1, 0.1], [0.8, 0.8, 0.1, 0.1]]]),
+    )
+    monkeypatch.setattr(model, "forward", lambda *args, **kwargs: outputs)
+    predictions = model.infer(
+        torch.zeros((3, 16, 16), dtype=torch.uint8),
+        classes=classes,
+        confidence=confidence,
+    )[0]
+    assert predictions.class_id.tolist() == ([0, 1] if confidence == 0 else [])
+
+
 def test_package_without_saved_prompts_keeps_explicit_queries(package):
     (package / "class_names.txt").unlink()
     (package / "owlv2_prompts.json").unlink()

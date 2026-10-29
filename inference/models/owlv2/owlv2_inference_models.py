@@ -318,7 +318,11 @@ class InferenceModelsOwlV2Adapter(Model):
                 iou_threshold=iou_threshold,
                 max_detections=max_detections,
             )
-        return self.make_response(predictions=results, image_sizes=image_sizes)
+        return self.make_response(
+            predictions=results,
+            image_sizes=image_sizes,
+            class_filter=kwargs.get("class_filter"),
+        )
 
     def make_response(
         self,
@@ -338,6 +342,11 @@ class InferenceModelsOwlV2Adapter(Model):
                 class_id = image_prediction.class_id[instance_id].item()
                 confidence = image_prediction.confidence[instance_id].item()
                 class_name = image_prediction.image_metadata["class_names"][class_id]
+                if (
+                    kwargs.get("class_filter")
+                    and class_name not in kwargs["class_filter"]
+                ):
+                    continue
                 image_instances.append(
                     ObjectDetectionPrediction(
                         # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)

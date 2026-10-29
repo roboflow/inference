@@ -594,6 +594,55 @@ class TestAnomalyClassificationDefaultProcess:
         assert all(item["anomaly_map"].shape == (2, 2) for item in out["batch"])
 
 
+def test_owlv2_reference_action_preserves_wire_marshalling(monkeypatch):
+    import io
+
+    from PIL import Image
+
+    from inference_model_manager.marshalling import with_decoded_color_format
+    from inference_models.models.owlv2.owlv2_hf import OWLv2HF
+
+    model = OWLv2HF.__new__(OWLv2HF)
+    monkeypatch.setattr(
+        model,
+        "prepare_reference_examples_embeddings",
+        lambda **kwargs: SimpleNamespace(class_embeddings={}),
+    )
+    predict = MagicMock(return_value=["prediction"])
+    monkeypatch.setattr(model, "infer_with_reference_examples_embeddings", predict)
+    image = io.BytesIO()
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(image, format="PNG")
+    manager = ModelManager()
+    backends = {}
+    _patch_create_backend(manager, backends)
+    try:
+        manager.load("owlv2/test", api_key="")
+        backend = backends["owlv2/test"]
+        backend._fake_model = model
+        backend._decode_input = lambda raw: np.array(
+            Image.open(io.BytesIO(raw)).convert("RGB")
+        )[:, :, ::-1].copy()
+        result = manager.process(
+            "owlv2/test",
+            action="infer_with_reference_examples",
+            serialize=False,
+            wire_marshalling=True,
+            images=image.getvalue(),
+            reference_examples=[],
+        )
+        assert result == "prediction"
+        decoded = predict.call_args.kwargs["images"]
+        assert decoded[0, 0].tolist() == [0, 0, 255]
+        assert (
+            with_decoded_color_format(model, "infer", {"images": decoded})[
+                "input_color_format"
+            ]
+            == "bgr"
+        )
+    finally:
+        manager.shutdown()
+
+
 class TestParamsOnlyWireMarshalling:
 
     def _process(self, returned, **kwargs):
