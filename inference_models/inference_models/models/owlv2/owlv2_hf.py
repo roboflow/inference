@@ -272,7 +272,20 @@ class OWLv2HF(
         """
         return list(self._class_names or [])
 
-    def infer(self, images, classes=None, **kwargs) -> List[Detections]:
+    def infer(
+        self, images, classes=None, *, input_color_format=None, **kwargs
+    ) -> List[Detections]:
+        """Detect objects using explicit queries or the package's saved prompts.
+
+        Args:
+            images: Images to process.
+            classes: Explicit text queries, or None to use saved prompts.
+            input_color_format: Input channel order, or None for processor defaults.
+            **kwargs: Inference parameters passed to the detection pipeline.
+
+        Returns:
+            Detections for each input image.
+        """
         if classes is None:
             classes = self._prompts
             class_names = self._class_names
@@ -282,7 +295,13 @@ class OWLv2HF(
             raise ModelInputError(
                 message="Provide classes or an OWLv2 package with saved prompts."
             )
-        return super().infer(images, classes=classes, class_names=class_names, **kwargs)
+        return super().infer(
+            images,
+            classes=classes,
+            class_names=class_names,
+            input_color_format=input_color_format,
+            **kwargs,
+        )
 
     def __call__(self, images, classes=None, **kwargs) -> List[Detections]:
         return self.infer(images, classes=classes, **kwargs)
@@ -304,9 +323,9 @@ class OWLv2HF(
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        input_color_format=None,
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
+        input_color_format = kwargs.get("input_color_format")
         if input_color_format is not None:
             images, image_dimensions = images_to_pillow(
                 images, input_color_format=input_color_format
@@ -342,7 +361,9 @@ class OWLv2HF(
         threshold = confidence
         if class_names is not None:
             threshold = ConfidenceFilter(
-                confidence=confidence,
+                confidence=(
+                    float(confidence) if isinstance(confidence, int) else confidence
+                ),
                 recommended_parameters=self.recommended_parameters,
                 default_confidence=INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
             ).get_threshold(class_names)

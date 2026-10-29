@@ -1,9 +1,13 @@
+import base64
+import io
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import torch
+from PIL import Image
 
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.models.owlv2 import owlv2_inference_models, rf_instant_inference_models
 from inference_models import Detections
@@ -69,6 +73,48 @@ def test_saved_prompts_do_not_replace_reference_example_requests(training_data):
             ]
             == []
         )
+
+
+@pytest.mark.parametrize(
+    "class_filter,expected",
+    [
+        (None, ["label-a", "label-b"]),
+        ([], ["label-a", "label-b"]),
+        (["label-b"], ["label-b"]),
+        (["missing"], []),
+    ],
+)
+def test_image_only_request_honors_class_filter(class_filter, expected):
+    adapter = owlv2_inference_models.InferenceModelsOwlV2Adapter.__new__(
+        owlv2_inference_models.InferenceModelsOwlV2Adapter
+    )
+    adapter.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+    adapter._model = MagicMock()
+    adapter._model.resolved_model = None
+    adapter._model.infer.return_value = [
+        Detections(
+            xyxy=torch.tensor([[1, 2, 7, 8], [8, 2, 14, 8]]),
+            class_id=torch.tensor([0, 1]),
+            confidence=torch.tensor([0.9, 0.8]),
+            image_metadata={"class_names": ["label-a", "label-b"]},
+        )
+    ]
+    image = io.BytesIO()
+    Image.new("RGB", (16, 12)).save(image, format="PNG")
+    response = adapter.infer_from_request(
+        ObjectDetectionInferenceRequest(
+            model_id="uploaded/1",
+            image={
+                "type": "base64",
+                "value": base64.b64encode(image.getvalue()).decode(),
+            },
+            confidence=0.1,
+            class_filter=class_filter,
+        )
+    )
+    if isinstance(response, list):
+        response = response[0]
+    assert [prediction.class_name for prediction in response.predictions] == expected
 
 
 @pytest.mark.parametrize("send_to_cpu", [True, False])
