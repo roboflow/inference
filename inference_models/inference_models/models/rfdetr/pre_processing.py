@@ -175,6 +175,10 @@ def _pre_process_one(
     pre_processing_overrides: Optional[PreProcessingOverrides],
     image_module=None,
 ) -> Tuple[torch.Tensor, PreProcessingMetadata]:
+    if input_color_mode is None and isinstance(image, torch.Tensor):
+        # Documented default: np.ndarray is BGR, torch.Tensor is RGB. Both
+        # branches below treat None as BGR, so resolve it for tensors here.
+        input_color_mode = ColorMode.RGB
     if isinstance(image, torch.Tensor) and image.is_floating_point():
         return _pre_process_tensor(
             image=image,

@@ -239,6 +239,53 @@ def test_one_step_stretch_default_input_color_format_is_treated_as_bgr() -> None
     torch.testing.assert_close(none_tensor, bgr_tensor, atol=0, rtol=0)
 
 
+@pytest.mark.parametrize("is_float", [False, True])
+@pytest.mark.parametrize(
+    "resize_mode, dataset_version_dims",
+    [
+        (ResizeMode.STRETCH_TO, None),
+        (ResizeMode.LETTERBOX, TrainingInputSize(height=48, width=64)),
+    ],
+)
+def test_default_input_color_format_for_torch_tensor_is_treated_as_rgb(
+    is_float: bool,
+    resize_mode: ResizeMode,
+    dataset_version_dims: TrainingInputSize | None,
+) -> None:
+    """`input_color_format=None` with a torch.Tensor follows the documented
+    convention (np.ndarray is BGR, torch.Tensor is RGB), so the result matches
+    an explicit `input_color_format="rgb"` call."""
+    image_pre_processing = ImagePreProcessing()
+    network_input = _build_network_input(
+        training_h=64,
+        training_w=64,
+        resize_mode=resize_mode,
+        dataset_version_dims=dataset_version_dims,
+    )
+    rng = np.random.default_rng(seed=13)
+    rgb_image = rng.integers(0, 256, size=(72, 96, 3), dtype=np.uint8)
+    chw = torch.from_numpy(rgb_image).permute(2, 0, 1).contiguous()
+    if is_float:
+        chw = chw.float() / 255
+
+    none_tensor, _ = pre_process_network_input(
+        images=chw,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format=None,
+    )
+    rgb_tensor, _ = pre_process_network_input(
+        images=chw,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+
+    torch.testing.assert_close(none_tensor, rgb_tensor, atol=0, rtol=0)
+
+
 # ---------------------------------------------------------------------------
 # Two-step (non-stretch) path — tensor content + metadata
 # ---------------------------------------------------------------------------
