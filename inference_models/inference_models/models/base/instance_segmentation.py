@@ -21,6 +21,7 @@ import supervision as sv
 import torch
 
 from inference_models.models.base.types import (
+    InstanceSegmentationGrid,
     InstancesRLEMasks,
     PreprocessedInputs,
     PreprocessingMetadata,
@@ -28,7 +29,7 @@ from inference_models.models.base.types import (
 )
 from inference_models.models.common.rle_utils import coco_rle_masks_to_numpy_mask
 
-InstanceSegmentationMaskFormat = Literal["dense", "rle"]
+InstanceSegmentationMaskFormat = Literal["dense", "rle", "grid"]
 
 
 _MISSING = object()
@@ -136,12 +137,17 @@ class _DirectInferenceFuture:
 
 @dataclass
 class InstanceDetections:
-    """Instance masks and boxes sharing the encoded mask coordinate grid.
+    """Instance masks and boxes with an explicit coordinate frame.
+
+    Dense/RLE boxes share the encoded mask grid. For ``InstanceSegmentationGrid``,
+    all three size fields name the original-image logical frame, independent of
+    score storage shape. Grid boxes are unrounded, unclipped float32 image
+    coordinates; consumers clip and finalize them when materializing a raster.
 
     Attributes:
         xyxy: Bounding boxes in ``mask_size`` coordinates.
         image_size: Original image ``(height, width)``. Older callers may omit it.
-        mask_size: Encoded mask grid ``(height, width)``.
+        mask_size: Encoded dense/RLE grid or compact-grid logical image frame.
         mask_frame_size: Image-space extent represented by the mask grid. Model
             outputs cover the original image; manually constructed crop-local
             masks may specify a smaller extent anchored at the origin.
@@ -151,7 +157,7 @@ class InstanceDetections:
     class_id: torch.Tensor  # (n_boxes, )
     confidence: torch.Tensor  # (n_boxes, )
     mask: Union[
-        torch.Tensor, InstancesRLEMasks
+        torch.Tensor, InstancesRLEMasks, InstanceSegmentationGrid
     ]  # for dense representation (n_boxes, mask_height, mask_width)
     image_metadata: Optional[dict] = None
     bboxes_metadata: Optional[List[dict]] = (
@@ -164,6 +170,57 @@ class InstanceDetections:
     mask_frame_size: Optional[Tuple[int, int]] = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.mask, InstanceSegmentationGrid):
+            if (
+                not isinstance(self.image_size, (tuple, list))
+                or len(self.image_size) != 2
+                or any(
+                    isinstance(v, bool)
+                    or not isinstance(v, (int, np.integer))
+                    or v <= 0
+                    for v in self.image_size
+                )
+            ):
+                raise ValueError(
+                    "grid detections require positive image_size (height, width)"
+                )
+
+            self.image_size = tuple(self.image_size)
+            for name in ("mask_size", "mask_frame_size"):
+                value = getattr(self, name)
+                if value is not None and tuple(value) != self.image_size:
+                    raise ValueError(f"grid {name} must equal the logical image_size")
+                setattr(self, name, self.image_size)
+
+            scores = self.mask.scores
+            rows = scores.shape[0]
+            if (
+                not isinstance(self.xyxy, torch.Tensor)
+                or tuple(self.xyxy.shape) != (rows, 4)
+                or self.xyxy.dtype != torch.float32
+                or self.xyxy.device != scores.device
+            ):
+                raise ValueError(
+                    "grid xyxy must be row-aligned float32 on the scores device"
+                )
+            for name in ("class_id", "confidence"):
+                value = getattr(self, name)
+                if (
+                    not isinstance(value, torch.Tensor)
+                    or tuple(value.shape) != (rows,)
+                    or value.device != scores.device
+                ):
+                    raise ValueError(
+                        f"grid {name} must be row-aligned on the scores device"
+                    )
+            if self.bboxes_metadata is not None and len(self.bboxes_metadata) != rows:
+                raise ValueError("grid bboxes_metadata must contain one entry per row")
+
+            x, y, width, height = self.mask.image_crop_xywh
+            if x + width > self.image_size[1] or y + height > self.image_size[0]:
+                raise ValueError("grid crop must fit within image_size")
+            return
+
         if self.mask_size is not None:
             return
         if isinstance(self.mask, InstancesRLEMasks):
@@ -198,8 +255,8 @@ class InstanceDetections:
         (xyxy, mask, class_id, confidence, tracker_id, data, metadata)
 
         - xyxy: torch.Tensor of shape (4,) - single bbox [x1, y1, x2, y2]
-        - mask: per-instance dense torch.Tensor of shape (H, W) or coco-representation
-            of RLE mask: {"size": (h, w), "counts": count}
+        - mask: per-instance dense tensor, COCO RLE dictionary, or one-row
+            InstanceSegmentationGrid preserving score and geometry semantics.
         - class_id: scalar tensor (0-dim)
         - confidence: scalar tensor (0-dim)
         - tracker_id: value of `bboxes_metadata[i]["tracker_id"]` or None
@@ -214,6 +271,14 @@ class InstanceDetections:
             data = bboxes_metadata[index]
             if self.mask is None:
                 selected_mask = None
+            elif isinstance(self.mask, InstanceSegmentationGrid):
+                selected_mask = InstanceSegmentationGrid(
+                    scores=self.mask.scores[index : index + 1],
+                    score_type=self.mask.score_type,
+                    threshold=self.mask.threshold,
+                    grid_padding_ltrb=self.mask.grid_padding_ltrb,
+                    image_crop_xywh=self.mask.image_crop_xywh,
+                )
             elif isinstance(self.mask, InstancesRLEMasks):
                 selected_mask = {
                     # the counts describe the encoded grid, which is not the
@@ -276,9 +341,20 @@ class InstanceDetections:
             >>> print(f"Masks shape: {detections.mask.shape}")  # (N, H, W)
             >>> print(f"First mask: {detections.mask[0]}")  # Boolean array
 
+        Raises:
+            ValueError: For compact score grids; request dense masks from the model
+                before conversion.
+
         See Also:
             - Supervision documentation: https://supervision.roboflow.com
         """
+        if isinstance(self.mask, InstanceSegmentationGrid):
+            raise ValueError(
+                "Compact score grids cannot be converted directly to Supervision. "
+                "Request mask_format='dense' with masks_resolution_factor=1.0 "
+                "from the model before calling to_supervision()."
+            )
+
         if isinstance(self.mask, torch.Tensor):
             mask = self.mask.cpu().numpy()
         else:

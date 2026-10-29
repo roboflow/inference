@@ -1,14 +1,14 @@
 """The inventory of engine construction sites outside workflows.
 
 This is the ONE inventory guard: it *discovers* `ExecutionEngine.init` sites
-across the production tree (server, CLI, and the two maintained direct-caller
-scripts) rather than trusting a hard-coded list, so a new root in a new file
+across the production tree (server, CLI, and the maintained direct-caller
+example) rather than trusting a hard-coded list, so a new root in a new file
 cannot go unnoticed - it fails the count below.
 
 What each site binds is proven at runtime, not from source text: the four
 server/CLI roots in `test_image_codec_binding.py` (codec, configuration,
-observer, platform objects, models provider, step error handler), the two
-scripts in `test_direct_caller_bindings.py`.
+observer, platform objects, models provider, step error handler), the
+example in `test_direct_caller_bindings.py`.
 """
 
 import ast
@@ -20,7 +20,6 @@ SEARCH_ROOTS = (
     "inference",
     "stream_vision/streamvision",
     "inference_cli",
-    "development",
     "examples",
 )
 # The standalone engine lives under workflows/, outside these host search roots.
@@ -29,7 +28,6 @@ EXPECTED_ROOTS = {
     "inference/core/interfaces/http/http_api.py": 2,
     "stream_vision/streamvision/stream/pipeline.py": 1,
     "inference_cli/lib/workflows/local_image_adapter.py": 1,
-    "development/stream_interface/benchmark_engine_throughput.py": 1,
     "examples/run_perspective_correction.py": 1,
 }
 
