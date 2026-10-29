@@ -20,6 +20,10 @@ for contributor and maintainer responsibilities.
 
 - Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.
 
+### Fixed
+
+- Video-state blocks now accept an image from a step output as well as from a Workflow input, so they keep working inside an embedded `roboflow_core/inner_workflow@v1` whose `image` is bound to a parent step (for example a preprocessing block). Inlining replaces the child's `$inputs.image` with that step selector, and the merged definition used to fail with `Could not parse workflow definition` even though each Workflow compiled on its own. Affected blocks: `time_in_zone@v2`/`@v3`, `velocity@v1`, `line_counter@v2`, `path_deviation_analytics@v2`, `detection_event_log@v1`, `byte_tracker@v2`, `cache_get@v1`, `cache_set@v1`, `delta_filter@v1` and `rate_limiter@v1` (`video_reference_image`). The blocks read `video_metadata` from the image, which step outputs built with `WorkflowImageData.copy_and_replace` keep, so per-video state is unchanged.
+
 ## `0.2.14`
 
 Bundled execution engine: `1.17.0`.
