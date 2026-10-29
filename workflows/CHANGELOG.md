@@ -16,6 +16,21 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Inner Workflow literal bindings keep their type.** A literal bound in an
+  Inner Workflow step's `parameter_bindings` (for example `0.3`, `true`, a list
+  or an object) now reaches the child workflow's steps with that type when the
+  child references the input as a whole `$inputs.<name>` value. Inlining used
+  to stringify every binding, so a child boolean input bound to `true` became
+  `"True"` and a number became `"0.3"`, which differed from the same value
+  supplied through the child's `default_value`. A literal embedded in a larger
+  string (`"prefix-$inputs.x"`) is still interpolated as text. Compilation now
+  rejects a non-string literal bound to a child output selector with
+  `InnerWorkflowInvalidStepEntryError` instead of producing an invalid selector
+  later. Workflows that worked around the cast by converting inside the child
+  keep working; no migration is needed.
+
 ### Added
 
 - Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.

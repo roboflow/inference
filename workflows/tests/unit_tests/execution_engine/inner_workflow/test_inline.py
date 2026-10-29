@@ -461,7 +461,7 @@ def _inline_with_scalar_echo_plugin(raw: dict) -> dict:
     ):
         blocks_loader.clear_caches()
         try:
-            from inference.core.workflows.execution_engine.v1.inner_workflow.reference_resolution import (
+            from roboflow_workflows.execution_engine.v1.inner_workflow.reference_resolution import (
                 normalize_inner_workflow_references_in_definition,
             )
 
