@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- OWLv2 packages with saved labels and prompts can serve ordinary object-detection
+  requests without explicit text queries, including per-class confidence thresholds.
+
+### Fixed
+
+- Batched OWLv2 text queries now supply the complete prompt list to every image.
+
 ### Changed
 
 - `FILE_LOCK_ACQUIRE_TIMEOUT` (`INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT`) defaults to

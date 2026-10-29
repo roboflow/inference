@@ -234,6 +234,7 @@ class InferenceModelsOwlV2Adapter(Model):
             content_addressed_artifact_cache=content_addressed_artifact_cache,
         )
         self._model: OWLv2HF = singleton_instance.model
+        self.class_names = self._model.saved_class_names
 
     def run_tensor_native_inference(self, images, **kwargs) -> List[Detections]:
         return self._model.infer(images=images, **kwargs)

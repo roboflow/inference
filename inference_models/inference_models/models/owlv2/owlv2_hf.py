@@ -263,6 +263,15 @@ class OWLv2HF(
         self._compiled = False
         self._lock = RLock()
 
+    @property
+    def saved_class_names(self) -> List[str]:
+        """Return the package labels independently of per-request text queries.
+
+        Returns:
+            A copy of the saved labels, or an empty list for open-vocabulary packages.
+        """
+        return list(self._class_names or [])
+
     def infer(self, images, classes=None, **kwargs) -> List[Detections]:
         if classes is None:
             classes = self._prompts
