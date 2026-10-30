@@ -641,6 +641,37 @@ def test_sam2_segmentation_returns_responses():
     assert len(out) == 1 and out[0].predictions[0].confidence == pytest.approx(0.7)
 
 
+def test_sam2_segmentation_returns_rle_masks_when_asked():
+    from pycocotools import mask as mask_utils
+
+    b = FakeSyncBridge()
+    b.routes["sam3/sam3_interactive"] = Route(
+        model_id="sam3/sam3_interactive",
+        registry_id="sam3/sam3_interactive",
+        task_type="interactive-instance-segmentation",
+        action="embed",
+        actions={"embed", "segment_with_visual_prompts"},
+    )
+    mask = np.zeros((1, 4, 6), dtype=bool)
+    mask[0, 1:3, 1:3] = True
+    mask[0, 1:3, 4:6] = True
+    b.predictions[("sam3/sam3_interactive", "segment_with_visual_prompts")] = (
+        SimpleNamespace(masks=mask, scores=np.array([0.7]))
+    )
+
+    out = GatewayModelsProvider(b, api_key=None).run_sam2_segmentation(
+        "sam3/sam3_interactive",
+        {"type": "numpy_object", "value": np.zeros((4, 6, 3), np.uint8)},
+        [{"points": [{"x": 2, "y": 2, "positive": True}]}],
+        request_model_id="sam3/sam3_interactive",
+        format="rle",
+    )
+
+    (prediction,) = out[0].predictions
+    assert prediction.format == "rle"
+    assert np.array_equal(mask_utils.decode(prediction.masks).astype(bool), mask[0])
+
+
 def test_sam3_3d_objects_is_501():
     from inference_server.legacy.errors import LegacyHTTPError
 

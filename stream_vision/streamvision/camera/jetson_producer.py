@@ -6,6 +6,7 @@ import os
 import struct
 import subprocess
 from datetime import datetime, timedelta
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
@@ -16,6 +17,7 @@ from streamvision.camera.entities import (
     SourceProperties,
     VideoFrameProducer,
 )
+from streamvision.camera.fourcc import parse_fourcc
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
@@ -233,8 +235,22 @@ def build_gstreamer_pipeline(
     video: Union[str, int],
     *,
     output_tensor: bool = False,
+    video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
 ) -> str:
-    """Build a Jetson GStreamer pipeline ending in an NVMM appsink."""
+    """Build a Jetson GStreamer pipeline ending in an NVMM appsink.
+
+    Args:
+        video: Camera index, device path, file path or stream URI.
+        output_tensor: Requested output representation; both use NVMM capture.
+        video_source_properties: OpenCV property suffixes for V4L2 negotiation:
+            ``fourcc``, ``frame_width``, ``frame_height`` and ``fps``.
+
+    Returns:
+        GStreamer launch string with requested camera caps before decoding.
+
+    Raises:
+        ValueError: If a requested V4L2 format or dimension/rate is unsupported.
+    """
 
     is_live = _is_live_source(video)
     sink = _build_sink(is_live=is_live)
@@ -247,17 +263,26 @@ def build_gstreamer_pipeline(
         )
     if _is_v4l2_source(video):
         device = _v4l2_device(video)
-        camera_format = _nvv4l2camerasrc_format(video)
+        properties = {
+            key.lower(): value for key, value in (video_source_properties or {}).items()
+        }
+        capture_chain = _v4l2_capture_chain(properties)
+        requested_fourcc = (
+            _v4l2_fourcc(properties["fourcc"]) if "fourcc" in properties else None
+        )
+        camera_format = _nvv4l2camerasrc_format(video, requested_fourcc)
         if camera_format is not None:
             return (
                 f'nvv4l2camerasrc device="{_quote_gstreamer_value(device)}" ! '
-                f"video/x-raw(memory:NVMM),format={camera_format} ! "
+                f"video/x-raw(memory:NVMM),format={camera_format}"
+                f"{_v4l2_caps_suffix(properties)} ! "
                 f"{sink}"
             )
-        return (
+        pipeline = (
             f'v4l2src device="{_quote_gstreamer_value(device)}" ! '
-            f"decodebin ! {sink}"
+            f"{capture_chain}{sink}"
         )
+        return pipeline
 
     if _is_rtsp_source(video):
         # Explicit video-only chain (the jetson-utils shape) instead of
@@ -304,6 +329,93 @@ def build_gstreamer_pipeline(
         'caps="video/x-raw(memory:NVMM)" ! '
         f"{sink}"
     )
+
+
+def _v4l2_caps_suffix(properties: Dict[str, Union[float, str]]) -> str:
+    constraints = []
+    for property_name, caps_name in (
+        ("frame_width", "width"),
+        ("frame_height", "height"),
+        ("fps", "framerate"),
+    ):
+        if property_name not in properties:
+            continue
+
+        value = properties[property_name]
+        try:
+            number = Fraction(str(value)).limit_denominator(1_000_000)
+        except (ValueError, ZeroDivisionError) as error:
+            raise ValueError(f"Invalid V4L2 {property_name}: {value!r}") from error
+        if number <= 0 or (caps_name != "framerate" and number.denominator != 1):
+            raise ValueError(f"Invalid V4L2 {property_name}: {value!r}")
+
+        if caps_name == "framerate":
+            # Rounded UI rates must match the exact fractions advertised by UVC.
+            standard_rates = (
+                Fraction(24000, 1001),
+                Fraction(30000, 1001),
+                Fraction(60000, 1001),
+                Fraction(round(number)),
+            )
+            nearest = min(standard_rates, key=lambda rate: abs(rate - number))
+            if nearest > 0 and abs(nearest - number) <= Fraction(1, 1000):
+                number = nearest
+
+        caps_value = (
+            f"{number.numerator}/{number.denominator}"
+            if caps_name == "framerate"
+            else str(number.numerator)
+        )
+        constraints.append(f",{caps_name}={caps_value}")
+    return "".join(constraints)
+
+
+def _v4l2_fourcc(value: Union[float, str]) -> str:
+    parsed = parse_fourcc(value)
+    if parsed is None:
+        raise ValueError("Invalid V4L2 fourcc")
+
+    return "".join(chr((parsed >> (8 * i)) & 0xFF) for i in range(4))
+
+
+def _v4l2_capture_chain(properties: Dict[str, Union[float, str]]) -> str:
+    properties = {key.lower(): value for key, value in properties.items()}
+    suffix = _v4l2_caps_suffix(properties)
+    if "fourcc" not in properties:
+        if not suffix:
+            return "decodebin ! "
+
+        # Retain automatic raw/compressed format selection while constraining
+        # the camera's size and rate, even when only one was requested.
+        caps = ";".join(
+            f"{media}{suffix}"
+            for media in ("video/x-raw", "image/jpeg", "video/x-h264", "video/x-h265")
+        )
+        return f'capsfilter caps="{caps}" ! decodebin ! '
+
+    fourcc = _v4l2_fourcc(properties["fourcc"])
+    if fourcc in ("MJPG", "JPEG"):
+        # JetPack 6 / L4T R36 supports MJPEG through the V4L2 HW decoder.
+        return f"image/jpeg{suffix} ! jpegparse ! nvv4l2decoder mjpeg=1 ! "
+
+    if fourcc in ("H264", "HEVC", "H265"):
+        codec = "h264" if fourcc == "H264" else "h265"
+        return f"video/x-{codec}{suffix} ! {codec}parse ! nvv4l2decoder ! "
+
+    raw_formats = {
+        "YUYV": "YUY2",
+        "YUY2": "YUY2",
+        "UYVY": "UYVY",
+        "NV12": "NV12",
+        "I420": "I420",
+        "GREY": "GRAY8",
+    }
+    if fourcc not in raw_formats:
+        # VideoSource's existing startup fallback applies the same properties
+        # to cv2, rather than silently opening an unrelated native format.
+        raise ValueError(f"Unsupported Jetson V4L2 fourcc: {fourcc!r}")
+
+    return f"video/x-raw,format={raw_formats[fourcc]}{suffix} ! "
 
 
 def _rtsp_video_codec() -> str:
@@ -396,13 +508,23 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         # Files (and other non-live sources) use the bridge's lossless
         # handoff: decode is backpressured to consumption speed and every
         # frame is served. Live sources keep the latest-wins slot.
-        self._native_pipeline = NativeJetsonTensorPipeline(
-            self._pipeline,
-            device_id=device_id,
-            lossless_handoff=not _is_live_source(video),
-        )
+        self._native_pipeline_factory = NativeJetsonTensorPipeline
+        self._device_id = device_id
+        self._native_pipeline = None
         self._closed = False
         self._eos = False
+        # VideoSource supplies capture properties after construction. Do not
+        # start a USB camera in its default mode before receiving those caps.
+        if not _is_v4l2_source(video):
+            self._ensure_native_pipeline()
+
+    def _ensure_native_pipeline(self) -> None:
+        if self._native_pipeline is None:
+            self._native_pipeline = self._native_pipeline_factory(
+                self._pipeline,
+                device_id=self._device_id,
+                lossless_handoff=not _is_live_source(self._source_ref),
+            )
 
     @property
     def pipeline(self) -> str:
@@ -416,6 +538,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
     def grab(self) -> bool:
         if self._closed or self._eos:
             return False
+        self._ensure_native_pipeline()
         if self._prerolled_frame_pending:
             self._prerolled_frame_pending = False
             return True
@@ -438,7 +561,32 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
     def initialize_source_properties(
         self, properties: Dict[str, Union[float, str]]
     ) -> None:
-        return None
+        """Apply requested V4L2 camera caps before source metadata discovery.
+
+        Args:
+            properties: OpenCV property suffixes such as ``fourcc`` and ``fps``.
+
+        Raises:
+            ValueError: If the requested native camera caps are unsupported.
+        """
+        if not _is_v4l2_source(self._source_ref) or self._closed:
+            return
+
+        pipeline = build_gstreamer_pipeline(
+            self._source_ref,
+            output_tensor=True,
+            video_source_properties=properties,
+        )
+        if pipeline != self._pipeline:
+            if self._native_pipeline is not None:
+                self._native_pipeline.close()
+                self._native_pipeline = None
+            self._pipeline = pipeline
+            self._decoder_validated = False
+            self._prerolled_frame_pending = False
+            self._cached_source_properties = None
+            self._eos = False
+        self._ensure_native_pipeline()
 
     def discover_source_properties(self) -> SourceProperties:
         if self._cached_source_properties is not None:
@@ -482,17 +630,27 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
         if self._closed or self._eos:
             return
         self._eos = True
-        self._native_pipeline.interrupt()
+        if self._native_pipeline is not None:
+            self._native_pipeline.interrupt()
 
     def release(self) -> None:
         if self._closed:
             return
         self._closed = True
         self._prerolled_frame_pending = False
-        self._native_pipeline.close()
+        if self._native_pipeline is not None:
+            self._native_pipeline.close()
 
     @property
     def tensor_bridge_stats(self) -> Dict[str, int]:
+        """Return bridge diagnostics while native capture is active.
+
+        Returns:
+            Bridge counters, or an empty dictionary before startup/after release.
+        """
+        if self._native_pipeline is None or self._closed:
+            return {}
+
         return self._native_pipeline.stats()
 
     def _validate_hardware_decoder(self) -> None:
@@ -631,7 +789,9 @@ def _nvv4l2camerasrc_formats() -> frozenset:
     return supported_formats
 
 
-def _nvv4l2camerasrc_format(video: Union[str, int]) -> Optional[str]:
+def _nvv4l2camerasrc_format(
+    video: Union[str, int], requested_fourcc: Optional[str] = None
+) -> Optional[str]:
     device = _v4l2_device(video)
     device_formats = _v4l2_pixel_formats(device)
     if not device_formats or device_formats & _V4L2_COMPRESSED_FORMATS:
@@ -639,6 +799,8 @@ def _nvv4l2camerasrc_format(video: Union[str, int]) -> Optional[str]:
 
     supported = _nvv4l2camerasrc_formats()
     for v4l2_format, gst_format in _V4L2_RAW_TO_GST_FORMAT.items():
+        if requested_fourcc not in (None, v4l2_format, gst_format):
+            continue
         if v4l2_format in device_formats and gst_format in supported:
             if _v4l2_supports_dmabuf_import(device):
                 return gst_format
