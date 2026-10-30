@@ -27,12 +27,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: 🛞 Create Wheels
+        # Packaging tools are small; avoid restoring/saving the runtime pip cache.
         run: |
-          make create_wheels
-      - name: 🧹 Remove roboflow-workflows artifacts (published separately)
-        # publish.pypi.roboflow_workflows.yml owns the roboflow-workflows
-        # release; keep exactly one publisher per distribution to avoid
-        # racing skip-existing checks on the same tag.
-        run: rm -f dist/roboflow_workflows-*.whl dist/roboflow_workflows-*.tar.gz dist/inference_models-*.whl dist/streamvision-*.whl dist/streamvision-*.tar.gz
+          make create_pypi_wheels
       - name: 🚀 Publish to PyPi
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/pypi/

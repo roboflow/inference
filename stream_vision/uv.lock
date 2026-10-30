@@ -1363,6 +1363,48 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcore2"
+version = "2.14.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
+dependencies = [
+    { name = "h11" },
+    { name = "truststore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/30/ff/b53af1b49bb2cb5fa97c92215614b173ca5c1a99ded80e2d52f15a94fa6d/httpcore2-2.14.0.tar.gz", hash = "sha256:4f57a1a8249fe6af589d935cfd456f1d13bbdcb0f0fc72af9142368fc94811d7", size = 69096, upload-time = "2026-10-18T16:29:21.898Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/06/a8d6a8f90d11b76d9086242b6bb0ee4b503473bfc8be34c2d5b067275c22/httpcore2-2.14.0-py3-none-any.whl", hash = "sha256:4c4f64f4b544afeb778c42c0ffb5941b29e671157e90ed3f6dc787c4bca90cd1", size = 84291, upload-time = "2026-10-18T16:29:19.743Z" },
+]
+
+[[package]]
+name = "httpcore2"
+version = "2.16.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version == '3.12.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version == '3.11.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version == '3.11.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.11.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
+dependencies = [
+    { name = "h11" },
+    { name = "truststore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c0/61/afa9d6b7452f9eca73f73d45324eb0bb52f098fd5e6049bf6b8263be9b4e/httpcore2-2.16.0.tar.gz", hash = "sha256:c72cd0413563b17e1cd8354677dff887466f8ec2551679759e93126534428643", size = 69886, upload-time = "2026-10-21T07:09:45.31Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/c2/ce417c397afa5181f0e3c6ff01a4d01639414e1adef08730d97571297151/httpcore2-2.16.0-py3-none-any.whl", hash = "sha256:5c4358319f2602d984ad93182c9fee5160f22e9da7babdda870a5e7c4e2dc34f", size = 85070, upload-time = "2026-10-21T07:09:42.802Z" },
+]
+
+[[package]]
 name = "httpx"
 version = "0.28.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1375,6 +1417,64 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406, upload-time = "2024-12-06T15:37:23.222Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad", size = 73517, upload-time = "2024-12-06T15:37:21.509Z" },
+]
+
+[[package]]
+name = "httpx2"
+version = "2.14.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
+dependencies = [
+    { name = "anyio", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'emscripten'" },
+    { name = "idna" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e8/67/58353f1848b4ba568e1ec22ea1e0d8e039f0bca5fde7e2d1f07739fd83e7/httpx2-2.14.0.tar.gz", hash = "sha256:47ad61a3c40282cd8d0dc96311531f00f5bfc71a066c6fe3b36d8f63fb9e4f6e", size = 102036, upload-time = "2026-10-18T16:29:22.627Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/5a/469616aa8c2cbb0bb9dd67a3c18d07c01ab604cc0b236ee1c47d260c7f6e/httpx2-2.14.0-py3-none-any.whl", hash = "sha256:9d20c13a10bae1773a0be3b0f1e5beeb4bdd549bc3a2ba18efa32897c65403e4", size = 96901, upload-time = "2026-10-18T16:29:20.819Z" },
+]
+
+[[package]]
+name = "httpx2"
+version = "2.16.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version == '3.12.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version == '3.11.*' and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version == '3.11.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.11.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
+dependencies = [
+    { name = "anyio", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", version = "2.16.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'emscripten'" },
+    { name = "httpx2-jsfetch", marker = "python_full_version >= '3.12' and sys_platform == 'emscripten'" },
+    { name = "idna" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/73/5ca2cedf5e4e50423d1c258877865a6b62793633b561c58499f8aeb33b7e/httpx2-2.16.0.tar.gz", hash = "sha256:0d54c98128e8f2ff7fbbde0fca8c359e5f032edeaaaac443cdb7f31f685bcd7f", size = 103116, upload-time = "2026-10-21T07:09:46.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/3d/2e4bc4fd1ef9770871669adb348d612a6e4786b303a23f9935b81c48dd60/httpx2-2.16.0-py3-none-any.whl", hash = "sha256:fd2c5d7909e8d86fe92d53020c310ca0e4e431b838c207c5754b9bbf0308d49a", size = 97880, upload-time = "2026-10-21T07:09:44.01Z" },
+]
+
+[[package]]
+name = "httpx2-jsfetch"
+version = "1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/c4/0e5636363151a2a1795e0a77617168b9ca438e1748ec05fc9b5687f93d64/httpx2_jsfetch-1.0.tar.gz", hash = "sha256:70a0e3eabfef7cce5ad9c629f7d01ca05e418f586646f4ddf14782e4c1454c60", size = 6872, upload-time = "2026-08-07T00:13:07.492Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/43/832f631d32e4f1211caa2ba368317739fe71f0b8530e4c9d15dc454bac2a/httpx2_jsfetch-1.0-py3-none-any.whl", hash = "sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32", size = 6382, upload-time = "2026-08-07T00:13:06.567Z" },
 ]
 
 [[package]]
@@ -2695,21 +2795,20 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "1.109.1"
+version = "3.41.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "distro" },
-    { name = "httpx" },
+    { name = "httpx2", version = "2.14.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "httpx2", version = "2.16.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "jiter" },
     { name = "pydantic" },
     { name = "sniffio" },
-    { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c6/a1/a303104dc55fc546a3f6914c842d3da471c64eec92043aef8f652eb6c524/openai-1.109.1.tar.gz", hash = "sha256:d173ed8dbca665892a6db099b4a2dfac624f94d20a93f46eb0b56aae940ed869", size = 564133, upload-time = "2025-09-24T13:00:53.075Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8f/f1/3aaadae62d59a9b464f9d2e1deab74f9eb697244beb7dc37fff64df9c92c/openai-3.41.0.tar.gz", hash = "sha256:d065fc59d3d7d8537a77b3ceb527732952c6ff610158e8a2a95b246be637e86f", size = 2313147, upload-time = "2026-10-28T22:27:52.317Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/2a/7dd3d207ec669cacc1f186fd856a0f61dbc255d24f6fdc1a6715d6051b0f/openai-1.109.1-py3-none-any.whl", hash = "sha256:6bcaf57086cf59159b8e27447e4e7dd019db5d29a438072fbd49c290c7e65315", size = 948627, upload-time = "2025-09-24T13:00:50.754Z" },
+    { url = "https://files.pythonhosted.org/packages/83/23/089333ff950ee07c30762160f4eff5ac5d376934c2d6797abf6da9cd06a5/openai-3.41.0-py3-none-any.whl", hash = "sha256:7060a74b239609b21f2919eb98807a8aad463b4f510b8b3b388b15559360b0a8", size = 2380171, upload-time = "2026-10-28T22:27:50.372Z" },
 ]
 
 [[package]]
@@ -2930,15 +3029,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/bf/20/22fe9384b7949e25fb1293bcfc84fb82590ff4ea6b37c95b24d26d793d86/pillow-12.3.0-pp311-pypy311_pp73-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:fbd139c8447d25dd750ab79ee274cc5e1fe80fc56340ab10b18a195e1b6eca3e", size = 5237776, upload-time = "2026-07-01T11:56:30.263Z" },
     { url = "https://files.pythonhosted.org/packages/08/14/f6ba68107680ffa74b39985f3f30884e41318fbc4250caa423c79b4788bb/pillow-12.3.0-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e7e480451b9fa137494bccd3a7d69adbe8ac65a87d97be61e11f1b1050a5bac3", size = 5860358, upload-time = "2026-07-01T11:56:32.68Z" },
     { url = "https://files.pythonhosted.org/packages/36/54/0169bc772ec491108b62f644f8ecf1fe5d8ae5ebafde2ee2142210166903/pillow-12.3.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:04f01d28a6aaff387bf842a13be313df23ba0597a44f1a976c9feb3c6ff4711a", size = 7231786, upload-time = "2026-07-01T11:56:35.046Z" },
-]
-
-[[package]]
-name = "pkgconfig"
-version = "1.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/52/fd/0adde075cd3bfecd557bc7d757e00e231d34d8a6edb4c8d1642759254c21/pkgconfig-1.6.0.tar.gz", hash = "sha256:4a5a6631ce937fafac457104a40d558785a658bbdca5c49b6295bc3fd651907f", size = 5691, upload-time = "2026-03-06T11:26:01.194Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/6f/f7ec07fba48f07c555cc4099481df644fbbc12067879072c17ac229f6556/pkgconfig-1.6.0-py3-none-any.whl", hash = "sha256:98e71754855e9563838d952a160eb577edabb57782e49853edb5381927e6bea1", size = 7086, upload-time = "2026-03-06T11:26:07.688Z" },
 ]
 
 [[package]]
@@ -3667,7 +3757,6 @@ version = "2.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
-    { name = "pkgconfig" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7b/88/f73dae807ec68b228fba72507105e3ba80a561dc0bade0004ce24fd118fc/pyvips-2.2.3.tar.gz", hash = "sha256:43bceced0db492654c93008246a58a508e0373ae1621116b87b322f2ac72212f", size = 56626, upload-time = "2024-04-28T11:19:58.158Z" }
 
@@ -4075,7 +4164,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.13"
+version = "0.2.15"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -4121,9 +4210,9 @@ dependencies = [
     { name = "zxing-cpp", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "zxing-cpp", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ba/e2/32e2dd9c61e6e3e6ee83208ca4edb2a2ea02938d9de672a70ce298f128cf/roboflow_workflows-0.2.13.tar.gz", hash = "sha256:85df22f37c93c8a567b3c92fe9b9dbe17177ed6feace90cc90677cbacd367e2b", size = 5422109, upload-time = "2026-10-23T18:11:42.115Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/bd/53c4076d73f50bb130c01d045d8d9d6a419e30e08e2f181943a60177a777/roboflow_workflows-0.2.15.tar.gz", hash = "sha256:03187a56286be4b92778e091401406e7fdbb16dc66ee62de81a0d4c322c09d89", size = 5433424, upload-time = "2026-10-30T20:11:09.844Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/73/fcfb5cf47747e6d6c0f03c65672767aabb126765b3d07217545fd21d4ea8/roboflow_workflows-0.2.13-py3-none-any.whl", hash = "sha256:fd586137973afb3163ac3afd0ae1208110f96cc93390c545c997313ee86066ba", size = 6528205, upload-time = "2026-10-23T18:11:40.011Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/27/22d1da21103835bb8fa98d466bc83104ff0cbdb59aab45a6ef698f728667/roboflow_workflows-0.2.15-py3-none-any.whl", hash = "sha256:d54d47ae6db34d957abf4c536e7cd2cd2961c5e7a3156122f857fd32b1456a51", size = 6535670, upload-time = "2026-10-30T20:11:08.106Z" },
 ]
 
 [[package]]
@@ -4528,7 +4617,7 @@ wheels = [
 
 [[package]]
 name = "streamvision"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -4576,12 +4665,12 @@ requires-dist = [
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.8.0,<2.12.0" },
     { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.1.0,<3.0.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<10.0.0" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<9.2.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = "<=0.21.1" },
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests", marker = "extra == 'webrtc'", specifier = ">=2.33.0,<3.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.13" },
+    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.15" },
     { name = "supervision", specifier = ">=0.30.6,<0.31.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
     { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.0.1,<3.0.0" },
@@ -4925,6 +5014,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/09/b7012e5bfae67640f268aa584caa80fe1674f6b0da949046b679972c33e3/triton-3.8.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e91ffa46d095b252248297292dd22bcbacd53a125a0c2eefbbbf74925a320bc3", size = 247972921, upload-time = "2026-08-28T15:55:53.157Z" },
     { url = "https://files.pythonhosted.org/packages/87/4d/4c564374bcdadb166fccbf3e45aee0d4a473f88d341761bd2fefe3b8e8c1/triton-3.8.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b7004666652f500ed854a86988e4b3d69d247188b5d2092b5df1e44f4a954099", size = 226476793, upload-time = "2026-08-28T16:08:30.956Z" },
     { url = "https://files.pythonhosted.org/packages/b0/b6/3394d5548404c1cabd1dadadd28d0b3f9478db1dff8180da53bb3f0a1e19/triton-3.8.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1f0497218e26b7d79773ad9c2a3fa3b539ee69f587a13fac2e552b1d322a8015", size = 247975122, upload-time = "2026-08-28T15:56:04.112Z" },
+]
+
+[[package]]
+name = "truststore"
+version = "0.10.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/9f/c5201d42a484c061e528825fc8e2d565f5abd50a4ced6fb7d29c4ec99b2b/truststore-0.10.5.tar.gz", hash = "sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd", size = 28091, upload-time = "2026-10-12T22:27:31.808Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/e9/3a7820be2bb0fe53b6bc9c3be26d3d1158004e4c3ab953aa6840b955b1e9/truststore-0.10.5-py3-none-any.whl", hash = "sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c", size = 19017, upload-time = "2026-10-12T22:27:30.377Z" },
 ]
 
 [[package]]
