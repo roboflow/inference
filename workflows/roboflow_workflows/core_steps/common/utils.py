@@ -24,7 +24,7 @@ from roboflow_workflows.core_steps.common.keypoints import (
     KEYPOINT_PADDING_CLASS_NAME,
     validate_keypoints_padding,
 )
-from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB, _native_obb_to_sv
 from roboflow_workflows.errors import RuntimeInputError
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
@@ -335,9 +335,21 @@ def attach_parent_coordinates_to_detections(
     coordinates_key: str,
     dimensions_key: str,
 ) -> sv.Detections:
+    """Attach frame lineage while retaining native image headers.
+
+    Args:
+        detections: Predictions to update in place.
+        parent_metadata: Known ancestor identity and coordinate frame.
+        parent_id_key: Parent identity field.
+        coordinates_key: Parent offset field.
+        dimensions_key: Parent dimensions field.
+
+    Returns:
+        Predictions with row lineage and, for natives, a matching image header.
+    """
     parent_coordinates_system = parent_metadata.origin_coordinates
-    if len(detections) == 0:
-        # Per-row data cannot retain lineage when there are no rows.
+    if len(detections) == 0 or detections.metadata.get(NATIVE_OBB):
+        # Native frames must survive later removal of every row.
         detections.metadata.update(
             {
                 parent_id_key: parent_metadata.parent_id,
@@ -380,7 +392,20 @@ KEYS_REQUIRED_TO_EMBED_IN_ROOT_COORDINATES = {
 def sv_detections_to_root_coordinates(
     detections: sv.Detections, keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
 ) -> sv.Detections:
-    detections_copy = deepcopy(detections)
+    """Return predictions expressed in their root image frame.
+
+    Args:
+        detections: Predictions carrying root lineage.
+        keypoints_key: Row field containing keypoint coordinates.
+
+    Returns:
+        A copy with translated geometry and synchronized native frame metadata.
+    """
+    detections_copy = (
+        _native_obb_to_sv(detections)
+        if detections.metadata.get(NATIVE_OBB)
+        else deepcopy(detections)
+    )
     if len(detections_copy) == 0:
         root_dimensions = detections_copy.metadata.get(ROOT_PARENT_DIMENSIONS_KEY)
         if root_dimensions is not None:
@@ -426,6 +451,12 @@ def sv_detections_to_root_coordinates(
     detections_copy[IMAGE_DIMENSIONS_KEY] = np.array(
         [[origin_height, origin_width]] * len(detections_copy)
     )
+    if detections_copy.metadata.get(NATIVE_OBB):
+        detections_copy.metadata.update(
+            image_dimensions=[origin_height, origin_width],
+            scaling_relative_to_parent=1.0,
+            scaling_relative_to_root_parent=1.0,
+        )
     root_parent_id = detections_copy[ROOT_PARENT_ID_KEY][0]
     shift_x, shift_y = detections_copy[ROOT_PARENT_COORDINATES_KEY][0]
     detections_copy.xyxy += [shift_x, shift_y, shift_x, shift_y]
@@ -574,8 +605,9 @@ def scale_sv_detections(
             Dataset Upload, when using different X/Y scales. An anisotropic
             transform cannot be represented by the existing scalar metadata.
     """
-    detections_copy = deepcopy(detections)
-    if len(detections_copy) == 0:
+    native = bool(detections.metadata.get(NATIVE_OBB))
+    detections_copy = _native_obb_to_sv(detections) if native else deepcopy(detections)
+    if not native and len(detections_copy) == 0:
         return detections_copy
 
     if isinstance(scale, (tuple, list)):
@@ -590,6 +622,31 @@ def scale_sv_detections(
             "coordinate metadata. Set update_scaling_metadata=False for a "
             "terminal result that will not undergo root-coordinate recovery."
         )
+
+    if native:
+        dimensions = detections_copy.metadata.get(IMAGE_DIMENSIONS_KEY)
+        if target_size_wh is not None:
+            detections_copy.metadata[IMAGE_DIMENSIONS_KEY] = [
+                int(target_size_wh[1]),
+                int(target_size_wh[0]),
+            ]
+        elif dimensions is not None:
+            detections_copy.metadata[IMAGE_DIMENSIONS_KEY] = (
+                np.rint(np.asarray(dimensions) * [scale_y, scale_x])
+                .astype(int)
+                .tolist()
+            )
+        if update_scaling_metadata:
+            for key in (
+                SCALING_RELATIVE_TO_PARENT_KEY,
+                SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
+            ):
+                detections_copy.metadata[key] = (
+                    detections_copy.metadata.get(key, 1.0) * scale_x
+                )
+        if not len(detections_copy):
+            detections_copy = _native_obb_to_sv(detections_copy)
+            return detections_copy
 
     xyxy = detections_copy.xyxy.astype(np.float64, copy=True)
     xyxy[:, [0, 2]] *= scale_x

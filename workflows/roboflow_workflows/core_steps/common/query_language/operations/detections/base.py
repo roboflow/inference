@@ -478,13 +478,21 @@ def _pick_detections_by_parent_class_impl(
 ) -> sv.Detections:
     class_names = detections.data.get("class_name")
     if class_names is None or len(class_names) == 0:
-        return sv.Detections.empty()
+        return (
+            detections[:0]
+            if detections.metadata.get(NATIVE_OBB)
+            else sv.Detections.empty()
+        )
     if not isinstance(class_names, np.ndarray):
         class_names = np.array(class_names)
     parent_mask = class_names == parent_class
     parent_detections = detections[parent_mask]
     if len(parent_detections) == 0:
-        return sv.Detections.empty()
+        return (
+            detections[:0]
+            if detections.metadata.get(NATIVE_OBB)
+            else sv.Detections.empty()
+        )
     dependent_detections = detections[~parent_mask]
     dependent_detections_anchors = dependent_detections.get_anchors_coordinates(
         anchor=Position.CENTER

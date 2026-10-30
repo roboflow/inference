@@ -1058,6 +1058,9 @@ def _correct_native_detections(
         _correct_oriented_box_in_metadata(
             entry=entry, perspective_transformer=perspective_transformer
         )
+        if (detections.image_metadata or {}).get(NATIVE_OBB):
+            corners = entry[ORIENTED_BOX_COORDINATES]
+            corrected_xyxy_rows[-1] = np.concatenate((corners.min(0), corners.max(0)))
         corrected_bboxes_metadata.append(entry)
 
     if number_of_detections > 0:

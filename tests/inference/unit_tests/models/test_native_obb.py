@@ -348,6 +348,7 @@ def test_workflow_block_executes_installed_onnx_request_and_native_transport(
     from roboflow_workflows.execution_engine.entities.base import (
         Batch,
         ImageParentMetadata,
+        OriginCoordinatesSystem,
         WorkflowImageData,
     )
 
@@ -377,6 +378,9 @@ def test_workflow_block_executes_installed_onnx_request_and_native_transport(
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="image0"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(
+            "root", OriginCoordinatesSystem(13, 17, 300, 200)
+        ),
         numpy_image=np.zeros((35, 73, 3), np.uint8),
     )
     result = block.run(
@@ -401,6 +405,33 @@ def test_workflow_block_executes_installed_onnx_request_and_native_transport(
     assert native["predictions"][0]["detection_id"] == manager.detection_id
     assert native["predictions"][0]["parent_id"] == "image0"
     assert native["predictions"][0]["heading"]
+
+    from roboflow_workflows.core_steps.common.tensor_native import (
+        native_detections_to_root_coordinates,
+    )
+    from roboflow_workflows.core_steps.common.utils import (
+        sv_detections_to_root_coordinates,
+    )
+    from roboflow_workflows.core_steps.transformations.per_class_confidence_filter import (
+        v1 as confidence_numpy,
+    )
+    from roboflow_workflows.core_steps.transformations.per_class_confidence_filter import (
+        v1_tensor as confidence_tensor,
+    )
+
+    filtering = confidence_tensor if tensor else confidence_numpy
+    empty = filtering.PerClassConfidenceFilterBlockV1().run(
+        predictions=[result[0]["predictions"]], class_thresholds={"plane": 1.0}
+    )[0]["predictions"]
+    rooted = (
+        native_detections_to_root_coordinates(empty)
+        if tensor
+        else sv_detections_to_root_coordinates(empty)
+    )
+    serialized = serialise_native_obb(rooted)
+    assert serialized["predictions"] == []
+    assert serialized["image"] == {"width": 300, "height": 200}
+    assert serialized["class_heading"] == native["class_heading"]
 
 
 def test_unused_frozen_classes_are_retained_without_output_mapping(tmp_path):
@@ -589,3 +620,28 @@ def test_core_metadata_and_standard_train_package_survive_cache_and_offline(
         core.AutoModel.from_pretrained(
             "native/1", use_auto_resolution_cache=False, **options
         )
+
+
+@pytest.mark.parametrize("task", ["oriented-object-detection", "object-detection"])
+def test_request_factory_preserves_native_or_ordinary_request(task):
+    from inference.core.entities.requests.inference import (
+        ObjectDetectionInferenceRequest,
+        OrientedObjectDetectionInferenceRequest,
+        request_from_type,
+    )
+
+    request_class = (
+        OrientedObjectDetectionInferenceRequest
+        if task == "oriented-object-detection"
+        else ObjectDetectionInferenceRequest
+    )
+    original = request_class(
+        model_id="native/1",
+        image={"type": "base64", "value": "AA=="},
+        confidence=0.5,
+        class_filter=["plane"],
+        id="dispatch-request",
+    )
+    restored = request_from_type(task, original.model_dump())
+    assert type(restored) is request_class
+    assert restored.model_dump() == original.model_dump()

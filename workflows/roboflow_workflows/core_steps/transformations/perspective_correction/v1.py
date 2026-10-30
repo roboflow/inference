@@ -789,6 +789,11 @@ def correct_detections(
                 else np.around(corrected_obb).astype(np.float32)
             )
             detection[ORIENTED_BOX_COORDINATES] = np.array([corrected_corners])
+            if detection.metadata.get(NATIVE_OBB):
+                detection.xyxy = np.concatenate(
+                    (corrected_corners.min(0), corrected_corners.max(0))
+                )[None]
+
         corrected_detections.append(detection)
     return sv.Detections.merge(corrected_detections)
 

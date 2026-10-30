@@ -327,7 +327,9 @@ def test_native_http_input_initializes_missing_lineage_before_consensus(
     assert result["predictions"][0]["parent_id"] == ("crop" if explicit else "external")
 
 
-@pytest.mark.parametrize("empty_by", ["confidence", "votes"])
+@pytest.mark.parametrize(
+    "empty_by", ["confidence", "votes", "per_class", "after_consensus", "after_combine"]
+)
 def test_compiled_empty_consensus_output_retains_crop_root_frame(empty_by):
     from roboflow_workflows.execution_engine.core import ExecutionEngine
 
@@ -377,6 +379,32 @@ def test_compiled_empty_consensus_output_retains_crop_root_frame(empty_by):
             },
         ],
     }
+    if empty_by in {"per_class", "after_consensus", "after_combine"}:
+        selector = "$inputs.predictions"
+        if empty_by == "per_class":
+            workflow["steps"] = []
+        elif empty_by == "after_combine":
+            workflow["steps"] = [
+                {
+                    "type": "roboflow_core/detections_combine@v1",
+                    "name": "combined",
+                    "prediction_one": selector,
+                    "prediction_two": selector,
+                }
+            ]
+            selector = "$steps.combined.predictions"
+        else:
+            selector = "$steps.consensus.predictions"
+        workflow["steps"].append(
+            {
+                "type": "roboflow_core/per_class_confidence_filter@v1",
+                "name": "filtered",
+                "predictions": selector,
+                "class_thresholds": {"plane": 0.99},
+            }
+        )
+        for output in workflow["outputs"]:
+            output["selector"] = "$steps.filtered.predictions"
     engine = ExecutionEngine.init(workflow_definition=workflow)
     try:
         result = engine.run(
@@ -388,3 +416,45 @@ def test_compiled_empty_consensus_output_retains_crop_root_frame(empty_by):
     assert result["root"]["image"] == {"height": 200, "width": 300}
     assert result["root"]["class_heading"] == payload["class_heading"]
     assert result["own"]["image"] == payload["image"]
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_native_consensus_accepts_identity_perspective_host_caches(tensor):
+    from roboflow_workflows.core_steps.common.utils import (
+        attach_parents_coordinates_to_sv_detections,
+    )
+    from roboflow_workflows.core_steps.transformations.perspective_correction import (
+        v1,
+        v1_tensor,
+    )
+    from roboflow_workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata("same-image"),
+        numpy_image=np.zeros((80, 100, 3), np.uint8),
+    )
+    source = attach_parents_coordinates_to_sv_detections(
+        native_obb_from_inference(_response(identity="original")), image
+    )
+    if tensor:
+        source = native_obb_to_tensor(source)
+    before = serialise_native_obb(source)
+    module = v1_tensor if tensor else v1
+    warped = module.PerspectiveCorrectionBlockV1().run(
+        images=[image],
+        predictions=[source],
+        perspective_polygons=[[0, 0], [99, 0], [99, 79], [0, 79]],
+        transformed_rect_width=100,
+        transformed_rect_height=80,
+        extend_perspective_polygon_by_detections_anchor="CENTER",
+        warp_image=False,
+    )[0]["corrected_coordinates"]
+    result = _run([source, warped], required_votes=2)
+    assert len(result) == 1
+    assert serialise_native_obb(result)["predictions"][0]["obb"] == pytest.approx(
+        before["predictions"][0]["obb"]
+    )
+    assert serialise_native_obb(source) == before

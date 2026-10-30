@@ -180,22 +180,6 @@ class DetectionsConsensusBlockV2(v1.DetectionsConsensusBlockV1):
             if not all(native):
                 raise ValueError("Native OBB consensus cannot mix ordinary detections")
             policy_carrier = sources[0][:0]
-            frame_keys = (
-                "parent_id",
-                "parent_coordinates",
-                "parent_dimensions",
-                "root_parent_id",
-                "root_parent_coordinates",
-                "root_parent_dimensions",
-            )
-            if len(sources[0]):
-                # Preserve row-only NumPy frame authority before voting can erase rows.
-                for key in frame_keys:
-                    if key in sources[0].data:
-                        value = sources[0].data[key][0]
-                        policy_carrier.metadata[key] = (
-                            value.tolist() if isinstance(value, np.ndarray) else value
-                        )
             for source in sources:
                 # Validate every source before filtering/voting, including empty maps.
                 serialise_native_obb(source)
@@ -227,14 +211,9 @@ class DetectionsConsensusBlockV2(v1.DetectionsConsensusBlockV1):
                 }
             sources = [source[:] for source in sources]
             for index, source in enumerate(sources):
-                source.metadata = {**source.metadata, "class_heading": policy}
-                # Class names are already per-row; tensor image metadata only
-                # describes classes observed by that source and may differ.
-                source.metadata.pop("class_names", None)
-                # SV merges image metadata strictly. Working copies carry their
-                # own lineage on rows; retain the first frame on policy_carrier.
-                for key in frame_keys:
-                    source.metadata.pop(key, None)
+                source.metadata = {**policy_carrier.metadata, "class_heading": policy}
+                # Native names and geometry remain per-row; temporary SV views
+                # share the first image header so optional keys do not break merge.
                 source.data[_SOURCE_ORDER] = np.full(len(source), index)
                 corners = source.data.get(ORIENTED_BOX_COORDINATES)
                 if len(source):
@@ -254,8 +233,6 @@ class DetectionsConsensusBlockV2(v1.DetectionsConsensusBlockV1):
         if any(native):
             if not len(detections):
                 detections = policy_carrier
-            else:
-                detections.metadata = {**sources[0].metadata, "class_heading": policy}
             detections.data.pop(_SOURCE_ORDER, None)
             if all(tensor):
                 if not len(detections):

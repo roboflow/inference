@@ -431,13 +431,26 @@ class LMMInferenceRequest(CVInferenceRequest):
 
 
 def request_from_type(model_type, request_dict):
-    """Uses original request id"""
+    """Reconstruct a task-specific request, preserving its identifier.
+
+    Args:
+        model_type: Canonical model task type.
+        request_dict: Serialized inference request.
+
+    Returns:
+        The request model for the specified task.
+
+    Raises:
+        ValueError: If the task type is unsupported.
+    """
     if model_type == "classification":
         request = ClassificationInferenceRequest(**request_dict)
     elif model_type == "instance-segmentation":
         request = InstanceSegmentationInferenceRequest(**request_dict)
     elif model_type == "object-detection":
         request = ObjectDetectionInferenceRequest(**request_dict)
+    elif model_type == "oriented-object-detection":
+        request = OrientedObjectDetectionInferenceRequest(**request_dict)
     elif model_type == "semantic-segmentation":
         request = SemanticSegmentationInferenceRequest(**request_dict)
     else:

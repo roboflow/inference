@@ -6,6 +6,9 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
+from roboflow_workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
@@ -311,6 +314,13 @@ def crop_image(
                 ORIENTED_BOX_COORDINATES
             ] - np.array([x_min, y_min])
 
+        if translated_detection.metadata.get(NATIVE_OBB):
+            dimensions = list(result.numpy_image.shape[:2])
+            translated_detection.metadata["image_dimensions"] = dimensions
+            translated_detection.data["image_dimensions"] = np.asarray([dimensions])
+            translated_detection = attach_parents_coordinates_to_sv_detections(
+                detections=translated_detection, image=result
+            )
         crops.append(
             {
                 "crops": result,

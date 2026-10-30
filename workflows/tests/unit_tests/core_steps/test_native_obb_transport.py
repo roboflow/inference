@@ -174,6 +174,8 @@ def test_native_visualization_uses_rotated_footprint_and_front():
 
 @pytest.mark.parametrize("tensor", [False, True])
 def test_dynamic_crop_and_root_restore_preserve_original_native_tuple(tensor):
+    from copy import deepcopy
+
     from roboflow_workflows.core_steps.common.utils import (
         attach_parents_coordinates_to_batch_of_sv_detections,
     )
@@ -194,19 +196,48 @@ def test_dynamic_crop_and_root_restore_preserve_original_native_tuple(tensor):
     transport = attach_parents_coordinates_to_batch_of_sv_detections(
         images=Batch([image], indices=[(0,)]), predictions=[transport]
     )[0]
-    cropped = crop_image(image, transport, mask_opacity=0, background_color="black")[0]
-    localized = attach_parents_coordinates_to_batch_of_sv_detections(
-        images=Batch([cropped["crops"]], indices=[(0,)]),
-        predictions=[cropped["predictions"]],
-    )[0]
+    before = deepcopy(transport)
+    if tensor:
+        from roboflow_workflows.core_steps.transformations.dynamic_crop.v1_tensor import (
+            crop_image as tensor_crop,
+        )
+
+        cropped = tensor_crop(image, native_obb_to_tensor(transport), 0, "black")[0]
+    else:
+        cropped = crop_image(
+            image, transport, mask_opacity=0, background_color="black"
+        )[0]
+    localized = cropped["predictions"]
+    assert serialise_native_obb(localized)["image"] == {
+        "height": cropped["crops"].numpy_image.shape[0],
+        "width": cropped["crops"].numpy_image.shape[1],
+    }
     restored = (
-        native_detections_to_root_coordinates(native_obb_to_tensor(localized))
+        native_detections_to_root_coordinates(localized)
         if tensor
         else sv_detections_to_root_coordinates(localized)
     )
     assert serialise_native_obb(restored)["predictions"][0]["obb"] == pytest.approx(
         original["predictions"][0]["obb"], abs=1e-9
     )
+
+    if tensor:
+        from roboflow_workflows.core_steps.common.tensor_native import (
+            take_detections_by_indices,
+        )
+
+        empty = take_detections_by_indices(localized, [])
+        rooted_empty = native_detections_to_root_coordinates(empty)
+    else:
+        rooted_empty = sv_detections_to_root_coordinates(localized[:0])
+    assert serialise_native_obb(rooted_empty)["image"] == original["image"]
+    assert serialise_native_obb(transport)["predictions"][0]["obb"] == pytest.approx(
+        original["predictions"][0]["obb"]
+    )
+
+    assert transport.metadata == before.metadata
+    for key in transport.data:
+        np.testing.assert_array_equal(transport.data[key], before.data[key])
 
 
 def test_workflow_schema_accepts_explicit_quadrilateral_result():
@@ -225,11 +256,26 @@ def test_workflow_schema_accepts_explicit_quadrilateral_result():
 
 
 @pytest.mark.parametrize("tensor", [False, True])
-def test_combination_preserves_full_frozen_maps_and_rejects_conflicts(tensor):
-    from roboflow_workflows.core_steps.common.oriented import merge_native_semantics
+@pytest.mark.parametrize("empty", ["neither", "first", "second", "both"])
+def test_combination_preserves_full_frozen_maps_and_rejects_conflicts(tensor, empty):
+    from copy import deepcopy
 
-    first = native_obb_from_inference(response())
+    from roboflow_workflows.core_steps.common.oriented import (
+        _native_obb_to_sv,
+        merge_native_semantics,
+    )
+
+    original = response()
     other = response()
+    original["predictions"] = original["predictions"][:1]
+    other["predictions"] = other["predictions"][1:]
+    original["class_heading"] = {"plane": True}
+    other["class_heading"] = {"stone": False}
+    if empty in {"first", "both"}:
+        original["predictions"] = []
+    if empty in {"second", "both"}:
+        other["predictions"] = []
+    first = native_obb_from_inference(original)
     other["class_heading"]["unused"] = True
     second = native_obb_from_inference(other)
     if tensor:
@@ -237,13 +283,28 @@ def test_combination_preserves_full_frozen_maps_and_rejects_conflicts(tensor):
             DetectionsCombineBlockV1,
         )
 
-        first, second = native_obb_to_tensor(first), native_obb_to_tensor(second)
     else:
         from roboflow_workflows.core_steps.transformations.detections_combine.v1 import (
             DetectionsCombineBlockV1,
         )
+    first, second = native_obb_to_tensor(first), native_obb_to_tensor(second)
+    if not tensor:
+        first, second = _native_obb_to_sv(first), _native_obb_to_sv(second)
+    headers = [
+        deepcopy(value.image_metadata if tensor else value.metadata)
+        for value in (first, second)
+    ]
+    before = [serialise_native_obb(value) for value in (first, second)]
     combined = DetectionsCombineBlockV1().run(first, second)["predictions"]
     assert serialise_native_obb(combined)["class_heading"]["unused"] is True
+    assert serialise_native_obb(combined)["image"] == original["image"]
+    assert [row["class"] for row in serialise_native_obb(combined)["predictions"]] == [
+        row["class"] for value in before for row in value["predictions"]
+    ]
+    assert [serialise_native_obb(value) for value in (first, second)] == before
+    assert [
+        value.image_metadata if tensor else value.metadata for value in (first, second)
+    ] == headers
     metadata = second.image_metadata if tensor else second.metadata
     metadata["class_heading"]["plane"] = False
     with pytest.raises(ValueError, match="Conflicting"):
@@ -251,16 +312,34 @@ def test_combination_preserves_full_frozen_maps_and_rejects_conflicts(tensor):
 
 
 @pytest.mark.parametrize("tensor", [False, True])
-def test_declared_kind_deserialization_uses_current_carrier(monkeypatch, tensor):
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("tensor_input", [False, True])
+def test_declared_kind_deserialization_uses_current_carrier(
+    monkeypatch, tensor, empty, tensor_input
+):
     from roboflow_workflows import environment
     from roboflow_workflows.core_steps.common.oriented import deserialize_native_obb
 
-    monkeypatch.setattr(environment, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
-    value = deserialize_native_obb("input", response())
-    assert isinstance(value, sv.Detections) is not tensor
-    assert serialise_native_obb(value)["predictions"][0]["obb"] == pytest.approx(
-        response()["predictions"][0]["obb"]
+    original = response()
+    if empty:
+        original["predictions"] = []
+    supplied = (
+        native_obb_to_tensor(native_obb_from_inference(original))
+        if tensor_input
+        else original
     )
+    monkeypatch.setattr(environment, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    value = deserialize_native_obb("input", supplied)
+    assert isinstance(value, sv.Detections) is not tensor
+    serialized = serialise_native_obb(value)
+    assert serialized["image"] == original["image"]
+    assert serialized["class_heading"] == original["class_heading"]
+    if empty:
+        assert serialized["predictions"] == []
+    else:
+        assert serialized["predictions"][0]["obb"] == pytest.approx(
+            original["predictions"][0]["obb"]
+        )
 
 
 @pytest.mark.parametrize("tensor", [False, True])
@@ -843,3 +922,189 @@ def test_empty_tensor_bridge_retains_root_frame_for_serialization(initially_empt
     assert restored.metadata["parent_id"] == "root"
     assert serialise_native_obb(restored)["image"] == {"height": 200, "width": 300}
     assert serialise_native_obb(restored)["predictions"] == []
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize("initially_empty", [False, True])
+def test_parent_class_query_empty_result_remains_native(
+    monkeypatch, tensor, initially_empty
+):
+    from roboflow_workflows.core_steps.common.query_language.operations.core import (
+        execute_operations,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.detections import (
+        base,
+    )
+    from roboflow_workflows.core_steps.transformations.detections_combine import (
+        v1,
+        v1_tensor,
+    )
+
+    payload = response()
+    if initially_empty:
+        payload["predictions"] = []
+    source = native_obb_from_inference(payload)
+    if tensor:
+        source = native_obb_to_tensor(source)
+    monkeypatch.setattr(base, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    selected = execute_operations(
+        source,
+        operations=[{"type": "PickDetectionsByParentClass", "parent_class": "absent"}],
+    )
+    serialized = serialise_native_obb(selected)
+    assert serialized == {**payload, "predictions": []}
+    module = v1_tensor if tensor else v1
+    combined = module.DetectionsCombineBlockV1().run(selected, selected)["predictions"]
+    assert serialise_native_obb(combined) == serialized
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_native_identity_perspective_keeps_tight_bounds_and_bbox_filter(
+    monkeypatch, tensor
+):
+    from roboflow_workflows.core_steps.common.oriented import _native_obb_to_sv
+    from roboflow_workflows.core_steps.common.query_language.operations.core import (
+        execute_operations,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.detection import (
+        base as single,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.detections import (
+        base,
+    )
+    from roboflow_workflows.core_steps.transformations.perspective_correction import (
+        v1,
+        v1_tensor,
+    )
+    from roboflow_workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    payload = response()
+    payload["predictions"] = payload["predictions"][:1]
+    source = native_obb_from_inference(payload)
+    if tensor:
+        source = native_obb_to_tensor(source)
+    before = serialise_native_obb(source)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata("image"),
+        numpy_image=np.zeros((79, 101, 3), np.uint8),
+    )
+    module = v1_tensor if tensor else v1
+    warped = module.PerspectiveCorrectionBlockV1().run(
+        images=[image],
+        predictions=[source],
+        perspective_polygons=[[0, 0], [100, 0], [100, 78], [0, 78]],
+        transformed_rect_width=101,
+        transformed_rect_height=79,
+        extend_perspective_polygon_by_detections_anchor="CENTER",
+        warp_image=False,
+    )[0]["corrected_coordinates"]
+    converted = _native_obb_to_sv(warped)
+    corners = converted.data["xyxyxyxy"]
+    np.testing.assert_allclose(
+        converted.xyxy,
+        np.concatenate((corners.min(1), corners.max(1)), axis=1),
+        atol=1e-6,
+    )
+    assert serialise_native_obb(source) == before
+    if tensor:
+        from roboflow_workflows.core_steps.common.tensor_native import read_host_mirror
+
+        mirror = read_host_mirror(warped.bboxes_metadata, len(warped))
+        assert mirror is not None
+        np.testing.assert_allclose(mirror[0], converted.xyxy, atol=1e-6)
+    monkeypatch.setattr(base, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    monkeypatch.setattr(single, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    operation = {
+        "type": "DetectionsFilter",
+        "filter_operation": {
+            "type": "StatementGroup",
+            "operator": "and",
+            "statements": [
+                {
+                    "type": "BinaryStatement",
+                    "negate": False,
+                    "left_operand": {
+                        "type": "DynamicOperand",
+                        "operand_name": "_",
+                        "operations": [
+                            {
+                                "type": "ExtractDetectionProperty",
+                                "property_name": "x_min",
+                            }
+                        ],
+                    },
+                    "comparator": {"type": "(Number) >"},
+                    "right_operand": {"type": "StaticOperand", "value": 31.05},
+                }
+            ],
+        },
+    }
+    assert len(execute_operations(source, operations=[operation])) == 1
+    assert len(execute_operations(warped, operations=[operation])) == 1
+
+
+@pytest.mark.parametrize("initially_empty", [False, True])
+def test_native_scale_updates_header_before_rows_can_disappear(initially_empty):
+    payload = response()
+    if initially_empty:
+        payload["predictions"] = []
+    source = native_obb_from_inference(payload)
+    for key, value in [
+        ("scaling_relative_to_parent", 1.25),
+        ("scaling_relative_to_root_parent", 0.5),
+    ]:
+        source.metadata[key] = value
+        source.data[key] = np.full(len(source), value)
+    scaled = scale_sv_detections(source, 2.0, target_size_wh=(203, 159))
+    assert scaled.metadata["image_dimensions"] == [159, 203]
+    assert scaled.metadata["scaling_relative_to_parent"] == 2.5
+    assert scaled.metadata["scaling_relative_to_root_parent"] == 1.0
+    if len(scaled):
+        np.testing.assert_array_equal(
+            scaled.data["image_dimensions"], [[159, 203]] * len(scaled)
+        )
+        np.testing.assert_array_equal(
+            scaled.data["scaling_relative_to_parent"], [2.5] * len(scaled)
+        )
+    assert serialise_native_obb(native_obb_to_tensor(scaled[:0]))["image"] == {
+        "height": 159,
+        "width": 203,
+    }
+    assert source.metadata["image_dimensions"] == [79, 101]
+    assert source.metadata["scaling_relative_to_parent"] == 1.25
+
+
+def test_native_carrier_header_wins_without_mutating_input(monkeypatch):
+    from copy import deepcopy
+
+    from roboflow_workflows import environment
+    from roboflow_workflows.core_steps.common.oriented import deserialize_native_obb
+
+    source = native_obb_from_inference(response())
+    source.metadata.update(
+        root_parent_id="root",
+        root_parent_coordinates=[13, 17],
+        root_parent_dimensions=[200, 300],
+    )
+    source.data["image_dimensions"][:] = [333, 444]
+    source.data["root_parent_id"] = np.array(["stale"] * len(source))
+    source.data["root_parent_coordinates"] = np.tile([100, 100], (len(source), 1))
+    source.data["root_parent_dimensions"] = np.tile([333, 444], (len(source), 1))
+    before = deepcopy(source)
+    monkeypatch.setattr(environment, "ENABLE_TENSOR_DATA_REPRESENTATION", False)
+    normalized = deserialize_native_obb("input", source)
+    assert serialise_native_obb(normalized)["image"] == {"width": 101, "height": 79}
+    tensor = native_obb_to_tensor(normalized)
+    assert tensor.image_metadata["image_dimensions"] == [79, 101]
+    assert tensor.image_metadata["root_parent_dimensions"] == [200, 300]
+    rooted = sv_detections_to_root_coordinates(normalized)
+    bridged_empty = take_detections_by_indices(native_obb_to_tensor(rooted), [])
+    assert serialise_native_obb(bridged_empty)["image"] == {"width": 300, "height": 200}
+    assert rooted.metadata["root_parent_coordinates"] == [0, 0]
+    assert rooted.metadata["parent_id"] == "root"
+    assert source.metadata == before.metadata
+    for key in source.data:
+        np.testing.assert_array_equal(source.data[key], before.data[key])

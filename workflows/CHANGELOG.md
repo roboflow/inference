@@ -63,6 +63,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Keep native OBB image headers through filtering, combination, crop/scale/root transforms and empty selections; derive Perspective bounds from ordered corners and reconstruct native requests through the shared task factory.
+
 - Preserve native class names across colliding model-local IDs, initialize external native input lineage, render empty tensor predictions, admit native perspective connections without rounding corners, and declare native blocks in workload discovery.
 
 - Keep legacy oriented-corner scaling and perspective rounding unchanged; float corner transport is specific to native OBB metadata.

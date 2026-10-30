@@ -6,6 +6,7 @@ are never silently refitted into native rectangle annotations.
 """
 
 import math
+from copy import deepcopy
 
 import cv2
 import numpy as np
@@ -13,6 +14,17 @@ import supervision as sv
 
 NATIVE_OBB = "native_obb"
 CORNERS = "xyxyxyxy"
+_NATIVE_FRAME_KEYS = (
+    "image_dimensions",
+    "parent_id",
+    "parent_coordinates",
+    "parent_dimensions",
+    "root_parent_id",
+    "root_parent_coordinates",
+    "root_parent_dimensions",
+    "scaling_relative_to_parent",
+    "scaling_relative_to_root_parent",
+)
 
 
 def _corners(obb):
@@ -139,6 +151,7 @@ def native_obb_from_inference(response):
     if parent_ids and all(parent_ids):
         result.data["parent_id"] = np.asarray(parent_ids, dtype=str)
 
+    result = _native_obb_to_sv(result)
     return result
 
 
@@ -187,8 +200,6 @@ def serialise_native_obb(detections):
             row["parent_id"] = str(data["parent_id"][i])
         rows.append(row)
     dimensions = detections.metadata.get("image_dimensions")
-    if len(detections) and "image_dimensions" in detections.data:
-        dimensions = detections.data["image_dimensions"][0]
     if dimensions is None:
         raise ValueError("Native OBB image dimensions are required")
     result = {
@@ -238,6 +249,7 @@ def deserialize_native_obb(parameter, detections):
                 coordinates_key=f"{prefix}_coordinates",
                 dimensions_key=f"{prefix}_dimensions",
             )
+    result = _native_obb_to_sv(result)
     serialise_native_obb(result)
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         result = native_obb_to_tensor(result)
@@ -281,24 +293,16 @@ def native_obb_to_tensor(detections):
 
     from inference_models.models.base.object_detection import Detections
 
+    detections = _native_obb_to_sv(detections)
     metadata = dict(detections.metadata)
-    if len(detections):
-        for key in detections.data:
-            if key not in {
-                CORNERS,
-                "heading",
-                "class_name",
-                "detection_id",
-                NATIVE_OBB,
-            }:
-                value = detections.data[key][0]
-                metadata[key] = (
-                    value.tolist() if isinstance(value, np.ndarray) else value
-                )
-    metadata["class_names"] = {
-        int(c): str(n)
-        for c, n in zip(detections.class_id, detections.data["class_name"])
-    }
+    metadata["class_names"] = (
+        {
+            int(c): str(n)
+            for c, n in zip(detections.class_id, detections.data["class_name"])
+        }
+        if len(detections)
+        else {}
+    )
     entries = [
         {key: value[i] for key, value in detections.data.items()}
         for i in range(len(detections))
@@ -315,31 +319,30 @@ def native_obb_to_tensor(detections):
 
 def _native_obb_to_sv(detections):
     if isinstance(detections, sv.Detections):
-        return detections
-    entries = detections.bboxes_metadata or []
-    keys = set().union(*(e.keys() for e in entries))
-    data = {key: np.asarray([e[key] for e in entries]) for key in keys}
-    metadata = dict(detections.image_metadata or {})
-    # Tensor coordinate operations update image lineage at image level; row-level
-    # copies may still describe the old crop, so always prefer the current frame.
-    for key in (
-        "image_dimensions",
-        "parent_id",
-        "parent_coordinates",
-        "parent_dimensions",
-        "root_parent_coordinates",
-        "root_parent_dimensions",
-        "root_parent_id",
-    ):
-        if key in metadata:
-            data[key] = np.asarray([metadata[key]] * len(entries))
-    result = sv.Detections(
-        xyxy=detections.xyxy.detach().cpu().numpy(),
-        confidence=detections.confidence.detach().cpu().numpy(),
-        class_id=detections.class_id.detach().cpu().numpy(),
-        data=data,
-        metadata=metadata,
-    )
+        result = deepcopy(detections)
+    else:
+        from roboflow_workflows.core_steps.common.tensor_native import HOST_MIRROR_KEYS
+
+        entries = detections.bboxes_metadata or []
+        # Device host mirrors are derived caches, not SV detection columns.
+        keys = set().union(*(e.keys() for e in entries)).difference(HOST_MIRROR_KEYS)
+        result = sv.Detections(
+            xyxy=detections.xyxy.detach().cpu().numpy(),
+            confidence=detections.confidence.detach().cpu().numpy(),
+            class_id=detections.class_id.detach().cpu().numpy(),
+            data={key: np.asarray([e[key] for e in entries]) for key in keys},
+            metadata=deepcopy(detections.image_metadata or {}),
+        )
+    # The image header owns the frame. Rows only fill absent boundary fields;
+    # compatibility copies must follow the header before further transformations.
+    for key in _NATIVE_FRAME_KEYS:
+        if key not in result.metadata and len(result) and key in result.data:
+            value = result.data[key][0]
+            result.metadata[key] = (
+                value.tolist() if isinstance(value, np.ndarray) else value
+            )
+        if key in result.metadata:
+            result.data[key] = np.asarray([result.metadata[key]] * len(result))
     return result
 
 
