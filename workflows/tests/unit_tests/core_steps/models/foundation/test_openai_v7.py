@@ -6,10 +6,12 @@ The v5/v6 behavior suites live in ``test_openai_v5.py`` and
 each of the three per-model detection prompt styles.
 """
 
+import base64
 import json
 from typing import List, Optional
 from unittest.mock import MagicMock, Mock, patch
 
+import cv2
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -770,3 +772,155 @@ def test_run_hands_the_service_tier_to_every_request() -> None:
         )
 
     assert mock_execute.call_args[1]["service_tier"] == "ultrafast"
+
+
+def _reference_example(box_class: str = "cat") -> dict:
+    image = np.full((100, 200, 3), 255, dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", image)
+    return {
+        "image": {
+            "type": "base64",
+            "value": base64.b64encode(encoded.tobytes()).decode("ascii"),
+        },
+        "boxes": [{"x": 50, "y": 50, "width": 40, "height": 20, "class": box_class}],
+    }
+
+
+def _run_detection_with_mock(
+    reference_examples: Optional[list],
+    model_version: str = "gpt-6.1-sol",
+    output_classes: Optional[List[str]] = None,
+) -> tuple:
+    block = OpenAIBlockV7(api_key="rf-key")
+    raw_output = (
+        NORMALIZED_LEGACY_OUTPUT
+        if model_version == "gpt-5.1"
+        else STRUCTURED_ABSOLUTE_OUTPUT
+    )
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(raw_output, 11, 3)]
+        results = block.run(
+            images=Batch(
+                content=[
+                    _build_image(
+                        width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT
+                    )
+                ],
+                indices=[(0,)],
+            ),
+            task_type="object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["small household feline", "domestic canine"],
+            output_classes=output_classes,
+            model_version=model_version,
+            reasoning_effort=None,
+            image_detail="auto",
+            max_tokens=None,
+            temperature=None,
+            max_concurrent_requests=None,
+            api_key="rf_key:account",
+            reference_examples=reference_examples,
+        )
+    prompt = mock_execute.call_args[1]["openai_prompts"][0]
+    return results[0], prompt
+
+
+@pytest.mark.parametrize(
+    "reference_examples", [[_reference_example()], "$inputs.reference_examples"]
+)
+def test_manifest_accepts_reference_examples(reference_examples) -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/open_ai@v7",
+            "name": "open_ai",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": ["small household feline", "domestic canine"],
+            "output_classes": ["cat", "dog"],
+            "reference_examples": reference_examples,
+        }
+    )
+
+    # then
+    assert result.reference_examples == reference_examples
+
+
+def test_manifest_checks_reference_labels_against_output_classes() -> None:
+    with pytest.raises(ValueError, match="small household feline"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": ["small household feline", "domestic canine"],
+                "output_classes": ["cat", "dog"],
+                "reference_examples": [
+                    _reference_example(box_class="small household feline")
+                ],
+            }
+        )
+
+
+def test_manifest_rejects_reference_examples_for_segmentation() -> None:
+    with pytest.raises(ValueError, match="only supported for the object-detection"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "instance-segmentation",
+                "classes": ["cat"],
+                "reference_examples": [_reference_example()],
+            }
+        )
+
+
+def test_run_sends_reference_crops_before_the_target() -> None:
+    # when
+    result, prompt = _run_detection_with_mock(
+        [_reference_example()], output_classes=["cat", "dog"]
+    )
+
+    # then
+    content = prompt["input"][0]["content"]
+    assert content[0]["text"].startswith("Reference examples: crops of labeled")
+    assert content[1] == {"type": "input_text", "text": 'Examples of "cat":'}
+    assert content[2]["image_url"].startswith("data:image/jpeg;base64,")
+    assert content[3] == {"type": "input_text", "text": "Target image:"}
+    assert content[4]["image_url"].startswith("data:image/png;base64,")
+    assert content[5]["text"].startswith("Detect all objects in the target image. ")
+    assert content[5]["text"].endswith("return detections for the target image only.")
+    assert len(content) == 6
+    assert prompt["text"]["format"]["name"] == "detections"
+    assert detection_boxes(result["predictions"])[0] == EXPECTED_XYXY
+
+
+def test_run_adds_reference_crops_to_the_legacy_prompt_style() -> None:
+    # when
+    _, prompt = _run_detection_with_mock(
+        [_reference_example(box_class="small household feline")],
+        model_version="gpt-5.1",
+    )
+
+    # then
+    content = prompt["input"][0]["content"]
+    assert content[-3]["text"].startswith("List of all classes to be recognised")
+    assert content[-3]["text"].endswith("return detections for the target image only.")
+    assert content[-2] == {"type": "input_text", "text": "Target image:"}
+    assert content[-1]["type"] == "input_image"
+    assert "You act as object-detection model" in prompt["instructions"]
+
+
+@pytest.mark.parametrize("reference_examples", [None, []])
+def test_run_without_reference_examples_keeps_the_request(reference_examples) -> None:
+    # when
+    _, prompt = _run_detection_with_mock(reference_examples)
+
+    # then
+    content = prompt["input"][0]["content"]
+    assert len(content) == 2
+    assert content[0]["type"] == "input_image"
+    assert content[1]["text"].startswith("Detect all objects in this image. ")
