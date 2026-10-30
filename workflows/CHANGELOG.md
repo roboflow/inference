@@ -16,7 +16,7 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-## `0.2.15rc1`
+## `0.2.15`
 
 Bundled execution engine: `1.17.1`.
 
