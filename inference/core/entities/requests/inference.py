@@ -141,8 +141,14 @@ class DepthEstimationRequest(InferenceRequest):
         Returns:
             The request with its explicit or derived model ID.
         """
-        if self.model_id is None and self.depth_version_id is not None:
+        if (
+            self.model_id is None
+            and "depth_version_id" in self.model_fields_set
+            and self.depth_version_id is not None
+        ):
             self.model_id = f"depth-anything-v2/{self.depth_version_id}"
+            # A derived ID is not an explicit body ID for path conflict checks.
+            self.model_fields_set.discard("model_id")
 
         return self
 
