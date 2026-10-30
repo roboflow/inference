@@ -4164,7 +4164,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.15rc1"
+version = "0.2.15"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -4210,9 +4210,9 @@ dependencies = [
     { name = "zxing-cpp", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "zxing-cpp", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/be/f7/e4e2d3796fe945ed4d8880896339212779113681f29021e84b90a3f2e37a/roboflow_workflows-0.2.15rc1.tar.gz", hash = "sha256:f71f45ca7d7437a0e94ef54e567a6dba878fa2d9decaa9505cbb6cad56d126f4", size = 5434425, upload-time = "2026-10-30T19:10:12.682Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/bd/53c4076d73f50bb130c01d045d8d9d6a419e30e08e2f181943a60177a777/roboflow_workflows-0.2.15.tar.gz", hash = "sha256:03187a56286be4b92778e091401406e7fdbb16dc66ee62de81a0d4c322c09d89", size = 5433424, upload-time = "2026-10-30T20:11:09.844Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/89/9aa021884b3adcd938ac055abbb8484f4492368d2bb5f24a2a174524e9eb/roboflow_workflows-0.2.15rc1-py3-none-any.whl", hash = "sha256:b918d0e9e06598e0964452a53fe1655585bf1d98ffcfbd90fbfc764f9e16f737", size = 6535705, upload-time = "2026-10-30T19:10:10.359Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/27/22d1da21103835bb8fa98d466bc83104ff0cbdb59aab45a6ef698f728667/roboflow_workflows-0.2.15-py3-none-any.whl", hash = "sha256:d54d47ae6db34d957abf4c536e7cd2cd2961c5e7a3156122f857fd32b1456a51", size = 6535670, upload-time = "2026-10-30T20:11:08.106Z" },
 ]
 
 [[package]]
@@ -4617,7 +4617,7 @@ wheels = [
 
 [[package]]
 name = "streamvision"
-version = "0.1.5rc1"
+version = "0.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -4670,7 +4670,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests", marker = "extra == 'webrtc'", specifier = ">=2.33.0,<3.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.15rc1" },
+    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.15" },
     { name = "supervision", specifier = ">=0.30.6,<0.31.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
     { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.0.1,<3.0.0" },
