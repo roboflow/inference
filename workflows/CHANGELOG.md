@@ -16,10 +16,6 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
-## `0.2.13.post1`
-
-Bundled execution engine: `1.17.0`.
-
 ### Added
 
 - OpenAI block (`open_ai@v7`): add GPT-6.1 Terra (`gpt-6.1-terra`) with
@@ -33,6 +29,14 @@ Bundled execution engine: `1.17.0`.
 
 - Remove duplicated model lists and counts from `meta_vlm@v3` descriptions;
   available models are defined by the registry-backed dropdown.
+
+## `0.2.14`
+
+Bundled execution engine: `1.17.0`.
+
+### Changed
+
+- Security maintenance release, no block or engine change. The Workflows lockfile is refreshed for three advisories in transitive dependencies: `certifi` 2026.7.22 -> 2026.10.23 (GHSA-6q48-6c7w-9gw2, bundled emSign root CAs whose intermediate CA keys were compromised), `GitPython` 3.1.62 -> 3.2.1 (GHSA-83vg-56qc-22m7, remote code execution through a submodule `.git` path) and `setuptools` 84.0.0 -> 84.2.1 (GHSA-xmj3-9gf7-h52w, Windows path escape during legacy wheel installation). Declared dependency ranges are unchanged.
 
 ## `0.2.13`
 

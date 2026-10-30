@@ -34,7 +34,7 @@ RUN pip3 install \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.easyocr.txt \
-    "setuptools~=83.0.0" \
+    "setuptools~=84.2.1" \
     && rm -rf ~/.cache/pip
 
 # Build & install roboflow-workflows from source so the source-copy runtime
