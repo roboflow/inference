@@ -63,6 +63,8 @@ class StreamsConfiguration:
     enable_tensor_data_representation: bool = False
     enable_workflows_profiling: bool = False
     workflows_profiler_buffer_size: int = 64
+    # Seconds a pipeline end gives workflow blocks between `prepare_close` and `close`.
+    workflows_block_close_deadline_seconds: float = 30.0
     predictions_queue_size: int = 512
     # Whether set explicitly; the tensor pipeline's cap applies to an omitted size only.
     predictions_queue_size_explicit: bool = False
