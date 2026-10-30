@@ -36,7 +36,7 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
     BLOCK_STATE_MAX_BYTES,
     apply_block_state,
     collect_block_state,
-    validate_block_state,
+    partition_block_state,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
     deserialize_for_modal_remote_execution,
@@ -45,6 +45,15 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import
 )
 
 from .conftest import build_ws_app
+
+
+@pytest.fixture(autouse=True)
+def _forget_logged_block_state_warnings():
+    # The client logs each block state warning once per process.
+    client._WARNED_BLOCK_STATE_MESSAGES.clear()
+    yield
+    client._WARNED_BLOCK_STATE_MESSAGES.clear()
+
 
 FIRST_FRAME_CODE = (
     "def run(self, image):\n"
@@ -105,55 +114,6 @@ def test_apply_block_state_replaces_user_attributes_and_keeps_engine_ones():
     assert not hasattr(block, "stale"), "attributes the sandbox deleted must go"
     assert block._workflow_step_name == "first_frame"
     assert block._api_key == "key"
-
-
-def test_validate_block_state_accepts_transportable_values():
-    detections = sv.Detections(
-        xyxy=np.array([[0, 0, 1, 1]], dtype=np.float32),
-        class_id=np.array([0]),
-        confidence=np.array([0.5], dtype=np.float32),
-    )
-    image = WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id="p"),
-        numpy_image=np.zeros((2, 2, 3), dtype=np.uint8),
-    )
-    state = {
-        "flag": True,
-        "count": 3,
-        "ratio": 0.5,
-        "name": "x",
-        "nothing": None,
-        "raw": b"\x00",
-        "when": datetime(2026, 10, 26),
-        "array": np.zeros((2,)),
-        "scalar": np.int64(4),
-        "flag_scalar": np.bool_(True),
-        "ratio_scalar": np.float32(0.25),
-        "history": [1, (2, 3), {"nested": [None]}],
-        "detections": detections,
-        "image": image,
-    }
-
-    validate_block_state(state)
-
-
-def test_validate_block_state_names_the_offending_attribute():
-    class Tracker:
-        pass
-
-    with pytest.raises(DynamicBlockError) as error:
-        validate_block_state({"history": [1, {"tracker": Tracker()}]})
-
-    message = str(error.value)
-    assert "history[1]['tracker']" in message
-    assert "Tracker" in message
-
-
-def test_validate_block_state_rejects_non_string_keys():
-    with pytest.raises(DynamicBlockError) as error:
-        validate_block_state({"lookup": {1: "a"}})
-
-    assert "lookup" in str(error.value)
 
 
 # --------------------------------------------------------------------------- #
@@ -244,9 +204,7 @@ def test_http_server_drops_a_non_transportable_self_attribute_and_warns(modal_ap
     response = _run_http(executor, TRACKER_CODE, {"image": 1}, block_state={})
 
     assert response["success"] is True
-    assert deserialize_for_modal_remote_execution(response["block_state"]) == {
-        "count": 1
-    }
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {}
     assert "self.tracker" in response["stderr"]
     assert "Tracker" in response["stderr"]
     assert "not carried" in response["stderr"]
@@ -261,10 +219,10 @@ def test_http_server_warns_about_a_dropped_attribute_once_per_container(modal_ap
     assert "self.tracker" in first["stderr"]
     assert second["success"] is True
     assert "self.tracker" not in (second["stderr"] or "")
-    assert deserialize_for_modal_remote_execution(second["block_state"]) == {"count": 2}
+    assert deserialize_for_modal_remote_execution(second["block_state"]) == {}
 
 
-def test_http_server_drops_an_attribute_over_the_size_cap_and_keeps_the_rest(
+def test_http_server_drops_an_attribute_over_the_size_cap_and_withholds_the_rest(
     modal_app,
 ):
     executor = _http_executor(modal_app)
@@ -272,9 +230,7 @@ def test_http_server_drops_an_attribute_over_the_size_cap_and_keeps_the_rest(
     response = _run_http(executor, OVERSIZED_CODE, {"image": 1}, block_state={})
 
     assert response["success"] is True
-    assert deserialize_for_modal_remote_execution(response["block_state"]) == {
-        "count": 1
-    }
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {}
     assert "self.buffer" in response["stderr"]
     assert "limit" in response["stderr"]
 
@@ -358,7 +314,7 @@ def test_ws_server_drops_a_non_transportable_self_attribute_and_warns(modal_app)
     response = _run_ws(executor, modal_app, TRACKER_CODE, {"image": 1}, {})
 
     assert response["success"] is True
-    assert response["block_state"] == {"count": 1}
+    assert response["block_state"] == {}
     assert "self.tracker" in response["stderr"]
     assert "Tracker" in response["stderr"]
     assert "not carried" in response["stderr"]
@@ -373,10 +329,10 @@ def test_ws_server_warns_about_a_dropped_attribute_once_per_container(modal_app)
     assert "self.tracker" in first["stderr"]
     assert second["success"] is True
     assert "self.tracker" not in (second["stderr"] or "")
-    assert second["block_state"] == {"count": 2}
+    assert second["block_state"] == {}
 
 
-def test_ws_server_drops_an_attribute_over_the_size_cap_and_keeps_the_rest(
+def test_ws_server_drops_an_attribute_over_the_size_cap_and_withholds_the_rest(
     modal_app,
 ):
     executor = _http_executor(modal_app)
@@ -384,7 +340,7 @@ def test_ws_server_drops_an_attribute_over_the_size_cap_and_keeps_the_rest(
     response = _run_ws(executor, modal_app, OVERSIZED_CODE, {"image": 1}, {})
 
     assert response["success"] is True
-    assert response["block_state"] == {"count": 1}
+    assert response["block_state"] == {}
     assert "self.buffer" in response["stderr"]
     assert "limit" in response["stderr"]
 
@@ -507,7 +463,7 @@ def test_ws_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
             inputs={"image": 1},
             workspace_id="test-ws",
             workflow_context={},
-            block_state={},
+            block_state={"has_first_frame": True},
         )
 
     assert "block_state" in str(error.value)
@@ -592,7 +548,7 @@ def test_http_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
             inputs={"image": 1},
             workspace_id="test-ws",
             workflow_context={},
-            block_state={},
+            block_state={"has_first_frame": True},
         )
 
     assert "block_state" in str(error.value)
@@ -643,8 +599,9 @@ def test_ws_client_drops_state_over_the_size_cap_with_a_warning(monkeypatch):
         block_state=oversized,
     )
 
-    assert sent[0]["block_state"] == {"count": 1}
+    assert sent[0]["block_state"] == {}
     assert any("buffer" in message and "limit" in message for message in warned)
+    assert any("withheld" in message and "self.count" in message for message in warned)
 
 
 def test_http_client_drops_a_non_transportable_attribute_with_a_warning(monkeypatch):
@@ -654,7 +611,7 @@ def test_http_client_drops_a_non_transportable_attribute_with_a_warning(monkeypa
         {"tracker": object(), "count": 1}, block_type_name="FirstFrameCheck"
     )
 
-    assert json.loads(block_state_json) == {"count": 1}
+    assert json.loads(block_state_json) == {}
     assert any("tracker" in message and "object" in message for message in warned)
 
 
@@ -809,13 +766,14 @@ CACHED_HELPER_CODE = (
 def test_block_instance_keeps_working_when_it_caches_a_non_transportable_object(
     monkeypatch, modal_app, capsys
 ):
+    # Pre-PR behaviour for such a block: nothing persists, nothing breaks.
     block = _build_first_frame_block(monkeypatch, modal_app, code=CACHED_HELPER_CODE)
 
     results = [block.run(image=frame) for frame in (1, 2, 3)]
 
-    assert [r["is_first_frame"] for r in results] == [True, False, False]
-    assert [r["calls"] for r in results] == [1, 2, 3]
-    assert block._ffc_calls == 3
+    assert [r["is_first_frame"] for r in results] == [True, True, True]
+    assert [r["calls"] for r in results] == [1, 1, 1]
+    assert not hasattr(block, "_ffc_calls")
     assert not hasattr(block, "helper")
     relayed_stderr = capsys.readouterr().err
     assert "self.helper" in relayed_stderr
@@ -938,13 +896,6 @@ def test_block_instance_cannot_shadow_class_attributes_from_the_sandbox(
 # --------------------------------------------------------------------------- #
 
 
-def test_validate_block_state_rejects_numpy_scalars_without_a_python_equivalent():
-    with pytest.raises(DynamicBlockError) as error:
-        validate_block_state({"stamp": np.datetime64("2026-10-27")})
-
-    assert "stamp" in str(error.value)
-
-
 NUMPY_SCALAR_CODE = (
     "import numpy as np\n"
     "def run(self, image):\n"
@@ -1052,3 +1003,533 @@ def test_http_server_echoes_a_tuple_holding_detections_as_a_list(modal_app):
     assert isinstance(prev, list)
     assert isinstance(prev[0], sv.Detections)
     assert prev[1] == 2
+
+
+# --------------------------------------------------------------------------- #
+# review round 3: dropping must keep the block working, and never fail the call
+# --------------------------------------------------------------------------- #
+
+FLAG_GUARDED_HELPER_CODE = (
+    "class Annotator:\n"
+    "    pass\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'initialized'):\n"
+    "        self.annotator = Annotator()\n"
+    "        self.initialized = True\n"
+    "    self.annotator\n"
+    "    return {'is_first_frame': True, 'calls': 1}\n"
+)
+
+
+def test_http_server_withholds_the_whole_state_when_an_attribute_is_dropped(
+    modal_app,
+):
+    # A flag carried without the helper it guards would make the next call
+    # skip the helper's construction and crash; when anything is dropped the
+    # call carries nothing, as before state was carried at all.
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, TRACKER_CODE, {"image": 1}, block_state={})
+
+    assert response["success"] is True
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {}
+    assert "self.tracker" in response["stderr"]
+    assert "self.count" in response["stderr"]
+    assert "withheld" in response["stderr"]
+
+
+def test_ws_server_withholds_the_whole_state_when_an_attribute_is_dropped(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(executor, modal_app, TRACKER_CODE, {"image": 1}, {})
+
+    assert response["success"] is True
+    assert response["block_state"] == {}
+    assert "self.tracker" in response["stderr"]
+    assert "self.count" in response["stderr"]
+    assert "withheld" in response["stderr"]
+
+
+def test_ws_server_warns_about_withheld_state_once_per_container(modal_app):
+    executor = _http_executor(modal_app)
+
+    first = _run_ws(executor, modal_app, TRACKER_CODE, {"image": 1}, {})
+    second = _run_ws(executor, modal_app, TRACKER_CODE, {"image": 1}, {})
+
+    assert "withheld" in first["stderr"]
+    assert "withheld" not in (second["stderr"] or "")
+
+
+def test_block_instance_survives_a_flag_guarded_helper(monkeypatch, modal_app, capsys):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=FLAG_GUARDED_HELPER_CODE
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["is_first_frame"] for r in results] == [True, True, True]
+    assert not hasattr(block, "initialized")
+    assert not hasattr(block, "annotator")
+    relayed_stderr = capsys.readouterr().err
+    assert "self.annotator" in relayed_stderr
+    assert "self.initialized" in relayed_stderr
+
+
+def test_engine_partition_withholds_everything_when_an_attribute_is_dropped():
+    partition = partition_block_state(
+        {"tracker": object(), "count": 1, "initialized": True},
+        measure=lambda attribute: len(json.dumps(attribute)),
+    )
+
+    assert partition.carried == {}
+    assert [name for name, _ in partition.dropped] == ["tracker"]
+    assert any("withheld" in note and "self.count" in note for note in partition.notes)
+
+
+UNCARRIABLE_VALUE_EXPRESSIONS = {
+    "complex_array": "np.array([1 + 2j])",
+    "datetime64_array": "np.array(['2020-01-01'], dtype='datetime64[D]')",
+    "object_array": "np.array([object()], dtype=object)",
+    "bytes_array": "np.array([b'a'])",
+    "longdouble": "np.longdouble(1.5)",
+    "timedelta64": "np.timedelta64(1, 's')",
+    "huge_int": "2 ** 64",
+    "uuid_int": "uuid.uuid4().int",
+    "nested_huge_int": "{'ids': [2 ** 64]}",
+    "detections_without_confidence": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]))"
+    ),
+    "detections_without_image_dimensions": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d'])})"
+    ),
+    "dict_with_type_marker": "{'_type': 'datetime', 'value': '2020-01-01T00:00:00'}",
+}
+
+
+def _uncarriable_value_code(expression: str) -> str:
+    code = (
+        "import uuid\n"
+        "import numpy as np\n"
+        "import supervision as sv\n"
+        "def run(self, image):\n"
+        f"    self.value = {expression}\n"
+        "    return {'ok': True}\n"
+    )
+    return code
+
+
+@pytest.mark.parametrize(
+    "expression",
+    UNCARRIABLE_VALUE_EXPRESSIONS.values(),
+    ids=UNCARRIABLE_VALUE_EXPRESSIONS,
+)
+def test_http_server_drops_a_value_the_transport_cannot_carry(modal_app, expression):
+    executor = _http_executor(modal_app)
+
+    response = _run_http(
+        executor, _uncarriable_value_code(expression), {"image": 1}, block_state={}
+    )
+
+    assert response["success"] is True, response.get("error")
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {}
+    assert "self.value" in response["stderr"]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    UNCARRIABLE_VALUE_EXPRESSIONS.values(),
+    ids=UNCARRIABLE_VALUE_EXPRESSIONS,
+)
+def test_ws_server_drops_a_value_the_transport_cannot_carry(modal_app, expression):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(
+        executor, modal_app, _uncarriable_value_code(expression), {"image": 1}, {}
+    )
+
+    assert response["success"] is True, response.get("error")
+    assert response["block_state"] == {}
+    assert "self.value" in response["stderr"]
+    msgpack.packb(response, use_bin_type=True)
+
+
+def _uncarriable_values() -> dict:
+    import uuid
+
+    values = {
+        name: eval(expression, {"np": np, "sv": sv, "uuid": uuid})
+        for name, expression in UNCARRIABLE_VALUE_EXPRESSIONS.items()
+    }
+    return values
+
+
+def _carriable_values() -> dict:
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="p"),
+        numpy_image=np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    values = {
+        "flag": True,
+        "count": 3,
+        "big_but_fits": 2**63 - 1,
+        "ratio": 0.5,
+        "name": "x",
+        "nothing": None,
+        "raw": b"\x00",
+        "when": datetime(2026, 10, 26),
+        "array": np.zeros((2,)),
+        "str_array": np.array(["a"]),
+        "scalar": np.int64(4),
+        "flag_scalar": np.bool_(True),
+        "ratio_scalar": np.float32(0.25),
+        "history": [1, (2, 3), {"nested": [None]}],
+        "detections": _detections(),
+        "image": image,
+    }
+    return values
+
+
+@pytest.mark.parametrize("name", list(UNCARRIABLE_VALUE_EXPRESSIONS))
+def test_engine_partition_drops_a_value_the_transport_cannot_carry(name):
+    value = _uncarriable_values()[name]
+
+    partition = partition_block_state(
+        {"value": value},
+        measure=lambda attribute: len(serialize_for_modal_remote_execution(attribute)),
+    )
+
+    assert partition.carried == {}
+    assert [dropped_name for dropped_name, _ in partition.dropped] == ["value"]
+
+
+def test_engine_partition_carries_every_transportable_value():
+    partition = partition_block_state(
+        _carriable_values(),
+        measure=lambda attribute: len(serialize_for_modal_remote_execution(attribute)),
+    )
+
+    assert partition.dropped == []
+    assert set(partition.carried) == set(_carriable_values())
+
+
+def test_engine_and_sandbox_partitions_agree_on_every_value(modal_app):
+    def measure(attribute):
+        return len(serialize_for_modal_remote_execution(attribute))
+
+    for name, value in {**_carriable_values(), **_uncarriable_values()}.items():
+        engine = partition_block_state({name: value}, measure=measure)
+        sandbox_carried, sandbox_dropped, _ = modal_app._partition_block_state(
+            {name: value}, measure
+        )
+
+        assert set(engine.carried) == set(sandbox_carried), name
+        assert [n for n, _ in engine.dropped] == [n for n, _ in sandbox_dropped], name
+
+
+def test_engine_partition_names_the_offending_path_inside_a_container():
+    class Tracker:
+        pass
+
+    partition = partition_block_state(
+        {"history": [1, {"tracker": Tracker()}]}, measure=lambda attribute: 0
+    )
+
+    reason = dict(partition.dropped)["history"]
+    assert "history[1]['tracker']" in reason
+    assert "Tracker" in reason
+
+
+def test_engine_partition_drops_a_dict_with_non_string_keys():
+    partition = partition_block_state({"lookup": {1: "a"}}, measure=lambda a: 0)
+
+    assert "lookup" in dict(partition.dropped)
+
+
+def test_engine_partition_drops_a_value_only_the_encoder_refuses():
+    # The validator cannot foresee every encoder failure; whatever ``measure``
+    # raises is a drop, not a failed call.
+    def measure(attribute):
+        raise TypeError("Object of type Weird is not JSON serializable")
+
+    partition = partition_block_state({"weird": 1}, measure=measure)
+
+    assert partition.carried == {}
+    assert "not JSON serializable" in dict(partition.dropped)["weird"]
+
+
+def test_http_client_fails_as_a_dynamic_block_error_when_the_echo_cannot_be_decoded():
+    broken = json.dumps(
+        {"prev": {"_type": "sv_detections", "predictions": [{}], "image": {}}}
+    )
+
+    with pytest.raises(DynamicBlockError) as error:
+        client._read_echoed_block_state_json(
+            {"block_state": broken}, block_state={}, block_type_name="B"
+        )
+
+    assert "B" in str(error.value)
+
+
+def test_ws_client_fails_as_a_dynamic_block_error_when_the_echo_cannot_be_decoded():
+    broken = {"prev": {"_type": "sv_detections", "predictions": [{}], "image": {}}}
+
+    with pytest.raises(DynamicBlockError) as error:
+        client._read_echoed_block_state_msgpack(
+            {"block_state": broken}, block_state={}, block_type_name="B"
+        )
+
+    assert "B" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "reader", ["_read_echoed_block_state_json", "_read_echoed_block_state_msgpack"]
+)
+def test_client_refuses_a_non_dict_echo(reader):
+    echoed = json.dumps(["count"]) if reader.endswith("json") else ["count"]
+
+    with pytest.raises(DynamicBlockError):
+        getattr(client, reader)(
+            {"block_state": echoed}, block_state={}, block_type_name="B"
+        )
+
+
+USER_STATE_NAME_CODE = (
+    "def run(self, image):\n"
+    "    self.user_state = {'frames': 1}\n"
+    "    return {'ok': True}\n"
+)
+
+
+def test_http_server_lets_a_block_keep_an_attribute_named_user_state(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, USER_STATE_NAME_CODE, {"image": 1}, block_state={})
+
+    assert response["success"] is True, response.get("error")
+    assert deserialize_for_modal_remote_execution(response["block_state"]) == {
+        "user_state": {"frames": 1}
+    }
+
+
+def test_ws_server_lets_a_block_keep_an_attribute_named_user_state(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(executor, modal_app, USER_STATE_NAME_CODE, {"image": 1}, {})
+
+    assert response["success"] is True, response.get("error")
+    assert response["block_state"] == {"user_state": {"frames": 1}}
+
+
+def test_client_logs_a_block_state_warning_once_per_process(monkeypatch):
+    warned = _capture_client_warnings(monkeypatch)
+
+    for _ in range(3):
+        client._serialize_block_state_json(
+            {"tracker": object()}, block_type_name="FirstFrameCheck"
+        )
+
+    assert len(warned) == 2, warned  # the drop and the withheld note, once each
+
+
+def test_ws_client_tolerates_a_missing_echo_when_it_sent_no_state(monkeypatch):
+    # A stateless block against a pre-upgrade server keeps working; only a
+    # block that already holds state is refused (see the "fails loudly" test).
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    warned = _capture_client_warnings(monkeypatch)
+    executor = _ws_executor()
+    executor._send_recv_with_retry = lambda frame_bytes, workspace, request_id=None: (
+        msgpack.packb(
+            {"success": True, "result": {"ok": 1}, "request_id": request_id},
+            use_bin_type=True,
+        )
+    )
+
+    result, state = executor.execute_remote_with_state(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+        block_state={},
+    )
+
+    assert result == {"ok": 1}
+    assert state == {}
+    assert any("older" in message for message in warned)
+
+
+def test_http_client_tolerates_a_missing_echo_when_it_sent_no_state(monkeypatch):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    warned = _capture_client_warnings(monkeypatch)
+    executor = client.ModalExecutor(workspace_id="test-ws")
+    executor._get_endpoint_url = lambda workspace: "http://modal.test/execute"
+    executor._post_execute = lambda **kwargs: {"success": True, "result": "{}"}
+
+    result, state = executor.execute_remote_with_state(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+        block_state={},
+    )
+
+    assert result == {}
+    assert state == {}
+    assert any("older" in message for message in warned)
+
+
+MARKER_SHAPED_STATE_CODE = (
+    "def run(self, image):\n"
+    "    self._type = 'datetime'\n"
+    "    self.value = '2020-01-01T00:00:00'\n"
+    "    return {'seeded': type(getattr(self, 'seeded', None)).__name__}\n"
+)
+
+
+def test_http_server_keeps_attributes_named_like_a_wire_marker_as_attributes(
+    modal_app,
+):
+    executor = _http_executor(modal_app)
+
+    response = _run_http(
+        executor,
+        MARKER_SHAPED_STATE_CODE,
+        {"image": 1},
+        block_state={
+            "_type": "datetime",
+            "value": "2020-01-01T00:00:00",
+            "seeded": "x",
+        },
+    )
+
+    assert response["success"] is True, response.get("error")
+    assert json.loads(response["result"]) == {"seeded": "str"}
+    assert client._read_echoed_block_state_json(
+        response, block_state={}, block_type_name="B"
+    ) == {
+        "_type": "datetime",
+        "value": "2020-01-01T00:00:00",
+        "seeded": "x",
+    }
+
+
+def test_ws_server_keeps_attributes_named_like_a_wire_marker_as_attributes(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(
+        executor,
+        modal_app,
+        MARKER_SHAPED_STATE_CODE,
+        {"image": 1},
+        {"_type": "datetime", "value": "2020-01-01T00:00:00", "seeded": "x"},
+    )
+
+    assert response["success"] is True, response.get("error")
+    assert response["result"] == {"seeded": "str"}
+    assert response["block_state"] == {
+        "_type": "datetime",
+        "value": "2020-01-01T00:00:00",
+        "seeded": "x",
+    }
+
+
+def test_http_client_decodes_an_echo_shaped_like_a_wire_marker_as_attributes():
+    echoed = json.dumps({"_type": "datetime", "value": "2020-01-01T00:00:00"})
+
+    state = client._read_echoed_block_state_json(
+        {"block_state": echoed}, block_state={}, block_type_name="B"
+    )
+
+    assert state == {"_type": "datetime", "value": "2020-01-01T00:00:00"}
+
+
+def test_ws_client_decodes_an_echo_shaped_like_a_wire_marker_as_attributes():
+    echoed = {"_type": "datetime", "value": "2020-01-01T00:00:00"}
+
+    state = client._read_echoed_block_state_msgpack(
+        {"block_state": echoed}, block_state={}, block_type_name="B"
+    )
+
+    assert state == {"_type": "datetime", "value": "2020-01-01T00:00:00"}
+
+
+def _detections_with_custom_data():
+    detections = _detections()
+    detections.data["custom"] = np.array(["kept?"])
+    return detections
+
+
+def test_engine_partition_notes_detections_data_keys_the_transport_loses():
+    partition = partition_block_state(
+        {"prev": _detections_with_custom_data()},
+        measure=lambda attribute: len(serialize_for_modal_remote_execution(attribute)),
+    )
+
+    assert "prev" in partition.carried
+    assert any("self.prev" in note and "custom" in note for note in partition.notes)
+
+
+def test_http_server_notes_detections_data_keys_the_transport_loses(modal_app):
+    executor = _http_executor(modal_app)
+    code = (
+        "import numpy as np\n"
+        "def run(self, image):\n"
+        "    self.prev.data['custom'] = np.array(['x'])\n"
+        "    return {'ok': True}\n"
+    )
+    seeded = client._serialize_block_state_json(
+        {"prev": _detections()}, block_type_name="b"
+    )
+    payload = {
+        "code_str": code,
+        "imports": [],
+        "run_function_name": "run",
+        "inputs_json": serialize_for_modal_remote_execution({"image": 1}),
+        "block_state_json": seeded,
+    }
+
+    response = asyncio.run(executor.execute_block(_FakeRequest(payload)))
+
+    assert response["success"] is True, response.get("error")
+    prev = deserialize_for_modal_remote_execution(response["block_state"])["prev"]
+    assert "custom" not in prev.data
+    assert "self.prev" in response["stderr"]
+    assert "custom" in response["stderr"]
+
+
+def test_apply_block_state_refuses_a_non_dict_echo_and_leaves_the_block_untouched():
+    block = _engine_block(count=7)
+
+    with pytest.raises(DynamicBlockError):
+        apply_block_state(block, ["count"])
+
+    assert block.count == 7
+
+
+def test_apply_block_state_allows_names_only_the_metaclass_defines():
+    from abc import ABC
+
+    class AbstractBlock(ABC):
+        pass
+
+    block = AbstractBlock()
+    block._api_key = "key"
+
+    apply_block_state(block, {"register": 1, "mro": 2})
+
+    assert block.register == 1
+    assert block.mro == 2
+
+
+def test_engine_and_sandbox_agree_on_the_carried_detections_data_keys(modal_app):
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_state
+
+    assert (
+        modal_app._CARRIED_DETECTIONS_DATA_KEYS
+        == block_state.CARRIED_DETECTIONS_DATA_KEYS
+    )
+    assert modal_app._ENGINE_ATTRIBUTE_NAMES == block_state.ENGINE_ATTRIBUTE_NAMES

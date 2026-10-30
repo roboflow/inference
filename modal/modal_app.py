@@ -134,15 +134,56 @@ _ENGINE_ATTRIBUTE_NAMES = frozenset(
 )
 
 
+# Mirrors of the ``block_state`` constants; keep in sync (the parity test in
+# test_block_state_round_trip.py compares both partitions value by value).
+_MIN_CARRIED_INT = -(2**63)
+_MAX_CARRIED_INT = 2**63 - 1
+_CARRIED_NDARRAY_KINDS = frozenset("biufU")
+_WIRE_TYPE_MARKER_KEY = "_type"
+_CARRIED_DETECTIONS_DATA_KEYS = frozenset(
+    {
+        "class_name",
+        "detection_id",
+        "image_dimensions",
+        "parent_id",
+        "root_parent_id",
+        "parent_coordinates",
+        "parent_dimensions",
+        "root_parent_coordinates",
+        "root_parent_dimensions",
+        "path_deviation",
+        "time_in_zone",
+        "polygon",
+        "angle",
+        "rect",
+        "height",
+        "width",
+        "keypoints_class_id",
+        "keypoints_class_name",
+        "keypoints_confidence",
+        "keypoints_xy",
+        "data",
+        "velocity",
+        "speed",
+        "smoothed_velocity",
+        "smoothed_speed",
+        "area_px",
+        "area_converted",
+        "rle_mask",
+    }
+)
+
+
 def _check_block_state_value(value: Any, path: str) -> None:
     """Raise unless ``value`` can cross the boundary without being stringified.
 
-    Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``
-    (kept inline like the serializers above, so the sandbox does not depend on
-    the engine package it may or may not ship). Accepted: None,
-    bool/int/float/str/bytes, datetime, numpy arrays and bool/int/float
-    scalars, sv.Detections, WorkflowImageData, VideoMetadata, lists/tuples and
-    string-keyed dicts of those.
+    Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``.
+    Kept inline because the sandbox image runs the released ``inference``
+    package, which may predate that module. Accepted: None,
+    bool/str/bytes, ints in the signed 64-bit range, floats, datetime, numpy
+    arrays of bool/int/float/str and such scalars, sv.Detections with the
+    fields the transport needs, WorkflowImageData, VideoMetadata, and
+    lists/tuples and string-keyed dicts (without a ``_type`` key) of those.
     """
     from datetime import datetime
 
@@ -154,14 +195,75 @@ def _check_block_state_value(value: Any, path: str) -> None:
         WorkflowImageData,
     )
 
+    def _not_transportable(description: str, path: str) -> None:
+        raise BlockStateSerializationError(
+            f"Custom Python block state `self.{path}` holds a "
+            f"{description}, which cannot be carried across remote "
+            "execution. Only JSON-like values, numpy arrays of bool/int/float/"
+            "str or such scalars, datetimes, sv.Detections, images and video "
+            "metadata persist between calls; other objects are rebuilt on "
+            "every call."
+        )
+
+    def _check_int(value: int, path: str) -> None:
+        if not _MIN_CARRIED_INT <= value <= _MAX_CARRIED_INT:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` holds an integer "
+                "outside the signed 64-bit range, which cannot be carried "
+                "across remote execution; store it as a string."
+            )
+
+    def _check_detections(value: Any, path: str) -> None:
+        if len(value) == 0:
+            return
+        missing = []
+        if value.confidence is None:
+            missing.append("confidence")
+        if value.class_id is None:
+            missing.append("class_id")
+        for key in ("class_name", "detection_id"):
+            if key not in value.data:
+                missing.append(f"data[{key!r}]")
+        has_size = (
+            "image_dimensions" in value.data or value.data.get("rle_mask") is not None
+        )
+        if not has_size:
+            missing.append("data['image_dimensions']")
+        if missing:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` is an sv.Detections "
+                f"without {', '.join(missing)}, which the transport needs to "
+                "carry it; detections from model blocks have them."
+            )
+
     def _check(value: Any, path: str) -> None:
-        if value is None or isinstance(value, (bool, int, float, str, bytes)):
+        if value is None or isinstance(value, (bool, float, str, bytes)):
             return
-        if isinstance(value, (datetime, np.ndarray)):
+        if isinstance(value, int):
+            _check_int(int(value), path)
             return
-        if isinstance(value, (np.bool_, np.integer, np.floating)):
+        if isinstance(value, datetime):
             return
-        if isinstance(value, (sv.Detections, WorkflowImageData, VideoMetadata)):
+        if isinstance(value, np.ndarray):
+            if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
+                _not_transportable(f"numpy array of dtype {value.dtype}", path)
+            if value.dtype.kind in "iu" and value.size:
+                _check_int(int(value.min()), path)
+                _check_int(int(value.max()), path)
+            return
+        if isinstance(value, (np.longdouble, np.clongdouble)) and not isinstance(
+            value, (np.float64, np.complex128)
+        ):
+            _not_transportable(type(value).__name__, path)
+        if isinstance(value, (np.bool_, np.floating)):
+            return
+        if isinstance(value, np.integer):
+            _check_int(int(value), path)
+            return
+        if isinstance(value, sv.Detections):
+            _check_detections(value, path)
+            return
+        if isinstance(value, (WorkflowImageData, VideoMetadata)):
             return
         if isinstance(value, dict):
             for key, item in value.items():
@@ -171,34 +273,37 @@ def _check_block_state_value(value: Any, path: str) -> None:
                         f"non-string key {key!r}; only string keys can be "
                         "carried across remote execution."
                     )
+                if key == _WIRE_TYPE_MARKER_KEY:
+                    raise BlockStateSerializationError(
+                        f"Custom Python block state `self.{path}` has a "
+                        f"`{_WIRE_TYPE_MARKER_KEY}` key, which the transport "
+                        "reserves to mark typed values; rename the key."
+                    )
                 _check(item, f"{path}[{key!r}]")
             return
         if isinstance(value, (list, tuple)):
             for index, item in enumerate(value):
                 _check(item, f"{path}[{index}]")
             return
-        raise BlockStateSerializationError(
-            f"Custom Python block state `self.{path}` holds a "
-            f"{type(value).__name__}, which cannot be carried across remote "
-            "execution. Only JSON-like values, numpy arrays or bool/int/float "
-            "scalars, datetimes, sv.Detections, images and video metadata "
-            "persist between calls; other objects are rebuilt on every call."
-        )
+        _not_transportable(type(value).__name__, path)
 
     _check(value, path)
 
 
 def _partition_block_state(
     state: Dict[str, Any], measure: Callable[[Dict[str, Any]], int]
-) -> Tuple[Dict[str, Any], List[Tuple[str, str]]]:
-    """Split the echo into what is carried and what is dropped, with reasons.
+) -> Tuple[Dict[str, Any], List[Tuple[str, str]], List[str]]:
+    """Decide what of the echo is carried: (carried, dropped, notes).
 
     Mirrors ``block_state.partition_block_state``. Dropped: names the engine
     owns and dunders (the echo is written onto the engine-side instance),
-    values ``_check_block_state_value`` refuses, and attributes whose own
+    values ``_check_block_state_value`` refuses, values the transport's
+    encoder refuses (``measure`` raising), and attributes whose own
     serialized size is over ``_BLOCK_STATE_MAX_BYTES``; if the rest is still
-    over the cap, the largest attributes go until it fits. Carried values
-    are normalized and ready for the transport's serializer.
+    over the cap, the largest attributes go until it fits. When anything is
+    dropped nothing is carried, so a flag is never carried without the
+    helper it guards. Carried values are normalized and ready for the
+    transport's serializer; notes flag lossy images and detections.
     """
     carried: Dict[str, Any] = {}
     sizes: Dict[str, int] = {}
@@ -218,11 +323,20 @@ def _partition_block_state(
             continue
         try:
             _check_block_state_value(value, name)
+            normalized_value = _normalize_block_state({name: value})[name]
+            size = measure({name: normalized_value})
         except BlockStateSerializationError as error:
             dropped.append((name, str(error)))
             continue
-        normalized_value = _normalize_block_state({name: value})[name]
-        size = measure({name: normalized_value})
+        except Exception as error:
+            dropped.append(
+                (
+                    name,
+                    "the transport cannot encode it "
+                    f"({type(error).__name__}: {error})",
+                )
+            )
+            continue
         if size > _BLOCK_STATE_MAX_BYTES:
             dropped.append(
                 (
@@ -249,29 +363,90 @@ def _partition_block_state(
         )
         total -= sizes[name]
 
-    return carried, dropped
+    if dropped:
+        dropped_names = ", ".join(f"`self.{name}`" for name, _ in dropped)
+        note = (
+            "Custom Python block state withheld for this call because "
+            f"{dropped_names} cannot be carried: none of the state kept on "
+            "`self` persists to the next call, so the block rebuilds it as it "
+            "did before state was carried"
+        )
+        if carried:
+            withheld_names = ", ".join(f"`self.{name}`" for name in carried)
+            note += f" (also not carried: {withheld_names})"
+        return {}, dropped, [note]
+
+    notes = _lossy_block_state_notes(carried)
+
+    return carried, dropped, notes
+
+
+def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
+    """Notes for carried values the transport degrades (images, detections)."""
+    import supervision as sv
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        WorkflowImageData,
+    )
+
+    notes: List[str] = []
+
+    def _collect(value: Any, path: str) -> None:
+        if isinstance(value, sv.Detections):
+            lost_keys = sorted(set(value.data) - _CARRIED_DETECTIONS_DATA_KEYS)
+            if lost_keys:
+                notes.append(
+                    f"Custom Python block state `self.{path}` is carried "
+                    f"without its sv.Detections data keys {lost_keys}; only the "
+                    "keys the workflow serializers know survive a call"
+                )
+        elif isinstance(value, WorkflowImageData):
+            notes.append(
+                f"Custom Python block state `self.{path}` is an image, which "
+                "is re-encoded as JPEG on every call; keep `image.numpy_image` "
+                "on `self` instead for exact pixels"
+            )
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                _collect(item, f"{path}[{key!r}]")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                _collect(item, f"{path}[{index}]")
+
+    for name, value in state.items():
+        _collect(value, name)
+
+    return notes
 
 
 def _warn_dropped_block_state(
-    executor: Any, code_hash: str, dropped: List[Tuple[str, str]], stderr_buf: Any
+    executor: Any,
+    code_hash: str,
+    dropped: List[Tuple[str, str]],
+    notes: List[str],
+    stderr_buf: Any,
 ) -> None:
-    """Tell the author once per container and code hash which attributes were dropped.
+    """Tell the author once per container and code hash what is not carried.
 
     Written to the captured stderr, which the engine relays to its own stderr
-    next to the block's prints. Once per (code hash, attribute) on this
+    next to the block's prints. Once per (code hash, message) on this
     container: the same block drops the same attribute on every call, and a
-    line per frame would bury the block's own output.
+    line per frame would bury the block's own output. Keyed by the message,
+    so a later drop of the same attribute for another reason is reported.
     """
     warned = executor.__dict__.setdefault("_block_state_drop_warnings", set())
-    for name, reason in dropped:
-        key = (code_hash, name)
+    messages = [
+        f"Custom Python block state `self.{name}` is not carried across "
+        f"remote execution and is rebuilt on every call: {reason}"
+        for name, reason in dropped
+    ]
+    messages.extend(notes)
+    for message in messages:
+        key = (code_hash, message)
         if key in warned:
             continue
         warned.add(key)
-        stderr_buf.write(
-            f"Custom Python block state `self.{name}` is not carried across "
-            f"remote execution and is rebuilt on every call: {reason}\n"
-        )
+        stderr_buf.write(f"{message}\n")
 
 
 def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -294,7 +469,24 @@ def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
             return [_normalize(item) for item in value]
         return value
 
-    return {name: _normalize(value) for name, value in state.items()}
+    normalized_state = {name: _normalize(value) for name, value in state.items()}
+
+    return normalized_state
+
+
+def _block_self_state(block_self: "_BlockSelf") -> Dict[str, Any]:
+    """The user attributes a ``_BlockSelf`` holds after the call.
+
+    A module function, not a method: user code owns every attribute name on
+    ``self``, so a method here would be shadowed by ``self.<name> = ...``.
+    """
+    state = {
+        name: value
+        for name, value in vars(block_self).items()
+        if name != "_BlockSelf__workflow_context"
+    }
+
+    return state
 
 
 class _BlockSelf:
@@ -306,19 +498,12 @@ class _BlockSelf:
 
     def __init__(self, workflow_context: Dict[str, Any], state: Optional[dict]):
         self.__dict__.update(state or {})
-        # Kept off ``__dict__`` so it is never echoed as state.
+        # Lives in ``__dict__`` under its mangled name; ``_block_self_state``
+        # leaves it out of the echo by that name.
         object.__setattr__(self, "_BlockSelf__workflow_context", workflow_context)
 
     def get_workflow_context(self) -> Dict[str, Any]:
         return dict(self.__workflow_context)
-
-    def user_state(self) -> Dict[str, Any]:
-        state = {
-            name: value
-            for name, value in self.__dict__.items()
-            if name != "_BlockSelf__workflow_context"
-        }
-        return state
 
 
 class _InputsDecodeError(Exception):
@@ -1143,8 +1328,14 @@ from datetime import datetime
                 return inputs
 
             inputs = deserialize_for_modal_remote_execution(inputs_json)
+            # Decoded attribute by attribute: the outer mapping is the
+            # attribute set, and attributes named ``_type``/``value`` must not
+            # read as a typed wire marker.
             block_state = (
-                deserialize_for_modal_remote_execution(block_state_json)
+                {
+                    name: deserialize_for_modal_remote_execution(json.dumps(value))
+                    for name, value in json.loads(block_state_json).items()
+                }
                 if block_state_json is not None
                 else None
             )
@@ -1191,15 +1382,17 @@ from datetime import datetime
                 }
                 if block_state is not None:
                     echoed_state = (
-                        block_self.user_state() if block_self else block_state
+                        _block_self_state(block_self) if block_self else block_state
                     )
-                    carried_state, dropped = _partition_block_state(
+                    carried_state, dropped, notes = _partition_block_state(
                         echoed_state,
                         measure=lambda attribute: len(
                             serialize_for_modal_remote_execution(attribute)
                         ),
                     )
-                    _warn_dropped_block_state(self, code_hash, dropped, stderr_buf)
+                    _warn_dropped_block_state(
+                        self, code_hash, dropped, notes, stderr_buf
+                    )
                     response["stderr"] = stderr_buf.getvalue() or None
                     response["block_state"] = serialize_for_modal_remote_execution(
                         carried_state
@@ -1348,8 +1541,10 @@ from datetime import datetime
             if block_state is not None:
                 import msgpack
 
-                echoed_state = block_self.user_state() if block_self else block_state
-                carried_state, dropped = _partition_block_state(
+                echoed_state = (
+                    _block_self_state(block_self) if block_self else block_state
+                )
+                carried_state, dropped, notes = _partition_block_state(
                     echoed_state,
                     measure=lambda attribute: len(
                         msgpack.packb(
@@ -1358,7 +1553,9 @@ from datetime import datetime
                         )
                     ),
                 )
-                _warn_dropped_block_state(executor, code_hash, dropped, stderr_buf)
+                _warn_dropped_block_state(
+                    executor, code_hash, dropped, notes, stderr_buf
+                )
                 response["stderr"] = stderr_buf.getvalue() or None
                 response["block_state"] = Executor._serialize_msgpack_result(
                     carried_state
@@ -1730,6 +1927,8 @@ from datetime import datetime
                 nonlocal started_running, decode_failed, never_ran
                 try:
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                    # Decodes attribute by attribute, never the outer map
+                    # as one value.
                     block_state = (
                         Executor._deserialize_msgpack_inputs(block_state_raw)
                         if carries_block_state

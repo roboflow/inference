@@ -26,7 +26,7 @@ import threading
 import time as _time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, NamedTuple, Optional, Tuple
+from typing import Any, Callable, Dict, NamedTuple, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import numpy as np
@@ -275,45 +275,127 @@ def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
     )
 
 
-def _warn_dropped_block_state(block_type_name: str, dropped: list) -> None:
-    for message in describe_dropped_block_state(block_type_name, dropped):
-        logger.warning(message)
+# Messages already logged by ``_warn_once``. The same block drops the same
+# attribute on every frame; a line per frame would bury everything else.
+# Bounded so a process serving many distinct blocks cannot grow it forever.
+_WARNED_BLOCK_STATE_MESSAGES: set = set()
+_MAX_WARNED_BLOCK_STATE_MESSAGES = 4096
+
+
+def _warn_once(message: str) -> None:
+    if message in _WARNED_BLOCK_STATE_MESSAGES:
+        return
+    if len(_WARNED_BLOCK_STATE_MESSAGES) >= _MAX_WARNED_BLOCK_STATE_MESSAGES:
+        _WARNED_BLOCK_STATE_MESSAGES.clear()
+    _WARNED_BLOCK_STATE_MESSAGES.add(message)
+    logger.warning(message)
+
+
+def _carry_block_state(
+    block_state: Optional[Dict[str, Any]],
+    *,
+    block_type_name: str,
+    measure: Callable[[Dict[str, Any]], int],
+) -> Optional[Dict[str, Any]]:
+    """Partition ``self`` state for sending and warn about what is not carried.
+
+    ``None`` (a caller that carries no state) passes through. In practice the
+    state here came back from the sandbox, which already applied the same
+    rule, so a warning means the engine-side instance gained something the
+    sandbox never saw.
+    """
+    if block_state is None:
+        return None
+
+    partition = partition_block_state(block_state, measure=measure)
+    for message in describe_dropped_block_state(block_type_name, partition):
+        _warn_once(message)
+
+    return partition.carried
+
+
+def _json_state_size(attribute: Dict[str, Any]) -> int:
+    size = len(serialize_for_modal_remote_execution(attribute))
+
+    return size
 
 
 def _serialize_block_state_json(
     block_state: Optional[Dict[str, Any]], *, block_type_name: str
 ) -> Optional[str]:
-    """JSON-encode ``self`` state for the HTTP transport; ``None`` passes through.
-
-    Attributes the transport cannot carry are left out with a warning (see
-    ``partition_block_state``); in practice the state here came back from the
-    sandbox, which already applied the same rule.
-    """
-    if block_state is None:
+    """JSON-encode ``self`` state for the HTTP transport; ``None`` passes through."""
+    carried_state = _carry_block_state(
+        block_state, block_type_name=block_type_name, measure=_json_state_size
+    )
+    if carried_state is None:
         return None
 
-    carried_state, dropped = partition_block_state(
-        block_state,
-        measure=lambda attribute: len(serialize_for_modal_remote_execution(attribute)),
-    )
-    _warn_dropped_block_state(block_type_name, dropped)
     block_state_json = serialize_for_modal_remote_execution(carried_state)
 
     return block_state_json
 
 
-def _missing_echoed_block_state_error(block_type_name: str) -> DynamicBlockError:
-    error = DynamicBlockError(
+def _missing_echoed_block_state(
+    block_state: Dict[str, Any], *, block_type_name: str
+) -> Dict[str, Any]:
+    """Handle a server that did not echo ``block_state``: it predates state.
+
+    With nothing sent there is nothing to lose, so the call goes on with an
+    empty state and a warning; that keeps every block that holds no state
+    working against an older webexec. A block that does hold state would
+    silently reset ``self`` on every call, which is the bug state carrying
+    fixes, so that is refused.
+    """
+    if not block_state:
+        _warn_once(
+            f"The Modal webexec server is older than this client and does not "
+            f"carry custom Python block state; `self` attributes of "
+            f"`{block_type_name}` are rebuilt on every call until it is "
+            "redeployed."
+        )
+        return {}
+
+    raise DynamicBlockError(
         public_message=(
-            f"The Modal webexec server did not return `block_state` for custom "
-            f"Python block `{block_type_name}`. The server is older than this "
-            "client and would reset `self` on every call; upgrade the webexec "
-            "deployment before running blocks that keep state on `self`."
+            f"Custom Python block `{block_type_name}` keeps state on `self`, "
+            "but the Modal webexec server is older than this client and did "
+            "not return `block_state`, so `self` would be reset on every call. Redeploy "
+            "the webexec app from this version of inference."
         ),
         context="modal_executor | block_state_unsupported",
     )
 
-    return error
+
+def _decode_echoed_block_state(
+    echoed: Any, *, decode: Callable[[Any], Any], block_type_name: str
+) -> Dict[str, Any]:
+    """Decode an echo attribute by attribute, failing as a ``DynamicBlockError``.
+
+    The outer mapping is the attribute set, not a value: decoding it as one
+    would read attributes named ``_type``/``value`` as a typed wire marker.
+    """
+    if not isinstance(echoed, dict):
+        raise DynamicBlockError(
+            public_message=(
+                f"The Modal webexec server returned `block_state` for custom "
+                f"Python block `{block_type_name}` as a "
+                f"{type(echoed).__name__}, not a mapping of attribute names."
+            ),
+            context="modal_executor | block_state_decode",
+        )
+    try:
+        echoed_state = {name: decode(value) for name, value in echoed.items()}
+    except Exception as error:
+        raise DynamicBlockError(
+            public_message=(
+                f"Could not decode the `self` state custom Python block "
+                f"`{block_type_name}` returned from remote execution: "
+                f"{type(error).__name__}: {error}"
+            ),
+            context="modal_executor | block_state_decode",
+        ) from error
+
+    return echoed_state
 
 
 def _read_echoed_block_state_json(
@@ -322,13 +404,33 @@ def _read_echoed_block_state_json(
     block_state: Optional[Dict[str, Any]],
     block_type_name: str,
 ) -> Optional[Dict[str, Any]]:
-    """Decode the state echoed by the HTTP transport, or ``None`` if none was sent."""
+    """Decode the state echoed by the HTTP transport, or ``None`` if none was sent.
+
+    ``block_state`` is the state that was sent, after partitioning.
+    """
     if block_state is None:
         return None
     if "block_state" not in result:
-        raise _missing_echoed_block_state_error(block_type_name)
+        echoed_state = _missing_echoed_block_state(
+            block_state, block_type_name=block_type_name
+        )
+        return echoed_state
 
-    echoed_state = deserialize_for_modal_remote_execution(result["block_state"])
+    try:
+        parsed = json.loads(result["block_state"])
+    except (TypeError, ValueError) as error:
+        raise DynamicBlockError(
+            public_message=(
+                f"The Modal webexec server returned malformed `block_state` "
+                f"for custom Python block `{block_type_name}`: {error}"
+            ),
+            context="modal_executor | block_state_decode",
+        ) from error
+    echoed_state = _decode_echoed_block_state(
+        parsed,
+        decode=_decode_modal_remote_value,
+        block_type_name=block_type_name,
+    )
 
     return echoed_state
 
@@ -339,13 +441,23 @@ def _read_echoed_block_state_msgpack(
     block_state: Optional[Dict[str, Any]],
     block_type_name: str,
 ) -> Optional[Dict[str, Any]]:
-    """Decode the state echoed by the websocket transport, or ``None`` if none was sent."""
+    """Decode the state echoed by the websocket transport, or ``None`` if none was sent.
+
+    ``block_state`` is the state that was sent, after partitioning.
+    """
     if block_state is None:
         return None
     if "block_state" not in result:
-        raise _missing_echoed_block_state_error(block_type_name)
+        echoed_state = _missing_echoed_block_state(
+            block_state, block_type_name=block_type_name
+        )
+        return echoed_state
 
-    echoed_state = _deserialize_msgpack_result(result["block_state"])
+    echoed_state = _decode_echoed_block_state(
+        result["block_state"],
+        decode=_deserialize_msgpack_result,
+        block_type_name=block_type_name,
+    )
 
     return echoed_state
 
@@ -541,60 +653,69 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
     return json.dumps(serialized_inputs, cls=InputJSONEncoder)
 
 
+def _decode_modal_remote_value(obj: Any) -> Any:
+    """Decode from modal remote execution."""
+    # datetime is already imported at the top level
+
+    if isinstance(obj, dict):
+        # Check for special type markers
+        if "_type" in obj:
+            if obj["_type"] == "datetime":
+                return datetime.fromisoformat(obj["value"])
+            elif obj["_type"] == "bytes":
+                return base64.b64decode(obj["value"])
+            elif obj["_type"] == "ndarray":
+                arr = np.array(obj["value"], dtype=obj["dtype"])
+                return arr.reshape(obj["shape"])
+            elif obj["_type"] == "object":
+                return obj["value"]
+            elif obj["_type"] == "sv_detections":
+                # First decode any nested special types in the dict
+                decoded_obj = {
+                    k: _decode_modal_remote_value(v)
+                    for k, v in obj.items()
+                    if k != "_type"
+                }
+                return deserialize_rle_detections_kind("input", decoded_obj)
+            elif obj["_type"] == "video_metadata":
+                # First decode any nested special types
+                decoded_obj = {
+                    k: _decode_modal_remote_value(v)
+                    for k, v in obj.items()
+                    if k != "_type"
+                }
+                return deserialize_video_metadata_kind("input", decoded_obj)
+            elif obj["_type"] == "workflow_image":
+                # First decode any nested special types
+                decoded_obj = {
+                    k: _decode_modal_remote_value(v)
+                    for k, v in obj.items()
+                    if k != "_type"
+                }
+                return deserialize_image_kind("input", decoded_obj)
+
+        # TODO: Not sure we actually need this anymore?
+        # For backward compatibility, check if this is a WorkflowImageData without _type marker
+        if obj.get("type") == "base64" and "value" in obj and "_type" not in obj:
+            # Decode nested datetimes first
+            if "video_metadata" in obj and obj["video_metadata"]:
+                obj["video_metadata"] = _decode_modal_remote_value(
+                    obj["video_metadata"]
+                )
+            return deserialize_image_kind("input", obj)
+
+        # Recursively process dict values
+        return {k: _decode_modal_remote_value(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_decode_modal_remote_value(item) for item in obj]
+    else:
+        return obj
+
+
 def deserialize_for_modal_remote_execution(json_str: str) -> BlockResult:
-    def decode_inputs(obj):
-        """Decode from modal remote execution."""
-        # datetime is already imported at the top level
-
-        if isinstance(obj, dict):
-            # Check for special type markers
-            if "_type" in obj:
-                if obj["_type"] == "datetime":
-                    return datetime.fromisoformat(obj["value"])
-                elif obj["_type"] == "bytes":
-                    return base64.b64decode(obj["value"])
-                elif obj["_type"] == "ndarray":
-                    arr = np.array(obj["value"], dtype=obj["dtype"])
-                    return arr.reshape(obj["shape"])
-                elif obj["_type"] == "object":
-                    return obj["value"]
-                elif obj["_type"] == "sv_detections":
-                    # First decode any nested special types in the dict
-                    decoded_obj = {
-                        k: decode_inputs(v) for k, v in obj.items() if k != "_type"
-                    }
-                    return deserialize_rle_detections_kind("input", decoded_obj)
-                elif obj["_type"] == "video_metadata":
-                    # First decode any nested special types
-                    decoded_obj = {
-                        k: decode_inputs(v) for k, v in obj.items() if k != "_type"
-                    }
-                    return deserialize_video_metadata_kind("input", decoded_obj)
-                elif obj["_type"] == "workflow_image":
-                    # First decode any nested special types
-                    decoded_obj = {
-                        k: decode_inputs(v) for k, v in obj.items() if k != "_type"
-                    }
-                    return deserialize_image_kind("input", decoded_obj)
-
-            # TODO: Not sure we actually need this anymore?
-            # For backward compatibility, check if this is a WorkflowImageData without _type marker
-            if obj.get("type") == "base64" and "value" in obj and "_type" not in obj:
-                # Decode nested datetimes first
-                if "video_metadata" in obj and obj["video_metadata"]:
-                    obj["video_metadata"] = decode_inputs(obj["video_metadata"])
-                return deserialize_image_kind("input", obj)
-
-            # Recursively process dict values
-            return {k: decode_inputs(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [decode_inputs(item) for item in obj]
-        else:
-            return obj
-
-    # Parse and decode inputs
     parsed_inputs = json.loads(json_str)
-    inputs = decode_inputs(parsed_inputs)
+    inputs = _decode_modal_remote_value(parsed_inputs)
+
     return inputs
 
 
@@ -697,8 +818,8 @@ class ModalExecutor:
             The block result and the user attributes after the call.
 
         Raises:
-            DynamicBlockError: If the state cannot be transported, exceeds the
-                size cap, or the server does not echo it back.
+            DynamicBlockError: If the server returns state it cannot decode, or
+                the block holds state and the server is too old to echo it.
         """
         block_result, echoed_state = self._execute_http(
             block_type_name=block_type_name,
@@ -732,8 +853,15 @@ class ModalExecutor:
             endpoint_url = self._get_endpoint_url(workspace)
 
             inputs_json = serialize_for_modal_remote_execution(inputs)
-            block_state_json = _serialize_block_state_json(
-                block_state, block_type_name=block_type_name
+            sent_state = _carry_block_state(
+                block_state,
+                block_type_name=block_type_name,
+                measure=_json_state_size,
+            )
+            block_state_json = (
+                serialize_for_modal_remote_execution(sent_state)
+                if sent_state is not None
+                else None
             )
 
             code_hash = _compute_code_hash(
@@ -845,7 +973,7 @@ class ModalExecutor:
             json_result = result.get("result", "{}")
             block_result = deserialize_for_modal_remote_execution(json_result)
             echoed_state = _read_echoed_block_state_json(
-                result, block_state=block_state, block_type_name=block_type_name
+                result, block_state=sent_state, block_type_name=block_type_name
             )
 
             return block_result, echoed_state
@@ -1785,10 +1913,27 @@ class WebSocketModalExecutor:
         *,
         block_state: Dict[str, Any],
     ) -> Tuple[BlockResult, Dict[str, Any]]:
-        """Run the block remotely, carrying its ``self`` state both ways.
+        """Run the block remotely over the websocket, carrying ``self`` state both ways.
 
-        See :meth:`ModalExecutor.execute_remote_with_state`; this is the
-        websocket counterpart with the same contract.
+        Same contract as :meth:`ModalExecutor.execute_remote_with_state`.
+
+        Args:
+            block_type_name: Block type, for error messages.
+            python_code: The block's code and function names.
+            inputs: The ``run`` keyword arguments.
+            workspace_id: Workspace the sandbox runs under.
+            workflow_context: Context exposed to the block via
+                ``self.get_workflow_context()``.
+            block_state: The block instance's user attributes before the call.
+
+        Returns:
+            The block result and the user attributes after the call. When any
+            attribute cannot be carried the state is withheld for the call and
+            the returned attributes are empty.
+
+        Raises:
+            DynamicBlockError: If the server returns state it cannot decode, or
+                the block holds state and the server is too old to echo it.
         """
         block_result, echoed_state = self._execute_remote(
             block_type_name=block_type_name,
@@ -2269,7 +2414,7 @@ class WebSocketModalExecutor:
 
         block_result = _deserialize_msgpack_result(result.get("result", {}))
         echoed_state = _read_echoed_block_state_msgpack(
-            result, block_state=block_state, block_type_name=block_type_name
+            result, block_state=packed_state, block_type_name=block_type_name
         )
 
         return block_result, echoed_state
@@ -2286,18 +2431,18 @@ class WebSocketModalExecutor:
         Attributes the transport cannot carry are left out with a warning
         (see ``partition_block_state``).
         """
-        if block_state is None:
-            return None
-
-        carried_state, dropped = partition_block_state(
+        carried_state = _carry_block_state(
             block_state,
+            block_type_name=block_type_name,
             measure=lambda attribute: len(
                 msgpack.packb(
                     serialize_inputs_for_msgpack(attribute), use_bin_type=True
                 )
             ),
         )
-        _warn_dropped_block_state(block_type_name, dropped)
+        if carried_state is None:
+            return None
+
         packed_state = serialize_inputs_for_msgpack(carried_state)
 
         return packed_state
@@ -2576,7 +2721,25 @@ class PooledWebSocketModalExecutor:
     ) -> Tuple[BlockResult, Dict[str, Any]]:
         """Run on the least-busy socket, carrying ``self`` state both ways.
 
-        See :meth:`ModalExecutor.execute_remote_with_state` for the contract.
+        Same contract as :meth:`ModalExecutor.execute_remote_with_state`.
+
+        Args:
+            block_type_name: Block type, for error messages.
+            python_code: The block's code and function names.
+            inputs: The ``run`` keyword arguments.
+            workspace_id: Workspace the sandbox runs under.
+            workflow_context: Context exposed to the block via
+                ``self.get_workflow_context()``.
+            block_state: The block instance's user attributes before the call.
+
+        Returns:
+            The block result and the user attributes after the call. When any
+            attribute cannot be carried the state is withheld for the call and
+            the returned attributes are empty.
+
+        Raises:
+            DynamicBlockError: If the server returns state it cannot decode, or
+                the block holds state and the server is too old to echo it.
         """
         index, executor = self._acquire_executor()
         try:

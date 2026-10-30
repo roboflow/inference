@@ -30,18 +30,32 @@ for contributor and maintainer responsibilities.
   call, so such blocks took their "first call" branch on every frame of a
   video. The engine-side block instance owns the state and carries it to
   the sandbox and back on each call, so it survives container recycling
-  and never leaks between workflow runs. What persists is the transportable
-  state: JSON-like values, numpy arrays, datetimes, `sv.Detections`, images
-  and video metadata, plus numpy bool/int/float scalars and tuples, which
-  come back as Python scalars and lists. Any other object kept on `self`
-  (an annotator, a tracker, a helper instance), an attribute whose
-  serialized form is over 1 MiB, and attribute names the engine or the
-  block class owns are left out of the round trip with a warning naming the
-  attribute on the block's stderr, so they are rebuilt on every call exactly
-  as every attribute was before. Existing hosted blocks that cache such
-  objects on `self` keep working unchanged. Requires a webexec deployment
-  built from this version: an older server is rejected loudly instead of
-  silently resetting `self`.
+  and never leaks between workflow runs or between block instances.
+  - What persists: JSON-like values (ints within the signed 64-bit range),
+    datetimes, numpy arrays of bool/int/float/str, numpy bool/int/float
+    scalars and tuples (read back as Python scalars and lists),
+    `sv.Detections` with confidence, class name, detection id and image
+    dimensions, images and video metadata. Images and detections are lossy:
+    an image is re-encoded as JPEG on every call, masks travel as polygons,
+    and `sv.Detections.data` keys the workflow serializers do not know are
+    lost; the block's stderr says so once. Keep `image.numpy_image` on `self`
+    for exact pixels.
+  - What does not: any other object (an annotator, a tracker, a helper
+    instance), a value the transport cannot encode (complex or object
+    arrays, `np.datetime64`, wider integers), a dict with a `_type` key,
+    engine-owned or dunder names, and an attribute whose serialized form is
+    over 1 MiB. When any attribute cannot be carried, none of the block's
+    state is carried for that call, with a warning naming the attributes on
+    the block's stderr, so the block behaves exactly as before this change
+    (a flag never persists without the helper it guards). An echo setting a
+    name defined on the block class fails the call.
+  - Each call serializes the state once per direction on each side, on top
+    of the inputs and the result. State a block changed before raising is
+    lost remotely, while local execution keeps it.
+  - Rollout: deploy the webexec app from this version first. Against an
+    older webexec a block with no state on `self` keeps working, with a
+    warning; a block that holds state fails loudly instead of silently
+    resetting `self` on every call.
 
 ## `0.2.14`
 
