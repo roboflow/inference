@@ -1043,7 +1043,13 @@ def test_manifest_cooldown_accepts_float_and_selector() -> None:
 
 def test_describe_outputs_includes_throttling_status() -> None:
     output_names = {output.name for output in BlockManifest.describe_outputs()}
-    assert output_names == {"error_status", "throttling_status", "event_id", "message"}
+    assert output_names == {
+        "error_status",
+        "throttling_status",
+        "event_id",
+        "message",
+        "videos",
+    }
 
 
 def test_manifest_declares_cooldown_restriction() -> None:
