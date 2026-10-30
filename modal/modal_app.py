@@ -207,6 +207,12 @@ _CARRIED_DETECTIONS_DATA_KEYS = frozenset(
 )
 
 
+# Mirrors ``block_state._PASSED_THROUGH_DETECTIONS_DATA_KEYS``.
+_PASSED_THROUGH_DETECTIONS_DATA_KEYS = frozenset(
+    {"path_deviation", "time_in_zone", "data", "angle", "rect", "height", "width"}
+)
+
+
 def _check_block_state_value(value: Any, path: str) -> None:
     """Raise unless ``value`` can cross the boundary and come back as itself.
 
@@ -360,6 +366,29 @@ def _check_block_state_value(value: Any, path: str) -> None:
         for key, item in value.data.items():
             if key in _CARRIED_DETECTIONS_DATA_KEYS:
                 _check_detections_field(item, f"{path}.data[{key!r}]", depth + 2)
+            if key in _PASSED_THROUGH_DETECTIONS_DATA_KEYS and isinstance(
+                item, (np.ndarray, list)
+            ):
+                for row in item:
+                    _check_row_arrays(row, f"{path}.data[{key!r}]")
+
+    def _check_row_arrays(value: Any, path: str) -> None:
+        if isinstance(value, np.ndarray):
+            if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
+                raise BlockStateSerializationError(
+                    f"Custom Python block state `self.{path}` holds a numpy "
+                    f"array of dtype {value.dtype} per detection, which the "
+                    "transport cannot carry inside sv.Detections data; use "
+                    "bool/int/float/str arrays there."
+                )
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                _check_row_arrays(item, path)
+            return
+        if isinstance(value, list):
+            for item in value:
+                _check_row_arrays(item, path)
 
     def _check_dict(value: Dict[Any, Any], path: str, depth: int) -> None:
         _check_dict_keys(value, path)
@@ -470,6 +499,51 @@ def _check_block_state_value(value: Any, path: str) -> None:
     _check(value, path, 0)
 
 
+def _decoded_block_state_allocation(value: Any) -> int:
+    """Bytes the engine allocates for a checked value's arrays and scalars.
+
+    Mirrors ``block_state._decoded_allocation``: every array and numpy scalar
+    the normalizer passes through, and inside ``sv.Detections`` the
+    per-detection arrays the serializer leaves as arrays.
+    """
+    import numpy as np
+    import supervision as sv
+
+    def _payload(item: Any) -> int:
+        if isinstance(item, np.ndarray):
+            if item.dtype.kind == "O":
+                return sum(_payload(element) for element in item.ravel())
+            return item.dtype.itemsize * item.size
+        if isinstance(item, dict):
+            return sum(_payload(element) for element in item.values())
+        if isinstance(item, (list, tuple)):
+            return sum(_payload(element) for element in item)
+        return 0
+
+    def _field(field: Any) -> int:
+        # Rows of a one-dimensional field are scalars, never arrays, on the wire.
+        if isinstance(field, np.ndarray) and field.dtype.kind != "O" and field.ndim < 2:
+            return 0
+        return _payload(field)
+
+    value_type = type(value)
+    if value_type in _carried_numpy_scalar_types():
+        return value.dtype.itemsize
+    if value_type is np.ndarray:
+        return value.dtype.itemsize * value.size
+    if value_type is sv.Detections:
+        return sum(
+            _field(item)
+            for key, item in value.data.items()
+            if key in _CARRIED_DETECTIONS_DATA_KEYS
+        )
+    if value_type is dict:
+        return sum(_decoded_block_state_allocation(item) for item in value.values())
+    if value_type in (list, tuple):
+        return sum(_decoded_block_state_allocation(item) for item in value)
+    return 0
+
+
 def _partition_block_state(
     state: Dict[str, Any], measure: Callable[[Dict[str, Any]], int]
 ) -> Tuple[Dict[str, Any], List[Tuple[str, str]], List[str]]:
@@ -478,9 +552,10 @@ def _partition_block_state(
     Mirrors ``block_state.partition_block_state``. Dropped: names the engine
     owns and dunders (the echo is written onto the engine-side instance),
     values ``_check_block_state_value`` refuses, values the transport's
-    encoder refuses (``measure`` raising), and attributes whose own
-    serialized size is over ``_BLOCK_STATE_MAX_BYTES``; if the rest is still
-    over the cap, the largest attributes go until it fits. When anything is
+    encoder refuses (``measure`` raising), attributes whose own serialized
+    size is over ``_BLOCK_STATE_MAX_BYTES``, and attributes whose arrays and
+    numpy scalars decode to more than ``_MAX_ECHO_ALLOCATION_BYTES``; if the
+    rest is still over either cap, the largest attributes go until it fits. When anything is
     dropped nothing is carried, so a flag is never carried without the
     helper it guards. Carried values are normalized and ready for the
     transport's serializer; notes flag lossy images and detections.
@@ -502,6 +577,7 @@ def _partition_block_state(
     carried: Dict[str, Any] = {}
     raw_carried: Dict[str, Any] = {}
     sizes: Dict[str, int] = {}
+    allocations: Dict[str, int] = {}
     dropped: List[Tuple[str, str]] = []
     for name, value in state.items():
         is_dunder = (
@@ -542,9 +618,21 @@ def _partition_block_state(
                 )
             )
             continue
+        allocation = _decoded_block_state_allocation(value)
+        if allocation > _MAX_ECHO_ALLOCATION_BYTES:
+            dropped.append(
+                (
+                    name,
+                    f"its numpy arrays and scalars take {allocation} bytes to "
+                    f"decode, over the {_MAX_ECHO_ALLOCATION_BYTES} byte limit "
+                    "for remote execution",
+                )
+            )
+            continue
         carried[name] = normalized_value
         raw_carried[name] = value
         sizes[name] = size
+        allocations[name] = allocation
     # The per-attribute sizes overcount the combined payload by one map
     # header each, so the total cap is decided on the combined encoding.
     total = sum(sizes.values())
@@ -562,6 +650,20 @@ def _partition_block_state(
             )
         )
         total = measure(carried) if carried else 0
+    total_allocation = sum(allocations[name] for name in carried)
+    for name in sorted(carried, key=allocations.get, reverse=True):
+        if total_allocation <= _MAX_ECHO_ALLOCATION_BYTES:
+            break
+        del carried[name]
+        dropped.append(
+            (
+                name,
+                f"the state kept on `self` takes {total_allocation} bytes to "
+                f"decode in total, over the {_MAX_ECHO_ALLOCATION_BYTES} byte "
+                "limit for remote execution",
+            )
+        )
+        total_allocation -= allocations[name]
 
     if dropped:
         dropped_names = ", ".join(f"`self.{name}`" for name, _ in dropped)

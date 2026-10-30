@@ -1268,6 +1268,7 @@ UNCARRIABLE_VALUE_EXPRESSIONS = {
         "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
         "'rle_mask': np.array([{'counts': '04'}], dtype=object)})"
     ),
+    "array_over_the_allocation_budget": "np.zeros(1, dtype='U3000000')",
 }
 
 
@@ -3358,3 +3359,634 @@ def test_http_server_echo_of_the_largest_carried_state_fits_the_cap(modal_app):
     assert len(response["block_state"]) == BLOCK_STATE_MAX_BYTES
     assert BLOCK_STATE_MAX_BYTES <= client._MAX_ECHOED_BLOCK_STATE_JSON_LENGTH
     assert len(state["big"]) == length
+
+
+ALLOCATION_BUDGET = 8 * BLOCK_STATE_MAX_BYTES
+
+
+def _huge_string_array_marker():
+    marker = {
+        "_type": "ndarray",
+        "value": ["a"],
+        "dtype": "<U2000000",
+        "shape": [1],
+    }
+    return marker
+
+
+def _huge_string_scalar_marker():
+    marker = {"_type": "numpy_scalar", "dtype": "<U2000000", "value": "a"}
+    return marker
+
+
+FORGED_ALLOCATION_ECHOES = {
+    "arrays_in_one_list": lambda: {"x": [_huge_string_array_marker()] * 5},
+    "arrays_across_attributes": lambda: {
+        f"x{index}": _huge_string_array_marker() for index in range(5)
+    },
+    "numpy_scalars_in_one_list": lambda: {"x": [_huge_string_scalar_marker()] * 5},
+}
+
+
+def _read_forged_echo_state(transport, echoed_state):
+    if transport == "http":
+        echo = {"block_state": json.dumps(echoed_state)}
+        reader = client._read_echoed_block_state_json
+    else:
+        echo = {"block_state": _through_msgpack(echoed_state)}
+        reader = client._read_echoed_block_state_msgpack
+    state = reader(echo, block_state={"x": 1}, block_type_name="B")
+    return state
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize(
+    "forged", FORGED_ALLOCATION_ECHOES.values(), ids=list(FORGED_ALLOCATION_ECHOES)
+)
+def test_client_refuses_an_echo_whose_values_together_exceed_the_allocation_budget(
+    transport, forged
+):
+    echoed_state = forged()
+
+    def read():
+        with pytest.raises(DynamicBlockError):
+            _read_forged_echo_state(transport, echoed_state)
+
+    assert _peak_traced_bytes(read) < 3 * 1024 * 1024
+
+
+def test_engine_and_sandbox_agree_on_the_state_allocation_limit(modal_app):
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_state
+
+    assert (
+        modal_app._MAX_ECHO_ALLOCATION_BYTES
+        == block_state._MAX_ECHO_ALLOCATION_BYTES
+        == ALLOCATION_BUDGET
+    )
+
+
+OVER_ALLOCATION_VALUES = {
+    "one_array": lambda: np.zeros(1, dtype="U3000000"),
+    "two_arrays_together": lambda: [np.zeros(1, dtype="U1500000")] * 2,
+    "detections_field": lambda: sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10]], dtype=float),
+        class_id=np.array([1]),
+        confidence=np.array([0.5]),
+        data={
+            "class_name": np.array(["a"]),
+            "detection_id": np.array(["d"]),
+            "image_dimensions": np.array([[20, 20]]),
+            "data": np.zeros((1, 1), dtype="U3000000"),
+        },
+    ),
+}
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+@pytest.mark.parametrize(
+    "build", OVER_ALLOCATION_VALUES.values(), ids=list(OVER_ALLOCATION_VALUES)
+)
+def test_partition_drops_state_that_would_allocate_over_the_budget(
+    modal_app, partition_side, build
+):
+    state = {"small": 1, "big": build()}
+    if partition_side == "engine":
+        carried, dropped, _ = partition_block_state(state, measure=_json_state_size)
+    else:
+        carried, dropped, _ = modal_app._partition_block_state(state, _json_state_size)
+
+    assert carried == {}
+    assert [name for name, _ in dropped] == ["big"]
+
+
+def _json_state_size(attribute):
+    size = len(serialize_for_modal_remote_execution(attribute))
+    return size
+
+
+def test_partition_drops_attributes_that_together_allocate_over_the_budget(
+    modal_app,
+):
+    state = {
+        "first": np.zeros(1, dtype=f"U{ALLOCATION_BUDGET // 8}"),
+        "second": np.zeros(1, dtype=f"U{ALLOCATION_BUDGET // 8 + 1}"),
+    }
+
+    engine = partition_block_state(state, measure=_json_state_size)
+    sandbox_carried, sandbox_dropped, _ = modal_app._partition_block_state(
+        state, _json_state_size
+    )
+
+    assert engine.carried == {} and sandbox_carried == {}
+    assert [name for name, _ in engine.dropped] == ["second"]
+    assert engine.dropped == sandbox_dropped
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_carries_state_at_the_allocation_budget(modal_app, partition_side):
+    state = {"big": np.zeros(1, dtype=f"U{ALLOCATION_BUDGET // 4}")}
+    if partition_side == "engine":
+        carried, dropped, _ = partition_block_state(state, measure=_json_state_size)
+    else:
+        carried, dropped, _ = modal_app._partition_block_state(state, _json_state_size)
+
+    assert dropped == []
+    assert list(carried) == ["big"]
+
+
+OVER_ALLOCATION_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    self.calls = getattr(self, 'calls', 0) + 1\n"
+    "    self.big = np.zeros(1, dtype='U3000000')\n"
+    "    return {'is_first_frame': self.calls == 1, 'calls': self.calls}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_withholds_sandbox_state_over_the_allocation_budget(
+    monkeypatch, modal_app, capsys, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=OVER_ALLOCATION_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 1, 1]
+    assert not hasattr(block, "big")
+    assert "self.big" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_withholds_engine_state_over_the_allocation_budget(
+    monkeypatch, modal_app, transport
+):
+    warned = _capture_client_warnings(monkeypatch)
+    block = _build_first_frame_block(monkeypatch, modal_app, transport=transport)
+    block.big = np.zeros(1, dtype="U3000000")
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert not hasattr(block, "big")
+    assert any("self.big" in message for message in warned)
+
+
+AT_ALLOCATION_BUDGET_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'big'):\n"
+    f"        self.big = np.full(1, 'ab', dtype='U{ALLOCATION_BUDGET // 4}')\n"
+    "    self.calls = getattr(self, 'calls', 0) + 1\n"
+    "    return {'is_first_frame': self.calls == 1, 'calls': self.calls}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_state_at_the_allocation_budget(
+    monkeypatch, modal_app, capsys, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=AT_ALLOCATION_BUDGET_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert block.big.dtype == np.dtype(f"U{ALLOCATION_BUDGET // 4}")
+    assert block.big.tolist() == ["ab"]
+    assert "withheld" not in capsys.readouterr().err
+
+
+def _jpeg_base64():
+    import base64
+
+    import cv2
+
+    pixels = np.zeros((64, 64, 3), dtype=np.uint8)
+    pixels[16:48, 16:48] = (40, 160, 220)
+    _, encoded = cv2.imencode(".jpg", pixels)
+    return base64.encodebytes(encoded.tobytes()).decode("ascii")
+
+
+def _whitespace_images() -> dict:
+    wrapped = _jpeg_base64()
+    images = {
+        "encodebytes_wrapped": wrapped,
+        "trailing_newline": wrapped.replace("\n", "") + "\n",
+        "crlf_and_tabs": wrapped.replace("\n", "\r\n\t "),
+    }
+    return images
+
+
+def _image_marker(value):
+    marker = {"_type": "workflow_image", "type": "base64", "value": value}
+    return marker
+
+
+def _decode_result(transport, result):
+    if transport == "http":
+        decoded = deserialize_for_modal_remote_execution(json.dumps(result))
+    else:
+        decoded = client._deserialize_msgpack_result(_through_msgpack(result))
+    return decoded
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("name", list(_whitespace_images()))
+def test_image_with_base64_whitespace_decodes_as_a_result(transport, name):
+    value = _whitespace_images()[name]
+
+    decoded = _decode_result(transport, {"out": _image_marker(value)})["out"]
+
+    assert isinstance(decoded, WorkflowImageData)
+    assert decoded.numpy_image.shape == (64, 64, 3)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("name", list(_whitespace_images()))
+def test_image_with_base64_whitespace_decodes_as_state(transport, name):
+    value = _whitespace_images()[name]
+
+    state = _read_forged_echo(transport, _image_marker(value))
+
+    assert isinstance(state["x"], WorkflowImageData)
+    assert state["x"].numpy_image.shape == (64, 64, 3)
+
+
+def _non_base64_payloads_with_whitespace(tmp_path) -> list:
+    host_file = tmp_path / "host.jpg"
+    payloads = [
+        "http://169.254.169.254/latest/image.jpg\n",
+        " /etc/hosts\n",
+        f"{host_file}\n",
+        "abcd:efgh\n",
+        _jpeg_base64().replace("\n", ":\n"),
+    ]
+    return payloads
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("index", range(5))
+def test_image_with_non_base64_characters_and_whitespace_is_refused_without_loading(
+    transport, index, image_loading_calls, tmp_path
+):
+    import cv2
+
+    cv2.imwrite(str(tmp_path / "host.jpg"), np.zeros((4, 4, 3), dtype=np.uint8))
+    payload = _non_base64_payloads_with_whitespace(tmp_path)[index]
+
+    with pytest.raises(DynamicBlockError):
+        _read_forged_echo(transport, _image_marker(payload))
+    with pytest.raises(ValueError):
+        _decode_result(transport, {"out": _image_marker(payload)})
+
+    assert _loading_calls_for(image_loading_calls, payload.strip()) == []
+
+
+def _object_arrays() -> dict:
+    two_by_two = np.empty((2, 2), dtype=object)
+    two_by_two[0, 0], two_by_two[0, 1] = 1, "a"
+    two_by_two[1, 0], two_by_two[1, 1] = None, {"k": [1, 2]}
+    arrays = {
+        "ragged_lists": np.array([[1, 2], [3]], dtype=object),
+        "dicts": np.array([{"a": 1}, {"b": [2]}], dtype=object),
+        "none_and_strings": np.array([None, "x", "yz"], dtype=object),
+        "two_d": two_by_two,
+        "empty": np.empty((0, 3), dtype=object),
+    }
+    return arrays
+
+
+def _decode_result_with_base_decoder(transport, encoded):
+    if transport == "http":
+        parsed = json.loads(encoded)
+    else:
+        parsed = encoded
+    decoded = {
+        name: np.array(marker["value"], dtype=marker["dtype"]).reshape(marker["shape"])
+        for name, marker in parsed.items()
+    }
+    return decoded
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_object_arrays_round_trip_as_results_through_the_server(modal_app, transport):
+    executor = _http_executor(modal_app)
+    code = (
+        "import numpy as np\n"
+        "def run(self, image):\n"
+        "    two_by_two = np.empty((2, 2), dtype=object)\n"
+        "    two_by_two[0, 0], two_by_two[0, 1] = 1, 'a'\n"
+        "    two_by_two[1, 0], two_by_two[1, 1] = None, {'k': [1, 2]}\n"
+        "    return {\n"
+        "        'ragged_lists': np.array([[1, 2], [3]], dtype=object),\n"
+        "        'dicts': np.array([{'a': 1}, {'b': [2]}], dtype=object),\n"
+        "        'none_and_strings': np.array([None, 'x', 'yz'], dtype=object),\n"
+        "        'two_d': two_by_two,\n"
+        "        'empty': np.empty((0, 3), dtype=object),\n"
+        "    }\n"
+    )
+
+    if transport == "http":
+        response = _run_http(executor, code, {"image": 1})
+        encoded = response["result"]
+        decoded = deserialize_for_modal_remote_execution(encoded)
+    else:
+        response = _run_ws_result(executor, modal_app, code)
+        encoded = response["result"]
+        decoded = client._deserialize_msgpack_result(encoded)
+    expected = _decode_result_with_base_decoder(transport, encoded)
+
+    assert response["success"] is True, response.get("error")
+    for name, array in _object_arrays().items():
+        assert decoded[name].dtype == array.dtype == expected[name].dtype, name
+        assert decoded[name].shape == array.shape == expected[name].shape, name
+        assert decoded[name].tolist() == expected[name].tolist(), name
+        assert decoded[name].tolist() == array.tolist(), name
+
+
+def _run_ws_result(executor, modal_app, code, block_state=None):
+    kwargs = {}
+    if block_state is not None:
+        kwargs["block_state"] = modal_app.Executor._deserialize_msgpack_inputs(
+            _through_msgpack(serialize_inputs_for_msgpack(block_state))
+        )
+    response = modal_app.Executor._run_user_code_ws(
+        executor,
+        code,
+        [],
+        "run",
+        modal_app.Executor._deserialize_msgpack_inputs(
+            _through_msgpack(serialize_inputs_for_msgpack({"image": 1}))
+        ),
+        "",
+        {},
+        **kwargs,
+    )
+    response["result"] = modal_app.Executor._serialize_msgpack_result(
+        response["result"]
+    )
+    return _through_msgpack(response)
+
+
+def test_object_array_with_values_off_its_outer_shape_is_refused():
+    marker = {
+        "_type": "ndarray",
+        "dtype": "object",
+        "shape": [3],
+        "value": [[1, 2], [3]],
+    }
+
+    with pytest.raises(ValueError):
+        deserialize_for_modal_remote_execution(json.dumps({"out": marker}))
+    with pytest.raises(ValueError):
+        client._deserialize_msgpack_result(_through_msgpack({"out": marker}))
+
+
+def _ragged_polygon_detections():
+    polygons = np.empty(2, dtype=object)
+    polygons[0] = np.array([[0, 0], [8, 0], [8, 8]], dtype=np.int32)
+    polygons[1] = np.array([[10, 10], [18, 10], [18, 18], [10, 18]], dtype=np.int32)
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 8, 8], [10, 10, 18, 18]], dtype=float),
+        class_id=np.array([0, 1]),
+        confidence=np.array([0.5, 0.6]),
+        data={
+            "class_name": np.array(["a", "b"]),
+            "detection_id": np.array(["d0", "d1"]),
+            "image_dimensions": np.array([[20, 20], [20, 20]]),
+            "polygon": polygons,
+        },
+    )
+    return detections
+
+
+def _assert_ragged_polygons(detections):
+    expected = _ragged_polygon_detections().data["polygon"]
+    polygons = detections.data["polygon"]
+    assert polygons.dtype == object
+    assert len(polygons) == len(expected)
+    for polygon, expected_polygon in zip(polygons, expected):
+        assert np.array_equal(polygon, expected_polygon)
+
+
+RAGGED_POLYGON_STATE_CODE = (
+    "def run(self, image):\n"
+    "    self.calls = getattr(self, 'calls', 0) + 1\n"
+    "    return {'is_first_frame': self.calls == 1, 'calls': self.calls}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_detections_with_ragged_polygons_on_self(
+    monkeypatch, modal_app, capsys, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=RAGGED_POLYGON_STATE_CODE, transport=transport
+    )
+    block.detections = _ragged_polygon_detections()
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    _assert_ragged_polygons(block.detections)
+    assert "withheld" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_detections_with_ragged_polygons_round_trip_as_a_result(modal_app, transport):
+    executor = _http_executor(modal_app)
+    code = "def run(self, image):\n    return {'out': self.detections}\n"
+    seeded = {"detections": _ragged_polygon_detections()}
+
+    if transport == "http":
+        response = _run_http(executor, code, {"image": 1}, seeded)
+        result = deserialize_for_modal_remote_execution(response["result"])
+    else:
+        response = _run_ws_result(executor, modal_app, code, seeded)
+        result = client._deserialize_msgpack_result(response["result"])
+
+    assert response["success"] is True, response.get("error")
+    _assert_ragged_polygons(result["out"])
+
+
+def _detections_with_data_field(key, field):
+    detections = sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10]], dtype=float),
+        class_id=np.array([1]),
+        confidence=np.array([0.5]),
+        data={
+            "class_name": np.array(["a"]),
+            "detection_id": np.array(["d"]),
+            "image_dimensions": np.array([[20, 20]]),
+            key: field,
+        },
+    )
+    return detections
+
+
+def _nested_object_rows():
+    rows = np.empty(1, dtype=object)
+    rows[0] = np.array(["x", "y"], dtype=object)
+    return rows
+
+
+OBJECT_ROW_DETECTIONS = {
+    "data_2d_object": lambda: _detections_with_data_field(
+        "data", np.array([["x", "y"]], dtype=object)
+    ),
+    "time_in_zone_2d_object": lambda: _detections_with_data_field(
+        "time_in_zone", np.array([[1.0, 2.0]], dtype=object)
+    ),
+    "data_object_rows_in_object_field": lambda: _detections_with_data_field(
+        "data", _nested_object_rows()
+    ),
+}
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize(
+    "build", OBJECT_ROW_DETECTIONS.values(), ids=list(OBJECT_ROW_DETECTIONS)
+)
+def test_block_instance_withholds_detections_whose_rows_travel_as_object_arrays(
+    monkeypatch, modal_app, transport, build
+):
+    warned = _capture_client_warnings(monkeypatch)
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=RAGGED_POLYGON_STATE_CODE, transport=transport
+    )
+    block.detections = build()
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert not hasattr(block, "detections")
+    assert any("self.detections" in message for message in warned)
+
+
+@pytest.mark.parametrize(
+    "build", OBJECT_ROW_DETECTIONS.values(), ids=list(OBJECT_ROW_DETECTIONS)
+)
+def test_engine_and_sandbox_partitions_drop_detections_with_object_array_rows(
+    modal_app, build
+):
+    state = {"detections": build()}
+
+    engine = partition_block_state(state, measure=_json_state_size)
+    sandbox_carried, sandbox_dropped, _ = modal_app._partition_block_state(
+        state, _json_state_size
+    )
+
+    assert engine.carried == {} and sandbox_carried == {}
+    assert [name for name, _ in engine.dropped] == ["detections"]
+    assert engine.dropped == sandbox_dropped
+
+
+def _model_shaped_detections() -> dict:
+    def base_data(count):
+        data = {
+            "class_name": np.array([f"c{index}" for index in range(count)]),
+            "detection_id": np.array([f"d{index}" for index in range(count)]),
+            "image_dimensions": np.array([[64, 96]] * count),
+            "parent_id": np.array(["frame"] * count),
+            "root_parent_id": np.array(["frame"] * count),
+        }
+        return data
+
+    def boxes():
+        return sv.Detections(
+            xyxy=np.array([[0, 0, 10, 10], [5, 5, 30, 20]], dtype=float),
+            class_id=np.array([0, 1]),
+            confidence=np.array([0.5, 0.9]),
+            data=base_data(2),
+        )
+
+    masks = boxes()
+    masks.xyxy = np.array([[2, 2, 30, 20], [40, 30, 90, 60]], dtype=float)
+    masks.mask = np.zeros((2, 64, 96), dtype=bool)
+    masks.mask[0, 2:20, 2:30] = True
+    masks.mask[1, 30:60, 40:90] = True
+    keypoints = sv.Detections(
+        xyxy=np.array([[0, 0, 10, 10]], dtype=float),
+        class_id=np.array([0]),
+        confidence=np.array([0.7]),
+        data={
+            **base_data(1),
+            "keypoints_class_id": np.array([[0, 1]]),
+            "keypoints_class_name": np.array([["nose", "eye"]], dtype=object),
+            "keypoints_confidence": np.array([[0.9, 0.8]]),
+            "keypoints_xy": np.array([[[1.0, 2.0], [3.0, 4.0]]]),
+        },
+    )
+    tracked = boxes()
+    tracked.tracker_id = np.array([7, 8])
+    tracked.data["time_in_zone"] = np.array([1.5, 2.0])
+    uniform_polygons = boxes()
+    uniform_polygons.data["polygon"] = np.array(
+        [[[0, 0], [10, 0], [10, 10]], [[5, 5], [30, 5], [30, 20]]]
+    )
+    ragged_polygons = boxes()
+    ragged_polygons.data["polygon"] = _ragged_polygon_detections().data["polygon"]
+    detections = {
+        "boxes": boxes(),
+        "masks": masks,
+        "keypoints": keypoints,
+        "tracked": tracked,
+        "uniform_polygons": uniform_polygons,
+        "ragged_polygons": ragged_polygons,
+        "empty": sv.Detections.empty(),
+    }
+    return detections
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_model_shaped_detections_on_self(
+    monkeypatch, modal_app, capsys, transport
+):
+    warned = _capture_client_warnings(monkeypatch)
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=RAGGED_POLYGON_STATE_CODE, transport=transport
+    )
+    originals = _model_shaped_detections()
+    block.detections = dict(originals)
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert "withheld" not in capsys.readouterr().err
+    assert not any("withheld" in message for message in warned)
+    assert set(block.detections) == set(originals)
+    for name, original in originals.items():
+        carried = block.detections[name]
+        assert len(carried) == len(original), name
+        assert np.allclose(carried.xyxy, original.xyxy), name
+        if len(original):
+            assert np.array_equal(carried.class_id, original.class_id), name
+            assert np.allclose(carried.confidence, original.confidence), name
+            assert carried.data["class_name"].tolist() == (
+                original.data["class_name"].tolist()
+            ), name
+    assert np.array_equal(block.detections["tracked"].tracker_id, [7, 8])
+    assert np.allclose(block.detections["tracked"].data["time_in_zone"], [1.5, 2.0])
+    assert block.detections["keypoints"].data["keypoints_class_name"].tolist() == [
+        ["nose", "eye"]
+    ]
+    assert block.detections["masks"].mask is not None
+    _assert_ragged_polygons(block.detections["ragged_polygons"])
+    assert np.array_equal(
+        block.detections["uniform_polygons"].data["polygon"],
+        originals["uniform_polygons"].data["polygon"],
+    )
+
+
+def test_engine_and_sandbox_agree_on_the_passed_through_detections_data_keys(
+    modal_app,
+):
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_state
+
+    assert (
+        modal_app._PASSED_THROUGH_DETECTIONS_DATA_KEYS
+        == block_state._PASSED_THROUGH_DETECTIONS_DATA_KEYS
+    )

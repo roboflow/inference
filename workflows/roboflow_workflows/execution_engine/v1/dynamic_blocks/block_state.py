@@ -28,7 +28,8 @@ id, and only the ``data`` keys those serializers know survive, which
 Anything else (a tracker object, an annotator, a model, a value an encoder
 refuses, a dict holding the ``_type`` wire marker or shaped like a
 serialized image) cannot be carried, nor can
-an attribute whose serialized form is over ``BLOCK_STATE_MAX_BYTES``. When
+an attribute whose serialized form is over ``BLOCK_STATE_MAX_BYTES``, nor
+state whose numpy arrays and scalars decode to more than eight times that. When
 any attribute is dropped, ``partition_block_state`` withholds the whole state
 for that call and warns, naming every attribute: carrying the rest would
 split state the block keeps consistent (a ``self.initialized`` flag guarding
@@ -115,9 +116,7 @@ _IMAGE_WIRE_LEVELS = 3
 _VIDEO_METADATA_WIRE_LEVELS = 2
 _DETECTIONS_WIRE_LEVELS = 5
 
-# Largest numpy scalar or array an echo may make the engine allocate. State
-# serializes to at most ``BLOCK_STATE_MAX_BYTES``; unicode arrays take four
-# bytes per character in memory, so this leaves room for honest values only.
+# Bytes the numpy arrays and scalars of one echo may make the engine allocate.
 _MAX_ECHO_ALLOCATION_BYTES = 8 * BLOCK_STATE_MAX_BYTES
 
 # Markers a state echo may contain; anything else is refused before decoding.
@@ -212,6 +211,20 @@ CARRIED_DETECTIONS_DATA_KEYS: FrozenSet[str] = frozenset(
         RLE_MASK_KEY_IN_SV_DETECTIONS,
         "width",
         "height",
+    }
+)
+
+
+# Detections data keys whose per-detection rows reach the wire unchanged.
+_PASSED_THROUGH_DETECTIONS_DATA_KEYS: FrozenSet[str] = frozenset(
+    {
+        PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+        TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+        DETECTED_CODE_KEY,
+        BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+        BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+        BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+        BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
     }
 )
 
@@ -452,18 +465,26 @@ def decode_numpy_scalar(dtype_name: Any, value: Any) -> Any:
     return scalar
 
 
-def check_echoed_wire_value(value: Any, *, path: str, depth: int = 0) -> None:
+def check_echoed_wire_value(
+    value: Any, *, path: str, depth: int = 0, allocated: int = 0
+) -> int:
     """Refuse an echoed attribute, still in wire form, before it is decoded.
 
     The echo is written by sandboxed code, which can bypass the sandbox's own
     checks, so only the shapes the state normalizer and the serializers
     produce for carried values are let through to the shared decoders: known
-    markers, arrays of carried dtypes within a size bound, images as base64.
+    markers, arrays of carried dtypes, images as base64, and numpy arrays and
+    scalars that together stay within one allocation budget per echo.
 
     Args:
         value: One attribute of the echo, as parsed from JSON or msgpack.
         path: The attribute path, for the message.
         depth: Nesting depth so far.
+        allocated: Bytes the echo's arrays and numpy scalars checked so far
+            make the engine allocate.
+
+    Returns:
+        ``allocated`` plus what this value's arrays and numpy scalars take.
 
     Raises:
         DynamicBlockError: Naming the attribute path and what was refused.
@@ -472,10 +493,12 @@ def check_echoed_wire_value(value: Any, *, path: str, depth: int = 0) -> None:
         _raise_malformed_echo(path, "is nested too deeply")
     if isinstance(value, list):
         for item in value:
-            check_echoed_wire_value(item, path=path, depth=depth + 1)
-        return
+            allocated = check_echoed_wire_value(
+                item, path=path, depth=depth + 1, allocated=allocated
+            )
+        return allocated
     if not isinstance(value, dict):
-        return
+        return allocated
     wire_type = value.get(WIRE_TYPE_MARKER_KEY)
     if wire_type is None:
         if value.get("type") == "base64" and "value" in value:
@@ -483,27 +506,41 @@ def check_echoed_wire_value(value: Any, *, path: str, depth: int = 0) -> None:
     elif wire_type not in _ECHO_WIRE_TYPES:
         _raise_malformed_echo(path, f"holds a `{wire_type}` marker")
     elif wire_type == "ndarray":
-        _check_echoed_ndarray(value, path=path)
+        allocated += _check_echoed_ndarray(value, path=path)
+    elif wire_type == "numpy_scalar" and isinstance(value.get("dtype"), str):
+        allocated += _echoed_dtype(value, path=path).itemsize
     elif wire_type == "workflow_image" and value.get("type") != "base64":
         _raise_malformed_echo(path, "holds an image that is not base64")
     elif wire_type == "zoned_datetime" and value.get("fold") not in (0, 1):
         _raise_malformed_echo(path, "holds a zoned datetime with an invalid fold")
+    if allocated > _MAX_ECHO_ALLOCATION_BYTES:
+        _raise_malformed_echo(path, "holds arrays larger than any carried state")
     for key, item in value.items():
         if key != WIRE_TYPE_MARKER_KEY:
-            check_echoed_wire_value(item, path=path, depth=depth + 1)
+            allocated = check_echoed_wire_value(
+                item, path=path, depth=depth + 1, allocated=allocated
+            )
+
+    return allocated
 
 
-def _check_echoed_ndarray(value: Dict[str, Any], *, path: str) -> None:
+def _echoed_dtype(value: Dict[str, Any], *, path: str) -> np.dtype:
     try:
         dtype = np.dtype(value.get("dtype"))
-    except TypeError as error:
+    except (TypeError, ValueError) as error:
         raise DynamicBlockError(
             public_message=(
                 f"Custom Python block state `self.{path}` returned from remote "
-                f"execution holds an array with an invalid dtype: {error}"
+                f"execution holds an invalid dtype: {error}"
             ),
             context="dynamic_block | block_state_echo",
         ) from error
+
+    return dtype
+
+
+def _check_echoed_ndarray(value: Dict[str, Any], *, path: str) -> int:
+    dtype = _echoed_dtype(value, path=path)
     if dtype.kind not in _CARRIED_NDARRAY_KINDS:
         _raise_malformed_echo(path, f"holds an array of dtype {dtype}")
     shape = value.get("shape")
@@ -513,11 +550,11 @@ def _check_echoed_ndarray(value: Dict[str, Any], *, path: str) -> None:
         _raise_malformed_echo(path, "holds an array with an invalid shape")
     if dtype.kind in "SUV" and dtype.itemsize == 0 and 0 not in shape:
         _raise_malformed_echo(path, f"holds a non-empty array of dtype {dtype}")
-    if (
-        dtype.itemsize * int(np.prod(shape, dtype=np.float64))
-        > _MAX_ECHO_ALLOCATION_BYTES
-    ):
+    allocation = dtype.itemsize * float(np.prod(shape, dtype=np.float64))
+    if allocation > _MAX_ECHO_ALLOCATION_BYTES:
         _raise_malformed_echo(path, "holds an array larger than any carried state")
+
+    return int(allocation)
 
 
 def _raise_malformed_echo(path: str, problem: str) -> None:
@@ -578,10 +615,12 @@ def partition_block_state(
 
     An attribute is dropped when its name is reserved (engine-owned, dunder
     or not a string), when its value is not transportable, when the
-    transport's encoder refuses it (``measure`` raising), or when its own
-    serialized size is over ``BLOCK_STATE_MAX_BYTES``; if the rest is still
-    over the cap, the largest attributes go until it fits. When anything is
-    dropped, nothing is carried: see the module docstring.
+    transport's encoder refuses it (``measure`` raising), when its own
+    serialized size is over ``BLOCK_STATE_MAX_BYTES``, or when its numpy
+    arrays and scalars would make the receiver allocate more than the echo
+    allows; if the rest is still over either cap, the largest attributes go
+    until it fits. When anything is dropped, nothing is carried: see the
+    module docstring.
 
     Args:
         state: User attributes about to be serialized.
@@ -606,6 +645,7 @@ def partition_block_state(
     carried: Dict[str, Any] = {}
     raw_carried: Dict[str, Any] = {}
     sizes: Dict[str, int] = {}
+    allocations: Dict[str, int] = {}
     dropped: List[DroppedAttribute] = []
     for name, value in state.items():
         if not isinstance(name, str) or is_reserved_state_name(name):
@@ -630,9 +670,14 @@ def partition_block_state(
         if size > BLOCK_STATE_MAX_BYTES:
             dropped.append((name, _over_cap_reason(size)))
             continue
+        allocation = _decoded_allocation(value)
+        if allocation > _MAX_ECHO_ALLOCATION_BYTES:
+            dropped.append((name, _over_allocation_reason(allocation)))
+            continue
         carried[name] = normalized_value
         raw_carried[name] = value
         sizes[name] = size
+        allocations[name] = allocation
     # The per-attribute sizes overcount the combined payload by one map
     # header each, so the total cap is decided on the combined encoding.
     total = sum(sizes.values())
@@ -650,6 +695,20 @@ def partition_block_state(
             )
         )
         total = measure(carried) if carried else 0
+    total_allocation = sum(allocations[name] for name in carried)
+    for name in sorted(carried, key=allocations.get, reverse=True):
+        if total_allocation <= _MAX_ECHO_ALLOCATION_BYTES:
+            break
+        del carried[name]
+        dropped.append(
+            (
+                name,
+                f"the state kept on `self` takes {total_allocation} bytes to "
+                f"decode in total, over the {_MAX_ECHO_ALLOCATION_BYTES} byte "
+                "limit for remote execution",
+            )
+        )
+        total_allocation -= allocations[name]
 
     if dropped:
         notes = [_withheld_note(dropped=dropped, withheld=list(carried))]
@@ -679,6 +738,66 @@ def _over_cap_reason(size: int) -> str:
     )
 
     return reason
+
+
+def _over_allocation_reason(allocation: int) -> str:
+    reason = (
+        f"its numpy arrays and scalars take {allocation} bytes to decode, over "
+        f"the {_MAX_ECHO_ALLOCATION_BYTES} byte limit for remote execution"
+    )
+
+    return reason
+
+
+def _decoded_allocation(value: Any) -> int:
+    """Bytes the receiver allocates for a validated value's arrays and scalars.
+
+    Counts what ``check_echoed_wire_value`` charges on the wire form: every
+    array and numpy scalar the state normalizer passes through, and inside
+    ``sv.Detections`` the per-detection arrays the serializer leaves as arrays.
+    """
+    detections_type = _workflow_object_types()[0]
+    value_type = type(value)
+    if value_type in CARRIED_NUMPY_SCALAR_TYPES:
+        return value.dtype.itemsize
+    if value_type is np.ndarray:
+        return value.dtype.itemsize * value.size
+    if value_type is detections_type:
+        allocation = sum(
+            _detections_field_allocation(item)
+            for key, item in value.data.items()
+            if key in CARRIED_DETECTIONS_DATA_KEYS
+        )
+        return allocation
+    if value_type is dict:
+        return sum(_decoded_allocation(item) for item in value.values())
+    if value_type in (list, tuple):
+        return sum(_decoded_allocation(item) for item in value)
+
+    return 0
+
+
+def _detections_field_allocation(field: Any) -> int:
+    # Rows of a one-dimensional field are scalars, never arrays, on the wire.
+    if isinstance(field, np.ndarray) and field.dtype.kind != "O" and field.ndim < 2:
+        return 0
+
+    allocation = _payload_allocation(field)
+
+    return allocation
+
+
+def _payload_allocation(value: Any) -> int:
+    if isinstance(value, np.ndarray):
+        if value.dtype.kind == "O":
+            return sum(_payload_allocation(item) for item in value.ravel())
+        return value.dtype.itemsize * value.size
+    if isinstance(value, dict):
+        return sum(_payload_allocation(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return sum(_payload_allocation(item) for item in value)
+
+    return 0
 
 
 def _withheld_note(*, dropped: List[DroppedAttribute], withheld: List[str]) -> str:
@@ -1049,6 +1168,33 @@ def _validate_detections(value: Any, *, path: str, depth: int) -> None:
             _validate_detections_field(
                 item, path=f"{path}.data[{key!r}]", depth=depth + 2
             )
+        if key in _PASSED_THROUGH_DETECTIONS_DATA_KEYS and isinstance(
+            item, (np.ndarray, list)
+        ):
+            for row in item:
+                _validate_row_arrays(row, path=f"{path}.data[{key!r}]")
+
+
+def _validate_row_arrays(value: Any, *, path: str) -> None:
+    if isinstance(value, np.ndarray):
+        if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
+            raise DynamicBlockError(
+                public_message=(
+                    f"Custom Python block state `self.{path}` holds a numpy "
+                    f"array of dtype {value.dtype} per detection, which the "
+                    "transport cannot carry inside sv.Detections data; use "
+                    "bool/int/float/str arrays there."
+                ),
+                context="dynamic_block | block_state_validation",
+            )
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _validate_row_arrays(item, path=path)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _validate_row_arrays(item, path=path)
 
 
 def _validate_detections_field(value: Any, *, path: str, depth: int) -> None:

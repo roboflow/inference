@@ -122,6 +122,8 @@ _WS_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 # size error instead of a server-side reassembly abort whose error frame the
 # response-id guard discards as a desync.
 _WS_MAX_REQUEST_BYTES = 64 * 1024 * 1024
+# Line breaks and spaces a base64 encoder may emit (``base64.encodebytes``).
+_BASE64_WHITESPACE = str.maketrans("", "", " \t\n\r\f\v")
 # Longest HTTP state echo parsed; honest echoes stay within BLOCK_STATE_MAX_BYTES.
 _MAX_ECHOED_BLOCK_STATE_JSON_LENGTH = 2 * BLOCK_STATE_MAX_BYTES
 
@@ -430,11 +432,12 @@ def _decode_echoed_block_state(
             ),
             context="modal_executor | block_state_decode",
         )
+    # Sandbox-written: check every attribute in wire form before decoding any.
+    allocated = 0
+    for name, value in echoed.items():
+        allocated = check_echoed_wire_value(value, path=str(name), allocated=allocated)
     echoed_state = {}
     for name, value in echoed.items():
-        # Checked in wire form first: the echo is written by sandboxed code,
-        # and some decoders allocate or read whatever a value names.
-        check_echoed_wire_value(value, path=str(name))
         try:
             echoed_state[name] = decode(value)
         except Exception as error:
@@ -750,13 +753,20 @@ def _decode_ndarray(marked: Dict[str, Any]) -> np.ndarray:
     """Rebuild an array, checking its values fill the declared shape first.
 
     ``np.array`` allocates the dtype's itemsize per value, so the values must
-    match the shape before it runs for any bound on the shape to hold.
+    match the shape before it runs for any bound on the shape to hold. An
+    object array's items may themselves be lists (a ragged array), so only
+    its outer shape is matched and each item is placed as it is.
     """
     shape = marked["shape"]
     if not isinstance(shape, list):
         raise ValueError(f"array shape {shape!r} is not a list")
-    _ensure_values_fill_shape(marked["value"], shape=shape)
     dtype = np.dtype(marked["dtype"])
+    if dtype.kind == "O":
+        _ensure_values_fill_shape(marked["value"], shape=shape, items_may_nest=True)
+        array = _object_array(marked["value"], shape=shape)
+        return array
+
+    _ensure_values_fill_shape(marked["value"], shape=shape, items_may_nest=False)
     if dtype.kind in "SUV" and dtype.itemsize == 0 and 0 not in shape:
         raise ValueError(f"a non-empty array cannot have dtype {dtype}")
     array = np.array(marked["value"], dtype=dtype).reshape(shape)
@@ -764,21 +774,33 @@ def _decode_ndarray(marked: Dict[str, Any]) -> np.ndarray:
     return array
 
 
-def _ensure_values_fill_shape(value: Any, *, shape: list) -> None:
+def _ensure_values_fill_shape(value: Any, *, shape: list, items_may_nest: bool) -> None:
     if not shape:
-        if isinstance(value, list):
+        if isinstance(value, list) and not items_may_nest:
             raise ValueError("array values are nested deeper than the shape")
         return
 
     if not isinstance(value, list) or len(value) != shape[0]:
         raise ValueError("array values do not match the declared shape")
     if len(shape) == 1:
-        if any(isinstance(item, list) for item in value):
+        if not items_may_nest and any(isinstance(item, list) for item in value):
             raise ValueError("array values are nested deeper than the shape")
         return
 
     for item in value:
-        _ensure_values_fill_shape(item, shape=shape[1:])
+        _ensure_values_fill_shape(item, shape=shape[1:], items_may_nest=items_may_nest)
+
+
+def _object_array(value: Any, *, shape: list) -> np.ndarray:
+    items = [value]
+    for _ in shape:
+        items = [item for nested in items for item in nested]
+    array = np.empty(len(items), dtype=object)
+    for index, item in enumerate(items):
+        array[index] = item
+    array = array.reshape(shape)
+
+    return array
 
 
 def _decode_base64_image(
@@ -795,7 +817,8 @@ def _decode_base64_image(
         raise ValueError("an image is only accepted as a base64 string")
     try:
         encoded = base64.b64decode(
-            BASE64_DATA_TYPE_PATTERN.sub("", payload), validate=True
+            BASE64_DATA_TYPE_PATTERN.sub("", payload).translate(_BASE64_WHITESPACE),
+            validate=True,
         )
     except binascii.Error as error:
         raise ValueError(f"the image is not valid base64: {error}") from error

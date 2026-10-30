@@ -74,24 +74,33 @@ for contributor and maintainer responsibilities.
     `sv.Detections`, and integer arrays under detection keys the serializer
     passes through as numpy scalars (`time_in_zone`, `path_deviation`,
     `data` and the bounding-rect keys `angle`, `rect`, `width` and
-    `height`); a tuple inside `sv.Detections` data; a dict with a `_type`
+    `height`) and per-detection arrays under those keys whose dtype is not
+    bool/int/float/str (an object array of two or more dimensions); a tuple
+    inside `sv.Detections` data; a dict with a `_type`
     key or shaped like a serialized image (`type` "base64" with a `value`),
     also inside carried `sv.Detections` fields; a value nested more than 64
     levels deep in its serialized form (a tuple counts two levels, and
-    images, video metadata and `sv.Detections` add their own); engine-owned
-    or dunder names; more than 1024 attributes; and an attribute whose
+    images, video metadata and `sv.Detections` add their own); state whose
+    numpy arrays and scalars, together, take more than 8 MiB to decode (a
+    numpy string array takes four bytes per character of its longest item,
+    for every item); engine-owned or dunder names; more than 1024 attributes; and an attribute whose
     serialized form is over 1 MiB. The whole state is also capped at 1 MiB: the
     largest attributes are dropped until it fits.
   - The engine treats the echoed state as untrusted: before decoding it
     refuses an HTTP echo longer than 2 MiB, unknown markers, arrays and
-    numpy scalars that do not match their dtype or exceed what honest state
-    can hold, images that are not base64, untagged image dicts (`type`
+    numpy scalars that do not match their dtype or together take more than
+    8 MiB to decode, images that are not base64, untagged image dicts (`type`
     "base64" with a `value`), nesting deeper than 64 levels and more than
     1024 attributes; after decoding it re-checks every value as it did
     before sending. A refused echo fails the call with a `DynamicBlockError`.
     Images in the echo and in block results are decoded from their base64
-    payload only, never fetched from a URL or read from a file, and arrays
-    are refused unless their values fill the declared shape exactly.
+    payload only (whitespace and line breaks in it are ignored), never
+    fetched from a URL or read from a file, and arrays are refused unless
+    their values fill the declared shape exactly; object arrays in block
+    results only need to match their outer shape, so ragged items come back
+    as lists. `sv.Detections` whose polygons differ in length, as
+    `scale_sv_detections` produces, now decode in block results and state
+    with one polygon array per detection instead of failing the call.
   - When any attribute cannot be carried, none of the block's state is
     carried for that call, with a warning naming the attributes on the
     block's stderr, so the block behaves exactly as before this change (a
