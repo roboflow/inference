@@ -137,10 +137,10 @@ _FROZEN_CONTRACTS = [
     ("InferencePipeline.init_with_workflow", "3dc51ebead0b32bb"),
     ("InferencePipeline.init_with_custom_logic", "f6a2999c313d244f"),
     ("Stream.__init__", "ad88b06bfd0ef5aa"),
-    ("sinks.display_image", "f8e554f57455543c"),
-    ("sinks.render_boxes", "bd087e986582eec5"),
+    ("sinks.display_image", "96a5ac796c31b98a"),
+    ("sinks.render_boxes", "f1d9f447976564cd"),
     ("sinks.render_statistics", "12aa6eb0579b10d5"),
-    ("sinks.multi_sink", "f665e4f385adb432"),
+    ("sinks.multi_sink", "bddf797257b579b3"),
     ("sinks.active_learning_sink", "4c5b2c7e4b2c1f03"),
 ]
 
@@ -404,3 +404,24 @@ def test_active_learning_sink_signature_contract() -> None:
     ]
     assert all(p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters)
     assert signature.return_annotation is None
+
+
+def test_stable_signature_ignores_nested_union_order() -> None:
+    """Ignore equal nested union annotations cached in different import orders."""
+
+    def before(value): ...
+    def after(value): ...
+
+    # Clearing typing's caches reproduces imports that first create either order.
+    from typing import _cleanups
+
+    for cleanup in _cleanups:
+        cleanup()
+    before.__annotations__["value"] = List[Union[int, str]]
+    for cleanup in _cleanups:
+        cleanup()
+    after.__annotations__["value"] = List[Union[str, int]]
+
+    assert _stable_signature(before) == _stable_signature(after)
+    after.__annotations__["value"] = List[Union[str, float]]
+    assert _stable_signature(before) != _stable_signature(after)

@@ -450,7 +450,7 @@ RUN --mount=type=cache,target=/build/triton/src,sharing=locked,id=triton-src-${T
     git -C src submodule update --init --recursive; \
     mkdir -p /tmp/triton-wheels; \
     python3 -m pip install --break-system-packages --no-cache-dir \
-        "setuptools~=83.0.0" \
+        "setuptools~=84.2.1" \
         wheel \
         "cmake>=3.18,<4.0" \
         "ninja>=1.11.1" \
@@ -502,7 +502,7 @@ RUN echo "opencv-python==4.12.0.88" > /tmp/jetson-opencv-overrides.txt && \
     -r requirements.easyocr.txt \
     -r requirements.jetson.txt \
     "pycuda>=2025.0.0,<2026.0.0" \
-    "setuptools~=83.0.0" \
+    "setuptools~=84.2.1" \
     "transformers==5.15.0" \
     packaging \
     && rm -rf ~/.cache/uv /tmp/jetson-opencv-overrides.txt
@@ -549,7 +549,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
-        "setuptools~=83.0.0"
+        "setuptools~=84.2.1"
 
 # Pin boto3/botocore last so the final versions win regardless of what the
 # requirement sets resolved to (previously done as an extra layer in the
@@ -656,6 +656,8 @@ WORKDIR /app
 # check degrades. The media.jetson.7.2.0 image installs it for the same reason
 # (verify_media_runtime.sh requires lsmod whenever BSP plugins are baked).
 # The dpkg path-exclude keeps docs/man/locale out of every package this layer installs.
+# ca-certificates >= 20260816 distrusts emSign ECC Root CA - G3 (eMudhra key compromise,
+# LP: #2171507); the version check stops a cached layer or stale mirror shipping an older store
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp62-runtime-${TARGETARCH} \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -663,6 +665,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/locale/*\n' > /etc/dpkg/dpkg.cfg.d/01-nodoc && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
+    ca-certificates \
     tzdata \
     libopenblas0 \
     libsqlite3-0 \
@@ -692,6 +695,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp62-ru
     python3-dev \
     zlib1g-dev \
     libxml2-dev && \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816 && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
     python --version && \
     python3 --version

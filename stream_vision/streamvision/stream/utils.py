@@ -4,7 +4,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
 
@@ -187,6 +187,7 @@ def on_pipeline_end(
     profiler: WorkflowsProfiler,
     profiling_directory: str,
     execution_engine_thread_pool_executor: Optional[ThreadPoolExecutor] = None,
+    execution_engine: Optional[Any] = None,
 ) -> None:
     if ENABLE_WORKFLOWS_PROFILING:
         try:
@@ -209,6 +210,17 @@ def on_pipeline_end(
         except TypeError:
             # we must support Python 3.8 which do not support `cancel_futures`
             executor.shutdown()
+    # After the pools, so sink tasks still running there finish with their blocks
+    # intact. A stopped pipeline that stays referenced would otherwise keep the
+    # blocks' background resources (reader threads, broker and server sessions)
+    # until it is garbage collected. `getattr`: an older roboflow-workflows engine
+    # has no `close()`.
+    close_execution_engine = getattr(execution_engine, "close", None)
+    if callable(close_execution_engine):
+        try:
+            close_execution_engine()
+        except Exception as error:
+            logger.warning(f"Could not close workflow blocks: {error}")
 
 
 def save_workflows_profiler_trace(

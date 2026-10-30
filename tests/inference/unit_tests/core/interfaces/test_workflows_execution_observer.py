@@ -31,6 +31,14 @@ def _cleared_channels():
     server_channel.clear_measured_block_execution()
 
 
+@pytest.fixture(autouse=True)
+def _held_usage_flush(monkeypatch):
+    # The collector thread swaps `_usage` for an empty dict every flush interval.
+    # Landing between the block row and the workflow row drops the latter from
+    # the dictionary the test patched in, so hold the swap for the test.
+    monkeypatch.setattr(usage_collector, "_enqueue_usage_payload", mock.MagicMock())
+
+
 def _compiled_workflow(api_key: str = "observer-key") -> SimpleNamespace:
     return SimpleNamespace(
         init_parameters={"workflows_core.api_key": api_key},

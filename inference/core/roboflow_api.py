@@ -594,14 +594,30 @@ def get_roboflow_model_data(
     device_id: str,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
+    use_cache: bool = True,
 ) -> dict:
+    """Fetch model metadata and artifact URLs from Roboflow.
+
+    Args:
+        api_key (str): API key used to authorize the request.
+        model_id (str): Model identifier.
+        endpoint_type (Union[str, ModelEndpointType]): Model API endpoint type.
+        device_id (str): Identifier of the requesting device.
+        countinference (Optional[bool]): Whether to count inference usage.
+        service_secret (Optional[str]): Secret authorizing internal usage settings.
+        use_cache (bool): Whether cached metadata may satisfy the request. Set
+            to False to obtain fresh signed artifact URLs after a download fails.
+
+    Returns:
+        dict: Model metadata, also stored in the metadata cache.
+    """
     # Workflow blocks pass the plain string `core_model` so they do not have to
     # import this enum (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE).
     # `ModelEndpointType(member)` is the identity for real members.
     endpoint_type = ModelEndpointType(endpoint_type)
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None
-    if not MODELS_CACHE_AUTH_ENABLED:
+    if use_cache and not MODELS_CACHE_AUTH_ENABLED:
         api_data = cache.get(api_data_cache_key)
     if api_data is not None:
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
@@ -1629,6 +1645,8 @@ def get_workflow_specification(
 
     When ephemeral cache (Redis/Dragonfly) is enabled but unreachable, falls back
     to the Roboflow API instead of failing the request.
+    When file caching is enabled, connection failures, timeouts and server errors
+    fall back to the cached response for the same workflow, version and API key.
 
     Args:
         api_key: Roboflow API key, or None for unauthenticated fetches.
@@ -1707,8 +1725,21 @@ def get_workflow_specification(
             requests.exceptions.ConnectionError,
             ConnectionError,
             requests.exceptions.Timeout,
+            requests.exceptions.HTTPError,
+            RetryRequestError,
         ) as error:
-            if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+            failure = (
+                error.inner_error if isinstance(error, RetryRequestError) else error
+            )
+            unavailable = isinstance(
+                failure,
+                (requests.exceptions.ConnectionError, ConnectionError, Timeout),
+            ) or (
+                isinstance(failure, requests.exceptions.HTTPError)
+                and failure.response is not None
+                and 500 <= failure.response.status_code < 600
+            )
+            if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS or not unavailable:
                 raise error
             response = load_cached_workflow_response(
                 workspace_id=workspace_id,
@@ -1894,7 +1925,7 @@ def get_from_url(
 
 @backoff.on_exception(
     backoff.constant,
-    exception=RetryRequestError,
+    exception=(RetryRequestError, requests.exceptions.ChunkedEncodingError),
     max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
     interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
 )

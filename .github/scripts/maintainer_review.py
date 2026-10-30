@@ -618,10 +618,8 @@ def save_state(github, *, state, comment_id, token):
         token (str): Credential for this client or notification step; never logged.
     """
     envelope = {"state": state, "signature": state_signature(state, token=token)}
-    # This integration is scoped to roboflow/inference and its Slack workspace.
-    permalink = f"https://roboflow.slack.com/archives/{state['channel']}/p{state['thread_ts'].replace('.', '')}"
     body = (
-        f"Maintainer review discussion: [Slack thread]({permalink}).\n\n"
+        "Maintainer review requested.\n\n"
         "Final approval and merge remain in GitHub.\n\n"
         f"{STATE_MARKER}{canonical(envelope)} -->"
     )
