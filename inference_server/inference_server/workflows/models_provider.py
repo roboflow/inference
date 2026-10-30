@@ -886,6 +886,7 @@ class GatewayModelsProvider:
         request_model_id: Union[str, None, _Unset] = UNSET,
         multimask_output: Union[bool, None, _Unset] = UNSET,
         threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
     ) -> List[Any]:
         request = Sam2SegmentationRequest(
             image=image,
@@ -897,6 +898,7 @@ class GatewayModelsProvider:
                 model_id=request_model_id,
                 multimask_output=multimask_output,
                 threshold=threshold,
+                format=format,
             ),
         )
         return [self._run_interactive_segmentation(model_id, request, api_key)]

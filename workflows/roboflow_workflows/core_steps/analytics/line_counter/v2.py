@@ -10,13 +10,13 @@ from roboflow_workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     Selector,
-    WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
@@ -136,7 +136,7 @@ class LineCounterManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/line_counter@v2"]
-    image: WorkflowImageSelector = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image with embedded video metadata. The video_metadata contains video_identifier to maintain separate counting state for different videos. Required for persistent counting across frames.",
     )
     detections: Selector(

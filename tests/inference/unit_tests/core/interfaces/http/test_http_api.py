@@ -422,7 +422,18 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     assert inference_request.api_key == "query-api-key"
 
 
-def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "body_fields, expected_model_id",
+    [
+        ({"model_id": "depth-anything-v3/small"}, "depth-anything-v3/small"),
+        ({"depth_version_id": "base"}, "depth-anything-v2/base"),
+        ({}, "depth-anything-v2/small"),
+        ({"model_id": None}, "depth-anything-v2/small"),
+    ],
+)
+def test_depth_estimation_uses_query_api_key_for_model_loading(
+    monkeypatch, body_fields, expected_model_id
+) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -445,7 +456,7 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
             "/infer/depth-estimation",
             params={"api_key": "query-api-key"},
             json={
-                "model_id": "depth-anything-v3/small",
+                **body_fields,
                 "image": {
                     "type": "url",
                     "value": "https://example.com/test.jpg",
@@ -460,14 +471,14 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
     assert payload["depth_map_format"] == "json"
     assert payload["normalized_depth"] == _DUMMY_DEPTH_MAP.tolist()
     model_manager.add_model.assert_called_once_with(
-        "depth-anything-v3/small",
+        expected_model_id,
         "query-api-key",
         countinference=None,
         service_secret=None,
     )
     model_manager.infer_from_request_sync.assert_called_once()
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
-    assert inference_request.model_id == "depth-anything-v3/small"
+    assert inference_request.model_id == expected_model_id
     assert inference_request.api_key == "query-api-key"
 
 
@@ -545,7 +556,18 @@ def test_depth_estimation_json_format_returns_legacy_shape(monkeypatch) -> None:
     assert payload["image"] == "depth-image"
 
 
-def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "body_fields",
+    [
+        {},
+        {"model_id": None},
+        {"depth_version_id": "base"},
+        {"model_id": None, "depth_version_id": "base"},
+    ],
+)
+def test_depth_estimation_with_model_id_path_sets_request_model_id(
+    monkeypatch, body_fields
+) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -568,6 +590,7 @@ def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) 
             "/infer/depth-estimation/depth-anything-v3/small",
             params={"api_key": "query-api-key"},
             json={
+                **body_fields,
                 "image": {
                     "type": "url",
                     "value": "https://example.com/test.jpg",

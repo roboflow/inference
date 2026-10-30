@@ -4,6 +4,11 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Fixed
+
+- Jetson USB camera capture honors requested format, dimensions and frame rate before startup, including automatic format selection and rounded NTSC rates. Bridge diagnostics are safe before deferred capture starts and after release.
+- When tensor-native Jetson USB capture falls back to OpenCV, startup fails with an error state if the effective camera format, dimensions or frame rate differ from the requested mode, including drivers that silently ignore property writes.
+
 ## `0.1.4`
 
 ### Changed
