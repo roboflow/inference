@@ -1045,6 +1045,38 @@ def test_workflow_image_build_create_crop_with_video_metadata_preservation() -> 
     assert result.video_metadata.fps == 40, "Expected preserved metadata"
 
 
+def test_workflow_image_create_crop_uses_video_crop_identifier_for_video_id() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="video_id",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        video_metadata=metadata,
+    )
+
+    # when
+    result = WorkflowImageData.create_crop(
+        origin_image_data=image,
+        crop_identifier="per-frame-uuid",
+        cropped_image=np.zeros((64, 60, 3)),
+        offset_x=100,
+        offset_y=20,
+        preserve_video_metadata=True,
+        video_crop_identifier="region",
+    )
+
+    # then
+    assert result.parent_metadata.parent_id == "per-frame-uuid"
+    assert result.video_metadata.video_identifier == "video_id | crop: region"
+    assert metadata.video_identifier == "video_id", "Expected origin left intact"
+
+
 def test_parent_origin_from_origin_coordinates_system() -> None:
     # given
     origin_coords = OriginCoordinatesSystem(
