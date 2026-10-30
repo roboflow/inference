@@ -18,10 +18,13 @@ Modules:
 
 Process settings are read once, at import, from the environment variables
 below (the same convention as `inference/core/env.py`). Invalid or
-non-positive values fall back to the default with a warning.
+non-positive values fall back to the default with a warning. `read_env` is the
+package's only environment read; the recorder and NVENC backends read their own
+settings through `env_positive_float` / `env_positive_int`.
 """
 
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Optional
@@ -32,6 +35,58 @@ MIB = 1024 * 1024
 GIB = 1024 * MIB
 
 
+def read_env(name: str) -> Optional[str]:
+    """Read one environment variable (the package's single environment read).
+
+    Args:
+        name: Environment variable name.
+
+    Returns:
+        The stripped value, or ``None`` when unset or empty.
+    """
+    raw_value = os.environ.get(name)
+    if raw_value is None or not raw_value.strip():
+        return None
+
+    return raw_value.strip()
+
+
+def env_positive_float(
+    name: str, *, default: float, maximum: Optional[float] = None
+) -> float:
+    """Read a positive number setting from the environment.
+
+    Args:
+        name: Environment variable name.
+        default: Value used when the variable is unset, empty or invalid.
+        maximum: Largest accepted value; larger values are clamped to it.
+
+    Returns:
+        The parsed value, or ``default``.
+    """
+    raw_value = read_env(name)
+    if raw_value is None:
+        return default
+
+    try:
+        value = float(raw_value)
+    except ValueError:
+        logger.warning("Ignoring invalid %s=%r; using %s.", name, raw_value, default)
+        return default
+
+    if not math.isfinite(value) or value <= 0:
+        logger.warning(
+            "Ignoring non-positive %s=%r; using %s.", name, raw_value, default
+        )
+        return default
+
+    if maximum is not None and value > maximum:
+        logger.warning("Clamping %s=%r to %s.", name, raw_value, maximum)
+        return maximum
+
+    return value
+
+
 def env_positive_int(name: str, *, default: int) -> int:
     """Read a positive integer setting from the environment.
 
@@ -40,22 +95,10 @@ def env_positive_int(name: str, *, default: int) -> int:
         default: Value used when the variable is unset, empty or invalid.
 
     Returns:
-        The parsed value, or ``default``.
+        The parsed value (fractions are truncated), or ``default``.
     """
-    raw_value = os.getenv(name)
-    if raw_value is None or not raw_value.strip():
-        return default
-
-    try:
-        value = int(float(raw_value))
-    except ValueError:
-        logger.warning("Ignoring invalid %s=%r; using %s.", name, raw_value, default)
-        return default
-
+    value = int(env_positive_float(name, default=float(default)))
     if value <= 0:
-        logger.warning(
-            "Ignoring non-positive %s=%r; using %s.", name, raw_value, default
-        )
         return default
 
     return value
@@ -70,11 +113,11 @@ def env_optional_path(name: str) -> Optional[Path]:
     Returns:
         The path, or ``None`` when the variable is unset or empty.
     """
-    raw_value = os.getenv(name)
-    if raw_value is None or not raw_value.strip():
+    raw_value = read_env(name)
+    if raw_value is None:
         return None
 
-    return Path(raw_value.strip())
+    return Path(raw_value)
 
 
 WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES = env_positive_int(
