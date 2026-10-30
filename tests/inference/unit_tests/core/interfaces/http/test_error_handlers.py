@@ -9,6 +9,7 @@ from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
     with_route_exceptions_async,
 )
+from inference.core.utils.image_utils import load_image_base64
 from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
     RuntimeLimitsCausedStepExecutionError,
@@ -37,6 +38,17 @@ class ModelRetrievalErrorWithStatus(ModelRetrievalError):
     def __init__(self, message: str, status_code: int):
         super().__init__(message)
         self.status_code = status_code
+
+
+def test_with_route_exceptions_reports_non_ascii_image_as_bad_request():
+    @with_route_exceptions
+    def image_route():
+        load_image_base64(value="not-base64-猫")
+
+    response = image_route()
+
+    assert response.status_code == 400
+    assert "Malformed base64 input image" in response.body.decode()
 
 
 def test_with_route_exceptions_when_usage_paused_error_raised():
