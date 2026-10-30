@@ -742,6 +742,16 @@ class WorkflowImageData:
         ).decode("ascii")
         return self._base64_image
 
+    def has_video_metadata(self) -> bool:
+        """Whether the image carries video metadata supplied by its producer.
+
+        ``video_metadata`` never fails: for an image without metadata (a still image,
+        or a step output built without copying the origin's metadata) it synthesises
+        a placeholder with ``frame_number=0`` and ``fps=30``. Blocks that derive time
+        from video metadata use this check to tell the placeholder from a real frame.
+        """
+        return self._video_metadata is not None
+
     @property
     def video_metadata(self) -> VideoMetadata:
         if self._video_metadata is not None:

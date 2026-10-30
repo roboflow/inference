@@ -39,8 +39,9 @@ This block limits the execution rate of workflow branches by enforcing a cooldow
 1. Takes a cooldown period (in seconds), a `depends_on` reference, and `next_steps` as input
 2. Tracks the timestamp of the last execution using an internal state variable
 3. Calculates the current time:
-   - For video processing: Uses video metadata (frame number and FPS) to compute a video-time-based timestamp when `video_reference_image` is provided
-   - For other contexts: Uses system clock time (datetime.now())
+   - For video files: Uses video metadata (frame number and FPS) to compute a video-time-based timestamp when `video_reference_image` is provided
+   - For streams, or video without a known FPS: Uses the frame timestamp from the video metadata of `video_reference_image`
+   - For other contexts (no `video_reference_image`, or an image without video metadata, such as a still image): Uses system clock time (datetime.now())
 4. Compares the time elapsed since the last execution against the `cooldown_seconds` threshold
 5. If sufficient time has passed (elapsed time >= cooldown_seconds):
    - Updates the last execution timestamp
@@ -96,7 +97,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         }
     )
     cooldown_seconds: float = Field(
-        description="Minimum number of seconds that must elapse between consecutive executions of the next_steps blocks. The rate limiter tracks the last execution timestamp and only allows execution to continue if at least this many seconds have passed since the previous execution. Must be greater than or equal to 0.0. For video workflows, this cooldown period is enforced based on video time (calculated from frame number and FPS) when video_reference_image is provided, rather than wall-clock time.",
+        description="Minimum number of seconds that must elapse between consecutive executions of the next_steps blocks. The rate limiter tracks the last execution timestamp and only allows execution to continue if at least this many seconds have passed since the previous execution. Must be greater than or equal to 0.0. For video files, this cooldown period is enforced based on video time (calculated from frame number and FPS) when video_reference_image is provided, rather than wall-clock time; for streams it is enforced based on frame timestamps.",
         examples=[1.0],
         default=1.0,
         ge=0.0,
@@ -113,7 +114,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         examples=[["$steps.upload"]],
     )
     video_reference_image: Optional[Selector(kind=[IMAGE_KIND])] = Field(
-        description="Optional reference to a video frame image to use for video-time-based timestamp generation. When provided, the rate limiter calculates timestamps based on video metadata (frame number and FPS) rather than system clock time. This is useful when processing video faster than real-time, ensuring rate limiting works correctly relative to video playback time rather than processing speed. If not provided (None), the block uses system clock time (datetime.now()). Only applicable for video processing workflows.",
+        description="Optional reference to a video frame image to use for video-time-based timestamp generation. When provided, the rate limiter calculates timestamps based on video metadata rather than system clock time: frame number and FPS for video files, and the frame timestamp for streams or when FPS is unknown. This is useful when processing video faster than real-time, ensuring rate limiting works correctly relative to video playback time rather than processing speed. If not provided (None), or if the image carries no video metadata (for example a still image), the block uses system clock time (datetime.now()). Only applicable for video processing workflows.",
         examples=["$inputs.image"],
         default=None,
     )
@@ -161,7 +162,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
 class RateLimiterBlockV1(WorkflowBlock):
     def __init__(self):
         super().__init__()
-        self._last_executed_at: Optional[datetime] = None
+        self._last_executed_at: Optional[float] = None
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -174,22 +175,28 @@ class RateLimiterBlockV1(WorkflowBlock):
         next_steps: List[StepSelector],
         video_reference_image: Optional[WorkflowImageData] = None,
     ) -> BlockResult:
-        current_time = datetime.now()
-        try:
-            metadata = video_reference_image.video_metadata
-            current_time = datetime.fromtimestamp(
-                1 / metadata.fps * metadata.frame_number
-            )
-        except Exception:
-            # reference not passed, metadata not set, or not a video frame
-            pass
-
+        current_time = _get_current_time_seconds(video_reference_image)
         should_throttle = False
         if self._last_executed_at is not None:
-            should_throttle = (
-                current_time - self._last_executed_at
-            ).total_seconds() < cooldown_seconds
+            should_throttle = (current_time - self._last_executed_at) < cooldown_seconds
         if should_throttle:
             return FlowControl(mode="terminate_branch")
         self._last_executed_at = current_time
         return FlowControl(mode="select_step", context=next_steps)
+
+
+def _get_current_time_seconds(
+    video_reference_image: Optional[WorkflowImageData],
+) -> float:
+    # Wall-clock time unless the image carries real video metadata: the
+    # placeholder `video_metadata` of a still image is always frame 0, which would
+    # pin the time and throttle every frame after the first.
+    if video_reference_image is None or not video_reference_image.has_video_metadata():
+        return datetime.now().timestamp()
+
+    metadata = video_reference_image.video_metadata
+    if metadata.comes_from_video_file and metadata.fps:
+        video_time = metadata.frame_number / metadata.fps
+        return video_time
+    frame_time = metadata.frame_timestamp.timestamp()
+    return frame_time
