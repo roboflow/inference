@@ -260,10 +260,12 @@ def test_http_server_round_trips_an_ndarray_attribute(modal_app):
 
 
 def _run_ws(executor, modal_app, code: str, inputs: dict, block_state=None) -> dict:
+    # Both directions go through msgpack bytes, as on the real wire: an
+    # in-memory dict would keep types (an IntEnum, a tuple) the wire loses.
     kwargs = {}
     if block_state is not None:
         kwargs["block_state"] = modal_app.Executor._deserialize_msgpack_inputs(
-            serialize_inputs_for_msgpack(block_state)
+            _through_msgpack(serialize_inputs_for_msgpack(block_state))
         )
     response = modal_app.Executor._run_user_code_ws(
         executor,
@@ -271,13 +273,18 @@ def _run_ws(executor, modal_app, code: str, inputs: dict, block_state=None) -> d
         [],
         "run",
         modal_app.Executor._deserialize_msgpack_inputs(
-            serialize_inputs_for_msgpack(inputs)
+            _through_msgpack(serialize_inputs_for_msgpack(inputs))
         ),
         "",
         {},
         **kwargs,
     )
-    return response
+    return _through_msgpack(response)
+
+
+def _through_msgpack(value):
+    unpacked = msgpack.unpackb(msgpack.packb(value, use_bin_type=True), raw=False)
+    return unpacked
 
 
 def test_ws_server_seeds_self_from_block_state_and_echoes_the_mutated_state(
@@ -443,11 +450,13 @@ def test_ws_client_sends_block_state_and_returns_the_echoed_state(monkeypatch):
     assert state == {"has_first_frame": True, "_ffc_calls": 2}
 
 
-def test_ws_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
-    # A pre-upgrade container ignores ``block_state`` and answers without it.
-    # Silently continuing would reset ``self`` on every frame — the bug this
-    # feature fixes — so the client refuses.
+def test_ws_client_clears_state_with_a_warning_when_the_server_drops_it(monkeypatch):
+    # A pre-upgrade container (a mixed fleet, or a rollback mid-stream)
+    # ignores ``block_state``. Failing would fail every later call of the
+    # stream for good, since the engine instance keeps its state; the call
+    # goes on with an empty state instead, as before state was carried.
     monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    warned = _capture_client_warnings(monkeypatch)
     executor = _ws_executor()
     executor._send_recv_with_retry = lambda frame_bytes, workspace, request_id=None: (
         msgpack.packb(
@@ -456,17 +465,17 @@ def test_ws_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
         )
     )
 
-    with pytest.raises(DynamicBlockError) as error:
-        executor.execute_remote_with_state(
-            block_type_name="FirstFrameCheck",
-            python_code=_python_code(),
-            inputs={"image": 1},
-            workspace_id="test-ws",
-            workflow_context={},
-            block_state={"has_first_frame": True},
-        )
+    _, state = executor.execute_remote_with_state(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+        block_state={"has_first_frame": True},
+    )
 
-    assert "block_state" in str(error.value)
+    assert state == {}
+    assert any("older" in message and "reset" in message for message in warned)
 
 
 def test_ws_client_execute_remote_without_state_sends_no_state_key(monkeypatch):
@@ -535,23 +544,36 @@ def test_http_client_sends_block_state_and_returns_the_echoed_state(monkeypatch)
     assert state == {"has_first_frame": True, "_ffc_calls": 2}
 
 
-def test_http_client_fails_loudly_when_the_server_drops_the_state(monkeypatch):
+def test_http_client_clears_state_with_a_warning_when_the_server_drops_it(monkeypatch):
     monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    warned = _capture_client_warnings(monkeypatch)
     executor = client.ModalExecutor(workspace_id="test-ws")
     executor._get_endpoint_url = lambda workspace: "http://modal.test/execute"
     executor._post_execute = lambda **kwargs: {"success": True, "result": "{}"}
 
-    with pytest.raises(DynamicBlockError) as error:
-        executor.execute_remote_with_state(
-            block_type_name="FirstFrameCheck",
-            python_code=_python_code(),
-            inputs={"image": 1},
-            workspace_id="test-ws",
-            workflow_context={},
-            block_state={"has_first_frame": True},
-        )
+    _, state = executor.execute_remote_with_state(
+        block_type_name="FirstFrameCheck",
+        python_code=_python_code(),
+        inputs={"image": 1},
+        workspace_id="test-ws",
+        workflow_context={},
+        block_state={"has_first_frame": True},
+    )
 
-    assert "block_state" in str(error.value)
+    assert state == {}
+    assert any("older" in message and "reset" in message for message in warned)
+
+
+def _serialize_block_state_json(block_state, *, block_type_name):
+    """What ``ModalExecutor._execute_http`` sends as ``block_state_json``."""
+    carried_state = client._carry_block_state(
+        block_state,
+        block_type_name=block_type_name,
+        workflow_context=None,
+        measure=client._json_state_size,
+    )
+    block_state_json = serialize_for_modal_remote_execution(carried_state)
+    return block_state_json
 
 
 def _capture_client_warnings(monkeypatch) -> list:
@@ -607,7 +629,7 @@ def test_ws_client_drops_state_over_the_size_cap_with_a_warning(monkeypatch):
 def test_http_client_drops_a_non_transportable_attribute_with_a_warning(monkeypatch):
     warned = _capture_client_warnings(monkeypatch)
 
-    block_state_json = client._serialize_block_state_json(
+    block_state_json = _serialize_block_state_json(
         {"tracker": object(), "count": 1}, block_type_name="FirstFrameCheck"
     )
 
@@ -680,7 +702,37 @@ class _InProcessHttpExecutor:
         return self._client.execute_remote(**kwargs)
 
 
-def _build_first_frame_block(monkeypatch, modal_app, code=FIRST_FRAME_CODE):
+class _InProcessWsExecutor:
+    """The engine's websocket executor talking to the real websocket ASGI app
+    of ``modal_app``, frames as real msgpack bytes."""
+
+    def __init__(self, modal_app):
+        from fastapi.testclient import TestClient
+
+        cls = modal_app.Executor
+        user_cls = cls._get_user_cls() if hasattr(cls, "_get_user_cls") else cls
+        server = user_cls.__new__(user_cls)
+        server.workspace_id = "test-ws"
+        user_cls.identify(server)
+        self._session = TestClient(user_cls.wsapp(server)).websocket_connect("/ws")
+        self._ws = self._session.__enter__()
+        self._client = _ws_executor()
+        self._client._send_recv_with_retry = self._send_recv
+
+    def _send_recv(self, frame_bytes, workspace, request_id=None):
+        self._ws.send_bytes(frame_bytes)
+        return self._ws.receive_bytes()
+
+    def execute_remote_with_state(self, **kwargs):
+        return self._client.execute_remote_with_state(**kwargs)
+
+    def execute_remote(self, **kwargs):
+        return self._client.execute_remote(**kwargs)
+
+
+def _build_first_frame_block(
+    monkeypatch, modal_app, code=FIRST_FRAME_CODE, transport="http"
+):
     from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
         compile_dynamic_blocks,
     )
@@ -690,7 +742,10 @@ def _build_first_frame_block(monkeypatch, modal_app, code=FIRST_FRAME_CODE):
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
     )
     monkeypatch.setattr(client, "validate_code_in_modal", lambda *a, **k: None)
-    executor = _InProcessHttpExecutor(modal_app)
+    if transport == "http":
+        executor = _InProcessHttpExecutor(modal_app)
+    else:
+        executor = _InProcessWsExecutor(modal_app)
 
     @contextmanager
     def acquire(workspace_id):
@@ -935,7 +990,7 @@ def test_ws_server_echoes_numpy_scalars_as_python_scalars(modal_app):
 def test_http_client_sends_numpy_scalars_as_python_scalars():
     state = {"seen": np.bool_(False), "score": np.float32(0.5), "n": np.int64(3)}
 
-    block_state_json = client._serialize_block_state_json(state, block_type_name="b")
+    block_state_json = _serialize_block_state_json(state, block_type_name="b")
 
     _assert_python_scalars(json.loads(block_state_json))
 
@@ -967,7 +1022,7 @@ def _detections():
 
 
 def test_http_client_carries_a_tuple_holding_detections_as_a_list():
-    block_state_json = client._serialize_block_state_json(
+    block_state_json = _serialize_block_state_json(
         {"prev": (_detections(), 1)}, block_type_name="b"
     )
 
@@ -985,7 +1040,7 @@ def test_http_server_echoes_a_tuple_holding_detections_as_a_list(modal_app):
         "    self.prev = (self.prev[0], self.prev[1] + 1)\n"
         "    return {'n': len(self.prev[0])}\n"
     )
-    seeded = client._serialize_block_state_json(
+    seeded = _serialize_block_state_json(
         {"prev": (_detections(), 1)}, block_type_name="b"
     )
     payload = {
@@ -1106,11 +1161,43 @@ UNCARRIABLE_VALUE_EXPRESSIONS = {
         "data={'class_name': np.array(['a']), 'detection_id': np.array(['d'])})"
     ),
     "dict_with_type_marker": "{'_type': 'datetime', 'value': '2020-01-01T00:00:00'}",
+    "base64_image_shaped_dict": "{'type': 'base64', 'value': 'abc'}",
+    "nested_base64_image_shaped_dict": "[{'type': 'base64', 'value': 'abc'}]",
+    "defaultdict": "collections.defaultdict(int, {'k1': 1})",
+    "counter": "collections.Counter({'k1': 1})",
+    "ordered_dict": "collections.OrderedDict(k1=1)",
+    "namedtuple": "collections.namedtuple('Point', 'x')(1)",
+    "int_enum": "enum.IntEnum('Color', 'RED').RED",
+    "str_subclass": "type('Name', (str,), {})('x')",
+    "list_subclass": "type('Items', (list,), {})([1])",
+    "datetime_subclass": "type('Stamp', (datetime.datetime,), {})(2020, 1, 1)",
+    "detections_uint64_class_id": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([2 ** 63], dtype=np.uint64), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'image_dimensions': np.array([[20, 20]])})"
+    ),
+    "detections_uint64_tracker_id": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "tracker_id=np.array([2 ** 63], dtype=np.uint64), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'image_dimensions': np.array([[20, 20]])})"
+    ),
+    "detections_rle_without_size": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'rle_mask': np.array([{'counts': '04'}], dtype=object)})"
+    ),
 }
 
 
 def _uncarriable_value_code(expression: str) -> str:
     code = (
+        "import collections\n"
+        "import datetime\n"
+        "import enum\n"
         "import uuid\n"
         "import numpy as np\n"
         "import supervision as sv\n"
@@ -1157,10 +1244,21 @@ def test_ws_server_drops_a_value_the_transport_cannot_carry(modal_app, expressio
 
 
 def _uncarriable_values() -> dict:
+    import collections
+    import datetime as datetime_module
+    import enum
     import uuid
 
+    namespace = {
+        "np": np,
+        "sv": sv,
+        "uuid": uuid,
+        "collections": collections,
+        "datetime": datetime_module,
+        "enum": enum,
+    }
     values = {
-        name: eval(expression, {"np": np, "sv": sv, "uuid": uuid})
+        name: eval(expression, namespace)
         for name, expression in UNCARRIABLE_VALUE_EXPRESSIONS.items()
     }
     return values
@@ -1212,7 +1310,29 @@ def test_engine_partition_carries_every_transportable_value():
     )
 
     assert partition.dropped == []
-    assert set(partition.carried) == set(_carriable_values())
+    decoded = client._read_echoed_block_state_json(
+        {"block_state": serialize_for_modal_remote_execution(partition.carried)},
+        block_state={"sent": True},
+        block_type_name="B",
+    )
+    assert set(decoded) == set(_carriable_values())
+    for name in ("flag", "count", "big_but_fits", "ratio", "name", "raw", "when"):
+        assert decoded[name] == _carriable_values()[name], name
+    assert decoded["history"] == [1, [2, 3], {"nested": [None]}]
+
+
+def _comparable(state: dict) -> dict:
+    # Serializing an image stamps a fresh frame timestamp, so images compare
+    # by pixels and parentage; everything else by its serialized form.
+    comparable = {
+        name: (
+            (value.parent_metadata.parent_id, value.numpy_image.tobytes())
+            if isinstance(value, WorkflowImageData)
+            else serialize_for_modal_remote_execution({name: value})
+        )
+        for name, value in state.items()
+    }
+    return comparable
 
 
 def test_engine_and_sandbox_partitions_agree_on_every_value(modal_app):
@@ -1221,12 +1341,15 @@ def test_engine_and_sandbox_partitions_agree_on_every_value(modal_app):
 
     for name, value in {**_carriable_values(), **_uncarriable_values()}.items():
         engine = partition_block_state({name: value}, measure=measure)
-        sandbox_carried, sandbox_dropped, _ = modal_app._partition_block_state(
-            {name: value}, measure
+        sandbox_carried, sandbox_dropped, sandbox_notes = (
+            modal_app._partition_block_state({name: value}, measure)
         )
 
-        assert set(engine.carried) == set(sandbox_carried), name
-        assert [n for n, _ in engine.dropped] == [n for n, _ in sandbox_dropped], name
+        assert _comparable(engine.carried) == _comparable(sandbox_carried), name
+        assert engine.dropped == sandbox_dropped, name
+        if not engine.dropped:
+            # Withheld notes are worded per side on purpose.
+            assert engine.notes == sandbox_notes, name
 
 
 def test_engine_partition_names_the_offending_path_inside_a_container():
@@ -1327,7 +1450,7 @@ def test_client_logs_a_block_state_warning_once_per_process(monkeypatch):
     warned = _capture_client_warnings(monkeypatch)
 
     for _ in range(3):
-        client._serialize_block_state_json(
+        _serialize_block_state_json(
             {"tracker": object()}, block_type_name="FirstFrameCheck"
         )
 
@@ -1481,9 +1604,7 @@ def test_http_server_notes_detections_data_keys_the_transport_loses(modal_app):
         "    self.prev.data['custom'] = np.array(['x'])\n"
         "    return {'ok': True}\n"
     )
-    seeded = client._serialize_block_state_json(
-        {"prev": _detections()}, block_type_name="b"
-    )
+    seeded = _serialize_block_state_json({"prev": _detections()}, block_type_name="b")
     payload = {
         "code_str": code,
         "imports": [],
@@ -1632,6 +1753,10 @@ def test_http_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app)
     )
     assert isinstance(state["last"], WorkflowImageData)
     assert state["last"].numpy_image.shape == (8, 8, 3)
+    pixel_error = np.abs(
+        state["last"].numpy_image.astype(int) - _image().numpy_image.astype(int)
+    )
+    assert pixel_error.max() <= 2
     assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
 
 
@@ -1642,12 +1767,16 @@ def test_ws_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app):
 
     assert response["success"] is True, response.get("error")
     state = client._read_echoed_block_state_msgpack(
-        msgpack.unpackb(msgpack.packb(response, use_bin_type=True), raw=False),
+        response,
         block_state={},
         block_type_name="B",
     )
     assert isinstance(state["last"], WorkflowImageData)
     assert state["last"].numpy_image.shape == (8, 8, 3)
+    pixel_error = np.abs(
+        state["last"].numpy_image.astype(int) - _image().numpy_image.astype(int)
+    )
+    assert pixel_error.max() <= 2
     assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
 
 
@@ -1672,3 +1801,186 @@ def test_detections_parent_ids_survive_a_server_round_trip(modal_app, transport)
 
     assert state["prev"].data["parent_id"].tolist() == ["frame-1"]
     assert state["prev"].data["root_parent_id"].tolist() == ["root-frame"]
+
+
+# --------------------------------------------------------------------------- #
+# re-review of 2869ec815
+# --------------------------------------------------------------------------- #
+
+
+SUBCLASS_STATE_CODE = (
+    "import collections\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'seen'):\n"
+    "        self.seen = collections.defaultdict(int)\n"
+    "    self.seen['k' + str(image)] += 1\n"
+    "    return {'is_first_frame': True, 'calls': len(self.seen)}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_working_with_a_defaultdict_on_self(
+    monkeypatch, modal_app, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=SUBCLASS_STATE_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 1, 1]
+    assert not hasattr(block, "seen")
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_self_state_across_calls_on_both_transports(
+    monkeypatch, modal_app, transport
+):
+    block = _build_first_frame_block(monkeypatch, modal_app, transport=transport)
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["is_first_frame"] for r in results] == [True, False, False]
+    assert [r["calls"] for r in results] == [1, 2, 3]
+
+
+def test_engine_partition_survives_detections_with_mixed_data_key_types():
+    detections = _detections()
+    detections.data["custom"] = np.array(["x"])
+    detections.data[42] = np.array(["y"])
+
+    partition = partition_block_state({"prev": detections}, measure=lambda attribute: 0)
+
+    assert "prev" in partition.carried
+    assert any("custom" in note and "42" in note for note in partition.notes)
+
+
+def test_sandbox_partition_survives_detections_with_mixed_data_key_types(modal_app):
+    detections = _detections()
+    detections.data["custom"] = np.array(["x"])
+    detections.data[42] = np.array(["y"])
+
+    carried, _, notes = modal_app._partition_block_state(
+        {"prev": detections}, lambda attribute: 0
+    )
+
+    assert "prev" in carried
+    assert any("custom" in note and "42" in note for note in notes)
+
+
+def _detections_with_equal_parent_ids():
+    detections = _detections()
+    detections.data["root_parent_id"] = np.array(["frame-1"])
+    return detections
+
+
+def test_engine_partition_notes_a_root_parent_id_equal_to_the_parent_id():
+    partition = partition_block_state(
+        {"prev": _detections_with_equal_parent_ids()}, measure=lambda attribute: 0
+    )
+
+    assert any("root_parent_id" in note for note in partition.notes)
+
+
+def test_sandbox_partition_notes_a_root_parent_id_equal_to_the_parent_id(modal_app):
+    _, _, notes = modal_app._partition_block_state(
+        {"prev": _detections_with_equal_parent_ids()}, lambda attribute: 0
+    )
+
+    assert any("root_parent_id" in note for note in notes)
+
+
+GROWING_BUFFER_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    self.buffer = np.zeros((2 * 1024 * 1024 + image,), dtype=np.uint8)\n"
+    "    return {'ok': True}\n"
+)
+
+
+def test_http_server_warns_once_about_an_oversized_attribute_whose_size_changes(
+    modal_app,
+):
+    executor = _http_executor(modal_app)
+
+    responses = [
+        _run_http(executor, GROWING_BUFFER_CODE, {"image": frame}, block_state={})
+        for frame in (1, 2, 3, 4)
+    ]
+
+    stderrs = [response["stderr"] or "" for response in responses]
+    assert "self.buffer" in stderrs[0]
+    assert all("self.buffer" not in stderr for stderr in stderrs[1:])
+    assert len(executor._block_state_drop_warnings) == 2
+
+
+def test_sandbox_warning_set_is_bounded(modal_app):
+    executor = _http_executor(modal_app)
+    stderr = __import__("io").StringIO()
+
+    for index in range(modal_app._MAX_BLOCK_STATE_WARNINGS + 10):
+        modal_app._warn_dropped_block_state(
+            executor, f"hash-{index}", [("x", "reason")], [], stderr
+        )
+
+    assert (
+        len(executor._block_state_drop_warnings) <= modal_app._MAX_BLOCK_STATE_WARNINGS
+    )
+
+
+def test_engine_withheld_note_says_the_sandbox_starts_this_call_empty():
+    partition = partition_block_state(
+        {"tracker": object(), "count": 1}, measure=lambda attribute: 0
+    )
+
+    assert any("this call" in note and "empty" in note for note in partition.notes)
+
+
+def test_sandbox_withheld_note_says_the_next_call_starts_empty(modal_app):
+    _, _, notes = modal_app._partition_block_state(
+        {"tracker": object(), "count": 1}, lambda attribute: 0
+    )
+
+    assert any("next call" in note and "empty" in note for note in notes)
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+@pytest.mark.parametrize("size_over_cap, carried", [(0, True), (1, False)])
+def test_partition_size_cap_boundary(modal_app, partition_side, size_over_cap, carried):
+    def measure(attribute):
+        return BLOCK_STATE_MAX_BYTES + size_over_cap
+
+    if partition_side == "engine":
+        carried_state, _, _ = partition_block_state({"x": 1}, measure=measure)
+    else:
+        carried_state, _, _ = modal_app._partition_block_state({"x": 1}, measure)
+
+    assert ("x" in carried_state) is carried
+
+
+def test_client_decode_error_names_the_failing_attribute():
+    broken = json.dumps(
+        {"ok": 1, "prev": {"_type": "sv_detections", "predictions": [{}], "image": {}}}
+    )
+
+    with pytest.raises(DynamicBlockError) as error:
+        client._read_echoed_block_state_json(
+            {"block_state": broken}, block_state={}, block_type_name="B"
+        )
+
+    assert "self.prev" in str(error.value)
+
+
+def test_client_warns_once_per_step_not_once_per_block_type(monkeypatch):
+    warned = _capture_client_warnings(monkeypatch)
+
+    for step_name in ("first", "second", "second"):
+        client._carry_block_state(
+            {"tracker": object()},
+            block_type_name="FirstFrameCheck",
+            workflow_context={"step_selector": f"$steps.{step_name}"},
+            measure=client._json_state_size,
+        )
+
+    tracker_warnings = [m for m in warned if "self.tracker" in m and "rebuilt" in m]
+    assert len(tracker_warnings) == 2

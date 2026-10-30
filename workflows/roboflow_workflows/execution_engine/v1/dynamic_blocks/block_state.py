@@ -390,13 +390,13 @@ def _over_cap_reason(size: int) -> str:
 def _withheld_note(*, dropped: List[DroppedAttribute], withheld: List[str]) -> str:
     dropped_names = ", ".join(f"`self.{name}`" for name, _ in dropped)
     note = (
-        f"Custom Python block state withheld for this call because {dropped_names} "
-        "cannot be carried: none of the state kept on `self` persists to the "
-        "next call, so the block rebuilds it as it did before state was carried"
+        f"Custom Python block state withheld: {dropped_names} cannot be "
+        "carried, so no state is sent to the sandbox and the block runs this "
+        "call with an empty `self`, as it did before state was carried"
     )
     if withheld:
         withheld_names = ", ".join(f"`self.{name}`" for name in withheld)
-        note += f" (also not carried: {withheld_names})"
+        note += f" (also not sent: {withheld_names})"
 
     return note
 
@@ -414,12 +414,19 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
     from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
     if isinstance(value, sv.Detections):
-        lost_keys = sorted(set(value.data) - CARRIED_DETECTIONS_DATA_KEYS)
+        lost_keys = sorted(set(value.data) - CARRIED_DETECTIONS_DATA_KEYS, key=repr)
         if lost_keys:
             notes.append(
                 f"Custom Python block state `self.{path}` is carried without "
                 f"its sv.Detections data keys {lost_keys}; only the keys the "
                 "workflow serializers know survive a call"
+            )
+        if _has_root_parent_id_equal_to_parent_id(value):
+            notes.append(
+                f"Custom Python block state `self.{path}` holds sv.Detections "
+                f"whose `{ROOT_PARENT_ID_KEY}` equals their `{PARENT_ID_KEY}`; "
+                f"the transport does not carry such a `{ROOT_PARENT_ID_KEY}` "
+                "and it comes back as the transport's own placeholder"
             )
         if value.mask is not None and RLE_MASK_KEY_IN_SV_DETECTIONS not in value.data:
             notes.append(
@@ -431,8 +438,7 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
     if isinstance(value, WorkflowImageData):
         notes.append(
             f"Custom Python block state `self.{path}` is an image, which is "
-            "re-encoded as JPEG on every call; keep `image.numpy_image` on "
-            "`self` instead for exact pixels"
+            "re-encoded as JPEG on every call, so its pixels drift"
         )
         return
     if isinstance(value, dict):
@@ -442,6 +448,21 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
     if isinstance(value, list):
         for index, item in enumerate(value):
             _collect_lossy_value_notes(item, path=f"{path}[{index}]", notes=notes)
+
+
+def _has_root_parent_id_equal_to_parent_id(detections: Any) -> bool:
+    if PARENT_ID_KEY not in detections.data:
+        return False
+    if ROOT_PARENT_ID_KEY not in detections.data:
+        return False
+    parent_ids = [str(item) for item in detections.data[PARENT_ID_KEY]]
+    root_parent_ids = [str(item) for item in detections.data[ROOT_PARENT_ID_KEY]]
+    has_equal_ids = any(
+        parent_id == root_parent_id
+        for parent_id, root_parent_id in zip(parent_ids, root_parent_ids)
+    )
+
+    return has_equal_ids
 
 
 def describe_dropped_block_state(
@@ -469,28 +490,26 @@ def describe_dropped_block_state(
 
 
 def _validate_value(value: Any, *, path: str) -> None:
-    if value is None or isinstance(value, (bool, float, str, bytes)):
+    # Exact types only: a subclass (defaultdict, Counter, OrderedDict, a
+    # namedtuple, an IntEnum member, a str subclass) comes back as its base
+    # type, which breaks the block from the next call on.
+    value_type = type(value)
+    if value is None or value_type in (bool, float, str, bytes, datetime):
         return
-    if isinstance(value, int):
-        _validate_int(int(value), path=path)
+    if value_type is int:
+        _validate_int(value, path=path)
         return
-    if isinstance(value, datetime):
+    if value_type is np.ndarray:
+        _validate_ndarray(value, path=path, description="numpy array")
         return
-    if isinstance(value, np.ndarray):
-        if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
-            _raise_not_transportable(f"numpy array of dtype {value.dtype}", path=path)
-        if value.dtype.kind in "iu" and value.size:
-            _validate_int(int(value.min()), path=path)
-            _validate_int(int(value.max()), path=path)
-        return
+    if isinstance(value, (np.timedelta64, np.datetime64)):
+        # timedelta64 subclasses np.signedinteger; neither is carried.
+        _raise_not_transportable(value_type.__name__, path=path)
     if isinstance(value, (np.longdouble, np.clongdouble)) and not isinstance(
         value, (np.float64, np.complex128)
     ):
-        _raise_not_transportable(type(value).__name__, path=path)
-    if isinstance(value, (np.timedelta64, np.datetime64)):
-        # timedelta64 subclasses np.signedinteger; neither is carried.
-        _raise_not_transportable(type(value).__name__, path=path)
-    if isinstance(value, np.bool_) or isinstance(value, np.floating):
+        _raise_not_transportable(value_type.__name__, path=path)
+    if isinstance(value, (np.bool_, np.floating)):
         return
     if isinstance(value, np.integer):
         _validate_int(int(value), path=path)
@@ -498,34 +517,73 @@ def _validate_value(value: Any, *, path: str) -> None:
     if _is_transportable_workflow_object(value):
         _validate_workflow_object(value, path=path)
         return
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise DynamicBlockError(
-                    public_message=(
-                        f"Custom Python block state `self.{path}` has a "
-                        f"non-string key {key!r}; only string keys can be "
-                        "carried across remote execution."
-                    ),
-                    context="dynamic_block | block_state_validation",
-                )
-            if key == WIRE_TYPE_MARKER_KEY:
-                raise DynamicBlockError(
-                    public_message=(
-                        f"Custom Python block state `self.{path}` has a "
-                        f"`{WIRE_TYPE_MARKER_KEY}` key, which the transport "
-                        "reserves to mark typed values; rename the key."
-                    ),
-                    context="dynamic_block | block_state_validation",
-                )
-            _validate_value(item, path=f"{path}[{key!r}]")
+    if value_type is dict:
+        _validate_dict(value, path=path)
         return
-    if isinstance(value, (list, tuple)):
+    if value_type in (list, tuple):
         for index, item in enumerate(value):
             _validate_value(item, path=f"{path}[{index}]")
         return
 
-    _raise_not_transportable(type(value).__name__, path=path)
+    _raise_not_transportable(_describe_type(value_type), path=path)
+
+
+def _describe_type(value_type: type) -> str:
+    base_names = [
+        base.__name__
+        for base in (bool, int, float, str, bytes, dict, list, tuple, datetime)
+        if issubclass(value_type, base)
+    ]
+    if base_names:
+        description = (
+            f"{value_type.__name__} (a {base_names[0]} subclass, which would "
+            f"come back as a plain {base_names[0]})"
+        )
+        return description
+
+    return value_type.__name__
+
+
+def _validate_dict(value: Dict[Any, Any], *, path: str) -> None:
+    for key, item in value.items():
+        if type(key) is not str:
+            raise DynamicBlockError(
+                public_message=(
+                    f"Custom Python block state `self.{path}` has a "
+                    f"non-string key {key!r}; only string keys can be "
+                    "carried across remote execution."
+                ),
+                context="dynamic_block | block_state_validation",
+            )
+        if key == WIRE_TYPE_MARKER_KEY:
+            raise DynamicBlockError(
+                public_message=(
+                    f"Custom Python block state `self.{path}` has a "
+                    f"`{WIRE_TYPE_MARKER_KEY}` key, which the transport "
+                    "reserves to mark typed values; rename the key."
+                ),
+                context="dynamic_block | block_state_validation",
+            )
+    if value.get("type") == "base64" and "value" in value:
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block state `self.{path}` is a dict shaped "
+                'like a serialized image (`type` "base64" with a `value`), '
+                "which the transport would decode as an image; rename the keys "
+                "or keep the image itself on `self`."
+            ),
+            context="dynamic_block | block_state_validation",
+        )
+    for key, item in value.items():
+        _validate_value(item, path=f"{path}[{key!r}]")
+
+
+def _validate_ndarray(value: np.ndarray, *, path: str, description: str) -> None:
+    if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
+        _raise_not_transportable(f"{description} of dtype {value.dtype}", path=path)
+    if value.dtype.kind in "iu" and value.size:
+        _validate_int(int(value.min()), path=path)
+        _validate_int(int(value.max()), path=path)
 
 
 def _validate_int(value: int, *, path: str) -> None:
@@ -543,7 +601,7 @@ def _validate_int(value: int, *, path: str) -> None:
 def _validate_workflow_object(value: Any, *, path: str) -> None:
     import supervision as sv
 
-    if not isinstance(value, sv.Detections) or len(value) == 0:
+    if type(value) is not sv.Detections or len(value) == 0:
         return
     missing = []
     if value.confidence is None:
@@ -553,11 +611,7 @@ def _validate_workflow_object(value: Any, *, path: str) -> None:
     for key in ("class_name", DETECTION_ID_KEY):
         if key not in value.data:
             missing.append(f"data[{key!r}]")
-    has_size = (
-        IMAGE_DIMENSIONS_KEY in value.data
-        or value.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS) is not None
-    )
-    if not has_size:
+    if IMAGE_DIMENSIONS_KEY not in value.data and not _rle_masks_carry_size(value):
         missing.append(f"data[{IMAGE_DIMENSIONS_KEY!r}]")
     if missing:
         raise DynamicBlockError(
@@ -568,6 +622,30 @@ def _validate_workflow_object(value: Any, *, path: str) -> None:
             ),
             context="dynamic_block | block_state_validation",
         )
+    integer_arrays = {"class_id": value.class_id, "tracker_id": value.tracker_id}
+    integer_arrays.update(
+        (f"data[{key!r}]", item)
+        for key, item in value.data.items()
+        if isinstance(item, np.ndarray) and item.dtype.kind in "iu"
+    )
+    for field, array in integer_arrays.items():
+        if array is not None and array.size:
+            _validate_int(int(np.max(array)), path=f"{path}.{field}")
+            _validate_int(int(np.min(array)), path=f"{path}.{field}")
+
+
+def _rle_masks_carry_size(detections: Any) -> bool:
+    rle_masks = detections.data.get(RLE_MASK_KEY_IN_SV_DETECTIONS)
+    if rle_masks is None:
+        return False
+    carry_size = all(
+        isinstance(rle, dict)
+        and isinstance(rle.get("size"), (list, tuple))
+        and len(rle["size"]) == 2
+        for rle in rle_masks
+    )
+
+    return carry_size
 
 
 def _raise_not_transportable(description: str, *, path: str) -> None:
@@ -591,8 +669,6 @@ def _is_transportable_workflow_object(value: Any) -> bool:
         WorkflowImageData,
     )
 
-    is_transportable = isinstance(
-        value, (sv.Detections, WorkflowImageData, VideoMetadata)
-    )
+    is_transportable = type(value) in (sv.Detections, WorkflowImageData, VideoMetadata)
 
     return is_transportable

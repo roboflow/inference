@@ -175,15 +175,18 @@ _CARRIED_DETECTIONS_DATA_KEYS = frozenset(
 
 
 def _check_block_state_value(value: Any, path: str) -> None:
-    """Raise unless ``value`` can cross the boundary without being stringified.
+    """Raise unless ``value`` can cross the boundary and come back as itself.
 
-    Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``.
-    Kept inline because the sandbox image runs the released ``inference``
-    package, which may predate that module. Accepted: None,
-    bool/str/bytes, ints in the signed 64-bit range, floats, datetime, numpy
-    arrays of bool/int/float/str and such scalars, sv.Detections with the
-    fields the transport needs, WorkflowImageData, VideoMetadata, and
-    lists/tuples and string-keyed dicts (without a ``_type`` key) of those.
+    Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``
+    message for message (a parity test compares both). Kept inline because the
+    sandbox image runs the released ``inference`` package, which may predate
+    that module. Accepted, as exact types (a subclass comes back as its base
+    type): None, bool/str/bytes, ints in the signed 64-bit range, floats,
+    datetime, numpy arrays of bool/int/float/str and such scalars,
+    sv.Detections with the fields the transport needs and integers in range,
+    WorkflowImageData, VideoMetadata, and lists/tuples and string-keyed dicts
+    of those (without a ``_type`` key, and not shaped like a serialized
+    image).
     """
     from datetime import datetime
 
@@ -205,6 +208,19 @@ def _check_block_state_value(value: Any, path: str) -> None:
             "every call."
         )
 
+    def _describe_type(value_type: type) -> str:
+        base_names = [
+            base.__name__
+            for base in (bool, int, float, str, bytes, dict, list, tuple, datetime)
+            if issubclass(value_type, base)
+        ]
+        if base_names:
+            return (
+                f"{value_type.__name__} (a {base_names[0]} subclass, which would "
+                f"come back as a plain {base_names[0]})"
+            )
+        return value_type.__name__
+
     def _check_int(value: int, path: str) -> None:
         if not _MIN_CARRIED_INT <= value <= _MAX_CARRIED_INT:
             raise BlockStateSerializationError(
@@ -212,6 +228,24 @@ def _check_block_state_value(value: Any, path: str) -> None:
                 "outside the signed 64-bit range, which cannot be carried "
                 "across remote execution; store it as a string."
             )
+
+    def _check_ndarray(value: Any, path: str) -> None:
+        if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
+            _not_transportable(f"numpy array of dtype {value.dtype}", path)
+        if value.dtype.kind in "iu" and value.size:
+            _check_int(int(value.min()), path)
+            _check_int(int(value.max()), path)
+
+    def _rle_masks_carry_size(value: Any) -> bool:
+        rle_masks = value.data.get("rle_mask")
+        if rle_masks is None:
+            return False
+        return all(
+            isinstance(rle, dict)
+            and isinstance(rle.get("size"), (list, tuple))
+            and len(rle["size"]) == 2
+            for rle in rle_masks
+        )
 
     def _check_detections(value: Any, path: str) -> None:
         if len(value) == 0:
@@ -224,10 +258,7 @@ def _check_block_state_value(value: Any, path: str) -> None:
         for key in ("class_name", "detection_id"):
             if key not in value.data:
                 missing.append(f"data[{key!r}]")
-        has_size = (
-            "image_dimensions" in value.data or value.data.get("rle_mask") is not None
-        )
-        if not has_size:
+        if "image_dimensions" not in value.data and not _rle_masks_carry_size(value):
             missing.append("data['image_dimensions']")
         if missing:
             raise BlockStateSerializationError(
@@ -235,60 +266,76 @@ def _check_block_state_value(value: Any, path: str) -> None:
                 f"without {', '.join(missing)}, which the transport needs to "
                 "carry it; detections from model blocks have them."
             )
+        integer_arrays = {"class_id": value.class_id, "tracker_id": value.tracker_id}
+        integer_arrays.update(
+            (f"data[{key!r}]", item)
+            for key, item in value.data.items()
+            if isinstance(item, np.ndarray) and item.dtype.kind in "iu"
+        )
+        for field, array in integer_arrays.items():
+            if array is not None and array.size:
+                _check_int(int(np.max(array)), f"{path}.{field}")
+                _check_int(int(np.min(array)), f"{path}.{field}")
+
+    def _check_dict(value: Dict[Any, Any], path: str) -> None:
+        for key in value:
+            if type(key) is not str:
+                raise BlockStateSerializationError(
+                    f"Custom Python block state `self.{path}` has a "
+                    f"non-string key {key!r}; only string keys can be "
+                    "carried across remote execution."
+                )
+            if key == _WIRE_TYPE_MARKER_KEY:
+                raise BlockStateSerializationError(
+                    f"Custom Python block state `self.{path}` has a "
+                    f"`{_WIRE_TYPE_MARKER_KEY}` key, which the transport "
+                    "reserves to mark typed values; rename the key."
+                )
+        if value.get("type") == "base64" and "value" in value:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` is a dict shaped "
+                'like a serialized image (`type` "base64" with a `value`), '
+                "which the transport would decode as an image; rename the keys "
+                "or keep the image itself on `self`."
+            )
+        for key, item in value.items():
+            _check(item, f"{path}[{key!r}]")
 
     def _check(value: Any, path: str) -> None:
-        if value is None or isinstance(value, (bool, float, str, bytes)):
+        value_type = type(value)
+        if value is None or value_type in (bool, float, str, bytes, datetime):
             return
-        if isinstance(value, int):
-            _check_int(int(value), path)
+        if value_type is int:
+            _check_int(value, path)
             return
-        if isinstance(value, datetime):
+        if value_type is np.ndarray:
+            _check_ndarray(value, path)
             return
-        if isinstance(value, np.ndarray):
-            if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
-                _not_transportable(f"numpy array of dtype {value.dtype}", path)
-            if value.dtype.kind in "iu" and value.size:
-                _check_int(int(value.min()), path)
-                _check_int(int(value.max()), path)
-            return
+        if isinstance(value, (np.timedelta64, np.datetime64)):
+            # timedelta64 subclasses np.signedinteger; neither is carried.
+            _not_transportable(value_type.__name__, path)
         if isinstance(value, (np.longdouble, np.clongdouble)) and not isinstance(
             value, (np.float64, np.complex128)
         ):
-            _not_transportable(type(value).__name__, path)
-        if isinstance(value, (np.timedelta64, np.datetime64)):
-            # timedelta64 subclasses np.signedinteger; neither is carried.
-            _not_transportable(type(value).__name__, path)
+            _not_transportable(value_type.__name__, path)
         if isinstance(value, (np.bool_, np.floating)):
             return
         if isinstance(value, np.integer):
             _check_int(int(value), path)
             return
-        if isinstance(value, sv.Detections):
+        if value_type is sv.Detections:
             _check_detections(value, path)
             return
-        if isinstance(value, (WorkflowImageData, VideoMetadata)):
+        if value_type in (WorkflowImageData, VideoMetadata):
             return
-        if isinstance(value, dict):
-            for key, item in value.items():
-                if not isinstance(key, str):
-                    raise BlockStateSerializationError(
-                        f"Custom Python block state `self.{path}` has a "
-                        f"non-string key {key!r}; only string keys can be "
-                        "carried across remote execution."
-                    )
-                if key == _WIRE_TYPE_MARKER_KEY:
-                    raise BlockStateSerializationError(
-                        f"Custom Python block state `self.{path}` has a "
-                        f"`{_WIRE_TYPE_MARKER_KEY}` key, which the transport "
-                        "reserves to mark typed values; rename the key."
-                    )
-                _check(item, f"{path}[{key!r}]")
+        if value_type is dict:
+            _check_dict(value, path)
             return
-        if isinstance(value, (list, tuple)):
+        if value_type in (list, tuple):
             for index, item in enumerate(value):
                 _check(item, f"{path}[{index}]")
             return
-        _not_transportable(type(value).__name__, path)
+        _not_transportable(_describe_type(value_type), path)
 
     _check(value, path)
 
@@ -369,14 +416,13 @@ def _partition_block_state(
     if dropped:
         dropped_names = ", ".join(f"`self.{name}`" for name, _ in dropped)
         note = (
-            "Custom Python block state withheld for this call because "
-            f"{dropped_names} cannot be carried: none of the state kept on "
-            "`self` persists to the next call, so the block rebuilds it as it "
-            "did before state was carried"
+            f"Custom Python block state withheld: {dropped_names} cannot be "
+            "carried, so no state is returned to the engine and the next call "
+            "starts with an empty `self`, as it did before state was carried"
         )
         if carried:
             withheld_names = ", ".join(f"`self.{name}`" for name in carried)
-            note += f" (also not carried: {withheld_names})"
+            note += f" (also not returned: {withheld_names})"
         return {}, dropped, [note]
 
     notes = _lossy_block_state_notes(carried)
@@ -396,13 +442,25 @@ def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
 
     def _collect(value: Any, path: str) -> None:
         if isinstance(value, sv.Detections):
-            lost_keys = sorted(set(value.data) - _CARRIED_DETECTIONS_DATA_KEYS)
+            lost_keys = sorted(
+                set(value.data) - _CARRIED_DETECTIONS_DATA_KEYS, key=repr
+            )
             if lost_keys:
                 notes.append(
                     f"Custom Python block state `self.{path}` is carried "
                     f"without its sv.Detections data keys {lost_keys}; only the "
                     "keys the workflow serializers know survive a call"
                 )
+            if "parent_id" in value.data and "root_parent_id" in value.data:
+                pairs = zip(value.data["parent_id"], value.data["root_parent_id"])
+                if any(str(parent) == str(root) for parent, root in pairs):
+                    notes.append(
+                        f"Custom Python block state `self.{path}` holds "
+                        "sv.Detections whose `root_parent_id` equals their "
+                        "`parent_id`; the transport does not carry such a "
+                        "`root_parent_id` and it comes back as the transport's "
+                        "own placeholder"
+                    )
             if value.mask is not None and "rle_mask" not in value.data:
                 notes.append(
                     f"Custom Python block state `self.{path}` holds "
@@ -413,8 +471,7 @@ def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
         elif isinstance(value, WorkflowImageData):
             notes.append(
                 f"Custom Python block state `self.{path}` is an image, which "
-                "is re-encoded as JPEG on every call; keep `image.numpy_image` "
-                "on `self` instead for exact pixels"
+                "is re-encoded as JPEG on every call, so its pixels drift"
             )
         elif isinstance(value, dict):
             for key, item in value.items():
@@ -429,6 +486,10 @@ def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
     return notes
 
 
+# Bound on the per-container warn-once set (see ``_warn_dropped_block_state``).
+_MAX_BLOCK_STATE_WARNINGS = 4096
+
+
 def _warn_dropped_block_state(
     executor: Any,
     code_hash: str,
@@ -439,11 +500,15 @@ def _warn_dropped_block_state(
     """Tell the author once per container and code hash what is not carried.
 
     Written to the captured stderr, which the engine relays to its own stderr
-    next to the block's prints. Once per (code hash, message) on this
+    next to the block's prints. Once per (code hash, message shape) on this
     container: the same block drops the same attribute on every call, and a
-    line per frame would bury the block's own output. Keyed by the message,
-    so a later drop of the same attribute for another reason is reported.
+    line per frame would bury the block's own output. Digits are ignored in
+    the key, so an oversized attribute whose size changes every frame is
+    reported once; a drop for another reason is still reported. Bounded so a
+    long-lived container cannot grow the set forever.
     """
+    import re
+
     warned = executor.__dict__.setdefault("_block_state_drop_warnings", set())
     messages = [
         f"Custom Python block state `self.{name}` is not carried across "
@@ -452,9 +517,11 @@ def _warn_dropped_block_state(
     ]
     messages.extend(notes)
     for message in messages:
-        key = (code_hash, message)
+        key = (code_hash, re.sub(r"\d+", "#", message))
         if key in warned:
             continue
+        if len(warned) >= _MAX_BLOCK_STATE_WARNINGS:
+            warned.clear()
         warned.add(key)
         stderr_buf.write(f"{message}\n")
 
@@ -1252,7 +1319,9 @@ from datetime import datetime
                 # Convert to JSON string
                 return json.dumps(serialized_inputs, cls=InputJSONEncoder)
 
-            def deserialize_for_modal_remote_execution(json_str: str) -> BlockResult:
+            def deserialize_for_modal_remote_execution(
+                json_str: str, *, per_attribute: bool = False
+            ) -> BlockResult:
                 def decode_inputs(obj):
                     """Decode from modal remote execution."""
                     # datetime is already imported at the top level
@@ -1334,18 +1403,21 @@ from datetime import datetime
 
                 # Parse and decode inputs
                 parsed_inputs = json.loads(json_str)
+                if per_attribute:
+                    # The outer mapping is the attribute set: attributes named
+                    # ``_type``/``value`` must not read as a typed wire marker.
+                    return {
+                        name: decode_inputs(value)
+                        for name, value in parsed_inputs.items()
+                    }
                 inputs = decode_inputs(parsed_inputs)
                 return inputs
 
             inputs = deserialize_for_modal_remote_execution(inputs_json)
-            # Decoded attribute by attribute: the outer mapping is the
-            # attribute set, and attributes named ``_type``/``value`` must not
-            # read as a typed wire marker.
             block_state = (
-                {
-                    name: deserialize_for_modal_remote_execution(json.dumps(value))
-                    for name, value in json.loads(block_state_json).items()
-                }
+                deserialize_for_modal_remote_execution(
+                    block_state_json, per_attribute=True
+                )
                 if block_state_json is not None
                 else None
             )

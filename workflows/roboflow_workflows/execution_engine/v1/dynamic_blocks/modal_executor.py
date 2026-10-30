@@ -19,6 +19,7 @@ import base64
 import gzip
 import hashlib
 import json
+import re
 import logging
 import os
 import sys
@@ -275,26 +276,41 @@ def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
     )
 
 
-# Messages already logged by ``_warn_once``. The same block drops the same
+# Warnings already logged by ``_warn_once``. The same block drops the same
 # attribute on every frame; a line per frame would bury everything else.
 # Bounded so a process serving many distinct blocks cannot grow it forever.
 _WARNED_BLOCK_STATE_MESSAGES: set = set()
 _MAX_WARNED_BLOCK_STATE_MESSAGES = 4096
 
 
-def _warn_once(message: str) -> None:
-    if message in _WARNED_BLOCK_STATE_MESSAGES:
+def _warn_once(message: str, *, scope: Optional[str] = None) -> None:
+    """Log ``message`` once per ``scope`` (a workflow step) and message shape.
+
+    Digits are ignored in the key: an oversized attribute whose size changes
+    every frame must not log a line per frame.
+    """
+    key = (scope, re.sub(r"\d+", "#", message))
+    if key in _WARNED_BLOCK_STATE_MESSAGES:
         return
     if len(_WARNED_BLOCK_STATE_MESSAGES) >= _MAX_WARNED_BLOCK_STATE_MESSAGES:
         _WARNED_BLOCK_STATE_MESSAGES.clear()
-    _WARNED_BLOCK_STATE_MESSAGES.add(message)
+    _WARNED_BLOCK_STATE_MESSAGES.add(key)
     logger.warning(message)
+
+
+def _warning_scope(workflow_context: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not workflow_context:
+        return None
+    scope = workflow_context.get("step_selector") or workflow_context.get("step_name")
+
+    return scope
 
 
 def _carry_block_state(
     block_state: Optional[Dict[str, Any]],
     *,
     block_type_name: str,
+    workflow_context: Optional[Dict[str, Any]],
     measure: Callable[[Dict[str, Any]], int],
 ) -> Optional[Dict[str, Any]]:
     """Partition ``self`` state for sending and warn about what is not carried.
@@ -308,8 +324,9 @@ def _carry_block_state(
         return None
 
     partition = partition_block_state(block_state, measure=measure)
+    scope = _warning_scope(workflow_context)
     for message in describe_dropped_block_state(block_type_name, partition):
-        _warn_once(message)
+        _warn_once(message, scope=scope)
 
     return partition.carried
 
@@ -320,50 +337,35 @@ def _json_state_size(attribute: Dict[str, Any]) -> int:
     return size
 
 
-def _serialize_block_state_json(
-    block_state: Optional[Dict[str, Any]], *, block_type_name: str
-) -> Optional[str]:
-    """JSON-encode ``self`` state for the HTTP transport; ``None`` passes through."""
-    carried_state = _carry_block_state(
-        block_state, block_type_name=block_type_name, measure=_json_state_size
-    )
-    if carried_state is None:
-        return None
-
-    block_state_json = serialize_for_modal_remote_execution(carried_state)
-
-    return block_state_json
-
-
 def _missing_echoed_block_state(
     block_state: Dict[str, Any], *, block_type_name: str
 ) -> Dict[str, Any]:
     """Handle a server that did not echo ``block_state``: it predates state.
 
-    With nothing sent there is nothing to lose, so the call goes on with an
-    empty state and a warning; that keeps every block that holds no state
-    working against an older webexec. A block that does hold state would
-    silently reset ``self`` on every call, which is the bug state carrying
-    fixes, so that is refused.
+    The call goes on with an empty state and a warning, which is how every
+    block behaved before state was carried. That holds for a uniformly old
+    fleet (the engine instance only gains state from an echo, so nothing was
+    sent) and for a mixed fleet or a rollback mid-stream, where the state the
+    engine still holds is cleared: failing instead would fail every later
+    call of the stream, since the instance would keep sending it.
     """
-    if not block_state:
-        _warn_once(
+    if block_state:
+        message = (
+            f"The Modal webexec server is older than this client and did not "
+            f"return `block_state`; the `self` state of custom Python block "
+            f"`{block_type_name}` is reset and rebuilt on every call until the "
+            "webexec app is redeployed."
+        )
+    else:
+        message = (
             f"The Modal webexec server is older than this client and does not "
             f"carry custom Python block state; `self` attributes of "
-            f"`{block_type_name}` are rebuilt on every call until it is "
-            "redeployed."
+            f"`{block_type_name}` are rebuilt on every call until the webexec "
+            "app is redeployed."
         )
-        return {}
+    _warn_once(message)
 
-    raise DynamicBlockError(
-        public_message=(
-            f"Custom Python block `{block_type_name}` keeps state on `self`, "
-            "but the Modal webexec server is older than this client and did "
-            "not return `block_state`, so `self` would be reset on every call. Redeploy "
-            "the webexec app from this version of inference."
-        ),
-        context="modal_executor | block_state_unsupported",
-    )
+    return {}
 
 
 def _decode_echoed_block_state(
@@ -383,17 +385,19 @@ def _decode_echoed_block_state(
             ),
             context="modal_executor | block_state_decode",
         )
-    try:
-        echoed_state = {name: decode(value) for name, value in echoed.items()}
-    except Exception as error:
-        raise DynamicBlockError(
-            public_message=(
-                f"Could not decode the `self` state custom Python block "
-                f"`{block_type_name}` returned from remote execution: "
-                f"{type(error).__name__}: {error}"
-            ),
-            context="modal_executor | block_state_decode",
-        ) from error
+    echoed_state = {}
+    for name, value in echoed.items():
+        try:
+            echoed_state[name] = decode(value)
+        except Exception as error:
+            raise DynamicBlockError(
+                public_message=(
+                    f"Could not decode `self.{name}` returned from remote "
+                    f"execution by custom Python block `{block_type_name}`: "
+                    f"{type(error).__name__}: {error}"
+                ),
+                context="modal_executor | block_state_decode",
+            ) from error
 
     return echoed_state
 
@@ -818,8 +822,7 @@ class ModalExecutor:
             The block result and the user attributes after the call.
 
         Raises:
-            DynamicBlockError: If the server returns state it cannot decode, or
-                the block holds state and the server is too old to echo it.
+            DynamicBlockError: If the server returns state it cannot decode.
         """
         block_result, echoed_state = self._execute_http(
             block_type_name=block_type_name,
@@ -856,6 +859,7 @@ class ModalExecutor:
             sent_state = _carry_block_state(
                 block_state,
                 block_type_name=block_type_name,
+                workflow_context=workflow_context,
                 measure=_json_state_size,
             )
             block_state_json = (
@@ -1928,12 +1932,11 @@ class WebSocketModalExecutor:
 
         Returns:
             The block result and the user attributes after the call. When any
-            attribute cannot be carried the state is withheld for the call and
-            the returned attributes are empty.
+            attribute cannot be carried, or the server is too old to echo the
+            state, the returned attributes are empty.
 
         Raises:
-            DynamicBlockError: If the server returns state it cannot decode, or
-                the block holds state and the server is too old to echo it.
+            DynamicBlockError: If the server returns state it cannot decode.
         """
         block_result, echoed_state = self._execute_remote(
             block_type_name=block_type_name,
@@ -2300,7 +2303,10 @@ class WebSocketModalExecutor:
 
         packed_inputs = serialize_inputs_for_msgpack(inputs)
         packed_state = self._pack_block_state(
-            block_state, block_type_name=block_type_name, msgpack=msgpack
+            block_state,
+            block_type_name=block_type_name,
+            msgpack=msgpack,
+            workflow_context=workflow_context,
         )
         t_ser = _time.monotonic()
 
@@ -2425,6 +2431,7 @@ class WebSocketModalExecutor:
         *,
         block_type_name: str,
         msgpack: Any,
+        workflow_context: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """msgpack-prepare ``self`` state; ``None`` passes through.
 
@@ -2434,6 +2441,7 @@ class WebSocketModalExecutor:
         carried_state = _carry_block_state(
             block_state,
             block_type_name=block_type_name,
+            workflow_context=workflow_context,
             measure=lambda attribute: len(
                 msgpack.packb(
                     serialize_inputs_for_msgpack(attribute), use_bin_type=True
@@ -2734,12 +2742,11 @@ class PooledWebSocketModalExecutor:
 
         Returns:
             The block result and the user attributes after the call. When any
-            attribute cannot be carried the state is withheld for the call and
-            the returned attributes are empty.
+            attribute cannot be carried, or the server is too old to echo the
+            state, the returned attributes are empty.
 
         Raises:
-            DynamicBlockError: If the server returns state it cannot decode, or
-                the block holds state and the server is too old to echo it.
+            DynamicBlockError: If the server returns state it cannot decode.
         """
         index, executor = self._acquire_executor()
         try:

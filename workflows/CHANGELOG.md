@@ -31,34 +31,49 @@ for contributor and maintainer responsibilities.
   video. The engine-side block instance owns the state and carries it to
   the sandbox and back on each call, so it survives container recycling
   and never leaks between workflow runs or between block instances.
-  - What persists: JSON-like values (ints within the signed 64-bit range),
-    datetimes, numpy arrays of bool/int/float/str, numpy bool/int/float
-    scalars and tuples (read back as Python scalars and lists),
-    `sv.Detections` with confidence, class name, detection id and image
-    dimensions, images and video metadata. Images and detections are lossy:
-    an image is re-encoded as JPEG on every call, masks travel as polygons
-    (a detection whose mask has no contour is lost), and
-    `sv.Detections.data` keys the workflow serializers do not know are
-    lost; the block's stderr says so once. Keep `image.numpy_image` on `self`
-    for exact pixels.
-  - What does not: any other object (an annotator, a tracker, a helper
-    instance), a value the transport cannot encode (complex or object
-    arrays, `np.datetime64`, wider integers), a dict with a `_type` key,
-    engine-owned or dunder names, and an attribute whose serialized form is
-    over 1 MiB. When any attribute cannot be carried, none of the block's
-    state is carried for that call, with a warning naming the attributes on
-    the block's stderr, so the block behaves exactly as before this change
-    (a flag never persists without the helper it guards). An echo setting a
-    name defined on the block class fails the call.
+  - What persists, as exact types: JSON-like values (ints within the
+    signed 64-bit range), datetimes, numpy arrays of bool/int/float/str,
+    numpy bool/int/float scalars and tuples (read back as Python scalars and
+    lists), `sv.Detections` with confidence, `class_id`, class name,
+    detection id and either image dimensions or RLE masks that carry their
+    size, images and video metadata.
+  - Images and detections are lossy, and the block's stderr says so once:
+    an image is re-encoded as JPEG on every call, so its pixels drift, and a
+    grayscale image comes back with three channels. Masks travel as
+    polygons, so a detection whose mask has no contour is lost.
+    `sv.Detections.data` keys the workflow serializers do not know are lost,
+    integer class names and detection ids come back as strings, `width`,
+    `height` and parent id keys are added, and a `root_parent_id` equal to
+    the `parent_id` comes back as a placeholder. A raw `numpy_image` array is
+    exact but realistic frames exceed the 1 MiB cap (a 480x640 RGB frame
+    does), so it is only an option for small images.
+  - What does not persist: a subclass of an accepted type (`defaultdict`,
+    `Counter`, `OrderedDict`, a namedtuple, an `IntEnum` member), which
+    would come back as its base type; any other object (an annotator, a
+    tracker, a helper instance); a value the transport cannot encode
+    (complex or object arrays, `np.datetime64`, integers beyond 64 bits,
+    also inside `sv.Detections`); a dict with a `_type` key or shaped like a
+    serialized image (`type` "base64" with a `value`); engine-owned or
+    dunder names; and an attribute whose serialized form is over 1 MiB.
+    The whole state is also capped at 1 MiB: the largest attributes are
+    dropped until it fits.
+  - When any attribute cannot be carried, none of the block's state is
+    carried for that call, with a warning naming the attributes on the
+    block's stderr, so the block behaves exactly as before this change (a
+    flag never persists without the helper it guards). A growing attribute
+    that crosses the cap therefore resets all of the block's state, on every
+    call it stays over, and the warning is shown once per container. An
+    echo setting a name defined on the block class fails the call.
   - Each side serializes every attribute twice per call (once to check its
     size, once into the payload), in both directions, on top of the inputs
-    and the result; a stored image costs at least two JPEG encodes per side
-    per call. State a block changed before raising is
-    lost remotely, while local execution keeps it.
+    and the result. State a block changed before raising is lost remotely,
+    while local execution keeps it.
   - Rollout: deploy the webexec app from this version first. Against an
-    older webexec a block with no state on `self` keeps working, with a
-    warning; a block that holds state fails loudly instead of silently
-    resetting `self` on every call.
+    older webexec, blocks run as they did before this change (`self` reset
+    on every call) with a warning in the engine's log: a uniformly old
+    fleet never echoes state, and in a mixed fleet or after a rollback
+    mid-stream the state the engine holds is cleared rather than failing
+    every later call.
 
 ## `0.2.14`
 
