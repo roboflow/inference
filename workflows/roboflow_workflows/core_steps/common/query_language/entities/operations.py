@@ -27,6 +27,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     TIMESTAMP_KIND,
     WILDCARD_KIND,
@@ -199,6 +200,7 @@ class DetectionsPropertyExtract(OperationDefinition):
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
@@ -216,6 +218,7 @@ class DetectionsToDictionary(OperationDefinition):
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
@@ -248,11 +251,13 @@ class DetectionsSelection(OperationDefinition):
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
             "output_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
@@ -283,11 +288,13 @@ class DetectionsFilter(OperationDefinition):
             "compound": True,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
             "output_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
@@ -306,11 +313,13 @@ class SortDetections(OperationDefinition):
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
             "output_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
@@ -372,6 +381,7 @@ class RandomNumber(OperationDefinition):
             "into random floating point value. To be used mainly to sample predictions or images.",
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
                 WILDCARD_KIND,
@@ -473,6 +483,7 @@ class SequenceLength(OperationDefinition):
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
                 LIST_OF_VALUES_KIND,
@@ -596,11 +607,13 @@ class PickDetectionsByParentClass(OperationDefinition):
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
             "output_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 KEYPOINT_DETECTION_PREDICTION_KIND,
             ],
@@ -954,6 +967,7 @@ class IsEmpty(UnaryOperator):
                     LIST_OF_VALUES_KIND,
                     DICTIONARY_KIND,
                     OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
@@ -974,6 +988,7 @@ class IsNotEmpty(UnaryOperator):
                     LIST_OF_VALUES_KIND,
                     DICTIONARY_KIND,
                     OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],

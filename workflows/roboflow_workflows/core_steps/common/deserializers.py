@@ -8,6 +8,7 @@ import numpy as np
 import pybase64
 import supervision as sv
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.core_steps.common.utils import (
     add_inference_keypoints_to_sv_detections,
     filter_out_invalid_polygons,
@@ -251,6 +252,34 @@ def deserialize_detections_kind(
     parameter: str,
     detections: Any,
 ) -> sv.Detections:
+    """Deserialize predictions declared as an ordinary detection kind.
+
+    Args:
+        parameter: Runtime parameter name used in validation errors and lineage.
+        detections: Serialized predictions or an existing Supervision carrier.
+
+    Returns:
+        Ordinary detections with image and parent metadata.
+
+    Raises:
+        RuntimeInputError: If the input is malformed or carries native OBB semantics.
+    """
+    native_payload = (
+        isinstance(detections, dict)
+        and detections.get("task_type") == "oriented-object-detection"
+    )
+    native_carrier = isinstance(detections, sv.Detections) and (
+        bool(detections.metadata.get(NATIVE_OBB))
+        or np.any(detections.data.get(NATIVE_OBB, False))
+    )
+    if native_payload or native_carrier:
+        raise RuntimeInputError(
+            public_message=f"Runtime parameter `{parameter}` contains native oriented "
+            "detections; declare oriented_object_detection_prediction instead of "
+            "an ordinary detection kind.",
+            context="workflow_execution | runtime_input_validation",
+        )
+
     if isinstance(detections, sv.Detections):
         return detections
     if not isinstance(detections, dict):

@@ -431,16 +431,44 @@ class LMMInferenceRequest(CVInferenceRequest):
 
 
 def request_from_type(model_type, request_dict):
-    """Uses original request id"""
+    """Reconstruct a task-specific request, preserving its identifier.
+
+    Args:
+        model_type: Canonical model task type.
+        request_dict: Serialized inference request.
+
+    Returns:
+        The request model for the specified task.
+
+    Raises:
+        ValueError: If the task type is unsupported.
+    """
     if model_type == "classification":
         request = ClassificationInferenceRequest(**request_dict)
     elif model_type == "instance-segmentation":
         request = InstanceSegmentationInferenceRequest(**request_dict)
     elif model_type == "object-detection":
         request = ObjectDetectionInferenceRequest(**request_dict)
+    elif model_type == "oriented-object-detection":
+        request = OrientedObjectDetectionInferenceRequest(**request_dict)
     elif model_type == "semantic-segmentation":
         request = SemanticSegmentationInferenceRequest(**request_dict)
     else:
         raise ValueError(f"Unknown task type {model_type}")
     request.id = request_dict.get("id", request.id)
     return request
+
+
+class OrientedObjectDetectionInferenceRequest(ObjectDetectionInferenceRequest):
+    """Run a native OBB model using numeric confidence and shared image fields."""
+
+    confidence: float = Field(
+        default=0.5,
+        ge=0,
+        le=1,
+        description="Minimum sigmoid class confidence for native OBB.",
+    )
+    disable_active_learning: bool = Field(
+        default=True,
+        description="Native OBB writeback requires a compatible platform adapter.",
+    )

@@ -10,6 +10,7 @@ from inference_models.models.auto_loaders.entities import (
 from inference_models.utils.imports import LazyClass
 
 OBJECT_DETECTION_TASK = "object-detection"
+ORIENTED_OBJECT_DETECTION_TASK = "oriented-object-detection"
 INSTANCE_SEGMENTATION_TASK = "instance-segmentation"
 SEMANTIC_SEGMENTATION_TASK = "semantic-segmentation"
 KEYPOINT_DETECTION_TASK = "keypoint-detection"
@@ -382,6 +383,14 @@ REGISTERED_MODELS: Dict[
     ("perception-encoder", EMBEDDING_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.perception_encoder.perception_encoder_pytorch",
         class_name="PerceptionEncoderTorch",
+    ),
+    ("rfdetr", ORIENTED_OBJECT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr.rfdetr_oriented_object_detection_onnx",
+        class_name="RFDetrForOrientedObjectDetectionONNX",
+    ),
+    ("rfdetr", "obb-detection", BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.rfdetr.rfdetr_oriented_object_detection_onnx",
+        class_name="RFDetrForOrientedObjectDetectionONNX",
     ),
     ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TRT): RegistryEntry(
         model_class=LazyClass(

@@ -1,4 +1,7 @@
-from roboflow_workflows.execution_engine.entities.types import Kind
+from roboflow_workflows.execution_engine.entities.types import (
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
+    Kind,
+)
 
 TENSOR_NATIVE_EMBEDDING_KIND_DOCS = """
 This kind represents a vector embedding. It is a list of floating point numbers.
@@ -739,4 +742,11 @@ TENSOR_KIND = Kind(
     docs=TENSOR_KIND_DOCS,
     serialised_data_type="list",
     internal_data_type="torch.Tensor",
+)
+
+
+TENSOR_NATIVE_ORIENTED_OBJECT_DETECTION_PREDICTION_KIND = (
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND.model_copy(
+        update={"internal_data_type": "inference_models.Detections"}
+    )
 )

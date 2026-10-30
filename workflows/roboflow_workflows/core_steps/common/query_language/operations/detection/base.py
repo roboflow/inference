@@ -9,6 +9,7 @@ from roboflow_workflows.core_steps.analytics.velocity.v1 import (
     SPEED_KEY_IN_SV_DETECTIONS,
     VELOCITY_KEY_IN_SV_DETECTIONS,
 )
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
 )
@@ -123,6 +124,9 @@ def _extract_detection_property(
 
 
 def _extract_class_name_tensor_native(detection: tuple) -> str:
+    if detection[6].get(NATIVE_OBB):
+        return str(detection[5]["class_name"])
+
     class_names = detection[6].get(CLASS_NAMES_KEY)
     if class_names is None:
         raise OperationError(

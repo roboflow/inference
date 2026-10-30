@@ -1425,6 +1425,18 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsDepthEstimationAdapter
             )
 
+    InferenceModelsOrientedObjectDetectionAdapter = _LazyModelClass(
+        "inference.core.models.inference_models_adapters:"
+        "InferenceModelsOrientedObjectDetectionAdapter"
+    )
+
+    ROBOFLOW_MODEL_TYPES[("oriented-object-detection", "rfdetr-obb-preview-2xl")] = (
+        InferenceModelsOrientedObjectDetectionAdapter
+    )
+    ROBOFLOW_MODEL_TYPES[("oriented-object-detection", "rfdetr")] = (
+        InferenceModelsOrientedObjectDetectionAdapter
+    )
+
     # RFDETR keypoint detection is inference_models-only (no legacy implementation),
     # so we add entries directly rather than swapping existing ones.
     ROBOFLOW_MODEL_TYPES[("keypoint-detection", "rfdetr-keypoint-preview")] = (

@@ -33,6 +33,9 @@ from inference_models.models.auto_loaders.model_cache_paths import (
     resolve_existing_model_package_cache_path,
     slugify_model_id_to_os_safe_format,
 )
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 from inference_models.utils.file_system import read_json
 from inference_models.weights_providers.entities import (
     JetsonEnvironmentRequirements,
@@ -520,6 +523,10 @@ def record_successful_load(
                 else None
             ),
         }
+        if model_metadata.oriented_box_metadata is not None:
+            incoming_model["oriented_box_metadata"] = (
+                model_metadata.oriented_box_metadata.model_dump(mode="json")
+            )
         merged_model = {
             field_name: (
                 incoming_value
@@ -585,6 +592,11 @@ def _record_to_model_metadata(record: dict) -> Optional[ModelMetadata]:
         model_variant=model_payload.get("model_variant"),
         model_dependencies=model_dependencies,
         recommended_parameters=recommended_parameters,
+        oriented_box_metadata=(
+            OrientedBoxMetadata.model_validate(model_payload["oriented_box_metadata"])
+            if model_payload.get("oriented_box_metadata") is not None
+            else None
+        ),
     )
 
 
@@ -667,8 +679,7 @@ def _parse_registry_timestamp(
         except ValueError:
             pass
     LOGGER.warning(
-        "Offline-weights registry record contains unparsable timestamp for "
-        "%s: %r",
+        "Offline-weights registry record contains unparsable timestamp for " "%s: %r",
         context,
         value,
     )

@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import numpy as np
 import supervision as sv
 import torch
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
     DetectionsSelectionMode,
@@ -477,13 +478,21 @@ def _pick_detections_by_parent_class_impl(
 ) -> sv.Detections:
     class_names = detections.data.get("class_name")
     if class_names is None or len(class_names) == 0:
-        return sv.Detections.empty()
+        return (
+            detections[:0]
+            if detections.metadata.get(NATIVE_OBB)
+            else sv.Detections.empty()
+        )
     if not isinstance(class_names, np.ndarray):
         class_names = np.array(class_names)
     parent_mask = class_names == parent_class
     parent_detections = detections[parent_mask]
     if len(parent_detections) == 0:
-        return sv.Detections.empty()
+        return (
+            detections[:0]
+            if detections.metadata.get(NATIVE_OBB)
+            else sv.Detections.empty()
+        )
     dependent_detections = detections[~parent_mask]
     dependent_detections_anchors = dependent_detections.get_anchors_coordinates(
         anchor=Position.CENTER
@@ -667,6 +676,9 @@ def _resolve_class_names(
 ) -> List[str]:
     if _detections_count(detections) == 0:
         return []
+    if (detections.image_metadata or {}).get(NATIVE_OBB):
+        return [str(entry["class_name"]) for entry in detections.bboxes_metadata]
+
     class_names = _class_names_lookup(detections, operation_name=operation_name)
     result = []
     for class_id_scalar in detections.class_id.tolist():
@@ -1441,10 +1453,18 @@ def _parent_class_row_flags(
     the divergence where the old ``_resolve_class_names`` call raised on any
     unmapped row, even ones the query doesn't touch.
 
+    Native OBB uses authoritative per-row names instead of model-local ID maps.
+
     A *truly absent* map (no ``CLASS_NAMES_KEY`` at all) remains a producer contract
     violation and still raises via ``_class_names_lookup`` — the single accepted
     divergence from numpy, which returns empty there.
     """
+    if (detections.image_metadata or {}).get(NATIVE_OBB):
+        return [
+            name == parent_class
+            for name in _resolve_class_names(detections, operation_name)
+        ]
+
     class_names_map = _class_names_lookup(detections, operation_name=operation_name)
     return [
         class_names_map.get(int(class_id_scalar)) == parent_class
@@ -1578,9 +1598,49 @@ def filter_detections(
     )
 
 
+def _reject_native_obb_operation(value: Any, *, operation_name: str) -> None:
+    """Reject operations that cannot preserve native geometry or frozen classes."""
+    if _is_key_point_prediction(value):
+        value = value[1]
+
+    if isinstance(value, sv.Detections):
+        is_native = bool(value.metadata.get(NATIVE_OBB)) or np.any(
+            value.data.get(NATIVE_OBB, False)
+        )
+    elif isinstance(value, TENSOR_NATIVE_DETECTIONS_TYPES):
+        is_native = bool((value.image_metadata or {}).get(NATIVE_OBB)) or any(
+            (row or {}).get(NATIVE_OBB, False) for row in (value.bboxes_metadata or [])
+        )
+    else:
+        return
+
+    if is_native:
+        raise InvalidInputTypeError(
+            public_message=f"Executing {operation_name}(...) does not support native "
+            "oriented detections with frozen geometry and class semantics.",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+
+
 def offset_detections(
     value: Any, offset_x: int, offset_y: int, **kwargs
 ) -> Union[sv.Detections, TensorNativeDetections]:
+    """Expand or contract ordinary detection bounds around their centers.
+
+    Args:
+        value: NumPy or tensor detections with axis-aligned geometry.
+        offset_x: Amount to add to each box's width.
+        offset_y: Amount to add to each box's height.
+        **kwargs: Additional operation execution context.
+
+    Returns:
+        Copied detections with adjusted axis-aligned bounds.
+
+    Raises:
+        InvalidInputTypeError: If detections are native oriented or unsupported.
+    """
+    _reject_native_obb_operation(value, operation_name="offset_detections")
+
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         return _offset_detections_tensor_native(
             value=value, offset_x=offset_x, offset_y=offset_y, **kwargs
@@ -1593,6 +1653,22 @@ def offset_detections(
 def shift_detections(
     value: Any, shift_x: int, shift_y: int, **kwargs
 ) -> Union[sv.Detections, TensorNativeDetections]:
+    """Translate ordinary detection bounds without changing their sizes.
+
+    Args:
+        value: NumPy or tensor detections with axis-aligned geometry.
+        shift_x: Horizontal translation in pixels.
+        shift_y: Vertical translation in pixels.
+        **kwargs: Additional operation execution context.
+
+    Returns:
+        Copied detections with translated axis-aligned bounds.
+
+    Raises:
+        InvalidInputTypeError: If detections are native oriented or unsupported.
+    """
+    _reject_native_obb_operation(value, operation_name="shift_detections")
+
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         return _shift_detections_tensor_native(
             value=value, shift_x=shift_x, shift_y=shift_y, **kwargs
@@ -1626,6 +1702,24 @@ def rename_detections(
     global_parameters: Dict[str, Any],
     **kwargs,
 ) -> Union[sv.Detections, TensorNativeDetections]:
+    """Rename ordinary detection classes using the configured mapping.
+
+    Args:
+        detections: Ordinary NumPy or tensor detections.
+        class_map: Name replacements or the parameter supplying them.
+        strict: Whether every observed class must appear in the mapping.
+        new_classes_id_offset: Starting ID for remapped classes in non-strict mode.
+        global_parameters: Runtime parameters resolving named configuration values.
+        **kwargs: Additional operation execution context.
+
+    Returns:
+        Copied detections with remapped names and class IDs.
+
+    Raises:
+        InvalidInputTypeError: If detections carry native frozen class semantics.
+    """
+    _reject_native_obb_operation(detections, operation_name="rename_detections")
+
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         return _rename_detections_tensor_native(
             detections=detections,

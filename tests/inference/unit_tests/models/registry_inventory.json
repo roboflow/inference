@@ -3104,6 +3104,16 @@
           "tr-ocr"
         ]
       ],
+      "inference.core.models.inference_models_adapters:InferenceModelsOrientedObjectDetectionAdapter": [
+        [
+          "oriented-object-detection",
+          "rfdetr"
+        ],
+        [
+          "oriented-object-detection",
+          "rfdetr-obb-preview-2xl"
+        ]
+      ],
       "inference.core.models.inference_models_adapters:InferenceModelsSemanticSegmentationAdapter": [
         [
           "semantic-segmentation",
@@ -4398,6 +4408,16 @@
         [
           "text-only-ocr",
           "tr-ocr"
+        ]
+      ],
+      "inference.core.models.inference_models_adapters:InferenceModelsOrientedObjectDetectionAdapter": [
+        [
+          "oriented-object-detection",
+          "rfdetr"
+        ],
+        [
+          "oriented-object-detection",
+          "rfdetr-obb-preview-2xl"
         ]
       ],
       "inference.core.models.inference_models_adapters:InferenceModelsSemanticSegmentationAdapter": [

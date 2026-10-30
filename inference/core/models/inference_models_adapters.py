@@ -2603,3 +2603,104 @@ def _as_action_recognition_model(model: Any, model_id: str) -> ActionRecognition
     if isinstance(model, Cosmos3EdgeReasoner):
         return Cosmos3EdgeActionRecognition.from_reasoner(reasoner=model)
     raise ValueError(f"Model {model_id} does not support action recognition.")
+
+
+class InferenceModelsOrientedObjectDetectionAdapter(
+    InferenceModelsObjectDetectionAdapter
+):
+    """Serve native OBB packages through the shared image loading and request lifecycle."""
+
+    def __init__(self, model_id: str, api_key: str = None, **kwargs):
+        super().__init__(model_id=model_id, api_key=api_key, **kwargs)
+        self.task_type = "oriented-object-detection"
+        self.img_size_h = self.img_size_w = self._model.resolution
+
+    def postprocess(self, predictions, preprocess_return_metadata, **kwargs):
+        """Serialize native tuples without converting them into axis-aligned boxes.
+
+        Args:
+            predictions: Raw three-output ONNX predictions.
+            preprocess_return_metadata: Realized letterbox metadata.
+            **kwargs: Confidence, cap and optional class filter.
+
+        Returns:
+            Native response for each input image.
+        """
+        from inference.core.entities.responses.inference import (
+            OrientedObjectDetectionInferenceResponse,
+            OrientedObjectDetectionPrediction,
+        )
+
+        results = self._model.post_process(
+            predictions, preprocess_return_metadata, **kwargs
+        )
+        responses = []
+        for result, meta in zip(results, preprocess_return_metadata):
+            native = []
+            for obb, confidence, class_id, heading, detection_id, name in zip(
+                result.obb.tolist(),
+                result.confidence.tolist(),
+                result.class_id.tolist(),
+                result.heading.tolist(),
+                result.detection_id,
+                result.class_names,
+            ):
+                if kwargs.get("class_filter") and name not in kwargs["class_filter"]:
+                    continue
+                native.append(
+                    OrientedObjectDetectionPrediction(
+                        obb=obb,
+                        confidence=confidence,
+                        class_id=class_id,
+                        heading=heading,
+                        detection_id=detection_id,
+                        **{"class": name},
+                    )
+                )
+            responses.append(
+                OrientedObjectDetectionInferenceResponse(
+                    predictions=native,
+                    image=InferenceResponseImage(
+                        width=meta.original_size.width, height=meta.original_size.height
+                    ),
+                    class_heading=self._model.metadata.classHeading,
+                )
+            )
+        return responses
+
+    def draw_predictions(self, inference_request, inference_response):
+        """Render the native footprint and front on the request image.
+
+        Args:
+            inference_request: Image request.
+            inference_response: Native prediction response.
+
+        Returns:
+            JPEG-encoded visualization bytes.
+        """
+        import math
+
+        image = Image.fromarray(load_image_rgb(inference_request.image))
+        draw = ImageDraw.Draw(image)
+        for prediction in inference_response.predictions:
+            cx, cy, width, height, angle = prediction.obb
+            c, s = math.cos(angle), math.sin(angle)
+            corners = [
+                (cx + x * c - y * s, cy + x * s + y * c)
+                for x, y in (
+                    (-width / 2, -height / 2),
+                    (width / 2, -height / 2),
+                    (width / 2, height / 2),
+                    (-width / 2, height / 2),
+                )
+            ]
+            draw.line(corners + [corners[0]], fill="#A351FB", width=2)
+            if prediction.heading:
+                draw.line(
+                    [(cx, cy), (cx + c * width / 2, cy + s * width / 2)],
+                    fill="#FFB633",
+                    width=3,
+                )
+        output = BytesIO()
+        image.save(output, format="JPEG")
+        return output.getvalue()

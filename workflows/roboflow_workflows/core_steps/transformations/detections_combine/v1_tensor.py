@@ -15,7 +15,10 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
 )
-from roboflow_workflows.execution_engine.entities.types import Selector
+from roboflow_workflows.execution_engine.entities.types import (
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
+    Selector,
+)
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     RuntimeRestriction,
@@ -92,6 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
     prediction_one: Selector(
         kind=[
             TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
@@ -101,6 +105,7 @@ class BlockManifest(WorkflowBlockManifest):
     prediction_two: Selector(
         kind=[
             TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
@@ -115,6 +120,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],
             ),
@@ -267,6 +273,12 @@ def _combine_image_metadata(
     if base is None:
         return None
     image_metadata = dict(base)
+    from roboflow_workflows.core_steps.common.oriented import merge_native_semantics
+
+    class_heading = merge_native_semantics(prediction_one, prediction_two)
+    if class_heading is not None:
+        image_metadata["class_heading"] = class_heading
+        image_metadata["native_obb"] = True
     image_metadata[CLASS_NAMES_KEY] = _merged_class_names(
         prediction_one=prediction_one,
         prediction_two=prediction_two,

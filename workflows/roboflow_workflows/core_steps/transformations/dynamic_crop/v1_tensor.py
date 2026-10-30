@@ -15,8 +15,10 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 import numpy as np
 import torch
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.core_steps.common.oriented import _NATIVE_FRAME_KEYS, NATIVE_OBB
 from roboflow_workflows.core_steps.common.tensor_native import (
     HOST_MIRROR_KEYS,
+    build_native_image_metadata,
     take_prediction_by_indices,
 )
 from roboflow_workflows.execution_engine.constants import (
@@ -37,6 +39,7 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
     Selector,
@@ -133,6 +136,7 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
@@ -194,6 +198,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
@@ -309,6 +314,20 @@ def crop_image(
             x_max=x_max,
             y_max=y_max,
         )
+        if (bbox_detections.image_metadata or {}).get(NATIVE_OBB):
+            translated_prediction.image_metadata.update(
+                build_native_image_metadata(
+                    cropped,
+                    class_names=translated_prediction.image_metadata.get(
+                        "class_names", {}
+                    ),
+                    prediction_type="oriented-object-detection",
+                )
+            )
+            for entry in translated_prediction.bboxes_metadata or []:
+                for key in _NATIVE_FRAME_KEYS:
+                    if key in translated_prediction.image_metadata:
+                        entry[key] = deepcopy(translated_prediction.image_metadata[key])
         crops.append(
             {
                 "crops": cropped,

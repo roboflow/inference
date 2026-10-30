@@ -78,6 +78,10 @@ MIN_POLYGON_POINT_COUNT = 3
 
 
 def serialise_sv_detections(detections: sv.Detections) -> dict:
+    if detections.metadata.get("native_obb") or "native_obb" in detections.data:
+        from roboflow_workflows.core_steps.common.oriented import serialise_native_obb
+
+        return serialise_native_obb(detections)
     serialized_detections = []
     image_dimensions = None
     for xyxy, mask, confidence, class_id, tracker_id, data in detections:
