@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- TensorRT CUDA graph capture and replay wait on the caller's CUDA stream and
+  record the input tensor on the graph stream before copying or executing it.
+  Previously, an input still being produced on the caller stream without a
+  tensor readiness event (RF-DETR tracker-based preprocessing, batch padding)
+  could be read too early and yield predictions for stale input when CUDA
+  graphs were enabled.
+
 ### Changed
 
 - `FILE_LOCK_ACQUIRE_TIMEOUT` (`INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT`) defaults to
@@ -73,15 +82,6 @@
 ### Fixed
 
 - PatchCore bounds its nearest-neighbour distance matrix by elements (`NEAREST_NEIGHBOURS_CHUNK_ELEMENTS = 2**26`, 256 MiB in fp32) instead of 4096 rows, and computes it in place. A 640 px model with a ~140k-entry memory bank allocated about 2 GiB per chunk per request and ran out of GPU memory under concurrent requests.
-
-### Fixed
-
-- TensorRT CUDA graph capture and replay wait on the caller's CUDA stream and
-  record the input tensor on the graph stream before copying or executing it.
-  Previously, an input still being produced on the caller stream without a
-  tensor readiness event (RF-DETR tracker-based preprocessing, batch padding)
-  could be read too early and yield predictions for stale input when CUDA
-  graphs were enabled.
 
 ## `0.39.4`
 
