@@ -245,6 +245,9 @@ MULTIPART_SPOOL_MB = get_integer_from_env("INFERENCE_MULTIPART_SPOOL_MB", defaul
 # ── Preload / readiness (routers/v2_server) ────────────────────────────────
 INFERENCE_PRELOAD_MODELS_ENV = "INFERENCE_PRELOAD_MODELS"
 PINNED_MODELS_ENV = "PINNED_MODELS"
+PINNED_PRELOAD_MAX_WAIT_S = get_float_from_env(
+    "PINNED_PRELOAD_MAX_WAIT_S", default=300.0
+)
 PRELOAD_HF_IDS_ENV = "PRELOAD_HF_IDS"
 
 

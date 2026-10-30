@@ -1490,6 +1490,10 @@ class _PinTrackingManager:
         if kwargs.get("pinned"):
             self.pinned.add(model_id)
 
+    def unload(self, model_id):
+        self.loaded.discard(model_id)
+        self.pinned.discard(model_id)
+
     def pin(self, model_id):
         if self._evictions_left:
             self._evictions_left -= 1
@@ -1624,6 +1628,38 @@ class TestPinnedLoadRace:
         assert await wrapper.load("m", "key") == ("error", 5)
         assert "m" not in mgr.loaded
         assert mgr.load_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_ensure_loaded_after_failed_pinned_load_is_pinned(self):
+        class _FailingFirstLoadManager(_PinTrackingManager):
+            def __init__(self):
+                super().__init__()
+                self._failed_once = False
+
+            def load(self, model_id, api_key, **kwargs):
+                if not self._failed_once:
+                    self._failed_once = True
+                    raise RuntimeError("weights unavailable")
+                super().load(model_id, api_key, **kwargs)
+
+        mgr = _FailingFirstLoadManager()
+        wrapper = ModelManagerGateway(mgr)
+
+        assert (await wrapper.load("m", "key"))[0] == "error"
+        assert (await wrapper.ensure_loaded("m", "", "key"))[0] == "model_ready"
+        assert mgr.loaded == {"m"}
+        assert mgr.pinned == {"m"}
+
+    @pytest.mark.asyncio
+    async def test_unload_forgets_pin_request(self):
+        mgr = _PinTrackingManager()
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.load("m", "key") == ("ok",)
+        assert await wrapper.unload("m") == ("ok",)
+        assert (await wrapper.ensure_loaded("m", "", "key"))[0] == "model_ready"
+        assert mgr.loaded == {"m"}
+        assert mgr.pinned == set()
 
 
 class _VanishingManager:

@@ -57,6 +57,7 @@ from prometheus_client.registry import Collector, CollectorRegistry
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from inference_server import configuration
+from inference_server.gateway import is_loaded_model_entry, loaded_model_entries
 
 logger = logging.getLogger(__name__)
 
@@ -563,7 +564,13 @@ def install_prometheus_metrics(
             else:
                 models = stats.get("models") or {}
                 if isinstance(models, list):
-                    models = [m.get("model_id") for m in models if m.get("model_id")]
+                    models = [
+                        m.get("model_id")
+                        for m in models
+                        if m.get("model_id") and is_loaded_model_entry(m)
+                    ]
+                else:
+                    models = list(loaded_model_entries(models))
                 MODEL_METRICS.observe_loaded(models, resolve_model_id)
         stream_manager_client = getattr(
             request.app.state, "stream_manager_client", None

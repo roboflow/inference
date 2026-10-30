@@ -16,6 +16,7 @@ import importlib.util
 import logging
 import multiprocessing
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial
@@ -100,6 +101,9 @@ _LEGACY_ERROR_HANDLING_ENABLED = (
 
 
 _PRELOAD_CONCURRENCY = 2
+_PRELOAD_LOAD_TIMEOUT_S = 300.0
+_PINNED_PRELOAD_RETRY_S = 15.0
+_PINNED_PRELOAD_MAX_WAIT_S = _cfg.PINNED_PRELOAD_MAX_WAIT_S
 
 
 async def _preload_models(
@@ -112,28 +116,50 @@ async def _preload_models(
     loads.update({mid: (api_key, True) for mid, api_key in pinned})
     semaphore = asyncio.Semaphore(_PRELOAD_CONCURRENCY)
 
-    async def _one(mid, api_key, is_pinned):
+    async def _load_once(mid, api_key, is_pinned, deadline) -> bool:
         async with semaphore:
+            timeout_s = _PRELOAD_LOAD_TIMEOUT_S
+            if deadline is not None:
+                timeout_s = max(0.0, min(timeout_s, deadline - time.monotonic()))
+
             try:
                 result = await proxy.load(
                     registry_id_for(mid),
                     api_key=api_key or None,
-                    timeout_s=300.0,
+                    timeout_s=timeout_s,
                     pinned=is_pinned,
                 )
             except Exception:
                 logger.error("Preload of '%s' failed", mid, exc_info=True)
-                return
+                return False
 
         if result and result[0] == "ok":
             logger.info("Preload of '%s': %s", mid, result)
             bridge = getattr(state, "legacy_bridge", None)
             if bridge is not None:
                 bridge.register_preloaded(mid)
-        else:
-            logger.error(
-                "Preload of '%s' failed: %s", mid, result[:2] if result else result
-            )
+            return True
+
+        logger.error(
+            "Preload of '%s' failed: %s", mid, result[:2] if result else result
+        )
+        return False
+
+    async def _one(mid, api_key, is_pinned):
+        started = time.monotonic()
+        deadline = started + _PINNED_PRELOAD_MAX_WAIT_S if is_pinned else None
+        while not await _load_once(mid, api_key, is_pinned, deadline):
+            if not is_pinned:
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= _PINNED_PRELOAD_RETRY_S:
+                logger.error(
+                    "Preload of '%s' gave up after %.0f s; serving without it",
+                    mid,
+                    time.monotonic() - started,
+                )
+                return
+            await asyncio.sleep(_PINNED_PRELOAD_RETRY_S)
 
     try:
         await asyncio.gather(

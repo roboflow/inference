@@ -4576,7 +4576,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.8.0,<2.12.0" },
     { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.1.0,<3.0.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<10.0.0" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<9.2.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = "<=0.21.1" },
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests", marker = "extra == 'webrtc'", specifier = ">=2.33.0,<3.0.0" },
