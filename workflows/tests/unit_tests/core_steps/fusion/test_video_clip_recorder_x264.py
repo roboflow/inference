@@ -7,6 +7,9 @@ from io import BytesIO
 import av
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.common.video_clips.capture import (
+    ClipUnavailableError,
+)
 from roboflow_workflows.core_steps.fusion.video_clip_recorder.v1 import (
     AVAILABILITY_OK,
     BACKEND_X264,
@@ -119,6 +122,46 @@ def test_close_finalises_pending_capture_as_partial_shutdown() -> None:
         artifact = pending.future.result(timeout=30)
         assert artifact.report.partial == "shutdown"
         assert artifact.size_bytes > 0
+        artifact.release()
+    finally:
+        if pending is not None:
+            pending.release()
+        block.close()
+
+
+@pytest.mark.timeout(60)
+def test_close_without_prepare_close_finalises_and_releases() -> None:
+    # given: the HTTP / batch path calls `close()` with no `prepare_close()`
+    block = VideoClipRecorderBlockV1()
+    start = datetime.now()
+    pending = None
+
+    try:
+        for index in range(20):
+            (result,) = block.run(
+                image=[_frame(index, start)],
+                pre_roll_seconds=0.3,
+                post_roll_seconds=5.0,
+            )
+            _pace()
+        anchor = result["anchor"]
+        pending = anchor.capture(anchor.pre_roll_seconds, anchor.post_roll_seconds)
+        ring = block._streams["camera-1"].ring
+
+        # when
+        block.close()
+
+        # then: the capture is finalised from the ring and the ring holds nothing
+        artifact = pending.future.result(timeout=30)
+        assert artifact.report.partial == "shutdown"
+        assert _mp4_frame_count(artifact) > 0
+        stats = ring.stats()
+        assert stats.bytes == 0
+        assert stats.held_bytes == 0
+        assert stats.pending_captures == 0
+        assert block._streams == {}
+        with pytest.raises(ClipUnavailableError):
+            anchor.capture(anchor.pre_roll_seconds, anchor.post_roll_seconds)
         artifact.release()
     finally:
         if pending is not None:

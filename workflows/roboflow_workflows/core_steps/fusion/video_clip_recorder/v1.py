@@ -880,6 +880,9 @@ def _available_nvenc_ring_class() -> Optional[Type]:
 def _carries_video_metadata(image: WorkflowImageData) -> bool:
     # `WorkflowImageData.video_metadata` synthesises metadata for still images; a
     # recorder fed only such images has no stream to record (stateless HTTP).
+    # Reviewer note: there is no public accessor that tells real metadata from the
+    # synthesised default without side effects, so this reads the private field on
+    # purpose. A public `has_video_metadata` on `WorkflowImageData` would remove it.
     return getattr(image, "_video_metadata", None) is not None
 
 
