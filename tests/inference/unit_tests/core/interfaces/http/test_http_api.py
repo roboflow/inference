@@ -422,7 +422,18 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     assert inference_request.api_key == "query-api-key"
 
 
-def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "body_fields, expected_model_id",
+    [
+        ({"model_id": "depth-anything-v3/small"}, "depth-anything-v3/small"),
+        ({"depth_version_id": "base"}, "depth-anything-v2/base"),
+        ({}, "depth-anything-v2/small"),
+        ({"model_id": None}, "depth-anything-v2/small"),
+    ],
+)
+def test_depth_estimation_uses_query_api_key_for_model_loading(
+    monkeypatch, body_fields, expected_model_id
+) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -445,7 +456,7 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
             "/infer/depth-estimation",
             params={"api_key": "query-api-key"},
             json={
-                "model_id": "depth-anything-v3/small",
+                **body_fields,
                 "image": {
                     "type": "url",
                     "value": "https://example.com/test.jpg",
@@ -460,14 +471,14 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
     assert payload["depth_map_format"] == "json"
     assert payload["normalized_depth"] == _DUMMY_DEPTH_MAP.tolist()
     model_manager.add_model.assert_called_once_with(
-        "depth-anything-v3/small",
+        expected_model_id,
         "query-api-key",
         countinference=None,
         service_secret=None,
     )
     model_manager.infer_from_request_sync.assert_called_once()
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
-    assert inference_request.model_id == "depth-anything-v3/small"
+    assert inference_request.model_id == expected_model_id
     assert inference_request.api_key == "query-api-key"
 
 
@@ -545,7 +556,18 @@ def test_depth_estimation_json_format_returns_legacy_shape(monkeypatch) -> None:
     assert payload["image"] == "depth-image"
 
 
-def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "body_fields",
+    [
+        {},
+        {"model_id": None},
+        {"depth_version_id": "base"},
+        {"model_id": None, "depth_version_id": "base"},
+    ],
+)
+def test_depth_estimation_with_model_id_path_sets_request_model_id(
+    monkeypatch, body_fields
+) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -568,6 +590,7 @@ def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) 
             "/infer/depth-estimation/depth-anything-v3/small",
             params={"api_key": "query-api-key"},
             json={
+                **body_fields,
                 "image": {
                     "type": "url",
                     "value": "https://example.com/test.jpg",
@@ -746,6 +769,108 @@ def test_startup_preload_uses_same_alias_registry_key_as_live_requests(
         model_id_alias="florence-2-base",
     )
     model_manager.pin_model.assert_called_once_with("florence-2-base")
+
+
+def test_startup_preload_pins_before_loading(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", "preload-key")
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        deadline = time.monotonic() + 1
+        response = client.get("/readiness")
+        while response.status_code != 200 and time.monotonic() < deadline:
+            time.sleep(0.01)
+            response = client.get("/readiness")
+
+    assert response.status_code == 200
+    call_names = [mock_call[0] for mock_call in model_manager.mock_calls]
+    assert call_names.index("pin_model") < call_names.index("add_model")
+
+
+def test_startup_preload_pins_model_that_failed_to_load(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", "preload-key")
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+    model_manager.add_model.side_effect = RuntimeError("boom")
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        deadline = time.monotonic() + 1
+        response = client.get("/readiness")
+        while response.status_code != 200 and time.monotonic() < deadline:
+            time.sleep(0.01)
+            response = client.get("/readiness")
+
+    assert response.status_code == 200
+    model_manager.pin_model.assert_called_once_with("florence-2-base")
+
+
+def test_startup_preload_does_not_pin_unpinned_model(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector,
+        "async_push_usage_payloads",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", None)
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", "preload-key")
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        deadline = time.monotonic() + 1
+        response = client.get("/readiness")
+        while response.status_code != 200 and time.monotonic() < deadline:
+            time.sleep(0.01)
+            response = client.get("/readiness")
+
+    assert response.status_code == 200
+    model_manager.add_model.assert_called_once()
+    model_manager.pin_model.assert_not_called()
 
 
 def test_serverless_auth_middleware_allows_authorized_key_and_caches(

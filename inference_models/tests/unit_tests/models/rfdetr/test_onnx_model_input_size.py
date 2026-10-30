@@ -158,6 +158,17 @@ def test_onnx_loader_disables_spatial_overrides_for_a_static_input(
 
 
 @pytest.mark.parametrize("module, model_class", LOADERS)
+def test_onnx_loader_applies_no_input_size_cap_by_default(
+    tmp_path, monkeypatch, module, model_class
+) -> None:
+    _stub_session(monkeypatch, module, input_shape=[1, 3, 2048, 2048])
+
+    model = _load(model_class, _package(tmp_path, configured_size=2048))
+
+    assert _training_input_size(model) == (2048, 2048)
+
+
+@pytest.mark.parametrize("module, model_class", LOADERS)
 def test_onnx_loader_rejects_a_declared_size_over_the_limit_before_building_a_session(
     tmp_path, monkeypatch, module, model_class
 ) -> None:

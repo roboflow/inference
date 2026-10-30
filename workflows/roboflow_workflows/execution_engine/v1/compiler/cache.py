@@ -50,9 +50,21 @@ class BasicWorkflowsCache(Generic[V]):
             return self._cache.get(key)
 
     def cache(self, key: str, value: V) -> None:
+        """Store a value under a key, evicting the oldest key when full.
+
+        Re-caching an existing key replaces its value and keeps its eviction position.
+
+        Args:
+            key: Cache key.
+            value: Value to store.
+        """
         with self._cache_lock:
+            if key in self._cache:
+                self._cache[key] = value
+                return
+
             if len(self._keys_buffer) == self._keys_buffer.maxlen:
                 to_pop = self._keys_buffer.popleft()
-                del self._cache[to_pop]
+                self._cache.pop(to_pop, None)
             self._keys_buffer.append(key)
             self._cache[key] = value

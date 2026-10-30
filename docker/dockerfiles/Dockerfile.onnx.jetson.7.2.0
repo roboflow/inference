@@ -28,12 +28,15 @@ WORKDIR /app
 
 COPY --from=nvidia-repository-key /nvidia-jetson.asc /usr/share/keyrings/nvidia-jetson.asc
 
+# ca-certificates >= 20260816 distrusts emSign ECC Root CA - G3 (eMudhra key compromise,
+# LP: #2171507); the version check stops a cached layer or stale mirror shipping an older store
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-server-runtime-${TARGETARCH} \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib-jp72-server-runtime-${TARGETARCH} \
     echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/common ${L4T_REPOSITORY} main" > /etc/apt/sources.list.d/nvidia-jetson.list && \
     echo "deb [signed-by=/usr/share/keyrings/nvidia-jetson.asc] https://repo.download.nvidia.com/jetson/som ${L4T_REPOSITORY} main" >> /etc/apt/sources.list.d/nvidia-jetson.list && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
+        ca-certificates \
         cuda-nvrtc-13-2 \
         gcc \
         libatlas3-base \
@@ -62,6 +65,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-jp72-se
         python3-libnvinfer-dispatch \
         python3-libnvinfer-lean \
         tensorrt-libs && \
+    dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816 && \
     rm -f \
         /etc/apt/sources.list.d/nvidia-jetson.list \
         /usr/share/keyrings/nvidia-jetson.asc
@@ -374,7 +378,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     /opt/wheels/onnxruntime_gpu-*.whl \
     /opt/wheels/pycuda-*.whl \
     /opt/wheels/triton-*.whl \
-    "setuptools>=83.0.0" \
+    "setuptools>=84.1.0" \
     "transformers==5.15.0" \
     packaging && \
     # Requirements also name torch==2.13.0. Reinstall from the wheel bundle
@@ -430,7 +434,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
         dist/inference_sdk*.whl \
-        "setuptools>=83.0.0" && \
+        "setuptools>=84.1.0" && \
     python -m pip wheel --no-deps --wheel-dir /opt/wheels ./inference_models && \
     cp dist/*.whl /opt/wheels/ && \
     find /usr/local/lib/python3.12/dist-packages -type d \
@@ -479,7 +483,7 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
         /opt/wheels/torch-*.whl \
         /opt/wheels/torchvision-*.whl \
         /opt/wheels/triton-*.whl \
-        "setuptools>=83.0.0" \
+        "setuptools>=84.1.0" \
         "transformers==5.15.0" \
         packaging && \
     rm -rf \
