@@ -4,12 +4,22 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
-## `0.1.3rc1`
+## `0.1.4`
 
 ### Changed
 
-- The `workflows` extra requires `roboflow-workflows>=0.2.13rc1` instead of
+- Security maintenance release, no functional change. The lockfile is refreshed for three advisories in transitive dependencies: `certifi` 2026.7.22 -> 2026.10.23 (GHSA-6q48-6c7w-9gw2, bundled emSign root CAs whose intermediate CA keys were compromised), `GitPython` 3.1.62 -> 3.2.1 (GHSA-83vg-56qc-22m7, remote code execution through a submodule `.git` path) and `setuptools` 84.0.0 -> 84.2.1 (GHSA-xmj3-9gf7-h52w, Windows path escape during legacy wheel installation). Declared dependency ranges are unchanged.
+
+## `0.1.3`
+
+### Changed
+
+- The `workflows` extra requires `roboflow-workflows>=0.2.13` instead of
   `>=0.2.11rc1`, providing the execution-engine cleanup used below.
+
+### Documentation
+
+- Clarify `max_fps` behavior: video files retain every frame and wait by default; streams drop intermediate frames. `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True` enables frame dropping for files, and the Inference CLI sets this flag automatically.
 
 ### Fixed
 

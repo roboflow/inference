@@ -1,6 +1,6 @@
 [project]
 name = "roboflow-workflows"
-version = "0.2.13rc1"
+version = "0.2.14"
 description = "Roboflow Workflows execution engine and block library"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -28,7 +28,7 @@ dependencies = [
   "aiohttp~=3.14.4",
   "msgpack",
   "websocket-client~=1.9.0",
-  "openai>=1.17.0,<2.0.0",
+  "openai>=3.32.0,<4.0.0",
   "anthropic~=0.49.0",
   "boto3>=1.40.0,<=1.41.5",
   "botocore>=1.40.0,<=1.41.5",

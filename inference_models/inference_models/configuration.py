@@ -163,7 +163,7 @@ CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
     default=60,
 )
 FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
-    variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=20
+    variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=600
 )
 
 
