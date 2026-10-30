@@ -61,6 +61,7 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import
     record_block_duration,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
+    NUMPY_SCALAR_WIRE_KINDS,
     describe_dropped_block_state,
     partition_block_state,
 )
@@ -282,22 +283,33 @@ def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
 _WARNED_BLOCK_STATE_MESSAGES: set = set()
 _MAX_WARNED_BLOCK_STATE_MESSAGES = 4096
 _BYTE_COUNT_PATTERN = re.compile(r"\d+ bytes")
+# Container keys inside an attribute path (``self.first_seen['10']``) can
+# change every frame; the warning is about the attribute, not the key.
+_PATH_KEY_PATTERN = re.compile(r"\[[^\]]*\]")
 
 
 def _warn_once(message: str, *, scope: Optional[str] = None) -> None:
     """Log ``message`` once per ``scope`` (a workflow step) and message.
 
-    Byte counts are ignored in the key, so an oversized attribute whose size
-    changes every frame does not log a line per frame; attribute and block
-    names are kept, so ``self.buf1`` and ``self.buf2`` are reported apart.
+    Byte counts and container keys are ignored in the key, so an oversized
+    attribute whose size changes every frame, or a dict keyed by something
+    new every frame, does not log a line per frame; attribute and block names
+    are kept, so ``self.buf1`` and ``self.buf2`` are reported apart.
     """
-    key = (scope, _BYTE_COUNT_PATTERN.sub("# bytes", message))
+    key = (scope, _dedup_message(message))
     if key in _WARNED_BLOCK_STATE_MESSAGES:
         return
     if len(_WARNED_BLOCK_STATE_MESSAGES) >= _MAX_WARNED_BLOCK_STATE_MESSAGES:
         _WARNED_BLOCK_STATE_MESSAGES.clear()
     _WARNED_BLOCK_STATE_MESSAGES.add(key)
     logger.warning(message)
+
+
+def _dedup_message(message: str) -> str:
+    without_sizes = _BYTE_COUNT_PATTERN.sub("# bytes", message)
+    dedup_message = _PATH_KEY_PATTERN.sub("[...]", without_sizes)
+
+    return dedup_message
 
 
 def _warning_scope(workflow_context: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -668,6 +680,28 @@ def serialize_for_modal_remote_execution(inputs: Dict[str, Any]) -> str:
     return json.dumps(serialized_inputs, cls=InputJSONEncoder)
 
 
+def _decode_numpy_scalar(
+    marked: Dict[str, Any], *, decode: Callable[[Any], Any]
+) -> Any:
+    """Rebuild a numpy scalar written by the ``self`` state normalizer."""
+    dtype = np.dtype(marked["dtype"])
+    if dtype.kind not in NUMPY_SCALAR_WIRE_KINDS:
+        raise ValueError(f"numpy scalar of dtype {dtype} is not carried")
+    scalar = dtype.type(decode(marked["value"]))
+
+    return scalar
+
+
+def _decode_zoned_datetime(marked: Dict[str, Any]) -> datetime:
+    """Rebuild a ``ZoneInfo`` datetime written by the ``self`` state normalizer."""
+    from zoneinfo import ZoneInfo
+
+    instant = datetime.fromisoformat(marked["value"])
+    zoned = instant.astimezone(ZoneInfo(marked["zone"]))
+
+    return zoned
+
+
 def _decode_modal_remote_value(obj: Any) -> Any:
     """Decode from modal remote execution."""
     # datetime is already imported at the top level
@@ -680,8 +714,12 @@ def _decode_modal_remote_value(obj: Any) -> Any:
             elif obj["_type"] == "bytes":
                 return base64.b64decode(obj["value"])
             elif obj["_type"] == "tuple":
-                # Only ``self`` state uses this marker (see block_state).
+                # Written by the ``self`` state normalizer (see block_state).
                 return tuple(_decode_modal_remote_value(item) for item in obj["value"])
+            elif obj["_type"] == "numpy_scalar":
+                return _decode_numpy_scalar(obj, decode=_decode_modal_remote_value)
+            elif obj["_type"] == "zoned_datetime":
+                return _decode_zoned_datetime(obj)
             elif obj["_type"] == "ndarray":
                 arr = np.array(obj["value"], dtype=obj["dtype"])
                 return arr.reshape(obj["shape"])
@@ -1272,8 +1310,12 @@ def _deserialize_msgpack_result(result: Any) -> Any:
         if _type == "datetime":
             return datetime.fromisoformat(result["value"])
         if _type == "tuple":
-            # Only ``self`` state uses this marker (see block_state).
+            # Written by the ``self`` state normalizer (see block_state).
             return tuple(_deserialize_msgpack_result(item) for item in result["value"])
+        if _type == "numpy_scalar":
+            return _decode_numpy_scalar(result, decode=_deserialize_msgpack_result)
+        if _type == "zoned_datetime":
+            return _decode_zoned_datetime(result)
         if _type == "ndarray":
             return np.array(result["value"], dtype=result["dtype"]).reshape(
                 result["shape"]

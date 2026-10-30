@@ -20,6 +20,7 @@ import weakref
 from contextlib import contextmanager
 from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import msgpack
 import numpy as np
@@ -840,7 +841,7 @@ def test_block_instance_keeps_working_when_it_caches_a_non_transportable_object(
 
 
 # --------------------------------------------------------------------------- #
-# review round 1: the echo is user output and must not reach engine attributes
+# the echo is user output and must not reach engine attributes
 # --------------------------------------------------------------------------- #
 
 
@@ -951,7 +952,7 @@ def test_block_instance_cannot_shadow_class_attributes_from_the_sandbox(
 
 
 # --------------------------------------------------------------------------- #
-# review round 1: numpy scalars and tuples must survive both transports
+# numpy scalars keep their numpy type on both transports
 # --------------------------------------------------------------------------- #
 
 
@@ -965,48 +966,64 @@ NUMPY_SCALAR_CODE = (
 )
 
 
-def _assert_python_scalars(state):
-    assert state["seen"] is False, state
-    assert type(state["score"]) is float and state["score"] == 0.5
-    assert type(state["n"]) is int and state["n"] == 3
+def _assert_numpy_scalars(state):
+    assert type(state["seen"]) is np.bool_ and not state["seen"], state
+    assert type(state["score"]) is np.float32 and state["score"] == 0.5
+    assert type(state["n"]) is np.int64 and state["n"] == 3
 
 
-def test_http_server_echoes_numpy_scalars_as_python_scalars(modal_app):
+def test_http_server_echoes_numpy_scalars_with_their_numpy_type(modal_app):
     executor = _http_executor(modal_app)
 
     response = _run_http(executor, NUMPY_SCALAR_CODE, {"image": 1}, block_state={})
 
     assert response["success"] is True, response.get("error")
-    _assert_python_scalars(
-        deserialize_for_modal_remote_execution(response["block_state"])
+    _assert_numpy_scalars(
+        client._read_echoed_block_state_json(
+            response, block_state={"x": 1}, block_type_name="b"
+        )
     )
 
 
-def test_ws_server_echoes_numpy_scalars_as_python_scalars(modal_app):
+def test_ws_server_echoes_numpy_scalars_with_their_numpy_type(modal_app):
     executor = _http_executor(modal_app)
 
     response = _run_ws(executor, modal_app, NUMPY_SCALAR_CODE, {"image": 1}, {})
 
     assert response["success"] is True, response.get("error")
-    _assert_python_scalars(client._deserialize_msgpack_result(response["block_state"]))
+    _assert_numpy_scalars(
+        client._read_echoed_block_state_msgpack(
+            response, block_state={"x": 1}, block_type_name="b"
+        )
+    )
 
 
-def test_http_client_sends_numpy_scalars_as_python_scalars():
+def test_http_client_sends_numpy_scalars_with_their_numpy_type():
     state = {"seen": np.bool_(False), "score": np.float32(0.5), "n": np.int64(3)}
 
     block_state_json = _serialize_block_state_json(state, block_type_name="b")
 
-    _assert_python_scalars(json.loads(block_state_json))
+    _assert_numpy_scalars(
+        client._read_echoed_block_state_json(
+            {"block_state": block_state_json}, block_state=state, block_type_name="b"
+        )
+    )
 
 
-def test_ws_client_packs_numpy_scalars_as_python_scalars():
+def test_ws_client_packs_numpy_scalars_with_their_numpy_type():
     state = {"seen": np.bool_(False), "score": np.float32(0.5), "n": np.int64(3)}
 
     packed = client.WebSocketModalExecutor._pack_block_state(
         state, block_type_name="b", msgpack=msgpack
     )
 
-    _assert_python_scalars(msgpack.unpackb(msgpack.packb(packed, use_bin_type=True)))
+    _assert_numpy_scalars(
+        client._read_echoed_block_state_msgpack(
+            {"block_state": _through_msgpack(packed)},
+            block_state=state,
+            block_type_name="b",
+        )
+    )
 
 
 def _detections():
@@ -1069,7 +1086,7 @@ def test_http_server_echoes_a_tuple_holding_detections_as_a_tuple(modal_app):
 
 
 # --------------------------------------------------------------------------- #
-# review round 3: dropping must keep the block working, and never fail the call
+# dropping must keep the block working, and never fail the call
 # --------------------------------------------------------------------------- #
 
 FLAG_GUARDED_HELPER_CODE = (
@@ -1178,6 +1195,28 @@ UNCARRIABLE_VALUE_EXPRESSIONS = {
     "int_enum": "enum.IntEnum('Color', 'RED').RED",
     "str_subclass": "type('Name', (str,), {})('x')",
     "numpy_int_subclass": "type('Count', (np.int64,), {})(1)",
+    "datetime_with_uncarried_tzinfo": (
+        "datetime.datetime(2020, 1, 1, tzinfo=type('Tz', (datetime.tzinfo,), "
+        "{'utcoffset': lambda self, dt: datetime.timedelta(0), "
+        "'tzname': lambda self, dt: 'X', 'dst': lambda self, dt: None})())"
+    ),
+    "detections_numpy_uint64_keypoint_id": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'image_dimensions': np.array([[20, 20]]), "
+        "'keypoints_class_id': np.array([[np.uint64(2 ** 63)]], dtype=object), "
+        "'keypoints_class_name': np.array([['k']], dtype=object), "
+        "'keypoints_confidence': np.array([[0.5]]), "
+        "'keypoints_xy': np.array([[[1.0, 1.0]]])})"
+    ),
+    "detections_tuple_in_data_payload": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'image_dimensions': np.array([[20, 20]]), "
+        "'data': np.array([{'pair': (1, 2)}], dtype=object)})"
+    ),
     "detections_marker_in_data_payload": (
         "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
         "class_id=np.array([1]), confidence=np.array([0.5]), "
@@ -1319,6 +1358,7 @@ def _carriable_values() -> dict:
         "history": [1, (2, 3), {"nested": [None]}],
         "shape": (4, 4, 3),
         "label": np.array(["cat"])[0],
+        "zoned": datetime(2026, 3, 28, 12, tzinfo=ZoneInfo("Europe/Warsaw")),
         "raw_label": np.array([b"cat"])[0],
         "per_class": {np.array(["cat"])[0]: 1},
         "detections": _detections(),
@@ -1695,7 +1735,7 @@ def test_engine_and_sandbox_agree_on_the_carried_detections_data_keys(modal_app)
 
 
 # --------------------------------------------------------------------------- #
-# review round 3, follow-up: gaps found re-checking the review against 889228f5e
+# flag-guarded helpers, numpy dates, masks, images and parent ids
 # --------------------------------------------------------------------------- #
 
 
@@ -1796,6 +1836,8 @@ def test_http_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app)
     pixel_error = np.abs(
         state["last"].numpy_image.astype(int) - _image().numpy_image.astype(int)
     )
+    # A gradient, so JPEG has edges to smear (a flat image would pass any
+    # tolerance); 8 levels covers one encode at the default quality.
     assert pixel_error.max() <= 8
     assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
 
@@ -1816,6 +1858,8 @@ def test_ws_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app):
     pixel_error = np.abs(
         state["last"].numpy_image.astype(int) - _image().numpy_image.astype(int)
     )
+    # A gradient, so JPEG has edges to smear (a flat image would pass any
+    # tolerance); 8 levels covers one encode at the default quality.
     assert pixel_error.max() <= 8
     assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
 
@@ -1844,7 +1888,7 @@ def test_detections_parent_ids_survive_a_server_round_trip(modal_app, transport)
 
 
 # --------------------------------------------------------------------------- #
-# re-review of 2869ec815
+# exact types, image-shaped dicts, Detections ranges, rollback, warnings
 # --------------------------------------------------------------------------- #
 
 
@@ -2027,7 +2071,7 @@ def test_client_warns_once_per_step_not_once_per_block_type(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# second re-review of fb62928a2
+# tuples, numpy strings, Detections payloads, total cap, warning keys
 # --------------------------------------------------------------------------- #
 
 
@@ -2084,7 +2128,8 @@ def test_block_instance_keeps_numpy_string_keys_and_values(
 
     assert [r["calls"] for r in results] == [1, 2, 3]
     assert block.counts == {"cat": 3, "dog": 3}
-    assert type(block.last_label) is str
+    assert type(block.last_label) is np.str_
+    assert [type(key) for key in block.counts] == [str, str]
 
 
 NUMPY_SCALAR_SUBCLASS_CODE = (
@@ -2164,8 +2209,13 @@ def test_carriable_values_come_back_with_their_types(modal_app, transport):
         assert type(state[name]) is type(values[name]), name
     assert state["shape"] == (4, 4, 3) and type(state["shape"]) is tuple
     assert state["history"] == [1, (2, 3), {"nested": [None]}]
-    assert type(state["label"]) is str and state["label"] == "cat"
-    assert type(state["raw_label"]) is bytes and state["raw_label"] == b"cat"
+    assert type(state["label"]) is np.str_ and state["label"] == "cat"
+    assert type(state["raw_label"]) is np.bytes_ and state["raw_label"] == b"cat"
+    for name in ("scalar", "flag_scalar", "ratio_scalar"):
+        assert type(state[name]) is type(values[name]), name
+        assert state[name] == values[name], name
+    assert type(state["zoned"].tzinfo).__name__ == "ZoneInfo"
+    assert state["zoned"] == values["zoned"]
     assert state["per_class"] == {"cat": 1}
     assert [type(key) for key in state["per_class"]] == [str]
 
@@ -2345,3 +2395,224 @@ def test_custom_detections_data_keys_are_not_range_checked():
     partition = partition_block_state({"prev": detections}, measure=lambda a: 0)
 
     assert "prev" in partition.carried
+
+
+# --------------------------------------------------------------------------- #
+# numpy scalar behaviour, time zones, image parentage, warning keys
+# --------------------------------------------------------------------------- #
+
+
+NUMPY_SCALAR_OPS_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'best'):\n"
+    "        self.best = np.array([0.25, 0.75]).max()\n"
+    "        self.flag = np.bool_(True)\n"
+    "        self.counter = np.uint8(254)\n"
+    "    else:\n"
+    "        self.flag = ~self.flag\n"
+    "        self.counter = self.counter + np.uint8(1)\n"
+    "    ops = [\n"
+    "        self.best.item(),\n"
+    "        float(self.best.round(1)),\n"
+    "        float(self.best / np.float64(0)),\n"
+    "        bool(self.flag),\n"
+    "        int(self.counter),\n"
+    "        isinstance(self.best, np.floating),\n"
+    "    ]\n"
+    "    return {'is_first_frame': True, 'calls': ops}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_numpy_scalar_behaviour(monkeypatch, modal_app, transport):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=NUMPY_SCALAR_OPS_CODE, transport=transport
+    )
+
+    with np.errstate(divide="ignore"):
+        results = [block.run(image=frame)["calls"] for frame in (1, 2, 3)]
+
+    assert [result[0] for result in results] == [0.75, 0.75, 0.75]
+    assert [result[1] for result in results] == [0.8, 0.8, 0.8]
+    assert [result[2] for result in results] == [float("inf")] * 3
+    assert [result[3] for result in results] == [True, False, True]
+    assert [result[4] for result in results] == [254, 255, 0]
+    assert [result[5] for result in results] == [True, True, True]
+
+
+ZONED_DATETIME_CODE = (
+    "import datetime\n"
+    "from zoneinfo import ZoneInfo\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'start'):\n"
+    "        self.start = datetime.datetime(\n"
+    "            2026, 3, 28, 12, tzinfo=ZoneInfo('Europe/Warsaw')\n"
+    "        )\n"
+    "    next_day = self.start + datetime.timedelta(days=1)\n"
+    "    return {'is_first_frame': True, 'calls': str(next_day.utcoffset())}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_a_zoneinfo_time_zone(monkeypatch, modal_app, transport):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=ZONED_DATETIME_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame)["calls"] for frame in (1, 2, 3)]
+
+    assert results == ["2:00:00", "2:00:00", "2:00:00"]
+    assert type(block.start.tzinfo).__name__ == "ZoneInfo"
+
+
+def _root_image():
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="cam-1"),
+        numpy_image=np.zeros((4, 4, 3), dtype=np.uint8),
+    )
+    return image
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_notes_a_root_image_losing_its_parent_id(modal_app, partition_side):
+    if partition_side == "engine":
+        _, _, notes = partition_block_state(
+            {"last": _root_image()}, measure=lambda a: 0
+        )
+    else:
+        _, _, notes = modal_app._partition_block_state(
+            {"last": _root_image()}, lambda a: 0
+        )
+
+    assert any("self.last" in note and "parent_id" in note for note in notes)
+
+
+ROOT_IMAGE_ON_SELF_CODE = (
+    "import numpy as np\n"
+    "from inference.core.workflows.execution_engine.entities.base import (\n"
+    "    ImageParentMetadata, WorkflowImageData,\n"
+    ")\n"
+    "def run(self, image):\n"
+    "    self.last = WorkflowImageData(\n"
+    "        parent_metadata=ImageParentMetadata(parent_id='cam-1'),\n"
+    "        numpy_image=np.zeros((4, 4, 3), dtype=np.uint8),\n"
+    "    )\n"
+    "    return {'ok': True}\n"
+)
+
+
+def test_http_server_returns_a_root_image_with_a_placeholder_parent_id(modal_app):
+    # An image the block builds itself keeps its own parent id locally; an
+    # image that came in as an input already holds the placeholder.
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, ROOT_IMAGE_ON_SELF_CODE, {"image": 1}, {})
+
+    state = client._read_echoed_block_state_json(
+        response, block_state={}, block_type_name="B"
+    )
+    assert state["last"].parent_metadata.parent_id in ("input", "result")
+    assert "parent_id" in response["stderr"]
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_notes_empty_detections_losing_data_and_metadata(
+    modal_app, partition_side
+):
+    empty = sv.Detections.empty()
+    empty.metadata["image_dimensions"] = [20, 30]
+    if partition_side == "engine":
+        _, _, notes = partition_block_state({"prev": empty}, measure=lambda a: 0)
+    else:
+        _, _, notes = modal_app._partition_block_state({"prev": empty}, lambda a: 0)
+
+    assert any("self.prev" in note and "empty" in note for note in notes)
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_notes_use_attribute_paths_not_wire_markers(
+    modal_app, partition_side
+):
+    state = {"v": (_image(), 1)}
+    if partition_side == "engine":
+        _, _, notes = partition_block_state(state, measure=lambda a: 0)
+    else:
+        _, _, notes = modal_app._partition_block_state(state, lambda a: 0)
+
+    assert any("self.v[0]" in note for note in notes)
+    assert not any("'value'" in note for note in notes)
+
+
+FIRST_SEEN_CODE = (
+    "import numpy as np\n"
+    "class Tracker:\n"
+    "    pass\n"
+    "def run(self, image):\n"
+    "    self.first_seen = {str(image): Tracker()}\n"
+    "    return {'ok': True}\n"
+)
+
+
+def test_http_server_warns_once_about_a_key_that_changes_every_frame(modal_app):
+    executor = _http_executor(modal_app)
+
+    responses = [
+        _run_http(executor, FIRST_SEEN_CODE, {"image": frame}, block_state={})
+        for frame in range(6)
+    ]
+
+    lines = [
+        line
+        for response in responses
+        for line in (response["stderr"] or "").splitlines()
+        if "self.first_seen" in line and "rebuilt" in line
+    ]
+    assert len(lines) == 1
+
+
+def test_client_warns_once_about_a_key_that_changes_every_frame(monkeypatch):
+    warned = _capture_client_warnings(monkeypatch)
+
+    for frame in range(6):
+        client._carry_block_state(
+            {"first_seen": {str(frame): object()}},
+            block_type_name="FirstFrameCheck",
+            workflow_context={"step_selector": "$steps.a"},
+            measure=client._json_state_size,
+        )
+
+    assert len([m for m in warned if "self.first_seen" in m and "rebuilt" in m]) == 1
+
+
+class _OldThenNewWsExecutor(_InProcessWsExecutor):
+    """A websocket executor whose server stops echoing state while ``old`` is set."""
+
+    old = False
+
+    def _send_recv(self, frame_bytes, workspace, request_id=None):
+        response_bytes = super()._send_recv(frame_bytes, workspace, request_id)
+        if not self.old:
+            return response_bytes
+        response = msgpack.unpackb(response_bytes, raw=False)
+        response.pop("block_state", None)
+        return msgpack.packb(response, use_bin_type=True)
+
+
+def test_block_instance_survives_new_old_new_webexec_over_websocket(
+    monkeypatch, modal_app
+):
+    block = _build_first_frame_block(monkeypatch, modal_app, transport="ws")
+    executor = _OldThenNewWsExecutor(modal_app)
+
+    @contextmanager
+    def acquire(workspace_id):
+        yield executor
+
+    monkeypatch.setattr(block_scaffolding, "_acquire_modal_executor", acquire)
+    calls = []
+    for old in (False, False, True, True, False, False):
+        executor.old = old
+        calls.append(block.run(image=1)["calls"])
+
+    assert calls == [1, 2, 3, 1, 1, 2]

@@ -16,13 +16,14 @@ types are the ones the existing input/result serializers already understand
 (scalars, strings, bytes, lists, string-keyed dicts, ``datetime``, numpy
 arrays of bool/int/float/str, ``sv.Detections``, ``WorkflowImageData``,
 ``VideoMetadata``), as exact types, plus numpy bool/int/float/str/bytes
-scalars, which are normalized to their Python equivalent, and tuples, which
-are wrapped in a ``tuple`` wire marker because both transports would
-otherwise carry them as lists. Subclasses are not carried: they would come
-back as their base type. Images and
-``sv.Detections`` ride the result serializers and are lossy: an image is
-re-encoded as JPEG on every hop and only the ``data`` keys those serializers
-know survive, which ``partition_block_state`` reports as a note.
+scalars, tuples and ``ZoneInfo`` datetimes, which are wrapped in wire markers
+(``numpy_scalar``, ``tuple``, ``zoned_datetime``) because both transports
+would otherwise bring them back as Python scalars, lists and fixed-offset
+datetimes. Subclasses are not carried: they would come back as their base
+type. Images and ``sv.Detections`` ride the result serializers and are
+lossy: an image is re-encoded as JPEG on every hop and loses a root parent
+id, and only the ``data`` keys those serializers know survive, which
+``partition_block_state`` reports as notes.
 
 Anything else (a tracker object, an annotator, a model, a value an encoder
 refuses, a dict holding the ``_type`` wire marker or shaped like a
@@ -43,7 +44,7 @@ before it touches the instance, and the sandbox leaves the first two out of
 the echo up front, with the same warning as for a non-transportable value.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, FrozenSet, List, NamedTuple, Tuple
 
 import numpy as np
@@ -118,13 +119,22 @@ _CARRIED_NDARRAY_KINDS = frozenset("biufU")
 # would be decoded as that type on the other side.
 WIRE_TYPE_MARKER_KEY = "_type"
 
-# Marker the state normalizer wraps tuples in: both transports would carry a
-# bare tuple as a list, and a block that hashes or compares it would break.
+# Markers the state normalizer wraps values in that both transports would
+# otherwise change: a tuple would come back as a list, a numpy scalar as the
+# Python scalar (``.item()``, ``~``, fixed-width overflow and division by zero
+# then behave differently), and a ``ZoneInfo`` datetime with a fixed offset.
+# The decoders are shared with workflow inputs and block results, so a dict
+# of exactly these shapes there is decoded too, like the older markers.
 TUPLE_WIRE_TYPE = "tuple"
+NUMPY_SCALAR_WIRE_TYPE = "numpy_scalar"
+ZONED_DATETIME_WIRE_TYPE = "zoned_datetime"
 
-# numpy scalar types carried as their Python equivalent (``.item()``), checked
-# exactly: a subclass would come back as the plain Python value. Excludes
-# long doubles, complex, datetime64 and timedelta64, which no encoder carries.
+# numpy dtype kinds a ``numpy_scalar`` marker may name when decoded.
+NUMPY_SCALAR_WIRE_KINDS = frozenset("biufSU")
+
+# numpy scalar types carried with the ``numpy_scalar`` marker, checked
+# exactly: a subclass would come back as its base type. Excludes long
+# doubles, complex, datetime64 and timedelta64, which no encoder carries.
 CARRIED_NUMPY_SCALAR_TYPES: FrozenSet[type] = frozenset(
     scalar_type
     for scalar_type in set(np.sctypeDict.values())
@@ -305,7 +315,19 @@ def normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def _normalize_value(value: Any) -> Any:
     if type(value) in CARRIED_NUMPY_SCALAR_TYPES:
-        return value.item()
+        marked = {
+            WIRE_TYPE_MARKER_KEY: NUMPY_SCALAR_WIRE_TYPE,
+            "dtype": str(value.dtype),
+            "value": value.item(),
+        }
+        return marked
+    if type(value) is datetime and _zone_key(value) is not None:
+        marked = {
+            WIRE_TYPE_MARKER_KEY: ZONED_DATETIME_WIRE_TYPE,
+            "value": value.isoformat(),
+            "zone": _zone_key(value),
+        }
+        return marked
     if isinstance(value, dict):
         normalized = {
             _normalize_key(key): _normalize_value(item) for key, item in value.items()
@@ -321,6 +343,16 @@ def _normalize_value(value: Any) -> Any:
         return [_normalize_value(item) for item in value]
 
     return value
+
+
+def _zone_key(value: datetime) -> Any:
+    """The ``ZoneInfo`` key of an aware datetime, or ``None``."""
+    from zoneinfo import ZoneInfo
+
+    if type(value.tzinfo) is not ZoneInfo:
+        return None
+
+    return value.tzinfo.key
 
 
 def _normalize_key(key: Any) -> Any:
@@ -352,6 +384,7 @@ def partition_block_state(
         notes for the block's author.
     """
     carried: Dict[str, Any] = {}
+    raw_carried: Dict[str, Any] = {}
     sizes: Dict[str, int] = {}
     dropped: List[DroppedAttribute] = []
     for name, value in state.items():
@@ -378,6 +411,7 @@ def partition_block_state(
             dropped.append((name, _over_cap_reason(size)))
             continue
         carried[name] = normalized_value
+        raw_carried[name] = value
         sizes[name] = size
     # The per-attribute sizes overcount the combined payload by one map
     # header each, so the total cap is decided on the combined encoding.
@@ -403,7 +437,9 @@ def partition_block_state(
 
         return partition
 
-    notes = _lossy_value_notes(carried)
+    # Notes read the values as the block holds them, so paths name the
+    # block's own structure rather than the wire markers.
+    notes = _lossy_value_notes(raw_carried)
     partition = BlockStatePartition(carried=carried, dropped=[], notes=notes)
 
     return partition
@@ -452,6 +488,12 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
     from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
     if isinstance(value, sv.Detections):
+        if len(value) == 0 and (value.data or value.metadata):
+            notes.append(
+                f"Custom Python block state `self.{path}` holds empty "
+                "sv.Detections, which come back without their data and metadata"
+            )
+            return
         lost_keys = sorted(set(value.data) - CARRIED_DETECTIONS_DATA_KEYS, key=repr)
         if lost_keys:
             notes.append(
@@ -485,6 +527,14 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
             f"Custom Python block state `self.{path}` is an image, which is "
             "re-encoded as JPEG on every call, so its pixels drift"
         )
+        parent_id = value.parent_metadata.parent_id
+        is_root_image = parent_id == value.workflow_root_ancestor_metadata.parent_id
+        if is_root_image and parent_id not in _PLACEHOLDER_PARENT_IDS:
+            notes.append(
+                f"Custom Python block state `self.{path}` is an image whose "
+                "`parent_id` comes back replaced by a placeholder (`input` or "
+                "`result`); the transport only carries the parentage of crops"
+            )
         # The private attribute, so an image held only as base64 is not decoded.
         numpy_image = getattr(value, "_numpy_image", None)
         if numpy_image is not None and numpy_image.ndim == 2:
@@ -555,8 +605,17 @@ def _validate_value(value: Any, *, path: str) -> None:
     # Exact types only: a subclass (defaultdict, Counter, OrderedDict, a
     # namedtuple, an IntEnum member, a str or numpy scalar subclass) comes
     # back as its base type, which breaks the block from the next call on.
+    import supervision as sv
+    from roboflow_workflows.execution_engine.entities.base import (
+        VideoMetadata,
+        WorkflowImageData,
+    )
+
     value_type = type(value)
-    if value is None or value_type in (bool, float, str, bytes, datetime):
+    if value is None or value_type in (bool, float, str, bytes):
+        return
+    if value_type is datetime:
+        _validate_datetime(value, path=path)
         return
     if value_type is int:
         _validate_int(value, path=path)
@@ -568,8 +627,10 @@ def _validate_value(value: Any, *, path: str) -> None:
     if value_type is np.ndarray:
         _validate_ndarray(value, path=path, description="numpy array")
         return
-    if _is_transportable_workflow_object(value):
-        _validate_workflow_object(value, path=path)
+    if value_type is sv.Detections:
+        _validate_detections(value, path=path)
+        return
+    if value_type in (WorkflowImageData, VideoMetadata):
         return
     if value_type is dict:
         _validate_dict(value, path=path)
@@ -580,6 +641,24 @@ def _validate_value(value: Any, *, path: str) -> None:
         return
 
     _raise_not_transportable(_describe_type(value_type), path=path)
+
+
+def _validate_datetime(value: datetime, *, path: str) -> None:
+    from zoneinfo import ZoneInfo
+
+    tzinfo = value.tzinfo
+    if tzinfo is None or type(tzinfo) is timezone:
+        return
+    if type(tzinfo) is ZoneInfo and tzinfo.key is not None:
+        return
+    raise DynamicBlockError(
+        public_message=(
+            f"Custom Python block state `self.{path}` is a datetime with a "
+            f"{type(tzinfo).__name__} time zone, which cannot be carried across "
+            "remote execution; use `zoneinfo.ZoneInfo` or `datetime.timezone`."
+        ),
+        context="dynamic_block | block_state_validation",
+    )
 
 
 def _describe_type(value_type: type) -> str:
@@ -603,7 +682,13 @@ def _describe_type(value_type: type) -> str:
 
 
 def _validate_dict(value: Dict[Any, Any], *, path: str) -> None:
+    _validate_dict_keys(value, path=path)
     for key, item in value.items():
+        _validate_value(item, path=f"{path}[{key!r}]")
+
+
+def _validate_dict_keys(value: Dict[Any, Any], *, path: str) -> None:
+    for key in value:
         if type(key) not in (str, np.str_):
             raise DynamicBlockError(
                 public_message=(
@@ -632,8 +717,6 @@ def _validate_dict(value: Dict[Any, Any], *, path: str) -> None:
             ),
             context="dynamic_block | block_state_validation",
         )
-    for key, item in value.items():
-        _validate_value(item, path=f"{path}[{key!r}]")
 
 
 def _validate_ndarray(value: np.ndarray, *, path: str, description: str) -> None:
@@ -656,10 +739,8 @@ def _validate_int(value: int, *, path: str) -> None:
         )
 
 
-def _validate_workflow_object(value: Any, *, path: str) -> None:
-    import supervision as sv
-
-    if type(value) is not sv.Detections or len(value) == 0:
+def _validate_detections(value: Any, *, path: str) -> None:
+    if len(value) == 0:
         return
     missing = []
     if value.confidence is None:
@@ -694,7 +775,13 @@ def _validate_workflow_object(value: Any, *, path: str) -> None:
 
 
 def _validate_detections_field(value: Any, *, path: str) -> None:
-    """Validate a carried Detections field by value, whatever its storage."""
+    """Validate a carried Detections field by value, whatever its storage.
+
+    The detections serializer passes these payloads through as they are, so
+    the state markers do not apply inside them: a tuple would come back as a
+    list and is refused, and so are the dicts the decoders would read as a
+    typed value.
+    """
     if isinstance(value, np.ndarray):
         if value.dtype.kind in "iu" and value.size:
             _validate_int(int(np.max(value)), path=path)
@@ -703,8 +790,26 @@ def _validate_detections_field(value: Any, *, path: str) -> None:
             for item in value.ravel():
                 _validate_detections_field(item, path=path)
         return
-    if isinstance(value, (dict, list, tuple)) or type(value) is int:
-        _validate_value(value, path=path)
+    if isinstance(value, tuple):
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block state `self.{path}` holds a tuple inside "
+                "sv.Detections data, which the transport carries as a list; "
+                "use a list there."
+            ),
+            context="dynamic_block | block_state_validation",
+        )
+    if isinstance(value, dict):
+        _validate_dict_keys(value, path=path)
+        for key, item in value.items():
+            _validate_detections_field(item, path=f"{path}[{key!r}]")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_detections_field(item, path=f"{path}[{index}]")
+        return
+    if isinstance(value, (int, np.integer)) and not isinstance(value, (bool, np.bool_)):
+        _validate_int(int(value), path=path)
 
 
 def _rle_masks_carry_size(detections: Any) -> bool:
@@ -733,15 +838,3 @@ def _raise_not_transportable(description: str, *, path: str) -> None:
         ),
         context="dynamic_block | block_state_validation",
     )
-
-
-def _is_transportable_workflow_object(value: Any) -> bool:
-    import supervision as sv
-    from roboflow_workflows.execution_engine.entities.base import (
-        VideoMetadata,
-        WorkflowImageData,
-    )
-
-    is_transportable = type(value) in (sv.Detections, WorkflowImageData, VideoMetadata)
-
-    return is_transportable
