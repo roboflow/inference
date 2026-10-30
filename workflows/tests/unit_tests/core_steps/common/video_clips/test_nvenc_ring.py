@@ -1,210 +1,35 @@
 """Tests for the NVENC ring.
 
-The ring logic is tested with a fake ``NvencAdapter`` (no CUDA, no PyNvVideoCodec).
-``ring.BaseEncodedRing`` comes from the shared ``ring.py``; while that module is not
-importable (it is developed in parallel) a minimal stand-in that follows the agreed
-hook contract is installed from THIS file. The real-encoder tests at the bottom run
-only where ``nvenc_ring.available()`` is true (CUDA GPU + PyNvVideoCodec).
+The ring logic is tested with a fake ``NvencAdapter`` (no CUDA, no PyNvVideoCodec)
+on top of the real ``ring.BaseEncodedRing``. The real-encoder tests at the bottom
+run only where ``nvenc_ring.available()`` is true (CUDA GPU + PyNvVideoCodec).
 """
 
-import importlib
+import io
 import sys
 import threading
 import time
-import types
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from fractions import Fraction
-from queue import Empty, Queue
 from typing import Any, List, Optional
 
+import av
 import pytest
-
-RING_MODULE = "roboflow_workflows.core_steps.common.video_clips.ring"
-
-
-# ---- stand-in for ring.BaseEncodedRing (used only when ring.py is missing) ------
-@dataclass
-class _StubPreparedFrame:
-    payload: Any
-    width: int
-    height: int
-    nbytes: int
-
-
-@dataclass
-class _StubEncodedOutput:
-    payload: bytes
-    is_keyframe: bool
-
-
-class _StubBaseEncodedRing:
-    """Follows the hook contract agreed with the ring.py owner; nothing more."""
-
-    backend = "base"
-
-    def __init__(
-        self,
-        video_identifier,
-        *,
-        pre_roll_seconds,
-        playback_speed=1.0,
-        clip_fps=None,
-        max_width=None,
-        declared_fps=None,
-        budget=None,
-        queue_depth=None,
-        byte_cap_bytes=None,
-        stall_grace_seconds=10.0,
-    ):
-        self.video_identifier = video_identifier
-        self.pre_roll_seconds = pre_roll_seconds
-        self.playback_speed = playback_speed
-        self.clip_fps = clip_fps
-        self.max_width = max_width
-        self.declared_fps = declared_fps
-        self._stub_queue: Queue = Queue(maxsize=queue_depth or 30)
-        self._stub_lock = threading.Lock()
-        self._stub_close_lock = threading.Lock()
-        self._stub_thread: Optional[threading.Thread] = None
-        self._stub_closing = False
-        self._stub_closed = False
-        self._stub_queue_drops = 0
-        self._stub_encode_errors = 0
-        self._stub_size = None
-        self._stub_t0 = None
-        self._stub_last_key = None
-        self.stub_outputs: List[Any] = []
-
-    def submit(self, frame_timestamp, frame_number, image):
-        if self._stub_closing:
-            return None
-        if self._stub_queue.full():
-            self._stub_queue_drops += 1
-            return None
-        prepared = self._prepare_frame(image)
-        if prepared is None:
-            self._stub_queue_drops += 1
-            return None
-        with self._stub_lock:
-            if self._stub_closing:
-                self._discard_frame(prepared)
-                return None
-            self._stub_queue.put((frame_timestamp, frame_number, prepared))
-            if self._stub_thread is None:
-                self._stub_thread = threading.Thread(target=self._stub_run, daemon=True)
-                self._stub_thread.start()
-
-    def _stub_run(self):
-        while True:
-            item = self._stub_queue.get()
-            if item is None:
-                break
-            timestamp, _, frame = item
-            size = (frame.width, frame.height)
-            if self._stub_size is not None and size != self._stub_size:
-                self.stub_outputs.extend(self._flush_encoder())
-                self._close_encoder()
-                self._stub_t0 = None
-                self._stub_last_key = None
-            self._stub_size = size
-            if self._stub_t0 is None:
-                self._stub_t0 = timestamp
-            elapsed = (timestamp - self._stub_t0).total_seconds() / self.playback_speed
-            pts = int(round(elapsed * 90000))
-            last = self._stub_last_key
-            force = last is None or (
-                (timestamp - last).total_seconds() / self.playback_speed >= 1.0 - 1e-6
-            )
-            try:
-                outputs = self._encode_frame(frame, pts=pts, force_keyframe=force)
-            except Exception:
-                self._stub_encode_errors += 1
-                self._discard_frame(frame)
-                continue
-            if force:
-                self._stub_last_key = timestamp
-            self.stub_outputs.extend(outputs)
-        self.stub_outputs.extend(self._flush_encoder())
-        self._close_encoder()
-
-    def capture(self, start, end_inclusive):
-        raise NotImplementedError("stub")
-
-    def prepare_close(self, deadline):
-        with self._stub_lock:
-            if self._stub_closing:
-                return None
-            self._stub_closing = True
-            while True:
-                try:
-                    item = self._stub_queue.get_nowait()
-                except Empty:
-                    break
-                self._stub_queue_drops += 1
-                self._discard_frame(item[2])
-            if self._stub_thread is not None:
-                self._stub_queue.put(None)
-
-    def close(self):
-        with self._stub_close_lock:
-            if self._stub_closed:
-                return None
-            self.prepare_close(None)
-            if self._stub_thread is not None:
-                self._stub_thread.join(timeout=10)
-            self._stub_closed = True
-
-    def stats(self):
-        return types.SimpleNamespace(
-            backend=self.backend,
-            queue_drops=self._stub_queue_drops,
-            encode_errors=self._stub_encode_errors,
-            extra=self._backend_stats(),
-        )
-
-    def _discard_frame(self, frame):
-        return None
-
-    def _backend_stats(self):
-        return {}
-
-
-def _import_nvenc_ring():
-    try:
-        ring = importlib.import_module(RING_MODULE)
-        uses_stub = False
-    except ImportError:
-        ring = types.ModuleType(RING_MODULE)
-        ring.BaseEncodedRing = _StubBaseEncodedRing
-        ring.PreparedFrame = _StubPreparedFrame
-        ring.EncodedOutput = _StubEncodedOutput
-        sys.modules[RING_MODULE] = ring
-        uses_stub = True
-    try:
-        module = importlib.import_module(
-            "roboflow_workflows.core_steps.common.video_clips.nvenc_ring"
-        )
-    finally:
-        if uses_stub:
-            # nvenc_ring keeps its references; nothing else may see the stand-in.
-            sys.modules.pop(RING_MODULE, None)
-    return module, ring, uses_stub
-
-
-nvenc_ring, _ring_module, USES_STUB_BASE = _import_nvenc_ring()
-EncodedOutput = _ring_module.EncodedOutput
-PreparedFrame = _ring_module.PreparedFrame
-
-requires_stub_base = pytest.mark.skipif(
-    not USES_STUB_BASE, reason="reads the stand-in base's recorded outputs"
+from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+from roboflow_workflows.core_steps.common.video_clips.artifact import ClipArtifact
+from roboflow_workflows.core_steps.common.video_clips.capture import (
+    PARTIAL_SHUTDOWN,
+    PendingCapture,
 )
+from roboflow_workflows.core_steps.common.video_clips.ring import (
+    EncodedOutput,
+    PreparedFrame,
+)
+
 requires_nvenc = pytest.mark.skipif(
     not nvenc_ring.available(), reason="needs a CUDA GPU and PyNvVideoCodec"
-)
-requires_real_base = pytest.mark.skipif(
-    USES_STUB_BASE, reason="needs the real ring.py (packet store and remux)"
 )
 
 IDR_ACCESS_UNIT = (
@@ -747,20 +572,58 @@ def test_idr_forced_once_per_output_second(speed, expected_idrs) -> None:
     assert ring._backend_stats()["forced_idrs"] == expected_idrs
 
 
-@requires_stub_base
 def test_keyframes_reach_the_base_in_submission_order() -> None:
     adapter = FakeAdapter(delay_frames=3)
     ring = make_ring(adapter, pool_frames=8, queue_depth=128)
+    try:
+        for index in range(60):
+            assert wait_for_slot(ring)
+            ring.submit(timestamp(index), index, FakeImage())
+        assert wait_for(lambda: len(adapter.encoded) == 60)
+        handle = ring.capture(timestamp(0), timestamp(59))
+        ring.prepare_close(5.0)  # flushes the 3 access units the fake still holds
+        artifact = handle.future.result(timeout=10)
+        packets = list(ring._store._packets)
+    finally:
+        ring.close()
 
-    for index in range(60):
-        assert wait_for_slot(ring)
-        ring.submit(timestamp(index), index, FakeImage())
-    assert wait_for(lambda: len(adapter.encoded) == 60)
-    ring.close()
-
-    flags = [output.is_keyframe for output in ring.stub_outputs]
-    assert len(flags) == 60
+    flags = [packet.is_keyframe for packet in packets]
+    assert [packet.frame_number for packet in packets] == list(range(60))
     assert [index for index, flag in enumerate(flags) if flag] == [0, 30]
+    assert artifact.report.frames == 60
+    assert artifact.report.partial == PARTIAL_SHUTDOWN
+    artifact.release()
+
+
+def test_capture_resolves_to_an_mp4_artifact_through_the_real_base() -> None:
+    adapter = FakeAdapter()
+    ring = make_ring(adapter, pool_frames=8, queue_depth=128)
+    try:
+        for index in range(45):
+            assert wait_for_slot(ring)
+            ring.submit(timestamp(index), index, FakeImage())
+        handle = ring.capture(timestamp(35), timestamp(50))
+        for index in range(45, 60):
+            assert wait_for_slot(ring)
+            ring.submit(timestamp(index), index, FakeImage())
+        # the post-roll is satisfied by frame 51, so no close is needed
+        artifact = handle.future.result(timeout=10)
+    finally:
+        ring.close()
+
+    assert isinstance(handle, PendingCapture)
+    assert isinstance(artifact, ClipArtifact)
+    assert isinstance(artifact.bytes_or_path, bytes)
+    with av.open(io.BytesIO(artifact.bytes_or_path)) as container:
+        demuxed = [packet for packet in container.demux(video=0) if packet.size > 0]
+    report = artifact.report
+    assert report.backend == "nvenc"
+    assert report.partial is None
+    # GOP-aligned: the window starts on the IDR of frame 30 and ends at frame 50
+    assert report.frames == 21
+    assert len(demuxed) == 21
+    assert demuxed[0].pts == 0 and demuxed[0].is_keyframe
+    artifact.release()
 
 
 # ---- lifecycle ----------------------------------------------------------------------
@@ -980,7 +843,6 @@ def _artifact_path(artifact, tmp_path, name: str):
 
 
 @requires_nvenc
-@requires_real_base
 def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
     ring = nvenc_ring.NvencRing("0", pre_roll_seconds=20.0, declared_fps=30.0)
     try:
@@ -1003,7 +865,6 @@ def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
 
 
 @requires_nvenc
-@requires_real_base
 def test_two_rings_record_simultaneously(tmp_path) -> None:
     rings = [
         nvenc_ring.NvencRing(name, pre_roll_seconds=10.0, declared_fps=30.0)
