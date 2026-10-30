@@ -65,8 +65,8 @@ class ClipArtifact:
         duration_seconds: Output (playback) duration in seconds.
         report: The clip report.
         content_type: MIME type of the clip.
-        on_release: Called once by the first `release()` (drops the packet
-            references the clip holds in its ring).
+        on_release: Optional hook called once by the first `release()`. Rings
+            drop their packet references when the MP4 is muxed, not here.
     """
 
     def __init__(
@@ -178,7 +178,7 @@ class ClipArtifact:
             yield stream
 
     def release(self) -> None:
-        """Free the clip: delete its temporary file and drop its packet refs.
+        """Free the clip: delete its temporary file and run `on_release`.
 
         Idempotent and thread-safe.
         """

@@ -1294,8 +1294,10 @@ class BaseEncodedRing(abc.ABC):
             path,
             duration_seconds=plan.duration_ticks / PTS_CLOCK_RATE,
             report=report,
-            on_release=partial(self._release_packets, packets),
         )
+        # The MP4 holds its own copy of the clip, so the ring's packets are
+        # released now rather than when the upload finishes.
+        self._release_packets(packets)
 
         return artifact
 

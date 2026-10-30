@@ -156,7 +156,7 @@ def test_gop_lead_never_exceeds_one_output_second(
     artifact.release()
 
 
-def test_future_resolves_on_the_ring_thread_and_packets_refcount_to_zero(
+def test_future_resolves_on_the_ring_thread_and_packets_are_released_once_muxed(
     ring,
 ) -> None:
     # given
@@ -174,19 +174,22 @@ def test_future_resolves_on_the_ring_thread_and_packets_refcount_to_zero(
     shared = set(map(id, pending[0].packets)) & set(map(id, pending[1].packets))
     assert shared
     assert all(packet.refs == 2 for packet in pending[1].packets)
+    captured_packets = pending[0].packets + pending[1].packets
     _feed(recorder, range(60, 75))
     artifacts = [first.future.result(timeout=10), second.future.result(timeout=10)]
 
     # then
     assert resolved_on and "finalizer" in resolved_on[0]
     assert resolved_on[0] != threading.current_thread().name
+    # the muxed MP4s own their bytes, so no packet stays referenced by them
+    assert all(packet.refs == 0 for packet in captured_packets)
     _feed(recorder, range(75, 400))
-    assert recorder.stats().held_bytes > 0
-    for artifact in artifacts:
-        artifact.release()
     stats = recorder.stats()
     assert stats.held_bytes == 0
     assert all(packet.refs == 0 for packet in recorder._store._packets)
+    assert all(artifact.read_bytes() for artifact in artifacts)
+    for artifact in artifacts:
+        artifact.release()
 
 
 def test_byte_cap_eviction_marks_capture_ring_evicted(ring) -> None:
