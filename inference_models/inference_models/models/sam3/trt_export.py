@@ -131,12 +131,15 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
+def export_sam3_onnx(
+    model_package: Path, output_dir: Path, *, parts: Tuple[str, ...] = PARTS
+) -> Dict:
     """Export the native SAM3 components and record their export durations.
 
     Args:
         model_package (Path): Existing package with weights and native tokenizer.
         output_dir (Path): Empty destination for ONNX files and their manifest.
+        parts (Tuple[str, ...]): Components to export in this process.
 
     Returns:
         Dict: Package provenance, shape constraints, and export durations.
@@ -147,7 +150,9 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
     """
     from inference_models.models.sam3.sam3_torch import SAM3Torch
 
-    if version("sam3") != "0.1.4":
+    if not parts or len(set(parts)) != len(parts) or not set(parts).issubset(PARTS):
+        raise ValueError("Select distinct SAM3 components: vision, text, decoder")
+    elif version("sam3") != "0.1.4":
         raise ValueError("Native split export currently supports sam3==0.1.4 only")
     elif not torch.cuda.is_available():
         raise RuntimeError("Export SAM3 on a CUDA device with sufficient memory")
@@ -172,6 +177,21 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
     text = SAM3TextExport(model).eval()
     decoder = SAM3DecoderExport(model).to(device).eval()
     export_seconds = {}
+    manifest = {
+        "schema_version": 1,
+        "sam3_version": version("sam3"),
+        "torch_version": torch.__version__,
+        "image_size": IMAGE_SIZE,
+        "text_length": TEXT_LENGTH,
+        "batch_size": 1,
+        "prompt_mode": "text_only",
+        "export_wall_seconds": export_seconds,
+        "weights_sha256": file_sha256(model_package / "weights.pt"),
+        "tokenizer_sha256": file_sha256(model_package / "bpe_simple_vocab_16e6.txt.gz"),
+        "components": {},
+    }
+    manifest_path = output_dir / "export.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     with torch.no_grad(), torch.autocast("cuda", enabled=False), sdpa_kernel(
         SDPBackend.MATH
     ), sam3_onnx_rope(model):
@@ -191,7 +211,12 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
             ),
         )
         for name, wrapper, inputs, input_names, output_names in exports:
+            if name not in parts:
+                continue
+
             started = time.perf_counter()
+            manifest["components"][name] = {"status": "running"}
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
             torch.onnx.export(
                 wrapper,
                 inputs,
@@ -203,18 +228,7 @@ def export_sam3_onnx(model_package: Path, output_dir: Path) -> Dict:
                 external_data=True,
             )
             export_seconds[name] = time.perf_counter() - started
+            manifest["components"][name] = {"status": "completed"}
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
-    manifest = {
-        "schema_version": 1,
-        "sam3_version": version("sam3"),
-        "torch_version": torch.__version__,
-        "image_size": IMAGE_SIZE,
-        "text_length": TEXT_LENGTH,
-        "batch_size": 1,
-        "prompt_mode": "text_only",
-        "export_wall_seconds": export_seconds,
-        "weights_sha256": file_sha256(model_package / "weights.pt"),
-        "tokenizer_sha256": file_sha256(model_package / "bpe_simple_vocab_16e6.txt.gz"),
-    }
-    (output_dir / "export.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest

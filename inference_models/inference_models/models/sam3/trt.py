@@ -4,7 +4,7 @@ import json
 import time
 from pathlib import Path
 from threading import RLock
-from typing import Dict
+from typing import Dict, Tuple
 
 import torch
 
@@ -40,6 +40,8 @@ def build_sam3_engines(
     engine_dir: Path,
     fp16: bool = False,
     workspace_gib: int = 8,
+    *,
+    parts: Tuple[str, ...] = PARTS,
 ) -> Dict:
     """Build static TensorRT engines with detailed inspection metadata.
 
@@ -48,6 +50,7 @@ def build_sam3_engines(
         engine_dir (Path): Empty destination for engines and build measurements.
         fp16 (bool): Enable FP16 tactics while retaining FP32 Softmax.
         workspace_gib (int): Builder workspace limit in GiB per engine.
+        parts (Tuple[str, ...]): Completed ONNX components to compile.
 
     Returns:
         Dict: Engine provenance, checksums, and per-engine build durations.
@@ -58,7 +61,9 @@ def build_sam3_engines(
     """
     trt = _tensorrt()
     manifest = json.loads((export_dir / "export.json").read_text())
-    if manifest["schema_version"] != 1:
+    if not parts or len(set(parts)) != len(parts) or not set(parts).issubset(PARTS):
+        raise ValueError("Select distinct SAM3 components: vision, text, decoder")
+    elif manifest["schema_version"] != 1:
         raise ValueError("Unsupported SAM3 export manifest")
     elif workspace_gib < 1:
         raise ValueError("workspace_gib must be positive")
@@ -71,7 +76,13 @@ def build_sam3_engines(
     logger = trt.Logger(trt.Logger.WARNING)
     engines = {}
     build_seconds = {}
-    for part in PARTS:
+    for part in parts:
+        if (
+            "components" in manifest
+            and manifest["components"].get(part, {}).get("status") != "completed"
+        ):
+            raise ValueError(f"SAM3 {part} ONNX export is incomplete")
+
         started = time.perf_counter()
         builder = trt.Builder(logger)
         network = builder.create_network(
