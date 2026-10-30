@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'darwin'",
@@ -2933,15 +2933,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pkgconfig"
-version = "1.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/52/fd/0adde075cd3bfecd557bc7d757e00e231d34d8a6edb4c8d1642759254c21/pkgconfig-1.6.0.tar.gz", hash = "sha256:4a5a6631ce937fafac457104a40d558785a658bbdca5c49b6295bc3fd651907f", size = 5691, upload-time = "2026-03-06T11:26:01.194Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/6f/f7ec07fba48f07c555cc4099481df644fbbc12067879072c17ac229f6556/pkgconfig-1.6.0-py3-none-any.whl", hash = "sha256:98e71754855e9563838d952a160eb577edabb57782e49853edb5381927e6bea1", size = 7086, upload-time = "2026-03-06T11:26:07.688Z" },
-]
-
-[[package]]
 name = "platformdirs"
 version = "4.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3667,7 +3658,6 @@ version = "2.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
-    { name = "pkgconfig" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7b/88/f73dae807ec68b228fba72507105e3ba80a561dc0bade0004ce24fd118fc/pyvips-2.2.3.tar.gz", hash = "sha256:43bceced0db492654c93008246a58a508e0373ae1621116b87b322f2ac72212f", size = 56626, upload-time = "2024-04-28T11:19:58.158Z" }
 
@@ -4572,7 +4562,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0.0,<2.4.0" },
     { name = "opencv-python", specifier = ">=4.8.1.78,<4.13.0" },
     { name = "orjson", marker = "extra == 'webrtc'", specifier = ">=3.11.6,<4.0.0" },
-    { name = "pillow", specifier = ">=12.3.0,<13.0.0" },
+    { name = "pillow", specifier = ">=12.3.0,<14.0.0" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.8.0,<2.12.0" },
     { name = "pynvvideocodec", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.1.0,<3.0.0" },
