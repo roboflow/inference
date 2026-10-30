@@ -108,8 +108,12 @@ BLOCK_STATE_MAX_BYTES = 1024 * 1024
 # sandbox cannot flood the engine's logs and warn-once set.
 BLOCK_STATE_MAX_ATTRIBUTES = 1024
 
-# Nesting depth accepted in an echo before anything is decoded.
+# Wire nesting depth of one attribute; senders drop deeper state.
 _MAX_ECHO_DEPTH = 64
+
+_IMAGE_WIRE_LEVELS = 3
+_VIDEO_METADATA_WIRE_LEVELS = 2
+_DETECTIONS_WIRE_LEVELS = 5
 
 # Largest numpy scalar or array an echo may make the engine allocate. State
 # serializes to at most ``BLOCK_STATE_MAX_BYTES``; unicode arrays take four
@@ -474,7 +478,7 @@ def check_echoed_wire_value(value: Any, *, path: str, depth: int = 0) -> None:
         return
     wire_type = value.get(WIRE_TYPE_MARKER_KEY)
     if wire_type is None:
-        if value.get("type") is not None and "value" in value:
+        if value.get("type") == "base64" and "value" in value:
             _raise_malformed_echo(path, "holds an untagged image")
     elif wire_type not in _ECHO_WIRE_TYPES:
         _raise_malformed_echo(path, f"holds a `{wire_type}` marker")
@@ -507,6 +511,8 @@ def _check_echoed_ndarray(value: Dict[str, Any], *, path: str) -> None:
         type(size) is int and size >= 0 for size in shape
     ):
         _raise_malformed_echo(path, "holds an array with an invalid shape")
+    if dtype.kind in "SUV" and dtype.itemsize == 0 and 0 not in shape:
+        _raise_malformed_echo(path, f"holds a non-empty array of dtype {dtype}")
     if (
         dtype.itemsize * int(np.prod(shape, dtype=np.float64))
         > _MAX_ECHO_ALLOCATION_BYTES
@@ -815,19 +821,25 @@ def describe_dropped_block_state(
     return messages
 
 
-def _validate_value(value: Any, *, path: str) -> None:
+def _validate_value(value: Any, *, path: str, depth: int = 0) -> None:
     # Exact types only: a subclass (defaultdict, Counter, OrderedDict, a
     # namedtuple, an IntEnum member, a str or numpy scalar subclass) comes
     # back as its base type, which breaks the block from the next call on.
     detections_type, image_type, video_metadata_type = _workflow_object_types()
     value_type = type(value)
-    if value is None or value_type in (bool, float, str, bytes):
+    if value is None or value_type in (bool, float, str):
+        _validate_wire_depth(depth, path=path)
+        return
+    if value_type is bytes:
+        _validate_wire_depth(depth + 1, path=path)
         return
     if value_type is datetime:
         _validate_datetime(value, path=path)
+        _validate_wire_depth(depth + 1, path=path)
         return
     if value_type is int:
         _validate_int(value, path=path)
+        _validate_wire_depth(depth, path=path)
         return
     if value_type in CARRIED_NUMPY_SCALAR_TYPES:
         if isinstance(value, np.integer):
@@ -836,24 +848,47 @@ def _validate_value(value: Any, *, path: str) -> None:
             _raise_not_transportable(
                 f"numpy {value.dtype.name} with trailing NUL characters", path=path
             )
+        # HTTP wraps a bytes scalar's value in a bytes marker.
+        scalar_levels = 2 if value.dtype.kind == "S" else 1
+        _validate_wire_depth(depth + scalar_levels, path=path)
         return
     if value_type is np.ndarray:
         _validate_ndarray(value, path=path, description="numpy array")
+        _validate_wire_depth(depth + 1 + value.ndim, path=path)
         return
     if value_type is detections_type:
-        _validate_detections(value, path=path)
+        _validate_detections(value, path=path, depth=depth)
         return
-    if value_type in (image_type, video_metadata_type):
+    if value_type is image_type:
+        _validate_wire_depth(depth + _IMAGE_WIRE_LEVELS, path=path)
+        return
+    if value_type is video_metadata_type:
+        _validate_wire_depth(depth + _VIDEO_METADATA_WIRE_LEVELS, path=path)
         return
     if value_type is dict:
-        _validate_dict(value, path=path)
+        _validate_wire_depth(depth, path=path)
+        _validate_dict(value, path=path, depth=depth)
         return
     if value_type in (list, tuple):
+        item_depth = depth + (2 if value_type is tuple else 1)
+        _validate_wire_depth(item_depth - 1, path=path)
         for index, item in enumerate(value):
-            _validate_value(item, path=f"{path}[{index}]")
+            _validate_value(item, path=f"{path}[{index}]", depth=item_depth)
         return
 
     _raise_not_transportable(_describe_type(value_type), path=path)
+
+
+def _validate_wire_depth(depth: int, *, path: str) -> None:
+    if depth > _MAX_ECHO_DEPTH:
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block state `self.{path}` is nested more than "
+                f"{_MAX_ECHO_DEPTH} levels deep on the wire, which cannot be "
+                "carried across remote execution; flatten it."
+            ),
+            context="dynamic_block | block_state_validation",
+        )
 
 
 def _has_trailing_nul(value: Any) -> bool:
@@ -919,10 +954,10 @@ def _describe_type(value_type: type) -> str:
     return value_type.__name__
 
 
-def _validate_dict(value: Dict[Any, Any], *, path: str) -> None:
+def _validate_dict(value: Dict[Any, Any], *, path: str, depth: int) -> None:
     _validate_dict_keys(value, path=path)
     for key, item in value.items():
-        _validate_value(item, path=f"{path}[{key!r}]")
+        _validate_value(item, path=f"{path}[{key!r}]", depth=depth + 1)
 
 
 def _validate_dict_keys(value: Dict[Any, Any], *, path: str) -> None:
@@ -978,7 +1013,8 @@ def _validate_int(value: int, *, path: str) -> None:
         )
 
 
-def _validate_detections(value: Any, *, path: str) -> None:
+def _validate_detections(value: Any, *, path: str, depth: int) -> None:
+    _validate_wire_depth(depth + _DETECTIONS_WIRE_LEVELS, path=path)
     if len(value) == 0:
         return
     missing = []
@@ -1005,21 +1041,24 @@ def _validate_detections(value: Any, *, path: str) -> None:
         ("tracker_id", value.tracker_id),
     ):
         if array is not None:
-            _validate_detections_field(array, path=f"{path}.{field}")
+            _validate_detections_field(array, path=f"{path}.{field}", depth=depth + 2)
     # Only the keys the transport carries: the others are dropped on the way
     # (and noted), so their contents never reach a decoder.
     for key, item in value.data.items():
         if key in CARRIED_DETECTIONS_DATA_KEYS:
-            _validate_detections_field(item, path=f"{path}.data[{key!r}]")
+            _validate_detections_field(
+                item, path=f"{path}.data[{key!r}]", depth=depth + 2
+            )
 
 
-def _validate_detections_field(value: Any, *, path: str) -> None:
+def _validate_detections_field(value: Any, *, path: str, depth: int) -> None:
     """Validate a carried Detections field by value, whatever its storage.
 
     The detections serializer passes these payloads through as they are, so
     the state markers do not apply inside them: a tuple would come back as a
     list and is refused, and so are the dicts the decoders would read as a
-    typed value.
+    typed value. ``depth`` is that of the per-detection list a field stands
+    for, one level above each detection's value in the serialized form.
     """
     if isinstance(value, np.ndarray):
         if value.dtype.kind in "iu" and value.size:
@@ -1027,7 +1066,10 @@ def _validate_detections_field(value: Any, *, path: str) -> None:
             _validate_int(int(np.min(value)), path=path)
         elif value.dtype.kind == "O":
             for item in value.ravel():
-                _validate_detections_field(item, path=path)
+                _validate_detections_field(
+                    item, path=path, depth=depth + 1 + value.ndim
+                )
+        _validate_wire_depth(depth + 1 + value.ndim, path=path)
         return
     if isinstance(value, tuple):
         raise DynamicBlockError(
@@ -1040,15 +1082,18 @@ def _validate_detections_field(value: Any, *, path: str) -> None:
         )
     if isinstance(value, dict):
         _validate_dict_keys(value, path=path)
+        _validate_wire_depth(depth, path=path)
         for key, item in value.items():
-            _validate_detections_field(item, path=f"{path}[{key!r}]")
+            _validate_detections_field(item, path=f"{path}[{key!r}]", depth=depth + 1)
         return
     if isinstance(value, list):
+        _validate_wire_depth(depth, path=path)
         for index, item in enumerate(value):
-            _validate_detections_field(item, path=f"{path}[{index}]")
+            _validate_detections_field(item, path=f"{path}[{index}]", depth=depth + 1)
         return
     if isinstance(value, (int, np.integer)) and not isinstance(value, (bool, np.bool_)):
         _validate_int(int(value), path=path)
+    _validate_wire_depth(depth + 1, path=path)
 
 
 def _rle_masks_carry_size(detections: Any) -> bool:

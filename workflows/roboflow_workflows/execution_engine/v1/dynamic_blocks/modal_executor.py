@@ -16,6 +16,7 @@ transport explicitly.
 """
 
 import base64
+import binascii
 import gzip
 import hashlib
 import json
@@ -30,11 +31,12 @@ from datetime import datetime
 from typing import Any, Callable, Dict, NamedTuple, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import cv2
 import numpy as np
 import requests
 from roboflow_workflows._compat_names import get_logger, historic_type_display
 from roboflow_workflows.core_steps.common.deserializers import (
-    deserialize_image_kind,
+    _parse_optional_parent_metadata,
     deserialize_rle_detections_kind,
     deserialize_video_metadata_kind,
 )
@@ -55,13 +57,23 @@ from roboflow_workflows.environment import (
     WEBEXEC_WS_READ_TIMEOUT_SECONDS,
 )
 from roboflow_workflows.errors import DynamicBlockCodeError, DynamicBlockError
-from roboflow_workflows.execution_engine.entities.base import ParentOrigin
+from roboflow_workflows.execution_engine.constants import (
+    PARENT_ID_KEY,
+    PARENT_ORIGIN_KEY,
+    ROOT_PARENT_ID_KEY,
+    ROOT_PARENT_ORIGIN_KEY,
+)
+from roboflow_workflows.execution_engine.entities.base import (
+    ParentOrigin,
+    WorkflowImageData,
+)
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import (
     BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
     record_block_duration,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
     BLOCK_STATE_MAX_ATTRIBUTES,
+    BLOCK_STATE_MAX_BYTES,
     check_echoed_wire_value,
     decode_numpy_scalar,
     describe_dropped_block_state,
@@ -74,6 +86,7 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.error_utils import (
     extract_code_snippet,
 )
 from roboflow_workflows.prototypes.block import BlockResult
+from roboflow_workflows.utils.image_encoding import BASE64_DATA_TYPE_PATTERN
 from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes
 
 logger = get_logger(__name__)
@@ -109,6 +122,8 @@ _WS_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 # size error instead of a server-side reassembly abort whose error frame the
 # response-id guard discards as a desync.
 _WS_MAX_REQUEST_BYTES = 64 * 1024 * 1024
+# Longest HTTP state echo parsed; honest echoes stay within BLOCK_STATE_MAX_BYTES.
+_MAX_ECHOED_BLOCK_STATE_JSON_LENGTH = 2 * BLOCK_STATE_MAX_BYTES
 
 
 def _split_ws_frames(frame_bytes: bytes, msgpack: Any) -> list:
@@ -457,8 +472,23 @@ def _read_echoed_block_state_json(
         )
         return echoed_state
 
+    echoed_json = result["block_state"]
+    if (
+        isinstance(echoed_json, str)
+        and len(echoed_json) > _MAX_ECHOED_BLOCK_STATE_JSON_LENGTH
+    ):
+        raise DynamicBlockError(
+            public_message=(
+                f"The Modal webexec server returned {len(echoed_json)} "
+                f"characters of `block_state` for custom Python block "
+                f"`{block_type_name}`, more than the "
+                f"{_MAX_ECHOED_BLOCK_STATE_JSON_LENGTH} ever carried; the echo "
+                "is refused."
+            ),
+            context="modal_executor | block_state_decode",
+        )
     try:
-        parsed = json.loads(result["block_state"])
+        parsed = json.loads(echoed_json)
     except (TypeError, ValueError, RecursionError) as error:
         raise DynamicBlockError(
             public_message=(
@@ -716,6 +746,99 @@ def _decode_zoned_datetime(marked: Dict[str, Any]) -> datetime:
     return zoned
 
 
+def _decode_ndarray(marked: Dict[str, Any]) -> np.ndarray:
+    """Rebuild an array, checking its values fill the declared shape first.
+
+    ``np.array`` allocates the dtype's itemsize per value, so the values must
+    match the shape before it runs for any bound on the shape to hold.
+    """
+    shape = marked["shape"]
+    if not isinstance(shape, list):
+        raise ValueError(f"array shape {shape!r} is not a list")
+    _ensure_values_fill_shape(marked["value"], shape=shape)
+    dtype = np.dtype(marked["dtype"])
+    if dtype.kind in "SUV" and dtype.itemsize == 0 and 0 not in shape:
+        raise ValueError(f"a non-empty array cannot have dtype {dtype}")
+    array = np.array(marked["value"], dtype=dtype).reshape(shape)
+
+    return array
+
+
+def _ensure_values_fill_shape(value: Any, *, shape: list) -> None:
+    if not shape:
+        if isinstance(value, list):
+            raise ValueError("array values are nested deeper than the shape")
+        return
+
+    if not isinstance(value, list) or len(value) != shape[0]:
+        raise ValueError("array values do not match the declared shape")
+    if len(shape) == 1:
+        if any(isinstance(item, list) for item in value):
+            raise ValueError("array values are nested deeper than the shape")
+        return
+
+    for item in value:
+        _ensure_values_fill_shape(item, shape=shape[1:])
+
+
+def _decode_base64_image(
+    marked: Dict[str, Any], *, parameter: str, decode: Callable[[Any], Any]
+) -> WorkflowImageData:
+    """Rebuild an image the sandbox sent as base64, never loading a URL or file.
+
+    Builds the same parent, root and video metadata as
+    ``deserialize_image_kind``, which would also fetch a URL, read a host
+    file or unpickle a numpy payload named by the value.
+    """
+    payload = marked.get("value")
+    if marked.get("type") != "base64" or not isinstance(payload, str):
+        raise ValueError("an image is only accepted as a base64 string")
+    try:
+        encoded = base64.b64decode(
+            BASE64_DATA_TYPE_PATTERN.sub("", payload), validate=True
+        )
+    except binascii.Error as error:
+        raise ValueError(f"the image is not valid base64: {error}") from error
+    numpy_image = None
+    if encoded:
+        numpy_image = cv2.imdecode(
+            np.frombuffer(encoded, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+    if numpy_image is None:
+        raise ValueError("the image payload is not an encoded image")
+
+    metadata = {
+        key: decode(item)
+        for key, item in marked.items()
+        if key not in ("_type", "value")
+    }
+    parent_metadata = _parse_optional_parent_metadata(
+        parameter=parameter,
+        parent_id=metadata.get(PARENT_ID_KEY, parameter),
+        parent_origin=metadata.get(PARENT_ORIGIN_KEY),
+    )
+    workflow_root_ancestor_metadata = _parse_optional_parent_metadata(
+        parameter=parameter,
+        parent_id=metadata.get(ROOT_PARENT_ID_KEY),
+        parent_origin=metadata.get(ROOT_PARENT_ORIGIN_KEY),
+    )
+    video_metadata = None
+    if "video_metadata" in metadata:
+        video_metadata = deserialize_video_metadata_kind(
+            parameter, metadata["video_metadata"]
+        )
+
+    image = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+        numpy_image=numpy_image,
+        base64_image=payload,
+        video_metadata=video_metadata,
+    )
+
+    return image
+
+
 def _decode_modal_remote_value(obj: Any) -> Any:
     """Decode from modal remote execution."""
     # datetime is already imported at the top level
@@ -735,8 +858,7 @@ def _decode_modal_remote_value(obj: Any) -> Any:
             elif obj["_type"] == "zoned_datetime":
                 return _decode_zoned_datetime(obj)
             elif obj["_type"] == "ndarray":
-                arr = np.array(obj["value"], dtype=obj["dtype"])
-                return arr.reshape(obj["shape"])
+                return _decode_ndarray(obj)
             elif obj["_type"] == "object":
                 return obj["value"]
             elif obj["_type"] == "sv_detections":
@@ -756,23 +878,16 @@ def _decode_modal_remote_value(obj: Any) -> Any:
                 }
                 return deserialize_video_metadata_kind("input", decoded_obj)
             elif obj["_type"] == "workflow_image":
-                # First decode any nested special types
-                decoded_obj = {
-                    k: _decode_modal_remote_value(v)
-                    for k, v in obj.items()
-                    if k != "_type"
-                }
-                return deserialize_image_kind("input", decoded_obj)
+                return _decode_base64_image(
+                    obj, parameter="input", decode=_decode_modal_remote_value
+                )
 
         # TODO: Not sure we actually need this anymore?
         # For backward compatibility, check if this is a WorkflowImageData without _type marker
         if obj.get("type") == "base64" and "value" in obj and "_type" not in obj:
-            # Decode nested datetimes first
-            if "video_metadata" in obj and obj["video_metadata"]:
-                obj["video_metadata"] = _decode_modal_remote_value(
-                    obj["video_metadata"]
-                )
-            return deserialize_image_kind("input", obj)
+            return _decode_base64_image(
+                obj, parameter="input", decode=_decode_modal_remote_value
+            )
 
         # Recursively process dict values
         return {k: _decode_modal_remote_value(v) for k, v in obj.items()}
@@ -1314,7 +1429,6 @@ def _deserialize_msgpack_result(result: Any) -> Any:
     workflow_image, and video_metadata to mirror the HTTP path.
     """
     from roboflow_workflows.core_steps.common.deserializers import (
-        deserialize_image_kind,
         deserialize_rle_detections_kind,
         deserialize_video_metadata_kind,
     )
@@ -1331,9 +1445,7 @@ def _deserialize_msgpack_result(result: Any) -> Any:
         if _type == "zoned_datetime":
             return _decode_zoned_datetime(result)
         if _type == "ndarray":
-            return np.array(result["value"], dtype=result["dtype"]).reshape(
-                result["shape"]
-            )
+            return _decode_ndarray(result)
         if _type == "sv_detections":
             decoded = {
                 k: _deserialize_msgpack_result(v)
@@ -1342,12 +1454,9 @@ def _deserialize_msgpack_result(result: Any) -> Any:
             }
             return deserialize_rle_detections_kind("result", decoded)
         if _type == "workflow_image":
-            decoded = {
-                k: _deserialize_msgpack_result(v)
-                for k, v in result.items()
-                if k != "_type"
-            }
-            return deserialize_image_kind("result", decoded)
+            return _decode_base64_image(
+                result, parameter="result", decode=_deserialize_msgpack_result
+            )
         if _type == "video_metadata":
             decoded = {
                 k: _deserialize_msgpack_result(v)

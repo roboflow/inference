@@ -76,16 +76,22 @@ for contributor and maintainer responsibilities.
     `data` and the bounding-rect keys `angle`, `rect`, `width` and
     `height`); a tuple inside `sv.Detections` data; a dict with a `_type`
     key or shaped like a serialized image (`type` "base64" with a `value`),
-    also inside carried `sv.Detections` fields; engine-owned or dunder
-    names; more than 1024 attributes; and an attribute whose serialized
-    form is over 1 MiB. The whole state is also capped at 1 MiB: the
+    also inside carried `sv.Detections` fields; a value nested more than 64
+    levels deep in its serialized form (a tuple counts two levels, and
+    images, video metadata and `sv.Detections` add their own); engine-owned
+    or dunder names; more than 1024 attributes; and an attribute whose
+    serialized form is over 1 MiB. The whole state is also capped at 1 MiB: the
     largest attributes are dropped until it fits.
   - The engine treats the echoed state as untrusted: before decoding it
-    refuses unknown markers, arrays and numpy scalars that do not match
-    their dtype or exceed what honest state can hold, images that are not
-    base64, untagged image dicts, deep nesting and more than 1024
-    attributes; after decoding it re-checks every value as it did before
-    sending. A refused echo fails the call with a `DynamicBlockError`.
+    refuses an HTTP echo longer than 2 MiB, unknown markers, arrays and
+    numpy scalars that do not match their dtype or exceed what honest state
+    can hold, images that are not base64, untagged image dicts (`type`
+    "base64" with a `value`), nesting deeper than 64 levels and more than
+    1024 attributes; after decoding it re-checks every value as it did
+    before sending. A refused echo fails the call with a `DynamicBlockError`.
+    Images in the echo and in block results are decoded from their base64
+    payload only, never fetched from a URL or read from a file, and arrays
+    are refused unless their values fill the declared shape exactly.
   - When any attribute cannot be carried, none of the block's state is
     carried for that call, with a warning naming the attributes on the
     block's stderr, so the block behaves exactly as before this change (a

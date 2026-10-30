@@ -150,6 +150,11 @@ _NUMPY_SCALAR_WIRE_KINDS = frozenset("biufSU")
 _BLOCK_STATE_MAX_ATTRIBUTES = 1024
 _MAX_ECHO_ALLOCATION_BYTES = 8 * 1024 * 1024
 _PLACEHOLDER_PARENT_IDS = frozenset({"input", "result"})
+# Mirrors ``block_state._MAX_ECHO_DEPTH`` and its wire levels.
+_MAX_ECHO_DEPTH = 64
+_IMAGE_WIRE_LEVELS = 3
+_VIDEO_METADATA_WIRE_LEVELS = 2
+_DETECTIONS_WIRE_LEVELS = 5
 
 
 @functools.lru_cache(maxsize=1)
@@ -283,7 +288,15 @@ def _check_block_state_value(value: Any, path: str) -> None:
         )
         return carry_size
 
-    def _check_detections_field(value: Any, path: str) -> None:
+    def _check_depth(depth: int, path: str) -> None:
+        if depth > _MAX_ECHO_DEPTH:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` is nested more than "
+                f"{_MAX_ECHO_DEPTH} levels deep on the wire, which cannot be "
+                "carried across remote execution; flatten it."
+            )
+
+    def _check_detections_field(value: Any, path: str, depth: int) -> None:
         # The detections serializer passes payloads through as they are, so
         # the state markers do not apply inside them.
         if isinstance(value, np.ndarray):
@@ -292,7 +305,8 @@ def _check_block_state_value(value: Any, path: str) -> None:
                 _check_int(int(np.min(value)), path)
             elif value.dtype.kind == "O":
                 for item in value.ravel():
-                    _check_detections_field(item, path)
+                    _check_detections_field(item, path, depth + 1 + value.ndim)
+            _check_depth(depth + 1 + value.ndim, path)
             return
         if isinstance(value, tuple):
             raise BlockStateSerializationError(
@@ -302,19 +316,23 @@ def _check_block_state_value(value: Any, path: str) -> None:
             )
         if isinstance(value, dict):
             _check_dict_keys(value, path)
+            _check_depth(depth, path)
             for key, item in value.items():
-                _check_detections_field(item, f"{path}[{key!r}]")
+                _check_detections_field(item, f"{path}[{key!r}]", depth + 1)
             return
         if isinstance(value, list):
+            _check_depth(depth, path)
             for index, item in enumerate(value):
-                _check_detections_field(item, f"{path}[{index}]")
+                _check_detections_field(item, f"{path}[{index}]", depth + 1)
             return
         if isinstance(value, (int, np.integer)) and not isinstance(
             value, (bool, np.bool_)
         ):
             _check_int(int(value), path)
+        _check_depth(depth + 1, path)
 
-    def _check_detections(value: Any, path: str) -> None:
+    def _check_detections(value: Any, path: str, depth: int) -> None:
+        _check_depth(depth + _DETECTIONS_WIRE_LEVELS, path)
         if len(value) == 0:
             return
         missing = []
@@ -338,15 +356,15 @@ def _check_block_state_value(value: Any, path: str) -> None:
             ("tracker_id", value.tracker_id),
         ):
             if array is not None:
-                _check_detections_field(array, f"{path}.{field}")
+                _check_detections_field(array, f"{path}.{field}", depth + 2)
         for key, item in value.data.items():
             if key in _CARRIED_DETECTIONS_DATA_KEYS:
-                _check_detections_field(item, f"{path}.data[{key!r}]")
+                _check_detections_field(item, f"{path}.data[{key!r}]", depth + 2)
 
-    def _check_dict(value: Dict[Any, Any], path: str) -> None:
+    def _check_dict(value: Dict[Any, Any], path: str, depth: int) -> None:
         _check_dict_keys(value, path)
         for key, item in value.items():
-            _check(item, f"{path}[{key!r}]")
+            _check(item, f"{path}[{key!r}]", depth + 1)
 
     def _check_dict_keys(value: Dict[Any, Any], path: str) -> None:
         for key in value:
@@ -391,15 +409,21 @@ def _check_block_state_value(value: Any, path: str) -> None:
             "use `zoneinfo.ZoneInfo(key)` or `datetime.timezone`."
         )
 
-    def _check(value: Any, path: str) -> None:
+    def _check(value: Any, path: str, depth: int) -> None:
         value_type = type(value)
-        if value is None or value_type in (bool, float, str, bytes):
+        if value is None or value_type in (bool, float, str):
+            _check_depth(depth, path)
+            return
+        if value_type is bytes:
+            _check_depth(depth + 1, path)
             return
         if value_type is datetime:
             _check_datetime(value, path)
+            _check_depth(depth + 1, path)
             return
         if value_type is int:
             _check_int(value, path)
+            _check_depth(depth, path)
             return
         if value_type in numpy_scalar_types:
             if isinstance(value, np.integer):
@@ -414,25 +438,36 @@ def _check_block_state_value(value: Any, path: str) -> None:
                 _not_transportable(
                     f"numpy {value.dtype.name} with trailing NUL characters", path
                 )
+            # HTTP wraps a bytes scalar's value in a bytes marker.
+            scalar_levels = 2 if value.dtype.kind == "S" else 1
+            _check_depth(depth + scalar_levels, path)
             return
         if value_type is np.ndarray:
             _check_ndarray(value, path)
+            _check_depth(depth + 1 + value.ndim, path)
             return
         if value_type is sv.Detections:
-            _check_detections(value, path)
+            _check_detections(value, path, depth)
             return
-        if value_type in (WorkflowImageData, VideoMetadata):
+        if value_type is WorkflowImageData:
+            _check_depth(depth + _IMAGE_WIRE_LEVELS, path)
+            return
+        if value_type is VideoMetadata:
+            _check_depth(depth + _VIDEO_METADATA_WIRE_LEVELS, path)
             return
         if value_type is dict:
-            _check_dict(value, path)
+            _check_depth(depth, path)
+            _check_dict(value, path, depth)
             return
         if value_type in (list, tuple):
+            item_depth = depth + (2 if value_type is tuple else 1)
+            _check_depth(item_depth - 1, path)
             for index, item in enumerate(value):
-                _check(item, f"{path}[{index}]")
+                _check(item, f"{path}[{index}]", item_depth)
             return
         _not_transportable(_describe_type(value_type), path)
 
-    _check(value, path)
+    _check(value, path, 0)
 
 
 def _partition_block_state(

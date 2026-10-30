@@ -2722,7 +2722,6 @@ FORGED_ATTRIBUTES = {
         "type": "file",
         "value": "/etc/hosts",
     },
-    "untagged_image": {"type": "file", "value": "/etc/hosts"},
     "untagged_base64_image": {"type": "base64", "value": "abc"},
     "unknown_marker": {"_type": "batch", "value": [1]},
     "zoned_datetime_bad_fold": {
@@ -2810,3 +2809,552 @@ def test_http_server_warns_once_about_a_non_string_key_that_changes(modal_app):
         if "self.first_seen" in line and "rebuilt" in line
     ]
     assert len(lines) == 1
+
+
+TYPE_AND_VALUE_DICTS_CODE = (
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'last_event'):\n"
+    "        self.last_event = {'type': 'line_crossed', 'value': 3}\n"
+    "        self.events = [\n"
+    "            {'type': 'line_crossed', 'value': 3},\n"
+    "            {'type': 'zone_left', 'value': None},\n"
+    "        ]\n"
+    "        self.pair = (\n"
+    "            {'type': 'line_crossed', 'value': 3},\n"
+    "            {'type': 'file', 'value': '/etc/hosts'},\n"
+    "        )\n"
+    "        self.calls = 0\n"
+    "    self.calls += 1\n"
+    "    return {'is_first_frame': self.calls == 1, 'calls': self.calls}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_dicts_with_type_and_value_keys(
+    monkeypatch, modal_app, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=TYPE_AND_VALUE_DICTS_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert block.last_event == {"type": "line_crossed", "value": 3}
+    assert block.events == [
+        {"type": "line_crossed", "value": 3},
+        {"type": "zone_left", "value": None},
+    ]
+    assert type(block.pair) is tuple
+    assert block.pair == (
+        {"type": "line_crossed", "value": 3},
+        {"type": "file", "value": "/etc/hosts"},
+    )
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_client_decodes_an_untagged_dict_naming_a_file_as_a_plain_dict(transport):
+    state = _read_forged_echo(transport, {"type": "file", "value": "/etc/hosts"})
+
+    assert state == {"x": {"type": "file", "value": "/etc/hosts"}}
+
+
+DEEP_STATE_CODE = (
+    "import numpy as np\n"
+    "import supervision as sv\n"
+    "def build(kind, extra):\n"
+    "    if kind == 'lists':\n"
+    "        value = 1\n"
+    "        for _ in range(64):\n"
+    "            value = [value]\n"
+    "    elif kind == 'dicts':\n"
+    "        value = 1\n"
+    "        for _ in range(64):\n"
+    "            value = {'k': value}\n"
+    "    elif kind == 'numpy_bytes':\n"
+    "        value = np.bytes_(b'x')\n"
+    "        for _ in range(62):\n"
+    "            value = [value]\n"
+    "    elif kind == 'tuples':\n"
+    "        value = 1\n"
+    "        for _ in range(32):\n"
+    "            value = (value,)\n"
+    "    else:\n"
+    "        value = [sv.Detections(\n"
+    "            xyxy=np.array([[0.0, 0.0, 8.0, 8.0]]),\n"
+    "            mask=np.ones((1, 8, 8), dtype=bool),\n"
+    "            class_id=np.array([0]),\n"
+    "            confidence=np.array([0.5]),\n"
+    "            data={\n"
+    "                'class_name': np.array(['cat']),\n"
+    "                'detection_id': np.array(['d0']),\n"
+    "                'image_dimensions': np.array([[8, 8]]),\n"
+    "            },\n"
+    "        )]\n"
+    "        for _ in range(29):\n"
+    "            value = (value,)\n"
+    "    for _ in range(extra):\n"
+    "        value = [value]\n"
+    "    return value\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'deep'):\n"
+    "        self.deep = build(KIND, EXTRA)\n"
+    "        self.calls = 0\n"
+    "    self.calls += 1\n"
+    "    return {'is_first_frame': self.calls == 1, 'calls': self.calls}\n"
+)
+
+
+def _unwrap_deep_state(kind, value):
+    if kind == "lists":
+        for _ in range(64):
+            assert type(value) is list
+            value = value[0]
+    elif kind == "dicts":
+        for _ in range(64):
+            assert type(value) is dict
+            value = value["k"]
+    elif kind == "numpy_bytes":
+        for _ in range(62):
+            assert type(value) is list
+            value = value[0]
+        assert type(value) is np.bytes_
+        value = 1 if value == b"x" else value
+    elif kind == "tuples":
+        for _ in range(32):
+            assert type(value) is tuple
+            value = value[0]
+    else:
+        for _ in range(29):
+            assert type(value) is tuple
+            value = value[0]
+        assert type(value) is list
+        value = value[0]
+    return value
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize(
+    "kind", ["lists", "dicts", "numpy_bytes", "tuples", "tuple_holding_detections"]
+)
+def test_block_instance_keeps_the_deepest_carried_state(
+    monkeypatch, modal_app, capsys, transport, kind
+):
+    code = DEEP_STATE_CODE.replace("KIND", repr(kind)).replace("EXTRA", "0")
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=code, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    bottom = _unwrap_deep_state(kind, block.deep)
+    if kind == "tuple_holding_detections":
+        assert isinstance(bottom, sv.Detections) and len(bottom) == 1
+        assert bottom.mask is not None
+    else:
+        assert bottom == 1
+    assert "withheld" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize(
+    "kind", ["lists", "dicts", "numpy_bytes", "tuples", "tuple_holding_detections"]
+)
+def test_block_instance_withholds_state_one_level_deeper_than_carried(
+    monkeypatch, modal_app, capsys, transport, kind
+):
+    code = DEEP_STATE_CODE.replace("KIND", repr(kind)).replace("EXTRA", "1")
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=code, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 1, 1]
+    assert not hasattr(block, "deep")
+    assert "self.deep" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_drops_state_nested_deeper_than_the_echo_accepts(
+    modal_app, partition_side
+):
+    deep = 1
+    for _ in range(65):
+        deep = [deep]
+    if partition_side == "engine":
+        carried, dropped, _ = partition_block_state({"deep": deep}, measure=lambda a: 0)
+    else:
+        carried, dropped, _ = modal_app._partition_block_state(
+            {"deep": deep}, lambda a: 0
+        )
+
+    assert carried == {}
+    assert [name for name, _ in dropped] == ["deep"]
+
+
+def test_engine_and_sandbox_agree_on_the_state_depth_limit(modal_app):
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_state
+
+    assert modal_app._MAX_ECHO_DEPTH == block_state._MAX_ECHO_DEPTH
+
+
+@pytest.fixture
+def image_loading_calls(monkeypatch, tmp_path):
+    import os
+
+    import cv2
+    from roboflow_workflows.core_steps.common import deserializers
+
+    calls = []
+    real_exists = os.path.exists
+    real_imread = cv2.imread
+
+    def exists(path):
+        calls.append(("exists", path))
+        return real_exists(path)
+
+    def imread(path, *args, **kwargs):
+        calls.append(("imread", path))
+        return real_imread(path, *args, **kwargs)
+
+    class RecordingCodec:
+        def fetch_url(self, value, *args, **kwargs):
+            calls.append(("fetch_url", value))
+            return np.zeros((2, 2, 3), dtype=np.uint8)
+
+        def decode_string(self, value, *args, **kwargs):
+            calls.append(("decode_string", value))
+            return np.zeros((2, 2, 3), dtype=np.uint8), True
+
+        def ensure_local_file_load_allowed(self, path):
+            calls.append(("ensure_local_file_load_allowed", path))
+
+        def load_image(self, value, *args, **kwargs):
+            calls.append(("load_image", value))
+            return np.zeros((2, 2, 3), dtype=np.uint8), True
+
+    monkeypatch.setattr(os.path, "exists", exists)
+    monkeypatch.setattr(cv2, "imread", imread)
+    monkeypatch.setattr(deserializers, "get_image_codec", lambda: RecordingCodec())
+    return calls
+
+
+def _forged_image_payloads(tmp_path) -> dict:
+    import cv2
+
+    host_file = tmp_path / "host.jpg"
+    cv2.imwrite(str(host_file), np.zeros((4, 4, 3), dtype=np.uint8))
+    payloads = {
+        "url": "http://169.254.169.254/latest/meta-data/image.jpg",
+        "host_file": str(host_file),
+        "etc_hosts": "/etc/hosts",
+        "int": 7,
+        "list": [1, 2],
+    }
+    return payloads
+
+
+FORGED_IMAGE_PAYLOAD_IDS = ["url", "host_file", "etc_hosts", "int", "list"]
+
+
+def _loading_calls_for(calls, payload):
+    loading_calls = [
+        call
+        for call in calls
+        if call[0] != "exists" or (isinstance(payload, str) and call[1] == payload)
+    ]
+    return loading_calls
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("payload_id", FORGED_IMAGE_PAYLOAD_IDS)
+def test_client_refuses_a_forged_echo_image_without_loading_it(
+    transport, payload_id, image_loading_calls, tmp_path
+):
+    payload = _forged_image_payloads(tmp_path)[payload_id]
+    forged = {"_type": "workflow_image", "type": "base64", "value": payload}
+
+    with pytest.raises(DynamicBlockError) as error:
+        _read_forged_echo(transport, forged)
+
+    assert "self.x" in str(error.value)
+    assert _loading_calls_for(image_loading_calls, payload) == []
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("payload_id", FORGED_IMAGE_PAYLOAD_IDS)
+def test_client_refuses_a_forged_result_image_without_loading_it(
+    transport, payload_id, image_loading_calls, tmp_path
+):
+    payload = _forged_image_payloads(tmp_path)[payload_id]
+    forged = {"_type": "workflow_image", "type": "base64", "value": payload}
+
+    with pytest.raises(Exception):
+        if transport == "http":
+            deserialize_for_modal_remote_execution(json.dumps({"out": forged}))
+        else:
+            client._deserialize_msgpack_result(_through_msgpack({"out": forged}))
+
+    assert _loading_calls_for(image_loading_calls, payload) == []
+
+
+@pytest.mark.parametrize("payload_id", FORGED_IMAGE_PAYLOAD_IDS)
+def test_http_client_refuses_a_forged_untagged_result_image_without_loading_it(
+    payload_id, image_loading_calls, tmp_path
+):
+    payload = _forged_image_payloads(tmp_path)[payload_id]
+
+    with pytest.raises(Exception):
+        deserialize_for_modal_remote_execution(
+            json.dumps({"out": {"type": "base64", "value": payload}})
+        )
+
+    assert _loading_calls_for(image_loading_calls, payload) == []
+
+
+def _crop_image():
+    from roboflow_workflows.execution_engine.entities.base import (
+        OriginCoordinatesSystem,
+        VideoMetadata,
+    )
+
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(
+            parent_id="crop-1",
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=2, left_top_y=3, origin_width=32, origin_height=24
+            ),
+        ),
+        workflow_root_ancestor_metadata=ImageParentMetadata(
+            parent_id="root-1",
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=5, left_top_y=7, origin_width=64, origin_height=48
+            ),
+        ),
+        numpy_image=_image().numpy_image,
+        video_metadata=VideoMetadata(
+            video_identifier="cam-7",
+            frame_number=9,
+            frame_timestamp=datetime(2026, 1, 2, 3, 4, 5),
+            fps=25,
+        ),
+    )
+    return image
+
+
+def _assert_crop_lineage(image):
+    expected = _crop_image()
+    assert isinstance(image, WorkflowImageData)
+    assert image.parent_metadata == expected.parent_metadata
+    assert (
+        image.workflow_root_ancestor_metadata
+        == expected.workflow_root_ancestor_metadata
+    )
+    assert image.video_metadata.video_identifier == "cam-7"
+    assert image.video_metadata.frame_number == 9
+    assert image.video_metadata.frame_timestamp == datetime(2026, 1, 2, 3, 4, 5)
+    assert image.numpy_image.shape == (16, 16, 3)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_image_lineage_and_video_metadata_survive_a_server_round_trip(
+    modal_app, transport
+):
+    executor = _http_executor(modal_app)
+    code = "def run(self, image):\n    return {'image': self.last}\n"
+    seeded = {"last": _crop_image()}
+
+    if transport == "http":
+        response = _run_http(executor, code, {"image": 1}, seeded)
+        result = deserialize_for_modal_remote_execution(response["result"])
+        state = client._read_echoed_block_state_json(
+            response, block_state=seeded, block_type_name="B"
+        )
+    else:
+        response = modal_app.Executor._run_user_code_ws(
+            executor,
+            code,
+            [],
+            "run",
+            modal_app.Executor._deserialize_msgpack_inputs(
+                _through_msgpack(serialize_inputs_for_msgpack({"image": 1}))
+            ),
+            "",
+            {},
+            block_state=modal_app.Executor._deserialize_msgpack_inputs(
+                _through_msgpack(serialize_inputs_for_msgpack(seeded))
+            ),
+        )
+        response["result"] = modal_app.Executor._serialize_msgpack_result(
+            response["result"]
+        )
+        response = _through_msgpack(response)
+        result = client._deserialize_msgpack_result(response["result"])
+        state = client._read_echoed_block_state_msgpack(
+            response, block_state=seeded, block_type_name="B"
+        )
+
+    assert response["success"] is True, response.get("error")
+    _assert_crop_lineage(state["last"])
+    _assert_crop_lineage(result["image"])
+
+
+FORGED_ARRAYS = {
+    "zero_width_string_dtype": {
+        "_type": "ndarray",
+        "dtype": "U0",
+        "shape": [2048],
+        "value": ["a" * 2048] + [""] * 2047,
+    },
+    "empty_shape_with_a_huge_dtype": {
+        "_type": "ndarray",
+        "dtype": "U10000000",
+        "shape": [0],
+        "value": [""],
+    },
+    "more_values_than_the_shape": {
+        "_type": "ndarray",
+        "dtype": "U1000000",
+        "shape": [1],
+        "value": [""] * 5,
+    },
+}
+
+
+def _peak_traced_bytes(action) -> int:
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        action()
+    finally:
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+    return peak
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("forged", FORGED_ARRAYS.values(), ids=list(FORGED_ARRAYS))
+def test_client_refuses_a_forged_echo_array_without_allocating_it(transport, forged):
+    def read():
+        with pytest.raises(DynamicBlockError):
+            _read_forged_echo(transport, forged)
+
+    assert _peak_traced_bytes(read) < 3 * 1024 * 1024
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("forged", FORGED_ARRAYS.values(), ids=list(FORGED_ARRAYS))
+def test_client_refuses_a_forged_result_array_without_allocating_it(transport, forged):
+    def read():
+        with pytest.raises(ValueError):
+            if transport == "http":
+                deserialize_for_modal_remote_execution(json.dumps({"out": forged}))
+            else:
+                client._deserialize_msgpack_result(_through_msgpack({"out": forged}))
+
+    assert _peak_traced_bytes(read) < 3 * 1024 * 1024
+
+
+def _honest_arrays() -> dict:
+    arrays = {
+        "zero_d": np.array(3.5),
+        "empty_rows": np.zeros((0, 4)),
+        "three_d": np.arange(24, dtype=np.int32).reshape(2, 3, 4),
+        "strings": np.array([["a", "bcd"], ["", "e"]]),
+        "empty_strings": np.array(["", ""]),
+        "no_strings": np.array([], dtype=str),
+    }
+    return arrays
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_honest_arrays_round_trip_as_results(transport):
+    arrays = _honest_arrays()
+
+    if transport == "http":
+        decoded = deserialize_for_modal_remote_execution(
+            serialize_for_modal_remote_execution(arrays)
+        )
+    else:
+        decoded = client._deserialize_msgpack_result(
+            _through_msgpack(serialize_inputs_for_msgpack(arrays))
+        )
+
+    for name, array in arrays.items():
+        assert decoded[name].shape == array.shape, name
+        assert decoded[name].dtype == array.dtype, name
+        assert np.array_equal(decoded[name], array), name
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_honest_arrays_round_trip_as_state_through_the_server(modal_app, transport):
+    executor = _http_executor(modal_app)
+    code = "def run(self, image):\n    return {'ok': True}\n"
+    arrays = _honest_arrays()
+
+    if transport == "http":
+        response = _run_http(executor, code, {"image": 1}, arrays)
+        state = client._read_echoed_block_state_json(
+            response, block_state=arrays, block_type_name="B"
+        )
+    else:
+        response = _run_ws(executor, modal_app, code, {"image": 1}, arrays)
+        state = client._read_echoed_block_state_msgpack(
+            response, block_state=arrays, block_type_name="B"
+        )
+
+    for name, array in arrays.items():
+        assert state[name].shape == array.shape, name
+        assert np.array_equal(state[name], array), name
+
+
+def test_http_client_refuses_an_oversized_echo_before_parsing_it(monkeypatch):
+    cap = client._MAX_ECHOED_BLOCK_STATE_JSON_LENGTH
+    echo = {"block_state": '{"x": "' + "a" * cap + '"}'}
+    parsed = []
+    real_loads = client.json.loads
+
+    def loads(value, *args, **kwargs):
+        parsed.append(len(value))
+        return real_loads(value, *args, **kwargs)
+
+    monkeypatch.setattr(client.json, "loads", loads)
+
+    with pytest.raises(DynamicBlockError):
+        client._read_echoed_block_state_json(
+            echo, block_state={"x": 1}, block_type_name="B"
+        )
+
+    assert parsed == []
+
+
+def test_http_client_accepts_an_echo_at_the_length_cap():
+    cap = client._MAX_ECHOED_BLOCK_STATE_JSON_LENGTH
+    filler = cap - len('{"x": ""}')
+    echo = {"block_state": '{"x": "' + "a" * filler + '"}'}
+
+    state = client._read_echoed_block_state_json(
+        echo, block_state={"x": 1}, block_type_name="B"
+    )
+
+    assert len(echo["block_state"]) == cap
+    assert len(state["x"]) == filler
+
+
+def test_http_server_echo_of_the_largest_carried_state_fits_the_cap(modal_app):
+    executor = _http_executor(modal_app)
+    length = BLOCK_STATE_MAX_BYTES - len('{"big": ""}')
+    code = f"def run(self, image):\n    self.big = 'a' * {length}\n    return {{}}\n"
+
+    response = _run_http(executor, code, {"image": 1}, block_state={})
+    state = client._read_echoed_block_state_json(
+        response, block_state={}, block_type_name="B"
+    )
+
+    assert response["success"] is True, response.get("error")
+    assert len(response["block_state"]) == BLOCK_STATE_MAX_BYTES
+    assert BLOCK_STATE_MAX_BYTES <= client._MAX_ECHOED_BLOCK_STATE_JSON_LENGTH
+    assert len(state["big"]) == length
