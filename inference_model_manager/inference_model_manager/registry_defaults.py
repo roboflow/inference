@@ -356,6 +356,20 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
     ],
     "OWLv2HF": [
         (
+            "infer",
+            "infer",
+            True,
+            _p(
+                _P_IMAGES,
+                {"classes": {"type": "list[str]", "required": False}},
+                _K_OD,
+                _P_FLOAT_CONFIDENCE,
+            ),
+            "validate_images_required",
+            "serialize_detections_compact",
+            "roboflow-object-detection-compact-v1",
+        ),
+        (
             "infer_with_reference_examples",
             "infer_with_reference_examples",
             False,

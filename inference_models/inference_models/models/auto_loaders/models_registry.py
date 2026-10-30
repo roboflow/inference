@@ -724,6 +724,14 @@ REGISTERED_MODELS: Dict[
     ),
     (
         "owlv2",
+        OBJECT_DETECTION_TASK,
+        BackendType.HF,
+    ): LazyClass(
+        module_name="inference_models.models.owlv2.owlv2_hf",
+        class_name="OWLv2HF",
+    ),
+    (
+        "owlv2",
         OPEN_VOCABULARY_OBJECT_DETECTION_TASK,
         BackendType.HF,
     ): LazyClass(

@@ -234,6 +234,10 @@ class InferenceModelsOwlV2Adapter(Model):
             content_addressed_artifact_cache=content_addressed_artifact_cache,
         )
         self._model: OWLv2HF = singleton_instance.model
+        self.class_names = self._model.saved_class_names
+
+    def run_tensor_native_inference(self, images, **kwargs) -> List[Detections]:
+        return self._model.infer(images=images, **kwargs)
 
     def draw_predictions(
         self,
@@ -275,14 +279,14 @@ class InferenceModelsOwlV2Adapter(Model):
     def infer(
         self,
         image: Any,
-        training_data: List[dict],
+        training_data: Optional[List[dict]] = None,
         confidence: float = 0.95,
         iou_threshold: float = 0.3,
         max_detections: int = MAX_DETECTIONS,
         **kwargs,
     ):
         reference_examples = []
-        for example in training_data:
+        for example in training_data or []:
             boxes = []
             for box in example["boxes"]:
                 boxes.append(ReferenceBoundingBox.model_validate(box))
@@ -297,14 +301,28 @@ class InferenceModelsOwlV2Adapter(Model):
         else:
             image_decoded = [load_image_bgr(image)]
         image_sizes: List[Tuple[int, int]] = [i.shape[:2][::-1] for i in image_decoded]  # type: ignore
-        results = self._model.infer_with_reference_examples(
-            images=image_decoded,
-            reference_examples=reference_examples,
-            confidence=confidence,
-            iou_threshold=iou_threshold,
-            max_detections=max_detections,
+        if training_data is None:
+            kwargs["input_color_format"] = "bgr"
+            results = self._model.infer(
+                images=image_decoded,
+                confidence=confidence,
+                iou_threshold=iou_threshold,
+                max_detections=max_detections,
+                **kwargs,
+            )
+        else:
+            results = self._model.infer_with_reference_examples(
+                images=image_decoded,
+                reference_examples=reference_examples,
+                confidence=confidence,
+                iou_threshold=iou_threshold,
+                max_detections=max_detections,
+            )
+        return self.make_response(
+            predictions=results,
+            image_sizes=image_sizes,
+            class_filter=kwargs.get("class_filter"),
         )
-        return self.make_response(predictions=results, image_sizes=image_sizes)
 
     def make_response(
         self,
@@ -324,6 +342,11 @@ class InferenceModelsOwlV2Adapter(Model):
                 class_id = image_prediction.class_id[instance_id].item()
                 confidence = image_prediction.confidence[instance_id].item()
                 class_name = image_prediction.image_metadata["class_names"][class_id]
+                if (
+                    kwargs.get("class_filter")
+                    and class_name not in kwargs["class_filter"]
+                ):
+                    continue
                 image_instances.append(
                     ObjectDetectionPrediction(
                         # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)

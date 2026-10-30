@@ -1,8 +1,120 @@
+import base64
+import io
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+import torch
+from PIL import Image
 
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
+from inference.core.managers.base import ModelManager
 from inference.models.owlv2 import owlv2_inference_models, rf_instant_inference_models
+from inference_models import Detections
+
+
+@pytest.mark.parametrize("saved_labels", [["leaf", "flower"], None])
+def test_model_manager_reads_saved_owlv2_labels(saved_labels):
+    native = owlv2_inference_models.OWLv2HF.__new__(owlv2_inference_models.OWLv2HF)
+    native._class_names = saved_labels
+    with patch.object(
+        owlv2_inference_models,
+        "Owlv2AdapterSingleton",
+        return_value=MagicMock(model=native),
+    ):
+        adapter = owlv2_inference_models.InferenceModelsOwlV2Adapter(
+            model_id="uploaded/1", api_key="test-key"
+        )
+    manager = ModelManager(
+        model_registry=MagicMock(),
+        models={"uploaded/1": adapter},
+        content_addressed_artifact_cache=MagicMock(),
+    )
+    assert manager.get_class_names("uploaded/1") == (saved_labels or [])
+    assert not hasattr(native, "class_names")
+
+
+@pytest.mark.parametrize("training_data", [None, []])
+def test_saved_prompts_do_not_replace_reference_example_requests(training_data):
+    adapter = owlv2_inference_models.InferenceModelsOwlV2Adapter.__new__(
+        owlv2_inference_models.InferenceModelsOwlV2Adapter
+    )
+    adapter.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+    adapter._model = MagicMock()
+    labels = ["saved label"] if training_data is None else ["reference label"]
+    detections = [
+        Detections(
+            xyxy=torch.tensor([[1, 2, 7, 8]]),
+            class_id=torch.tensor([0]),
+            confidence=torch.tensor([0.8]),
+            image_metadata={"class_names": labels},
+        )
+    ]
+    adapter._model.infer.return_value = detections
+    adapter._model.infer_with_reference_examples.return_value = detections
+    response = adapter.infer(
+        np.zeros((12, 16, 3), dtype=np.uint8),
+        training_data=training_data,
+        confidence=0.2,
+        max_detections=1,
+        class_agnostic_nms=True,
+    )[0]
+    assert response.predictions[0].class_name == labels[0]
+    assert (response.image.height, response.image.width) == (12, 16)
+    if training_data is None:
+        adapter._model.infer_with_reference_examples.assert_not_called()
+        assert adapter._model.infer.call_args.kwargs["input_color_format"] == "bgr"
+        assert adapter._model.infer.call_args.kwargs["class_agnostic_nms"] is True
+    else:
+        adapter._model.infer.assert_not_called()
+        assert (
+            adapter._model.infer_with_reference_examples.call_args.kwargs[
+                "reference_examples"
+            ]
+            == []
+        )
+
+
+@pytest.mark.parametrize(
+    "class_filter,expected",
+    [
+        (None, ["label-a", "label-b"]),
+        ([], ["label-a", "label-b"]),
+        (["label-b"], ["label-b"]),
+        (["missing"], []),
+    ],
+)
+def test_image_only_request_honors_class_filter(class_filter, expected):
+    adapter = owlv2_inference_models.InferenceModelsOwlV2Adapter.__new__(
+        owlv2_inference_models.InferenceModelsOwlV2Adapter
+    )
+    adapter.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
+    adapter._model = MagicMock()
+    adapter._model.resolved_model = None
+    adapter._model.infer.return_value = [
+        Detections(
+            xyxy=torch.tensor([[1, 2, 7, 8], [8, 2, 14, 8]]),
+            class_id=torch.tensor([0, 1]),
+            confidence=torch.tensor([0.9, 0.8]),
+            image_metadata={"class_names": ["label-a", "label-b"]},
+        )
+    ]
+    image = io.BytesIO()
+    Image.new("RGB", (16, 12)).save(image, format="PNG")
+    response = adapter.infer_from_request(
+        ObjectDetectionInferenceRequest(
+            model_id="uploaded/1",
+            image={
+                "type": "base64",
+                "value": base64.b64encode(image.getvalue()).decode(),
+            },
+            confidence=0.1,
+            class_filter=class_filter,
+        )
+    )
+    if isinstance(response, list):
+        response = response[0]
+    assert [prediction.class_name for prediction in response.predictions] == expected
 
 
 @pytest.mark.parametrize("send_to_cpu", [True, False])
@@ -95,6 +207,5 @@ def test_adapter_singleton_defaults_to_shared_blob_cache() -> None:
 
     shared_getter.assert_called_once_with()
     assert (
-        auto_model.call_args.kwargs["content_addressed_artifact_cache"]
-        is shared_cache
+        auto_model.call_args.kwargs["content_addressed_artifact_cache"] is shared_cache
     )
