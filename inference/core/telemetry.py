@@ -19,10 +19,16 @@ Usage::
 
 import contextvars
 import logging
+import traceback
 from contextlib import contextmanager
 from typing import Any, Dict, Optional, Sequence
 
-from inference.core.env import OFFLINE_MODE
+from inference.core.env import (
+    OFFLINE_MODE,
+    PRELOAD_API_KEY,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+)
+from inference.core.utils.requests import _redact_credentials
 
 logger = logging.getLogger("inference")
 
@@ -77,8 +83,18 @@ def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
         yield None
         return
     tracer = _get_tracer()
-    with tracer.start_as_current_span(name, attributes=attributes) as span:
-        yield span
+    # Record errors through the same credential filter as explicit error events.
+    with tracer.start_as_current_span(
+        name,
+        attributes=attributes,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        try:
+            yield span
+        except Exception as error:
+            record_error(error)
+            raise
 
 
 def record_error(error: Exception) -> None:
@@ -90,8 +106,26 @@ def record_error(error: Exception) -> None:
         return
     span = trace.get_current_span()
     if span and span.is_recording():
-        span.record_exception(error)
-        span.set_status(StatusCode.ERROR, str(error))
+        credentials = (PRELOAD_API_KEY, ROBOFLOW_INTERNAL_SERVICE_SECRET)
+        reason = _redact_credentials(str(error), credentials=credentials)
+        stacktrace = _redact_credentials(
+            "".join(
+                traceback.format_exception(type(error), error, error.__traceback__)
+            ),
+            credentials=credentials,
+        )
+        module = type(error).__module__
+        name = type(error).__qualname__
+        error_type = f"{module}.{name}" if module and module != "builtins" else name
+        span.record_exception(
+            Exception(reason),
+            attributes={
+                "exception.type": error_type,
+                "exception.message": reason,
+                "exception.stacktrace": stacktrace,
+            },
+        )
+        span.set_status(StatusCode.ERROR, reason)
 
 
 def get_trace_id() -> Optional[str]:
