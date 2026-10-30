@@ -16,6 +16,18 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.
+
+## `0.2.14`
+
+Bundled execution engine: `1.17.0`.
+
+### Changed
+
+- Security maintenance release, no block or engine change. The Workflows lockfile is refreshed for three advisories in transitive dependencies: `certifi` 2026.7.22 -> 2026.10.23 (GHSA-6q48-6c7w-9gw2, bundled emSign root CAs whose intermediate CA keys were compromised), `GitPython` 3.1.62 -> 3.2.1 (GHSA-83vg-56qc-22m7, remote code execution through a submodule `.git` path) and `setuptools` 84.0.0 -> 84.2.1 (GHSA-xmj3-9gf7-h52w, Windows path escape during legacy wheel installation). Declared dependency ranges are unchanged.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.
