@@ -332,9 +332,13 @@ class ClipUploader:
         """
         with self._lock:
             self._shutting_down = True
-            end = None if deadline_seconds is None else self._clock() + deadline_seconds
+            end = (
+                None
+                if deadline_seconds is None
+                else time.monotonic() + deadline_seconds
+            )
             while self._jobs:
-                remaining = None if end is None else end - self._clock()
+                remaining = None if end is None else end - time.monotonic()
                 if remaining is not None and remaining <= 0:
                     break
                 self._idle.wait(
