@@ -16,6 +16,24 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- SAM 3 Interactive (`roboflow_core/sam3_interactive@v1`): optional `output_format`, `polygons` (default, output unchanged) or `rle`, with the same values as SAM 3 v3. With `rle` the block asks SAM 3 for RLE masks on every execution path and returns one prediction per prompt that keeps the model's mask in `rle_mask` (decoded into `mask` for downstream blocks), declared as `rle_instance_segmentation_prediction` first, so serialized outputs carry `rle_mask` instead of polygon `points`. A server that answers polygons anyway has them rasterised into the prompt's mask. The tensor-native variant already carried RLE masks; with `rle` it declares and serializes them as RLE, and, like the NumPy block, keeps one mask per prompt for a polygon answer, drops empty masks and reports COCO box extents (a one-pixel mask is a 1x1 box). `ModelsProvider.run_sam2_segmentation` gains `format`, which the block sends only for `rle`.
+- Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.
+
+### Fixed
+
+- Root-coordinate recovery (`sv_detections_to_root_coordinates`, applied to workflow outputs by default) re-encodes `rle_mask` from the re-anchored dense masks. A block that ran on a crop and returns RLE with dense masks, such as SAM 3 v3 with `output_format: rle`, used to serialize root-coordinate boxes next to an RLE still sized and placed in the crop. RLE-only predictions (`mask=None`) are unchanged, as in `scale_sv_detections`.
+
+
+## `0.2.14`
+
+Bundled execution engine: `1.17.0`.
+
+### Changed
+
+- Security maintenance release, no block or engine change. The Workflows lockfile is refreshed for three advisories in transitive dependencies: `certifi` 2026.7.22 -> 2026.10.23 (GHSA-6q48-6c7w-9gw2, bundled emSign root CAs whose intermediate CA keys were compromised), `GitPython` 3.1.62 -> 3.2.1 (GHSA-83vg-56qc-22m7, remote code execution through a submodule `.git` path) and `setuptools` 84.0.0 -> 84.2.1 (GHSA-xmj3-9gf7-h52w, Windows path escape during legacy wheel installation). Declared dependency ranges are unchanged.
+
 ## `0.2.13`
 
 Bundled execution engine: `1.17.0`.
