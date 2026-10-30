@@ -124,7 +124,7 @@ const MODELS = [
 ];
 const $ = (id) => document.getElementById(id);
 const fmt = (v, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
-let adapter = null, f16 = false, bandwidth = 0, pick = 0, engine = null, busy = false;
+let adapter = null, f16 = false, soft = false, bandwidth = 0, pick = 0, engine = null, busy = false;
 const history = [{ role: 'system', content: 'You are a small language model running entirely on the user\'s own device, inside their web browser, on its GPU. Answer briefly and plainly.' }];
 
 const step = (n, state) => { const s = $('s' + n); s.classList.toggle('on', state === 'on'); s.classList.toggle('done', state === 'done'); };
@@ -148,9 +148,12 @@ async function detect() {
   if (!adapter) return fail('e1', 'The browser kept its GPU adapter from this page. It can happen in low-power mode or with a blocklisted driver.');
   const info = adapter.info || {};
   f16 = adapter.features.has('shader-f16');
+  // a software renderer (SwiftShader, lavapipe, WARP) runs the shaders on the CPU
+  soft = !!(info.isFallbackAdapter || adapter.isFallbackAdapter) ||
+         /swiftshader|llvmpipe|lavapipe|warp/i.test([info.vendor, info.architecture, info.device, info.description].join(' '));
   const rows = [
-    ['GPU', [info.vendor, info.architecture].filter(Boolean).join(' · ') || 'present'],
-    ['fp16 shaders', f16 ? 'yes' : 'fp32 builds used'],
+    ['GPU', ([info.vendor, info.architecture].filter(Boolean).join(' · ') || 'present') + (soft ? ' (software)' : '')],
+    ['Model builds', f16 ? 'fp16 (shader-f16)' : 'fp32 (no shader-f16)'],
     ['Largest buffer', fmt(adapter.limits.maxBufferSize / 2 ** 20) + ' MB'],
     ['Storage binding', fmt(adapter.limits.maxStorageBufferBindingSize / 2 ** 20) + ' MB'],
   ];
@@ -215,13 +218,14 @@ async function measure() {
 // 3. models: an estimate from bandwidth (4-bit weights ≈ 0.56 bytes a parameter with their scales; ~60 % of peak)
 function drawModels() {
   $('models').innerHTML = MODELS.map((m, i) => {
-    const gb = m.params * 0.56, tps = bandwidth ? 0.6 * bandwidth / gb : 0, mb = m.vram[f16 ? 0 : 1];
+    const gb = m.params * 0.56, tps = bandwidth && !soft ? 0.6 * bandwidth / gb : 0, mb = m.vram[f16 ? 0 : 1];
     const tight = adapter && mb * 2 ** 20 > adapter.limits.maxBufferSize * 4;
     return `<label class="model${i === pick ? ' sel' : ''}"><input type="radio" name="m" value="${i}"${i === pick ? ' checked' : ''}>
       <b>${m.name}</b><small>${m.note} · about ${fmt(mb)} MB of GPU memory</small>
       <em class="${tight ? 'warn' : ''}">${tps ? `~${fmt(tps)} tok/s` : ''}${tight ? '<br>may be too big' : ''}</em></label>`;
   }).join('');
-  if (bandwidth) $('est-note').textContent = `Estimated from ${fmt(bandwidth)} GB/s. The real speed shows after each answer.`;
+  if (soft) $('est-note').textContent = 'This is a software renderer: the CPU runs the shaders, so memory bandwidth does not set the pace and the page shows no estimate. The real speed shows after each answer.';
+  else if (bandwidth) $('est-note').textContent = `Estimated from ${fmt(bandwidth)} GB/s. The real speed shows after each answer.`;
   $('models').querySelectorAll('input').forEach((r) => r.onchange = () => { pick = +r.value; drawModels(); });
 }
 
@@ -254,16 +258,22 @@ async function ask(ev) {
   if (!q || !engine || busy) return;
   $('q').value = ''; say('you', q); history.push({ role: 'user', content: q });
   busy = true; stopped = false; $('stop').hidden = false;
-  const out = say('it', '…'); let text = '';
+  const out = say('it', '…'); let text = '', rate = 0;
   try {
-    const stream = await engine.chat.completions.create({ messages: history, stream: true, temperature: 0.7, max_tokens: 512 });
+    // include_usage: the last chunk carries WebLLM's own decode speed for this answer.
+    const stream = await engine.chat.completions.create({ messages: history, stream: true, temperature: 0.7, max_tokens: 512,
+                                                          stream_options: { include_usage: true } });
     for await (const ch of stream) {
       if (stopped) break;
+      if (ch.usage?.extra?.decode_tokens_per_s) rate = ch.usage.extra.decode_tokens_per_s;
       text += ch.choices[0]?.delta?.content || ''; out.textContent = text; $('log').scrollTop = 1e9;
     }
     history.push({ role: 'assistant', content: text });
-    const s = await engine.runtimeStatsText(), m = /decode:\s*([\d.]+)\s*tok\/s/i.exec(s || '');
-    if (m) $('speed').textContent = `${Math.round(+m[1])} tok/s on this GPU`;
+    if (!rate && engine.runtimeStatsText) {
+      const m = /decode:\s*([\d.]+)\s*tok\/s/i.exec(await engine.runtimeStatsText() || '');
+      if (m) rate = +m[1];
+    }
+    if (rate) $('speed').textContent = `${rate < 10 ? rate.toFixed(1) : Math.round(rate)} tok/s on this GPU`;
   } catch (e) { out.textContent = 'It stopped: ' + why(e); history.pop(); }
   busy = false; $('stop').hidden = true;
 }

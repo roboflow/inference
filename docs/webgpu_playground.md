@@ -40,7 +40,10 @@ page over HTTPS (see the server's HTTPS configuration) or a tunnel.
 | iPhone, iPad | Safari on iOS / iPadOS 26 or later (earlier versions: enable the WebGPU feature flag) |
 | Desktop | Chrome, Edge, or Safari 26 or later |
 
-On a GPU without `shader-f16`, the page loads the fp32 build of each model.
+On a GPU without `shader-f16`, the page loads the fp32 build of each model. On a
+software renderer (SwiftShader, lavapipe, WARP) the page still runs, but the
+CPU executes the shaders: it marks the adapter as software and shows no speed
+estimate, only the speed it measures after each answer.
 
 ## Models
 

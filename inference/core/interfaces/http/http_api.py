@@ -187,10 +187,10 @@ from inference.core.env import (
     DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
-    ENABLE_WEBGPU_PLAYGROUND,
     ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG,
     ENABLE_DASHBOARD,
     ENABLE_STREAM_API,
+    ENABLE_WEBGPU_PLAYGROUND,
     ENABLE_WORKFLOWS_PROFILING,
     GCP_SERVERLESS,
     GET_MODEL_REGISTRY_ENABLED,
@@ -4782,12 +4782,12 @@ class HttpInterface(BaseInterface):
 
         if ENABLE_WEBGPU_PLAYGROUND:
             from inference.core.interfaces.http.webgpu.routes import (
-                router as webgpu_router,
+                mount_webgpu_playground,
             )
 
             # On-device WebGPU playground: one static page; models run in the
             # visitor's browser, so this adds no inference endpoints.
-            app.include_router(webgpu_router, prefix="/webgpu", tags=["webgpu"])
+            mount_webgpu_playground(app, prefix="/webgpu")
 
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatibility
