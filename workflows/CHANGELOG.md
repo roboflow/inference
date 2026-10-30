@@ -16,6 +16,21 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Inner Workflow literal bindings keep their type.** A literal bound in an
+  Inner Workflow step's `parameter_bindings` (for example `0.3`, `true`, a list
+  or an object) now reaches the child workflow's steps with that type when the
+  child references the input as a whole `$inputs.<name>` value. Inlining used
+  to stringify every binding, so a child boolean input bound to `true` became
+  `"True"` and a number became `"0.3"`, which differed from the same value
+  supplied through the child's `default_value`. A literal embedded in a larger
+  string (`"prefix-$inputs.x"`) is still interpolated as text. Compilation now
+  rejects a non-string literal bound to a child output selector with
+  `InnerWorkflowInvalidStepEntryError` instead of producing an invalid selector
+  later. Workflows that worked around the cast by converting inside the child
+  keep working; no migration is needed.
+
 ### Added
 
 - OpenAI block (`open_ai@v7`): add GPT-6.1 Terra (`gpt-6.1-terra`) with
