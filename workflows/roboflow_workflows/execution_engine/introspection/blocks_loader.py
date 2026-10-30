@@ -26,6 +26,9 @@ from roboflow_workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlocksDescription,
 )
+from roboflow_workflows.execution_engine.introspection.manifest_cache import (
+    cache_static_manifest,
+)
 from roboflow_workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
@@ -606,11 +609,11 @@ def get_plugin_modules() -> List[str]:
     return plugins_to_load.split(",")
 
 
-@lru_cache(maxsize=256)
+@cache_static_manifest(maxsize=256)
 def _cached_model_json_schema(manifest_class):
     return manifest_class.model_json_schema()
 
 
-@lru_cache(maxsize=256)
+@cache_static_manifest(maxsize=256)
 def _cached_describe_outputs(manifest_class):
     return manifest_class.describe_outputs()

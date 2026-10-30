@@ -415,6 +415,8 @@ class InferenceConfiguration:
             ("source", "source"),
             ("source_info", "source_info"),
             ("response_mask_format", "response_mask_format"),
+            # The legacy route reads it as a query parameter (see `legacy_infer_from_request`).
+            ("include_anomaly_map", "include_anomaly_map"),
         ]
         parameters = get_non_empty_attributes(
             source_object=self,
