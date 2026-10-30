@@ -15,16 +15,18 @@ State therefore has to cross a serialization boundary. The transportable
 types are the ones the existing input/result serializers already understand
 (scalars, strings, bytes, lists, string-keyed dicts, ``datetime``, numpy
 arrays of bool/int/float/str, ``sv.Detections``, ``WorkflowImageData``,
-``VideoMetadata``), plus numpy bool/int/float scalars and tuples, which the
-transports do not carry as such: values are normalized to Python scalars and
-lists before serialization on either side, so a block reads back ``False``
-for the ``np.bool_`` it stored and a list for its tuple. Images and
+``VideoMetadata``), as exact types, plus numpy bool/int/float/str/bytes
+scalars, which are normalized to their Python equivalent, and tuples, which
+are wrapped in a ``tuple`` wire marker because both transports would
+otherwise carry them as lists. Subclasses are not carried: they would come
+back as their base type. Images and
 ``sv.Detections`` ride the result serializers and are lossy: an image is
 re-encoded as JPEG on every hop and only the ``data`` keys those serializers
 know survive, which ``partition_block_state`` reports as a note.
 
 Anything else (a tracker object, an annotator, a model, a value an encoder
-refuses, a dict holding the ``_type`` wire marker) cannot be carried, nor can
+refuses, a dict holding the ``_type`` wire marker or shaped like a
+serialized image) cannot be carried, nor can
 an attribute whose serialized form is over ``BLOCK_STATE_MAX_BYTES``. When
 any attribute is dropped, ``partition_block_state`` withholds the whole state
 for that call and warns, naming every attribute: carrying the rest would
@@ -115,6 +117,23 @@ _CARRIED_NDARRAY_KINDS = frozenset("biufU")
 # The ``_type`` key marks a typed value on the wire; a user dict carrying it
 # would be decoded as that type on the other side.
 WIRE_TYPE_MARKER_KEY = "_type"
+
+# Marker the state normalizer wraps tuples in: both transports would carry a
+# bare tuple as a list, and a block that hashes or compares it would break.
+TUPLE_WIRE_TYPE = "tuple"
+
+# numpy scalar types carried as their Python equivalent (``.item()``), checked
+# exactly: a subclass would come back as the plain Python value. Excludes
+# long doubles, complex, datetime64 and timedelta64, which no encoder carries.
+CARRIED_NUMPY_SCALAR_TYPES: FrozenSet[type] = frozenset(
+    scalar_type
+    for scalar_type in set(np.sctypeDict.values())
+    if issubclass(scalar_type, (np.bool_, np.integer, np.floating, np.str_, np.bytes_))
+    and not issubclass(scalar_type, (np.timedelta64, np.longdouble))
+)
+
+# Ids the decoders substitute when a detection's parentage is not carried.
+_PLACEHOLDER_PARENT_IDS = frozenset({"input", "result"})
 
 # ``sv.Detections.data`` keys the transport serializer writes and the
 # deserializer reads back; any other key is lost on every hop.
@@ -285,14 +304,30 @@ def normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _normalize_value(value: Any) -> Any:
-    if isinstance(value, (np.bool_, np.integer, np.floating)):
+    if type(value) in CARRIED_NUMPY_SCALAR_TYPES:
         return value.item()
     if isinstance(value, dict):
-        return {key: _normalize_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+        normalized = {
+            _normalize_key(key): _normalize_value(item) for key, item in value.items()
+        }
+        return normalized
+    if isinstance(value, tuple):
+        marked = {
+            WIRE_TYPE_MARKER_KEY: TUPLE_WIRE_TYPE,
+            "value": [_normalize_value(item) for item in value],
+        }
+        return marked
+    if isinstance(value, list):
         return [_normalize_value(item) for item in value]
 
     return value
+
+
+def _normalize_key(key: Any) -> Any:
+    if type(key) is np.str_:
+        return key.item()
+
+    return key
 
 
 def partition_block_state(
@@ -344,20 +379,23 @@ def partition_block_state(
             continue
         carried[name] = normalized_value
         sizes[name] = size
+    # The per-attribute sizes overcount the combined payload by one map
+    # header each, so the total cap is decided on the combined encoding.
     total = sum(sizes.values())
+    if total > BLOCK_STATE_MAX_BYTES:
+        total = measure(carried)
     for name in sorted(sizes, key=sizes.get, reverse=True):
         if total <= BLOCK_STATE_MAX_BYTES:
             break
-        total -= sizes[name]
         del carried[name]
         dropped.append(
             (
                 name,
-                f"the state kept on `self` is {total + sizes[name]} bytes in "
-                f"total, over the {BLOCK_STATE_MAX_BYTES} byte limit for remote "
-                "execution",
+                f"the state kept on `self` is {total} bytes in total, over the "
+                f"{BLOCK_STATE_MAX_BYTES} byte limit for remote execution",
             )
         )
+        total = measure(carried) if carried else 0
 
     if dropped:
         notes = [_withheld_note(dropped=dropped, withheld=list(carried))]
@@ -425,8 +463,15 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
             notes.append(
                 f"Custom Python block state `self.{path}` holds sv.Detections "
                 f"whose `{ROOT_PARENT_ID_KEY}` equals their `{PARENT_ID_KEY}`; "
-                f"the transport does not carry such a `{ROOT_PARENT_ID_KEY}` "
-                "and it comes back as the transport's own placeholder"
+                f"it comes back replaced by a placeholder (`input` or "
+                "`result`), because the transport only carries a root parent "
+                "that differs from the parent"
+            )
+        if _has_integer_labels(value):
+            notes.append(
+                f"Custom Python block state `self.{path}` holds sv.Detections "
+                "with integer class names or detection ids, which come back as "
+                "strings"
             )
         if value.mask is not None and RLE_MASK_KEY_IN_SV_DETECTIONS not in value.data:
             notes.append(
@@ -440,12 +485,19 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
             f"Custom Python block state `self.{path}` is an image, which is "
             "re-encoded as JPEG on every call, so its pixels drift"
         )
+        # The private attribute, so an image held only as base64 is not decoded.
+        numpy_image = getattr(value, "_numpy_image", None)
+        if numpy_image is not None and numpy_image.ndim == 2:
+            notes.append(
+                f"Custom Python block state `self.{path}` is a grayscale image, "
+                "which comes back with three channels"
+            )
         return
     if isinstance(value, dict):
         for key, item in value.items():
             _collect_lossy_value_notes(item, path=f"{path}[{key!r}]", notes=notes)
         return
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
             _collect_lossy_value_notes(item, path=f"{path}[{index}]", notes=notes)
 
@@ -458,11 +510,21 @@ def _has_root_parent_id_equal_to_parent_id(detections: Any) -> bool:
     parent_ids = [str(item) for item in detections.data[PARENT_ID_KEY]]
     root_parent_ids = [str(item) for item in detections.data[ROOT_PARENT_ID_KEY]]
     has_equal_ids = any(
-        parent_id == root_parent_id
+        parent_id == root_parent_id and parent_id not in _PLACEHOLDER_PARENT_IDS
         for parent_id, root_parent_id in zip(parent_ids, root_parent_ids)
     )
 
     return has_equal_ids
+
+
+def _has_integer_labels(detections: Any) -> bool:
+    has_integer_labels = any(
+        isinstance(detections.data.get(key), np.ndarray)
+        and detections.data[key].dtype.kind in "iu"
+        for key in ("class_name", DETECTION_ID_KEY)
+    )
+
+    return has_integer_labels
 
 
 def describe_dropped_block_state(
@@ -491,28 +553,20 @@ def describe_dropped_block_state(
 
 def _validate_value(value: Any, *, path: str) -> None:
     # Exact types only: a subclass (defaultdict, Counter, OrderedDict, a
-    # namedtuple, an IntEnum member, a str subclass) comes back as its base
-    # type, which breaks the block from the next call on.
+    # namedtuple, an IntEnum member, a str or numpy scalar subclass) comes
+    # back as its base type, which breaks the block from the next call on.
     value_type = type(value)
     if value is None or value_type in (bool, float, str, bytes, datetime):
         return
     if value_type is int:
         _validate_int(value, path=path)
         return
+    if value_type in CARRIED_NUMPY_SCALAR_TYPES:
+        if isinstance(value, np.integer):
+            _validate_int(int(value), path=path)
+        return
     if value_type is np.ndarray:
         _validate_ndarray(value, path=path, description="numpy array")
-        return
-    if isinstance(value, (np.timedelta64, np.datetime64)):
-        # timedelta64 subclasses np.signedinteger; neither is carried.
-        _raise_not_transportable(value_type.__name__, path=path)
-    if isinstance(value, (np.longdouble, np.clongdouble)) and not isinstance(
-        value, (np.float64, np.complex128)
-    ):
-        _raise_not_transportable(value_type.__name__, path=path)
-    if isinstance(value, (np.bool_, np.floating)):
-        return
-    if isinstance(value, np.integer):
-        _validate_int(int(value), path=path)
         return
     if _is_transportable_workflow_object(value):
         _validate_workflow_object(value, path=path)
@@ -529,11 +583,15 @@ def _validate_value(value: Any, *, path: str) -> None:
 
 
 def _describe_type(value_type: type) -> str:
-    base_names = [
-        base.__name__
+    numpy_bases = [
+        base for base in value_type.__mro__ if base in CARRIED_NUMPY_SCALAR_TYPES
+    ]
+    builtin_bases = [
+        base
         for base in (bool, int, float, str, bytes, dict, list, tuple, datetime)
         if issubclass(value_type, base)
     ]
+    base_names = [base.__name__ for base in numpy_bases + builtin_bases]
     if base_names:
         description = (
             f"{value_type.__name__} (a {base_names[0]} subclass, which would "
@@ -546,7 +604,7 @@ def _describe_type(value_type: type) -> str:
 
 def _validate_dict(value: Dict[Any, Any], *, path: str) -> None:
     for key, item in value.items():
-        if type(key) is not str:
+        if type(key) not in (str, np.str_):
             raise DynamicBlockError(
                 public_message=(
                     f"Custom Python block state `self.{path}` has a "
@@ -622,16 +680,31 @@ def _validate_workflow_object(value: Any, *, path: str) -> None:
             ),
             context="dynamic_block | block_state_validation",
         )
-    integer_arrays = {"class_id": value.class_id, "tracker_id": value.tracker_id}
-    integer_arrays.update(
-        (f"data[{key!r}]", item)
-        for key, item in value.data.items()
-        if isinstance(item, np.ndarray) and item.dtype.kind in "iu"
-    )
-    for field, array in integer_arrays.items():
-        if array is not None and array.size:
-            _validate_int(int(np.max(array)), path=f"{path}.{field}")
-            _validate_int(int(np.min(array)), path=f"{path}.{field}")
+    for field, array in (
+        ("class_id", value.class_id),
+        ("tracker_id", value.tracker_id),
+    ):
+        if array is not None:
+            _validate_detections_field(array, path=f"{path}.{field}")
+    # Only the keys the transport carries: the others are dropped on the way
+    # (and noted), so their contents never reach a decoder.
+    for key, item in value.data.items():
+        if key in CARRIED_DETECTIONS_DATA_KEYS:
+            _validate_detections_field(item, path=f"{path}.data[{key!r}]")
+
+
+def _validate_detections_field(value: Any, *, path: str) -> None:
+    """Validate a carried Detections field by value, whatever its storage."""
+    if isinstance(value, np.ndarray):
+        if value.dtype.kind in "iu" and value.size:
+            _validate_int(int(np.max(value)), path=path)
+            _validate_int(int(np.min(value)), path=path)
+        elif value.dtype.kind == "O":
+            for item in value.ravel():
+                _validate_detections_field(item, path=path)
+        return
+    if isinstance(value, (dict, list, tuple)) or type(value) is int:
+        _validate_value(value, path=path)
 
 
 def _rle_masks_carry_size(detections: Any) -> bool:
@@ -640,7 +713,7 @@ def _rle_masks_carry_size(detections: Any) -> bool:
         return False
     carry_size = all(
         isinstance(rle, dict)
-        and isinstance(rle.get("size"), (list, tuple))
+        and isinstance(rle.get("size"), (list, tuple, np.ndarray))
         and len(rle["size"]) == 2
         for rle in rle_masks
     )

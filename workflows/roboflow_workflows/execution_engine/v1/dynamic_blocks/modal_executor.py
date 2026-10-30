@@ -19,9 +19,9 @@ import base64
 import gzip
 import hashlib
 import json
-import re
 import logging
 import os
+import re
 import sys
 import threading
 import time as _time
@@ -281,15 +281,17 @@ def _as_ws_endpoint_url(endpoint_url: str, workspace_id: str) -> str:
 # Bounded so a process serving many distinct blocks cannot grow it forever.
 _WARNED_BLOCK_STATE_MESSAGES: set = set()
 _MAX_WARNED_BLOCK_STATE_MESSAGES = 4096
+_BYTE_COUNT_PATTERN = re.compile(r"\d+ bytes")
 
 
 def _warn_once(message: str, *, scope: Optional[str] = None) -> None:
-    """Log ``message`` once per ``scope`` (a workflow step) and message shape.
+    """Log ``message`` once per ``scope`` (a workflow step) and message.
 
-    Digits are ignored in the key: an oversized attribute whose size changes
-    every frame must not log a line per frame.
+    Byte counts are ignored in the key, so an oversized attribute whose size
+    changes every frame does not log a line per frame; attribute and block
+    names are kept, so ``self.buf1`` and ``self.buf2`` are reported apart.
     """
-    key = (scope, re.sub(r"\d+", "#", message))
+    key = (scope, _BYTE_COUNT_PATTERN.sub("# bytes", message))
     if key in _WARNED_BLOCK_STATE_MESSAGES:
         return
     if len(_WARNED_BLOCK_STATE_MESSAGES) >= _MAX_WARNED_BLOCK_STATE_MESSAGES:
@@ -338,7 +340,10 @@ def _json_state_size(attribute: Dict[str, Any]) -> int:
 
 
 def _missing_echoed_block_state(
-    block_state: Dict[str, Any], *, block_type_name: str
+    block_state: Dict[str, Any],
+    *,
+    block_type_name: str,
+    workflow_context: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Handle a server that did not echo ``block_state``: it predates state.
 
@@ -363,7 +368,7 @@ def _missing_echoed_block_state(
             f"`{block_type_name}` are rebuilt on every call until the webexec "
             "app is redeployed."
         )
-    _warn_once(message)
+    _warn_once(message, scope=_warning_scope(workflow_context))
 
     return {}
 
@@ -407,6 +412,7 @@ def _read_echoed_block_state_json(
     *,
     block_state: Optional[Dict[str, Any]],
     block_type_name: str,
+    workflow_context: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Decode the state echoed by the HTTP transport, or ``None`` if none was sent.
 
@@ -416,7 +422,9 @@ def _read_echoed_block_state_json(
         return None
     if "block_state" not in result:
         echoed_state = _missing_echoed_block_state(
-            block_state, block_type_name=block_type_name
+            block_state,
+            block_type_name=block_type_name,
+            workflow_context=workflow_context,
         )
         return echoed_state
 
@@ -444,6 +452,7 @@ def _read_echoed_block_state_msgpack(
     *,
     block_state: Optional[Dict[str, Any]],
     block_type_name: str,
+    workflow_context: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Decode the state echoed by the websocket transport, or ``None`` if none was sent.
 
@@ -453,7 +462,9 @@ def _read_echoed_block_state_msgpack(
         return None
     if "block_state" not in result:
         echoed_state = _missing_echoed_block_state(
-            block_state, block_type_name=block_type_name
+            block_state,
+            block_type_name=block_type_name,
+            workflow_context=workflow_context,
         )
         return echoed_state
 
@@ -668,6 +679,9 @@ def _decode_modal_remote_value(obj: Any) -> Any:
                 return datetime.fromisoformat(obj["value"])
             elif obj["_type"] == "bytes":
                 return base64.b64decode(obj["value"])
+            elif obj["_type"] == "tuple":
+                # Only ``self`` state uses this marker (see block_state).
+                return tuple(_decode_modal_remote_value(item) for item in obj["value"])
             elif obj["_type"] == "ndarray":
                 arr = np.array(obj["value"], dtype=obj["dtype"])
                 return arr.reshape(obj["shape"])
@@ -977,7 +991,10 @@ class ModalExecutor:
             json_result = result.get("result", "{}")
             block_result = deserialize_for_modal_remote_execution(json_result)
             echoed_state = _read_echoed_block_state_json(
-                result, block_state=sent_state, block_type_name=block_type_name
+                result,
+                block_state=sent_state,
+                block_type_name=block_type_name,
+                workflow_context=workflow_context,
             )
 
             return block_result, echoed_state
@@ -1254,6 +1271,9 @@ def _deserialize_msgpack_result(result: Any) -> Any:
         _type = result.get("_type")
         if _type == "datetime":
             return datetime.fromisoformat(result["value"])
+        if _type == "tuple":
+            # Only ``self`` state uses this marker (see block_state).
+            return tuple(_deserialize_msgpack_result(item) for item in result["value"])
         if _type == "ndarray":
             return np.array(result["value"], dtype=result["dtype"]).reshape(
                 result["shape"]
@@ -2420,7 +2440,10 @@ class WebSocketModalExecutor:
 
         block_result = _deserialize_msgpack_result(result.get("result", {}))
         echoed_state = _read_echoed_block_state_msgpack(
-            result, block_state=packed_state, block_type_name=block_type_name
+            result,
+            block_state=packed_state,
+            block_type_name=block_type_name,
+            workflow_context=workflow_context,
         )
 
         return block_result, echoed_state

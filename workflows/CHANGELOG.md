@@ -32,31 +32,36 @@ for contributor and maintainer responsibilities.
   the sandbox and back on each call, so it survives container recycling
   and never leaks between workflow runs or between block instances.
   - What persists, as exact types: JSON-like values (ints within the
-    signed 64-bit range), datetimes, numpy arrays of bool/int/float/str,
-    numpy bool/int/float scalars and tuples (read back as Python scalars and
-    lists), `sv.Detections` with confidence, `class_id`, class name,
-    detection id and either image dimensions or RLE masks that carry their
-    size, images and video metadata.
-  - Images and detections are lossy, and the block's stderr says so once:
-    an image is re-encoded as JPEG on every call, so its pixels drift, and a
-    grayscale image comes back with three channels. Masks travel as
-    polygons, so a detection whose mask has no contour is lost.
-    `sv.Detections.data` keys the workflow serializers do not know are lost,
-    integer class names and detection ids come back as strings, `width`,
-    `height` and parent id keys are added, and a `root_parent_id` equal to
-    the `parent_id` comes back as a placeholder. A raw `numpy_image` array is
-    exact but realistic frames exceed the 1 MiB cap (a 480x640 RGB frame
+    signed 64-bit range), tuples (read back as tuples), datetimes, numpy
+    arrays of bool/int/float/str, numpy bool/int/float/str/bytes scalars
+    (read back as the Python equivalent, also as dict keys), `sv.Detections`
+    with confidence, `class_id`, class name, detection id and either image
+    dimensions or RLE masks that carry their size, images and video
+    metadata.
+  - Images, detections and time zones are lossy: an image is re-encoded as
+    JPEG on every call, so its pixels drift, and a grayscale image comes
+    back with three channels. Masks travel as polygons, so a detection whose
+    mask has no contour is lost. `sv.Detections.data` keys the workflow
+    serializers do not know are lost, integer class names and detection ids
+    come back as strings, `width`, `height` and parent id keys are added,
+    and a `root_parent_id` equal to the `parent_id` comes back as a
+    placeholder. A `datetime` keeps its UTC offset but not its `ZoneInfo`
+    zone, so arithmetic across a DST change is off by the change. The
+    sandbox reports each of these once per container on the block's
+    stderr; the engine side logs it once per step. A raw `numpy_image` array
+    is exact but realistic frames exceed the 1 MiB cap (a 480x640 RGB frame
     does), so it is only an option for small images.
   - What does not persist: a subclass of an accepted type (`defaultdict`,
-    `Counter`, `OrderedDict`, a namedtuple, an `IntEnum` member), which
-    would come back as its base type; any other object (an annotator, a
-    tracker, a helper instance); a value the transport cannot encode
-    (complex or object arrays, `np.datetime64`, integers beyond 64 bits,
-    also inside `sv.Detections`); a dict with a `_type` key or shaped like a
-    serialized image (`type` "base64" with a `value`); engine-owned or
-    dunder names; and an attribute whose serialized form is over 1 MiB.
-    The whole state is also capped at 1 MiB: the largest attributes are
-    dropped until it fits.
+    `Counter`, `OrderedDict`, a namedtuple, an `IntEnum` member, a `str` or
+    numpy scalar subclass), which would come back as its base type; any
+    other object (an annotator, a tracker, a helper instance); a value the
+    transport cannot encode (complex or object arrays, `np.datetime64`,
+    integers outside the signed 64-bit range, also inside the carried
+    fields of `sv.Detections`); a dict with a `_type` key or shaped like a
+    serialized image (`type` "base64" with a `value`), also inside carried
+    `sv.Detections` fields; engine-owned or dunder names; and an attribute
+    whose serialized form is over 1 MiB. The whole state is also capped at
+    1 MiB: the largest attributes are dropped until it fits.
   - When any attribute cannot be carried, none of the block's state is
     carried for that call, with a warning naming the attributes on the
     block's stderr, so the block behaves exactly as before this change (a

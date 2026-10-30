@@ -140,6 +140,25 @@ _MIN_CARRIED_INT = -(2**63)
 _MAX_CARRIED_INT = 2**63 - 1
 _CARRIED_NDARRAY_KINDS = frozenset("biufU")
 _WIRE_TYPE_MARKER_KEY = "_type"
+_TUPLE_WIRE_TYPE = "tuple"
+_PLACEHOLDER_PARENT_IDS = frozenset({"input", "result"})
+
+
+def _carried_numpy_scalar_types() -> frozenset:
+    """Mirror of ``block_state.CARRIED_NUMPY_SCALAR_TYPES``."""
+    import numpy as np
+
+    scalar_types = frozenset(
+        scalar_type
+        for scalar_type in set(np.sctypeDict.values())
+        if issubclass(
+            scalar_type, (np.bool_, np.integer, np.floating, np.str_, np.bytes_)
+        )
+        and not issubclass(scalar_type, (np.timedelta64, np.longdouble))
+    )
+    return scalar_types
+
+
 _CARRIED_DETECTIONS_DATA_KEYS = frozenset(
     {
         "class_name",
@@ -182,11 +201,11 @@ def _check_block_state_value(value: Any, path: str) -> None:
     sandbox image runs the released ``inference`` package, which may predate
     that module. Accepted, as exact types (a subclass comes back as its base
     type): None, bool/str/bytes, ints in the signed 64-bit range, floats,
-    datetime, numpy arrays of bool/int/float/str and such scalars,
-    sv.Detections with the fields the transport needs and integers in range,
-    WorkflowImageData, VideoMetadata, and lists/tuples and string-keyed dicts
-    of those (without a ``_type`` key, and not shaped like a serialized
-    image).
+    datetime, numpy bool/int/float/str/bytes scalars, numpy arrays of
+    bool/int/float/str, sv.Detections with the fields the transport needs
+    and carried payloads that pass these same rules, WorkflowImageData,
+    VideoMetadata, and lists/tuples and string-keyed dicts of those (without
+    a ``_type`` key, and not shaped like a serialized image).
     """
     from datetime import datetime
 
@@ -197,6 +216,8 @@ def _check_block_state_value(value: Any, path: str) -> None:
         VideoMetadata,
         WorkflowImageData,
     )
+
+    numpy_scalar_types = _carried_numpy_scalar_types()
 
     def _not_transportable(description: str, path: str) -> None:
         raise BlockStateSerializationError(
@@ -209,16 +230,21 @@ def _check_block_state_value(value: Any, path: str) -> None:
         )
 
     def _describe_type(value_type: type) -> str:
-        base_names = [
-            base.__name__
+        numpy_bases = [
+            base for base in value_type.__mro__ if base in numpy_scalar_types
+        ]
+        builtin_bases = [
+            base
             for base in (bool, int, float, str, bytes, dict, list, tuple, datetime)
             if issubclass(value_type, base)
         ]
+        base_names = [base.__name__ for base in numpy_bases + builtin_bases]
         if base_names:
-            return (
+            description = (
                 f"{value_type.__name__} (a {base_names[0]} subclass, which would "
                 f"come back as a plain {base_names[0]})"
             )
+            return description
         return value_type.__name__
 
     def _check_int(value: int, path: str) -> None:
@@ -240,12 +266,25 @@ def _check_block_state_value(value: Any, path: str) -> None:
         rle_masks = value.data.get("rle_mask")
         if rle_masks is None:
             return False
-        return all(
+        carry_size = all(
             isinstance(rle, dict)
-            and isinstance(rle.get("size"), (list, tuple))
+            and isinstance(rle.get("size"), (list, tuple, np.ndarray))
             and len(rle["size"]) == 2
             for rle in rle_masks
         )
+        return carry_size
+
+    def _check_detections_field(value: Any, path: str) -> None:
+        if isinstance(value, np.ndarray):
+            if value.dtype.kind in "iu" and value.size:
+                _check_int(int(np.max(value)), path)
+                _check_int(int(np.min(value)), path)
+            elif value.dtype.kind == "O":
+                for item in value.ravel():
+                    _check_detections_field(item, path)
+            return
+        if isinstance(value, (dict, list, tuple)) or type(value) is int:
+            _check(value, path)
 
     def _check_detections(value: Any, path: str) -> None:
         if len(value) == 0:
@@ -266,20 +305,19 @@ def _check_block_state_value(value: Any, path: str) -> None:
                 f"without {', '.join(missing)}, which the transport needs to "
                 "carry it; detections from model blocks have them."
             )
-        integer_arrays = {"class_id": value.class_id, "tracker_id": value.tracker_id}
-        integer_arrays.update(
-            (f"data[{key!r}]", item)
-            for key, item in value.data.items()
-            if isinstance(item, np.ndarray) and item.dtype.kind in "iu"
-        )
-        for field, array in integer_arrays.items():
-            if array is not None and array.size:
-                _check_int(int(np.max(array)), f"{path}.{field}")
-                _check_int(int(np.min(array)), f"{path}.{field}")
+        for field, array in (
+            ("class_id", value.class_id),
+            ("tracker_id", value.tracker_id),
+        ):
+            if array is not None:
+                _check_detections_field(array, f"{path}.{field}")
+        for key, item in value.data.items():
+            if key in _CARRIED_DETECTIONS_DATA_KEYS:
+                _check_detections_field(item, f"{path}.data[{key!r}]")
 
     def _check_dict(value: Dict[Any, Any], path: str) -> None:
         for key in value:
-            if type(key) is not str:
+            if type(key) not in (str, np.str_):
                 raise BlockStateSerializationError(
                     f"Custom Python block state `self.{path}` has a "
                     f"non-string key {key!r}; only string keys can be "
@@ -308,20 +346,12 @@ def _check_block_state_value(value: Any, path: str) -> None:
         if value_type is int:
             _check_int(value, path)
             return
+        if value_type in numpy_scalar_types:
+            if isinstance(value, np.integer):
+                _check_int(int(value), path)
+            return
         if value_type is np.ndarray:
             _check_ndarray(value, path)
-            return
-        if isinstance(value, (np.timedelta64, np.datetime64)):
-            # timedelta64 subclasses np.signedinteger; neither is carried.
-            _not_transportable(value_type.__name__, path)
-        if isinstance(value, (np.longdouble, np.clongdouble)) and not isinstance(
-            value, (np.float64, np.complex128)
-        ):
-            _not_transportable(value_type.__name__, path)
-        if isinstance(value, (np.bool_, np.floating)):
-            return
-        if isinstance(value, np.integer):
-            _check_int(int(value), path)
             return
         if value_type is sv.Detections:
             _check_detections(value, path)
@@ -399,7 +429,11 @@ def _partition_block_state(
             continue
         carried[name] = normalized_value
         sizes[name] = size
+    # The per-attribute sizes overcount the combined payload by one map
+    # header each, so the total cap is decided on the combined encoding.
     total = sum(sizes.values())
+    if total > _BLOCK_STATE_MAX_BYTES:
+        total = measure(carried)
     for name in sorted(sizes, key=sizes.get, reverse=True):
         if total <= _BLOCK_STATE_MAX_BYTES:
             break
@@ -411,7 +445,7 @@ def _partition_block_state(
                 f"{_BLOCK_STATE_MAX_BYTES} byte limit for remote execution",
             )
         )
-        total -= sizes[name]
+        total = measure(carried) if carried else 0
 
     if dropped:
         dropped_names = ", ".join(f"`self.{name}`" for name, _ in dropped)
@@ -432,6 +466,7 @@ def _partition_block_state(
 
 def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
     """Notes for carried values the transport degrades (images, detections)."""
+    import numpy as np
     import supervision as sv
 
     from inference.core.workflows.execution_engine.entities.base import (
@@ -453,14 +488,28 @@ def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
                 )
             if "parent_id" in value.data and "root_parent_id" in value.data:
                 pairs = zip(value.data["parent_id"], value.data["root_parent_id"])
-                if any(str(parent) == str(root) for parent, root in pairs):
+                if any(
+                    str(parent) == str(root)
+                    and str(parent) not in _PLACEHOLDER_PARENT_IDS
+                    for parent, root in pairs
+                ):
                     notes.append(
                         f"Custom Python block state `self.{path}` holds "
                         "sv.Detections whose `root_parent_id` equals their "
-                        "`parent_id`; the transport does not carry such a "
-                        "`root_parent_id` and it comes back as the transport's "
-                        "own placeholder"
+                        "`parent_id`; it comes back replaced by a placeholder "
+                        "(`input` or `result`), because the transport only "
+                        "carries a root parent that differs from the parent"
                     )
+            if any(
+                isinstance(value.data.get(key), np.ndarray)
+                and value.data[key].dtype.kind in "iu"
+                for key in ("class_name", "detection_id")
+            ):
+                notes.append(
+                    f"Custom Python block state `self.{path}` holds "
+                    "sv.Detections with integer class names or detection ids, "
+                    "which come back as strings"
+                )
             if value.mask is not None and "rle_mask" not in value.data:
                 notes.append(
                     f"Custom Python block state `self.{path}` holds "
@@ -473,10 +522,16 @@ def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
                 f"Custom Python block state `self.{path}` is an image, which "
                 "is re-encoded as JPEG on every call, so its pixels drift"
             )
+            numpy_image = getattr(value, "_numpy_image", None)
+            if numpy_image is not None and numpy_image.ndim == 2:
+                notes.append(
+                    f"Custom Python block state `self.{path}` is a grayscale "
+                    "image, which comes back with three channels"
+                )
         elif isinstance(value, dict):
             for key, item in value.items():
                 _collect(item, f"{path}[{key!r}]")
-        elif isinstance(value, list):
+        elif isinstance(value, (list, tuple)):
             for index, item in enumerate(value):
                 _collect(item, f"{path}[{index}]")
 
@@ -502,10 +557,11 @@ def _warn_dropped_block_state(
     Written to the captured stderr, which the engine relays to its own stderr
     next to the block's prints. Once per (code hash, message shape) on this
     container: the same block drops the same attribute on every call, and a
-    line per frame would bury the block's own output. Digits are ignored in
-    the key, so an oversized attribute whose size changes every frame is
-    reported once; a drop for another reason is still reported. Bounded so a
-    long-lived container cannot grow the set forever.
+    line per frame would bury the block's own output. Byte counts are
+    ignored in the key, so an oversized attribute whose size changes every
+    frame is reported once; attribute names are kept, so ``self.buf1`` and
+    ``self.buf2`` are reported apart. Bounded so a long-lived container cannot
+    grow the set forever.
     """
     import re
 
@@ -517,7 +573,7 @@ def _warn_dropped_block_state(
     ]
     messages.extend(notes)
     for message in messages:
-        key = (code_hash, re.sub(r"\d+", "#", message))
+        key = (code_hash, re.sub(r"\d+ bytes", "# bytes", message))
         if key in warned:
             continue
         if len(warned) >= _MAX_BLOCK_STATE_WARNINGS:
@@ -529,20 +585,33 @@ def _warn_dropped_block_state(
 def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """Replace values the transports cannot carry as-is, mirroring the engine.
 
-    numpy bool/int/float scalars become Python scalars (the JSON encoder
-    rejects them and the msgpack one would stringify ``np.bool_``) and tuples
-    become lists (the JSON patcher only recurses into lists, so a tuple
-    holding detections or an image would be stringified). Run on values
+    numpy bool/int/float/str/bytes scalars become Python scalars (the JSON
+    encoder rejects them and the msgpack one would stringify ``np.bool_``),
+    numpy string dict keys become ``str``, and tuples are wrapped in the
+    ``tuple`` wire marker (both transports would otherwise carry them as
+    lists, and the JSON patcher would stringify a tuple holding detections). Run on values
     ``_check_block_state_value`` accepted.
     """
     import numpy as np
 
+    numpy_scalar_types = _carried_numpy_scalar_types()
+
     def _normalize(value: Any) -> Any:
-        if isinstance(value, (np.bool_, np.integer, np.floating)):
+        if type(value) in numpy_scalar_types:
             return value.item()
         if isinstance(value, dict):
-            return {key: _normalize(item) for key, item in value.items()}
-        if isinstance(value, (list, tuple)):
+            normalized = {
+                (key.item() if type(key) is np.str_ else key): _normalize(item)
+                for key, item in value.items()
+            }
+            return normalized
+        if isinstance(value, tuple):
+            marked = {
+                _WIRE_TYPE_MARKER_KEY: _TUPLE_WIRE_TYPE,
+                "value": [_normalize(item) for item in value],
+            }
+            return marked
+        if isinstance(value, list):
             return [_normalize(item) for item in value]
         return value
 
@@ -1333,6 +1402,9 @@ from datetime import datetime
                                 return datetime.fromisoformat(obj["value"])
                             elif obj["_type"] == "bytes":
                                 return base64.b64decode(obj["value"])
+                            elif obj["_type"] == "tuple":
+                                # Only ``self`` state uses this marker.
+                                return tuple(decode_inputs(v) for v in obj["value"])
                             elif obj["_type"] == "ndarray":
                                 arr = np.array(obj["value"], dtype=obj["dtype"])
                                 return arr.reshape(obj["shape"])
@@ -1759,6 +1831,9 @@ from datetime import datetime
                             [tuple(i) for i in indices] if indices is not None else None
                         ),
                     )
+                if _type == "tuple":
+                    # Only ``self`` state uses this marker.
+                    return tuple(_decode(v) for v in obj["value"])
                 if _type == "bytes":
                     return (
                         base64.b64decode(obj["value"])

@@ -14,7 +14,9 @@ engine-side block through the real HTTP handler in-process.
 """
 
 import asyncio
+import io
 import json
+import weakref
 from contextlib import contextmanager
 from datetime import datetime
 from types import SimpleNamespace
@@ -716,6 +718,8 @@ class _InProcessWsExecutor:
         user_cls.identify(server)
         self._session = TestClient(user_cls.wsapp(server)).websocket_connect("/ws")
         self._ws = self._session.__enter__()
+        # Closed when the block (and with it this executor) is collected.
+        weakref.finalize(self, self._session.__exit__, None, None, None)
         self._client = _ws_executor()
         self._client._send_recv_with_retry = self._send_recv
 
@@ -1021,19 +1025,21 @@ def _detections():
     return detections
 
 
-def test_http_client_carries_a_tuple_holding_detections_as_a_list():
+def test_http_client_carries_a_tuple_holding_detections_as_a_tuple():
     block_state_json = _serialize_block_state_json(
         {"prev": (_detections(), 1)}, block_type_name="b"
     )
 
-    prev = deserialize_for_modal_remote_execution(block_state_json)["prev"]
+    prev = client._read_echoed_block_state_json(
+        {"block_state": block_state_json}, block_state={"x": 1}, block_type_name="b"
+    )["prev"]
 
-    assert isinstance(prev, list)
+    assert type(prev) is tuple
     assert isinstance(prev[0], sv.Detections)
     assert prev[1] == 1
 
 
-def test_http_server_echoes_a_tuple_holding_detections_as_a_list(modal_app):
+def test_http_server_echoes_a_tuple_holding_detections_as_a_tuple(modal_app):
     executor = _http_executor(modal_app)
     code = (
         "def run(self, image):\n"
@@ -1054,8 +1060,10 @@ def test_http_server_echoes_a_tuple_holding_detections_as_a_list(modal_app):
     response = asyncio.run(executor.execute_block(_FakeRequest(payload)))
 
     assert response["success"] is True, response.get("error")
-    prev = deserialize_for_modal_remote_execution(response["block_state"])["prev"]
-    assert isinstance(prev, list)
+    prev = client._read_echoed_block_state_json(
+        response, block_state={"x": 1}, block_type_name="b"
+    )["prev"]
+    assert type(prev) is tuple
     assert isinstance(prev[0], sv.Detections)
     assert prev[1] == 2
 
@@ -1169,6 +1177,31 @@ UNCARRIABLE_VALUE_EXPRESSIONS = {
     "namedtuple": "collections.namedtuple('Point', 'x')(1)",
     "int_enum": "enum.IntEnum('Color', 'RED').RED",
     "str_subclass": "type('Name', (str,), {})('x')",
+    "numpy_int_subclass": "type('Count', (np.int64,), {})(1)",
+    "detections_marker_in_data_payload": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'image_dimensions': np.array([[20, 20]]), "
+        "'data': np.array([{'_type': 'datetime', 'value': 'bad'}], dtype=object)})"
+    ),
+    "detections_image_shaped_dict_in_data_payload": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'image_dimensions': np.array([[20, 20]]), "
+        "'data': np.array([{'type': 'base64', 'value': 'abc'}], dtype=object)})"
+    ),
+    "detections_object_keypoint_id_beyond_int64": (
+        "sv.Detections(xyxy=np.array([[0, 0, 10, 10]], dtype=float), "
+        "class_id=np.array([1]), confidence=np.array([0.5]), "
+        "data={'class_name': np.array(['a']), 'detection_id': np.array(['d']), "
+        "'image_dimensions': np.array([[20, 20]]), "
+        "'keypoints_class_id': np.array([[2 ** 63]], dtype=object), "
+        "'keypoints_class_name': np.array([['k']], dtype=object), "
+        "'keypoints_confidence': np.array([[0.5]]), "
+        "'keypoints_xy': np.array([[[1.0, 1.0]]])})"
+    ),
     "list_subclass": "type('Items', (list,), {})([1])",
     "datetime_subclass": "type('Stamp', (datetime.datetime,), {})(2020, 1, 1)",
     "detections_uint64_class_id": (
@@ -1284,6 +1317,10 @@ def _carriable_values() -> dict:
         "flag_scalar": np.bool_(True),
         "ratio_scalar": np.float32(0.25),
         "history": [1, (2, 3), {"nested": [None]}],
+        "shape": (4, 4, 3),
+        "label": np.array(["cat"])[0],
+        "raw_label": np.array([b"cat"])[0],
+        "per_class": {np.array(["cat"])[0]: 1},
         "detections": _detections(),
         "image": image,
     }
@@ -1318,7 +1355,8 @@ def test_engine_partition_carries_every_transportable_value():
     assert set(decoded) == set(_carriable_values())
     for name in ("flag", "count", "big_but_fits", "ratio", "name", "raw", "when"):
         assert decoded[name] == _carriable_values()[name], name
-    assert decoded["history"] == [1, [2, 3], {"nested": [None]}]
+    assert decoded["history"] == [1, (2, 3), {"nested": [None]}]
+    assert type(decoded["history"][1]) is tuple
 
 
 def _comparable(state: dict) -> dict:
@@ -1737,7 +1775,9 @@ IMAGE_ON_SELF_CODE = (
 def _image():
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="frame-1"),
-        numpy_image=np.full((8, 8, 3), 100, dtype=np.uint8),
+        numpy_image=np.tile(
+            np.linspace(40, 200, 16, dtype=np.uint8)[None, :, None], (16, 1, 3)
+        ),
     )
     return image
 
@@ -1752,11 +1792,11 @@ def test_http_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app)
         response, block_state={}, block_type_name="B"
     )
     assert isinstance(state["last"], WorkflowImageData)
-    assert state["last"].numpy_image.shape == (8, 8, 3)
+    assert state["last"].numpy_image.shape == (16, 16, 3)
     pixel_error = np.abs(
         state["last"].numpy_image.astype(int) - _image().numpy_image.astype(int)
     )
-    assert pixel_error.max() <= 2
+    assert pixel_error.max() <= 8
     assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
 
 
@@ -1772,11 +1812,11 @@ def test_ws_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app):
         block_type_name="B",
     )
     assert isinstance(state["last"], WorkflowImageData)
-    assert state["last"].numpy_image.shape == (8, 8, 3)
+    assert state["last"].numpy_image.shape == (16, 16, 3)
     pixel_error = np.abs(
         state["last"].numpy_image.astype(int) - _image().numpy_image.astype(int)
     )
-    assert pixel_error.max() <= 2
+    assert pixel_error.max() <= 8
     assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
 
 
@@ -1916,7 +1956,7 @@ def test_http_server_warns_once_about_an_oversized_attribute_whose_size_changes(
 
 def test_sandbox_warning_set_is_bounded(modal_app):
     executor = _http_executor(modal_app)
-    stderr = __import__("io").StringIO()
+    stderr = io.StringIO()
 
     for index in range(modal_app._MAX_BLOCK_STATE_WARNINGS + 10):
         modal_app._warn_dropped_block_state(
@@ -1984,3 +2024,324 @@ def test_client_warns_once_per_step_not_once_per_block_type(monkeypatch):
 
     tracker_warnings = [m for m in warned if "self.tracker" in m and "rebuilt" in m]
     assert len(tracker_warnings) == 2
+
+
+# --------------------------------------------------------------------------- #
+# second re-review of fb62928a2
+# --------------------------------------------------------------------------- #
+
+
+TUPLE_IN_SET_CODE = (
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'last'):\n"
+    "        self.last = (1, 2)\n"
+    "    seen = {self.last}\n"
+    "    resets = getattr(self, 'resets', 0)\n"
+    "    if getattr(self, 'shape', None) != (4, 4, 3):\n"
+    "        resets += 1\n"
+    "        self.shape = (4, 4, 3)\n"
+    "    self.resets = resets\n"
+    "    return {'is_first_frame': len(seen) == 1, 'calls': resets}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_tuples_on_self_as_tuples(
+    monkeypatch, modal_app, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=TUPLE_IN_SET_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 1, 1]
+    assert type(block.last) is tuple
+    assert block.shape == (4, 4, 3)
+
+
+NP_STR_COUNTER_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    labels = np.array(['cat', 'dog'])\n"
+    "    self.counts = getattr(self, 'counts', {})\n"
+    "    for label in labels:\n"
+    "        self.counts[label] = self.counts.get(label, 0) + 1\n"
+    "    self.last_label = labels[0]\n"
+    "    return {'is_first_frame': True, 'calls': self.counts['cat']}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_numpy_string_keys_and_values(
+    monkeypatch, modal_app, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=NP_STR_COUNTER_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 2, 3]
+    assert block.counts == {"cat": 3, "dog": 3}
+    assert type(block.last_label) is str
+
+
+NUMPY_SCALAR_SUBCLASS_CODE = (
+    "import numpy as np\n"
+    "class Count(np.int64):\n"
+    "    def next(self):\n"
+    "        return Count(self + 1)\n"
+    "def run(self, image):\n"
+    "    self.count = self.count.next() if hasattr(self, 'count') else Count(1)\n"
+    "    return {'is_first_frame': True, 'calls': int(self.count)}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_survives_a_numpy_scalar_subclass(
+    monkeypatch, modal_app, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=NUMPY_SCALAR_SUBCLASS_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [1, 1, 1]
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_carriable_values_come_back_with_their_types(modal_app, transport):
+    executor = _http_executor(modal_app)
+    code = "def run(self, image):\n    return {'ok': True}\n"
+    values = _carriable_values()
+
+    # Sent exactly as the clients send it, so the round trip covers both
+    # encoders and both decoders on each transport.
+    if transport == "http":
+        payload = {
+            "code_str": code,
+            "imports": [],
+            "run_function_name": "run",
+            "inputs_json": serialize_for_modal_remote_execution({"image": 1}),
+            "block_state_json": _serialize_block_state_json(
+                values, block_type_name="B"
+            ),
+        }
+        response = asyncio.run(executor.execute_block(_FakeRequest(payload)))
+        state = client._read_echoed_block_state_json(
+            response, block_state=values, block_type_name="B"
+        )
+    else:
+        packed = client.WebSocketModalExecutor._pack_block_state(
+            values, block_type_name="B", msgpack=msgpack
+        )
+        response = _through_msgpack(
+            modal_app.Executor._run_user_code_ws(
+                executor,
+                code,
+                [],
+                "run",
+                modal_app.Executor._deserialize_msgpack_inputs(
+                    _through_msgpack(serialize_inputs_for_msgpack({"image": 1}))
+                ),
+                "",
+                {},
+                block_state=modal_app.Executor._deserialize_msgpack_inputs(
+                    _through_msgpack(packed)
+                ),
+            )
+        )
+        state = client._read_echoed_block_state_msgpack(
+            response, block_state=values, block_type_name="B"
+        )
+
+    assert response["success"] is True, response.get("error")
+    assert set(state) == set(values)
+    for name in ("flag", "count", "big_but_fits", "ratio", "name", "raw", "when"):
+        assert state[name] == values[name], name
+        assert type(state[name]) is type(values[name]), name
+    assert state["shape"] == (4, 4, 3) and type(state["shape"]) is tuple
+    assert state["history"] == [1, (2, 3), {"nested": [None]}]
+    assert type(state["label"]) is str and state["label"] == "cat"
+    assert type(state["raw_label"]) is bytes and state["raw_label"] == b"cat"
+    assert state["per_class"] == {"cat": 1}
+    assert [type(key) for key in state["per_class"]] == [str]
+
+
+def test_ws_total_cap_is_measured_on_the_combined_payload():
+    import msgpack as packer
+
+    def measure(attribute):
+        return len(
+            packer.packb(serialize_inputs_for_msgpack(attribute), use_bin_type=True)
+        )
+
+    state = {"a": "x" * (BLOCK_STATE_MAX_BYTES - 11), "b": ""}
+    assert measure(state) == BLOCK_STATE_MAX_BYTES
+
+    partition = partition_block_state(state, measure=measure)
+
+    assert set(partition.carried) == {"a", "b"}
+
+
+def test_ws_total_cap_one_byte_over_drops_the_largest_attribute():
+    import msgpack as packer
+
+    def measure(attribute):
+        return len(
+            packer.packb(serialize_inputs_for_msgpack(attribute), use_bin_type=True)
+        )
+
+    state = {"a": "x" * (BLOCK_STATE_MAX_BYTES - 10), "b": ""}
+    assert measure(state) == BLOCK_STATE_MAX_BYTES + 1
+
+    partition = partition_block_state(state, measure=measure)
+
+    assert partition.carried == {}
+    assert [name for name, _ in partition.dropped] == ["a"]
+
+
+def test_client_warns_separately_about_attributes_whose_names_differ_by_digits(
+    monkeypatch,
+):
+    warned = _capture_client_warnings(monkeypatch)
+
+    for name in ("buf1", "buf2", "buf2"):
+        client._carry_block_state(
+            {name: object()},
+            block_type_name="FirstFrameCheck",
+            workflow_context={"step_selector": "$steps.a"},
+            measure=client._json_state_size,
+        )
+
+    rebuilt = [m for m in warned if "rebuilt" in m]
+    assert len(rebuilt) == 2
+
+
+def test_client_warns_once_about_an_oversized_attribute_whose_size_changes(
+    monkeypatch,
+):
+    warned = _capture_client_warnings(monkeypatch)
+
+    for extra in (1, 2, 3):
+        client._carry_block_state(
+            {"buffer": "x" * (BLOCK_STATE_MAX_BYTES + extra)},
+            block_type_name="FirstFrameCheck",
+            workflow_context={"step_selector": "$steps.a"},
+            measure=client._json_state_size,
+        )
+
+    assert len([m for m in warned if "self.buffer" in m and "rebuilt" in m]) == 1
+
+
+def test_sandbox_warns_separately_about_attributes_whose_names_differ_by_digits(
+    modal_app,
+):
+    executor = _http_executor(modal_app)
+    stderr = io.StringIO()
+
+    for name in ("buf1", "buf2"):
+        modal_app._warn_dropped_block_state(
+            executor, "hash", [(name, "it is a Tracker")], [], stderr
+        )
+
+    assert "self.buf1" in stderr.getvalue()
+    assert "self.buf2" in stderr.getvalue()
+
+
+def test_client_scopes_the_missing_echo_warning_per_step(monkeypatch):
+    warned = _capture_client_warnings(monkeypatch)
+
+    for step in ("a", "b"):
+        client._read_echoed_block_state_json(
+            {"success": True},
+            block_state={},
+            block_type_name="FirstFrameCheck",
+            workflow_context={"step_selector": f"$steps.{step}"},
+        )
+
+    assert len([m for m in warned if "older" in m]) == 2
+
+
+class _OldThenNewHttpExecutor(_InProcessHttpExecutor):
+    """An HTTP executor whose server stops echoing state while ``old`` is set."""
+
+    old = False
+
+    def _post(self, **payload):
+        response = super()._post(**payload)
+        if self.old:
+            response.pop("block_state", None)
+        return response
+
+
+def test_block_instance_survives_new_old_new_webexec(monkeypatch, modal_app):
+    block = _build_first_frame_block(monkeypatch, modal_app)
+    executor = _OldThenNewHttpExecutor(modal_app)
+
+    @contextmanager
+    def acquire(workspace_id):
+        yield executor
+
+    monkeypatch.setattr(block_scaffolding, "_acquire_modal_executor", acquire)
+    calls = []
+    for old in (False, False, True, True, False, False):
+        executor.old = old
+        calls.append(block.run(image=1)["calls"])
+
+    # The first call against the old server still receives the state; only its
+    # echo is lost, so the engine clears the state from the next call on.
+    assert calls == [1, 2, 3, 1, 1, 2]
+
+
+def test_engine_notes_a_grayscale_image_gaining_channels():
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="frame-1"),
+        numpy_image=np.zeros((4, 4), dtype=np.uint8),
+    )
+
+    partition = partition_block_state({"last": image}, measure=lambda a: 0)
+
+    assert any("three channels" in note for note in partition.notes)
+
+
+def test_engine_notes_integer_class_names_becoming_strings():
+    detections = _detections()
+    detections.data["class_name"] = np.array([7])
+
+    partition = partition_block_state({"prev": detections}, measure=lambda a: 0)
+
+    assert any("strings" in note for note in partition.notes)
+
+
+def test_root_parent_note_is_skipped_for_placeholder_ids():
+    detections = _detections()
+    detections.data["parent_id"] = np.array(["input"])
+    detections.data["root_parent_id"] = np.array(["input"])
+
+    partition = partition_block_state({"prev": detections}, measure=lambda a: 0)
+
+    assert not any("root_parent_id" in note for note in partition.notes)
+
+
+def test_detections_rle_size_may_be_an_array():
+    detections = _detections()
+    del detections.data["image_dimensions"]
+    detections.data["rle_mask"] = np.array(
+        [{"size": np.array([20, 30]), "counts": "04"}], dtype=object
+    )
+
+    partition = partition_block_state({"prev": detections}, measure=lambda a: 0)
+
+    assert "prev" in partition.carried
+
+
+def test_custom_detections_data_keys_are_not_range_checked():
+    detections = _detections()
+    detections.data["hash"] = np.array([2**63], dtype=np.uint64)
+
+    partition = partition_block_state({"prev": detections}, measure=lambda a: 0)
+
+    assert "prev" in partition.carried
