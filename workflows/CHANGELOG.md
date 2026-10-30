@@ -61,6 +61,9 @@ Bundled execution engine: `1.17.1`.
 
 ### Fixed
 
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+
 - `roboflow_core/asset_library_attributes@v1` normalizes metadata keys before sending them: characters outside `[A-Za-z0-9_.]` become `_`, and a leading `.` gets a `_` prefix. If two keys of one image normalize to the same key (for example `traffic light` and `traffic_light`), the block raises an error instead of letting one value overwrite the other. Before, one invalid key (for example a class name with a space) made the API reject every attribute for that image.
 
 - Root-coordinate recovery (`sv_detections_to_root_coordinates`, applied to workflow outputs by default) re-encodes `rle_mask` from the re-anchored dense masks. A block that ran on a crop and returns RLE with dense masks, such as SAM 3 v3 with `output_format: rle`, used to serialize root-coordinate boxes next to an RLE still sized and placed in the crop. RLE-only predictions (`mask=None`) are unchanged, as in `scale_sv_detections`.
