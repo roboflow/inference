@@ -33,7 +33,11 @@ from inference_server.framework.model_stat import (
     _TtlLruCache,
     stat_model_details_while_checking_auth,
 )
-from inference_server.gateway import ModelManagerGateway, ReloadAfterEvictionError
+from inference_server.gateway import (
+    ModelManagerGateway,
+    ReloadAfterEvictionError,
+    loaded_model_entries,
+)
 from inference_server.legacy.common import (
     ImagePayload,
     _url_fetch_error,
@@ -1094,7 +1098,7 @@ class LegacyModelBridge:
 
     async def _stats_models(self) -> dict:
         stats = await self.gateway.stats()
-        models = stats.get("models") or {}
+        models = loaded_model_entries(stats.get("models") or {})
         self._loaded_ids = set(models)
         for route in self._routes.values():
             if route.registry_id not in self._loaded_ids:
