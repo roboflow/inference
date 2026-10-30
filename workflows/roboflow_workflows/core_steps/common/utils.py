@@ -446,6 +446,7 @@ def sv_detections_to_root_coordinates(
             ORIENTED_BOX_COORDINATES
         ] + np.asarray([shift_x, shift_y])
     if detections_copy.mask is not None:
+        source_mask_hw = tuple(detections_copy.mask.shape[1:])
         origin_mask_base = np.full((origin_height, origin_width), False)
         new_anchored_masks = np.array(
             [origin_mask_base.copy() for _ in detections_copy]
@@ -460,6 +461,19 @@ def sv_detections_to_root_coordinates(
                 original_mask
             )
         detections_copy.mask = new_anchored_masks
+        masks_moved = (
+            shift_x != 0
+            or shift_y != 0
+            or source_mask_hw != (origin_height, origin_width)
+        )
+        if masks_moved and RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
+            # The stored RLE encodes the source canvas: re-encode the re-anchored
+            # masks so the serialised RLE lines up with the root boxes. RLE-only
+            # predictions (`mask=None`) pass through untouched, as in
+            # `scale_sv_detections`.
+            detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = (
+                _dense_masks_to_coco_rle(masks=new_anchored_masks)
+            )
     new_root_metadata = ImageParentMetadata(
         parent_id=root_parent_id,
         origin_coordinates=OriginCoordinatesSystem(
@@ -517,6 +531,24 @@ def grab_non_batch_parameters(operations_parameters: Dict[str, Any]) -> Dict[str
         for key, value in operations_parameters.items()
         if not isinstance(value, Batch)
     }
+
+
+def _dense_masks_to_coco_rle(masks: np.ndarray) -> np.ndarray:
+    """Encode each ``(H, W)`` mask as COCO RLE with string counts, empty masks
+    included, so the result stays aligned with the detections."""
+    # pycocotools is not a base dependency - it ships with the extras that
+    # produce RLE predictions - so keep the import deferred and only reach it
+    # when RLE masks are actually involved.
+    from pycocotools import mask as mask_utils
+
+    rle_masks = []
+    for mask in masks:
+        rle_mask = mask_utils.encode(np.asfortranarray(mask.astype(np.uint8)))
+        if isinstance(rle_mask["counts"], bytes):
+            rle_mask["counts"] = rle_mask["counts"].decode("utf-8")
+        rle_masks.append(rle_mask)
+    encoded_masks = np.array(rle_masks, dtype=object)
+    return encoded_masks
 
 
 def scale_sv_detections(
@@ -620,13 +652,6 @@ def scale_sv_detections(
         scaled_w = max(1, scaled_w)
         scaled_h = max(1, scaled_h)
         if (scaled_w, scaled_h) != original_mask_size_wh:
-            rle_masks_present = RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data
-            if rle_masks_present:
-                # pycocotools is not a base dependency - it ships with the extras
-                # that produce RLE predictions - so keep the import deferred and
-                # only reach it when RLE masks are actually involved.
-                from pycocotools import mask as mask_utils
-
             resized_masks = np.array(
                 [
                     cv2.resize(
@@ -638,20 +663,12 @@ def scale_sv_detections(
                 ]
             )
             detections_copy.mask = resized_masks
-            if rle_masks_present:
+            if RLE_MASK_KEY_IN_SV_DETECTIONS in detections_copy.data:
                 # Source RLE counts encode the old canvas and cannot be scaled
                 # arithmetically. Re-encode every resized mask, including valid
                 # all-zero masks, to preserve detection-to-RLE alignment.
-                resized_rle_masks = []
-                for detection_mask in resized_masks:
-                    rle_mask = mask_utils.encode(
-                        np.asfortranarray(detection_mask.astype(np.uint8))
-                    )
-                    if isinstance(rle_mask["counts"], bytes):
-                        rle_mask["counts"] = rle_mask["counts"].decode("utf-8")
-                    resized_rle_masks.append(rle_mask)
-                detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = np.array(
-                    resized_rle_masks, dtype=object
+                detections_copy.data[RLE_MASK_KEY_IN_SV_DETECTIONS] = (
+                    _dense_masks_to_coco_rle(masks=resized_masks)
                 )
 
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:

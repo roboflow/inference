@@ -305,6 +305,7 @@ class ModelsProvider(Protocol):
         request_model_id: Union[str, None, _Unset] = UNSET,
         multimask_output: Union[bool, None, _Unset] = UNSET,
         threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
     ) -> List[Any]: ...
 
     def run_sam3_segmentation(
