@@ -194,6 +194,24 @@ def test_default_decodes_base64_numpy_and_raw_bytes() -> None:
     assert is_bgr is True and decoded is IMAGE
 
 
+@pytest.mark.parametrize("payload", ["invalid-猫", "invalid-猫".encode("utf-8")])
+def test_default_rejects_non_ascii_base64_with_workflow_error(payload) -> None:
+    codec = WorkflowsLocalImageCodec()
+
+    with pytest.raises(WorkflowImageLoadError) as declared_error:
+        codec.load_image({"type": "base64", "value": payload})
+
+    assert declared_error.value.public_message == "Malformed base64 input image."
+    assert declared_error.value.inner_error_type == "ValueError"
+
+    with pytest.raises(WorkflowImageLoadError) as inferred_error:
+        codec.load_image(payload)
+
+    assert inferred_error.value.public_message.startswith(
+        "Input image format could not be inferred from the payload."
+    )
+
+
 @pytest.mark.parametrize("disable_preproc_auto_orient", [True, False])
 def test_default_forwards_decoding_flags_on_every_in_memory_path(
     disable_preproc_auto_orient: bool,

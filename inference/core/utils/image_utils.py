@@ -302,7 +302,7 @@ def load_image_base64(
     value = BASE64_DATA_TYPE_PATTERN.sub("", value)
     try:
         value = pybase64.b64decode(value)
-    except binascii.Error as error:
+    except (binascii.Error, ValueError) as error:
         raise InputImageLoadError(
             message="Could not load valid image from base64 string.",
             public_message="Malformed base64 input image.",
