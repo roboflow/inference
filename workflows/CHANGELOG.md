@@ -31,6 +31,13 @@ for contributor and maintainer responsibilities.
   later. Workflows that worked around the cast by converting inside the child
   keep working; no migration is needed.
 
+### Breaking
+
+- Require `openai>=3.32.0,<4.0.0` (it was `>=1.17.0,<2.0.0`). 3.32 is the first release whose `client.decisions.create` accepts `prompt_cache_options`. Environments that cap `openai` below 3, as the current litellm, crewai and llama-index-llms-openai releases do, can no longer install `roboflow-workflows` alongside them.
+  - openai 3 replaced HTTPX with HTTPX2. The blocks that call models through the SDK (OpenAI, OpenAI-Compatible, and the OpenRouter- and xAI-based blocks) now verify TLS certificates against the operating-system trust store instead of `certifi`; `SSL_CERT_FILE` and `SSL_CERT_DIR` still apply.
+  - The OpenAI-Compatible block builds its client with `DefaultHttpx2Client` and parses base URLs with `httpx2.URL`. It still refuses redirects, and its redirect test intercepts the HTTPX2 transport.
+  - Migration: install `roboflow-workflows` in an environment that allows `openai` 3, and on a host that verified TLS through a patched `certifi` bundle, point `SSL_CERT_FILE` at that bundle.
+
 ### Added
 
 - OpenAI block (`open_ai@v7`): add GPT-6.1 Terra (`gpt-6.1-terra`) with
@@ -44,10 +51,6 @@ for contributor and maintainer responsibilities.
 - Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.
 
 ### Changed
-
-- Require `openai>=3.32.0,<4.0.0` (it was `>=1.17.0,<2.0.0`). 3.32 is the first release whose `client.decisions.create` accepts `prompt_cache_options`. Environments that cap `openai` below 3, as the current litellm, crewai and llama-index-llms-openai releases do, can no longer install `roboflow-workflows` alongside them.
-  - openai 3 replaced HTTPX with HTTPX2. The blocks that call models through the SDK (OpenAI, OpenAI-Compatible, and the OpenRouter- and xAI-based blocks) now verify TLS certificates against the operating-system trust store instead of `certifi`; `SSL_CERT_FILE` and `SSL_CERT_DIR` still apply.
-  - The OpenAI-Compatible block builds its client with `DefaultHttpx2Client` and parses base URLs with `httpx2.URL`. It still refuses redirects, and its redirect test intercepts the HTTPX2 transport.
 
 - Remove duplicated model lists and counts from `meta_vlm@v3` descriptions;
   available models are defined by the registry-backed dropdown.
