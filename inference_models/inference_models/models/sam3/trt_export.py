@@ -132,7 +132,11 @@ def file_sha256(path: Path) -> str:
 
 
 def export_sam3_onnx(
-    model_package: Path, output_dir: Path, *, parts: Tuple[str, ...] = PARTS
+    model_package: Path,
+    output_dir: Path,
+    *,
+    parts: Tuple[str, ...] = PARTS,
+    opset_version: int = 17,
 ) -> Dict:
     """Export the native SAM3 components and record their export durations.
 
@@ -140,6 +144,7 @@ def export_sam3_onnx(
         model_package (Path): Existing package with weights and native tokenizer.
         output_dir (Path): Empty destination for ONNX files and their manifest.
         parts (Tuple[str, ...]): Components to export in this process.
+        opset_version (int): ONNX operator set used for the export.
 
     Returns:
         Dict: Package provenance, shape constraints, and export durations.
@@ -189,6 +194,7 @@ def export_sam3_onnx(
         "weights_sha256": file_sha256(model_package / "weights.pt"),
         "tokenizer_sha256": file_sha256(model_package / "bpe_simple_vocab_16e6.txt.gz"),
         "components": {},
+        "opset_version": opset_version,
     }
     manifest_path = output_dir / "export.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
@@ -223,7 +229,7 @@ def export_sam3_onnx(
                 str(output_dir / f"{name}.onnx"),
                 input_names=list(input_names),
                 output_names=list(output_names),
-                opset_version=17,
+                opset_version=opset_version,
                 dynamo=False,
                 external_data=True,
             )

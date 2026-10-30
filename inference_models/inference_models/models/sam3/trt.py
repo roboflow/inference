@@ -1,6 +1,7 @@
 """Experimental TensorRT build and execution for native SAM3 text prompts."""
 
 import json
+import re
 import time
 from pathlib import Path
 from threading import RLock
@@ -42,6 +43,7 @@ def build_sam3_engines(
     workspace_gib: int = 8,
     *,
     parts: Tuple[str, ...] = PARTS,
+    fp32_layer_patterns: Tuple[str, ...] = (),
 ) -> Dict:
     """Build static TensorRT engines with detailed inspection metadata.
 
@@ -51,6 +53,7 @@ def build_sam3_engines(
         fp16 (bool): Enable FP16 tactics while retaining FP32 Softmax.
         workspace_gib (int): Builder workspace limit in GiB per engine.
         parts (Tuple[str, ...]): Completed ONNX components to compile.
+        fp32_layer_patterns (Tuple[str, ...]): Layer-name patterns that retain FP32.
 
     Returns:
         Dict: Engine provenance, checksums, and per-engine build durations.
@@ -76,6 +79,7 @@ def build_sam3_engines(
     logger = trt.Logger(trt.Logger.WARNING)
     engines = {}
     build_seconds = {}
+    constrained_layers = {}
     for part in parts:
         if (
             "components" in manifest
@@ -112,9 +116,23 @@ def build_sam3_engines(
             # Softmax precision is sensitive in the split-export reference.
             for index in range(network.num_layers):
                 layer = network.get_layer(index)
-                if layer.type == trt.LayerType.SOFTMAX:
+                requested = any(
+                    re.search(pattern, layer.name, re.IGNORECASE)
+                    for pattern in fp32_layer_patterns
+                )
+                floating_outputs = [
+                    output_index
+                    for output_index in range(layer.num_outputs)
+                    if layer.get_output(output_index).dtype
+                    in (trt.float32, trt.float16)
+                ]
+                if (
+                    layer.type == trt.LayerType.SOFTMAX or requested
+                ) and floating_outputs:
                     layer.precision = trt.float32
-                    layer.set_output_type(0, trt.float32)
+                    for output_index in floating_outputs:
+                        layer.set_output_type(output_index, trt.float32)
+                    constrained_layers.setdefault(part, []).append(layer.name)
         serialized = builder.build_serialized_network(network, configuration)
         if serialized is None:
             raise RuntimeError(f"TensorRT failed to build SAM3 {part}")
@@ -129,6 +147,8 @@ def build_sam3_engines(
         profiling_verbosity="detailed",
         engines_sha256=engines,
         build_wall_seconds=build_seconds,
+        fp32_layer_patterns=list(fp32_layer_patterns),
+        fp32_constrained_layers=constrained_layers,
     )
     (engine_dir / "engines.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
