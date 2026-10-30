@@ -40,13 +40,13 @@ import atexit
 import ctypes
 import functools
 import logging
-import os
 import threading
 import weakref
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Optional, Protocol, Tuple
 
+from roboflow_workflows.core_steps.common.video_clips import read_env
 from roboflow_workflows.core_steps.common.video_clips.ring import (
     BaseEncodedRing,
     EncodedOutput,
@@ -138,7 +138,7 @@ def resolve_bitrate(width: int, height: int, fps: float) -> int:
         Bits per second. ``WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS`` (clamped to
         100-200000 kbit/s) wins when it parses; otherwise :func:`default_bitrate`.
     """
-    raw = os.getenv(BITRATE_KBPS_ENV, "").strip()
+    raw = read_env(BITRATE_KBPS_ENV)
     if raw:
         try:
             kbps = int(float(raw))
@@ -159,7 +159,7 @@ def resolve_pool_frames() -> int:
     Returns:
         Number of NV12 frame slots per ring, default 8, clamped to 1-256.
     """
-    raw = os.getenv(POOL_FRAMES_ENV, "").strip()
+    raw = read_env(POOL_FRAMES_ENV)
     if not raw:
         return DEFAULT_POOL_FRAMES
 
