@@ -316,6 +316,65 @@ def test_normalize_to_per_row_list_with_batch_values() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "key, expected_key",
+    [
+        ("counts_per_class.traffic light", "counts_per_class.traffic_light"),
+        ("counts_per_class.a\\.b", "counts_per_class.a_.b"),
+        ("counts_per_class/person", "counts_per_class_person"),
+        (".hidden", "_.hidden"),
+        ("already_valid.key_1", "already_valid.key_1"),
+        (3, "3"),
+    ],
+)
+def test_build_effective_updates_normalizes_metadata_keys(
+    key: Any, expected_key: str
+) -> None:
+    effective = build_effective_updates(
+        source_ids=make_batch(["img-1"]),
+        metadata={key: 1},
+        tags=["My Tag/1"],
+    )
+
+    assert effective.updates == [
+        {"imageId": "img-1", "metadata": {expected_key: 1}, "addTags": ["My Tag/1"]}
+    ]
+
+
+@pytest.mark.parametrize(
+    "metadata, expected_message",
+    [
+        (
+            {"this_key": 1, "this key": 2},
+            'Sanitizing Asset Library metadata key "this key" to "this_key" failed as '
+            'there is already a key named "this_key". Please sanitize your keys yourself.',
+        ),
+        (
+            {"this key": 1, "this_key": 2},
+            'Sanitizing Asset Library metadata key "this key" to "this_key" failed as '
+            'there is already a key named "this_key". Please sanitize your keys yourself.',
+        ),
+        (
+            {"this key": 1, "this/key": 2},
+            'Sanitizing Asset Library metadata key "this key" to "this_key" failed as '
+            'key "this/key" sanitizes to "this_key" as well. '
+            "Please sanitize your keys yourself.",
+        ),
+    ],
+)
+def test_build_effective_updates_raises_when_normalized_metadata_keys_collide(
+    metadata: dict, expected_message: str
+) -> None:
+    with pytest.raises(ValueError) as error:
+        build_effective_updates(
+            source_ids=make_batch(["img-1"]),
+            metadata=metadata,
+            tags=None,
+        )
+
+    assert str(error.value) == expected_message
+
+
 def test_build_effective_updates_resolves_batch_values_in_metadata_and_tags() -> None:
     effective = build_effective_updates(
         source_ids=make_batch(["img-1", "img-2"]),
