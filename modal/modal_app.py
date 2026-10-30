@@ -145,6 +145,10 @@ _TUPLE_WIRE_TYPE = "tuple"
 _NUMPY_SCALAR_WIRE_TYPE = "numpy_scalar"
 _ZONED_DATETIME_WIRE_TYPE = "zoned_datetime"
 _NUMPY_SCALAR_WIRE_KINDS = frozenset("biufSU")
+# Mirrors ``block_state.BLOCK_STATE_MAX_ATTRIBUTES`` and the allocation bound
+# the engine applies to an echo.
+_BLOCK_STATE_MAX_ATTRIBUTES = 1024
+_MAX_ECHO_ALLOCATION_BYTES = 8 * 1024 * 1024
 _PLACEHOLDER_PARENT_IDS = frozenset({"input", "result"})
 
 
@@ -349,7 +353,8 @@ def _check_block_state_value(value: Any, path: str) -> None:
             if type(key) not in (str, np.str_):
                 raise BlockStateSerializationError(
                     f"Custom Python block state `self.{path}` has a "
-                    f"non-string key {key!r}; only string keys can be "
+                    f"non-string key of type {type(key).__name__}; only string "
+                    "keys can be "
                     "carried across remote execution."
                 )
             if key == _WIRE_TYPE_MARKER_KEY:
@@ -375,10 +380,15 @@ def _check_block_state_value(value: Any, path: str) -> None:
             return
         if type(tzinfo) is ZoneInfo and tzinfo.key is not None:
             return
+        description = (
+            "a ZoneInfo loaded from a file, without a key"
+            if type(tzinfo) is ZoneInfo
+            else f"a {type(tzinfo).__name__} time zone"
+        )
         raise BlockStateSerializationError(
-            f"Custom Python block state `self.{path}` is a datetime with a "
-            f"{type(tzinfo).__name__} time zone, which cannot be carried across "
-            "remote execution; use `zoneinfo.ZoneInfo` or `datetime.timezone`."
+            f"Custom Python block state `self.{path}` is a datetime with "
+            f"{description}, which cannot be carried across remote execution; "
+            "use `zoneinfo.ZoneInfo(key)` or `datetime.timezone`."
         )
 
     def _check(value: Any, path: str) -> None:
@@ -394,6 +404,16 @@ def _check_block_state_value(value: Any, path: str) -> None:
         if value_type in numpy_scalar_types:
             if isinstance(value, np.integer):
                 _check_int(int(value), path)
+            # numpy keeps the declared width but drops trailing NULs from the
+            # value, so a wider dtype means NULs that would not come back.
+            width = 4 if value.dtype.kind == "U" else 1
+            if (
+                value.dtype.kind in "SU"
+                and value.dtype.itemsize > len(value.item()) * width
+            ):
+                _not_transportable(
+                    f"numpy {value.dtype.name} with trailing NUL characters", path
+                )
             return
         if value_type is np.ndarray:
             _check_ndarray(value, path)
@@ -430,6 +450,20 @@ def _partition_block_state(
     helper it guards. Carried values are normalized and ready for the
     transport's serializer; notes flag lossy images and detections.
     """
+    if len(state) > _BLOCK_STATE_MAX_ATTRIBUTES:
+        reason = (
+            f"the block keeps {len(state)} attributes on `self`, more than the "
+            f"{_BLOCK_STATE_MAX_ATTRIBUTES} carried across remote execution"
+        )
+        first_dropped = [(str(next(iter(state))), reason)]
+        note = (
+            f"Custom Python block state withheld: `self.{first_dropped[0][0]}` "
+            "cannot be carried, so no state is returned to the engine and the "
+            "next call starts with an empty `self`, as it did before state was "
+            "carried"
+        )
+        return {}, first_dropped, [note]
+
     carried: Dict[str, Any] = {}
     raw_carried: Dict[str, Any] = {}
     sizes: Dict[str, int] = {}
@@ -671,14 +705,21 @@ def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
         if type(value) in numpy_scalar_types:
             marked = {
                 _WIRE_TYPE_MARKER_KEY: _NUMPY_SCALAR_WIRE_TYPE,
-                "dtype": str(value.dtype),
+                # Type code for numbers keeps aliases such as np.longlong;
+                # strings need the full dtype for their length.
+                "dtype": (
+                    value.dtype.str if value.dtype.kind in "SU" else value.dtype.char
+                ),
                 "value": value.item(),
             }
             return marked
         if type(value) is datetime and type(value.tzinfo) is ZoneInfo:
+            # Wall time, fold and zone rebuild the value exactly, including
+            # DST gaps and folds and the min/max sentinels.
             marked = {
                 _WIRE_TYPE_MARKER_KEY: _ZONED_DATETIME_WIRE_TYPE,
-                "value": value.isoformat(),
+                "value": value.replace(tzinfo=None).isoformat(),
+                "fold": value.fold,
                 "zone": value.tzinfo.key,
             }
             return marked
@@ -707,10 +748,37 @@ def _decode_numpy_scalar(marked: Dict[str, Any], decode: Callable[[Any], Any]) -
     """Rebuild a numpy scalar written by ``_normalize_block_state``."""
     import numpy as np
 
-    dtype = np.dtype(marked["dtype"])
+    # Mirrors ``block_state.decode_numpy_scalar``: checked before numpy
+    # allocates anything.
+    dtype_name = marked.get("dtype")
+    value = decode(marked.get("value"))
+    if not isinstance(dtype_name, str):
+        raise ValueError("numpy scalar dtype must be a string")
+    dtype = np.dtype(dtype_name)
     if dtype.kind not in _NUMPY_SCALAR_WIRE_KINDS:
         raise ValueError(f"numpy scalar of dtype {dtype} is not carried")
-    scalar = dtype.type(decode(marked["value"]))
+    if dtype.itemsize > _MAX_ECHO_ALLOCATION_BYTES:
+        raise ValueError(f"numpy scalar of dtype {dtype} is too large")
+    expected_types = {
+        "b": (bool,),
+        "i": (int,),
+        "u": (int,),
+        "f": (float, int),
+        "U": (str,),
+        "S": (bytes,),
+    }[dtype.kind]
+    if type(value) not in expected_types:
+        raise ValueError(
+            f"numpy scalar of dtype {dtype} cannot hold a {type(value).__name__}"
+        )
+    if dtype.kind in "iu":
+        limits = np.iinfo(dtype)
+        if not limits.min <= value <= limits.max:
+            raise ValueError(f"{value} is out of range for {dtype}")
+    width = 4 if dtype.kind == "U" else 1
+    if dtype.kind in "SU" and len(value) * width > dtype.itemsize:
+        raise ValueError(f"value is longer than dtype {dtype}")
+    scalar = dtype.type(value)
     return scalar
 
 
@@ -719,8 +787,8 @@ def _decode_zoned_datetime(marked: Dict[str, Any]) -> Any:
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    instant = datetime.fromisoformat(marked["value"])
-    zoned = instant.astimezone(ZoneInfo(marked["zone"]))
+    wall_time = datetime.fromisoformat(marked["value"])
+    zoned = wall_time.replace(tzinfo=ZoneInfo(marked["zone"]), fold=marked["fold"])
     return zoned
 
 

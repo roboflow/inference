@@ -45,6 +45,7 @@ the echo up front, with the same warning as for a non-transportable value.
 """
 
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Callable, Dict, FrozenSet, List, NamedTuple, Tuple
 
 import numpy as np
@@ -101,6 +102,34 @@ ENGINE_ATTRIBUTE_NAMES: FrozenSet[str] = frozenset(
 # frame; an attribute over the cap is left out with a warning instead of
 # slowing the whole stream down.
 BLOCK_STATE_MAX_BYTES = 1024 * 1024
+
+# Attributes carried per call. A block keeping more on ``self`` is withheld
+# rather than shipped; the engine refuses an echo with more, so a tampered
+# sandbox cannot flood the engine's logs and warn-once set.
+BLOCK_STATE_MAX_ATTRIBUTES = 1024
+
+# Nesting depth accepted in an echo before anything is decoded.
+_MAX_ECHO_DEPTH = 64
+
+# Largest numpy scalar or array an echo may make the engine allocate. State
+# serializes to at most ``BLOCK_STATE_MAX_BYTES``; unicode arrays take four
+# bytes per character in memory, so this leaves room for honest values only.
+_MAX_ECHO_ALLOCATION_BYTES = 8 * BLOCK_STATE_MAX_BYTES
+
+# Markers a state echo may contain; anything else is refused before decoding.
+_ECHO_WIRE_TYPES = frozenset(
+    {
+        "datetime",
+        "zoned_datetime",
+        "bytes",
+        "ndarray",
+        "tuple",
+        "numpy_scalar",
+        "sv_detections",
+        "workflow_image",
+        "video_metadata",
+    }
+)
 
 # One dropped attribute: its name and the reason it is not carried.
 DroppedAttribute = Tuple[str, str]
@@ -317,15 +346,20 @@ def _normalize_value(value: Any) -> Any:
     if type(value) in CARRIED_NUMPY_SCALAR_TYPES:
         marked = {
             WIRE_TYPE_MARKER_KEY: NUMPY_SCALAR_WIRE_TYPE,
-            "dtype": str(value.dtype),
+            "dtype": numpy_scalar_wire_dtype(value),
             "value": value.item(),
         }
         return marked
-    if type(value) is datetime and _zone_key(value) is not None:
+    zone_key = _zone_key(value) if type(value) is datetime else None
+    if zone_key is not None:
+        # The wall time, fold and zone rebuild the value exactly, including
+        # times in a DST gap or fold and the min/max sentinels, which an
+        # instant converted back with ``astimezone`` would shift or overflow.
         marked = {
             WIRE_TYPE_MARKER_KEY: ZONED_DATETIME_WIRE_TYPE,
-            "value": value.isoformat(),
-            "zone": _zone_key(value),
+            "value": value.replace(tzinfo=None).isoformat(),
+            "fold": value.fold,
+            "zone": zone_key,
         }
         return marked
     if isinstance(value, dict):
@@ -343,6 +377,175 @@ def _normalize_value(value: Any) -> Any:
         return [_normalize_value(item) for item in value]
 
     return value
+
+
+def numpy_scalar_wire_dtype(value: Any) -> str:
+    """The dtype a ``numpy_scalar`` marker names for ``value``.
+
+    The type code for numbers, so aliases such as ``np.longlong`` come back
+    as themselves; the full dtype for strings, which needs the length.
+
+    Args:
+        value: A numpy scalar of one of ``CARRIED_NUMPY_SCALAR_TYPES``.
+
+    Returns:
+        A string ``np.dtype`` accepts.
+    """
+    if value.dtype.kind in "SU":
+        return value.dtype.str
+
+    return value.dtype.char
+
+
+def decode_numpy_scalar(dtype_name: Any, value: Any) -> Any:
+    """Build the numpy scalar a ``numpy_scalar`` marker describes, safely.
+
+    The marker comes from sandboxed code, so its parts are checked before
+    numpy allocates anything: an integer value under a bytes dtype would
+    otherwise allocate that many bytes.
+
+    Args:
+        dtype_name: The marker's ``dtype``.
+        value: The marker's decoded ``value``.
+
+    Returns:
+        The numpy scalar.
+
+    Raises:
+        ValueError: If the dtype is not carried, the value does not match it,
+            or the scalar would be larger than any honest state value.
+    """
+    if not isinstance(dtype_name, str):
+        raise ValueError("numpy scalar dtype must be a string")
+    dtype = np.dtype(dtype_name)
+    if dtype.kind not in NUMPY_SCALAR_WIRE_KINDS:
+        raise ValueError(f"numpy scalar of dtype {dtype} is not carried")
+    if dtype.itemsize > _MAX_ECHO_ALLOCATION_BYTES:
+        raise ValueError(f"numpy scalar of dtype {dtype} is too large")
+    expected_types = {
+        "b": (bool,),
+        "i": (int,),
+        "u": (int,),
+        "f": (float, int),
+        "U": (str,),
+        "S": (bytes,),
+    }[dtype.kind]
+    if type(value) not in expected_types:
+        raise ValueError(
+            f"numpy scalar of dtype {dtype} cannot hold a {type(value).__name__}"
+        )
+    if dtype.kind in "iu":
+        limits = np.iinfo(dtype)
+        if not limits.min <= value <= limits.max:
+            raise ValueError(f"{value} is out of range for {dtype}")
+    if (
+        dtype.kind in "SU"
+        and len(value) * (4 if dtype.kind == "U" else 1) > dtype.itemsize
+    ):
+        raise ValueError(f"value is longer than dtype {dtype}")
+    scalar = dtype.type(value)
+
+    return scalar
+
+
+def check_echoed_wire_value(value: Any, *, path: str, depth: int = 0) -> None:
+    """Refuse an echoed attribute, still in wire form, before it is decoded.
+
+    The echo is written by sandboxed code, which can bypass the sandbox's own
+    checks, so only the shapes the state normalizer and the serializers
+    produce for carried values are let through to the shared decoders: known
+    markers, arrays of carried dtypes within a size bound, images as base64.
+
+    Args:
+        value: One attribute of the echo, as parsed from JSON or msgpack.
+        path: The attribute path, for the message.
+        depth: Nesting depth so far.
+
+    Raises:
+        DynamicBlockError: Naming the attribute path and what was refused.
+    """
+    if depth > _MAX_ECHO_DEPTH:
+        _raise_malformed_echo(path, "is nested too deeply")
+    if isinstance(value, list):
+        for item in value:
+            check_echoed_wire_value(item, path=path, depth=depth + 1)
+        return
+    if not isinstance(value, dict):
+        return
+    wire_type = value.get(WIRE_TYPE_MARKER_KEY)
+    if wire_type is None:
+        if value.get("type") is not None and "value" in value:
+            _raise_malformed_echo(path, "holds an untagged image")
+    elif wire_type not in _ECHO_WIRE_TYPES:
+        _raise_malformed_echo(path, f"holds a `{wire_type}` marker")
+    elif wire_type == "ndarray":
+        _check_echoed_ndarray(value, path=path)
+    elif wire_type == "workflow_image" and value.get("type") != "base64":
+        _raise_malformed_echo(path, "holds an image that is not base64")
+    elif wire_type == "zoned_datetime" and value.get("fold") not in (0, 1):
+        _raise_malformed_echo(path, "holds a zoned datetime with an invalid fold")
+    for key, item in value.items():
+        if key != WIRE_TYPE_MARKER_KEY:
+            check_echoed_wire_value(item, path=path, depth=depth + 1)
+
+
+def _check_echoed_ndarray(value: Dict[str, Any], *, path: str) -> None:
+    try:
+        dtype = np.dtype(value.get("dtype"))
+    except TypeError as error:
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block state `self.{path}` returned from remote "
+                f"execution holds an array with an invalid dtype: {error}"
+            ),
+            context="dynamic_block | block_state_echo",
+        ) from error
+    if dtype.kind not in _CARRIED_NDARRAY_KINDS:
+        _raise_malformed_echo(path, f"holds an array of dtype {dtype}")
+    shape = value.get("shape")
+    if not isinstance(shape, list) or not all(
+        type(size) is int and size >= 0 for size in shape
+    ):
+        _raise_malformed_echo(path, "holds an array with an invalid shape")
+    if (
+        dtype.itemsize * int(np.prod(shape, dtype=np.float64))
+        > _MAX_ECHO_ALLOCATION_BYTES
+    ):
+        _raise_malformed_echo(path, "holds an array larger than any carried state")
+
+
+def _raise_malformed_echo(path: str, problem: str) -> None:
+    raise DynamicBlockError(
+        public_message=(
+            f"Custom Python block state `self.{path}` returned from remote "
+            f"execution {problem}, which the sandbox never sends for carried "
+            "state; the echo is refused."
+        ),
+        context="dynamic_block | block_state_echo",
+    )
+
+
+def validate_echoed_block_state(state: Dict[str, Any]) -> None:
+    """Check a decoded echo the way the state was checked before it was sent.
+
+    Args:
+        state: The echo after decoding, attribute by attribute.
+
+    Raises:
+        DynamicBlockError: If the echo has more attributes than are ever
+            carried, or a value the engine would not have carried.
+    """
+    if len(state) > BLOCK_STATE_MAX_ATTRIBUTES:
+        raise DynamicBlockError(
+            public_message=(
+                f"Custom Python block state returned from remote execution has "
+                f"{len(state)} attributes, more than the "
+                f"{BLOCK_STATE_MAX_ATTRIBUTES} ever carried; the echo is refused."
+            ),
+            context="dynamic_block | block_state_echo",
+        )
+    for name, value in state.items():
+        _validate_value(value, path=name)
 
 
 def _zone_key(value: datetime) -> Any:
@@ -383,6 +586,17 @@ def partition_block_state(
         The carried state, the dropped attributes with their reasons, and
         notes for the block's author.
     """
+    if len(state) > BLOCK_STATE_MAX_ATTRIBUTES:
+        reason = (
+            f"the block keeps {len(state)} attributes on `self`, more than the "
+            f"{BLOCK_STATE_MAX_ATTRIBUTES} carried across remote execution"
+        )
+        dropped = [(str(name), reason) for name in state]
+        notes = [_withheld_note(dropped=dropped[:1], withheld=[])]
+        partition = BlockStatePartition(carried={}, dropped=dropped[:1], notes=notes)
+
+        return partition
+
     carried: Dict[str, Any] = {}
     raw_carried: Dict[str, Any] = {}
     sizes: Dict[str, int] = {}
@@ -605,12 +819,7 @@ def _validate_value(value: Any, *, path: str) -> None:
     # Exact types only: a subclass (defaultdict, Counter, OrderedDict, a
     # namedtuple, an IntEnum member, a str or numpy scalar subclass) comes
     # back as its base type, which breaks the block from the next call on.
-    import supervision as sv
-    from roboflow_workflows.execution_engine.entities.base import (
-        VideoMetadata,
-        WorkflowImageData,
-    )
-
+    detections_type, image_type, video_metadata_type = _workflow_object_types()
     value_type = type(value)
     if value is None or value_type in (bool, float, str, bytes):
         return
@@ -623,14 +832,18 @@ def _validate_value(value: Any, *, path: str) -> None:
     if value_type in CARRIED_NUMPY_SCALAR_TYPES:
         if isinstance(value, np.integer):
             _validate_int(int(value), path=path)
+        if value.dtype.kind in "SU" and _has_trailing_nul(value):
+            _raise_not_transportable(
+                f"numpy {value.dtype.name} with trailing NUL characters", path=path
+            )
         return
     if value_type is np.ndarray:
         _validate_ndarray(value, path=path, description="numpy array")
         return
-    if value_type is sv.Detections:
+    if value_type is detections_type:
         _validate_detections(value, path=path)
         return
-    if value_type in (WorkflowImageData, VideoMetadata):
+    if value_type in (image_type, video_metadata_type):
         return
     if value_type is dict:
         _validate_dict(value, path=path)
@@ -643,6 +856,26 @@ def _validate_value(value: Any, *, path: str) -> None:
     _raise_not_transportable(_describe_type(value_type), path=path)
 
 
+def _has_trailing_nul(value: Any) -> bool:
+    # numpy keeps the declared width but drops trailing NULs from the value,
+    # so a wider dtype than the value means NULs that would not come back.
+    width = 4 if value.dtype.kind == "U" else 1
+    has_trailing_nul = value.dtype.itemsize > len(value.item()) * width
+
+    return has_trailing_nul
+
+
+@lru_cache(maxsize=1)
+def _workflow_object_types() -> Tuple[type, type, type]:
+    import supervision as sv
+    from roboflow_workflows.execution_engine.entities.base import (
+        VideoMetadata,
+        WorkflowImageData,
+    )
+
+    return sv.Detections, WorkflowImageData, VideoMetadata
+
+
 def _validate_datetime(value: datetime, *, path: str) -> None:
     from zoneinfo import ZoneInfo
 
@@ -651,11 +884,16 @@ def _validate_datetime(value: datetime, *, path: str) -> None:
         return
     if type(tzinfo) is ZoneInfo and tzinfo.key is not None:
         return
+    description = (
+        "a ZoneInfo loaded from a file, without a key"
+        if type(tzinfo) is ZoneInfo
+        else f"a {type(tzinfo).__name__} time zone"
+    )
     raise DynamicBlockError(
         public_message=(
-            f"Custom Python block state `self.{path}` is a datetime with a "
-            f"{type(tzinfo).__name__} time zone, which cannot be carried across "
-            "remote execution; use `zoneinfo.ZoneInfo` or `datetime.timezone`."
+            f"Custom Python block state `self.{path}` is a datetime with "
+            f"{description}, which cannot be carried across remote execution; "
+            "use `zoneinfo.ZoneInfo(key)` or `datetime.timezone`."
         ),
         context="dynamic_block | block_state_validation",
     )
@@ -693,7 +931,8 @@ def _validate_dict_keys(value: Dict[Any, Any], *, path: str) -> None:
             raise DynamicBlockError(
                 public_message=(
                     f"Custom Python block state `self.{path}` has a "
-                    f"non-string key {key!r}; only string keys can be "
+                    f"non-string key of type {type(key).__name__}; only string "
+                    "keys can be "
                     "carried across remote execution."
                 ),
                 context="dynamic_block | block_state_validation",

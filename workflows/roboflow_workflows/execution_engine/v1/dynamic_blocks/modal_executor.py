@@ -61,9 +61,12 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import
     record_block_duration,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
-    NUMPY_SCALAR_WIRE_KINDS,
+    BLOCK_STATE_MAX_ATTRIBUTES,
+    check_echoed_wire_value,
+    decode_numpy_scalar,
     describe_dropped_block_state,
     partition_block_state,
+    validate_echoed_block_state,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import PythonCode
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.error_utils import (
@@ -402,8 +405,21 @@ def _decode_echoed_block_state(
             ),
             context="modal_executor | block_state_decode",
         )
+    if len(echoed) > BLOCK_STATE_MAX_ATTRIBUTES:
+        raise DynamicBlockError(
+            public_message=(
+                f"The Modal webexec server returned {len(echoed)} `self` "
+                f"attributes for custom Python block `{block_type_name}`, more "
+                f"than the {BLOCK_STATE_MAX_ATTRIBUTES} ever carried; the echo "
+                "is refused."
+            ),
+            context="modal_executor | block_state_decode",
+        )
     echoed_state = {}
     for name, value in echoed.items():
+        # Checked in wire form first: the echo is written by sandboxed code,
+        # and some decoders allocate or read whatever a value names.
+        check_echoed_wire_value(value, path=str(name))
         try:
             echoed_state[name] = decode(value)
         except Exception as error:
@@ -415,6 +431,7 @@ def _decode_echoed_block_state(
                 ),
                 context="modal_executor | block_state_decode",
             ) from error
+    validate_echoed_block_state(echoed_state)
 
     return echoed_state
 
@@ -442,7 +459,7 @@ def _read_echoed_block_state_json(
 
     try:
         parsed = json.loads(result["block_state"])
-    except (TypeError, ValueError) as error:
+    except (TypeError, ValueError, RecursionError) as error:
         raise DynamicBlockError(
             public_message=(
                 f"The Modal webexec server returned malformed `block_state` "
@@ -684,20 +701,17 @@ def _decode_numpy_scalar(
     marked: Dict[str, Any], *, decode: Callable[[Any], Any]
 ) -> Any:
     """Rebuild a numpy scalar written by the ``self`` state normalizer."""
-    dtype = np.dtype(marked["dtype"])
-    if dtype.kind not in NUMPY_SCALAR_WIRE_KINDS:
-        raise ValueError(f"numpy scalar of dtype {dtype} is not carried")
-    scalar = dtype.type(decode(marked["value"]))
+    scalar = decode_numpy_scalar(marked.get("dtype"), decode(marked.get("value")))
 
     return scalar
 
 
 def _decode_zoned_datetime(marked: Dict[str, Any]) -> datetime:
-    """Rebuild a ``ZoneInfo`` datetime written by the ``self`` state normalizer."""
+    """Rebuild a ``ZoneInfo`` datetime from its wall time, fold and zone."""
     from zoneinfo import ZoneInfo
 
-    instant = datetime.fromisoformat(marked["value"])
-    zoned = instant.astimezone(ZoneInfo(marked["zone"]))
+    wall_time = datetime.fromisoformat(marked["value"])
+    zoned = wall_time.replace(tzinfo=ZoneInfo(marked["zone"]), fold=marked["fold"])
 
     return zoned
 

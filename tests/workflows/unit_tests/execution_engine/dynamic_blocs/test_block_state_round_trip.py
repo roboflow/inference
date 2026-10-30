@@ -36,6 +36,7 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
     modal_executor as client,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state import (
+    BLOCK_STATE_MAX_ATTRIBUTES,
     BLOCK_STATE_MAX_BYTES,
     apply_block_state,
     collect_block_state,
@@ -1195,6 +1196,11 @@ UNCARRIABLE_VALUE_EXPRESSIONS = {
     "int_enum": "enum.IntEnum('Color', 'RED').RED",
     "str_subclass": "type('Name', (str,), {})('x')",
     "numpy_int_subclass": "type('Count', (np.int64,), {})(1)",
+    "numpy_str_with_trailing_nul": "np.str_('a' + chr(0))",
+    "datetime_with_keyless_zoneinfo": (
+        "datetime.datetime(2020, 1, 1, tzinfo=__import__('zoneinfo').ZoneInfo"
+        ".from_file(open(__import__('zoneinfo').TZPATH[0] + '/UTC', 'rb')))"
+    ),
     "datetime_with_uncarried_tzinfo": (
         "datetime.datetime(2020, 1, 1, tzinfo=type('Tz', (datetime.tzinfo,), "
         "{'utcoffset': lambda self, dt: datetime.timedelta(0), "
@@ -1358,6 +1364,8 @@ def _carriable_values() -> dict:
         "history": [1, (2, 3), {"nested": [None]}],
         "shape": (4, 4, 3),
         "label": np.array(["cat"])[0],
+        "wide_int": np.longlong(5),
+        "empty_label": np.str_(""),
         "zoned": datetime(2026, 3, 28, 12, tzinfo=ZoneInfo("Europe/Warsaw")),
         "raw_label": np.array([b"cat"])[0],
         "per_class": {np.array(["cat"])[0]: 1},
@@ -2616,3 +2624,189 @@ def test_block_instance_survives_new_old_new_webexec_over_websocket(
         calls.append(block.run(image=1)["calls"])
 
     assert calls == [1, 2, 3, 1, 1, 2]
+
+
+# --------------------------------------------------------------------------- #
+# zoned datetimes at the edges, and the echo as untrusted input
+# --------------------------------------------------------------------------- #
+
+
+ZONED_EDGES_CODE = (
+    "import datetime\n"
+    "from zoneinfo import ZoneInfo\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'values'):\n"
+    "        warsaw, new_york = ZoneInfo('Europe/Warsaw'), ZoneInfo('America/New_York')\n"
+    "        self.values = [\n"
+    "            datetime.datetime.min.replace(tzinfo=warsaw),\n"
+    "            datetime.datetime.max.replace(tzinfo=new_york),\n"
+    "            datetime.datetime(2024, 3, 31, 2, 30, tzinfo=warsaw),\n"
+    "            datetime.datetime(2024, 10, 27, 2, 30, fold=1, tzinfo=warsaw),\n"
+    "        ]\n"
+    "    described = [\n"
+    "        [value.isoformat(), value.fold, value.tzinfo.key, value.hour]\n"
+    "        for value in self.values\n"
+    "    ]\n"
+    "    return {'is_first_frame': True, 'calls': described}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_zoned_datetimes_at_the_edges(
+    monkeypatch, modal_app, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=ZONED_EDGES_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame)["calls"] for frame in (1, 2, 3)]
+
+    assert results[1] == results[0]
+    assert results[2] == results[0]
+    assert results[0][3][1] == 1
+
+
+def _read_forged_echo(transport, echoed_attribute):
+    if transport == "http":
+        echo = {"block_state": json.dumps({"x": echoed_attribute})}
+        reader = client._read_echoed_block_state_json
+    else:
+        echo = {"block_state": {"x": echoed_attribute}}
+        reader = client._read_echoed_block_state_msgpack
+    state = reader(echo, block_state={"x": 1}, block_type_name="B")
+    return state
+
+
+FORGED_ATTRIBUTES = {
+    "numpy_bytes_from_an_int": {
+        "_type": "numpy_scalar",
+        "dtype": "S1",
+        "value": 50_000_000,
+    },
+    "numpy_scalar_wrong_value_type": {
+        "_type": "numpy_scalar",
+        "dtype": "int64",
+        "value": "1",
+    },
+    "numpy_scalar_out_of_range": {
+        "_type": "numpy_scalar",
+        "dtype": "uint8",
+        "value": 300,
+    },
+    "numpy_scalar_object_dtype": {"_type": "numpy_scalar", "dtype": "O", "value": 1},
+    "numpy_scalar_longdouble": {"_type": "numpy_scalar", "dtype": "g", "value": 1.0},
+    "numpy_scalar_uint64_beyond_int64": {
+        "_type": "numpy_scalar",
+        "dtype": "Q",
+        "value": 2**64 - 1,
+    },
+    "numpy_scalar_huge_str_dtype": {
+        "_type": "numpy_scalar",
+        "dtype": "<U99999999",
+        "value": "a",
+    },
+    "ndarray_huge_dtype": {
+        "_type": "ndarray",
+        "dtype": "S50000000",
+        "shape": [1],
+        "value": ["a"],
+    },
+    "ndarray_object_dtype": {
+        "_type": "ndarray",
+        "dtype": "O",
+        "shape": [1],
+        "value": [1],
+    },
+    "image_from_a_file": {
+        "_type": "workflow_image",
+        "type": "file",
+        "value": "/etc/hosts",
+    },
+    "untagged_image": {"type": "file", "value": "/etc/hosts"},
+    "untagged_base64_image": {"type": "base64", "value": "abc"},
+    "unknown_marker": {"_type": "batch", "value": [1]},
+    "zoned_datetime_bad_fold": {
+        "_type": "zoned_datetime",
+        "value": "2020-01-01T00:00:00",
+        "fold": 7,
+        "zone": "UTC",
+    },
+}
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize(
+    "forged", FORGED_ATTRIBUTES.values(), ids=list(FORGED_ATTRIBUTES)
+)
+def test_client_refuses_a_forged_echo_before_building_values(transport, forged):
+    with pytest.raises(DynamicBlockError) as error:
+        _read_forged_echo(transport, forged)
+
+    assert "self.x" in str(error.value)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_client_refuses_a_deeply_nested_echo(transport):
+    nested = 1
+    for _ in range(5000):
+        nested = [nested]
+    if transport == "http":
+        echo = {"block_state": '{"x": ' + "[" * 5000 + "1" + "]" * 5000 + "}"}
+        reader = client._read_echoed_block_state_json
+    else:
+        echo = {"block_state": {"x": nested}}
+        reader = client._read_echoed_block_state_msgpack
+
+    with pytest.raises(DynamicBlockError):
+        reader(echo, block_state={"x": 1}, block_type_name="B")
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_client_refuses_an_echo_with_too_many_attributes(transport):
+    attributes = {f"a{index}": 1 for index in range(BLOCK_STATE_MAX_ATTRIBUTES + 1)}
+    if transport == "http":
+        echo = {"block_state": json.dumps(attributes)}
+        reader = client._read_echoed_block_state_json
+    else:
+        echo = {"block_state": attributes}
+        reader = client._read_echoed_block_state_msgpack
+
+    with pytest.raises(DynamicBlockError):
+        reader(echo, block_state={"x": 1}, block_type_name="B")
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_withholds_state_with_too_many_attributes(modal_app, partition_side):
+    state = {f"a{index}": 1 for index in range(BLOCK_STATE_MAX_ATTRIBUTES + 1)}
+    if partition_side == "engine":
+        carried, dropped, _ = partition_block_state(state, measure=lambda a: 0)
+    else:
+        carried, dropped, _ = modal_app._partition_block_state(state, lambda a: 0)
+
+    assert carried == {}
+    assert dropped and "attributes" in dropped[0][1]
+
+
+NUMPY_KEY_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    self.first_seen = {np.int64(image): 1}\n"
+    "    return {'ok': True}\n"
+)
+
+
+def test_http_server_warns_once_about_a_non_string_key_that_changes(modal_app):
+    executor = _http_executor(modal_app)
+
+    responses = [
+        _run_http(executor, NUMPY_KEY_CODE, {"image": frame}, block_state={})
+        for frame in range(6)
+    ]
+
+    lines = [
+        line
+        for response in responses
+        for line in (response["stderr"] or "").splitlines()
+        if "self.first_seen" in line and "rebuilt" in line
+    ]
+    assert len(lines) == 1

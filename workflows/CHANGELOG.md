@@ -32,44 +32,60 @@ for contributor and maintainer responsibilities.
   the sandbox and back on each call, so it survives container recycling
   and never leaks between workflow runs or between block instances.
   - What persists, as exact types: JSON-like values (ints within the
-    signed 64-bit range), tuples, numpy bool/int/float/str/bytes scalars
-    (all three read back with their own type), datetimes (naive, fixed
-    offset, or `ZoneInfo`, whose zone is kept), numpy arrays of
-    bool/int/float/str, `sv.Detections` with confidence, `class_id`, class
-    name, detection id and either image dimensions or RLE masks that carry
-    their size, images and video metadata. Numpy string dict keys come back
-    as `str`; numpy bytes dict keys are not carried.
-  - Images and detections are lossy. An image is re-encoded as JPEG on every
-    call, so its pixels drift; a grayscale image comes back with three
-    channels; and an image that is not a crop comes back with its
-    `parent_id` replaced by a placeholder (`input` or `result`). Masks
-    travel as polygons, so a detection whose mask has no contour is lost.
-    `sv.Detections.data` keys the workflow serializers do not know are
-    lost, integer class names and detection ids come back as strings,
-    `width`, `height` and parent id keys are added, a `root_parent_id`
-    equal to the `parent_id` comes back as a placeholder, parent and root
-    coordinates and dimensions are only kept for crops, float32 coordinates
-    and confidences come back as float64, and empty detections lose their
-    data and metadata. The sandbox reports these once per container on the
-    block's stderr (except the coordinate, dimension and float32 changes,
-    which are only listed here); the engine side logs them once per step.
-    A raw `numpy_image` array is exact but realistic frames exceed the
-    1 MiB cap (a 480x640 RGB frame does), so it is only an option for small
-    images.
+    signed 64-bit range), tuples, numpy bool/int/float/str/bytes scalars,
+    datetimes (naive, fixed offset, or `ZoneInfo` with its zone and fold),
+    numpy arrays of bool/int/float/str, `sv.Detections` with confidence,
+    `class_id`, class name, detection id and either image dimensions or RLE
+    masks that carry their size, images and video metadata. Tuples come
+    back as tuples, numpy scalars with their own numpy type (including
+    aliases such as `np.longlong`), and `ZoneInfo` datetimes with the same
+    wall time, fold and zone, including DST gaps and `datetime.min`/`max`.
+    Numpy string dict keys come back as `str` (lookups and counting are
+    unchanged, numpy methods on the key are not); numpy bytes dict keys are
+    not carried.
+  - Lossy values. An image is re-encoded as JPEG on every call, so its
+    pixels drift; a grayscale image comes back with three channels; and an
+    image that is not a crop comes back with its `parent_id` replaced by a
+    placeholder (`input` or `result`). Masks travel as polygons, so a
+    detection whose mask has no contour is lost. `sv.Detections.data` keys
+    the workflow serializers do not know are lost, integer class names and
+    detection ids come back as strings, `width`, `height` and parent id
+    keys are added, a `root_parent_id` equal to the `parent_id` comes back
+    as a placeholder, parent and root coordinates and dimensions are only
+    kept for crops, float32 coordinates and confidences come back as
+    float64, and empty detections lose their data and metadata. A
+    `VideoMetadata` timestamp keeps its UTC offset but not a `ZoneInfo`
+    zone, a naive datetime loses its `fold`, and a named
+    `datetime.timezone` loses its name. The sandbox reports the image and
+    detection losses once per container on the block's stderr (except the
+    coordinate, dimension and float32 changes) and the engine logs them once
+    per step; the datetime losses are only listed here. A raw `numpy_image`
+    array is exact but realistic frames exceed the 1 MiB cap (a 480x640 RGB
+    frame does), so it is only an option for small images.
   - What does not persist: a subclass of an accepted type (`defaultdict`,
     `Counter`, `OrderedDict`, a namedtuple, an `IntEnum` member, a `str` or
     numpy scalar subclass), which would come back as its base type; any
     other object (an annotator, a tracker, a helper instance); a value the
-    transport cannot encode (complex or object arrays, `np.datetime64`,
-    integers outside the signed 64-bit range, a datetime whose time zone is
-    neither `ZoneInfo` nor `datetime.timezone`, also integer values inside
-    the carried fields of `sv.Detections`, and integer arrays under
-    detection keys the serializer passes through as numpy scalars:
-    `time_in_zone`, `path_deviation` and `data`); a tuple inside `sv.Detections` data; a dict with a `_type` key or shaped like a
-    serialized image (`type` "base64" with a `value`), also inside carried
-    `sv.Detections` fields; engine-owned or dunder names; and an attribute
-    whose serialized form is over 1 MiB. The whole state is also capped at
-    1 MiB: the largest attributes are dropped until it fits.
+    transport cannot encode: complex or object arrays, `np.datetime64`,
+    `np.longdouble`, numpy strings with trailing NUL characters, integers
+    outside the signed 64-bit range, a datetime whose time zone is neither
+    `ZoneInfo(key)` nor `datetime.timezone` (a `ZoneInfo.from_file` zone
+    has no key), integer values inside the carried fields of
+    `sv.Detections`, and integer arrays under detection keys the serializer
+    passes through as numpy scalars (`time_in_zone`, `path_deviation`,
+    `data` and the bounding-rect keys `angle`, `rect`, `width` and
+    `height`); a tuple inside `sv.Detections` data; a dict with a `_type`
+    key or shaped like a serialized image (`type` "base64" with a `value`),
+    also inside carried `sv.Detections` fields; engine-owned or dunder
+    names; more than 1024 attributes; and an attribute whose serialized
+    form is over 1 MiB. The whole state is also capped at 1 MiB: the
+    largest attributes are dropped until it fits.
+  - The engine treats the echoed state as untrusted: before decoding it
+    refuses unknown markers, arrays and numpy scalars that do not match
+    their dtype or exceed what honest state can hold, images that are not
+    base64, untagged image dicts, deep nesting and more than 1024
+    attributes; after decoding it re-checks every value as it did before
+    sending. A refused echo fails the call with a `DynamicBlockError`.
   - When any attribute cannot be carried, none of the block's state is
     carried for that call, with a warning naming the attributes on the
     block's stderr, so the block behaves exactly as before this change (a
