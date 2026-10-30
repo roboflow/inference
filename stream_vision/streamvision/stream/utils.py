@@ -24,6 +24,7 @@ from streamvision.camera.video_source import (
 from streamvision.stream.environment import (
     DEFAULT_BUFFER_SIZE,
     ENABLE_WORKFLOWS_PROFILING,
+    WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,7 +172,24 @@ def on_pipeline_end(
     profiling_directory: str,
     execution_engine_thread_pool_executor: Optional[ThreadPoolExecutor] = None,
     execution_engine: Optional[Any] = None,
+    block_close_deadline_seconds: Optional[float] = None,
 ) -> None:
+    """Save the profiler trace, stop the thread pools and close the workflow.
+
+    Args:
+        thread_pool_executor: The pool workflow blocks and sinks run their
+            background tasks on.
+        cancel_thread_pool_tasks_on_exit: Whether tasks not yet started are
+            cancelled instead of run when the pools stop.
+        profiler: The workflows profiler whose trace is saved when profiling is on.
+        profiling_directory: Directory the profiler trace is written to.
+        execution_engine_thread_pool_executor: The pool the Execution Engine runs
+            steps on, if separate.
+        execution_engine: The pipeline's Execution Engine, if any.
+        block_close_deadline_seconds: Seconds the blocks get, from the start of
+            the close, to finish their work; ``None`` uses
+            ``WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS``.
+    """
     if ENABLE_WORKFLOWS_PROFILING:
         try:
             save_workflows_profiler_trace(
@@ -184,6 +202,21 @@ def on_pipeline_end(
                 f"'{profiling_directory}' - profiling data will be lost. "
                 f"This may happen when the filesystem is read-only."
             )
+
+    if block_close_deadline_seconds is None:
+        block_close_deadline_seconds = WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS
+    # Closing the workflow has two phases around the pool shutdown. First,
+    # `prepare_close` lets blocks start finishing while the pools drain: a video
+    # recorder stops ingesting and starts muxing pending clips, so the encode
+    # overlaps the wait for sink tasks instead of following it. `getattr`: an
+    # older roboflow-workflows engine has no `prepare_close()`.
+    prepare_close_execution_engine = getattr(execution_engine, "prepare_close", None)
+    if callable(prepare_close_execution_engine):
+        try:
+            prepare_close_execution_engine(block_close_deadline_seconds)
+        except Exception as error:
+            logger.warning(f"Could not prepare workflow blocks for close: {error}")
+
     executors = [thread_pool_executor]
     if execution_engine_thread_pool_executor is not None:
         executors.append(execution_engine_thread_pool_executor)
@@ -193,11 +226,12 @@ def on_pipeline_end(
         except TypeError:
             # we must support Python 3.8 which do not support `cancel_futures`
             executor.shutdown()
-    # After the pools, so sink tasks still running there finish with their blocks
-    # intact. A stopped pipeline that stays referenced would otherwise keep the
-    # blocks' background resources (reader threads, broker and server sessions)
-    # until it is garbage collected. `getattr`: an older roboflow-workflows engine
-    # has no `close()`.
+    # Second, `close()` after the pools, so sink tasks still running there finish
+    # with their blocks intact; it is where blocks wait for work started by
+    # `prepare_close` and release what they hold. A stopped pipeline that stays
+    # referenced would otherwise keep the blocks' background resources (reader
+    # threads, broker and server sessions) until it is garbage collected.
+    # `getattr`: an older roboflow-workflows engine has no `close()`.
     close_execution_engine = getattr(execution_engine, "close", None)
     if callable(close_execution_engine):
         try:
