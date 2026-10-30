@@ -695,6 +695,28 @@ def correct_detections(
     transformed_rect_width: float,
     transformed_rect_height: float,
 ) -> sv.Detections:
+    """Warp detections into the destination perspective frame.
+
+    Args:
+        detections: Predictions in the source frame.
+        perspective_transformer: Source-to-destination homography.
+        transformed_rect_width: Destination width in pixels.
+        transformed_rect_height: Destination height in pixels.
+
+    Returns:
+        Warped predictions; native outputs retain policy and destination dimensions.
+    """
+    if detections.metadata.get(NATIVE_OBB):
+        detections = detections[:]
+        dimensions = [
+            int(round(transformed_rect_height)),
+            int(round(transformed_rect_width)),
+        ]
+        detections.metadata["image_dimensions"] = dimensions
+        detections.data["image_dimensions"] = np.tile(dimensions, (len(detections), 1))
+        if not len(detections):
+            return detections
+
     corrected_detections: List[sv.Detections] = []
     for i in range(len(detections)):
         # copy

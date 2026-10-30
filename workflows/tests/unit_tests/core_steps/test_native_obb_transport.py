@@ -614,8 +614,9 @@ def test_query_rename_declaration_excludes_native_kind():
 
 @pytest.mark.parametrize("tensor", [False, True])
 @pytest.mark.parametrize("fusion", ["consensus", "combine"])
+@pytest.mark.parametrize("consumer", ["per_class", "parent_class", "filter"])
 def test_native_colliding_class_ids_keep_row_names_through_filter(
-    monkeypatch, tensor, fusion
+    monkeypatch, tensor, fusion, consumer
 ):
     from roboflow_workflows.core_steps.fusion.detections_consensus.v1 import (
         AggregationMode,
@@ -671,13 +672,60 @@ def test_native_colliding_class_ids_keep_row_names_through_filter(
     assert base.extract_detections_property(
         merged, DetectionsProperty.CLASS_NAME, "test"
     ) == ["plane", "stone"]
-    module = v1_tensor if tensor else v1
-    result = module.PerClassConfidenceFilterBlockV1().run(
-        predictions=[merged],
-        class_thresholds={"plane": 0.9, "stone": 0.1},
-    )[0]["predictions"]
+    if consumer == "per_class":
+        module = v1_tensor if tensor else v1
+        result = module.PerClassConfidenceFilterBlockV1().run(
+            predictions=[merged],
+            class_thresholds={"plane": 0.9, "stone": 0.1},
+        )[0]["predictions"]
+        expected = "stone"
+    else:
+        from roboflow_workflows.core_steps.common.query_language.operations.core import (
+            execute_operations,
+        )
+        from roboflow_workflows.core_steps.common.query_language.operations.detection import (
+            base as single_detection,
+        )
+
+        monkeypatch.setattr(
+            single_detection, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor
+        )
+        operation = (
+            {"type": "PickDetectionsByParentClass", "parent_class": "plane"}
+            if consumer == "parent_class"
+            else {
+                "type": "DetectionsFilter",
+                "filter_operation": {
+                    "type": "StatementGroup",
+                    "operator": "and",
+                    "statements": [
+                        {
+                            "type": "BinaryStatement",
+                            "negate": False,
+                            "left_operand": {
+                                "type": "DynamicOperand",
+                                "operand_name": "_",
+                                "operations": [
+                                    {
+                                        "type": "ExtractDetectionProperty",
+                                        "property_name": "class_name",
+                                    }
+                                ],
+                            },
+                            "comparator": {"type": "=="},
+                            "right_operand": {
+                                "type": "StaticOperand",
+                                "value": "plane",
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+        result = execute_operations(merged, operations=[operation])
+        expected = "plane"
     rows = serialise_native_obb(result)["predictions"]
-    assert [(row["class"], row["class_id"]) for row in rows] == [("stone", 0)]
+    assert [(row["class"], row["class_id"]) for row in rows] == [(expected, 0)]
 
 
 @pytest.mark.parametrize("tensor", [False, True])
@@ -703,7 +751,8 @@ def test_native_empty_visualization_block_returns_unchanged_image(tensor):
     np.testing.assert_array_equal(result["image"].numpy_image, pixels)
 
 
-def test_compiled_native_perspective_roundtrip_preserves_ordered_subpixel_quad():
+@pytest.mark.parametrize("empty", [False, True])
+def test_compiled_native_perspective_roundtrip_preserves_ordered_subpixel_quad(empty):
     from roboflow_workflows.execution_engine.core import ExecutionEngine
 
     workflow = {
@@ -744,17 +793,26 @@ def test_compiled_native_perspective_roundtrip_preserves_ordered_subpixel_quad()
             }
         ],
     }
+    payload = response()
+    if empty:
+        payload["predictions"] = []
     engine = ExecutionEngine.init(workflow_definition=workflow)
     try:
         result = engine.run(
             runtime_parameters={
                 "image": np.zeros((79, 101, 3), dtype=np.uint8),
-                "predictions": [response()],
+                "predictions": [payload],
             },
             serialize_results=True,
         )[0]["result"]
     finally:
         engine.close()
+    assert result["image"] == {"height": 83, "width": 103}
+    assert result["class_heading"] == payload["class_heading"]
+    if empty:
+        assert result["predictions"] == []
+        return
+
     row = result["predictions"][0]
     assert row["geometry_type"] == "quadrilateral"
     corners = np.asarray(row["corners"])
@@ -766,11 +824,13 @@ def test_compiled_native_perspective_roundtrip_preserves_ordered_subpixel_quad()
     assert row["detection_id"] == "plane0"
 
 
-def test_empty_tensor_bridge_retains_root_frame_for_serialization():
+@pytest.mark.parametrize("initially_empty", [False, True])
+def test_empty_tensor_bridge_retains_root_frame_for_serialization(initially_empty):
     from roboflow_workflows.core_steps.common.oriented import _native_obb_to_sv
 
     value = response()
-    value["predictions"] = []
+    if initially_empty:
+        value["predictions"] = []
     source = native_obb_from_inference(value)
     source.metadata.update(
         parent_id="crop",
@@ -779,7 +839,7 @@ def test_empty_tensor_bridge_retains_root_frame_for_serialization():
         root_parent_dimensions=[200, 300],
     )
     bridged = _native_obb_to_sv(native_obb_to_tensor(source))
-    restored = sv_detections_to_root_coordinates(bridged)
+    restored = sv_detections_to_root_coordinates(bridged[:0])
     assert restored.metadata["parent_id"] == "root"
     assert serialise_native_obb(restored)["image"] == {"height": 200, "width": 300}
     assert serialise_native_obb(restored)["predictions"] == []

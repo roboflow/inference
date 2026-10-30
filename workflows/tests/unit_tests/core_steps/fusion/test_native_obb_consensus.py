@@ -325,3 +325,66 @@ def test_native_http_input_initializes_missing_lineage_before_consensus(
         np.testing.assert_array_equal(lineage["parent_coordinates"], [[3, 5]])
     result = serialise_native_obb(_run([source], required_votes=1))
     assert result["predictions"][0]["parent_id"] == ("crop" if explicit else "external")
+
+
+@pytest.mark.parametrize("empty_by", ["confidence", "votes"])
+def test_compiled_empty_consensus_output_retains_crop_root_frame(empty_by):
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+
+    payload = _response(identity="crop-row")
+    payload["image"] = {"width": 101, "height": 79}
+    payload["predictions"][0].update(
+        parent_id="crop",
+        root_parent_id="root",
+        parent_origin={"offset_x": 0, "offset_y": 0, "width": 101, "height": 79},
+        root_parent_origin={
+            "offset_x": 13,
+            "offset_y": 17,
+            "width": 300,
+            "height": 200,
+        },
+    )
+    workflow = {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowBatchInput",
+                "name": "predictions",
+                "kind": ["oriented_object_detection_prediction"],
+            }
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/detections_consensus@v2",
+                "name": "consensus",
+                "predictions_batches": ["$inputs.predictions"],
+                "required_votes": 2 if empty_by == "votes" else 1,
+                "confidence": 0.99 if empty_by == "confidence" else 0,
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "root",
+                "selector": "$steps.consensus.predictions",
+                "coordinates_system": "parent",
+            },
+            {
+                "type": "JsonField",
+                "name": "own",
+                "selector": "$steps.consensus.predictions",
+                "coordinates_system": "own",
+            },
+        ],
+    }
+    engine = ExecutionEngine.init(workflow_definition=workflow)
+    try:
+        result = engine.run(
+            runtime_parameters={"predictions": [payload]}, serialize_results=True
+        )[0]
+    finally:
+        engine.close()
+    assert result["root"]["predictions"] == []
+    assert result["root"]["image"] == {"height": 200, "width": 300}
+    assert result["root"]["class_heading"] == payload["class_heading"]
+    assert result["own"]["image"] == payload["image"]

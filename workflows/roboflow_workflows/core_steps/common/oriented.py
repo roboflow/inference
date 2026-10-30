@@ -333,10 +333,6 @@ def _native_obb_to_sv(detections):
     ):
         if key in metadata:
             data[key] = np.asarray([metadata[key]] * len(entries))
-            if entries and key != "image_dimensions":
-                # SV carries lineage per row; redundant image keys would reject
-                # otherwise mergeable sources with different root identities.
-                metadata.pop(key)
     result = sv.Detections(
         xyxy=detections.xyxy.detach().cpu().numpy(),
         confidence=detections.confidence.detach().cpu().numpy(),

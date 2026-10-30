@@ -1445,10 +1445,18 @@ def _parent_class_row_flags(
     the divergence where the old ``_resolve_class_names`` call raised on any
     unmapped row, even ones the query doesn't touch.
 
+    Native OBB uses authoritative per-row names instead of model-local ID maps.
+
     A *truly absent* map (no ``CLASS_NAMES_KEY`` at all) remains a producer contract
     violation and still raises via ``_class_names_lookup`` — the single accepted
     divergence from numpy, which returns empty there.
     """
+    if (detections.image_metadata or {}).get(NATIVE_OBB):
+        return [
+            name == parent_class
+            for name in _resolve_class_names(detections, operation_name)
+        ]
+
     class_names_map = _class_names_lookup(detections, operation_name=operation_name)
     return [
         class_names_map.get(int(class_id_scalar)) == parent_class
