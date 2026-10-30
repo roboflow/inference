@@ -2467,3 +2467,58 @@ def test_instance_segmentation_routes_forward_mask_resolution_opt_in(
     assert request.allow_reduced_mask_resolution is (opt_in is True)
     assert request.mask_decode_mode == "tradeoff"
     assert request.tradeoff_factor == 0.25
+
+
+@pytest.mark.parametrize("failure_site", ["add_model", "pin_model"])
+@pytest.mark.parametrize(
+    "reason_template",
+    [
+        "API key {key} does not have access to model florence-2-base",
+        'weights request failed: {{"Authorization": "Bearer {key}"}}',
+    ],
+)
+def test_preload_errors_redact_credentials_from_logs_and_state(
+    monkeypatch, failure_site, reason_template
+) -> None:
+    key = "sentinel-private-preload-key"
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", key)
+    log = MagicMock()
+    monkeypatch.setattr(http_api.logger, "error", log)
+    states = []
+
+    class ImmediateThread:
+        def __init__(self, target, args, daemon):
+            self.target = target
+            self.args = args
+            states.append(args[0])
+
+        def start(self):
+            self.target(*self.args)
+
+    monkeypatch.setattr(http_api, "Thread", ImmediateThread)
+    manager = MagicMock()
+    manager.pingback = None
+    manager.num_errors = 0
+    getattr(manager, failure_site).side_effect = RuntimeError(
+        reason_template.format(key=key)
+    )
+    interface = http_api.HttpInterface(model_manager=manager)
+
+    with TestClient(interface.app) as client:
+        assert client.get("/readiness").status_code == 200
+
+    assert log.call_count == 1
+    assert key not in str(log.call_args_list)
+    assert "[REDACTED]" in str(log.call_args_list)
+    assert "florence-2-base" in str(log.call_args_list)
+    assert states[0].initialization_errors == [
+        ("florence-2-base", reason_template.format(key="[REDACTED]"))
+    ]
