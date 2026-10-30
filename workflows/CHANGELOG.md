@@ -117,7 +117,10 @@ Bundled execution engine: `1.17.1`.
     bool/int/float/str (an object array of two or more dimensions); a tuple
     inside `sv.Detections` data; a dict with a `_type`
     key or shaped like a serialized image (`type` "base64" with a `value`),
-    also inside carried `sv.Detections` fields; a value nested more than 64
+    also inside carried `sv.Detections` fields; a list, dict, array,
+    `sv.Detections`, image or video metadata object kept in two places on
+    `self` (`self.b = self.a`, or twice inside one attribute), which would
+    come back as two separate copies; a value nested more than 64
     levels deep in its serialized form (a tuple counts two levels, and
     images, video metadata and `sv.Detections` add their own); state whose
     numpy arrays and scalars, together, take more than 8 MiB to decode (a

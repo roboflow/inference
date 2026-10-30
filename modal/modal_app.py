@@ -544,6 +544,61 @@ def _decoded_block_state_allocation(value: Any) -> int:
     return 0
 
 
+def _shared_block_state_objects(state: Dict[Any, Any]) -> Dict[str, str]:
+    """Reason per attribute holding an object already reached at an earlier path.
+
+    Mirrors ``block_state._shared_object_reasons``: lists, dicts, numpy
+    arrays, ``sv.Detections``, images and video metadata are tracked by
+    identity across the whole state; one reached twice would come back as
+    two independent copies.
+    """
+    import numpy as np
+    import supervision as sv
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        VideoMetadata,
+        WorkflowImageData,
+    )
+
+    tracked_types = (
+        list,
+        dict,
+        np.ndarray,
+        sv.Detections,
+        WorkflowImageData,
+        VideoMetadata,
+    )
+    seen: Dict[int, str] = {}
+    reasons: Dict[str, str] = {}
+
+    def _collect(value: Any, path: str, attribute: str, depth: int) -> None:
+        value_type = type(value)
+        if value_type in tracked_types:
+            first_path = seen.get(id(value))
+            if first_path is not None:
+                reasons.setdefault(
+                    attribute,
+                    f"`self.{path}` is the same object as `self.{first_path}`, "
+                    "and an object kept in two places on `self` would come back "
+                    "as two separate copies after remote execution; keep it in "
+                    "one place",
+                )
+                return
+            seen[id(value)] = path
+        if value_type is dict:
+            for key, item in value.items():
+                _collect(item, f"{path}[{key!r}]", attribute, depth + 1)
+        elif value_type in (list, tuple):
+            for index, item in enumerate(value):
+                _collect(item, f"{path}[{index}]", attribute, depth + 1)
+
+    for name, value in state.items():
+        if isinstance(name, str):
+            _collect(value, name, name, 0)
+
+    return reasons
+
+
 def _partition_block_state(
     state: Dict[str, Any], measure: Callable[[Dict[str, Any]], int]
 ) -> Tuple[Dict[str, Any], List[Tuple[str, str]], List[str]]:
@@ -551,6 +606,7 @@ def _partition_block_state(
 
     Mirrors ``block_state.partition_block_state``. Dropped: names the engine
     owns and dunders (the echo is written onto the engine-side instance),
+    attributes holding an object already reached elsewhere in the state,
     values ``_check_block_state_value`` refuses, values the transport's
     encoder refuses (``measure`` raising), attributes whose own serialized
     size is over ``_BLOCK_STATE_MAX_BYTES``, and attributes whose arrays and
@@ -579,6 +635,7 @@ def _partition_block_state(
     sizes: Dict[str, int] = {}
     allocations: Dict[str, int] = {}
     dropped: List[Tuple[str, str]] = []
+    shared_reasons = _shared_block_state_objects(state)
     for name, value in state.items():
         is_dunder = (
             isinstance(name, str) and name.startswith("__") and name.endswith("__")
@@ -591,6 +648,9 @@ def _partition_block_state(
                     "another name for state kept on `self`",
                 )
             )
+            continue
+        if name in shared_reasons:
+            dropped.append((name, shared_reasons[name]))
             continue
         try:
             _check_block_state_value(value, name)
@@ -638,8 +698,9 @@ def _partition_block_state(
     total = sum(sizes.values())
     if total > _BLOCK_STATE_MAX_BYTES:
         total = measure(carried)
+    remaining = total
     for name in sorted(sizes, key=sizes.get, reverse=True):
-        if total <= _BLOCK_STATE_MAX_BYTES:
+        if remaining <= _BLOCK_STATE_MAX_BYTES:
             break
         del carried[name]
         dropped.append(
@@ -649,7 +710,7 @@ def _partition_block_state(
                 f"{_BLOCK_STATE_MAX_BYTES} byte limit for remote execution",
             )
         )
-        total = measure(carried) if carried else 0
+        remaining -= sizes[name]
     total_allocation = sum(allocations[name] for name in carried)
     for name in sorted(carried, key=allocations.get, reverse=True):
         if total_allocation <= _MAX_ECHO_ALLOCATION_BYTES:

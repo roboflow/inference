@@ -14,9 +14,10 @@ engine-side block through the real HTTP handler in-process.
 """
 
 import asyncio
+import copy
 import io
 import json
-import weakref
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from types import SimpleNamespace
@@ -57,6 +58,24 @@ def _forget_logged_block_state_warnings():
     client._WARNED_BLOCK_STATE_MESSAGES.clear()
     yield
     client._WARNED_BLOCK_STATE_MESSAGES.clear()
+
+
+# Websocket executors opened by a test, closed when that test ends.
+_OPEN_WS_EXECUTORS: list = []
+
+
+def _portal_thread_count() -> int:
+    count = sum(1 for thread in threading.enumerate() if "-portal-" in thread.name)
+    return count
+
+
+@pytest.fixture(autouse=True)
+def _close_ws_sessions_when_the_test_ends():
+    portal_threads_before = _portal_thread_count()
+    yield
+    while _OPEN_WS_EXECUTORS:
+        _OPEN_WS_EXECUTORS.pop().close()
+    assert _portal_thread_count() == portal_threads_before
 
 
 FIRST_FRAME_CODE = (
@@ -708,7 +727,7 @@ class _InProcessHttpExecutor:
 
 class _InProcessWsExecutor:
     """The engine's websocket executor talking to the real websocket ASGI app
-    of ``modal_app``, frames as real msgpack bytes."""
+    of ``modal_app``, frames as real msgpack bytes; closed when the test ends."""
 
     def __init__(self, modal_app):
         from fastapi.testclient import TestClient
@@ -720,10 +739,15 @@ class _InProcessWsExecutor:
         user_cls.identify(server)
         self._session = TestClient(user_cls.wsapp(server)).websocket_connect("/ws")
         self._ws = self._session.__enter__()
-        # Closed when the block (and with it this executor) is collected.
-        weakref.finalize(self, self._session.__exit__, None, None, None)
+        _OPEN_WS_EXECUTORS.append(self)
         self._client = _ws_executor()
         self._client._send_recv_with_retry = self._send_recv
+
+    def close(self):
+        if self._session is None:
+            return
+        self._session.__exit__(None, None, None)
+        self._session = None
 
     def _send_recv(self, frame_bytes, workspace, request_id=None):
         self._ws.send_bytes(frame_bytes)
@@ -3990,3 +4014,244 @@ def test_engine_and_sandbox_agree_on_the_passed_through_detections_data_keys(
         modal_app._PASSED_THROUGH_DETECTIONS_DATA_KEYS
         == block_state._PASSED_THROUGH_DETECTIONS_DATA_KEYS
     )
+
+
+# --------------------------------------------------------------------------- #
+# one object kept in two places on self, and the cost of the total cap
+# --------------------------------------------------------------------------- #
+
+
+SHARED_LIST_CODE = (
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'a'):\n"
+    "        self.a = []\n"
+    "        self.b = self.a\n"
+    "    self.a.append(image)\n"
+    "    return {'is_first_frame': self.b is self.a, 'calls': len(self.b)}\n"
+)
+
+SHARED_DICT_IN_ONE_ATTRIBUTE_CODE = (
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'pair'):\n"
+    "        shared = {'n': 0}\n"
+    "        self.pair = [shared, shared]\n"
+    "    self.pair[0]['n'] += 1\n"
+    "    return {\n"
+    "        'is_first_frame': self.pair[1] is self.pair[0],\n"
+    "        'calls': self.pair[1]['n'],\n"
+    "    }\n"
+)
+
+SHARED_NDARRAY_CODE = (
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'counts'):\n"
+    "        self.counts = np.zeros(2, dtype=np.int64)\n"
+    "        self.same = self.counts\n"
+    "    self.counts[0] += 1\n"
+    "    return {'is_first_frame': self.same is self.counts, 'calls': int(self.same[0])}\n"
+)
+
+SHARED_STATE_CODES = {
+    "list_across_attributes": (
+        SHARED_LIST_CODE,
+        "a",
+        "`self.b` is the same object as `self.a`",
+    ),
+    "dict_inside_one_attribute": (
+        SHARED_DICT_IN_ONE_ATTRIBUTE_CODE,
+        "pair",
+        "`self.pair[1]` is the same object as `self.pair[0]`",
+    ),
+    "ndarray_across_attributes": (
+        SHARED_NDARRAY_CODE,
+        "counts",
+        "`self.same` is the same object as `self.counts`",
+    ),
+}
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+@pytest.mark.parametrize("case", list(SHARED_STATE_CODES))
+def test_block_instance_withholds_an_object_kept_in_two_places_on_self(
+    monkeypatch, modal_app, capsys, transport, case
+):
+    code, attribute, expected_message = SHARED_STATE_CODES[case]
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=code, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["is_first_frame"] for r in results] == [True, True, True]
+    assert [r["calls"] for r in results] == [1, 1, 1]
+    assert not hasattr(block, attribute)
+    relayed_stderr = capsys.readouterr().err
+    assert expected_message in relayed_stderr
+    assert "withheld" in relayed_stderr
+
+
+EQUAL_BUT_DISTINCT_CODE = (
+    "import copy\n"
+    "import numpy as np\n"
+    "def run(self, image):\n"
+    "    if not hasattr(self, 'a'):\n"
+    "        self.a = [1]\n"
+    "        self.b = [1]\n"
+    "        self.c = copy.deepcopy(self.a)\n"
+    "        self.d = {'k': np.zeros(2)}\n"
+    "        self.e = {'k': np.zeros(2)}\n"
+    "    self.a.append(image)\n"
+    "    return {'is_first_frame': self.a == self.b, 'calls': len(self.a)}\n"
+)
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_keeps_equal_but_distinct_objects_on_self(
+    monkeypatch, modal_app, capsys, transport
+):
+    block = _build_first_frame_block(
+        monkeypatch, modal_app, code=EQUAL_BUT_DISTINCT_CODE, transport=transport
+    )
+
+    results = [block.run(image=frame) for frame in (1, 2, 3)]
+
+    assert [r["calls"] for r in results] == [2, 3, 4]
+    assert block.a == [1, 1, 2, 3]
+    assert block.b == [1] and block.c == [1]
+    assert "withheld" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_block_instance_withholds_engine_side_state_kept_in_two_places(
+    monkeypatch, modal_app, transport
+):
+    warned = _capture_client_warnings(monkeypatch)
+    block = _build_first_frame_block(monkeypatch, modal_app, transport=transport)
+    block.a = [1]
+    block.b = block.a
+
+    result = block.run(image=1)
+
+    assert result["is_first_frame"] is True
+    assert not hasattr(block, "a") and not hasattr(block, "b")
+    assert any("`self.b` is the same object as `self.a`" in m for m in warned)
+
+
+def _partition(modal_app, partition_side, state, measure=_json_state_size):
+    if partition_side == "engine":
+        carried, dropped, notes = partition_block_state(state, measure=measure)
+    else:
+        carried, dropped, notes = modal_app._partition_block_state(state, measure)
+    return carried, dropped, notes
+
+
+def _shared_object_states() -> dict:
+    shared_list = [1]
+    shared_dict = {"n": 0}
+    shared_array = np.zeros(2)
+    looping = []
+    looping.append(looping)
+    detections = _detections()
+    image = _image()
+    states = {
+        "list_across_attributes": (
+            {"a": shared_list, "b": shared_list},
+            "b",
+            "`self.b` is the same object as `self.a`",
+        ),
+        "dict_inside_one_attribute": (
+            {"pair": [shared_dict, shared_dict]},
+            "pair",
+            "`self.pair[1]` is the same object as `self.pair[0]`",
+        ),
+        "ndarray_under_a_dict_key": (
+            {"x": shared_array, "y": {"k": shared_array}},
+            "y",
+            "`self.y['k']` is the same object as `self.x`",
+        ),
+        "list_reached_through_a_tuple": (
+            {"t": (shared_list,), "u": shared_list},
+            "u",
+            "`self.u` is the same object as `self.t[0]`",
+        ),
+        "self_referencing_list": (
+            {"loop": looping},
+            "loop",
+            "`self.loop[0]` is the same object as `self.loop`",
+        ),
+        "detections_twice": (
+            {"d1": detections, "d2": [detections]},
+            "d2",
+            "`self.d2[0]` is the same object as `self.d1`",
+        ),
+        "image_twice": (
+            {"i1": image, "i2": image},
+            "i2",
+            "`self.i2` is the same object as `self.i1`",
+        ),
+    }
+    return states
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+@pytest.mark.parametrize("case", list(_shared_object_states()))
+def test_partition_withholds_an_object_kept_in_two_places(
+    modal_app, partition_side, case
+):
+    state, dropped_name, expected_message = _shared_object_states()[case]
+
+    carried, dropped, notes = _partition(modal_app, partition_side, state)
+
+    assert carried == {}
+    assert [name for name, _ in dropped] == [dropped_name]
+    assert expected_message in dropped[0][1]
+    assert len(notes) == 1 and "withheld" in notes[0]
+
+
+@pytest.mark.parametrize("case", list(_shared_object_states()))
+def test_engine_and_sandbox_agree_on_objects_kept_in_two_places(modal_app, case):
+    state, _, _ = _shared_object_states()[case]
+
+    engine = partition_block_state(state, measure=_json_state_size)
+    _, sandbox_dropped, _ = modal_app._partition_block_state(state, _json_state_size)
+
+    assert engine.dropped == sandbox_dropped
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_carries_equal_but_distinct_objects(modal_app, partition_side):
+    first = [1, {"k": np.zeros(2)}]
+    state = {
+        "a": first,
+        "b": [1, {"k": np.zeros(2)}],
+        "c": copy.deepcopy(first),
+        "d": (first[1]["k"].copy(),),
+        "e": "same string",
+        "f": "same string",
+    }
+
+    carried, dropped, _ = _partition(modal_app, partition_side, state)
+
+    assert dropped == []
+    assert set(carried) == set(state)
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_measures_the_combined_payload_at_most_once(
+    modal_app, partition_side
+):
+    measured = []
+
+    def measure(attribute):
+        measured.append(len(attribute))
+        return (BLOCK_STATE_MAX_BYTES - 1) * len(attribute)
+
+    state = {f"a{index}": index for index in range(100)}
+
+    carried, dropped, _ = _partition(modal_app, partition_side, state, measure)
+
+    assert carried == {}
+    assert len(dropped) == 99
+    assert len(measured) <= len(state) + 1
+    assert sum(1 for size in measured if size > 1) <= 1

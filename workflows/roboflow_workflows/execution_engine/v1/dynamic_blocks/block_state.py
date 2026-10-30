@@ -177,6 +177,9 @@ CARRIED_NUMPY_SCALAR_TYPES: FrozenSet[type] = frozenset(
 # Ids the decoders substitute when a detection's parentage is not carried.
 _PLACEHOLDER_PARENT_IDS = frozenset({"input", "result"})
 
+# Tracked by identity with the workflow objects: one reached twice splits.
+_IDENTITY_TRACKED_TYPES = (list, dict, np.ndarray)
+
 # ``sv.Detections.data`` keys the transport serializer writes and the
 # deserializer reads back; any other key is lost on every hop.
 CARRIED_DETECTIONS_DATA_KEYS: FrozenSet[str] = frozenset(
@@ -614,13 +617,15 @@ def partition_block_state(
     """Decide what of ``self`` state the transport carries on this call.
 
     An attribute is dropped when its name is reserved (engine-owned, dunder
-    or not a string), when its value is not transportable, when the
-    transport's encoder refuses it (``measure`` raising), when its own
-    serialized size is over ``BLOCK_STATE_MAX_BYTES``, or when its numpy
-    arrays and scalars would make the receiver allocate more than the echo
-    allows; if the rest is still over either cap, the largest attributes go
-    until it fits. When anything is dropped, nothing is carried: see the
-    module docstring.
+    or not a string), when it holds a list, dict, array, detections, image
+    or video metadata object already reached elsewhere in the state (the
+    two would come back as separate copies), when its value is not
+    transportable, when the transport's encoder refuses it (``measure``
+    raising), when its own serialized size is over ``BLOCK_STATE_MAX_BYTES``,
+    or when its numpy arrays and scalars would make the receiver allocate
+    more than the echo allows; if the rest is still over either cap, the
+    largest attributes go until it fits. When anything is dropped, nothing is
+    carried: see the module docstring.
 
     Args:
         state: User attributes about to be serialized.
@@ -647,6 +652,7 @@ def partition_block_state(
     sizes: Dict[str, int] = {}
     allocations: Dict[str, int] = {}
     dropped: List[DroppedAttribute] = []
+    shared_reasons = _shared_object_reasons(state)
     for name, value in state.items():
         if not isinstance(name, str) or is_reserved_state_name(name):
             dropped.append(
@@ -656,6 +662,9 @@ def partition_block_state(
                     "another name for state kept on `self`",
                 )
             )
+            continue
+        if name in shared_reasons:
+            dropped.append((name, shared_reasons[name]))
             continue
         try:
             _validate_value(value, path=name)
@@ -683,8 +692,9 @@ def partition_block_state(
     total = sum(sizes.values())
     if total > BLOCK_STATE_MAX_BYTES:
         total = measure(carried)
+    remaining = total
     for name in sorted(sizes, key=sizes.get, reverse=True):
-        if total <= BLOCK_STATE_MAX_BYTES:
+        if remaining <= BLOCK_STATE_MAX_BYTES:
             break
         del carried[name]
         dropped.append(
@@ -694,7 +704,7 @@ def partition_block_state(
                 f"{BLOCK_STATE_MAX_BYTES} byte limit for remote execution",
             )
         )
-        total = measure(carried) if carried else 0
+        remaining -= sizes[name]
     total_allocation = sum(allocations[name] for name in carried)
     for name in sorted(carried, key=allocations.get, reverse=True):
         if total_allocation <= _MAX_ECHO_ALLOCATION_BYTES:
@@ -722,6 +732,66 @@ def partition_block_state(
     partition = BlockStatePartition(carried=carried, dropped=[], notes=notes)
 
     return partition
+
+
+def _shared_object_reasons(state: Dict[Any, Any]) -> Dict[str, str]:
+    """Reason per attribute holding an object already reached at an earlier path."""
+    seen: Dict[int, str] = {}
+    reasons: Dict[str, str] = {}
+    for name, value in state.items():
+        if isinstance(name, str):
+            _collect_shared_objects(
+                value, path=name, attribute=name, seen=seen, reasons=reasons
+            )
+
+    return reasons
+
+
+def _collect_shared_objects(
+    value: Any,
+    *,
+    path: str,
+    attribute: str,
+    seen: Dict[int, str],
+    reasons: Dict[str, str],
+) -> None:
+    value_type = type(value)
+    if value_type in _IDENTITY_TRACKED_TYPES or value_type in _workflow_object_types():
+        first_path = seen.get(id(value))
+        if first_path is not None:
+            reasons.setdefault(
+                attribute, _shared_object_reason(path=path, first_path=first_path)
+            )
+            return
+        seen[id(value)] = path
+    if value_type is dict:
+        for key, item in value.items():
+            _collect_shared_objects(
+                item,
+                path=f"{path}[{key!r}]",
+                attribute=attribute,
+                seen=seen,
+                reasons=reasons,
+            )
+    elif value_type in (list, tuple):
+        for index, item in enumerate(value):
+            _collect_shared_objects(
+                item,
+                path=f"{path}[{index}]",
+                attribute=attribute,
+                seen=seen,
+                reasons=reasons,
+            )
+
+
+def _shared_object_reason(*, path: str, first_path: str) -> str:
+    reason = (
+        f"`self.{path}` is the same object as `self.{first_path}`, and an object "
+        "kept in two places on `self` would come back as two separate copies "
+        "after remote execution; keep it in one place"
+    )
+
+    return reason
 
 
 def _encoder_refused_reason(error: Exception) -> str:
