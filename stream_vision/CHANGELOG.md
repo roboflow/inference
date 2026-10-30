@@ -4,11 +4,11 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
-## `0.1.5rc1`
+## `0.1.5`
 
 ### Changed
 
-- The `workflows` extra requires `roboflow-workflows>=0.2.15rc1` instead of
+- The `workflows` extra requires `roboflow-workflows>=0.2.15` instead of
   `>=0.2.13`.
 
 ### Fixed
