@@ -361,6 +361,7 @@ def test_sync_write_empty_event_data_omitted(tmp_path) -> None:
     payload, _ = _read_bundle(result["bundle_path"])
     assert "eventData" not in payload
     assert "customMetadata" not in payload
+    assert "valueBaseUnits" not in payload
 
 
 def test_target_directory_created_if_missing(tmp_path) -> None:
@@ -1023,3 +1024,95 @@ def test_sync_write_with_native_detections_tensor_native(tmp_path) -> None:
     assert image_entry["objectDetections"] == expected_annotations["objectDetections"]
     assert image_entry["objectDetections"][0]["class"] == "cat"
     assert image_entry["objectDetections"][0]["confidence"] == pytest.approx(0.9)
+
+
+# === Event value (value_base_units) ===
+
+
+def test_manifest_accepts_value_base_units() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/vision_event_bundle@v1",
+            "name": "bundle_step",
+            "target_directory": "/data/bundles",
+            "event_type": "quality_check",
+            "value_base_units": "$steps.expression.output",
+        }
+    )
+    assert manifest.value_base_units == "$steps.expression.output"
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_manifest_rejects_boolean_value_base_units(value) -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/vision_event_bundle@v1",
+                "name": "bundle_step",
+                "target_directory": "/data/bundles",
+                "event_type": "quality_check",
+                "value_base_units": value,
+            }
+        )
+
+
+def test_sync_write_omits_value_base_units_for_operator_feedback(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(
+        block,
+        str(tmp_path),
+        event_type="operator_feedback",
+        qc_result=None,
+        related_event_id="evt-0",
+        feedback="correct",
+        value_base_units=1999,
+    )
+
+    assert result["error_status"] is False
+    payload, _ = _read_bundle(result["bundle_path"])
+    assert "valueBaseUnits" not in payload
+
+
+@pytest.mark.parametrize("value, expected", [(1999, 1999), (-250, -250), (19.6, 20)])
+def test_sync_write_includes_value_base_units(tmp_path, value, expected) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(block, str(tmp_path), value_base_units=value)
+
+    assert result["error_status"] is False
+    payload, _ = _read_bundle(result["bundle_path"])
+    assert payload["valueBaseUnits"] == expected
+    # the currency always comes from the use case, never from the block
+    assert "valueCurrency" not in payload
+
+
+def test_sync_write_drops_non_numeric_value_base_units(tmp_path) -> None:
+    block = _make_block(tmp_path)
+
+    result = _run_block(block, str(tmp_path), value_base_units="lots")
+
+    assert result["error_status"] is False
+    payload, _ = _read_bundle(result["bundle_path"])
+    assert "valueBaseUnits" not in payload
+
+
+@_TENSOR_ONLY
+def test_sync_write_includes_value_base_units_tensor_native(tmp_path) -> None:
+    from roboflow_workflows.core_steps.sinks.roboflow.vision_events_bundle.v1_tensor import (
+        VisionEventBundleSinkBlockV1 as TensorVisionEventBundleSinkBlockV1,
+    )
+
+    block = TensorVisionEventBundleSinkBlockV1(
+        background_tasks=None,
+        thread_pool_executor=None,
+        allow_access_to_file_system=True,
+        allowed_write_directory=None,
+        disable_sinks=False,
+    )
+
+    result = _run_block(block, str(tmp_path), value_base_units=19.6)
+
+    assert result["error_status"] is False
+    payload, _ = _read_bundle(result["bundle_path"])
+    assert payload["valueBaseUnits"] == 20

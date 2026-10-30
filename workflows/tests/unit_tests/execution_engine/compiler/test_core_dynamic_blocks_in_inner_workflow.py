@@ -2,10 +2,22 @@
 
 from unittest import mock
 
+import pytest
 from roboflow_workflows.execution_engine.v1.compiler import core as compiler_core
 from roboflow_workflows.execution_engine.v1.inner_workflow.constants import (
     USE_INNER_WORKFLOW_BLOCK_TYPE,
 )
+
+
+@pytest.fixture(autouse=True)
+def clean_compilation_cache():
+    with compiler_core.COMPILATION_CACHE._cache_lock:
+        compiler_core.COMPILATION_CACHE._cache.clear()
+        compiler_core.COMPILATION_CACHE._keys_buffer.clear()
+    yield
+    with compiler_core.COMPILATION_CACHE._cache_lock:
+        compiler_core.COMPILATION_CACHE._cache.clear()
+        compiler_core.COMPILATION_CACHE._keys_buffer.clear()
 
 
 def _dynamic_block_definition(block_type: str) -> dict:

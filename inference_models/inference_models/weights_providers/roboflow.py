@@ -1,10 +1,10 @@
 import json
 import urllib.parse
-from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import backoff
 import requests
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from requests import Response, Timeout
 
 from inference_models.configuration import (
@@ -39,6 +39,7 @@ from inference_models.runtime_introspection.core import get_coreml_runtime_versi
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    MemoryProfile,
     ModelDependency,
     ModelMetadata,
     ModelPackageMetadata,
@@ -87,6 +88,19 @@ class RoboflowModelPackageV1(BaseModel):
     recommended_parameters: Optional[RecommendedParameters] = Field(
         alias="recommendedParameters", default=None
     )
+    memory_profile: MemoryProfile = Field(
+        alias="memoryProfile", default_factory=MemoryProfile
+    )
+
+    @field_validator("memory_profile", mode="before")
+    @classmethod
+    def _drop_malformed_memory_profile(cls, value: Any) -> MemoryProfile:
+        try:
+            memory_profile = MemoryProfile.model_validate(value)
+        except ValidationError:
+            return MemoryProfile()
+
+        return memory_profile
 
 
 class RoboflowModelDependencyV1(BaseModel):
@@ -111,7 +125,21 @@ class RoboflowModelMetadata(BaseModel):
     recommended_parameters: Optional[RecommendedParameters] = Field(
         alias="recommendedParameters", default=None
     )
+    model_latency_ms: Optional[float] = Field(alias="modelLatencyMs", default=None)
     next_page: Optional[str] = Field(alias="nextPage", default=None)
+
+    @field_validator("model_latency_ms", mode="before")
+    @classmethod
+    def _drop_non_numeric_latency(cls, value: Any) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+
+        try:
+            latency_ms = float(value)
+        except OverflowError:
+            return None
+
+        return latency_ms
 
 
 def get_roboflow_model(
@@ -512,6 +540,7 @@ def parse_onnx_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -602,6 +631,7 @@ def parse_trt_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -636,6 +666,7 @@ def parse_torch_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -662,6 +693,7 @@ def parse_hf_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -681,6 +713,7 @@ def parse_ultralytics_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -730,6 +763,7 @@ def parse_torch_script_model_package(
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
         recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
         torch_script_package_details=torch_script_package_details,
     )
 
