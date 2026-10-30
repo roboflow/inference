@@ -192,7 +192,7 @@ TRACKER_CODE = (
 OVERSIZED_CODE = (
     "import numpy as np\n"
     "def run(self, image):\n"
-    f"    self.buffer = np.zeros(({BLOCK_STATE_MAX_BYTES},), dtype=np.uint8)\n"
+    f"    self.buffer = np.zeros(({2 * BLOCK_STATE_MAX_BYTES},), dtype=np.uint8)\n"
     "    self.count = getattr(self, 'count', 0) + 1\n"
     "    return {'ok': True}\n"
 )
@@ -586,7 +586,7 @@ def test_ws_client_drops_state_over_the_size_cap_with_a_warning(monkeypatch):
 
     executor._send_recv_with_retry = fake_send_recv
     oversized = {
-        "buffer": np.zeros((BLOCK_STATE_MAX_BYTES,), dtype=np.uint8),
+        "buffer": np.zeros((2 * BLOCK_STATE_MAX_BYTES,), dtype=np.uint8),
         "count": 1,
     }
 
@@ -1533,3 +1533,142 @@ def test_engine_and_sandbox_agree_on_the_carried_detections_data_keys(modal_app)
         == block_state.CARRIED_DETECTIONS_DATA_KEYS
     )
     assert modal_app._ENGINE_ATTRIBUTE_NAMES == block_state.ENGINE_ATTRIBUTE_NAMES
+
+
+# --------------------------------------------------------------------------- #
+# review round 3, follow-up: gaps found re-checking the review against 889228f5e
+# --------------------------------------------------------------------------- #
+
+
+def test_ws_server_withholds_a_flag_whose_guarded_helper_is_dropped(modal_app):
+    executor = _http_executor(modal_app)
+
+    first = _run_ws(executor, modal_app, FLAG_GUARDED_HELPER_CODE, {"image": 1}, {})
+    second = _run_ws(
+        executor,
+        modal_app,
+        FLAG_GUARDED_HELPER_CODE,
+        {"image": 1},
+        first["block_state"],
+    )
+
+    assert first["block_state"] == {}
+    assert second["success"] is True, second.get("error")
+
+
+def test_http_server_withholds_a_flag_whose_guarded_helper_is_dropped(modal_app):
+    executor = _http_executor(modal_app)
+
+    first = _run_http(executor, FLAG_GUARDED_HELPER_CODE, {"image": 1}, block_state={})
+    state = client._read_echoed_block_state_json(
+        first, block_state={}, block_type_name="B"
+    )
+    second = _run_http(executor, FLAG_GUARDED_HELPER_CODE, {"image": 1}, state)
+
+    assert state == {}
+    assert second["success"] is True, second.get("error")
+
+
+@pytest.mark.parametrize("partition_side", ["engine", "sandbox"])
+def test_partition_drops_a_timedelta64_scalar(modal_app, partition_side):
+    # np.timedelta64 subclasses np.signedinteger, so an integer check admits it.
+    def measure(attribute):
+        return 0
+
+    state = {"gap": np.timedelta64(1, "s")}
+    if partition_side == "engine":
+        carried, dropped, _ = partition_block_state(state, measure=measure)
+    else:
+        carried, dropped, _ = modal_app._partition_block_state(state, measure)
+
+    assert carried == {}
+    assert [name for name, _ in dropped] == ["gap"]
+    assert "timedelta64" in dropped[0][1]
+
+
+def _detections_with_an_empty_mask():
+    detections = _detections()
+    detections.mask = np.zeros((1, 20, 30), dtype=bool)
+    return detections
+
+
+def test_engine_partition_notes_that_masks_travel_as_polygons():
+    partition = partition_block_state(
+        {"prev": _detections_with_an_empty_mask()}, measure=lambda attribute: 0
+    )
+
+    assert any("self.prev" in note and "polygon" in note for note in partition.notes)
+
+
+def test_sandbox_partition_notes_that_masks_travel_as_polygons(modal_app):
+    _, _, notes = modal_app._partition_block_state(
+        {"prev": _detections_with_an_empty_mask()}, lambda attribute: 0
+    )
+
+    assert any("self.prev" in note and "polygon" in note for note in notes)
+
+
+IMAGE_ON_SELF_CODE = (
+    "def run(self, image):\n" "    self.last = image\n" "    return {'ok': True}\n"
+)
+
+
+def _image():
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="frame-1"),
+        numpy_image=np.full((8, 8, 3), 100, dtype=np.uint8),
+    )
+    return image
+
+
+def test_http_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_http(executor, IMAGE_ON_SELF_CODE, {"image": _image()}, {})
+
+    assert response["success"] is True, response.get("error")
+    state = client._read_echoed_block_state_json(
+        response, block_state={}, block_type_name="B"
+    )
+    assert isinstance(state["last"], WorkflowImageData)
+    assert state["last"].numpy_image.shape == (8, 8, 3)
+    assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
+
+
+def test_ws_server_carries_an_image_kept_on_self_and_notes_the_loss(modal_app):
+    executor = _http_executor(modal_app)
+
+    response = _run_ws(executor, modal_app, IMAGE_ON_SELF_CODE, {"image": _image()}, {})
+
+    assert response["success"] is True, response.get("error")
+    state = client._read_echoed_block_state_msgpack(
+        msgpack.unpackb(msgpack.packb(response, use_bin_type=True), raw=False),
+        block_state={},
+        block_type_name="B",
+    )
+    assert isinstance(state["last"], WorkflowImageData)
+    assert state["last"].numpy_image.shape == (8, 8, 3)
+    assert "self.last" in response["stderr"] and "JPEG" in response["stderr"]
+
+
+@pytest.mark.parametrize("transport", ["http", "ws"])
+def test_detections_parent_ids_survive_a_server_round_trip(modal_app, transport):
+    executor = _http_executor(modal_app)
+    code = "def run(self, image):\n    return {'ok': True}\n"
+    seeded = {"prev": _detections()}
+
+    if transport == "http":
+        response = _run_http(executor, code, {"image": 1}, seeded)
+        state = client._read_echoed_block_state_json(
+            response, block_state=seeded, block_type_name="B"
+        )
+    else:
+        response = _run_ws(executor, modal_app, code, {"image": 1}, seeded)
+        state = client._read_echoed_block_state_msgpack(
+            msgpack.unpackb(msgpack.packb(response, use_bin_type=True), raw=False),
+            block_state=seeded,
+            block_type_name="B",
+        )
+
+    assert state["prev"].data["parent_id"].tolist() == ["frame-1"]
+    assert state["prev"].data["root_parent_id"].tolist() == ["root-frame"]

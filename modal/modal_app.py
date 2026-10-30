@@ -255,6 +255,9 @@ def _check_block_state_value(value: Any, path: str) -> None:
             value, (np.float64, np.complex128)
         ):
             _not_transportable(type(value).__name__, path)
+        if isinstance(value, (np.timedelta64, np.datetime64)):
+            # timedelta64 subclasses np.signedinteger; neither is carried.
+            _not_transportable(type(value).__name__, path)
         if isinstance(value, (np.bool_, np.floating)):
             return
         if isinstance(value, np.integer):
@@ -399,6 +402,13 @@ def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
                     f"Custom Python block state `self.{path}` is carried "
                     f"without its sv.Detections data keys {lost_keys}; only the "
                     "keys the workflow serializers know survive a call"
+                )
+            if value.mask is not None and "rle_mask" not in value.data:
+                notes.append(
+                    f"Custom Python block state `self.{path}` holds "
+                    "sv.Detections masks, which are carried as polygons: mask "
+                    "edges are approximated and a detection whose mask has no "
+                    "contour is lost"
                 )
         elif isinstance(value, WorkflowImageData):
             notes.append(

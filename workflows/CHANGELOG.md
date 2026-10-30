@@ -36,8 +36,9 @@ for contributor and maintainer responsibilities.
     scalars and tuples (read back as Python scalars and lists),
     `sv.Detections` with confidence, class name, detection id and image
     dimensions, images and video metadata. Images and detections are lossy:
-    an image is re-encoded as JPEG on every call, masks travel as polygons,
-    and `sv.Detections.data` keys the workflow serializers do not know are
+    an image is re-encoded as JPEG on every call, masks travel as polygons
+    (a detection whose mask has no contour is lost), and
+    `sv.Detections.data` keys the workflow serializers do not know are
     lost; the block's stderr says so once. Keep `image.numpy_image` on `self`
     for exact pixels.
   - What does not: any other object (an annotator, a tracker, a helper
@@ -49,8 +50,10 @@ for contributor and maintainer responsibilities.
     the block's stderr, so the block behaves exactly as before this change
     (a flag never persists without the helper it guards). An echo setting a
     name defined on the block class fails the call.
-  - Each call serializes the state once per direction on each side, on top
-    of the inputs and the result. State a block changed before raising is
+  - Each side serializes every attribute twice per call (once to check its
+    size, once into the payload), in both directions, on top of the inputs
+    and the result; a stored image costs at least two JPEG encodes per side
+    per call. State a block changed before raising is
     lost remotely, while local execution keeps it.
   - Rollout: deploy the webexec app from this version first. Against an
     older webexec a block with no state on `self` keeps working, with a

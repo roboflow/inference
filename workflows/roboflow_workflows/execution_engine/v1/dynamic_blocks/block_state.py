@@ -421,6 +421,12 @@ def _collect_lossy_value_notes(value: Any, *, path: str, notes: List[str]) -> No
                 f"its sv.Detections data keys {lost_keys}; only the keys the "
                 "workflow serializers know survive a call"
             )
+        if value.mask is not None and RLE_MASK_KEY_IN_SV_DETECTIONS not in value.data:
+            notes.append(
+                f"Custom Python block state `self.{path}` holds sv.Detections "
+                "masks, which are carried as polygons: mask edges are "
+                "approximated and a detection whose mask has no contour is lost"
+            )
         return
     if isinstance(value, WorkflowImageData):
         notes.append(
@@ -480,6 +486,9 @@ def _validate_value(value: Any, *, path: str) -> None:
     if isinstance(value, (np.longdouble, np.clongdouble)) and not isinstance(
         value, (np.float64, np.complex128)
     ):
+        _raise_not_transportable(type(value).__name__, path=path)
+    if isinstance(value, (np.timedelta64, np.datetime64)):
+        # timedelta64 subclasses np.signedinteger; neither is carried.
         _raise_not_transportable(type(value).__name__, path=path)
     if isinstance(value, np.bool_) or isinstance(value, np.floating):
         return
