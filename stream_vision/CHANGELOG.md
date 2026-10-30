@@ -4,7 +4,7 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
-## `0.1.5`
+## `0.1.5rc1`
 
 ### Fixed
 
