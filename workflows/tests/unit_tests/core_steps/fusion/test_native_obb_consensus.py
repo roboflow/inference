@@ -294,3 +294,34 @@ def test_native_carrier_requires_frozen_policy_for_every_observed_class(tensor):
     del sources[1].metadata["class_heading"]["plane"]
     with pytest.raises(ValueError, match="frozen class semantics"):
         _run(sources, tensor=tensor)
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize("explicit", [False, True])
+def test_native_http_input_initializes_missing_lineage_before_consensus(
+    monkeypatch, tensor, explicit
+):
+    from roboflow_workflows import environment
+    from roboflow_workflows.core_steps.common.oriented import (
+        _native_obb_to_sv,
+        deserialize_native_obb,
+    )
+
+    payload = _response(identity="http")
+    row = payload["predictions"][0]
+    del row["parent_id"]
+    if explicit:
+        row.update(
+            parent_id="crop",
+            root_parent_id="root",
+            parent_origin={"offset_x": 3, "offset_y": 5, "width": 100, "height": 80},
+        )
+    monkeypatch.setattr(environment, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    source = deserialize_native_obb("external", payload)
+    lineage = _native_obb_to_sv(source).data
+    assert lineage["parent_id"].tolist() == ["crop" if explicit else "external"]
+    assert lineage["root_parent_id"].tolist() == ["root" if explicit else "external"]
+    if explicit:
+        np.testing.assert_array_equal(lineage["parent_coordinates"], [[3, 5]])
+    result = serialise_native_obb(_run([source], required_votes=1))
+    assert result["predictions"][0]["parent_id"] == ("crop" if explicit else "external")

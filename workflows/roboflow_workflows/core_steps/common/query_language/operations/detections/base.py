@@ -668,6 +668,9 @@ def _resolve_class_names(
 ) -> List[str]:
     if _detections_count(detections) == 0:
         return []
+    if (detections.image_metadata or {}).get(NATIVE_OBB):
+        return [str(entry["class_name"]) for entry in detections.bboxes_metadata]
+
     class_names = _class_names_lookup(detections, operation_name=operation_name)
     result = []
     for class_id_scalar in detections.class_id.tolist():

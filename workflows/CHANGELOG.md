@@ -32,6 +32,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Preserve native class names across colliding model-local IDs, initialize external native input lineage, render empty tensor predictions, admit native perspective connections without rounding corners, and declare native blocks in workload discovery.
+
 - Keep legacy oriented-corner scaling and perspective rounding unchanged; float corner transport is specific to native OBB metadata.
 
 - Reject native oriented detections at ordinary detection conversion and input boundaries; use the dedicated native kind and model block.

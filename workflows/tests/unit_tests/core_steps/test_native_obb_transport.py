@@ -610,3 +610,176 @@ def test_query_rename_declaration_excludes_native_kind():
         names = [kind.name for kind in kinds]
         assert "object_detection_prediction" in names
         assert "oriented_object_detection_prediction" not in names
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+@pytest.mark.parametrize("fusion", ["consensus", "combine"])
+def test_native_colliding_class_ids_keep_row_names_through_filter(
+    monkeypatch, tensor, fusion
+):
+    from roboflow_workflows.core_steps.fusion.detections_consensus.v1 import (
+        AggregationMode,
+        MaskAggregationMode,
+    )
+    from roboflow_workflows.core_steps.fusion.detections_consensus.v2 import (
+        DetectionsConsensusBlockV2,
+    )
+    from roboflow_workflows.core_steps.transformations.detections_combine import (
+        v1 as combine,
+    )
+    from roboflow_workflows.core_steps.transformations.detections_combine import (
+        v1_tensor as combine_tensor,
+    )
+    from roboflow_workflows.core_steps.transformations.per_class_confidence_filter import (
+        v1,
+        v1_tensor,
+    )
+
+    value = response()
+    sources = []
+    for row in value["predictions"]:
+        row["class_id"] = 0
+        row["confidence"] = 0.7
+        row["parent_id"] = "image"
+        source = native_obb_from_inference({**value, "predictions": [row]})
+        sources.append(native_obb_to_tensor(source) if tensor else source)
+    if fusion == "combine":
+        module = combine_tensor if tensor else combine
+        merged = module.DetectionsCombineBlockV1().run(*sources)["predictions"]
+    else:
+        merged = DetectionsConsensusBlockV2().run(
+            predictions_batches=[[source] for source in sources],
+            required_votes=1,
+            class_aware=True,
+            iou_threshold=0.5,
+            confidence=0,
+            classes_to_consider=None,
+            required_objects=None,
+            presence_confidence_aggregation=AggregationMode.MAX,
+            detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
+            detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+            detections_merge_mask_aggregation=MaskAggregationMode.UNION,
+        )[0]["predictions"]
+    from roboflow_workflows.core_steps.common.query_language.entities.operations import (
+        DetectionsProperty,
+    )
+    from roboflow_workflows.core_steps.common.query_language.operations.detections import (
+        base,
+    )
+
+    monkeypatch.setattr(base, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor)
+    assert base.extract_detections_property(
+        merged, DetectionsProperty.CLASS_NAME, "test"
+    ) == ["plane", "stone"]
+    module = v1_tensor if tensor else v1
+    result = module.PerClassConfidenceFilterBlockV1().run(
+        predictions=[merged],
+        class_thresholds={"plane": 0.9, "stone": 0.1},
+    )[0]["predictions"]
+    rows = serialise_native_obb(result)["predictions"]
+    assert [(row["class"], row["class_id"]) for row in rows] == [("stone", 0)]
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_native_empty_visualization_block_returns_unchanged_image(tensor):
+    from roboflow_workflows.core_steps.models.roboflow.oriented_object_detection.v1 import (
+        NativeOBBVisualizationBlockV1,
+    )
+    from roboflow_workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    value = response()
+    value["predictions"] = []
+    predictions = native_obb_from_inference(value)
+    if tensor:
+        predictions = native_obb_to_tensor(predictions)
+    pixels = np.full((79, 101, 3), 123, dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"), numpy_image=pixels
+    )
+    result = NativeOBBVisualizationBlockV1().run(image, predictions, 2)
+    np.testing.assert_array_equal(result["image"].numpy_image, pixels)
+
+
+def test_compiled_native_perspective_roundtrip_preserves_ordered_subpixel_quad():
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+
+    workflow = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "InferenceImage", "name": "image"},
+            {
+                "type": "WorkflowBatchInput",
+                "name": "predictions",
+                "kind": ["oriented_object_detection_prediction"],
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/perspective_correction@v1",
+                "name": "warp",
+                "images": "$inputs.image",
+                "predictions": "$inputs.predictions",
+                "perspective_polygons": [[0, 0], [90, 7], [100, 78], [2, 75]],
+                "transformed_rect_width": 103,
+                "transformed_rect_height": 83,
+                "extend_perspective_polygon_by_detections_anchor": "CENTER",
+                "warp_image": False,
+            },
+            {
+                "type": "roboflow_core/detections_consensus@v2",
+                "name": "consumer",
+                "predictions_batches": ["$steps.warp.corrected_coordinates"],
+                "required_votes": 1,
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "result",
+                "selector": "$steps.consumer.predictions",
+                "coordinates_system": "own",
+            }
+        ],
+    }
+    engine = ExecutionEngine.init(workflow_definition=workflow)
+    try:
+        result = engine.run(
+            runtime_parameters={
+                "image": np.zeros((79, 101, 3), dtype=np.uint8),
+                "predictions": [response()],
+            },
+            serialize_results=True,
+        )[0]["result"]
+    finally:
+        engine.close()
+    row = result["predictions"][0]
+    assert row["geometry_type"] == "quadrilateral"
+    corners = np.asarray(row["corners"])
+    assert np.isfinite(corners).all()
+    assert np.any(np.abs(corners - np.rint(corners)) > 0.01)
+    restored = serialise_native_obb(native_obb_from_inference(result))
+    np.testing.assert_allclose(restored["predictions"][0]["corners"], corners)
+    assert row["heading"] is True
+    assert row["detection_id"] == "plane0"
+
+
+def test_empty_tensor_bridge_retains_root_frame_for_serialization():
+    from roboflow_workflows.core_steps.common.oriented import _native_obb_to_sv
+
+    value = response()
+    value["predictions"] = []
+    source = native_obb_from_inference(value)
+    source.metadata.update(
+        parent_id="crop",
+        root_parent_id="root",
+        root_parent_coordinates=[13, 17],
+        root_parent_dimensions=[200, 300],
+    )
+    bridged = _native_obb_to_sv(native_obb_to_tensor(source))
+    restored = sv_detections_to_root_coordinates(bridged)
+    assert restored.metadata["parent_id"] == "root"
+    assert serialise_native_obb(restored)["image"] == {"height": 200, "width": 300}
+    assert serialise_native_obb(restored)["predictions"] == []

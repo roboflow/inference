@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import torch
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -212,7 +213,11 @@ def _resolve_class_names(
 ) -> List[Optional[str]]:
     """Per-box class name, preferring the ``image_metadata[CLASS_NAMES_KEY]``
     (class_id -> name) map and falling back to ``bboxes_metadata[i]["class"]``
-    when the map is absent or lacks the id."""
+    when the map is absent or lacks the id. Native OBB uses authoritative row
+    names because numeric class IDs can collide across models."""
+    if (detections.image_metadata or {}).get(NATIVE_OBB):
+        return [entry["class_name"] for entry in detections.bboxes_metadata or []]
+
     number_of_detections = int(detections.confidence.shape[0])
     name_by_class_id: Dict[int, str] = {}
     if detections.image_metadata:

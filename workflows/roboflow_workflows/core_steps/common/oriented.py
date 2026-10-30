@@ -217,6 +217,27 @@ def deserialize_native_obb(parameter, detections):
         if isinstance(detections, dict)
         else _native_obb_to_sv(detections)
     )
+    if isinstance(detections, dict):
+        # Match ordinary prediction inputs, importing lazily to avoid the
+        # deserializer registry's dependency on this module.
+        from roboflow_workflows.core_steps.common.deserializers import (
+            _attach_parent_coordinates_and_dimensions,
+        )
+
+        rows = detections["predictions"]
+        for prefix in ("parent", "root_parent"):
+            key = f"{prefix}_id"
+            result.data.setdefault(
+                key, np.asarray([row.get(key, parameter) for row in rows], dtype=str)
+            )
+            _attach_parent_coordinates_and_dimensions(
+                parameter=parameter,
+                raw_detections=rows,
+                parsed_detections=result,
+                origin_key=f"{prefix}_origin",
+                coordinates_key=f"{prefix}_coordinates",
+                dimensions_key=f"{prefix}_dimensions",
+            )
     serialise_native_obb(result)
     if ENABLE_TENSOR_DATA_REPRESENTATION:
         result = native_obb_to_tensor(result)
@@ -234,6 +255,9 @@ def annotate_native_obb(image, detections, *, thickness=2):
     Returns:
         Annotated input image.
     """
+    if not len(detections):
+        return image
+
     for i, corners in enumerate(detections.data[CORNERS]):
         points = np.rint(corners).astype(np.int32)
         cv2.polylines(image, [points], True, (251, 81, 163), thickness)
@@ -309,6 +333,10 @@ def _native_obb_to_sv(detections):
     ):
         if key in metadata:
             data[key] = np.asarray([metadata[key]] * len(entries))
+            if entries and key != "image_dimensions":
+                # SV carries lineage per row; redundant image keys would reject
+                # otherwise mergeable sources with different root identities.
+                metadata.pop(key)
     result = sv.Detections(
         xyxy=detections.xyxy.detach().cpu().numpy(),
         confidence=detections.confidence.detach().cpu().numpy(),

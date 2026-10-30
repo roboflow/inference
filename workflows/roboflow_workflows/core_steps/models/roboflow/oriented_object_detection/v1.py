@@ -28,7 +28,13 @@ from roboflow_workflows.execution_engine.entities.types import (
     RoboflowModelField,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
 from roboflow_workflows.prototypes.block import (
+    DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
     roboflow_platform_model,
@@ -83,7 +89,35 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls):
         return ">=1.3.0,<2.0.0"
 
-    def discover_dependent_resources(self):
+    def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare native model inference.
+
+        Returns:
+            The work performed by this block.
+        """
+        return [WorkOperation.MODEL_INFERENCE]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare unrestricted execution.
+
+        Args:
+            ignore_environment_restrictions: Whether to omit host restrictions.
+
+        Returns:
+            A complete empty restriction declaration.
+        """
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        """Declare the selected native model.
+
+        Returns:
+            The model dependency, retaining selectors for discovery.
+        """
         return [roboflow_platform_model(model_id=self.model_id)]
 
 
@@ -189,6 +223,37 @@ class NativeOBBVisualizationManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls):
         return ">=1.3.0,<2.0.0"
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare native footprint visualization.
+
+        Returns:
+            The work performed by this block.
+        """
+        return [WorkOperation.VISUALIZATION]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare unrestricted execution.
+
+        Args:
+            ignore_environment_restrictions: Whether to omit host restrictions.
+
+        Returns:
+            A complete empty restriction declaration.
+        """
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        """Declare that no external resources are required.
+
+        Returns:
+            A complete empty resource declaration.
+        """
+        return []
 
 
 class NativeOBBVisualizationBlockV1(WorkflowBlock):

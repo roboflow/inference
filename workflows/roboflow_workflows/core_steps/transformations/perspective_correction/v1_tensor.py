@@ -45,6 +45,7 @@ import numpy as np
 import supervision as sv
 import torch
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     instance_mask_to_numpy,
@@ -64,6 +65,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+    TENSOR_NATIVE_ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
 )
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -193,6 +195,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         Selector(
             kind=[
                 TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                TENSOR_NATIVE_ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             ]
         )
@@ -257,6 +260,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
                 name=OUTPUT_DETECTIONS_KEY,
                 kind=[
                     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                    TENSOR_NATIVE_ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],
             ),
@@ -982,7 +986,11 @@ def _correct_oriented_box_in_metadata(
         src=np.array([np.asarray(oriented_box)], dtype=np.float32),
         m=perspective_transformer,
     ).reshape(-1, 2)
-    entry[ORIENTED_BOX_COORDINATES] = np.around(corrected_obb).astype(np.float32)
+    entry[ORIENTED_BOX_COORDINATES] = (
+        corrected_obb.astype(np.float64)
+        if entry.get(NATIVE_OBB)
+        else np.around(corrected_obb).astype(np.float32)
+    )
 
 
 def _correct_native_detections(
@@ -1097,6 +1105,11 @@ def _correct_native_detections(
         class_names=class_names,
         prediction_type=prediction_type,
     )
+    if (detections.image_metadata or {}).get(NATIVE_OBB):
+        corrected.image_metadata.update(
+            native_obb=True,
+            class_heading=dict(detections.image_metadata["class_heading"]),
+        )
     # The corrected boxes/masks live in the destination (warped) frame, not the
     # source image. ``attach_native_detection_metadata`` reports the source image
     # dimensions, so override IMAGE_DIMENSIONS_KEY with the destination rect size

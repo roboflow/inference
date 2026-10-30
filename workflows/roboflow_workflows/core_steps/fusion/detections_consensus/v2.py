@@ -36,6 +36,12 @@ from roboflow_workflows.execution_engine.entities.types import (
     ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import DependentResource
 from shapely.geometry import Polygon
 from supervision.config import ORIENTED_BOX_COORDINATES
 
@@ -108,6 +114,37 @@ class BlockManifest(v1.BlockManifest):
             else []
         )
         return outputs
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        """Declare geometry-aware detection processing.
+
+        Returns:
+            The work performed by this block.
+        """
+        return [WorkOperation.DETECTION_PROCESSING]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Declare unrestricted execution.
+
+        Args:
+            ignore_environment_restrictions: Whether to omit host restrictions.
+
+        Returns:
+            A complete empty restriction declaration.
+        """
+        return Discovery[RuntimeRestriction](
+            items=[], complete=True, unknown_reasons=[]
+        )
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        """Declare that no external resources are required.
+
+        Returns:
+            A complete empty resource declaration.
+        """
+        return []
 
 
 class DetectionsConsensusBlockV2(v1.DetectionsConsensusBlockV1):

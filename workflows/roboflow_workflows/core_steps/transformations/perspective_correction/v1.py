@@ -21,6 +21,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     Selector,
 )
@@ -132,6 +133,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
             ]
         )
@@ -196,6 +198,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
                 name=OUTPUT_DETECTIONS_KEY,
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],
             ),
