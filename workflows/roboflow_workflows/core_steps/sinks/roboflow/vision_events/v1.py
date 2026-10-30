@@ -34,7 +34,6 @@ from roboflow_workflows.core_steps.sinks.roboflow.vision_events.clip_attachments
     STATUS_DISABLED,
     STATUS_THROTTLED,
     STATUS_UNSUPPORTED_SINK_MODE,
-    VIDEO_CLIP_ANCHOR_KIND,
     ClipAttachments,
     SinkClipUploads,
     plan_attachments,
@@ -65,6 +64,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_SOLUTION_KIND,
     STRING_KIND,
+    VIDEO_CLIP_ANCHOR_KIND,
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (

@@ -32,23 +32,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
-from roboflow_workflows.execution_engine.entities.types import Kind
 from roboflow_workflows.prototypes.platform_client import (
     RoboflowPlatformClient,
     ensure_roboflow_api_access,
 )
-
-try:
-    from roboflow_workflows.execution_engine.entities.types import (
-        VIDEO_CLIP_ANCHOR_KIND,
-    )
-except ImportError:  # pragma: no cover - until the recorder's kind is registered
-    VIDEO_CLIP_ANCHOR_KIND = Kind(
-        name="video_clip_anchor",
-        description="Reference to a recorder's buffered video for a specific "
-        "frame; consumed by the Vision Events sink",
-        serialised_data_type="dict",
-    )
 
 logger = logging.getLogger(__name__)
 
