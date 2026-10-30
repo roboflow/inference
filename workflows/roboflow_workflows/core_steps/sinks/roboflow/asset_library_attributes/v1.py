@@ -361,6 +361,28 @@ def normalize_metadata_key(key: Any) -> str:
     return normalized_key
 
 
+def normalize_metadata_keys(metadata: Dict[Any, Any]) -> Dict[str, Any]:
+    # Refuse keys that collide after normalization, instead of letting one value
+    # silently overwrite the other.
+    keys_by_normalized_key: Dict[str, List[Any]] = {}
+    for key in metadata:
+        keys_by_normalized_key.setdefault(normalize_metadata_key(key), []).append(key)
+    for normalized_key, keys in keys_by_normalized_key.items():
+        if len(keys) < 2:
+            continue
+        sanitized_key = next(k for k in keys if k != normalized_key)
+        other_key = next(k for k in keys if k != sanitized_key)
+        if other_key == normalized_key:
+            reason = f'there is already a key named "{normalized_key}"'
+        else:
+            reason = f'key "{other_key}" sanitizes to "{normalized_key}" as well'
+        raise ValueError(
+            f'Sanitizing Asset Library metadata key "{sanitized_key}" to '
+            f'"{normalized_key}" failed as {reason}. Please sanitize your keys yourself.'
+        )
+    return {normalize_metadata_key(k): v for k, v in metadata.items()}
+
+
 def build_effective_updates(
     source_ids: Batch[str],
     metadata: Optional[Union[Dict[str, Any], Batch[Optional[Dict[str, Any]]]]],
@@ -386,7 +408,7 @@ def build_effective_updates(
         merged = updates_by_source_id.setdefault(source, {"imageId": source})
         if image_metadata:
             merged.setdefault("metadata", {}).update(
-                {normalize_metadata_key(k): v for k, v in image_metadata.items()}
+                normalize_metadata_keys(image_metadata)
             )
         if image_tags:
             combined = [*merged.get("addTags", []), *image_tags]
