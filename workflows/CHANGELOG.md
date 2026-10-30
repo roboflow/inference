@@ -57,6 +57,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Rate Limiter (`roboflow_core/rate_limiter@v1`) falls back to wall-clock time when `video_reference_image` carries no video metadata, for example a still image sent over HTTP or the output of a step that builds a new image (`stitch_images@v1`, `grid_visualization@v1`, the Stability AI blocks). The block used to read the placeholder metadata such images report (frame 0 at 30 FPS), so its time never advanced and it suppressed `next_steps` on every run after the first. Video time (`frame_number / fps`) is now used only for frames from a video file with a known, non-zero FPS; stream frames, frames whose source is unknown and video files without FPS use the frame timestamp, as Time in Zone and Velocity do. Streams that report FPS used to be timed by `frame_number / fps`. The new `WorkflowImageData.has_video_metadata()` tells real video metadata from the placeholder.
 - Root-coordinate recovery (`sv_detections_to_root_coordinates`, applied to workflow outputs by default) re-encodes `rle_mask` from the re-anchored dense masks. A block that ran on a crop and returns RLE with dense masks, such as SAM 3 v3 with `output_format: rle`, used to serialize root-coordinate boxes next to an RLE still sized and placed in the crop. RLE-only predictions (`mask=None`) are unchanged, as in `scale_sv_detections`.
 
 
