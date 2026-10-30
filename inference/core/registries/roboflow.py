@@ -559,7 +559,7 @@ def _resolve_model_type(
             service_secret=service_secret,
         ):
             raise RoboflowAPINotAuthorizedError(
-                f"API key {api_key} does not have access to model {model_id}"
+                f"API key does not have access to model {model_id}"
             )
 
     cached_metadata = _get_cached_model_metadata(

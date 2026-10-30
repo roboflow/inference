@@ -960,3 +960,19 @@ def test_decorator_forwards_the_new_members() -> None:
     inner.load_action_recognition_model.assert_called_once_with(
         model_id="ar/1", api_key="k"
     )
+
+
+def test_access_denial_does_not_disclose_api_key(monkeypatch) -> None:
+    key = "sentinel-private-key"
+    monkeypatch.setattr(base_module, "MODELS_CACHE_AUTH_ENABLED", True)
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(
+        base_module, "_check_if_api_key_has_access_to_model", lambda **kwargs: False
+    )
+    manager = ModelManager(model_registry=MagicMock())
+
+    with pytest.raises(base_module.RoboflowAPINotAuthorizedError) as error:
+        manager.add_model(model_id="example/1", api_key=key)
+
+    assert key not in str(error.value)
+    assert "does not have access to model example/1" in str(error.value)

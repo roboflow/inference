@@ -368,6 +368,7 @@ from inference.core.utils.depth_encoding import (
 )
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.requests import (
+    _redact_credentials,
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
 )
@@ -3128,10 +3129,17 @@ class HttpInterface(BaseInterface):
                         )
                     except Exception as e:
                         load_time = time.perf_counter() - t_start
-                        error_msg = f"Preload: error loading model '{model_id}' after {load_time:.1f}s: {e}"
+                        reason = _redact_credentials(
+                            str(e),
+                            credentials=(
+                                PRELOAD_API_KEY,
+                                ROBOFLOW_INTERNAL_SERVICE_SECRET,
+                            ),
+                        )
+                        error_msg = f"Preload: error loading model '{model_id}' after {load_time:.1f}s: {reason}"
                         logger.error(error_msg)
                         with state.lock:
-                            state.initialization_errors.append((model_id, str(e)))
+                            state.initialization_errors.append((model_id, reason))
                         return
 
                 all_models = list(
@@ -3163,11 +3171,18 @@ class HttpInterface(BaseInterface):
                             )
                             future.cancel()
                         except Exception as e:
+                            reason = _redact_credentials(
+                                str(e),
+                                credentials=(
+                                    PRELOAD_API_KEY,
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+                                ),
+                            )
                             logger.error(
-                                f"Preload: unexpected error for model '{model_id}': {e}"
+                                f"Preload: unexpected error for model '{model_id}': {reason}"
                             )
                             with state.lock:
-                                state.initialization_errors.append((model_id, str(e)))
+                                state.initialization_errors.append((model_id, reason))
 
                 # Update the readiness state in a thread-safe manner
                 with state.lock:
