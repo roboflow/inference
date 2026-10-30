@@ -5,7 +5,7 @@ import re
 import time
 from pathlib import Path
 from threading import RLock
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 
@@ -44,6 +44,8 @@ def build_sam3_engines(
     *,
     parts: Tuple[str, ...] = PARTS,
     fp32_layer_patterns: Tuple[str, ...] = (),
+    precision: Optional[str] = None,
+    fp32_softmax: bool = True,
 ) -> Dict:
     """Build static TensorRT engines with detailed inspection metadata.
 
@@ -54,6 +56,8 @@ def build_sam3_engines(
         workspace_gib (int): Builder workspace limit in GiB per engine.
         parts (Tuple[str, ...]): Completed ONNX components to compile.
         fp32_layer_patterns (Tuple[str, ...]): Layer-name patterns that retain FP32.
+        precision (Optional[str]): FP32, FP16, or BF16 computation. Replaces fp16.
+        fp32_softmax (bool): Constrain Softmax operations to FP32 in reduced precision.
 
     Returns:
         Dict: Engine provenance, checksums, and per-engine build durations.
@@ -62,6 +66,13 @@ def build_sam3_engines(
         ValueError: If the manifest, destination, or shapes are unsupported.
         RuntimeError: If TensorRT cannot parse or build an engine.
     """
+    if precision is None:
+        precision = "fp16" if fp16 else "fp32"
+    elif precision not in ("fp32", "fp16", "bf16"):
+        raise ValueError("Select fp32, fp16, or bf16 precision")
+    elif fp16 and precision != "fp16":
+        raise ValueError("fp16 conflicts with the requested precision")
+
     trt = _tensorrt()
     manifest = json.loads((export_dir / "export.json").read_text())
     if not parts or len(set(parts)) != len(parts) or not set(parts).issubset(PARTS):
@@ -110,10 +121,11 @@ def build_sam3_engines(
             trt.MemoryPoolType.WORKSPACE, workspace_gib << 30
         )
         configuration.clear_flag(trt.BuilderFlag.TF32)
-        if fp16:
-            configuration.set_flag(trt.BuilderFlag.FP16)
+        if precision != "fp32":
+            configuration.set_flag(
+                trt.BuilderFlag.BF16 if precision == "bf16" else trt.BuilderFlag.FP16
+            )
             configuration.set_flag(trt.BuilderFlag.OBEY_PRECISION_CONSTRAINTS)
-            # Softmax precision is sensitive in the split-export reference.
             for index in range(network.num_layers):
                 layer = network.get_layer(index)
                 requested = any(
@@ -124,10 +136,10 @@ def build_sam3_engines(
                     output_index
                     for output_index in range(layer.num_outputs)
                     if layer.get_output(output_index).dtype
-                    in (trt.float32, trt.float16)
+                    in (trt.float32, trt.float16, trt.bfloat16)
                 ]
                 if (
-                    layer.type == trt.LayerType.SOFTMAX or requested
+                    (fp32_softmax and layer.type == trt.LayerType.SOFTMAX) or requested
                 ) and floating_outputs:
                     layer.precision = trt.float32
                     for output_index in floating_outputs:
@@ -143,7 +155,8 @@ def build_sam3_engines(
 
     manifest.update(
         environment=_environment(),
-        precision="fp16" if fp16 else "fp32",
+        precision=precision,
+        fp32_softmax=fp32_softmax,
         profiling_verbosity="detailed",
         engines_sha256=engines,
         build_wall_seconds=build_seconds,
@@ -177,6 +190,7 @@ class _TensorRTEngine:
         self.dtypes = {
             trt.float32: torch.float32,
             trt.float16: torch.float16,
+            trt.bfloat16: torch.bfloat16,
             trt.int32: torch.int32,
             trt.int64: torch.int64,
             trt.bool: torch.bool,
