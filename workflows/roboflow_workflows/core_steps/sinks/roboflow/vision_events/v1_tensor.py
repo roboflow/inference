@@ -30,6 +30,10 @@ from roboflow_workflows.core_steps.common.workload_presets import (
     COOLDOWN_ACTUAL_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_message
+from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+    _api_key_safe_raise_for_status,
+    _build_cloud_request_headers,
+)
 from roboflow_workflows.environment import API_BASE_URL
 from roboflow_workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
@@ -162,7 +166,24 @@ dashboard.
    input image
 3. Creates a vision event with the specified event type, use case, event data,
    and custom metadata
-4. Supports fire-and-forget mode for non-blocking execution
+4. Enforces a built-in rate limit (`cooldown_seconds`, default 1 second) so
+   high-frequency video workflows do not flood the API with an event per frame
+5. Supports fire-and-forget mode for non-blocking execution
+
+## Rate Limiting
+
+Video workflows can run many times per second, which by default would send an event
+(and its images) for every frame. To prevent this, the block enforces a cooldown
+between consecutive events: at most one event per second is sent by default. Events
+triggered during the cooldown period are dropped and the `throttling_status` output
+is set to `True`.
+
+Adjust `cooldown_seconds` to your needs, or set it to `0` to disable rate limiting
+entirely (e.g. for intentionally bursty use cases). The cooldown timer lives in the
+block instance, so it throttles long-lived executions such as video processing with
+InferencePipeline. Workflows served over HTTP (e.g. `/workflows/run`) create fresh
+block instances per request, so the cooldown does not throttle across separate HTTP
+calls.
 
 ## Deployment Modes
 
@@ -1211,11 +1232,13 @@ def _upload_image(
     )
     response = requests.post(
         platform_client.wrap_url(f"{api_base_url}/vision-events/upload"),
-        headers={"Authorization": f"Bearer {api_key}"},
+        headers=_build_cloud_request_headers(
+            api_key=api_key, platform_client=platform_client
+        ),
         files={"file": ("image.jpg", image_bytes, "image/jpeg")},
         timeout=30,
     )
-    response.raise_for_status()
+    _api_key_safe_raise_for_status(response=response)
     result = response.json()
     return result["sourceId"], result.get("url", "")
 
@@ -1269,14 +1292,15 @@ def _send_event(
         ensure_roboflow_api_access(platform_client)
         response = requests.post(
             platform_client.wrap_url(f"{api_base_url}/vision-events"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=_build_cloud_request_headers(
+                api_key=api_key,
+                platform_client=platform_client,
+                explicit_headers={"Content-Type": "application/json"},
+            ),
             json=payload,
             timeout=30,
         )
-        response.raise_for_status()
+        _api_key_safe_raise_for_status(response=response)
         return False, "Vision event sent successfully"
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response is not None else "unknown"
