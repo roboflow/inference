@@ -50,6 +50,104 @@ for contributor and maintainer responsibilities.
 - SAM 3 Interactive (`roboflow_core/sam3_interactive@v1`): optional `output_format`, `polygons` (default, output unchanged) or `rle`, with the same values as SAM 3 v3. With `rle` the block asks SAM 3 for RLE masks on every execution path and returns one prediction per prompt that keeps the model's mask in `rle_mask` (decoded into `mask` for downstream blocks), declared as `rle_instance_segmentation_prediction` first, so serialized outputs carry `rle_mask` instead of polygon `points`. A server that answers polygons anyway has them rasterised into the prompt's mask. The tensor-native variant already carried RLE masks; with `rle` it declares and serializes them as RLE, and, like the NumPy block, keeps one mask per prompt for a polygon answer, drops empty masks and reports COCO box extents (a one-pixel mask is a 1x1 box). `ModelsProvider.run_sam2_segmentation` gains `format`, which the block sends only for `rle`.
 - Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.
 
+### Execution engine
+
+- **Custom Python `self` state under remote execution** — Attributes a
+  Custom Python block sets on `self` (for example a first-frame flag or a
+  per-run counter) now persist between calls when the block runs in the
+  Modal sandbox (`WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal`), matching
+  local execution. Previously the sandbox rebuilt an empty `self` on every
+  call, so such blocks took their "first call" branch on every frame of a
+  video. The engine-side block instance owns the state and carries it to
+  the sandbox and back on each call, so it survives container recycling
+  and never leaks between workflow runs or between block instances.
+  - What persists, as exact types: JSON-like values (ints within the
+    signed 64-bit range), tuples, numpy bool/int/float/str/bytes scalars,
+    datetimes (naive, fixed offset, or `ZoneInfo` with its zone and fold),
+    numpy arrays of bool/int/float/str, `sv.Detections` with confidence,
+    `class_id`, class name, detection id and either image dimensions or RLE
+    masks that carry their size, images and video metadata. Tuples come
+    back as tuples, numpy scalars with their own numpy type (including
+    aliases such as `np.longlong`), and `ZoneInfo` datetimes with the same
+    wall time, fold and zone, including DST gaps and `datetime.min`/`max`.
+    Numpy string dict keys come back as `str` (lookups and counting are
+    unchanged, numpy methods on the key are not); numpy bytes dict keys are
+    not carried.
+  - Lossy values. An image is re-encoded as JPEG on every call, so its
+    pixels drift; a grayscale image comes back with three channels; and an
+    image that is not a crop comes back with its `parent_id` replaced by a
+    placeholder (`input` or `result`). Masks travel as polygons, so a
+    detection whose mask has no contour is lost. `sv.Detections.data` keys
+    the workflow serializers do not know are lost, integer class names and
+    detection ids come back as strings, `width`, `height` and parent id
+    keys are added, a `root_parent_id` equal to the `parent_id` comes back
+    as a placeholder, parent and root coordinates and dimensions are only
+    kept for crops, float32 coordinates and confidences come back as
+    float64, and empty detections lose their data and metadata. A
+    `VideoMetadata` timestamp keeps its UTC offset but not a `ZoneInfo`
+    zone, a naive datetime loses its `fold`, and a named
+    `datetime.timezone` loses its name. The sandbox reports the image and
+    detection losses once per container on the block's stderr (except the
+    coordinate, dimension and float32 changes) and the engine logs them once
+    per step; the datetime losses are only listed here. A raw `numpy_image`
+    array is exact but realistic frames exceed the 1 MiB cap (a 480x640 RGB
+    frame does), so it is only an option for small images.
+  - What does not persist: a subclass of an accepted type (`defaultdict`,
+    `Counter`, `OrderedDict`, a namedtuple, an `IntEnum` member, a `str` or
+    numpy scalar subclass), which would come back as its base type; any
+    other object (an annotator, a tracker, a helper instance); a value the
+    transport cannot encode: complex or object arrays, `np.datetime64`,
+    `np.longdouble`, numpy strings with trailing NUL characters, integers
+    outside the signed 64-bit range, a datetime whose time zone is neither
+    `ZoneInfo(key)` nor `datetime.timezone` (a `ZoneInfo.from_file` zone
+    has no key), integer values inside the carried fields of
+    `sv.Detections`, and integer arrays under detection keys the serializer
+    passes through as numpy scalars (`time_in_zone`, `path_deviation`,
+    `data` and the bounding-rect keys `angle`, `rect`, `width` and
+    `height`) and per-detection arrays under those keys whose dtype is not
+    bool/int/float/str (an object array of two or more dimensions); a tuple
+    inside `sv.Detections` data; a dict with a `_type`
+    key or shaped like a serialized image (`type` "base64" with a `value`),
+    also inside carried `sv.Detections` fields; a value nested more than 64
+    levels deep in its serialized form (a tuple counts two levels, and
+    images, video metadata and `sv.Detections` add their own); state whose
+    numpy arrays and scalars, together, take more than 8 MiB to decode (a
+    numpy string array takes four bytes per character of its longest item,
+    for every item); engine-owned or dunder names; more than 1024 attributes; and an attribute whose
+    serialized form is over 1 MiB. The whole state is also capped at 1 MiB: the
+    largest attributes are dropped until it fits.
+  - The engine treats the echoed state as untrusted: before decoding it
+    refuses an HTTP echo longer than 2 MiB, unknown markers, arrays and
+    numpy scalars that do not match their dtype or together take more than
+    8 MiB to decode, images that are not base64, untagged image dicts (`type`
+    "base64" with a `value`), nesting deeper than 64 levels and more than
+    1024 attributes; after decoding it re-checks every value as it did
+    before sending. A refused echo fails the call with a `DynamicBlockError`.
+    Images in the echo and in block results are decoded from their base64
+    payload only (whitespace and line breaks in it are ignored), never
+    fetched from a URL or read from a file, and arrays are refused unless
+    their values fill the declared shape exactly; object arrays in block
+    results only need to match their outer shape, so ragged items come back
+    as lists. `sv.Detections` whose polygons differ in length, as
+    `scale_sv_detections` produces, now decode in block results and state
+    with one polygon array per detection instead of failing the call.
+  - When any attribute cannot be carried, none of the block's state is
+    carried for that call, with a warning naming the attributes on the
+    block's stderr, so the block behaves exactly as before this change (a
+    flag never persists without the helper it guards). A growing attribute
+    that crosses the cap therefore resets all of the block's state, on every
+    call it stays over, and the warning is shown once per container. An
+    echo setting a name defined on the block class fails the call.
+  - Each side serializes every attribute twice per call (once to check its
+    size, once into the payload), in both directions, on top of the inputs
+    and the result. State a block changed before raising is lost remotely,
+    while local execution keeps it.
+  - Rollout: deploy the webexec app from this version first. Against an
+    older webexec, blocks run as they did before this change (`self` reset
+    on every call) with a warning in the engine's log: a uniformly old
+    fleet never echoes state, and in a mixed fleet or after a rollback
+    mid-stream the state the engine holds is cleared rather than failing
+    every later call.
 ### Changed
 
 - Remove duplicated model lists and counts from `meta_vlm@v3` descriptions;
