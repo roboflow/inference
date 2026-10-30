@@ -13,7 +13,6 @@ from roboflow_workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     Selector,
     StepSelector,
-    WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
@@ -114,7 +113,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         description="List of workflow steps to execute if the rate limit allows (i.e., sufficient time has passed since the last execution). These steps receive control flow only when the cooldown period has elapsed, enabling throttled downstream processing. If the cooldown period hasn't elapsed, these steps will not execute as the branch terminates. Each step selector references a block in the workflow that should execute when rate limiting permits.",
         examples=[["$steps.upload"]],
     )
-    video_reference_image: Optional[WorkflowImageSelector] = Field(
+    video_reference_image: Optional[Selector(kind=[IMAGE_KIND])] = Field(
         description="Optional reference to a video frame image to use for video-time-based timestamp generation. When provided, the rate limiter calculates timestamps based on video metadata rather than system clock time: frame number and FPS for video files, and the frame timestamp for streams or when FPS is unknown. This is useful when processing video faster than real-time, ensuring rate limiting works correctly relative to video playback time rather than processing speed. If not provided (None), or if the image carries no video metadata (for example a still image), the block uses system clock time (datetime.now()). Only applicable for video processing workflows.",
         examples=["$inputs.image"],
         default=None,
