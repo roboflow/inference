@@ -16,9 +16,52 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Inner Workflow literal bindings keep their type.** A literal bound in an
+  Inner Workflow step's `parameter_bindings` (for example `0.3`, `true`, a list
+  or an object) now reaches the child workflow's steps with that type when the
+  child references the input as a whole `$inputs.<name>` value. Inlining used
+  to stringify every binding, so a child boolean input bound to `true` became
+  `"True"` and a number became `"0.3"`, which differed from the same value
+  supplied through the child's `default_value`. A literal embedded in a larger
+  string (`"prefix-$inputs.x"`) is still interpolated as text. Compilation now
+  rejects a non-string literal bound to a child output selector with
+  `InnerWorkflowInvalidStepEntryError` instead of producing an invalid selector
+  later. Workflows that worked around the cast by converting inside the child
+  keep working; no migration is needed.
+
+### Breaking
+
+- Require `openai>=3.32.0,<4.0.0` (it was `>=1.17.0,<2.0.0`). 3.32 is the first release whose `client.decisions.create` accepts `prompt_cache_options`. Environments that cap `openai` below 3, as the current litellm, crewai and llama-index-llms-openai releases do, can no longer install `roboflow-workflows` alongside them.
+  - openai 3 replaced HTTPX with HTTPX2. The blocks that call models through the SDK (OpenAI, OpenAI-Compatible, and the OpenRouter- and xAI-based blocks) now verify TLS certificates against the operating-system trust store instead of `certifi`; `SSL_CERT_FILE` and `SSL_CERT_DIR` still apply.
+  - The OpenAI-Compatible block builds its client with `DefaultHttpx2Client` and parses base URLs with `httpx2.URL`. It still refuses redirects, and its redirect test intercepts the HTTPX2 transport.
+  - Migration: install `roboflow-workflows` in an environment that allows `openai` 3, and on a host that verified TLS through a patched `certifi` bundle, point `SSL_CERT_FILE` at that bundle.
+
 ### Added
 
+- OpenAI block (`open_ai@v7`): add GPT-6.1 Terra (`gpt-6.1-terra`) with
+  `none` through `max` reasoning effort and the existing structured absolute-pixel
+  detection prompt.
+- Add Muse Spark Open to `meta_vlm@v3` via OpenRouter, with minimal, low,
+  medium, high, and xhigh reasoning and the existing normalized 0–1000
+  detection format.
+
+- SAM 3 Interactive (`roboflow_core/sam3_interactive@v1`): optional `output_format`, `polygons` (default, output unchanged) or `rle`, with the same values as SAM 3 v3. With `rle` the block asks SAM 3 for RLE masks on every execution path and returns one prediction per prompt that keeps the model's mask in `rle_mask` (decoded into `mask` for downstream blocks), declared as `rle_instance_segmentation_prediction` first, so serialized outputs carry `rle_mask` instead of polygon `points`. A server that answers polygons anyway has them rasterised into the prompt's mask. The tensor-native variant already carried RLE masks; with `rle` it declares and serializes them as RLE, and, like the NumPy block, keeps one mask per prompt for a polygon answer, drops empty masks and reports COCO box extents (a one-pixel mask is a 1x1 box). `ModelsProvider.run_sam2_segmentation` gains `format`, which the block sends only for `rle`.
 - Vision Events (`roboflow_core/roboflow_vision_events@v1`) and Vision Event Bundle (`roboflow_core/vision_event_bundle@v1`) blocks gain an optional `value_base_units` input: what the event is worth, in base units of the use case's currency (e.g. cents for USD). The currency always comes from the use case. The value is sent as `valueBaseUnits` to the Vision Events API and in the bundle `payload.json`, and as `value_base_units` to the local event store. A typed value or workflow input must be a whole number (`true`/`false` are rejected). A value from another step is rounded to whole base units; one that is not a finite number or falls outside ±10,000,000,000 is dropped with a warning and the event is still recorded. Left empty, the use case's default value applies. `operator_feedback` events never carry a value, so the blocks omit it for them.
+
+### Changed
+
+- Remove duplicated model lists and counts from `meta_vlm@v3` descriptions;
+  available models are defined by the registry-backed dropdown.
+
+### Fixed
+
+- Root-coordinate recovery (`sv_detections_to_root_coordinates`, applied to workflow outputs by default) re-encodes `rle_mask` from the re-anchored dense masks. A block that ran on a crop and returns RLE with dense masks, such as SAM 3 v3 with `output_format: rle`, used to serialize root-coordinate boxes next to an RLE still sized and placed in the crop. RLE-only predictions (`mask=None`) are unchanged, as in `scale_sv_detections`.
+
+- Video-state blocks now accept an image from a step output as well as from a Workflow input, so they keep working inside an embedded `roboflow_core/inner_workflow@v1` whose `image` is bound to a parent step (for example a preprocessing block). Inlining replaces the child's `$inputs.image` with that step selector, and the merged definition used to fail with `Could not parse workflow definition` even though each Workflow compiled on its own. Affected blocks: `time_in_zone@v2`/`@v3`, `velocity@v1`, `line_counter@v2`, `path_deviation_analytics@v2`, `detection_event_log@v1`, `byte_tracker@v2`, `cache_get@v1`, `cache_set@v1`, `delta_filter@v1` and `rate_limiter@v1` (`video_reference_image`). The blocks read `video_metadata` from the image, which step outputs built with `WorkflowImageData.copy_and_replace` keep, so per-video state is unchanged.
+- Absolute and relative static crops (`absolute_static_crop@v1`, `relative_statoic_crop@v1`) now give a crop the same `video_identifier` on every frame (`<video> | crop: <block>:<x_min>,<y_min>,<x_max>,<y_max>`). They used to append the per-frame crop ID, so a stateful block fed by a static crop (Cache Get/Set, trackers, analytics) saw each frame as a new video: the cache missed on every frame and state kept growing with one namespace per frame. Crop `parent_id` values are still unique per frame. `WorkflowImageData.create_crop` and `create_crop_from_tensor` take an optional `video_crop_identifier` for this; other callers are unchanged.
+- Camera Calibration (`camera-calibration@v1`) keeps the input image's video metadata and root-ancestor metadata on its output. It used to drop them, so a rate limiter using the calibrated frame as `video_reference_image` saw every frame at time zero and suppressed its downstream steps after the first frame.
 
 ## `0.2.14`
 
