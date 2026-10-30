@@ -570,6 +570,14 @@ def test_load_image_base64_when_invalid_bytes_given() -> None:
         _ = load_image_base64(value=b"some")
 
 
+@pytest.mark.parametrize("payload", ["invalid-猫", "invalid-猫".encode("utf-8")])
+def test_load_image_base64_rejects_non_ascii_payload(payload) -> None:
+    with pytest.raises(InputImageLoadError) as error:
+        load_image_base64(value=payload)
+
+    assert error.value.get_public_error_details() == "Malformed base64 input image."
+
+
 def test_load_image_with_inferred_type_when_value_is_np_array(
     image_as_numpy: np.ndarray,
 ) -> None:
