@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- TensorRT CUDA graph capture and replay wait on the caller's CUDA stream and
+  record the input tensor on the graph stream before copying or executing it.
+  Previously, an input still being produced on the caller stream without a
+  tensor readiness event (RF-DETR tracker-based preprocessing, batch padding)
+  could be read too early and yield predictions for stale input when CUDA
+  graphs were enabled.
+
+### Changed
+
+- `FILE_LOCK_ACQUIRE_TIMEOUT` (`INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT`) defaults to
+  600 seconds instead of 20, so a model whose weights package is being downloaded by
+  another process waits for that download instead of failing on the package
+  materialization lock.
+
 ## `0.39.6`
 
 ### Changed

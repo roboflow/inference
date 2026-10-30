@@ -2,7 +2,7 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import httpx
+import httpx2
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -508,17 +508,17 @@ def test_approved_endpoint_uses_real_sdk_without_following_redirects(
     def respond(request):
         requests.append(request)
         if len(requests) == 1 and status_code != 200:
-            return httpx.Response(
+            return httpx2.Response(
                 status_code,
                 headers={"Location": "http://169.254.169.254/redirect-target"},
             )
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={"choices": [{"message": {"content": "ok"}}]},
         )
 
     block = OpenAICompatibleBlockV1()
-    with patch.object(httpx.HTTPTransport, "handle_request", side_effect=respond):
+    with patch.object(httpx2.HTTPTransport, "handle_request", side_effect=respond):
         with block._get_client(base_url, "synthetic-secret"):
             result = block.run(
                 base_url=base_url + "/",
