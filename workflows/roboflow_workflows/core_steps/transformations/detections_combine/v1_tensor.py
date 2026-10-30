@@ -331,6 +331,15 @@ class DetectionsCombineBlockV1(WorkflowBlock):
             prediction_one=prediction_one,
             prediction_two=prediction_two,
         )
+        if (image_metadata or {}).get("native_obb"):
+            from roboflow_workflows.core_steps.common.oriented import _NATIVE_FRAME_KEYS
+
+            for entry in bboxes_metadata or []:
+                for key in _NATIVE_FRAME_KEYS:
+                    if key in image_metadata:
+                        entry[key] = image_metadata[key]
+                    elif key != "parent_id":
+                        entry.pop(key, None)
 
         one_has_masks = isinstance(prediction_one, InstanceDetections)
         two_has_masks = isinstance(prediction_two, InstanceDetections)

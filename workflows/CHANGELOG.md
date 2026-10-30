@@ -56,14 +56,14 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
-- Native OBB requires `inference-models>=0.39.7` and `inference-sdk>=1.8.4`; existing Supervision `<0.31.0` support is retained. Package `0.2.15` must follow those dependency releases.
+- Native OBB requires `inference-models>=0.39.8` and `inference-sdk>=1.8.4`; existing Supervision `<0.31.0` support is retained. Package `0.2.16` must follow those dependency releases.
 
 - Remove duplicated model lists and counts from `meta_vlm@v3` descriptions;
   available models are defined by the registry-backed dropdown.
 
 ### Fixed
 
-- Keep native OBB image headers through filtering, combination, crop/scale/root transforms and empty selections; derive Perspective bounds from ordered corners and reconstruct native requests through the shared task factory.
+- Keep native OBB image headers through filtering, combination, crop/scale/root transforms and empty selections; derive Perspective bounds from ordered corners.
 
 - Preserve native class names across colliding model-local IDs, initialize external native input lineage, render empty tensor predictions, admit native perspective connections without rounding corners, and declare native blocks in workload discovery.
 

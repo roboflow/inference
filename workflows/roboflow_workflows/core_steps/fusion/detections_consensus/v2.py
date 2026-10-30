@@ -13,6 +13,7 @@ import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from roboflow_workflows.core_steps.common.oriented import (
     NATIVE_OBB,
+    _native_obb_in_frame,
     _native_obb_to_sv,
     merge_native_semantics,
     native_obb_to_tensor,
@@ -179,6 +180,7 @@ class DetectionsConsensusBlockV2(v1.DetectionsConsensusBlockV1):
         if any(native):
             if not all(native):
                 raise ValueError("Native OBB consensus cannot mix ordinary detections")
+            sources = [_native_obb_to_sv(source) for source in sources]
             policy_carrier = sources[0][:0]
             for source in sources:
                 # Validate every source before filtering/voting, including empty maps.
@@ -209,9 +211,13 @@ class DetectionsConsensusBlockV2(v1.DetectionsConsensusBlockV1):
                     **policy_carrier.metadata,
                     "class_heading": policy,
                 }
-            sources = [source[:] for source in sources]
+            if not v1.does_not_detect_objects_in_any_source(sources):
+                v1.get_parent_id_of_detections_from_sources(sources)
+            sources = [
+                _native_obb_in_frame(source, policy_carrier.metadata)
+                for source in sources
+            ]
             for index, source in enumerate(sources):
-                source.metadata = {**policy_carrier.metadata, "class_heading": policy}
                 # Native names and geometry remain per-row; temporary SV views
                 # share the first image header so optional keys do not break merge.
                 source.data[_SOURCE_ORDER] = np.full(len(source), index)

@@ -7,6 +7,7 @@ are never silently refitted into native rectangle annotations.
 
 import math
 from copy import deepcopy
+from dataclasses import replace
 
 import cv2
 import numpy as np
@@ -341,8 +342,22 @@ def _native_obb_to_sv(detections):
             result.metadata[key] = (
                 value.tolist() if isinstance(value, np.ndarray) else value
             )
-        if key in result.metadata:
-            result.data[key] = np.asarray([result.metadata[key]] * len(result))
+    result = _native_obb_in_frame(result, result.metadata)
+    return result
+
+
+def _native_obb_in_frame(detections, metadata):
+    """Project compatibility columns into an already selected image frame."""
+    # An empty first source can lack a header ID; keep row identity for consensus.
+    data = {
+        key: value
+        for key, value in detections.data.items()
+        if key not in _NATIVE_FRAME_KEYS or (key == "parent_id" and key not in metadata)
+    }
+    for key in _NATIVE_FRAME_KEYS:
+        if key in metadata:
+            data[key] = np.asarray([metadata[key]] * len(detections))
+    result = replace(detections, data=data, metadata=metadata)
     return result
 
 

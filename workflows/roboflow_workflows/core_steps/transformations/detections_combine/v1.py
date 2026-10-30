@@ -1,5 +1,4 @@
 from copy import deepcopy
-from dataclasses import replace
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -148,7 +147,10 @@ class DetectionsCombineBlockV1(WorkflowBlock):
 
         class_heading = merge_native_semantics(prediction_one, prediction_two)
         if class_heading is not None:
-            from roboflow_workflows.core_steps.common.oriented import _native_obb_to_sv
+            from roboflow_workflows.core_steps.common.oriented import (
+                _native_obb_in_frame,
+                _native_obb_to_sv,
+            )
 
             prediction_one = _native_obb_to_sv(prediction_one)
             prediction_two = _native_obb_to_sv(prediction_two)
@@ -157,8 +159,8 @@ class DetectionsCombineBlockV1(WorkflowBlock):
             if len(prediction_one) or len(prediction_two):
                 result = sv.Detections.merge(
                     [
-                        replace(prediction_one, metadata=header),
-                        replace(prediction_two, metadata=header),
+                        _native_obb_in_frame(prediction_one, header),
+                        _native_obb_in_frame(prediction_two, header),
                     ]
                 )
             result.metadata = header

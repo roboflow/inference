@@ -458,3 +458,236 @@ def test_native_consensus_accepts_identity_perspective_host_caches(tensor):
         before["predictions"][0]["obb"]
     )
     assert serialise_native_obb(source) == before
+
+
+@pytest.mark.parametrize(
+    "fusion,model_first,external_state",
+    [
+        ("combine", False, "populated"),
+        ("combine", True, "populated"),
+        ("combine", False, "empty"),
+        ("combine_then_consensus", False, "empty"),
+        ("consensus", False, "populated"),
+        ("consensus", True, "populated"),
+        ("consensus", False, "empty"),
+        ("consensus", False, "different-parent"),
+    ],
+)
+def test_compiled_external_and_model_sources_retain_selected_frame(
+    fusion, model_first, external_state
+):
+    from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+    from roboflow_workflows.errors import StepExecutionError
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+    from roboflow_workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        OriginCoordinatesSystem,
+        WorkflowImageData,
+    )
+
+    external = _response(identity="external", confidence=0.6)
+    external["class_heading"]["external-only"] = False
+    if external_state == "empty":
+        external["predictions"] = []
+    elif external_state == "different-parent":
+        external["predictions"][0]["parent_id"] = "other-image"
+    model_response = _response(identity="model", confidence=0.9, angle=math.pi)
+    model_response["class_heading"]["model-only"] = True
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="same-image"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(
+            parent_id="root",
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=13, left_top_y=17, origin_width=300, origin_height=200
+            ),
+        ),
+        numpy_image=np.zeros((80, 100, 3), dtype=np.uint8),
+    )
+    before = copy.deepcopy(external)
+    image_before = copy.deepcopy(image)
+
+    class Provider:
+        def add_model(self, **kwargs):
+            pass
+
+        def run_oriented_object_detection(self, **kwargs):
+            return [copy.deepcopy(model_response)]
+
+    selectors = ["$inputs.external", "$steps.model.predictions"]
+    if model_first:
+        selectors.reverse()
+    step = (
+        {
+            "type": "roboflow_core/detections_combine@v1",
+            "name": "fused",
+            "prediction_one": selectors[0],
+            "prediction_two": selectors[1],
+        }
+        if fusion != "consensus"
+        else {
+            "type": "roboflow_core/detections_consensus@v2",
+            "name": "fused",
+            "predictions_batches": selectors,
+            "required_votes": 1 if external_state == "empty" else 2,
+            "confidence": 0,
+        }
+    )
+    workflow = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "images"},
+            {
+                "type": "WorkflowBatchInput",
+                "name": "external",
+                "kind": ["oriented_object_detection_prediction"],
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/roboflow_oriented_object_detection_model@v1",
+                "name": "model",
+                "images": "$inputs.images",
+                "model_id": "native/1",
+            },
+            step,
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": coordinates,
+                "selector": "$steps.fused.predictions",
+                "coordinates_system": coordinates,
+            }
+            for coordinates in ("own", "parent")
+        ]
+        + [
+            {
+                "type": "JsonField",
+                "name": "model_root",
+                "selector": "$steps.model.predictions",
+                "coordinates_system": "parent",
+            },
+            {
+                "type": "JsonField",
+                "name": "external",
+                "selector": "$inputs.external",
+                "coordinates_system": "own",
+            },
+        ],
+    }
+    if fusion == "combine_then_consensus":
+        workflow["steps"].append(
+            {
+                "type": "roboflow_core/detections_consensus@v2",
+                "name": "final",
+                "predictions_batches": ["$steps.fused.predictions"],
+                "required_votes": 1,
+                "confidence": 0,
+            }
+        )
+        for output in workflow["outputs"][:2]:
+            output["selector"] = "$steps.final.predictions"
+    engine = ExecutionEngine.init(
+        workflow_definition=workflow,
+        init_parameters={
+            "workflows_core.model_manager": Provider(),
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+    )
+    try:
+        if external_state == "different-parent":
+            with pytest.raises(StepExecutionError, match="different parent"):
+                engine.run(
+                    runtime_parameters={"images": [image], "external": [external]},
+                    serialize_results=True,
+                )
+            return
+        result = engine.run(
+            runtime_parameters={"images": [image], "external": [external]},
+            serialize_results=True,
+        )[0]
+    finally:
+        engine.close()
+
+    expected_ids = ["model", "external"] if model_first else ["external", "model"]
+    if fusion == "consensus" or external_state == "empty":
+        expected_ids = ["model"]
+    for coordinates in ("own", "parent"):
+        output = result[coordinates]
+        translated = model_first and coordinates == "parent"
+        assert output["image"] == (
+            {"width": 300, "height": 200}
+            if translated
+            else {"width": 100, "height": 80}
+        )
+        assert output["class_heading"] == {
+            **external["class_heading"],
+            **model_response["class_heading"],
+        }
+        assert [row["detection_id"] for row in output["predictions"]] == expected_ids
+        for identity, row in zip(expected_ids, output["predictions"]):
+            assert row["obb"] == pytest.approx(
+                [
+                    53.25 if translated else 40.25,
+                    47.75 if translated else 30.75,
+                    12.0,
+                    24.0,
+                    math.pi if identity == "model" else 0.0,
+                ]
+            )
+            assert row["class"] == "plane"
+            assert row["class_id"] == 7
+            assert row["heading"] is True
+            assert row["parent_id"] == ("root" if translated else "same-image")
+            expected_confidence = 0.9 if identity == "model" else 0.6
+            if fusion == "consensus" and external_state != "empty":
+                expected_confidence = 0.75
+            assert row["confidence"] == pytest.approx(expected_confidence)
+    assert result["model_root"]["image"] == {"width": 300, "height": 200}
+    assert result["model_root"]["predictions"][0]["obb"] == pytest.approx(
+        [53.25, 47.75, 12.0, 24.0, math.pi]
+    )
+    assert result["model_root"]["class_heading"] == model_response["class_heading"]
+    assert result["external"] == before
+    assert external == before
+    assert image.parent_metadata == image_before.parent_metadata
+    assert (
+        image.workflow_root_ancestor_metadata
+        == image_before.workflow_root_ancestor_metadata
+    )
+    np.testing.assert_array_equal(image.numpy_image, image_before.numpy_image)
+
+
+@pytest.mark.parametrize("tensor_input", [False, True])
+def test_native_consensus_recovers_legacy_row_frame(tensor_input):
+    from roboflow_workflows.core_steps.common.tensor_native import (
+        native_detections_to_root_coordinates,
+    )
+    from roboflow_workflows.core_steps.common.utils import (
+        sv_detections_to_root_coordinates,
+    )
+
+    source = native_obb_from_inference(_response(identity="legacy"))
+    frame = {
+        "root_parent_id": "root",
+        "root_parent_coordinates": [13, 17],
+        "root_parent_dimensions": [200, 300],
+    }
+    for key, value in frame.items():
+        source.data[key] = np.asarray([value] * len(source))
+    if tensor_input:
+        source = native_obb_to_tensor(source)
+        for key in frame:
+            del source.image_metadata[key]
+    consensus = _run([source], required_votes=1)
+    rooted = (
+        native_detections_to_root_coordinates(consensus)
+        if tensor_input
+        else sv_detections_to_root_coordinates(consensus)
+    )
+    result = serialise_native_obb(rooted)
+    assert result["image"] == {"width": 300, "height": 200}
+    assert result["predictions"][0]["obb"] == pytest.approx(
+        [53.25, 47.75, 12.0, 24.0, 0.0]
+    )
+    assert result["predictions"][0]["parent_id"] == "root"

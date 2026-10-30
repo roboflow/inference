@@ -122,92 +122,75 @@ requirements, not evidence of a published or deployed native provider:
 | Distribution | Required version | Consumer |
 | --- | --- | --- |
 | `inference-sdk` | `1.8.4` | Remote native task dispatch in Workflows and model evaluation |
-| `inference-models` | `0.39.7` | Native RF-DETR ONNX registry/runtime |
-| `roboflow-workflows` | `0.2.15` | Canonical native response entities, blocks and consensus v2 |
+| `inference-models` | `0.39.8` | Native RF-DETR ONNX registry/runtime |
+| `roboflow-workflows` | `0.2.16` | Canonical native response entities, blocks and consensus v2 |
 | `inference`, `inference-cpu`, `inference-gpu`, `inference-core` | `1.8.4` | HTTP server and model adapters |
 
-### Bootstrap before merging the consumer PR
+### Build validation before release
 
-The existing `publish.pypi.yml` and `publish.pypi.inference_exp.yml` workflows
-already exist on the default branch, support `workflow_dispatch`, and were read
-as active on 2026-10-27. GitHub requires the workflow to exist on the default
-branch; `--ref` then selects its version on the reviewed feature branch. A new
-workflow file existing only in a PR cannot be assumed dispatchable. See
-[GitHub's manual workflow instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
-and [`gh workflow run --ref`](https://cli.github.com/manual/gh_workflow_run).
-
-The SDK stays owned by `publish.pypi.yml`, its existing publisher identity.
-SDK-only mode uses `make create_sdk_wheel` and resolves no Workflows dependencies.
-Normal release events still build and publish the SDK plus all root packages;
-the SDK's separate upload skips an already-published bootstrap wheel while root
-uploads retain duplicate-version checks. Manual runs default to build-only.
-
-A maintainer must review and authorize branch publication separately. These
-commands document that future operation; no dispatch or publication has been
-performed by this change. Confirm the remote branch still points to the reviewed
-commit before each run, and verify each run's `head_sha` and artifact metadata.
-Build-only commands for the existing workflows are:
+Build candidate packages from the same reviewed checkout:
 
 ```bash
-gh workflow run publish.pypi.yml --repo roboflow/inference \
-  --ref caio/native-obb-consensus-current -f package=sdk -f publish=false
-gh workflow run publish.pypi.inference_exp.yml --repo roboflow/inference \
-  --ref caio/native-obb-consensus-current -f publish=false
+make create_sdk_wheel
+(cd inference_models && uv build)
+make download_fonts
+(cd workflows && uv build --wheel --out-dir ../dist)
 ```
 
-After reviewing those build artifacts, a separately authorized maintainer can
-repeat the same commands with `-f publish=true` to publish SDK `1.8.4` and models
-`0.39.7`. The root workflow's SDK mode publishes only the isolated SDK wheel;
-it cannot publish root distributions. The models workflow retains its independent
-publisher. Both can run from this one reviewed branch before the consumer PR
-merges, because their workflow files are already registered on the default
-branch. No second active PR, new workflow identity or vendored package is needed.
+These commands produce local distributions without publishing them. Same-checkout
+wheels can validate source compatibility and package isolation in a disposable
+environment. They do not establish registry availability or make a committed
+registry lock valid. The existing SDK and Models workflows also support manual
+build-only validation; publishing is a separate release operation.
 
-For local build inspection from that reviewed checkout, the corresponding commands
-are `python -m pip install setuptools wheel uv`, `make create_sdk_wheel`, and
-`cd inference_models && uv build`. They produce distributions only; local builds
-do not authenticate or upload to PyPI.
+### Dependency order and release gates
 
-### Publisher configuration and release gates
+SDK and Models changes must merge before their normal, separately approved
+releases. Consumer pins and registry locks require those published dependencies.
+With the existing registry-lock gates, this requires a merge boundary between the
+SDK/Models changes and the Workflows/server consumer changes; the combined change
+cannot satisfy that order by publishing from an unmerged branch. This dependency
+order is required for release; no package publication or deployment is established
+by the local build checks above.
 
-Before an authorized publication, a PyPI project owner must verify each project's
-**Manage → Publishing** Trusted Publisher settings. The expected GitHub owner is
-`roboflow`, repository `inference`, and workflow filename `publish.pypi.yml` for
-`inference-sdk` and the root distributions, `publish.pypi.inference_exp.yml` for
-`inference-models`, and `publish.pypi.roboflow_workflows.yml` for
-`roboflow-workflows`. The workflow filename is part of the trusted identity; a
-renamed/new SDK workflow would require separate registration. These existing
-jobs declare no GitHub environment, so any configured environment must match
-before publishing; environment or branch protection may require additional
-maintainer approval. Current private PyPI publisher settings were not inspected
-or changed. See [PyPI's publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
-
-1. Publish and verify SDK `1.8.4` and models `0.39.7` from the reviewed branch using
-   the existing workflow identities above. Check registry wheel contents and
-   metadata; publication is an irreversible maintainer operation, separate from
-   approval to push or merge this PR.
-2. After both wheels exist on the registry, run `cd workflows && uv lock`,
-   commit the generated lock on this same PR, and verify a fresh constrained
-   installation. Until then this consumer draft is blocked from merge/release:
-   the retained lock records previous real releases. No fabricated registry
-   hashes or vendored wheels substitute for this gate. The generated models lock
-   must also pass `cd inference_models && uv lock --check`.
-3. Merge the single consumer PR only after those checks, then publish Workflows
-   `0.2.15` through its existing workflow. Verify the wheel contains
-   `core_steps/common/oriented_entities.py`. `make create_workflows_wheel` is the
-   local build; its existing publish workflow defaults to build-only on manual
-   dispatch. Verify clean ordinary server imports with the released dependency set.
-4. Publish the root `1.8.4` packages through the existing root workflow and build
+1. Merge the SDK and Models changes, then release SDK `1.8.4` and Models `0.39.8`
+   through their existing release workflows after separate release approval.
+   Verify the registry wheels' metadata and contents against the merged source.
+2. Once those registry releases are verified, update the consumer pins and run
+   `cd workflows && uv lock`. Verify the genuine generated registry lock and a
+   fresh constrained installation before merging the consumer changes. Use the
+   same-checkout Workflows wheel when testing its unpublished version; that
+   installed-wheel check is separate from the registry-lock check. Update the
+   Streamvision registry lock if its dependency graph requires it, and verify
+   which Workflows release it actually selects.
+   The Models project lock must also pass
+   `cd inference_models && uv lock --check`. Local wheel overrides, fabricated
+   hashes, and vendored wheels do not satisfy the registry-lock gate.
+3. After the consumer changes merge, release Workflows `0.2.16` through its
+   existing workflow. Verify the registry wheel contains
+   `core_steps/common/oriented_entities.py`, and verify clean ordinary server
+   imports with the released dependency set. Workflows must be available before
+   root distributions requiring its exact version become consumable.
+4. Release the root `1.8.4` packages after their consumer changes merge and build
    server images. `make create_wheels` builds the root release set, including the
-   SDK; the workflow isolates its upload so the bootstrap version can be skipped.
-   Full CPU/GPU builds explicitly install their checkout models wheel; slim builds
-   resolve the new registry pin. Verify installed model registration and a CPU
-   ONNX fixture in actual deployed images and US/EU targets.
+   SDK; the root workflow handles the SDK upload separately. Full CPU/GPU builds
+   explicitly install their checkout Models wheel; slim builds resolve the new
+   registry pin. Verify installed model registration and a CPU ONNX fixture in
+   actual deployed images and US/EU targets.
 5. Deploy compatible serving and queue workers before enabling platform native
    producers. Native custom Auto Label jobs use direct HTTP and require no queue
    SDK/Supervision upgrade. Unavailable endpoints or non-native responses fail the
    job without an ordinary detection fallback. Native Workflow Auto Label
    admission is a separate unsupported path.
+
+Before publication, a PyPI project owner must verify the project's Trusted
+Publisher settings. The expected repository is `roboflow/inference`, with
+`publish.pypi.yml` for SDK/root distributions,
+`publish.pypi.inference_exp.yml` for Models, and
+`publish.pypi.roboflow_workflows.yml` for Workflows. The workflow filename is part
+of the trusted identity, and any configured environment or protection must match.
+Private publisher settings have not been verified by the local checks. See
+[PyPI's publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
 
 Python Supervision's native parser/NMM feature is independent. Its development
 version is outside the platform's existing `<0.31.0` cap; the server/Workflows
