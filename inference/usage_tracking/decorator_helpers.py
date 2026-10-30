@@ -1,3 +1,5 @@
+import json
+import math
 from contextvars import ContextVar, Token
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -815,3 +817,60 @@ def get_request_resource_details_from_kwargs(
     if isinstance(model_id, str) and model_id.startswith("sam3/"):
         resource_details["execution_mode"] = SAM3_EXEC_MODE
     return resource_details
+
+
+usage_batch_billing_context: ContextVar[Optional[str]] = ContextVar(
+    "usage_batch_billing_context", default=None
+)
+
+
+def read_batch_billing_context(
+    func: Callable[..., Any], args: Any, kwargs: Dict[str, Any]
+) -> Optional[str]:
+    """Read a batch rate authenticated by the internal service secret.
+
+    Args:
+        func: Decorated request handler.
+        args: Positional handler arguments.
+        kwargs: Keyword handler arguments.
+
+    Returns:
+        Canonical JSON context, or None for ordinary or unauthenticated calls.
+    """
+    if "countinference" not in get_signature(func).parameters:
+        return None
+
+    bound = collect_func_params(func, args, kwargs)
+    if not service_secret_is_valid(bound.get("service_secret")):
+        return None
+
+    request = bound.get("request")
+    query = getattr(request, "query_params", {})
+    raw = query.get("billing_context")
+    if raw is None:
+        return None
+
+    try:
+        context = json.loads(raw)
+        multiplier = context["multiplier"]
+        valid = (
+            context.get("version") == "batch-v1"
+            and context.get("media") in ("image", "video")
+            and type(multiplier) in (int, float)
+            and math.isfinite(multiplier)
+            and 0 < multiplier <= 1
+        )
+        if not valid:
+            raise ValueError("Invalid batch billing context")
+
+        canonical = json.dumps(
+            {
+                "version": "batch-v1",
+                "media": context["media"],
+                "multiplier": multiplier,
+            },
+            sort_keys=True,
+        )
+        return canonical
+    except (ValueError, TypeError, KeyError):
+        raise ValueError("Invalid authenticated batch billing context") from None
