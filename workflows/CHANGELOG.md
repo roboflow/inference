@@ -57,6 +57,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- ByteTrack blocks (`roboflow_core/byte_tracker@v1`, `@v2`, `@v3` and their tensor-native variants) initialize a video's tracker at 30 fps when its `VideoMetadata.fps` is missing, zero, negative or not finite, matching the blocks in `core_steps/trackers`. v2 and v3 used to build the tracker with `frame_rate=0`, which makes supervision remove a lost track almost immediately, so an object missed for three frames came back with a new tracker ID and line counters, time in zone and similar logic could miss or double-count it. v1 used to raise `ValueError` on every such frame. The warning is now logged once per `video_identifier`, when its tracker is created, instead of on every frame. Videos that declare a frame rate are unchanged.
 - Root-coordinate recovery (`sv_detections_to_root_coordinates`, applied to workflow outputs by default) re-encodes `rle_mask` from the re-anchored dense masks. A block that ran on a crop and returns RLE with dense masks, such as SAM 3 v3 with `output_format: rle`, used to serialize root-coordinate boxes next to an RLE still sized and placed in the crop. RLE-only predictions (`mask=None`) are unchanged, as in `scale_sv_detections`.
 
 

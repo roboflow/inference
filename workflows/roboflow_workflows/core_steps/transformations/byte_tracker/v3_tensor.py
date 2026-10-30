@@ -1,17 +1,18 @@
-import logging
 from collections import deque
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
-from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.tensor_native import (
     split_key_point_prediction,
     take_prediction_by_indices,
 )
 from roboflow_workflows.core_steps.common.workload_presets import (
     STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
+)
+from roboflow_workflows.core_steps.transformations.byte_tracker._fps import (
+    resolve_byte_track_fps,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -46,8 +47,6 @@ from roboflow_workflows.prototypes.block import (
 from inference_models.models.base.instance_segmentation import InstanceDetections
 from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
-
-logger = get_logger(__name__)
 
 OUTPUT_KEY: str = "tracked_detections"
 _INPUT_INDEX_KEY: str = "__byte_tracker_input_index__"
@@ -122,7 +121,7 @@ This block maintains object tracking across sequential video frames by associati
    - Accesses video_metadata from the WorkflowImageData object
    - Extracts fps (frames per second) for tracker configuration
    - Extracts video_identifier to maintain separate tracking state for different videos
-   - Handles missing fps gracefully (defaults to 0 and logs a warning instead of failing)
+   - Handles missing fps gracefully (defaults to 30 fps and logs one warning per video instead of failing)
 3. Initializes or retrieves a ByteTrack tracker for the video:
    - Creates a new tracker instance for each unique video (identified by video_identifier)
    - Stores trackers in memory to maintain tracking state across frames
@@ -193,7 +192,7 @@ This block receives an image with video metadata and detection predictions, and 
 
 ## Requirements
 
-This block requires detection predictions (object detection, instance segmentation, or keypoint detection) and an image with embedded video metadata containing frame rate (fps) and video identifier information. The image's video_metadata should include a valid fps value for optimal tracking performance, though the block will continue with fps=0 if missing. The block maintains tracking state and instance cache across frames for each video, so it should be used in video workflows where frames are processed sequentially. For optimal tracking performance, detections should be provided consistently across frames. The algorithm works best with stable detection performance and handles temporary detection gaps through the lost_track_buffer mechanism. The instance cache maintains a history of seen track IDs with FIFO eviction when the cache size limit is reached.
+This block requires detection predictions (object detection, instance segmentation, or keypoint detection) and an image with embedded video metadata containing frame rate (fps) and video identifier information. The image's video_metadata should include a valid fps value for optimal tracking performance, though the block will assume 30 fps if it is missing. The block maintains tracking state and instance cache across frames for each video, so it should be used in video workflows where frames are processed sequentially. For optimal tracking performance, detections should be provided consistently across frames. The algorithm works best with stable detection performance and handles temporary detection gaps through the lost_track_buffer mechanism. The instance cache maintains a history of seen track IDs with FIFO eviction when the cache size limit is reached.
 
 Tensor-native note: the underlying `sv.ByteTrack` is numpy-based, so this block materialises only the bounding boxes / class ids / confidences to numpy at the boundary (tagged with a positional index) and runs the tracker. ByteTrack only filters and reorders detections — it never mutates coordinates — so the surviving rows are recovered by index and the ORIGINAL device tensors are sliced with `take_prediction_by_indices` (no GPU re-upload); instance-segmentation masks follow the same index selection and are preserved. For keypoint input the bbox component of the `(KeyPoints, Detections)` tuple drives tracking and the output is that bbox `Detections` (keypoints are not carried onto the tracked output). The `new_instances` / `already_seen_instances` splits reuse the same index selection over the tracked prediction.
 """
@@ -220,7 +219,7 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/byte_tracker@v3"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="Input image containing embedded video metadata (fps and video_identifier) required for ByteTrack initialization and tracking state management. The block extracts video_metadata from the WorkflowImageData object. The fps value is used to configure the tracker, and the video_identifier is used to maintain separate tracking state and instance cache for different videos. If fps is missing or invalid, the block defaults to 0 and logs a warning but continues operation. If processing multiple videos, each video should have a unique video_identifier in its metadata to maintain separate tracking states and caches. The block maintains persistent trackers and instance caches across frames for each video using the video_identifier.",
+        description="Input image containing embedded video metadata (fps and video_identifier) required for ByteTrack initialization and tracking state management. The block extracts video_metadata from the WorkflowImageData object. The fps value is used to configure the tracker, and the video_identifier is used to maintain separate tracking state and instance cache for different videos. If fps is missing or invalid, the block assumes 30 fps, logs one warning per video and continues operation. If processing multiple videos, each video should have a unique video_identifier in its metadata to maintain separate tracking states and caches. The block maintains persistent trackers and instance caches across frames for each video using the video_identifier.",
     )
     detections: Selector(
         kind=[
@@ -332,13 +331,8 @@ class ByteTrackerBlockV3(WorkflowBlock):
         # bbox component itself (masks preserved through the index selection).
         _, bbox = split_key_point_prediction(detections)
         metadata = image.video_metadata
-        fps = metadata.fps
-        if not fps:
-            fps = 0
-            logger.warning(
-                f"Malformed fps in VideoMetadata, {self.__class__.__name__} requires fps in order to initialize ByteTrack"
-            )
         if metadata.video_identifier not in self._trackers:
+            fps = resolve_byte_track_fps(metadata, self.__class__.__name__)
             self._trackers[metadata.video_identifier] = sv.ByteTrack(
                 track_activation_threshold=track_activation_threshold,
                 lost_track_buffer=lost_track_buffer,

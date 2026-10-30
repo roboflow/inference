@@ -107,14 +107,16 @@ def test_byte_tracker_no_fps() -> None:
     byte_tracker_block = ByteTrackerBlockV1()
 
     # when
-    with pytest.raises(
-        ValueError,
-        match="Malformed fps in VideoMetadata, ByteTrackerBlockV1 requires fps in order to initialize ByteTrack",
-    ):
-        _ = byte_tracker_block.run(
-            metadata=frame1_metadata,
-            detections=frame1_detections,
-        )
+    result = byte_tracker_block.run(
+        metadata=frame1_metadata,
+        detections=frame1_detections,
+    )
+
+    # then
+    assert len(set(result["tracked_detections"].tracker_id.tolist())) == 4
+    assert (
+        byte_tracker_block._trackers["vid_1"].max_time_lost == 30
+    ), "Expected the tracker to fall back to 30 fps"
 
 
 def test_byte_tracker_not_video() -> None:
