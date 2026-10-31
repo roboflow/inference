@@ -197,6 +197,10 @@ class _UploadJob:
         self.future: "Future[ClipCompletion]" = Future()
         self.lock = threading.Lock()
         self.finished = False
+        # Set (under `lock`) once a worker owns the job's PUT: from then on only
+        # that worker finishes it, so `shutdown()` never releases the artifact
+        # under a running PUT nor records a status the PUT may still contradict.
+        self.uploading = False
         self.ready_at: Optional[str] = None
         self.uploaded_at: Optional[str] = None
         self.report: Optional[ClipReport] = None
@@ -324,7 +328,10 @@ class ClipUploader:
         """Stop accepting clips and wait for in-flight ones up to a deadline.
 
         Clips not uploaded when the deadline passes end as
-        ``shutdown_deadline``. Idempotent.
+        ``shutdown_deadline``, except a PUT already running: its worker records
+        the real outcome when it returns (``put_accepted`` if the upload
+        succeeded, ``shutdown_deadline`` if it failed, without retrying) and
+        only then releases the clip. Idempotent.
 
         Args:
             deadline_seconds: Seconds to wait; ``None`` waits until every job
@@ -355,6 +362,7 @@ class ClipUploader:
                 job,
                 status=STATUS_SHUTDOWN_DEADLINE,
                 error="upload not finished before the shutdown deadline",
+                unless_uploading=True,
             )
 
     def pending_jobs(self) -> int:
@@ -452,6 +460,10 @@ class ClipUploader:
             )
             return None
 
+        with job.lock:
+            if job.finished:
+                return None
+            job.uploading = True
         if job.admission_ticket is not None:
             job.admission_ticket.set_bytes(artifact.size_bytes)
         status, message = self._put_with_retries(job, artifact)
@@ -519,9 +531,16 @@ class ClipUploader:
 
         return STATUS_UPLOAD_FAILED, message, False
 
-    def _finish(self, job: _UploadJob, *, status: str, error: Optional[str]) -> None:
+    def _finish(
+        self,
+        job: _UploadJob,
+        *,
+        status: str,
+        error: Optional[str],
+        unless_uploading: bool = False,
+    ) -> None:
         with job.lock:
-            if job.finished:
+            if job.finished or (unless_uploading and job.uploading):
                 return None
             job.finished = True
 

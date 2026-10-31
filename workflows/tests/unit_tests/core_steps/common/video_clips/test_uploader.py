@@ -348,6 +348,53 @@ def test_shutdown_finishes_waiting_jobs_and_refuses_new_ones() -> None:
     assert uploader.pending_jobs() == 0
 
 
+class _BlockingPut:
+    """A PUT that runs until the test lets it return."""
+
+    def __init__(self, outcome: object):
+        self.outcome = outcome
+        self.started = threading.Event()
+        self.proceed = threading.Event()
+
+    def __call__(self, url, *, data, headers, timeout):
+        self.started.set()
+        self.proceed.wait(timeout=10)
+        data.read()
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+
+@pytest.mark.parametrize(
+    "outcome, expected_status",
+    [
+        (_Response(200), STATUS_PUT_ACCEPTED),
+        (requests.ConnectionError("reset"), STATUS_SHUTDOWN_DEADLINE),
+    ],
+)
+def test_shutdown_lets_an_in_flight_put_record_its_real_outcome(
+    outcome: object, expected_status: str
+) -> None:
+    # given: a PUT is running when the shutdown deadline passes
+    put = _BlockingPut(outcome)
+    uploader = _uploader(put, _FakeClock())
+    released: list = []
+    completion = _submit(uploader, _capture(_artifact(released)))
+    assert put.started.wait(timeout=5)
+
+    # when
+    uploader.shutdown(0.1)
+
+    # then: the clip is neither released nor reported while the PUT runs
+    assert not completion.done()
+    assert released == []
+    put.proceed.set()
+    result = completion.result(timeout=5)
+    assert result.terminal_status == expected_status
+    assert released == [True]
+    assert uploader.pending_jobs() == 0
+
+
 def test_oversized_clip_is_upload_failed() -> None:
     # given
     put = _FakePut([_Response(200)])
