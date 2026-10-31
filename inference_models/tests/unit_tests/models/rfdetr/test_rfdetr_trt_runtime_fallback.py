@@ -23,6 +23,9 @@ from inference_models.models.optimization.contracts import (
 )
 from inference_models.models.optimization.errors import RecoverableStageExecutionError
 from inference_models.models.optimization.registry import ImplementationRegistry
+from inference_models.models.optimization.runtime_metadata import (
+    SelectionSnapshot,
+)
 from inference_models.models.rfdetr.optimization.contracts import (
     PostprocessRequest,
     PreprocessRequest,
@@ -741,3 +744,39 @@ def test_postprocess_nonrecoverable_failure_records_attempted_selection(
     assert selection["fallback_reason"] is None
     assert candidate.calls == 1
     assert base.calls == 0
+
+
+def test_last_execution_metadata_is_caller_thread_local(rfdetr_trt_model_class):
+    model = rfdetr_trt_model_class.__new__(rfdetr_trt_model_class)
+    model._thread_local_storage = threading.local()
+    barrier = threading.Barrier(2)
+    outputs = {}
+
+    def worker(name):
+        model._thread_local_storage.last_preprocessor_selection = SelectionSnapshot(
+            requested_id=name,
+            effective_id=name,
+        )
+        barrier.wait(timeout=5)
+        outputs[name] = model._last_execution_metadata()
+
+    threads = [
+        threading.Thread(target=worker, args=(name,)) for name in ("first", "second")
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not any(thread.is_alive() for thread in threads)
+    # SelectionSnapshot.to_dict() omits fallback_reason while no fallback occurred.
+    assert outputs == {
+        name: {
+            "preprocessor": {
+                "requested_id": name,
+                "effective_id": name,
+                "fallback_occurred": False,
+            }
+        }
+        for name in ("first", "second")
+    }
+    assert model._last_execution_metadata() == {}

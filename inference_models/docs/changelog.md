@@ -99,6 +99,10 @@
   Same-size tensors bypass resizing and Triton preparation. Set the flag to
   `false` to retain the previous PyTorch bilinear resize. Float tensors, NumPy
   preprocessing and RF-DETR's separate Pillow resize are unaffected by the flag.
+- `INFERENCE_MODELS_RFDETR_ALLOW_COMPATIBILITY_FALLBACK` and
+  `INFERENCE_MODELS_RFDETR_ALLOW_RUNTIME_FAILURE_FALLBACK` let a deployment that
+  has no explicit `RFDetrExecutionPlan` reject RF-DETR stage fallback. Both
+  default to `true`, so existing behavior is unchanged.
 
 ### Fixed
 
