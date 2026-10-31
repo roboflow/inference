@@ -341,11 +341,14 @@ class RoboflowModelRegistry(ModelRegistry):
         )
         logger.debug(f"Model type: {model_type}")
 
-        if model_type not in self.registry_dict:
+        try:
+            model_class = self.registry_dict[model_type]
+        except KeyError as error:
             raise ModelNotRecognisedError(
                 f"Model type not supported, you may want to try a different inference server configuration or endpoint: {model_type}"
-            )
-        return self.registry_dict[model_type]
+            ) from error
+
+        return model_class
 
 
 def _check_if_api_key_has_access_to_model(

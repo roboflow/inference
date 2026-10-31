@@ -9,10 +9,10 @@ from roboflow_workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     WILDCARD_KIND,
     Selector,
     StepSelector,
-    WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
@@ -92,7 +92,7 @@ class DeltaFilterManifest(WorkflowBlockManifest):
             },
         }
     )
-    image: WorkflowImageSelector
+    image: Selector(kind=[IMAGE_KIND])
     value: Selector(kind=[WILDCARD_KIND]) = Field(
         title="Input Value",
         description="Value to monitor for changes. Can be any data type (numbers, strings, detection counts, metrics, etc.) from workflow inputs or step outputs. The workflow branch continues to next_steps only when this value differs from the previously cached value for the current video stream. If the value remains the same, the branch terminates to avoid redundant processing. Example: Monitor a line counter count ($steps.line_counter.count_in) and trigger actions only when the count changes.",

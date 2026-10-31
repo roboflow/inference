@@ -4,6 +4,24 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.5`
+
+### Changed
+
+- The `workflows` extra requires `roboflow-workflows>=0.2.15` instead of
+  `>=0.2.13`.
+
+### Fixed
+
+- Jetson USB camera capture honors requested format, dimensions and frame rate before startup, including automatic format selection and rounded NTSC rates. Bridge diagnostics are safe before deferred capture starts and after release.
+- When tensor-native Jetson USB capture falls back to OpenCV, startup fails with an error state if the effective camera format, dimensions or frame rate differ from the requested mode, including drivers that silently ignore property writes.
+
+## `0.1.4`
+
+### Changed
+
+- Security maintenance release, no functional change. The lockfile is refreshed for three advisories in transitive dependencies: `certifi` 2026.7.22 -> 2026.10.23 (GHSA-6q48-6c7w-9gw2, bundled emSign root CAs whose intermediate CA keys were compromised), `GitPython` 3.1.62 -> 3.2.1 (GHSA-83vg-56qc-22m7, remote code execution through a submodule `.git` path) and `setuptools` 84.0.0 -> 84.2.1 (GHSA-xmj3-9gf7-h52w, Windows path escape during legacy wheel installation). Declared dependency ranges are unchanged.
+
 ## `0.1.3`
 
 ### Changed
