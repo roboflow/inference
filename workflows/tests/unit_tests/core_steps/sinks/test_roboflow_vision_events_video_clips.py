@@ -6,10 +6,12 @@ sink's side only: capture on the caller's thread, admission, prepare-upload,
 the event's `videos` field, the hand-off and the immediate outputs.
 """
 
+import json
 import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest import mock
 from urllib.parse import quote
@@ -28,6 +30,8 @@ from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+
+from .vision_events_request_snapshot import record_no_video_requests
 
 VISION_EVENTS_MODULES = [vision_events_v1, vision_events_v1_tensor]
 API_BASE_URL = "https://api.roboflow.test"
@@ -282,6 +286,28 @@ def test_no_video_requests_are_byte_identical(
     assert len(without_fields) == 2
     assert b'"videos"' not in without_fields[-1][3]
     assert budget.decisions == []
+
+
+NO_VIDEO_REQUESTS_ASSET = (
+    Path(__file__).parent / "assets" / "vision_events_no_video_requests.json"
+)
+
+
+@pytest.mark.parametrize(
+    "module, variant",
+    [(vision_events_v1, "v1"), (vision_events_v1_tensor, "v1_tensor")],
+)
+def test_no_video_requests_match_the_bytes_recorded_before_video_clips(
+    module: Any, variant: str
+) -> None:
+    # given: requests recorded from origin/main (f79bf9f5c), before video clips
+    expected = json.loads(NO_VIDEO_REQUESTS_ASSET.read_text())[variant]
+
+    # when
+    recorded = record_no_video_requests(module)
+
+    # then: method, URL, headers and body are byte for byte the same
+    assert recorded == expected
 
 
 @pytest.mark.parametrize("module", VISION_EVENTS_MODULES)
