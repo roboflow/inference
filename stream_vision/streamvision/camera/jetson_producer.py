@@ -3,6 +3,7 @@
 import ctypes
 import ctypes.util
 import os
+import struct
 import subprocess
 from datetime import datetime, timedelta
 from fractions import Fraction
@@ -77,6 +78,12 @@ _SOFTWARE_DECODER_ELEMENTS = (
     "libde265dec",
     "openh264dec",
 )
+_VIDIOC_ENUM_FMT = 0xC0405602
+_VIDIOC_REQBUFS = 0xC0145608
+_V4L2_FMTDESC = struct.Struct("II4x32sII12x")
+_V4L2_REQUESTBUFFERS = struct.Struct("IIIII")
+_V4L2_RAW_TO_GST_FORMAT = {"UYVY": "UYVY", "YUYV": "YUY2"}
+_V4L2_COMPRESSED_FORMATS = frozenset({"MJPG", "JPEG", "H264", "HEVC"})
 _FILE_DEMUXERS = {
     ".avi": "avidemux",
     ".m4v": "qtdemux",
@@ -160,6 +167,8 @@ def required_gstreamer_elements(
     if _is_csi_source(video):
         return tuple(elements + ["nvarguscamerasrc"])
     if _is_v4l2_source(video):
+        if _nvv4l2camerasrc_format(video) is not None:
+            return tuple(elements + ["nvv4l2camerasrc"])
         return tuple(
             elements
             + [
@@ -254,7 +263,21 @@ def build_gstreamer_pipeline(
         )
     if _is_v4l2_source(video):
         device = _v4l2_device(video)
-        capture_chain = _v4l2_capture_chain(video_source_properties or {})
+        properties = {
+            key.lower(): value for key, value in (video_source_properties or {}).items()
+        }
+        capture_chain = _v4l2_capture_chain(properties)
+        requested_fourcc = (
+            _v4l2_fourcc(properties["fourcc"]) if "fourcc" in properties else None
+        )
+        camera_format = _nvv4l2camerasrc_format(video, requested_fourcc)
+        if camera_format is not None:
+            return (
+                f'nvv4l2camerasrc device="{_quote_gstreamer_value(device)}" ! '
+                f"video/x-raw(memory:NVMM),format={camera_format}"
+                f"{_v4l2_caps_suffix(properties)} ! "
+                f"{sink}"
+            )
         pipeline = (
             f'v4l2src device="{_quote_gstreamer_value(device)}" ! '
             f"{capture_chain}{sink}"
@@ -308,8 +331,7 @@ def build_gstreamer_pipeline(
     )
 
 
-def _v4l2_capture_chain(properties: Dict[str, Union[float, str]]) -> str:
-    properties = {key.lower(): value for key, value in properties.items()}
+def _v4l2_caps_suffix(properties: Dict[str, Union[float, str]]) -> str:
     constraints = []
     for property_name, caps_name in (
         ("frame_width", "width"),
@@ -345,7 +367,20 @@ def _v4l2_capture_chain(properties: Dict[str, Union[float, str]]) -> str:
             else str(number.numerator)
         )
         constraints.append(f",{caps_name}={caps_value}")
-    suffix = "".join(constraints)
+    return "".join(constraints)
+
+
+def _v4l2_fourcc(value: Union[float, str]) -> str:
+    parsed = parse_fourcc(value)
+    if parsed is None:
+        raise ValueError("Invalid V4L2 fourcc")
+
+    return "".join(chr((parsed >> (8 * i)) & 0xFF) for i in range(4))
+
+
+def _v4l2_capture_chain(properties: Dict[str, Union[float, str]]) -> str:
+    properties = {key.lower(): value for key, value in properties.items()}
+    suffix = _v4l2_caps_suffix(properties)
     if "fourcc" not in properties:
         if not suffix:
             return "decodebin ! "
@@ -358,11 +393,7 @@ def _v4l2_capture_chain(properties: Dict[str, Union[float, str]]) -> str:
         )
         return f'capsfilter caps="{caps}" ! decodebin ! '
 
-    parsed = parse_fourcc(properties["fourcc"])
-    if parsed is None:
-        raise ValueError("Invalid V4L2 fourcc")
-
-    fourcc = "".join(chr((parsed >> (8 * i)) & 0xFF) for i in range(4))
+    fourcc = _v4l2_fourcc(properties["fourcc"])
     if fourcc in ("MJPG", "JPEG"):
         # JetPack 6 / L4T R36 supports MJPEG through the V4L2 HW decoder.
         return f"image/jpeg{suffix} ! jpegparse ! nvv4l2decoder mjpeg=1 ! "
@@ -689,6 +720,92 @@ def _is_v4l2_source(video: Union[str, int]) -> bool:
 
 def _v4l2_device(video: Union[str, int]) -> str:
     return f"/dev/video{video}" if isinstance(video, int) else video
+
+
+def _v4l2_pixel_formats(device: str) -> set:
+    try:
+        import fcntl
+
+        fd = os.open(device, os.O_RDONLY | os.O_NONBLOCK)
+    except (ImportError, OSError):
+        return set()
+
+    formats = set()
+    try:
+        index = 0
+        while True:
+            buffer = bytearray(_V4L2_FMTDESC.pack(index, 1, b"", 0, 0))
+            fcntl.ioctl(fd, _VIDIOC_ENUM_FMT, buffer)
+            pixel_format = _V4L2_FMTDESC.unpack(buffer)[3]
+            formats.add(pixel_format.to_bytes(4, "little").decode("ascii", "replace"))
+            index += 1
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+    return formats
+
+
+def _v4l2_supports_dmabuf_import(device: str) -> bool:
+    try:
+        import fcntl
+
+        fd = os.open(device, os.O_RDWR | os.O_NONBLOCK)
+    except (ImportError, OSError):
+        return False
+
+    try:
+        request = bytearray(_V4L2_REQUESTBUFFERS.pack(0, 1, 4, 0, 0))
+        fcntl.ioctl(fd, _VIDIOC_REQBUFS, request)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+@lru_cache(maxsize=None)
+def _nvv4l2camerasrc_formats() -> frozenset:
+    try:
+        result = subprocess.run(
+            ["gst-inspect-1.0", "nvv4l2camerasrc"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
+
+    if result.returncode != 0:
+        return frozenset()
+
+    supported_formats = frozenset(
+        gst_format
+        for gst_format in _V4L2_RAW_TO_GST_FORMAT.values()
+        if gst_format.encode("ascii") in result.stdout
+    )
+
+    return supported_formats
+
+
+def _nvv4l2camerasrc_format(
+    video: Union[str, int], requested_fourcc: Optional[str] = None
+) -> Optional[str]:
+    device = _v4l2_device(video)
+    device_formats = _v4l2_pixel_formats(device)
+    if not device_formats or device_formats & _V4L2_COMPRESSED_FORMATS:
+        return None
+
+    supported = _nvv4l2camerasrc_formats()
+    for v4l2_format, gst_format in _V4L2_RAW_TO_GST_FORMAT.items():
+        if requested_fourcc not in (None, v4l2_format, gst_format):
+            continue
+        if v4l2_format in device_formats and gst_format in supported:
+            if _v4l2_supports_dmabuf_import(device):
+                return gst_format
+            return None
+    return None
 
 
 def _is_live_source(video: Union[str, int]) -> bool:
