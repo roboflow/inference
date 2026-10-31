@@ -167,3 +167,59 @@ def test_close_without_prepare_close_finalises_and_releases() -> None:
         if pending is not None:
             pending.release()
         block.close()
+
+
+def _wait_for(predicate, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        if time.monotonic() > deadline:
+            raise AssertionError("condition not reached in time")
+        time.sleep(0.01)
+
+
+@pytest.mark.timeout(60)
+def test_retired_rings_release_themselves_before_close() -> None:
+    # given: five frame-number resets, the second with a capture still pending
+    block = VideoClipRecorderBlockV1()
+    retired = []
+    pending = None
+
+    try:
+        for round_index in range(6):
+            start = datetime.now()
+            for index in range(10):
+                (result,) = block.run(
+                    image=[_frame(index, start)],
+                    pre_roll_seconds=0.3,
+                    post_roll_seconds=5.0,
+                )
+                _pace()
+            if round_index == 1:
+                anchor = result["anchor"]
+                pending = anchor.capture(
+                    anchor.pre_roll_seconds, anchor.post_roll_seconds
+                )
+            if round_index < 5:
+                retired.append(block._streams["camera-1"].ring)
+
+        # when: the pending capture of a retired ring is finalised
+        artifact = pending.future.result(timeout=30)
+        artifact.release()
+
+        # then: every retired ring left the block, the budget and its threads
+        _wait_for(lambda: block._retired_rings == [])
+        assert len(retired) == 5
+        for ring in retired:
+            _wait_for(lambda: not ring._encoder_thread.is_alive())
+            if ring._finalizer_thread is not None:
+                _wait_for(lambda: not ring._finalizer_thread.is_alive())
+            assert ring.budget_bytes() == 0
+            assert ring.stats().held_bytes == 0
+            assert ring not in ring._budget._sources
+        live_ring = block._streams["camera-1"].ring
+        assert live_ring not in retired
+        assert live_ring in live_ring._budget._sources
+    finally:
+        if pending is not None:
+            pending.release()
+        block.close()

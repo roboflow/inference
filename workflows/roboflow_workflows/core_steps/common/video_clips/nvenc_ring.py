@@ -690,6 +690,11 @@ class NvencRing(BaseEncodedRing):
         super().close()
         _LIVE_RINGS.discard(self)
 
+    def _after_release(self) -> None:
+        # A retired ring released itself: its session was destroyed on the
+        # encoder thread, so the exit hook no longer needs it.
+        _LIVE_RINGS.discard(self)
+
     # ---- caller thread ---------------------------------------------------------
     def _prepare_frame(self, image: Any) -> Optional[PreparedFrame]:
         # Pool slot (or None = full, the base counts queue_drops), then an async

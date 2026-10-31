@@ -12,6 +12,7 @@ import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import partial
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple, Type
 
 import numpy as np
@@ -467,7 +468,8 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         # Ordered least- to most-recently-seen stream, for LRU retirement.
         self._streams: "OrderedDict[str, _StreamState]" = OrderedDict()
         # Rings retired by a reset or eviction: their pending captures finalise on
-        # the rings' own threads, and they are closed with the block.
+        # the rings' own threads. A ring releases itself and leaves this list once
+        # its last capture is finalised; the rest are closed with the block.
         self._retired_rings: List[Any] = []
         self._closing = False
         self._closed = False
@@ -766,14 +768,22 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         if ring is None:
             return
 
+        self._retired_rings.append(ring)
         try:
-            ring.retire(reason)
+            ring.retire(reason, on_released=partial(self._forget_retired_ring, ring))
         except Exception as error:
             logger.warning(
                 f"Video Clip Recorder `{self._step_name()}` could not retire a ring: "
                 f"{error}"
             )
-        self._retired_rings.append(ring)
+
+    def _forget_retired_ring(self, ring: Any) -> None:
+        # Called by a retired ring (on its own thread, or inside `retire`) once it
+        # released its packets and budget share: nothing is left to close.
+        with self._lock:
+            self._retired_rings = [
+                retired for retired in self._retired_rings if retired is not ring
+            ]
 
     def _ensure_ring(
         self,

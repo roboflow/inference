@@ -38,6 +38,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import (
     Any,
+    Callable,
     ClassVar,
     Deque,
     Dict,
@@ -713,6 +714,8 @@ class BaseEncodedRing(abc.ABC):
         self._closing = False
         self._prepared = False
         self._closed = False
+        self._encoder_stopped = False
+        self._on_released: Optional[Callable[[], None]] = None
         self._close_deadline: Optional[float] = None
         self._stop_reason: Optional[str] = None
 
@@ -888,23 +891,30 @@ class BaseEncodedRing(abc.ABC):
 
         return pending
 
-    def retire(self, reason: str) -> None:
+    def retire(
+        self, reason: str, *, on_released: Optional[Callable[[], None]] = None
+    ) -> None:
         """End this ring after a source reset (resolution change, frame reset).
 
         Non-blocking: frames already queued are still encoded, pending captures
         are then finalised with ``partial=reason`` and the ring's threads exit
-        on their own. New frames and captures are refused. Call `close()` later
-        to release the remaining packets.
+        on their own. New frames and captures are refused. Once the last
+        capture is finalised the ring releases its packets and leaves the
+        budget by itself; `close()` stays safe to call at any time.
 
         Args:
             reason: Partial reason for the pending captures.
+            on_released: Called once (from a ring thread, or from this call when
+                nothing is pending) after the ring released itself.
         """
         with self._lock:
             if self._closing:
                 return None
             self._closing = True
             self._stop_reason = reason
+            self._on_released = on_released
         self._stop_encoder(reason)
+        self._release_if_retired_and_idle()
 
     def prepare_close(self, deadline: Optional[float] = None) -> None:
         """Start closing: drop unencoded frames, finalise pending as shutdown.
@@ -1231,7 +1241,10 @@ class BaseEncodedRing(abc.ABC):
                 self._discard_safely(frame)
         finally:
             self._close_encoder_safely()
+            with self._lock:
+                self._encoder_stopped = True
             self._finalize_queue.put(None)
+            self._release_if_retired_and_idle()
 
     # ---- finalizer thread ----------------------------------------------------------
 
@@ -1240,6 +1253,7 @@ class BaseEncodedRing(abc.ABC):
             state = self._finalize_queue.get()
             if state is None:
                 if self._finalize_queue.empty():
+                    self._release_if_retired_and_idle()
                     return None
                 continue
             try:
@@ -1440,10 +1454,45 @@ class BaseEncodedRing(abc.ABC):
             if encoder_alive:
                 self._queue.put(_Job(kind=_STOP, reason=reason))
                 return None
+            # No encoder thread ever ran, so there is no encoder to release.
+            self._encoder_stopped = True
             for state in list(self._pending):
                 self._complete(state, partial=reason)
             if self._finalizer_thread is not None:
                 self._finalize_queue.put(None)
+
+    def _release_if_retired_and_idle(self) -> None:
+        # A retired ring holds its packet store and budget share until nothing
+        # can use them: no pending or outstanding capture and a stopped encoder.
+        # Releasing here (not in the owner's close()) keeps repeated resets and
+        # evictions from growing memory. A host close (prepare_close) owns the
+        # release instead.
+        with self._lock:
+            if (
+                self._closed
+                or self._prepared
+                or self._stop_reason is None
+                or not self._encoder_stopped
+                or self._pending
+                or self._outstanding
+            ):
+                return None
+            self._store.clear()
+            self._closed = True
+            on_released = self._on_released
+            self._on_released = None
+        self._budget.unregister_source(self)
+        self._after_release()
+        if on_released is None:
+            return None
+        try:
+            on_released()
+        except Exception as error:
+            self._log_error("release", error)
+
+    def _after_release(self) -> None:
+        """Backend hook run once after the ring released itself."""
+        return None
 
     def _ensure_encoder_thread(self) -> None:
         with self._lock:

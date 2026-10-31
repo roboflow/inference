@@ -82,8 +82,9 @@ class FakeRing:
         self.captures.append((start, end_inclusive))
         return ("pending_capture", start, end_inclusive)
 
-    def retire(self, reason: str) -> None:
+    def retire(self, reason: str, *, on_released=None) -> None:
         self.retired_with = reason
+        self.on_released = on_released
 
     def prepare_close(self, deadline_seconds) -> None:
         self._closing = True

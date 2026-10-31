@@ -385,6 +385,43 @@ def test_retire_finalises_pending_with_reason_and_stops_threads(ring) -> None:
     artifact.release()
 
 
+def test_retired_ring_releases_itself_once_its_last_capture_is_finalised(
+    ring,
+) -> None:
+    # given
+    budget = Budget()
+    recorder = ring(budget=budget)
+    _feed(recorder, range(30))
+    capture = recorder.capture(_ts(10), _ts(60))
+    released = threading.Event()
+
+    # when
+    recorder.retire(PARTIAL_RESOLUTION_CHANGE, on_released=released.set)
+    artifact = capture.future.result(timeout=5)
+
+    # then: packets and the budget share are gone without close()
+    assert released.wait(timeout=5)
+    assert recorder.budget_bytes() == 0
+    assert budget.usage().source_bytes == 0
+    assert recorder not in budget._sources
+    artifact.release()
+    recorder.close()
+
+
+def test_retired_ring_without_frames_releases_itself_at_once(ring) -> None:
+    # given
+    budget = Budget()
+    recorder = ring(budget=budget)
+    released = threading.Event()
+
+    # when
+    recorder.retire(PARTIAL_RESOLUTION_CHANGE, on_released=released.set)
+
+    # then
+    assert released.is_set()
+    assert recorder not in budget._sources
+
+
 def test_submit_never_keeps_a_reference_to_the_callers_frame() -> None:
     # given: the encoder is slow, so the frame is still queued when mutated
     recorder = _SlowX264Ring(
