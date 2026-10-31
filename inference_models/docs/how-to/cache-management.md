@@ -125,6 +125,15 @@ Model IDs are slugified and hashed to create safe, unique, yet human-readable di
 
 When the weights provider supplies a content hash (MD5) for a file, the library stores the actual file in `$INFERENCE_HOME/shared-blobs/` named after its hash, and creates symlinks from the model package directories.
 
+On Windows, if creating a file symlink fails because the process lacks the
+symbolic-link privilege (WinError 1314), the library uses a hardlink instead.
+This does not require Developer Mode, but the package and shared blob must be
+on the same hardlink-capable filesystem, such as NTFS. Cache validation still
+requires a link to the exact expected blob and a matching content hash; an
+independent copy is not accepted as a shared blob. This fallback applies to
+shared **files**, not dependency-directory links, and does not change the
+default cache location.
+
 **Benefits:**
 
 - **Avoids duplicate downloads** - If multiple models or packages share the same file (e.g., same weights with different configs), it's only downloaded once
