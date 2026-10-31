@@ -4434,6 +4434,13 @@ class HttpInterface(BaseInterface):
                                 f"specifies '{inference_request.model_id}'",
                             )
                         inference_request.model_id = model_id
+                    elif (
+                        inference_request.model_id is None
+                        and inference_request.depth_version_id is not None
+                    ):
+                        inference_request.model_id = (
+                            f"depth-anything-v2/{inference_request.depth_version_id}"
+                        )
                     api_key = api_key_fallback(api_key)
                     if api_key is not None:
                         inference_request.api_key = api_key
