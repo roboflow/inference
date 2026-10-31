@@ -12,6 +12,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from unittest import mock
+from urllib.parse import quote
 
 import numpy as np
 import pytest
@@ -373,6 +374,49 @@ def test_prepare_upload_goes_through_the_secure_gateway_wrapper(
     wrapped = [call.args[0] for call in platform_client.wrap_url.call_args_list]
     assert PREPARE_URL in wrapped
     assert EVENTS_URL in wrapped
+
+
+GATEWAY_PREFIX = "https://gateway.test/proxy?url="
+
+
+def _gateway_wrap(url: str) -> str:
+    # Wraps only the storage host so the mocked platform URLs still match.
+    if not url.startswith("https://storage.test/"):
+        return url
+    return GATEWAY_PREFIX + quote(url, safe="~()*!'")
+
+
+@pytest.mark.parametrize("module", VISION_EVENTS_MODULES)
+def test_signed_upload_url_goes_through_the_secure_gateway_wrapper(
+    module: Any,
+    platform: Any,
+    budget: FakeBudget,
+    uploader: FakeUploader,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # given
+    platform_client = _platform_client()
+    platform_client.wrap_url.side_effect = _gateway_wrap
+
+    # when
+    with caplog.at_level(logging.DEBUG):
+        result = _run(
+            _block(module, platform_client=platform_client),
+            module,
+            video_clips=FakeAnchor(),
+        )
+
+    # then: the uploader PUTs to the gateway, and the signature stays redacted
+    signed_url = f"https://storage.test/upload/1?{SIGNATURE}"
+    upload_url = uploader.submissions[0]["signed_url"]
+    assert upload_url == _gateway_wrap(signed_url)
+    assert upload_url.startswith(GATEWAY_PREFIX)
+    assert signed_url in [
+        call.args[0] for call in platform_client.wrap_url.call_args_list
+    ]
+    assert "very-secret" not in clip_attachments.redact_signed_urls(upload_url)
+    assert "very-secret" not in str(result)
+    assert "very-secret" not in caplog.text
 
 
 @pytest.mark.parametrize("module", VISION_EVENTS_MODULES)

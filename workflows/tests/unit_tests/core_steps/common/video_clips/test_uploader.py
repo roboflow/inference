@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote
 
 import pytest
 import requests
@@ -445,3 +446,12 @@ def test_redaction_helpers() -> None:
     )
     assert redact_url("https://example.com/a") == "https://example.com/a"
     assert "deadbeefsecret" not in redact_text(f"error at {SIGNED_URL} (x)")
+
+
+def test_redaction_hides_the_signature_of_a_gateway_wrapped_url() -> None:
+    # given: the sink wraps the signed URL for the secure gateway
+    wrapped = "https://gateway.example/proxy?url=" + quote(SIGNED_URL, safe="")
+
+    # then
+    assert redact_url(wrapped) == "https://gateway.example/proxy?REDACTED"
+    assert "deadbeefsecret" not in redact_text(f"PUT {wrapped} failed")

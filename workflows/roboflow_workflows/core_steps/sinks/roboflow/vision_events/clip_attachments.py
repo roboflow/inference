@@ -236,7 +236,8 @@ class ClipAttachments:
             event_id (str): Event id, used in the uploaded file name.
             api_base_url (str): Roboflow API base URL.
             platform_client (RoboflowPlatformClient): Resolved platform client;
-                it wraps the URLs for the secure gateway.
+                it wraps the URLs for the secure gateway, the signed upload
+                URL included.
             request_headers (Dict[str, Any]): Headers of a JSON Vision Events
                 API request, credential included.
             raise_for_status (Callable[[requests.Response], None]): The sink's
@@ -272,11 +273,16 @@ class ClipAttachments:
                         _release(attachment)
                 continue
 
+            # Behind a secure gateway the storage host is reachable only through
+            # the gateway, so the PUT targets the wrapped URL (as model
+            # downloads do). Its query string, the signature included, is
+            # still redacted wherever the URL is logged.
+            upload_url = platform_client.wrap_url(signed_url)
             with self._settle_lock:
                 attachment.video_id = video_id
                 if self._settled:
                     continue
-                attachment.signed_url = signed_url
+                attachment.signed_url = upload_url
                 attachment.required_headers = required_headers
 
     def videos_field(self) -> List[Dict[str, str]]:
