@@ -245,6 +245,18 @@ In fire-and-forget mode `video_id` is empty because the upload slot is requested
 in the background. Disabled or throttled events capture nothing, and the local
 event store mode does not support clips (`unavailable:unsupported_sink_mode`).
 
+Keep `fire_and_forget` enabled when attaching clips to a video stream: with it
+disabled, each clip's upload slot request (about 0.3 s each in validation) and the
+event POST run on the pipeline thread, which stops processing frames meanwhile.
+
+The completion record carries the event and video ids, the label, a
+`terminal_status` (`put_accepted`, `upload_failed`, `expired`, `clip_failed`,
+`cancelled` or `shutdown_deadline`), the clip report (bounds, frame counts and
+missing frames by cause), timings and, with `confirm_ingestion`, the ingestion
+result (`confirmed`, `pending` or `failed`). `put_accepted` means the upload was
+accepted, not that the platform finished ingesting it. Transient upload errors are
+retried until `clip_upload_timeout_seconds` after the upload slot was requested.
+
 ## Common Use Cases
 
 - **Quality Control**: Automatically log inspection results with images and detection overlays

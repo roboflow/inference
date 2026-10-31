@@ -4,6 +4,25 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Added
+
+- A workflow `InferencePipeline` now closes its workflow in two phases. When the
+  pipeline ends, `on_pipeline_end` calls the Execution Engine's
+  `prepare_close(deadline_seconds)` before shutting down the thread pools, then
+  `close()` after them as before, so blocks such as the Video Clip Recorder start
+  muxing and uploading pending clips while sink tasks drain. A failing
+  `prepare_close` is logged. With a `roboflow-workflows` that has no
+  `prepare_close()`, nothing changes.
+- `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS` (default 30) sets the deadline passed to
+  `prepare_close`, and `InferencePipeline.set_block_close_deadline(deadline_seconds)`
+  overrides it per pipeline (call it before `join()`; `None` restores the setting).
+  It applies to pipelines built by `init_with_workflow` and does nothing for custom
+  logic.
+- The WebRTC worker passes a deadline that fits the shutdown reserve for sessions
+  with a time limit: `max(1, WEBRTC_MODAL_SHUTDOWN_RESERVE - 1)` seconds, capped at
+  `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS`. Sessions without a time limit use the
+  default.
+
 ## `0.1.5`
 
 ### Changed
