@@ -427,9 +427,10 @@ def test_stable_signature_ignores_nested_union_order() -> None:
     assert _stable_signature(before) != _stable_signature(after)
 
 
-@pytest.mark.parametrize("factory_name", [
-    "init", "init_with_yolo_world", "init_with_workflow", "init_with_custom_logic",
-])
+@pytest.mark.parametrize(
+    "factory_name",
+    ["init", "init_with_yolo_world", "init_with_workflow", "init_with_custom_logic"],
+)
 def test_public_video_source_options_remains_optional(factory_name):
     from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 
@@ -438,5 +439,6 @@ def test_public_video_source_options_remains_optional(factory_name):
     ]
     assert parameter.default is None
     assert parameter.kind in {
-        inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
     }
