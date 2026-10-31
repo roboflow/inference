@@ -43,6 +43,9 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.core.utils.torchscript_guard import _temporarily_disable_torch_jit_script
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -91,6 +94,7 @@ class SegmentAnything2(RoboflowCoreModel):
         }[self.version_id]
 
         self.sam = build_sam2(model_cfg, checkpoint, device=DEVICE)
+        self.image_size = int(getattr(self.sam, "image_size", 1024))
         self.low_res_logits_cache_size = low_res_logits_cache_size
         self.embedding_cache_size = embedding_cache_size
 
@@ -187,28 +191,35 @@ class SegmentAnything2(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())
             inference_time = perf_counter() - t1
-            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            response = Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            self._attach_resolved_model_metadata(response)
+            return response
         elif isinstance(request, Sam2SegmentationRequest):
             masks, scores, low_resolution_logits = self.segment_image(**request.dict())
 
             if request.format == "json":
-                return turn_segmentation_results_into_api_response(
+                response = turn_segmentation_results_into_api_response(
                     masks=masks,
                     scores=scores,
                     mask_threshold=0.0,
                     inference_start_timestamp=t1,
                 )
+                self._attach_resolved_model_metadata(response)
+                return response
             elif request.format == "rle":
-                return turn_segmentation_results_into_rle_response(
+                response = turn_segmentation_results_into_rle_response(
                     masks=masks,
                     scores=scores,
                     mask_threshold=0.0,
                     inference_start_timestamp=t1,
                 )
+                self._attach_resolved_model_metadata(response)
+                return response
             elif request.format == "binary":
                 binary_vector = BytesIO()
                 np.savez_compressed(

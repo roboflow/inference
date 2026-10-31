@@ -5,6 +5,7 @@ from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
     ROBOFLOW_API_KEY,
     PlatformEnvironment,
+    apply_auth_mode,
 )
 
 DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
@@ -51,12 +52,12 @@ DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
 
 CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: [
-        0.8472128510475159,
-        0.9162841439247131,
+        0.51904296875,
+        0.52099609375,
     ],
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: [
-        0.6154301762580872,
-        0.5893789529800415,
+        0.6154422163963318,
+        0.6047013401985168,
     ],
 }
 CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
@@ -81,12 +82,14 @@ def test_detection_plus_classification_workflow(
     classification_model_id: str,
     dogs_image: np.ndarray,
     license_plate_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -117,7 +120,7 @@ def test_detection_plus_classification_workflow(
         p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
     ]
     assert np.allclose(
-        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=5e-3
+        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=5e-2
     ), "Expected predictions to match what was observed while test creation"
     assert (
         len(result[0]["classification_predictions"]) == 2

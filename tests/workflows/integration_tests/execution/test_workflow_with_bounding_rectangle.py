@@ -2,14 +2,90 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    USE_INFERENCE_MODELS,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.instance_segmentation import (
+    InstanceDetections as NativeInstanceDetections,
+)
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the bounding_rect block emits a native
+# inference_models.InstanceDetections instead of sv.Detections. The numpy-shaped
+# assertions below run only with the flag off; an equivalent *_tensor_native test
+# asserts the same facts against the native carrier with the flag on.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="sv.Detections output; native under ENABLE_TENSOR_DATA_REPRESENTATION "
+    "— see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
+)
+
+# (corners, width, height, angle, corner/size tolerance) per dog.
+_EXPECTED_RECTS = [
+    (
+        [[322.0, 402.0], [325.0, 224.0], [586.0, 228.0], [583.0, 406.0]],
+        261.5,
+        178.4,
+        0.826,
+        5.0,
+    ),
+    (
+        [[219.0, 82.0], [352.0, 57.0], [409.0, 363.0], [276.0, 388.0]],
+        311.25,
+        135.2,
+        79.5,
+        6.0,
+    ),
+]
+
+
+def _canonical_rect_size(width: float, height: float, angle: float) -> tuple:
+    # cv2.minAreaRect reports the same rectangle as (w, h, a), (h, w, a - 90)
+    # or (h, w, a + 90)
+    if angle > 45:
+        return height, width, angle - 90
+    if angle < -45:
+        return height, width, angle + 90
+    return width, height, angle
+
+
+def _assert_rect_matches(rect, width, height, angle, expected) -> None:
+    # The first dog's mask is nearly axis-aligned, so minAreaRect has two
+    # near-equal candidates (tilted ~0.8 deg, or axis-aligned reported at 90 deg)
+    # and a one-pixel mask change picks the other one; cv2.boxPoints then starts
+    # from a different corner and width/height swap. Compare geometry instead.
+    expected_rect, expected_width, expected_height, expected_angle, atol = expected
+    rect = np.asarray(rect, dtype=float)
+    assert any(
+        np.allclose(np.roll(rect, shift, axis=0), expected_rect, atol=atol)
+        for shift in range(4)
+    ), f"{rect.tolist()} does not match {expected_rect} up to the starting corner"
+    w, h, a = _canonical_rect_size(float(width), float(height), float(angle))
+    ew, eh, ea = _canonical_rect_size(expected_width, expected_height, expected_angle)
+    assert np.allclose([w, h], [ew, eh], atol=atol), f"size {(w, h)} != {(ew, eh)}"
+    # 1 deg matches the corner tolerance: 5 px over a ~260 px side is ~1.1 deg.
+    assert abs(a - ea) <= 1.0, f"angle {a} != {ea}"
+
+
+def test_assert_rect_matches_accepts_negative_near_minus_90_angle() -> None:
+    expected = _EXPECTED_RECTS[0]
+    _assert_rect_matches(expected[0], 178.4, 261.5, -89.174, expected)
+
 
 BOUNDNG_RECTANGLE_WORKFLOW = {
     "version": "1.0",
@@ -39,6 +115,7 @@ BOUNDNG_RECTANGLE_WORKFLOW = {
 }
 
 
+@_NUMPY_ONLY
 @add_to_workflows_gallery(
     category="Basic Workflows",
     use_case_title="Workflow with bounding rect",
@@ -91,18 +168,116 @@ def test_rectangle_bounding_workflow(
         "angle" in result[0]["result"].data
     ), "'angle' data field must expected to be found in result"
 
-    assert np.allclose(
-        result[0]["result"]["rect"][0],
-        np.array([[322.0, 402.0], [325.0, 224.0], [586.0, 228.0], [583.0, 406.0]]),
+    for i, expected in enumerate(_EXPECTED_RECTS):
+        _assert_rect_matches(
+            result[0]["result"]["rect"][i],
+            result[0]["result"]["width"][i],
+            result[0]["result"]["height"][i],
+            result[0]["result"]["angle"][i],
+            expected,
+        )
+
+
+@_TENSOR_ONLY
+def test_rectangle_bounding_workflow_tensor_native(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    image_as_workflow_input,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=BOUNDNG_RECTANGLE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
-    assert np.allclose(
-        result[0]["result"]["rect"][1],
-        np.array([[219.0, 82.0], [352.0, 57.0], [409.0, 363.0], [276.0, 388.0]]),
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [image_as_workflow_input(dogs_image)],
+        }
     )
-    assert np.allclose(
-        result[0]["result"]["width"], np.array([261.5, 311.25]), atol=0.1
+
+    # then
+    assert len(result) == 1, "One set ot outputs expected"
+    assert "result" in result[0], "Output must contain key 'result'"
+    detections = result[0]["result"]
+    assert isinstance(
+        detections, NativeInstanceDetections
+    ), "Output must be instance of native inference_models.InstanceDetections"
+    assert detections.xyxy.shape[0] == 2, "Two dogs on the image"
+
+    # On the native carrier the rect/width/height/angle geometry that lived in the
+    # vectorized sv.Detections.data columns is stored per-box in bboxes_metadata[i].
+    assert detections.bboxes_metadata is not None, "Should have per-box metadata"
+    for i in range(2):
+        meta = detections.bboxes_metadata[i]
+        assert "rect" in meta, "'rect' geometry must be found in per-box metadata"
+        assert "width" in meta, "'width' geometry must be found in per-box metadata"
+        assert "height" in meta, "'height' geometry must be found in per-box metadata"
+        assert "angle" in meta, "'angle' geometry must be found in per-box metadata"
+
+    for i, expected in enumerate(_EXPECTED_RECTS):
+        meta = detections.bboxes_metadata[i]
+        _assert_rect_matches(
+            meta["rect"], meta["width"], meta["height"], meta["angle"], expected
+        )
+
+
+@_TENSOR_ONLY
+def test_rectangle_bounding_workflow_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # Same as test_rectangle_bounding_workflow_tensor_native, but the image arrives ALREADY
+    # materialised as a CHW RGB device tensor (is_tensor_materialised() == True), so the
+    # instance-seg block runs its on-device tensor path. Results must match the numpy-input
+    # variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=BOUNDNG_RECTANGLE_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
-    assert np.allclose(
-        result[0]["result"]["height"], np.array([178.4, 135.2]), atol=0.1
+
+    # when — feed the fixture as a pre-materialised tensor
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [numpy_image_as_tensor(dogs_image)],
+        }
     )
-    assert np.allclose(result[0]["result"]["angle"], np.array([0.826, 79.5]), atol=0.1)
+
+    # then
+    assert len(result) == 1, "One set ot outputs expected"
+    assert "result" in result[0], "Output must contain key 'result'"
+    detections = result[0]["result"]
+    assert isinstance(
+        detections, NativeInstanceDetections
+    ), "Output must be instance of native inference_models.InstanceDetections"
+    assert detections.xyxy.shape[0] == 2, "Two dogs on the image"
+
+    # On the native carrier the rect/width/height/angle geometry that lived in the
+    # vectorized sv.Detections.data columns is stored per-box in bboxes_metadata[i].
+    assert detections.bboxes_metadata is not None, "Should have per-box metadata"
+    for i in range(2):
+        meta = detections.bboxes_metadata[i]
+        assert "rect" in meta, "'rect' geometry must be found in per-box metadata"
+        assert "width" in meta, "'width' geometry must be found in per-box metadata"
+        assert "height" in meta, "'height' geometry must be found in per-box metadata"
+        assert "angle" in meta, "'angle' geometry must be found in per-box metadata"
+
+    for i, expected in enumerate(_EXPECTED_RECTS):
+        meta = detections.bboxes_metadata[i]
+        _assert_rect_matches(
+            meta["rect"], meta["width"], meta["height"], meta["angle"], expected
+        )

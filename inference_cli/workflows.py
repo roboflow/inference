@@ -72,6 +72,14 @@ def process_video(
             "(mutually exclusive with `workflow_specification_path`)",
         ),
     ] = None,
+    workflow_version_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow_version_id",
+            "-wvid",
+            help="Specific version of the Workflow to use. If not provided, the latest version is used.",
+        ),
+    ] = None,
     workflow_parameters_path: Annotated[
         Optional[str],
         typer.Option(
@@ -143,6 +151,7 @@ def process_video(
             workflow_specification=workflow_specification,
             workspace_name=workspace_name,
             workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
             workflow_parameters=workflow_parameters,
             image_input_name=image_input_name,
             max_fps=max_fps,
@@ -216,6 +225,14 @@ def process_image(
             "-wid",
             help="Identifier of a Workflow on Roboflow platform "
             "(mutually exclusive with `workflow_specification_path`)",
+        ),
+    ] = None,
+    workflow_version_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow_version_id",
+            "-wvid",
+            help="Specific version of the Workflow to use. If not provided, the latest version is used.",
         ),
     ] = None,
     workflow_parameters_path: Annotated[
@@ -297,6 +314,7 @@ def process_image(
             workflow_specification=workflow_specification,
             workspace_name=workspace_name,
             workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
             workflow_parameters=workflow_parameters,
             image_input_name=image_input_name,
             api_key=api_key,
@@ -371,6 +389,14 @@ def process_images_directory(
             "-wid",
             help="Identifier of a Workflow on Roboflow platform "
             "(mutually exclusive with `workflow_specification_path`)",
+        ),
+    ] = None,
+    workflow_version_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow_version_id",
+            "-wvid",
+            help="Specific version of the Workflow to use. If not provided, the latest version is used.",
         ),
     ] = None,
     workflow_parameters_path: Annotated[
@@ -485,6 +511,7 @@ def process_images_directory(
             workflow_specification=workflow_specification,
             workspace_name=workspace_name,
             workflow_id=workflow_id,
+            workflow_version_id=workflow_version_id,
             workflow_parameters=workflow_parameters,
             image_input_name=image_input_name,
             api_key=api_key,

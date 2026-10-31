@@ -9,6 +9,7 @@ from peft import PeftModel
 from torch import nn
 from transformers import AutoBackbone
 
+from inference_models.configuration import HF_HUB_CACHE, OFFLINE_MODE
 from inference_models.logger import LOGGER
 from inference_models.models.rfdetr.dinov2_with_windowed_attn import (
     WindowedDinov2WithRegistersBackbone,
@@ -84,8 +85,10 @@ class DinoV2(nn.Module):
             ), "Using non-windowed attention requires loading dinov2 weights from hub"
             self.encoder = AutoBackbone.from_pretrained(
                 name,
+                cache_dir=HF_HUB_CACHE,
                 out_features=[f"stage{i}" for i in out_feature_indexes],
                 return_dict=False,
+                local_files_only=OFFLINE_MODE,
             )
         else:
             window_block_indexes = set(range(out_feature_indexes[-1] + 1))
@@ -130,7 +133,9 @@ class DinoV2(nn.Module):
             self.encoder = (
                 WindowedDinov2WithRegistersBackbone.from_pretrained(
                     name,
+                    cache_dir=HF_HUB_CACHE,
                     config=windowed_dino_config,
+                    local_files_only=OFFLINE_MODE,
                 )
                 if load_dinov2_weights
                 else WindowedDinov2WithRegistersBackbone(windowed_dino_config)

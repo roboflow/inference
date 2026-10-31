@@ -98,6 +98,22 @@ def test_import_from_function():
         _import_from("nonexistent_module", "attribute")
 
 
+def test_model_lazy_export(monkeypatch):
+    """Model is advertised in __all__ and must resolve through the lazy loader."""
+    for mod_name in [
+        "inference",
+        "inference.core.models.base",
+    ]:
+        monkeypatch.delitem(sys.modules, mod_name, raising=False)
+
+    import inference
+
+    assert "Model" in inference.__all__
+    Model = inference.Model
+    assert Model is inference.Model
+    assert Model is sys.modules["inference.core.models.base"].Model
+
+
 def test_getattr_implementation(monkeypatch):
     """Test that the __getattr__ implementation is being called correctly."""
     for mod_name in [

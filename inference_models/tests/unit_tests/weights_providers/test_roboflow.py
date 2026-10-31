@@ -1,6 +1,8 @@
 import json
+import re
 import urllib.parse
-from typing import Optional
+from typing import Dict, List, Optional, Type, Union
+from unittest.mock import patch
 
 import pytest
 from packaging.version import Version
@@ -9,18 +11,25 @@ from requests_mock import Mocker
 
 from inference_models.configuration import API_CALLS_MAX_TRIES, ROBOFLOW_API_HOST
 from inference_models.errors import (
+    AssumptionError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
-from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.weights_providers import roboflow as roboflow_module
 from inference_models.weights_providers.entities import (
+    BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    MemoryProfile,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
+    RecommendedParameters,
     ServerEnvironmentRequirements,
     TorchScriptPackageDetails,
     TRTPackageDetails,
@@ -36,7 +45,21 @@ from inference_models.weights_providers.roboflow import (
     get_roboflow_model,
     handle_response_errors,
     parse_model_package_metadata,
+    roboflow_secure_gateway_proxy_url_builder,
 )
+
+DUMMY_PROXY_PREFIX = "https://gateway.local/proxy?url="
+
+
+def test_get_roboflow_model_does_not_request_metadata_in_offline_mode() -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), patch.object(
+        roboflow_module,
+        "get_model_metadata",
+    ) as get_model_metadata_mock:
+        with pytest.raises(ModelRetrievalError, match="OFFLINE_MODE"):
+            get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    get_model_metadata_mock.assert_not_called()
 
 
 def test_as_version_when_valid_version_provided() -> None:
@@ -51,62 +74,6 @@ def test_as_version_when_invalid_version_provided() -> None:
     # when
     with pytest.raises(ModelMetadataConsistencyError):
         _ = as_version(value="invalid")
-
-
-def test_parse_mediapipe_model_package_when_package_is_valid() -> None:
-    # given
-    metadata = RoboflowModelPackageV1(
-        type="external-model-package-v1",
-        packageId="my-package-id",
-        packageManifest={
-            "type": "mediapipe-model-package-v1",
-            "backendType": "mediapipe",
-        },
-        packageFiles=[
-            RoboflowModelPackageFile(
-                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
-            )
-        ],
-        trustedSource=True,
-    )
-
-    # when
-    result = parse_model_package_metadata(metadata=metadata)
-
-    # then
-    assert result == ModelPackageMetadata(
-        package_id="my-package-id",
-        backend=BackendType.MEDIAPIPE,
-        package_artefacts=[
-            FileDownloadSpecs(
-                download_url="https://dummy.com", file_handle="some", md5_hash="some"
-            ),
-        ],
-        quantization=Quantization.UNKNOWN,
-        trusted_source=True,
-    )
-
-
-def test_parse_mediapipe_model_package_when_package_is_invalid() -> None:
-    # given
-    metadata = RoboflowModelPackageV1(
-        type="external-model-package-v1",
-        packageId="my-package-id",
-        packageManifest={
-            "type": "mediapipe-model-package-v1",
-            "backendType": "invalid",
-        },
-        packageFiles=[
-            RoboflowModelPackageFile(
-                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
-            )
-        ],
-        trustedSource=True,
-    )
-
-    # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
 
 
 def test_parse_ultralytics_model_package() -> None:
@@ -193,8 +160,10 @@ def test_parse_hf_model_package_model_package_when_invalid_input_provided() -> N
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_model_package_when_batch_size_missmatch_present() -> None:
@@ -216,8 +185,10 @@ def test_parse_torch_model_package_when_batch_size_missmatch_present() -> None:
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
@@ -235,8 +206,10 @@ def test_parse_torch_model_package_when_invalid_manifest_provided() -> None:
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 @pytest.mark.parametrize(
@@ -271,8 +244,10 @@ def test_parse_torch_model_package_when_invalid_manifest_provided_regarding_batc
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_model_package_when_valid_manifest_provided() -> None:
@@ -327,8 +302,10 @@ def test_parse_trt_model_package_when_invalid_manifest_provided() -> None:
         trustedSource=True,
     )
 
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provided() -> (
@@ -368,8 +345,10 @@ def test_parse_trt_model_package_when_manifest_with_batch_size_missmatch_provide
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_dynamic_batch_size_missmatch_provided() -> (
@@ -409,8 +388,10 @@ def test_parse_trt_model_package_when_manifest_with_dynamic_batch_size_missmatch
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_environment_specification_missmatch_for_gpu_server() -> (
@@ -453,8 +434,10 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_environment_specification_missmatch_for_jetson() -> (
@@ -496,8 +479,10 @@ def test_parse_trt_model_package_when_manifest_with_environment_specification_mi
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_trt_model_package_when_manifest_with_jetson_environment_specification() -> (
@@ -667,8 +652,10 @@ def test_parse_onnx_model_package_when_invalid_manifest_provided() -> None:
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_onnx_model_package_when_valid_manifest_with_batch_size_missmatch_provided() -> (
@@ -693,8 +680,11 @@ def test_parse_onnx_model_package_when_valid_manifest_with_batch_size_missmatch_
         trustedSource=True,
     )
 
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 @pytest.mark.parametrize(
@@ -731,8 +721,10 @@ def test_parse_onnx_model_package_when_invalid_manifest_provided_regarding_batch
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_onnx_model_package_when_valid_manifest_provided() -> None:
@@ -796,8 +788,10 @@ def test_parse_torch_script_model_package_when_package_is_manifest_invalid() -> 
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 @pytest.mark.parametrize(
@@ -835,8 +829,10 @@ def test_parse_torch_script_model_package_when_package_batch_settings_are_invali
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_torch_script_model_package_when_package_is_manifest_valid() -> None:
@@ -972,8 +968,10 @@ def test_parse_model_package_metadata_when_package_manifest_is_known_but_invalid
     )
 
     # when
-    with pytest.raises(ModelMetadataConsistencyError):
-        _ = parse_model_package_metadata(metadata=metadata)
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
 
 
 def test_parse_model_package_metadata_when_package_manifest_is_known_and_valid() -> (
@@ -1068,6 +1066,29 @@ def test_handle_response_errors_when_status_code_is_retryable_error() -> None:
         handle_response_errors(response=response, operation_name="some")
 
 
+@pytest.mark.parametrize(
+    ("status_code", "expected_error"),
+    [
+        (402, PaymentRequiredModelAccessError),
+        (403, ForbiddenModelAccessError),
+        (423, UsagePausedModelAccessError),
+    ],
+)
+def test_handle_response_errors_when_model_access_is_denied(
+    status_code: int, expected_error: Type[Exception]
+) -> None:
+    # given
+    response = Response()
+    response.status_code = status_code
+
+    # when
+    with pytest.raises(expected_error) as error:
+        handle_response_errors(response=response, operation_name="get model weights")
+
+    assert error.value.status_code == status_code
+    assert expected_error.__name__.lower() in error.value.help_url
+
+
 def test_handle_response_errors_when_status_code_is_non_retryable_error() -> None:
     # given
     response = Response()
@@ -1150,12 +1171,83 @@ def test_get_one_page_of_model_metadata_when_retry_not_needed_and_parsable_respo
         ],
         nextPage="some",
     )
-
+    assert requests_mock.last_request.headers["Authorization"] == "Bearer some"
     parsed_params = urllib.parse.parse_qs(requests_mock.last_request.query)
     assert parsed_params["modelid"][0] == "my-model"
-    assert parsed_params["api_key"][0] == "some"
     assert parsed_params["pagesize"][0] == "100"
     assert parsed_params["startafter"][0] == "start"
+
+
+def test_get_one_page_of_model_metadata_excludes_auth_header_when_local_api_key(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [],
+            }
+        },
+    )
+
+    # when
+    _ = get_one_page_of_model_metadata(model_id="my-model", api_key="local")
+
+    # then
+    assert "Authorization" not in requests_mock.last_request.headers
+
+
+@pytest.mark.parametrize(
+    "coremltools_version, expected_query_value",
+    [(Version("9.0"), ["true"]), (None, None)],
+)
+def test_get_one_page_of_model_metadata_asks_for_coreml_packages_only_when_coreml_runs(
+    requests_mock: Mocker,
+    coremltools_version: Optional[Version],
+    expected_query_value: Optional[List[str]],
+) -> None:
+    # given
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "rfdetr",
+                "taskType": "object-detection",
+                "modelPackages": [],
+            }
+        },
+    )
+
+    # when
+    with patch.object(
+        roboflow_module,
+        "get_coreml_runtime_version",
+        return_value=coremltools_version,
+    ):
+        _ = get_one_page_of_model_metadata(model_id="my-model", api_key="some")
+
+    # then
+    assert (
+        requests_mock.last_request.qs.get("includecoremlpackages")
+        == expected_query_value
+    )
+
+
+def test_get_one_page_of_model_metadata_rejects_offline_mode(
+    requests_mock: Mocker,
+) -> None:
+    with patch.object(roboflow_module, "OFFLINE_MODE", True), pytest.raises(
+        ModelRetrievalError, match="OFFLINE_MODE"
+    ):
+        get_one_page_of_model_metadata(model_id="my-model")
+
+    assert not requests_mock.called
 
 
 def test_get_one_page_of_model_metadata_when_retry_not_needed_and_not_parsable_response(
@@ -1457,3 +1549,1246 @@ def test_get_roboflow_model(requests_mock: Mocker) -> None:
     assert result.model_variant == "yolov8-n"
     assert result.task_type == "object-detection"
     assert len(result.model_packages) == 2
+
+
+def test_get_roboflow_model_propagates_recommended_parameters(
+    requests_mock: Mocker,
+) -> None:
+    # The weights provider returns model-level recommendedParameters; the loader must
+    # parse them and surface them on the resulting ModelMetadata so initialize_model
+    # can later forward them to model instances. This is the end-to-end parse path.
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+                "recommendedParameters": {"confidence": 0.42},
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters == RecommendedParameters(confidence=0.42)
+
+
+def test_get_roboflow_model_when_no_recommended_parameters_returns_none(
+    requests_mock: Mocker,
+) -> None:
+    # Models registered before the recommendedParameters field existed (or models
+    # never evaluated) won't have it in the API response. The field must be None,
+    # not missing — callers do `if metadata.recommended_parameters:` style checks.
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters is None
+
+
+def test_get_roboflow_model_propagates_per_class_confidence(
+    requests_mock: Mocker,
+) -> None:
+    # Per-class thresholds round-trip from camelCase API payload to snake_case
+    # field on the parsed RecommendedParameters. This is the loader's contract with
+    # TheGOAT — keys are class names, values in [0, 1].
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+                "recommendedParameters": {
+                    "confidence": 0.42,
+                    "perClassConfidence": {"cat": 0.45, "dog": 0.4},
+                },
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters == RecommendedParameters(
+        confidence=0.42,
+        per_class_confidence={"cat": 0.45, "dog": 0.4},
+    )
+
+
+def test_get_roboflow_model_drops_unknown_recommended_parameters_keys(
+    requests_mock: Mocker,
+) -> None:
+    # Forward compatibility: if a future model_eval release adds a new field to
+    # recommendedParameters that this version of inference_models doesn't know about,
+    # the unknown field must be silently dropped — the load must not crash.
+    requests_mock.get(
+        f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
+        json={
+            "modelMetadata": {
+                "type": "external-model-metadata-v1",
+                "modelId": "my-model",
+                "modelArchitecture": "yolov8",
+                "taskType": "object-detection",
+                "modelPackages": [
+                    {
+                        "type": "external-model-package-v1",
+                        "packageId": "my-package-id",
+                        "packageManifest": {
+                            "type": "onnx-model-package-v1",
+                            "backendType": "onnx",
+                            "quantization": "fp32",
+                            "dynamicBatchSize": True,
+                            "opset": 19,
+                        },
+                        "packageFiles": [
+                            {
+                                "fileHandle": "some",
+                                "downloadUrl": "https://link.com",
+                            }
+                        ],
+                    },
+                ],
+                "recommendedParameters": {
+                    "confidence": 0.42,
+                    "futureFieldFromNewerModelEval": "anything",
+                },
+            }
+        },
+    )
+
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    assert result.recommended_parameters == RecommendedParameters(confidence=0.42)
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local")
+def test_get_roboflow_model_with_proxy(requests_mock: Mocker) -> None:
+    # given
+    requests_mock.register_uri(
+        "GET",
+        re.compile(r"https://gateway\.local/proxy"),
+        [
+            {
+                "status_code": 200,
+                "json": {
+                    "modelMetadata": {
+                        "type": "external-model-metadata-v1",
+                        "modelId": "my-model",
+                        "modelArchitecture": "yolov8",
+                        "modelVariant": "yolov8-n",
+                        "taskType": "object-detection",
+                        "modelPackages": [
+                            {
+                                "type": "new-unknown",
+                            },
+                            {
+                                "type": "external-model-package-v1",
+                                "packageId": "my-package-id-1",
+                                "packageManifest": {
+                                    "type": "onnx-model-package-v1",
+                                    "backendType": "onnx",
+                                    "quantization": "fp32",
+                                    "dynamicBatchSize": True,
+                                    "opset": 19,
+                                    "incompatibleProviders": ["TRTExecutionProvider"],
+                                },
+                                "packageFiles": [
+                                    {
+                                        "fileHandle": "some",
+                                        "downloadUrl": "https://link.com",
+                                    }
+                                ],
+                            },
+                        ],
+                        "nextPage": "some",
+                    }
+                },
+            },
+            {
+                "status_code": 200,
+                "json": {
+                    "modelMetadata": {
+                        "type": "external-model-metadata-v1",
+                        "modelId": "my-model",
+                        "modelArchitecture": "yolov8",
+                        "modelVariant": "yolov8-n",
+                        "taskType": "object-detection",
+                        "modelPackages": [
+                            {
+                                "type": "external-model-package-v1",
+                                "packageId": "my-package-id-2",
+                                "packageManifest": {
+                                    "type": "trt-model-package-v1",
+                                    "backendType": "trt",
+                                    "dynamicBatchSize": True,
+                                    "static_batch_size": None,
+                                    "minBatchSize": 1,
+                                    "optBatchSize": 8,
+                                    "maxBatchSize": 16,
+                                    "quantization": "fp16",
+                                    "cudaDeviceType": "orin",
+                                    "cudaDeviceCC": "8.7",
+                                    "cudaVersion": "12.6",
+                                    "trtVersion": "10.3.0.17",
+                                    "sameCCCompatible": False,
+                                    "trtForwardCompatible": False,
+                                    "trtLeanRuntimeExcluded": False,
+                                    "machineType": "jetson",
+                                    "machineSpecs": {
+                                        "type": "jetson-machine-specs-v1",
+                                        "l4tVersion": "36.4.3",
+                                        "deviceName": "jetson-orin-nx",
+                                        "driverVersion": "540.0.1",
+                                    },
+                                },
+                                "packageFiles": [
+                                    {
+                                        "fileHandle": "some",
+                                        "downloadUrl": "https://link.com",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                },
+            },
+        ],
+    )
+
+    # when
+    result = get_roboflow_model(model_id="my-model", api_key="my-api-key")
+
+    # then — same structural assertions as non-proxy test
+    assert result.model_id == "my-model"
+    assert result.model_architecture == "yolov8"
+    assert result.model_variant == "yolov8-n"
+    assert result.task_type == "object-detection"
+    assert len(result.model_packages) == 2
+
+    # verify all API calls went through proxy
+    assert requests_mock.call_count == 2
+    for history_entry in requests_mock.request_history:
+        parsed = urllib.parse.urlparse(history_entry.url)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "gateway.local"
+        assert parsed.path == "/proxy"
+        outer_params = urllib.parse.parse_qs(parsed.query)
+        assert "url" in outer_params
+        # verify the inner URL points to the real API
+        inner_url = outer_params["url"][0]
+        assert inner_url.startswith(f"{ROBOFLOW_API_HOST}/models/v1/external/weights")
+
+    # verify download URLs in parsed packages are proxied
+    for package in result.model_packages:
+        for artefact in package.package_artefacts:
+            parsed = urllib.parse.urlparse(artefact.download_url)
+            assert parsed.netloc == "gateway.local"
+            assert parsed.path == "/proxy"
+            inner_url = urllib.parse.parse_qs(parsed.query)["url"][0]
+            assert inner_url == "https://link.com"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
+def test_basic_url_no_query():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/models/v1/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gateway.local:8080"
+    assert outer.path == "/proxy"
+
+    inner_url = _extract_proxied_url(result)
+    inner = urllib.parse.urlparse(inner_url)
+    assert inner.scheme == "https"
+    assert inner.netloc == "api.roboflow.com"
+    assert inner.path == "/models/v1/weights"
+    assert inner.query == ""
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
+def test_query_params_are_embedded_in_proxied_url():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "my-model", "api_key": "abc123"},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["modelId"] == ["my-model"]
+    assert inner_params["api_key"] == ["abc123"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
+def test_query_with_list_values():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"tag": ["a", "b"]},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["tag"] == ["a", "b"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gateway.local:8080")
+def test_empty_query_dict_no_params_in_proxied_url():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={},
+    )
+    inner_url = _extract_proxied_url(result)
+    inner = urllib.parse.urlparse(inner_url)
+    assert inner.query == ""
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", None)
+def test_no_secure_gateway_returns_plain_url():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    parsed = urllib.parse.urlparse(result)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "api.roboflow.com"
+    assert parsed.path == "/weights"
+    assert parsed.query == ""
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", None)
+def test_no_secure_gateway_with_query_returns_url_with_params():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "my-model"},
+    )
+    parsed = urllib.parse.urlparse(result)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "api.roboflow.com"
+    assert parsed.path == "/weights"
+    params = urllib.parse.parse_qs(parsed.query)
+    assert params["modelId"] == ["my-model"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "")
+def test_empty_string_secure_gateway_returns_plain_url():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    parsed = urllib.parse.urlparse(result)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "api.roboflow.com"
+    assert parsed.query == ""
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
+def test_url_with_existing_params_preserved_after_proxying():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights?existing=val&other=123",
+        query=None,
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["existing"] == ["val"]
+    assert inner_params["other"] == ["123"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal:9090")
+def test_proxy_url_structure():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "proxy.internal:9090"
+    assert outer.path == "/proxy"
+    assert "url" in urllib.parse.parse_qs(outer.query)
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
+def test_proxy_uses_https_by_default():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local")
+def test_scheme_qualified_gateway_is_used_verbatim():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/models/v1/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gateway.local"
+    assert outer.path == "/proxy"
+
+    inner = urllib.parse.urlparse(_extract_proxied_url(result))
+    assert inner.netloc == "api.roboflow.com"
+    assert inner.path == "/models/v1/weights"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local:8443/")
+def test_scheme_qualified_gateway_keeps_port_and_strips_trailing_slash():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gateway.local:8443"
+    assert outer.path == "/proxy"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
+def test_roundtrip_preserves_query_with_special_characters():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "workspace/model", "api_key": "key=with=equals"},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    assert inner_params["modelId"] == ["workspace/model"]
+    assert inner_params["api_key"] == ["key=with=equals"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
+def test_proxy_url_param_does_not_leak_into_inner_url():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query={"modelId": "test"},
+    )
+    outer = _parse_proxy_result(result)
+    outer_params = urllib.parse.parse_qs(outer.query)
+    # outer should only have "url", not "modelId"
+    assert "modelId" not in outer_params
+    assert "url" in outer_params
+    # inner should have "modelId", not "url"
+    inner_params = _parse_proxied_url_query(result)
+    assert "modelId" in inner_params
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
+def test_params_from_url_and_query_are_both_preserved():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights?existing=from_url&page=1",
+        query={"modelId": "my-model", "api_key": "abc123"},
+    )
+    inner_params = _parse_proxied_url_query(result)
+    # params originally in the URL
+    assert inner_params["existing"] == ["from_url"]
+    assert inner_params["page"] == ["1"]
+    # params added via query argument
+    assert inner_params["modelId"] == ["my-model"]
+    assert inner_params["api_key"] == ["abc123"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "proxy.internal")
+def test_overlapping_params_from_url_and_query():
+    with pytest.raises(AssumptionError):
+        _ = roboflow_secure_gateway_proxy_url_builder(
+            url="https://api.roboflow.com/weights?key=from_url",
+            query={"key": "from_query"},
+        )
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", None)
+def test_params_from_url_and_query_are_both_preserved_without_proxy():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights?existing=from_url",
+        query={"modelId": "my-model"},
+    )
+    parsed = urllib.parse.urlparse(result)
+    params = urllib.parse.parse_qs(parsed.query)
+    assert params["existing"] == ["from_url"]
+    assert params["modelId"] == ["my-model"]
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local/edge")
+def test_scheme_qualified_gateway_preserves_base_path():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    # The "/edge" base path must not be dropped: the proxy lives under it.
+    assert (
+        result
+        == "https://gw.local/edge/proxy?url=https%3A%2F%2Fapi.roboflow.com%2Fweights"
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gw.local"
+    assert outer.path == "/edge/proxy"
+    assert _extract_proxied_url(result) == "https://api.roboflow.com/weights"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local:8443/edge/")
+def test_scheme_qualified_gateway_preserves_base_path_with_port_and_trailing_slash():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    assert outer.scheme == "https"
+    assert outer.netloc == "gw.local:8443"
+    assert outer.path == "/edge/proxy"
+    assert "//proxy" not in result
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "gw.local:8080/edge")
+def test_bare_host_gateway_preserves_base_path():
+    result = roboflow_secure_gateway_proxy_url_builder(
+        url="https://api.roboflow.com/weights",
+        query=None,
+    )
+    outer = _parse_proxy_result(result)
+    # Bare host defaults to HTTPS and preserves the base path.
+    assert outer.scheme == "https"
+    assert outer.netloc == "gw.local:8080"
+    assert outer.path == "/edge/proxy"
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gateway.local")
+def test_already_wrapped_download_url_is_not_double_proxied():
+    original_url = "https://link.com/weights.onnx"
+
+    # First pass wraps the download URL (query is None on the artefact path).
+    wrapped_once = roboflow_secure_gateway_proxy_url_builder(
+        url=original_url,
+        query=None,
+    )
+    # Second pass must be a no-op instead of proxying the proxy.
+    wrapped_twice = roboflow_secure_gateway_proxy_url_builder(
+        url=wrapped_once,
+        query=None,
+    )
+
+    assert wrapped_twice == wrapped_once
+    assert _extract_proxied_url(wrapped_twice) == original_url
+
+
+@patch.object(roboflow_module, "SECURE_GATEWAY", "https://gw.local/edge")
+def test_idempotent_when_gateway_has_base_path():
+    original_url = "https://link.com/weights.onnx"
+
+    wrapped_once = roboflow_secure_gateway_proxy_url_builder(
+        url=original_url,
+        query=None,
+    )
+    wrapped_twice = roboflow_secure_gateway_proxy_url_builder(
+        url=wrapped_once,
+        query=None,
+    )
+
+    assert wrapped_twice == wrapped_once
+    assert _extract_proxied_url(wrapped_twice) == original_url
+
+
+def test_parse_ultralytics_model_package_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "ultralytics-model-package-v1",
+            "backendType": "ultralytics",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=False,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.ULTRALYTICS,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        quantization=Quantization.UNKNOWN,
+        trusted_source=False,
+    )
+
+
+def test_parse_hf_model_package_when_valid_input_provided_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "hf-model-package-v1",
+            "backendType": "hf",
+            "quantization": "fp32",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.HF,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+    )
+
+
+def test_parse_torch_model_package_when_valid_manifest_provided_with_proxy_builder() -> (
+    None
+):
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-model-package-v1",
+            "backendType": "torch",
+            "quantization": "fp32",
+            "dynamicBatchSize": True,
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        trusted_source=True,
+    )
+
+
+def test_parse_onnx_model_package_when_valid_manifest_provided_with_proxy_builder() -> (
+    None
+):
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "onnx-model-package-v1",
+            "backendType": "onnx",
+            "quantization": "fp32",
+            "dynamicBatchSize": True,
+            "opset": 19,
+            "incompatibleProviders": ["TRTExecutionProvider"],
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id=metadata.package_id,
+        backend=BackendType.ONNX,
+        quantization=Quantization.FP32,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        onnx_package_details=ONNXPackageDetails(
+            opset=19,
+            incompatible_providers=["TRTExecutionProvider"],
+        ),
+        trusted_source=True,
+    )
+
+
+def test_parse_trt_model_package_with_jetson_env_and_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "trt-model-package-v1",
+            "backendType": "trt",
+            "dynamicBatchSize": True,
+            "static_batch_size": None,
+            "minBatchSize": 1,
+            "optBatchSize": 8,
+            "maxBatchSize": 16,
+            "quantization": "fp16",
+            "cudaDeviceType": "orin",
+            "cudaDeviceCC": "8.7",
+            "cudaVersion": "12.6",
+            "trtVersion": "10.3.0.17",
+            "sameCCCompatible": False,
+            "trtForwardCompatible": False,
+            "trtLeanRuntimeExcluded": False,
+            "machineType": "jetson",
+            "machineSpecs": {
+                "type": "jetson-machine-specs-v1",
+                "l4tVersion": "36.4.3",
+                "deviceName": "jetson-orin-nx",
+                "driverVersion": "540.0.1",
+            },
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    environment_requirements = JetsonEnvironmentRequirements(
+        cuda_device_cc=Version("8.7"),
+        cuda_device_name="orin",
+        l4t_version=Version("36.4.3"),
+        jetson_product_name="jetson-orin-nx",
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.3.0.17"),
+        driver_version=Version("540.0.1"),
+    )
+    trt_package_details = TRTPackageDetails(
+        min_dynamic_batch_size=1,
+        opt_dynamic_batch_size=8,
+        max_dynamic_batch_size=16,
+        same_cc_compatible=False,
+        trt_forward_compatible=False,
+        trt_lean_runtime_excluded=False,
+    )
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        trt_package_details=trt_package_details,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        environment_requirements=environment_requirements,
+        trusted_source=True,
+    )
+
+
+def test_parse_trt_model_package_with_server_env_and_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "trt-model-package-v1",
+            "backendType": "trt",
+            "dynamicBatchSize": True,
+            "static_batch_size": None,
+            "minBatchSize": 1,
+            "optBatchSize": 8,
+            "maxBatchSize": 16,
+            "quantization": "fp16",
+            "cudaDeviceType": "orin",
+            "cudaDeviceCC": "8.7",
+            "cudaVersion": "12.6",
+            "trtVersion": "10.3.0.17",
+            "sameCCCompatible": False,
+            "trtForwardCompatible": False,
+            "trtLeanRuntimeExcluded": False,
+            "machineType": "gpu-server",
+            "machineSpecs": {
+                "type": "gpu-server-specs-v1",
+                "osVersion": "ubuntu-20.04",
+                "driverVersion": "540.0.1",
+            },
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    environment_requirements = ServerEnvironmentRequirements(
+        cuda_device_cc=Version("8.7"),
+        cuda_device_name="orin",
+        cuda_version=Version("12.6"),
+        trt_version=Version("10.3.0.17"),
+        driver_version=Version("540.0.1"),
+        os_version="ubuntu-20.04",
+    )
+    trt_package_details = TRTPackageDetails(
+        min_dynamic_batch_size=1,
+        opt_dynamic_batch_size=8,
+        max_dynamic_batch_size=16,
+        same_cc_compatible=False,
+        trt_forward_compatible=False,
+        trt_lean_runtime_excluded=False,
+    )
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=True,
+        static_batch_size=None,
+        trt_package_details=trt_package_details,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        environment_requirements=environment_requirements,
+        trusted_source=True,
+    )
+
+
+def test_parse_torch_script_model_package_when_valid_with_proxy_builder() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "torch-script-model-package-v1",
+            "backendType": "torch-script",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 2,
+            "quantization": "fp32",
+            "supportedDeviceTypes": ["cuda", "cpu", "mps"],
+            "torchVersion": "2.6.0",
+            "torchVisionVersion": "0.22.0",
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="some", downloadUrl="https://dummy.com", md5Hash="some"
+            )
+        ],
+        modelFeatures={"nms_fused": True},
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(
+        metadata=metadata,
+        proxy_url_builder=_dummy_proxy_url_builder,
+    )
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.TORCH_SCRIPT,
+        dynamic_batch_size_supported=False,
+        static_batch_size=2,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url=f"{DUMMY_PROXY_PREFIX}https://dummy.com",
+                file_handle="some",
+                md5_hash="some",
+            ),
+        ],
+        quantization=Quantization.FP32,
+        trusted_source=True,
+        model_features={"nms_fused": True},
+        torch_script_package_details=TorchScriptPackageDetails(
+            supported_device_types={"cuda", "cpu", "mps"},
+            torch_version=Version("2.6.0"),
+            torch_vision_version=Version("0.22.0"),
+        ),
+    )
+
+
+def _parse_proxy_result(result: str) -> urllib.parse.ParseResult:
+    """Parse the outer proxy URL and return ParseResult."""
+    return urllib.parse.urlparse(result)
+
+
+def _parse_proxied_url_query(result: str) -> dict:
+    """Extract and parse query params from the inner proxied URL."""
+    inner_url = _extract_proxied_url(result)
+    parsed_inner = urllib.parse.urlparse(inner_url)
+    return urllib.parse.parse_qs(parsed_inner.query)
+
+
+def _extract_proxied_url(result: str) -> str:
+    """Extract the inner URL from the proxy's ?url= parameter."""
+    parsed = _parse_proxy_result(result)
+    proxy_params = urllib.parse.parse_qs(parsed.query)
+    assert "url" in proxy_params, f"Expected 'url' query param in: {result}"
+    assert len(proxy_params["url"]) == 1, f"Expected single 'url' value in: {result}"
+    return proxy_params["url"][0]
+
+
+def _dummy_proxy_url_builder(
+    url: str, query: Optional[Dict[str, Union[str, List[str]]]]
+) -> str:
+    return f"{DUMMY_PROXY_PREFIX}{url}"
+
+
+def test_parse_coreml_model_package_when_valid_manifest_provided() -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest={
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+            "dynamicBatchSize": False,
+            "staticBatchSize": 1,
+        },
+        packageFiles=[
+            RoboflowModelPackageFile(
+                fileHandle="weights.mlpackage.zip",
+                downloadUrl="https://dummy.com",
+                md5Hash="some",
+            )
+        ],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result == ModelPackageMetadata(
+        package_id="my-package-id",
+        backend=BackendType.COREML,
+        quantization=Quantization.FP16,
+        dynamic_batch_size_supported=False,
+        static_batch_size=1,
+        package_artefacts=[
+            FileDownloadSpecs(
+                download_url="https://dummy.com",
+                file_handle="weights.mlpackage.zip",
+                md5_hash="some",
+            ),
+        ],
+        trusted_source=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "onnx",
+            "quantization": "fp16",
+            "staticBatchSize": 1,
+        },
+        {
+            "type": "coreml-model-package-v1",
+            "backendType": "coreml",
+            "quantization": "fp16",
+        },
+    ],
+)
+def test_parse_coreml_model_package_when_invalid_manifest_provided(
+    manifest: dict,
+) -> None:
+    # given
+    metadata = RoboflowModelPackageV1(
+        type="external-model-package-v1",
+        packageId="my-package-id",
+        packageManifest=manifest,
+        packageFiles=[],
+        trustedSource=True,
+    )
+
+    # when
+    result = parse_model_package_metadata(metadata=metadata)
+
+    # then
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    "raw_latency, expected",
+    [
+        (12.5, 12.5),
+        (7, 7.0),
+        (None, None),
+        (True, None),
+        ("fast", None),
+        ({}, None),
+        pytest.param(10**400, None, id="int-too-large-for-float"),
+    ],
+)
+def test_roboflow_model_metadata_parses_model_latency_ms(
+    raw_latency: object, expected: object
+) -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolo-nas",
+            "modelPackages": [],
+            "modelLatencyMs": raw_latency,
+        }
+    )
+
+    # then
+    assert result.model_latency_ms == expected
+
+
+def test_roboflow_model_metadata_leaves_model_latency_ms_unset_when_absent() -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [],
+        }
+    )
+
+    # then
+    assert result.model_latency_ms is None
+
+
+def _metadata_with_memory_profile(memory_profile: object) -> RoboflowModelMetadata:
+    return RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [
+                {
+                    "type": "external-model-package-v1",
+                    "packageId": "my-package-id",
+                    "packageManifest": {
+                        "type": "onnx-model-package-v1",
+                        "backendType": "onnx",
+                        "quantization": "fp32",
+                        "dynamicBatchSize": True,
+                        "opset": 19,
+                    },
+                    "packageFiles": [
+                        {
+                            "fileHandle": "some",
+                            "downloadUrl": "https://dummy.com",
+                            "md5Hash": "some",
+                        }
+                    ],
+                    "memoryProfile": memory_profile,
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_memory_profile",
+    [
+        None,
+        "bad",
+        [],
+        5,
+        {"peakVramMb": None},
+        {"peakVramMb": "bad"},
+        {"peakVramMb": [1, 2]},
+        {"peakVramMb": {"bad": 1024}},
+        {"peakVramMb": {"1": "lots"}},
+        {"peakVramMb": {"1": float("inf")}},
+        {"peakVramMb": {"1": {"nested": [1]}}},
+    ],
+)
+def test_roboflow_model_metadata_keeps_package_typed_when_memory_profile_is_malformed(
+    raw_memory_profile: object,
+) -> None:
+    # when
+    result = _metadata_with_memory_profile(memory_profile=raw_memory_profile)
+    parsed_package = parse_model_package_metadata(metadata=result.model_packages[0])
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert result.model_packages[0].memory_profile == MemoryProfile()
+    assert parsed_package is not None
+    assert parsed_package.backend is BackendType.ONNX
+    assert parsed_package.memory_profile == MemoryProfile()
+    assert parsed_package.memory_profile.vram_for_batch(1) is None
+
+
+def test_roboflow_model_metadata_keeps_valid_memory_profile_with_string_keys() -> None:
+    # when
+    result = _metadata_with_memory_profile(
+        memory_profile=json.loads('{"peakVramMb": {"1": 1024, "8": 4096}}')
+    )
+    parsed_package = parse_model_package_metadata(metadata=result.model_packages[0])
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert parsed_package is not None
+    assert parsed_package.memory_profile == MemoryProfile(
+        peak_vram_mb={1: 1024, 8: 4096}
+    )
+    assert parsed_package.memory_profile.vram_for_batch(4) == 4096
+
+
+def test_roboflow_model_metadata_keeps_package_typed_when_memory_profile_is_absent() -> (
+    None
+):
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [
+                {
+                    "type": "external-model-package-v1",
+                    "packageId": "my-package-id",
+                    "packageManifest": {"type": "onnx-model-package-v1"},
+                    "packageFiles": [],
+                }
+            ],
+        }
+    )
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert result.model_packages[0].memory_profile == MemoryProfile()

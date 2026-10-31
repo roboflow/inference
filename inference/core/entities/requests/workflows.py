@@ -1,81 +1,39 @@
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
-
-from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
-    DynamicBlockDefinition,
+from roboflow_workflows.http_contract.entities import (  # noqa: F401
+    DescribeBlocksRequest,
+    DescribeInterfaceRequest,
+    PredefinedWorkflowDescribeInterfaceRequest,
+    PredefinedWorkflowInferenceRequest,
+    WorkflowInferenceRequest,
+    WorkflowSpecificationDescribeInterfaceRequest,
+    WorkflowSpecificationInferenceRequest,
 )
 
 
-class WorkflowInferenceRequest(BaseModel):
+class DescribeWorkloadRequest(BaseModel):
     api_key: Optional[str] = Field(
         default=None,
-        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-    )
-    inputs: Dict[str, Any] = Field(
-        description="Dictionary that contains each parameter defined as an input for chosen workflow"
-    )
-    excluded_fields: Optional[List[str]] = Field(
-        default=None,
-        description="List of field that shall be excluded from the response (among those defined in workflow specification)",
-    )
-    enable_profiling: bool = Field(
-        default=False,
-        description="Flag to request Workflow run profiling. Enables Workflow profiler only when server settings "
-        "allow profiling traces to be exported to clients. Only applies for Workflows definitions saved "
-        "on Roboflow platform.",
-    )
-    workflow_id: Optional[str] = Field(
-        default=None, description="Optional identifier of workflow"
+        description="Roboflow API Key used to resolve the workflow definition and, when "
+        "model metadata enrichment is enabled, to look up model metadata. "
+        "May alternatively be sent in the `Authorization: Bearer <api_key>` header - the route "
+        "still requires a key through one of the channels.",
     )
 
 
-class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):
-    use_cache: bool = Field(
-        default=True,
-        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
-        "definition saved in Roboflow app and want to fetch the newest version for the request.",
-    )
-
-
-class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
-    specification: dict
-    is_preview: bool = Field(
-        default=False,
-        description="Reserved, used internally by Roboflow to distinguish between preview and non-preview runs",
-    )
-
-
-class DescribeBlocksRequest(BaseModel):
-    api_key: Optional[str] = Field(
-        default=None,
-        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-    )
-    dynamic_blocks_definitions: List[DynamicBlockDefinition] = Field(
-        default_factory=list, description="Dynamic blocks to be used."
-    )
-    execution_engine_version: Optional[str] = Field(
-        default=None,
-        description="Requested Execution Engine compatibility. If given, result will only "
-        "contain blocks suitable for requested EE version, otherwise - descriptions for "
-        "all available blocks will be delivered.",
-    )
-
-
-class DescribeInterfaceRequest(BaseModel):
-    api_key: str = Field(
-        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-    )
-
-
-class PredefinedWorkflowDescribeInterfaceRequest(DescribeInterfaceRequest):
+class PredefinedWorkflowDescribeWorkloadRequest(DescribeWorkloadRequest):
     use_cache: bool = Field(
         default=True,
         description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
         "definition saved in Roboflow app and want to fetch the newest version for the request. "
         "Only applies for Workflows definitions saved on Roboflow platform.",
     )
+    workflow_version_id: Optional[str] = Field(
+        default=None,
+        description="Specific version of the workflow to fetch. If not provided, the latest version is used.",
+    )
 
 
-class WorkflowSpecificationDescribeInterfaceRequest(DescribeInterfaceRequest):
+class WorkflowSpecificationDescribeWorkloadRequest(DescribeWorkloadRequest):
     specification: dict

@@ -1,12 +1,15 @@
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, List, Literal, Optional, Set, Tuple, Union
+from typing import Annotated, Dict, List, Literal, Optional, Set, Tuple, Union
 
-from pydantic import BaseModel, BeforeValidator, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError, model_validator
 
-from inference_models.entities import ImageDimensions
-from inference_models.errors import CorruptedModelPackageError
+from inference_models.errors import (
+    CorruptedModelPackageError,
+    ModelPackageRestrictedError,
+)
+from inference_models.logger import LOGGER
 from inference_models.utils.file_system import read_json, stream_file_lines
 
 
@@ -21,7 +24,7 @@ def parse_class_names_file(class_names_path: str) -> List[str]:
             message=f"Could not decode file which is supposed to provide list of model class names. Error: {error}."
             f"If you created model package manually, please verify its consistency in docs. In case that the "
             f"weights are hosted on the Roboflow platform - contact support.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -52,12 +55,15 @@ PreProcessingMetadata = namedtuple(
         "scale_width",
         "scale_height",
         "static_crop_offset",
+        "nonsquare_intermediate_size",
     ],
+    defaults=[None],
 )
 
 
 def parse_key_points_metadata(
     key_points_metadata_path: str,
+    classes_re_mapping=None,
 ) -> Tuple[List[List[str]], List[List[Tuple[int, int]]]]:
     try:
         parsed_config = read_json(path=key_points_metadata_path)
@@ -65,24 +71,41 @@ def parse_key_points_metadata(
             raise ValueError(
                 "config should contain list of key points descriptions for each instance"
             )
-        class_names: List[Optional[List[str]]] = [None] * len(parsed_config)
-        skeletons: List[Optional[List[Tuple[int, int]]]] = [None] * len(parsed_config)
+        if classes_re_mapping is not None:
+            class_names = [None] * len(classes_re_mapping.remaining_class_ids)
+            skeletons = [None] * len(classes_re_mapping.remaining_class_ids)
+        else:
+            class_names: List[Optional[List[str]]] = [None] * len(parsed_config)
+            skeletons: List[Optional[List[Tuple[int, int]]]] = [None] * len(
+                parsed_config
+            )
+
         for instance_key_point_description in parsed_config:
             if "object_class_id" not in instance_key_point_description:
                 raise ValueError(
                     "instance key point description lack 'object_class_id' key"
                 )
             object_class_id: int = instance_key_point_description["object_class_id"]
+
+            if classes_re_mapping is not None:
+                object_class_id = int(classes_re_mapping.class_mapping[object_class_id])
+
+                if object_class_id == -1:
+                    continue
+
             if not 0 <= object_class_id < len(class_names):
                 raise ValueError("`object_class_id` field point invalid class")
+
             if "keypoints" not in instance_key_point_description:
                 raise ValueError(
                     f"`keypoints` field not available in config for class with id {object_class_id}"
                 )
+
             class_names[object_class_id] = _retrieve_key_points_names(
                 key_points=instance_key_point_description["keypoints"],
             )
             key_points_count = len(class_names[object_class_id])
+
             if "edges" not in instance_key_point_description:
                 raise ValueError(
                     f"`edges` field not available in config for class with id {object_class_id}"
@@ -106,7 +129,7 @@ def parse_key_points_metadata(
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -187,7 +210,7 @@ def parse_trt_config(config_path: str) -> TRTConfig:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
 
 
@@ -256,7 +279,10 @@ Number = Union[int, float]
 
 
 class NetworkInputDefinition(BaseModel):
-    training_input_size: TrainingInputSize
+    # A model that accepts any input size (a VLM whose processor sizes images itself) has
+    # no training size to declare; the trainers ship none for versions without a resize.
+    training_input_size: Optional[TrainingInputSize] = Field(default=None)
+    dataset_version_resize_dimensions: Optional[TrainingInputSize] = Field(default=None)
     dynamic_spatial_size_supported: bool
     dynamic_spatial_size_mode: Optional[Union[DivisiblePadding, AnySizePadding]] = (
         Field(discriminator="type", default=None)
@@ -267,6 +293,19 @@ class NetworkInputDefinition(BaseModel):
     input_channels: int
     scaling_factor: Optional[Number] = Field(default=None)
     normalization: Optional[Tuple[List[Number], List[Number]]] = Field(default=None)
+
+    @model_validator(mode="after")
+    def _training_input_size_may_only_be_omitted_for_any_size_models(self):
+        accepts_any_size = self.dynamic_spatial_size_supported and isinstance(
+            self.dynamic_spatial_size_mode, AnySizePadding
+        )
+        if self.training_input_size is None and not accepts_any_size:
+            raise ValueError(
+                "network_input.training_input_size may only be omitted for models that "
+                "accept any input size (dynamic_spatial_size_supported with an any-size "
+                "dynamic_spatial_size_mode)"
+            )
+        return self
 
 
 class ForwardPassConfiguration(BaseModel):
@@ -327,7 +366,30 @@ class InferenceConfig(BaseModel):
 def parse_inference_config(
     config_path: str,
     allowed_resize_modes: Set[ResizeMode],
+    implicit_resize_mode_substitutions: Optional[
+        Dict[ResizeMode, Tuple[ResizeMode, Optional[int], Optional[str]]]
+    ] = None,
+    max_allowed_input_size: Optional[Union[int, Tuple[int, int]]] = None,
 ) -> InferenceConfig:
+    """Load and validate a Roboflow model package inference configuration.
+
+    Args:
+        config_path: Path to the package's inference configuration JSON file.
+        allowed_resize_modes: Resize modes supported by the model implementation.
+        implicit_resize_mode_substitutions: Optional mapping from package resize
+            modes to supported substitutes, padding values, and warning messages.
+        max_allowed_input_size: Optional environment limit for training input
+            height and width, or a single limit for both dimensions.
+
+    Returns:
+        The validated inference configuration.
+
+    Raises:
+        CorruptedModelPackageError: If the file cannot be read, is malformed, or
+            declares an unsupported resize mode.
+        ModelPackageRestrictedError: If the package's declared input size cannot
+            be safely checked against the configured environment limit.
+    """
     try:
         decoded_config = read_json(path=config_path)
         if not isinstance(decoded_config, dict):
@@ -340,15 +402,25 @@ def parse_inference_config(
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
     try:
         parsed_config = InferenceConfig.model_validate(decoded_config)
     except ValidationError as error:
         raise CorruptedModelPackageError(
             message=f"Could not parse the inference config from the model package.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         ) from error
+    if implicit_resize_mode_substitutions is None:
+        implicit_resize_mode_substitutions = {}
+    if parsed_config.network_input.resize_mode in implicit_resize_mode_substitutions:
+        substitution, padding, reason = implicit_resize_mode_substitutions[
+            parsed_config.network_input.resize_mode
+        ]
+        if reason is not None:
+            LOGGER.warning(reason)
+        parsed_config.network_input.resize_mode = substitution
+        parsed_config.network_input.padding_value = padding
     if parsed_config.network_input.resize_mode not in allowed_resize_modes:
         allowed_resize_modes_str = ", ".join([e.value for e in allowed_resize_modes])
         raise CorruptedModelPackageError(
@@ -356,6 +428,110 @@ def parse_inference_config(
             f"{parsed_config.network_input.resize_mode} which is not supported by the model implementation. "
             f"Config defines: {parsed_config.network_input.resize_mode.value}, but the allowed values are: "
             f"{allowed_resize_modes_str}.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )
+    ensure_input_size_within_limit(
+        inference_config=parsed_config,
+        max_allowed_input_size=max_allowed_input_size,
+    )
     return parsed_config
+
+
+def ensure_input_size_within_limit(
+    inference_config: InferenceConfig,
+    max_allowed_input_size: Optional[Union[int, Tuple[int, int]]],
+) -> None:
+    """Reject an inference config whose training input size exceeds the environment's limit.
+
+    Args:
+        inference_config (InferenceConfig): Parsed inference config to check.
+        max_allowed_input_size (int | tuple[int, int], optional): Limit for training input
+            height and width, or a single limit for both dimensions. None disables the check.
+
+    Raises:
+        ModelPackageRestrictedError: If the config's input size exceeds the limit, or the
+            config declares no training input size while a limit is set.
+    """
+    if max_allowed_input_size is None:
+        return None
+
+    if isinstance(max_allowed_input_size, int):
+        max_allowed_input_size = (max_allowed_input_size, max_allowed_input_size)
+    training_input_size = inference_config.network_input.training_input_size
+    if training_input_size is None:
+        raise ModelPackageRestrictedError(
+            message="Configuration of runtime environment limits model input "
+            f"size to {max_allowed_input_size}, but the model package does not "
+            "declare a training input size that can be validated against that "
+            "limit.",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+        )
+
+    if (
+        training_input_size.height > max_allowed_input_size[0]
+        or training_input_size.width > max_allowed_input_size[1]
+    ):
+        raise ModelPackageRestrictedError(
+            message="Configuration of runtime environment prevents packages with input size larger than "
+            f"{max_allowed_input_size} from being loaded. Package attempted to be loaded define "
+            f"input size ({training_input_size.height}, {training_input_size.width}). "
+            f"Running locally, verify configuration of your environment. If you see this error running "
+            f"on Roboflow platform - contact support.",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpackagerestrictederror",
+        )
+
+
+def align_training_input_size_with_model(
+    inference_config: InferenceConfig,
+    model_input_height: int,
+    model_input_width: int,
+) -> InferenceConfig:
+    """Use the model's own static input size when the package's inference config declares another one.
+
+    Some registered packages carry an ``inference_config.json`` whose training input size does not match
+    the exported weights, and pre-processing to the configured size then fails every call. The weights
+    are authoritative for models whose outputs are relative to the input (such as RF-DETR), so
+    pre-processing to the size the model takes gives correct results. The model's input is static, so
+    spatial size overrides are disabled as well.
+
+    Args:
+        inference_config (InferenceConfig): The package's parsed inference config.
+        model_input_height (int): Input height the exported model takes.
+        model_input_width (int): Input width the exported model takes.
+
+    Returns:
+        InferenceConfig: ``inference_config`` itself when it already declares the model's static input
+        size, otherwise a copy that does.
+    """
+    network_input = inference_config.network_input
+    size = network_input.training_input_size
+    size_matches = size is not None and (size.height, size.width) == (
+        model_input_height,
+        model_input_width,
+    )
+    if size_matches and not network_input.dynamic_spatial_size_supported:
+        return inference_config
+
+    if size is not None and not size_matches:
+        LOGGER.warning(
+            "Model takes %sx%s input, but the package's inference_config.json declares %sx%s; using the "
+            "model's input size.",
+            model_input_width,
+            model_input_height,
+            size.width,
+            size.height,
+        )
+    aligned_network_input = network_input.model_copy(
+        update={
+            "training_input_size": TrainingInputSize(
+                height=model_input_height, width=model_input_width
+            ),
+            "dynamic_spatial_size_supported": False,
+            "dynamic_spatial_size_mode": None,
+        }
+    )
+    aligned_config = inference_config.model_copy(
+        update={"network_input": aligned_network_input}
+    )
+
+    return aligned_config

@@ -13,8 +13,17 @@ on:
         description: "Do you want to push image after build?"
         default: false
 
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 env:
   VERSION: "0.0.0" # Default version, will be overwritten
+  BASE_IMAGE: "roboflow/roboflow-inference-server-cpu-slim"
 
 jobs:
   docker:
@@ -25,23 +34,102 @@ jobs:
       id-token: write
       contents: read
       packages: write
+    env:
+      PUBLISH: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
     steps:
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-      - name: Build and Push
+      # Publishing runs push amd64 by digest, test that exact image, then reuse
+      # the same digest in the multi-arch tags. Other runs only load and test.
+      - name: Build and load CPU image (amd64)
+        if: ${{ env.PUBLISH != 'true' }}
         uses: depot/build-push-action@v1
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
+          push: false
           project: grl7ffzxd7
-          tags: roboflow/roboflow-inference-server-cpu-slim:latest,roboflow/roboflow-inference-server-cpu-slim:${{env.VERSION}}
-          platforms: linux/amd64,linux/arm64
+          context: .
+          load: true
+          tags: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
+          platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
+      - name: Build and push CPU image by digest (amd64)
+        id: amd64
+        if: ${{ env.PUBLISH == 'true' }}
+        uses: depot/build-push-action@v1
+        with:
+          project: grl7ffzxd7
+          context: .
+          outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          platforms: linux/amd64
+          file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
+      - name: Test CPU PyTorch runtime
+        env:
+          IMAGE_TAGS: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
+          AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
+        run: |
+          if [ "$PUBLISH" = "true" ]; then
+            image="${BASE_IMAGE}@${AMD64_DIGEST}"
+            docker pull --platform linux/amd64 "$image"
+          else
+            image="${IMAGE_TAGS%%,*}"
+          fi
+          docker run --rm --pull=never --entrypoint /bin/sh \
+            -e CPU_IMAGE_TEST=true \
+            -v "${{ github.workspace }}/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
+            "$image" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
+      # arm64 is built but not runtime-tested.
+      - name: Build CPU image and optionally push by digest (arm64)
+        id: arm64
+        uses: depot/build-push-action@v1
+        with:
+          project: grl7ffzxd7
+          context: .
+          outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH }}
+          platforms: linux/arm64
+          file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
+      - name: Publish tested amd64 and arm64 digests
+        if: ${{ env.PUBLISH == 'true' }}
+        env:
+          IMAGE_TAGS: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
+          AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
+          ARM64_DIGEST: ${{ steps.arm64.outputs.digest }}
+        run: |
+          set -o pipefail
+          amd64_manifest() {
+            jq -r '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64")] | if length == 1 then .[0].digest else "" end'
+          }
+          tested="${BASE_IMAGE}@${AMD64_DIGEST}"
+          tested_manifest="$(docker buildx imagetools inspect --raw "$tested" | jq -r --arg self "$AMD64_DIGEST" 'if .manifests then empty else $self end')"
+          if [ -z "$tested_manifest" ]; then
+            tested_manifest="$(docker buildx imagetools inspect --raw "$tested" | amd64_manifest)"
+          fi
+          IFS=',' read -ra tags <<< "$IMAGE_TAGS"
+          tag_args=()
+          for tag in "${tags[@]}"; do
+            [ -n "$tag" ] && tag_args+=(--tag "$tag")
+          done
+          sources=("$tested" "${BASE_IMAGE}@${ARM64_DIGEST}")
+          planned="$(docker buildx imagetools create --dry-run "${tag_args[@]}" "${sources[@]}" | amd64_manifest)"
+          if [ -z "$tested_manifest" ] || [ "$planned" != "$tested_manifest" ]; then
+            echo "::error::Planned amd64 manifest '$planned' is not the tested '$tested_manifest'; nothing was published"
+            exit 1
+          fi
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+          for tag in "${tags[@]}"; do
+            [ -z "$tag" ] && continue
+            published="$(docker buildx imagetools inspect --raw "$tag" | amd64_manifest)"
+            if [ "$published" != "$tested_manifest" ]; then
+              echo "::error::$tag amd64 manifest '$published' is not the tested '$tested_manifest'"
+              exit 1
+            fi
+            echo "$tag amd64 manifest $published matches the tested image"
+          done

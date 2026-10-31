@@ -3,7 +3,10 @@ FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as base
 
 WORKDIR /app
 
+# ca-certificates >= 20260816 distrusts emSign ECC Root CA - G3 (eMudhra key compromise,
+# LP: #2171507); the version check stops a cached layer or stale mirror shipping an older store
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -11,31 +14,40 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     git \
     rustc \
     cargo \
-    && rm -rf /var/lib/apt/lists/*
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816 \
+    && rm -rf /var/lib/apt/lists/* \
+# apt's uvicorn drags in python3-h11 0.13.0 (CVE-2025-43859); the served process uses
+# pip's h11 from /usr/local, but scanners flag the apt copy - upgrade it in place in the
+# same layer so the vulnerable version never lands in any image layer
+    && pip3 install --no-cache-dir --upgrade --target=/usr/lib/python3/dist-packages "h11>=0.16.0" \
+    && rm -rf /usr/lib/python3/dist-packages/h11-*.egg-info
 
 COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
     requirements/requirements.gpu.txt \
-    requirements/requirements.gaze.txt \
     requirements/requirements.parallel.txt \
     requirements/_requirements.txt \
     requirements/requirements.easyocr.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN pip3 install --upgrade pip  && pip3 install \
+# the cu124 index dropped nvidia-cudnn-cu12==9.1.0.70 (torch's exact pin), so nvidia-*
+# deps must come from PyPI; +cu124 pins keep torch/torchvision on the pytorch index
+RUN pip3 install --upgrade pip && pip3 install \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    --extra-index-url https://pypi.org/simple \
+    torch==2.6.0+cu124 torchvision==0.21.0+cu124
+RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
-    -r requirements.gaze.txt \
     -r requirements.parallel.txt \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
-    "setuptools<=75.5.0" \
-    --upgrade \
+    "setuptools~=84.2.1" \
     && rm -rf ~/.cache/pip
 
 RUN apt-get update && apt-get install -y lsb-release curl gpg
@@ -51,13 +63,14 @@ WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install --find-links dist/ dist/roboflow_workflows*.whl dist/streamvision*.whl dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools~=84.2.1"
 
 WORKDIR /notebooks
 COPY examples/notebooks .
 
 WORKDIR /app/
 COPY inference inference
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
 COPY inference/enterprise/parallel/entrypoint.py entrypoint.py
 ENV PYTHONPATH=/app/

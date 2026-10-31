@@ -5,7 +5,7 @@ import torch
 from clip.clip import _transform
 from PIL import Image
 
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError
 from inference_models.models.clip.preprocessing import create_clip_preprocessor
 
 
@@ -206,7 +206,7 @@ def test_clip_preprocessor_when_empty_list_provided() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor([], None, torch.device("cpu"))
 
 
@@ -217,7 +217,7 @@ def test_clip_preprocessor_when_string_provided() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor("some", None, torch.device("cpu"))
 
 
@@ -228,7 +228,7 @@ def test_clip_preprocessor_when_list_of_string_provided() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(["some"], None, torch.device("cpu"))
 
 
@@ -239,7 +239,7 @@ def test_clip_preprocessor_when_single_channel_np_array_provided() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(np.zeros((192, 168, 1)), None, torch.device("cpu"))
 
 
@@ -250,7 +250,7 @@ def test_clip_preprocessor_when_invalid_channel_np_array_provided() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(np.zeros((192, 168, 4)), None, torch.device("cpu"))
 
 
@@ -261,7 +261,7 @@ def test_clip_preprocessor_when_invalid_channel_np_array_provided_in_list() -> N
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor([np.zeros((192, 168, 1))], None, torch.device("cpu"))
 
 
@@ -272,7 +272,7 @@ def test_clip_preprocessor_when_batched_np_array_provided() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(
             np.zeros((3, 192, 168, 3)), None, torch.device("cpu")
         )
@@ -285,7 +285,7 @@ def test_clip_preprocessor_when_batched_np_array_provided_in_list() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(
             [np.zeros((3, 192, 168, 3))], None, torch.device("cpu")
         )
@@ -298,7 +298,7 @@ def test_clip_preprocessor_invalid_channel_tensor_provided() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(
             torch.zeros(size=(1, 192, 168)), None, torch.device("cpu")
         )
@@ -311,7 +311,7 @@ def test_clip_preprocessor_invalid_channel_tensor_provided_in_list() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(
             [torch.zeros(size=(1, 192, 168))], None, torch.device("cpu")
         )
@@ -324,7 +324,7 @@ def test_clip_preprocessor_batched_tensor_provided_in_list() -> None:
     inference_preprocessor = create_clip_preprocessor(image_size=224)
 
     # when
-    with pytest.raises(ModelRuntimeError):
+    with pytest.raises(ModelInputError):
         _ = inference_preprocessor(
             [torch.zeros(size=(10, 3, 192, 168))], None, torch.device("cpu")
         )

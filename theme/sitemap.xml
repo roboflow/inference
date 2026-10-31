@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{# Emit the homepage first with an explicit priority. index.md uses
+   `template: home.html`, so some build pipelines skip it or rank it low.
+   The loop below then skips every page that resolves to the same URL,
+   otherwise the homepage is listed twice. Note that zensical does not
+   supply `is_homepage`, `is_link`, `abs_url` or `update_date`; those are
+   undefined here and must not be used as the only guard. #}
+{%- set home = config.site_url|trim('/') %}
+    <url>
+         <loc>{{ config.site_url }}</loc>
+         <changefreq>weekly</changefreq>
+         <priority>1.0</priority>
+    </url>
+{%- for page in pages -%}
+    {%- set url = page.canonical_url or page.abs_url %}
+    {%- if url and url|trim('/') != home %}
+    <url>
+         <loc>{{ url }}</loc>
+    </url>
+    {%- endif -%}
+{% endfor %}
+</urlset>

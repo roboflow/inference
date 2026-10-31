@@ -21,6 +21,16 @@ from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+from tests.workflows.unit_tests.prototypes.platform_client_double import (
+    RecordingPlatformClient,
+)
+
+platform_client = RecordingPlatformClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_platform_client():
+    platform_client.reset()
 
 
 @pytest.mark.parametrize(
@@ -44,9 +54,7 @@ def test_v2_manifest_parsing_when_input_is_valid(
         "sms_provider": sms_provider,
         "receiver_number": receiver_number,
         "message": "Alert! Detected {{ $parameters.num_detections }} objects",
-        "message_parameters": {
-            "num_detections": "$steps.model.predictions"
-        },
+        "message_parameters": {"num_detections": "$steps.model.predictions"},
         "fire_and_forget": True,
     }
 
@@ -219,15 +227,15 @@ def test_serialize_media_for_api_with_workflow_image() -> None:
     assert media_base64[0]["mimeType"] == "image/jpeg"
 
 
-
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_send_sms_via_roboflow_proxy_success(mock_post: MagicMock) -> None:
+def test_send_sms_via_roboflow_proxy_success() -> None:
     # given
+    mock_post = platform_client.post_mock
     mock_post.return_value = {"success": True, "message_sid": "SM123"}
 
     # when
     error, message = send_sms_via_roboflow_proxy(
         roboflow_api_key="test_key",
+        platform_client=platform_client,
         receiver_number="+15551234567",
         message="Test {{ $parameters.count }}",
         message_parameters={"count": 5},
@@ -247,14 +255,15 @@ def test_send_sms_via_roboflow_proxy_success(mock_post: MagicMock) -> None:
     assert "Test" in payload["message"]
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_send_sms_via_roboflow_proxy_with_media(mock_post: MagicMock) -> None:
+def test_send_sms_via_roboflow_proxy_with_media() -> None:
     # given
+    mock_post = platform_client.post_mock
     mock_post.return_value = {"success": True, "message_sid": "SM123"}
 
     # when
     error, message = send_sms_via_roboflow_proxy(
         roboflow_api_key="test_key",
+        platform_client=platform_client,
         receiver_number="+15551234567",
         message="Check this out",
         message_parameters={},
@@ -269,12 +278,11 @@ def test_send_sms_via_roboflow_proxy_with_media(mock_post: MagicMock) -> None:
     assert payload["media_urls"] == ["https://example.com/image.jpg"]
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_send_sms_via_roboflow_proxy_rate_limit_error(mock_post: MagicMock) -> None:
+def test_send_sms_via_roboflow_proxy_rate_limit_error() -> None:
     # given
     from inference.core.exceptions import RoboflowAPIUnsuccessfulRequestError
 
-    def raise_rate_limit(endpoint, api_key, payload, http_errors_handlers):
+    def raise_rate_limit(endpoint, api_key, payload, http_errors_handlers, params=None):
         handler = http_errors_handlers[429]
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -285,11 +293,13 @@ def test_send_sms_via_roboflow_proxy_rate_limit_error(mock_post: MagicMock) -> N
         mock_error.response = mock_response
         handler(mock_error)
 
+    mock_post = platform_client.post_mock
     mock_post.side_effect = raise_rate_limit
 
     # when
     error, message = send_sms_via_roboflow_proxy(
         roboflow_api_key="test_key",
+        platform_client=platform_client,
         receiver_number="+15551234567",
         message="Test",
         message_parameters={},
@@ -302,12 +312,13 @@ def test_send_sms_via_roboflow_proxy_rate_limit_error(mock_post: MagicMock) -> N
     assert "rate limit" in message.lower()
 
 
-@mock.patch.object(v2, "post_to_roboflow_api")
-def test_send_sms_via_roboflow_proxy_credits_exceeded(mock_post: MagicMock) -> None:
+def test_send_sms_via_roboflow_proxy_credits_exceeded() -> None:
     # given
     from inference.core.exceptions import RoboflowAPIUnsuccessfulRequestError
 
-    def raise_credits_error(endpoint, api_key, payload, http_errors_handlers):
+    def raise_credits_error(
+        endpoint, api_key, payload, http_errors_handlers, params=None
+    ):
         handler = http_errors_handlers.get(429, http_errors_handlers.get(403))
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -318,11 +329,13 @@ def test_send_sms_via_roboflow_proxy_credits_exceeded(mock_post: MagicMock) -> N
         mock_error.response = mock_response
         handler(mock_error)
 
+    mock_post = platform_client.post_mock
     mock_post.side_effect = raise_credits_error
 
     # when
     error, message = send_sms_via_roboflow_proxy(
         roboflow_api_key="test_key",
+        platform_client=platform_client,
         receiver_number="+15551234567",
         message="Test",
         message_parameters={},
@@ -341,31 +354,32 @@ def test_twilio_block_v2_roboflow_managed_success() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
-    with mock.patch.object(v2, "post_to_roboflow_api") as mock_post:
-        mock_post.return_value = {"success": True}
+    mock_post = platform_client.post_mock
+    mock_post.return_value = {"success": True}
 
-        # when
-        result = block.run(
-            sms_provider="Roboflow Managed API Key",
-            receiver_number="+15551234567",
-            message="Test message",
-            message_parameters={},
-            message_parameters_operations={},
-            media_url=None,
-            twilio_account_sid=None,
-            twilio_auth_token=None,
-            sender_number=None,
-            fire_and_forget=False,
-            disable_sink=False,
-            cooldown_seconds=5,
-        )
+    # when
+    result = block.run(
+        sms_provider="Roboflow Managed API Key",
+        receiver_number="+15551234567",
+        message="Test message",
+        message_parameters={},
+        message_parameters_operations={},
+        media_url=None,
+        twilio_account_sid=None,
+        twilio_auth_token=None,
+        sender_number=None,
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=5,
+    )
 
-        # then
-        assert result["error_status"] is False
-        assert result["throttling_status"] is False
-        assert "successfully" in result["message"].lower()
+    # then
+    assert result["error_status"] is False
+    assert result["throttling_status"] is False
+    assert "successfully" in result["message"].lower()
 
 
 def test_twilio_block_v2_custom_twilio_success() -> None:
@@ -374,13 +388,16 @@ def test_twilio_block_v2_custom_twilio_success() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
     mock_client = MagicMock()
     mock_messages = MagicMock()
     mock_client.messages = mock_messages
 
-    with mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client") as mock_client_class:
+    with mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client"
+    ) as mock_client_class:
         mock_client_class.return_value = mock_client
 
         # when
@@ -410,6 +427,7 @@ def test_twilio_block_v2_custom_twilio_missing_credentials() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -439,6 +457,7 @@ def test_twilio_block_v2_disable_sink() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
     # when
@@ -468,13 +487,16 @@ def test_twilio_block_v2_custom_twilio_with_mms_list() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
     mock_client = MagicMock()
     mock_messages = MagicMock()
     mock_client.messages = mock_messages
 
-    with mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client") as mock_client_class:
+    with mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client"
+    ) as mock_client_class:
         mock_client_class.return_value = mock_client
 
         # when
@@ -484,7 +506,10 @@ def test_twilio_block_v2_custom_twilio_with_mms_list() -> None:
             message="Check out these images",
             message_parameters={},
             message_parameters_operations={},
-            media_url=["https://example.com/image1.jpg", "https://example.com/image2.jpg"],
+            media_url=[
+                "https://example.com/image1.jpg",
+                "https://example.com/image2.jpg",
+            ],
             twilio_account_sid="AC123",
             twilio_auth_token="auth_token",
             sender_number="+15559876543",
@@ -507,6 +532,7 @@ def test_twilio_block_v2_custom_twilio_with_workflow_image() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
     image = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -519,9 +545,12 @@ def test_twilio_block_v2_custom_twilio_with_workflow_image() -> None:
     mock_messages = MagicMock()
     mock_client.messages = mock_messages
 
-    with mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client") as mock_client_class, \
-         mock.patch("inference.core.workflows.core_steps.sinks.twilio.sms.v2._upload_image_to_ephemeral_host") as mock_upload:
-        
+    with mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2.Client"
+    ) as mock_client_class, mock.patch(
+        "inference.core.workflows.core_steps.sinks.twilio.sms.v2._upload_image_to_ephemeral_host"
+    ) as mock_upload:
+
         mock_client_class.return_value = mock_client
         mock_upload.return_value = "https://example.org/dl/12345/image.jpg"
 
@@ -556,51 +585,52 @@ def test_twilio_block_v2_cooldown_behavior() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
-    with mock.patch.object(v2, "post_to_roboflow_api") as mock_post:
-        mock_post.return_value = {"success": True}
+    mock_post = platform_client.post_mock
+    mock_post.return_value = {"success": True}
 
-        # First call - should succeed
-        result1 = block.run(
-            sms_provider="Roboflow Managed API Key",
-            receiver_number="+15551234567",
-            message="Test message 1",
-            message_parameters={},
-            message_parameters_operations={},
-            media_url=None,
-            twilio_account_sid=None,
-            twilio_auth_token=None,
-            sender_number=None,
-            fire_and_forget=False,
-            disable_sink=False,
-            cooldown_seconds=5,
-        )
+    # First call - should succeed
+    result1 = block.run(
+        sms_provider="Roboflow Managed API Key",
+        receiver_number="+15551234567",
+        message="Test message 1",
+        message_parameters={},
+        message_parameters_operations={},
+        media_url=None,
+        twilio_account_sid=None,
+        twilio_auth_token=None,
+        sender_number=None,
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=5,
+    )
 
-        # then
-        assert result1["error_status"] is False
-        assert result1["throttling_status"] is False
+    # then
+    assert result1["error_status"] is False
+    assert result1["throttling_status"] is False
 
-        # Second call immediately - should be throttled
-        result2 = block.run(
-            sms_provider="Roboflow Managed API Key",
-            receiver_number="+15551234567",
-            message="Test message 2",
-            message_parameters={},
-            message_parameters_operations={},
-            media_url=None,
-            twilio_account_sid=None,
-            twilio_auth_token=None,
-            sender_number=None,
-            fire_and_forget=False,
-            disable_sink=False,
-            cooldown_seconds=5,
-        )
+    # Second call immediately - should be throttled
+    result2 = block.run(
+        sms_provider="Roboflow Managed API Key",
+        receiver_number="+15551234567",
+        message="Test message 2",
+        message_parameters={},
+        message_parameters_operations={},
+        media_url=None,
+        twilio_account_sid=None,
+        twilio_auth_token=None,
+        sender_number=None,
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=5,
+    )
 
-        # then
-        assert result2["error_status"] is False
-        assert result2["throttling_status"] is True
-        assert "cooldown" in result2["message"].lower()
+    # then
+    assert result2["error_status"] is False
+    assert result2["throttling_status"] is True
+    assert "cooldown" in result2["message"].lower()
 
 
 def test_twilio_block_v2_cooldown_expires() -> None:
@@ -609,87 +639,89 @@ def test_twilio_block_v2_cooldown_expires() -> None:
         background_tasks=None,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
-    with mock.patch.object(v2, "post_to_roboflow_api") as mock_post:
-        mock_post.return_value = {"success": True}
+    mock_post = platform_client.post_mock
+    mock_post.return_value = {"success": True}
 
-        # First call
-        result1 = block.run(
-            sms_provider="Roboflow Managed API Key",
-            receiver_number="+15551234567",
-            message="Test message 1",
-            message_parameters={},
-            message_parameters_operations={},
-            media_url=None,
-            twilio_account_sid=None,
-            twilio_auth_token=None,
-            sender_number=None,
-            fire_and_forget=False,
-            disable_sink=False,
-            cooldown_seconds=1,  # 1 second cooldown
-        )
+    # First call
+    result1 = block.run(
+        sms_provider="Roboflow Managed API Key",
+        receiver_number="+15551234567",
+        message="Test message 1",
+        message_parameters={},
+        message_parameters_operations={},
+        media_url=None,
+        twilio_account_sid=None,
+        twilio_auth_token=None,
+        sender_number=None,
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=1,  # 1 second cooldown
+    )
 
-        assert result1["throttling_status"] is False
+    assert result1["throttling_status"] is False
 
-        # Wait for cooldown to expire
-        time.sleep(1.1)
+    # Wait for cooldown to expire
+    time.sleep(1.1)
 
-        # Second call after cooldown - should succeed
-        result2 = block.run(
-            sms_provider="Roboflow Managed API Key",
-            receiver_number="+15551234567",
-            message="Test message 2",
-            message_parameters={},
-            message_parameters_operations={},
-            media_url=None,
-            twilio_account_sid=None,
-            twilio_auth_token=None,
-            sender_number=None,
-            fire_and_forget=False,
-            disable_sink=False,
-            cooldown_seconds=1,
-        )
+    # Second call after cooldown - should succeed
+    result2 = block.run(
+        sms_provider="Roboflow Managed API Key",
+        receiver_number="+15551234567",
+        message="Test message 2",
+        message_parameters={},
+        message_parameters_operations={},
+        media_url=None,
+        twilio_account_sid=None,
+        twilio_auth_token=None,
+        sender_number=None,
+        fire_and_forget=False,
+        disable_sink=False,
+        cooldown_seconds=1,
+    )
 
-        # then
-        assert result2["error_status"] is False
-        assert result2["throttling_status"] is False
+    # then
+    assert result2["error_status"] is False
+    assert result2["throttling_status"] is False
 
 
 def test_twilio_block_v2_fire_and_forget_with_thread_pool() -> None:
     # given
     from concurrent.futures import ThreadPoolExecutor
-    
+
     executor = ThreadPoolExecutor(max_workers=2)
     block = TwilioSMSNotificationBlockV2(
         background_tasks=None,
         thread_pool_executor=executor,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
-    with mock.patch.object(v2, "post_to_roboflow_api") as mock_post:
-        mock_post.return_value = {"success": True}
+    mock_post = platform_client.post_mock
+    mock_post.return_value = {"success": True}
 
-        # when
-        result = block.run(
-            sms_provider="Roboflow Managed API Key",
-            receiver_number="+15551234567",
-            message="Test message",
-            message_parameters={},
-            message_parameters_operations={},
-            media_url=None,
-            twilio_account_sid=None,
-            twilio_auth_token=None,
-            sender_number=None,
-            fire_and_forget=True,
-            disable_sink=False,
-            cooldown_seconds=5,
-        )
+    # when
+    result = block.run(
+        sms_provider="Roboflow Managed API Key",
+        receiver_number="+15551234567",
+        message="Test message",
+        message_parameters={},
+        message_parameters_operations={},
+        media_url=None,
+        twilio_account_sid=None,
+        twilio_auth_token=None,
+        sender_number=None,
+        fire_and_forget=True,
+        disable_sink=False,
+        cooldown_seconds=5,
+    )
 
-        # then - should return immediately without error
-        assert result["error_status"] is False
-        assert result["throttling_status"] is False
-        assert "background" in result["message"].lower()
+    # then - should return immediately without error
+    assert result["error_status"] is False
+    assert result["throttling_status"] is False
+    assert "background" in result["message"].lower()
 
     executor.shutdown(wait=True)
 
@@ -697,34 +729,35 @@ def test_twilio_block_v2_fire_and_forget_with_thread_pool() -> None:
 def test_twilio_block_v2_fire_and_forget_with_background_tasks() -> None:
     # given
     from fastapi import BackgroundTasks
-    
+
     background_tasks = BackgroundTasks()
     block = TwilioSMSNotificationBlockV2(
         background_tasks=background_tasks,
         thread_pool_executor=None,
         api_key="test_key",
+        platform_client=platform_client,
     )
 
-    with mock.patch.object(v2, "post_to_roboflow_api") as mock_post:
-        mock_post.return_value = {"success": True}
+    mock_post = platform_client.post_mock
+    mock_post.return_value = {"success": True}
 
-        # when
-        result = block.run(
-            sms_provider="Roboflow Managed API Key",
-            receiver_number="+15551234567",
-            message="Test message",
-            message_parameters={},
-            message_parameters_operations={},
-            media_url=None,
-            twilio_account_sid=None,
-            twilio_auth_token=None,
-            sender_number=None,
-            fire_and_forget=True,
-            disable_sink=False,
-            cooldown_seconds=5,
-        )
+    # when
+    result = block.run(
+        sms_provider="Roboflow Managed API Key",
+        receiver_number="+15551234567",
+        message="Test message",
+        message_parameters={},
+        message_parameters_operations={},
+        media_url=None,
+        twilio_account_sid=None,
+        twilio_auth_token=None,
+        sender_number=None,
+        fire_and_forget=True,
+        disable_sink=False,
+        cooldown_seconds=5,
+    )
 
-        # then - should return immediately without error
-        assert result["error_status"] is False
-        assert result["throttling_status"] is False
-        assert "background" in result["message"].lower()
+    # then - should return immediately without error
+    assert result["error_status"] is False
+    assert result["throttling_status"] is False
+    assert "background" in result["message"].lower()

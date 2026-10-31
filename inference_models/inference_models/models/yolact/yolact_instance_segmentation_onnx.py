@@ -1,16 +1,29 @@
 from threading import Lock
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
 import torchvision
 
-from inference_models import InstanceDetections, InstanceSegmentationModel
-from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.entities import ColorFormat
+from inference_models import (
+    InstanceDetections,
+    InstanceSegmentationMaskFormat,
+    InstanceSegmentationModel,
+    PreProcessingOverrides,
+)
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
+)
+from inference_models.developer_tools import align_device_with_onnx_session
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     EnvironmentConfigurationError,
     MissingDependencyError,
+    ModelInputError,
     ModelRuntimeError,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -25,31 +38,30 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_class_names_file,
     parse_inference_config,
 )
-from inference_models.models.common.roboflow.post_processing import (
-    align_instance_segmentation_results,
-    crop_masks_to_boxes,
-)
+from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.streams import get_cuda_stream, use_cuda_stream
+from inference_models.models.yolact.common import prepare_dense_masks, prepare_rle_masks
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv5 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running YOLA-CT model with ONNX backend requires pycuda installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -68,6 +80,7 @@ class YOLOACTForInstanceSegmentationOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOACTForInstanceSegmentationOnnx":
         if onnx_execution_providers is None:
@@ -78,7 +91,7 @@ class YOLOACTForInstanceSegmentationOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
@@ -105,18 +118,31 @@ class YOLOACTForInstanceSegmentationOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLACT model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if input_batch_size != 1:
             raise ModelRuntimeError(
                 message="Implementation of YOLOACTForInstanceSegmentationOnnx is adjusted to work correctly with "
                 "onnx models accepting inputs with `batch_size=1`. It can be extended if needed, but we've "
-                "not heard such request so far. If you find that a valueble feature - let us know via "
-                "https://github.com/roboflow/inference/issues"
+                "not heard such request so far. If you find that a valuable feature - let us know via "
+                "https://github.com/roboflow/inference/issues",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         input_name = session.get_inputs()[0].name
         return cls(
@@ -125,6 +151,7 @@ class YOLOACTForInstanceSegmentationOnnx(
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -134,6 +161,7 @@ class YOLOACTForInstanceSegmentationOnnx(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -141,24 +169,36 @@ class YOLOACTForInstanceSegmentationOnnx(
         self._class_names = class_names
         self._device = device
         self._session_thread_lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
 
+    @property
+    def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
+        return {"dense", "rle"}
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-        )
+        pre_process_stream = self._pre_process_stream
+        with use_cuda_stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(
         self, pre_processed_images: torch.Tensor, **kwargs
@@ -176,6 +216,7 @@ class YOLOACTForInstanceSegmentationOnnx(
                     run_onnx_session_with_batch_size_limit(
                         session=self._session,
                         inputs={self._input_name: image.unsqueeze(0).contiguous()},
+                        stream=self._inference_stream,
                     )
                 )
                 all_loc_data.append(loc_data)
@@ -183,13 +224,16 @@ class YOLOACTForInstanceSegmentationOnnx(
                 all_mask_data.append(mask_data)
                 all_prior_data.append(prior_data)
                 all_proto_data.append(proto_data)
-            return (
+            results = (
                 torch.cat(all_loc_data, dim=0),
                 torch.cat(all_conf_data, dim=0),
                 torch.cat(all_mask_data, dim=0),
                 torch.stack(all_prior_data, dim=0),
                 torch.cat(all_proto_data, dim=0),
             )
+            if self._device.type == "cuda":
+                torch.cuda.current_stream(self._device).synchronize()
+            return results
 
     def post_process(
         self,
@@ -197,83 +241,107 @@ class YOLOACTForInstanceSegmentationOnnx(
             torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
         ],
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
+        confidence: Confidence = "default",
+        iou_threshold: float = INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS,
+        mask_format: InstanceSegmentationMaskFormat = "dense",
+        masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
-        all_loc_data, all_conf_data, all_mask_data, all_prior_data, all_proto_data = (
-            model_results
+        if mask_format not in self.supported_mask_formats:
+            raise ModelInputError(
+                message=f"YOLA-CT Instance Segmentation models support the following mask "
+                f"formats: {self.supported_mask_formats}. Requested format: {mask_format} "
+                f"is not supported. If you see this error while running on Roboflow platform, "
+                f"contact support or raise an issue at https://github.com/roboflow/inference/issues. "
+                f"When running locally - please verify your integration to make sure that appropriate "
+                f"value of `mask_format` parameter is set.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE,
         )
-        batch_size = all_loc_data.shape[0]
-        num_priors = all_loc_data.shape[1]
-        boxes = torch.zeros((batch_size, num_priors, 4), device=self._device)
-        for batch_element_id, (
-            batch_element_loc_data,
-            batch_element_priors,
-            image_prep_meta,
-        ) in enumerate(zip(all_loc_data, all_prior_data, pre_processing_meta)):
-            image_boxes = decode_predicted_bboxes(
-                loc_data=batch_element_loc_data,
-                priors=batch_element_priors,
-            )
-            inference_height, inference_width = (
-                image_prep_meta.inference_size.height,
-                image_prep_meta.inference_size.width,
-            )
-            scale = torch.tensor(
-                [inference_width, inference_height, inference_width, inference_height],
-                device=self._device,
-            )
-            image_boxes = image_boxes.mul_(scale)
-            boxes[batch_element_id, :, :] = image_boxes
-        all_conf_data = all_conf_data[:, :, 1:]  # remove background class
-        instances = torch.cat([boxes, all_conf_data, all_mask_data], dim=2)
-        nms_results = run_nms_for_instance_segmentation(
-            output=instances,
-            conf_thresh=conf_thresh,
-            iou_thresh=iou_thresh,
-            max_detections=max_detections,
-            class_agnostic=class_agnostic,
-        )
-        final_results = []
-        for image_bboxes, image_protos, image_meta in zip(
-            nms_results, all_proto_data, pre_processing_meta
-        ):
-            pre_processed_masks = image_protos @ image_bboxes[:, 6:].T
-            pre_processed_masks = 1 / (1 + torch.exp(-pre_processed_masks))
-            pre_processed_masks = torch.permute(pre_processed_masks, (2, 0, 1))
-            cropped_masks = crop_masks_to_boxes(
-                image_bboxes[:, :4], pre_processed_masks
-            )
-            padding = (
-                image_meta.pad_left,
-                image_meta.pad_top,
-                image_meta.pad_right,
-                image_meta.pad_bottom,
-            )
-            aligned_boxes, aligned_masks = align_instance_segmentation_results(
-                image_bboxes=image_bboxes,
-                masks=cropped_masks,
-                padding=padding,
-                scale_height=image_meta.scale_height,
-                scale_width=image_meta.scale_width,
-                original_size=image_meta.original_size,
-                size_after_pre_processing=image_meta.size_after_pre_processing,
-                inference_size=image_meta.inference_size,
-                static_crop_offset=image_meta.static_crop_offset,
-                binarization_threshold=0.5,
-            )
-            final_results.append(
-                InstanceDetections(
-                    xyxy=aligned_boxes[:, :4].round().int(),
-                    class_id=aligned_boxes[:, 5].int(),
-                    confidence=aligned_boxes[:, 4],
-                    mask=aligned_masks,
+        confidence = confidence_filter.get_threshold(self.class_names)
+        post_process_stream = self._post_process_stream
+        with use_cuda_stream(post_process_stream):
+            if post_process_stream is not None:
+                for result_element in model_results:
+                    result_element.record_stream(post_process_stream)
+            (
+                all_loc_data,
+                all_conf_data,
+                all_mask_data,
+                all_prior_data,
+                all_proto_data,
+            ) = model_results
+            batch_size = all_loc_data.shape[0]
+            num_priors = all_loc_data.shape[1]
+            boxes = torch.zeros((batch_size, num_priors, 4), device=self._device)
+            for batch_element_id, (
+                batch_element_loc_data,
+                batch_element_priors,
+                image_prep_meta,
+            ) in enumerate(zip(all_loc_data, all_prior_data, pre_processing_meta)):
+                image_boxes = decode_predicted_bboxes(
+                    loc_data=batch_element_loc_data,
+                    priors=batch_element_priors,
                 )
+                inference_height, inference_width = (
+                    image_prep_meta.inference_size.height,
+                    image_prep_meta.inference_size.width,
+                )
+                scale = torch.tensor(
+                    [
+                        inference_width,
+                        inference_height,
+                        inference_width,
+                        inference_height,
+                    ],
+                    device=self._device,
+                )
+                image_boxes = image_boxes.mul_(scale)
+                boxes[batch_element_id, :, :] = image_boxes
+            all_conf_data = all_conf_data[:, :, 1:]  # remove background class
+            instances = torch.cat([boxes, all_conf_data, all_mask_data], dim=2)
+            nms_results = run_nms_for_instance_segmentation(
+                output=instances,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
+                max_detections=max_detections,
+                class_agnostic=class_agnostic_nms,
             )
+            if mask_format == "dense":
+                final_results = prepare_dense_masks(
+                    nms_results=nms_results,
+                    all_proto_data=all_proto_data,
+                    pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
+                )
+            else:
+                final_results = prepare_rle_masks(
+                    nms_results=nms_results,
+                    all_proto_data=all_proto_data,
+                    pre_processing_meta=pre_processing_meta,
+                    masks_resolution_factor=masks_resolution_factor,
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return final_results
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")
 
 
 def decode_predicted_bboxes(
@@ -294,11 +362,15 @@ def decode_predicted_bboxes(
 
 def run_nms_for_instance_segmentation(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :, :4]  # (N, 19248, 4)
     scores = output[:, :, 4:-32]  # (N, 19248, num_classes)
@@ -309,7 +381,10 @@ def run_nms_for_instance_segmentation(
         class_scores = scores[b]  # (19248, 80)
         box_masks = masks[b]
         class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
-        mask = class_conf > conf_thresh
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = class_conf > conf_thresh.to(output.device)[class_ids]
+        else:
+            mask = class_conf > conf_thresh
         if mask.sum() == 0:
             results.append(torch.zeros((0, 38), device=output.device))
             continue

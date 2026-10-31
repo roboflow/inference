@@ -1,3 +1,4 @@
-## Inference Source Code License
-
-See [Roboflow Licensing](https://roboflow.com/licensing) for information on how Inference and models supported in Inference are licensed.
+---
+template: redirect.html
+redirect_url: https://docs.roboflow.com/models/supported-models#licensing
+---

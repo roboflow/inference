@@ -1,0 +1,12 @@
+Name,Projected Start (ns),Projected Duration (ns),Orig Start (ns),Orig Duration (ns),Style,PID,TID,NumGPUOps,Lvl,NumChild,RangeId,ParentId,RangeStack
+:profile-target,11422912,336423,11070091,700839,PushPop,2124,2124,8,0,2,1,,:1
+:iteration 0,11422912,191620,11187261,431993,PushPop,2124,2124,4,1,4,2,1,:1:2
+:smoke multiply,11422912,2112,11239119,210176,PushPop,2124,2124,1,2,0,3,2,:1:2:3
+:smoke reduction,11529763,4192,11470845,63790,PushPop,2124,2124,1,2,0,4,2,:1:2:4
+:smoke multiply,11576388,1920,11554853,23985,PushPop,2124,2124,1,2,0,5,2,:1:2:5
+:smoke reduction,11610532,4000,11589208,23394,PushPop,2124,2124,1,2,0,6,2,:1:2:6
+:iteration 1,11659621,99714,11629554,138050,PushPop,2124,2124,4,1,4,7,1,:1:7
+:smoke multiply,11659621,1920,11639212,22943,PushPop,2124,2124,1,2,0,8,7,:1:7:8
+:smoke reduction,11693510,4000,11671433,24015,PushPop,2124,2124,1,2,0,9,7,:1:7:9
+:smoke multiply,11725543,1920,11707140,20188,PushPop,2124,2124,1,2,0,10,7,:1:7:10
+:smoke reduction,11755335,4000,11736174,20509,PushPop,2124,2124,1,2,0,11,7,:1:7:11

@@ -4,9 +4,22 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from inference_models import Detections, KeyPoints, KeyPointsDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.entities import ColorFormat
+from inference_models import (
+    Detections,
+    KeyPoints,
+    KeyPointsDetectionModel,
+    PreProcessingOverrides,
+)
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+)
+from inference_models.developer_tools import align_device_with_onnx_session
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import (
     CorruptedModelPackageError,
     EnvironmentConfigurationError,
@@ -26,6 +39,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_key_points_metadata,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_key_points_detections,
     run_nms_for_key_points_detection,
@@ -33,24 +47,25 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.streams import get_cuda_stream, use_cuda_stream
 from inference_models.utils.onnx_introspection import (
     get_selected_onnx_execution_providers,
 )
+from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
     import onnxruntime
 except ImportError as import_error:
     raise MissingDependencyError(
-        message=f"Could not import YOLOv8 model with ONNX backend - this error means that some additional dependencies "
-        f"are not installed in the environment. If you run the `inference-models` library directly in your Python "
-        f"program, make sure the following extras of the package are installed: \n"
-        f"\t* `onnx-cpu` - when you wish to use library with CPU support only\n"
-        f"\t* `onnx-cu12` - for running on GPU with Cuda 12 installed\n"
-        f"\t* `onnx-cu118` - for running on GPU with Cuda 11.8 installed\n"
-        f"\t* `onnx-jp6-cu126` - for running on Jetson with Jetpack 6\n"
-        f"If you see this error using Roboflow infrastructure, make sure the service you use does support the model. "
-        f"You can also contact Roboflow to get support.",
-        help_url="https://todo",
+        message="Running YOLOv8 model with ONNX backend requires pycuda installation, which is brought with "
+        "`onnx-*` extras of `inference-models` library. If you see this error running locally, "
+        "please follow our installation guide: https://inference-models.roboflow.com/getting-started/installation/"
+        " If you see this error using Roboflow infrastructure, make sure the service you use does support the "
+        f"model, You can also contact Roboflow to get support."
+        "Additionally - if AutoModel.from_pretrained(...) "
+        f"automatically selects model package which does not match your environment - that's a serious problem and "
+        f"we will really appreciate letting us know - https://github.com/roboflow/inference/issues",
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#missingdependencyerror",
     ) from import_error
 
 
@@ -65,6 +80,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
         **kwargs,
     ) -> "YOLOv8ForKeyPointsDetectionOnnx":
         if onnx_execution_providers is None:
@@ -75,7 +91,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/runtime-environment/#environmentconfigurationerror",
             )
         onnx_execution_providers = set_onnx_execution_provider_defaults(
             providers=onnx_execution_providers,
@@ -103,11 +119,22 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv8 Key Points detection model running with ONNX backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
                 message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         parsed_key_points_metadata, skeletons = parse_key_points_metadata(
             key_points_metadata_path=model_package_content["keypoints_metadata.json"]
@@ -116,6 +143,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             path_or_bytes=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
+        device = align_device_with_onnx_session(session=session, device=device)
         input_batch_size = session.get_inputs()[0].shape[0]
         if isinstance(input_batch_size, str):
             input_batch_size = None
@@ -129,6 +157,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             input_batch_size=input_batch_size,
             parsed_key_points_metadata=parsed_key_points_metadata,
             skeletons=skeletons,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -141,6 +170,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         input_batch_size: Optional[int],
         parsed_key_points_metadata: List[List[str]],
         skeletons: List[List[Tuple[int, int]]],
+        recommended_parameters=None,
     ):
         self._session = session
         self._input_name = input_name
@@ -151,6 +181,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
         self._parsed_key_points_metadata = parsed_key_points_metadata
+        self.recommended_parameters = recommended_parameters
         self._key_points_classes_for_instances = torch.tensor(
             [len(e) for e in self._parsed_key_points_metadata], device=device
         )
@@ -175,16 +206,23 @@ class YOLOv8ForKeyPointsDetectionOnnx(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Tuple[int, int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-        return pre_process_network_input(
-            images=images,
-            image_pre_processing=self._inference_config.image_pre_processing,
-            network_input=self._inference_config.network_input,
-            target_device=self._device,
-            input_color_format=input_color_format,
-            image_size_wh=image_size,
-        )
+        pre_process_stream = self._pre_process_stream
+        with use_cuda_stream(pre_process_stream):
+            pre_processed_images, pre_processing_meta = pre_process_network_input(
+                images=images,
+                image_pre_processing=self._inference_config.image_pre_processing,
+                network_input=self._inference_config.network_input,
+                target_device=self._device,
+                input_color_format=input_color_format,
+                image_size_wh=image_size,
+                pre_processing_overrides=pre_processing_overrides,
+            )
+        if pre_process_stream is not None:
+            pre_process_stream.synchronize()
+        return pre_processed_images, pre_processing_meta
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
         with self._session_thread_lock:
@@ -193,71 +231,104 @@ class YOLOv8ForKeyPointsDetectionOnnx(
                 inputs={self._input_name: pre_processed_images},
                 min_batch_size=self._input_batch_size,
                 max_batch_size=self._input_batch_size,
+                stream=self._inference_stream,
             )[0]
 
     def post_process(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
-        key_points_threshold: float = 0.3,
+        confidence: Confidence = "default",
+        iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+        key_points_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
-        if self._inference_config.post_processing.fused:
-            nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
-            )
-        else:
-            nms_results = run_nms_for_key_points_detection(
-                output=model_results,
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
+        post_process_stream = self._post_process_stream
+        with use_cuda_stream(post_process_stream):
+            if post_process_stream is not None:
+                model_results.record_stream(post_process_stream)
+            if self._inference_config.post_processing.fused:
+                nms_results = post_process_nms_fused_model_output(
+                    output=model_results, conf_thresh=confidence
+                )
+            else:
+                nms_results = run_nms_for_key_points_detection(
+                    output=model_results,
+                    num_classes=len(self._class_names),
+                    key_points_slots_in_prediction=self._key_points_slots_in_prediction,
+                    conf_thresh=confidence,
+                    iou_thresh=iou_threshold,
+                    max_detections=max_detections,
+                    class_agnostic=class_agnostic_nms,
+                )
+            rescaled_results = rescale_key_points_detections(
+                detections=nms_results,
+                images_metadata=pre_processing_meta,
                 num_classes=len(self._class_names),
                 key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
-                max_detections=max_detections,
-                class_agnostic=class_agnostic,
             )
-        rescaled_results = rescale_key_points_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-            num_classes=len(self._class_names),
-            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
-        )
-        detections, all_key_points = [], []
-        for result in rescaled_results:
-            class_id = result[:, 5].int()
-            detections.append(
-                Detections(
-                    xyxy=result[:, :4].round().int(),
-                    class_id=class_id,
-                    confidence=result[:, 4],
+            detections, all_key_points = [], []
+            for result in rescaled_results:
+                class_id = result[:, 5].int()
+                detections.append(
+                    Detections(
+                        xyxy=result[:, :4].round().int(),
+                        class_id=class_id,
+                        confidence=result[:, 4],
+                    )
                 )
-            )
-            key_points_reshaped = result[:, 6:].view(
-                result.shape[0], self._key_points_slots_in_prediction, 3
-            )
-            xy = key_points_reshaped[:, :, :2]
-            confidence = key_points_reshaped[:, :, 2]
-            key_points_classes_for_instance_class = (
-                (self._key_points_classes_for_instances[class_id])
-                .unsqueeze(1)
-                .to(device=result.device)
-            )
-            instances_class_mask = (
-                torch.arange(self._key_points_slots_in_prediction, device=result.device)
-                .unsqueeze(0)
-                .repeat(result.shape[0], 1)
-                < key_points_classes_for_instance_class
-            )
+                key_points_reshaped = result[:, 6:].view(
+                    result.shape[0], self._key_points_slots_in_prediction, 3
+                )
+                xy = key_points_reshaped[:, :, :2]
+                predicted_key_points_confidence = key_points_reshaped[:, :, 2]
+                key_points_classes_for_instance_class = (
+                    (self._key_points_classes_for_instances[class_id])
+                    .unsqueeze(1)
+                    .to(device=result.device)
+                )
+                invalid_slot_keypoints = (
+                    torch.arange(
+                        self._key_points_slots_in_prediction, device=result.device
+                    )
+                    .unsqueeze(0)
+                    .repeat(result.shape[0], 1)
+                    >= key_points_classes_for_instance_class
+                )
 
-            confidence_mask = confidence < key_points_threshold
-            mask = instances_class_mask & confidence_mask
-            xy[mask] = 0.0
-            confidence[mask] = 0.0
-            all_key_points.append(
-                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
-            )
+                keypoints_below_threshold = (
+                    predicted_key_points_confidence < key_points_threshold
+                )
+                mask = invalid_slot_keypoints | keypoints_below_threshold
+                xy[mask] = 0.0
+                predicted_key_points_confidence[mask] = 0.0
+                all_key_points.append(
+                    KeyPoints(
+                        xy=xy.round().int(),
+                        class_id=class_id,
+                        confidence=predicted_key_points_confidence,
+                    )
+                )
+        if post_process_stream is not None:
+            post_process_stream.synchronize()
         return all_key_points, detections
+
+    @property
+    def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="pre-processing")
+
+    @property
+    def _post_process_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="post-processing")
+
+    @property
+    def _inference_stream(self) -> Optional[torch.cuda.Stream]:
+        return get_cuda_stream(device=self._device, purpose="inference")

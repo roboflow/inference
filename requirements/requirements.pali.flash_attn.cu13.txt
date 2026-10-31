@@ -1,0 +1,7 @@
+# CUDA 13 sibling of requirements.pali.flash_attn.txt, consumed by
+# Dockerfile.onnx.cu13.gpu. flash-attn 2.7.4.post1 (the cu12 pin) bundles a
+# cutlass that predates CUDA 13; 2.8.3.post1 is the first line with CUDA 13
+# era fixes. There is no prebuilt wheel for the cu13/torch combination, so
+# the Dockerfile compiles it from source with TORCH_CUDA_ARCH_LIST scoped.
+flash-attn==2.8.3.post1
+xformers>=0.0.29.post3

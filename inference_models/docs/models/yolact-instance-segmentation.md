@@ -32,7 +32,6 @@ YOLACT instance segmentation models must be trained on Roboflow or uploaded as c
 | Backend | Extras Required |
 |---------|----------------|
 | `onnx` | `onnx-cpu`, `onnx-cu12`, `onnx-cu118`, `onnx-jp6-cu126` |
-| `trt` | `trt10` |
 
 ## Roboflow Platform Compatibility
 

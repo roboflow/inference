@@ -1,11 +1,14 @@
 site_name: Roboflow Inference
 site_url: https://inference.roboflow.com/
 site_author: Roboflow
-site_description: Scalable, on-device computer vision deployment.
+site_description: Open-source computer vision inference server for object detection, segmentation, classification, and foundation models. Deploy on-device or in the cloud.
 repo_name: roboflow/inference
 repo_url: https://github.com/roboflow/inference
 edit_uri: https://github.com/roboflow/inference/tree/main/docs
-copyright: Roboflow 2025. All rights reserved.
+copyright: Roboflow 2026. All rights reserved.
+
+exclude_docs: |
+  node_modules/
 
 extra:
   analytics:
@@ -23,171 +26,23 @@ extra:
       link: https://twitter.com/roboflow
   version:
     default: 1.0
-  exclude:
-    - node_modules/**
 
 extra_css:
   - styles/cookbooks.css
   - styles.css
 
 nav:
-  - Start:
-      - Overview: start/overview.md
-      - Getting Started: start/getting-started.md
-      - Understand:
-          - Architecture: understand/architecture.md
-          - Features: understand/features.md
-          - Vocabulary: understand/vocabulary.md
-          - Alternatives: understand/alternatives.md
-      - Cloud Hosting:
-          - managed/index.md
-          - "Serverless API »": "https://docs.roboflow.com/deploy/serverless-hosted-api-v2"
-          - "Dedicated Deployments »": "https://docs.roboflow.com/deploy/dedicated-deployments"
-          - "Bring Your Own Cloud": "install/cloud/index.md"
-      - Self Hosting:
-          - install/index.md
-          - Minimum Requirements: install/minimum-requirements.md
-          - Install on Linux: install/linux.md
-          - Install on Windows: install/windows.md
-          - Install on Mac: install/mac.md
-          - Install on Jetson: install/jetson.md
-          - Install on Raspberry Pi: install/raspberry-pi.md
-          - Bring Your Own Cloud:
-              - install/cloud/index.md
-              - AWS: install/cloud/aws.md
-              - Azure: install/cloud/azure.md
-              - GCP: install/cloud/gcp.md
-          - Other Devices: install/other.md
-      # - Inputs:
-      #     - inputs/index.md
-      #     - Images: inputs/images.md
-      #     - Webcam: inputs/webcam.md
-      #     - IP Camera (RTSP):
-      #         - inputs/rtsp/index.md
-      #         - Reolink: inputs/rtsp/reolink.md
-      #         - UniFi: inputs/rtsp/unifi.md
-      #     - Recorded Video: inputs/video.md
-      #     - Industrial:
-      #         - inputs/industrial/index.md
-      #         - Basler: inputs/industrial/basler.md
-      #         - Lucid: inputs/industrial/lucid.md
-      #         - FLIR: inputs/industrial/flir.md
-
-      - Start Building ⭐️:
-          - Hello World: guides/hello-world.md
-          - Compare Models: guides/compare-models.md
-          - Detect Small Objects: guides/detect-small-objects.md
-          # - Count Things in Video: guides/count-things.md
-
-      - Next Steps: start/next.md
-      - More Resources: resources.md
-
-  - Models:
-      - Run a Model: quickstart/run_a_model.md
-      - From Local Weights: models/from_local_weights.md
-      - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
-      - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
-      - 'Fine-Tuned Models':
-          - quickstart/explore_models.md
-          - RF-DETR: fine-tuned/rfdetr.md
-          - YOLO26: fine-tuned/yolo26.md
-          - YOLOv11: fine-tuned/yolov11.md
-          - YOLOv10: fine-tuned/yolov10.md
-          - YOLOv9: fine-tuned/yolov9.md
-          - YOLOv8: fine-tuned/yolov8.md
-          - YOLOv7: fine-tuned/yolov7.md
-          - YOLOv5: fine-tuned/yolov5.md
-          - YOLO-NAS: fine-tuned/yolonas.md
-      - 'Pre-Trained Models': quickstart/aliases.md
-      - 'Universe Models': quickstart/load_from_universe.md
-      - 'Foundation Models':
-          - foundation/about.md
-          - CLIP (Classification, Embeddings): foundation/clip.md
-          - DocTR (OCR): foundation/doctr.md
-          - Depth Estimation (Depth Anything V2 Small): foundation/depth_estimation.md
-          - Florence-2: foundation/florence2.md
-          - TrOCR (OCR): foundation/trocr.md
-          - Grounding DINO (Object Detection): foundation/grounding_dino.md
-          - L2CS-Net (Gaze Detection): foundation/gaze.md
-          - Moondream2: foundation/moondream2.md
-          - PaliGemma: foundation/paligemma.md
-          - Perception Encoder: foundation/perception_encoder.md
-          - Segment Anything (Segmentation): foundation/sam.md
-          - Segment Anything 2 (Segmentation): foundation/sam2.md
-          - Segment Anything 3 (Segmentation): foundation/sam3.md
-          - SmolVLM2: foundation/smolvlm.md
-          - YOLO-World (Object Detection): foundation/yolo_world.md
-          - OwlV2 (Object Detection): foundation/owlv2.md
-      - Deploy a Model:
-          - Configure Your Deployment: https://roboflow.github.io/deploy-setup-widget/results.html
-          - How Do I Run Inference?: quickstart/inference_101.md
-          - What Devices Can I Use?: quickstart/devices.md
-          - Retrieve Your API Key: quickstart/configure_api_key.md
-          - Model Licenses: https://roboflow.com/licensing
-  - Workflows:
-      - About Workflows: workflows/about.md
-      - User Guide:
-        - Ecosystem: workflows/understanding.md
-        - Create And Run: workflows/create_and_run.md
-        - Blocks Overview: workflows/blocks_connections.md
-        - Running Workflows: workflows/modes_of_running.md
-        - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
-        - Video Processing: workflows/video_processing/overview.md
-      - Examples: workflows/gallery/
-      - Block Gallery: workflows/blocks/
-      - Batch Processing:
-          - User Guide: workflows/batch_processing/about.md
-          - Integration: workflows/batch_processing/integration.md
-          - API Reference: workflows/batch_processing/api_reference.md
-          - Known Issues: workflows/batch_processing/known_issues.md
-      - Developer Guide:
-        - Workflows Definitions: workflows/definitions.md
-        - Workflow Execution: workflows/workflow_execution.md
-        - Kinds: workflows/kinds/
-        - Compiler: workflows/workflows_compiler.md
-        - Execution Engine: workflows/workflows_execution_engine.md
-        - Block Creation: workflows/create_workflow_block.md
-        - Block Bundling: workflows/blocks_bundling.md
-        - Data Representations: workflows/internal_data_types.md
-        - Versioning: workflows/versioning.md
-        - Testing: workflows/testing.md
-        - Schema API: workflows/schema_api.md
-        - Changelog: workflows/execution_engine_changelog.md
-  - Reference:
-      - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
-      - InferencePipeline: using_inference/inference_pipeline.md
-      - Python SDK:
-          - inference_helpers/inference_sdk.md
-          - Reference: reference/inference_sdk/
-      - Command Line Interface:
-          - About CLI: inference_helpers/inference_cli.md
-          - Control The Server: inference_helpers/cli_commands/server.md
-          - Run Workflows: inference_helpers/cli_commands/workflows.md
-          - Benchmark Inference: inference_helpers/cli_commands/benchmark.md
-          - Make Predictions: inference_helpers/cli_commands/infer.md
-          - Deploy To Cloud: inference_helpers/cli_commands/cloud.md
-          - Reference: inference_helpers/cli_commands/reference.md
-      - HTTP API:
-        - OpenAPI Spec: api.md
-      - inference Python Package: reference/inference/
-      - Enterprise Features:
-          - Parallel HTTP API: enterprise/parallel_processing.md
-          - Stream Management API: enterprise/stream_management_api.md
-      - Server Configuration:
-          - Running With Docker: quickstart/docker.md
-          - Docker Configuration Options: quickstart/docker_configuration_options.md
-          - Environmental variables: server_configuration/environmental_variables.md
-          - Security of input formats: server_configuration/accepted_input_formats.md
-          - Service telemetry: server_configuration/service_telemetry.md
-          - Install "bare metal" Inference GPU on Windows: quickstart/inference_gpu_windows.md
-      - Model Weights Download: using_inference/offline_weights_download.md
-      - Contribute to Inference: contributing.md
-      - Changelog: https://github.com/roboflow/inference/releases
-  - Examples: workflows/gallery/
+  - Home: index.md
+  - "Get Started": "https://docs.roboflow.com/deployment/self-hosted/self-hosted"
+  - "Models": "https://docs.roboflow.com/models/supported-models"
+  - "Workflows": "https://docs.roboflow.com/workflows"
+  - "Classifier Embeddings": workflows/classifier_embeddings.md
+  - "Reference": "https://docs.roboflow.com/reference/inference/choosing-the-right-tool"
+  - "Changelog": "https://github.com/roboflow/inference/releases"
 
 theme:
   name: 'material'
-  logo: roboflow-logomark-white.svg
+  logo: roboflow-logomark-color.svg
   favicon: favicon.png
   custom_dir: theme
   font:
@@ -210,8 +65,6 @@ theme:
     - navigation.top
     - navigation.tracking
     - optimize
-    - search.share
-    - search.suggest
     - toc.follow
   icon:
     repo: fontawesome/brands/github
@@ -220,29 +73,28 @@ theme:
       primary: 'custom'
 
 plugins:
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: [.]
-  - search
-  - swagger-ui-tag
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: date
+  - search:
+      enabled: false
   - mkdocs-jupyter
-  - social
+  - social:
+      cards: true
+      cards_layout_options:
+        background_color: "#8315F9"
+        color: "#FFFFFF"
+        font_family: Inter
   - ezlinks
-  - gen-files:
-      scripts:
-        - docs/scripts/gen_ref_pages.py
-  - literate-nav:
-      nav_file: SUMMARY.md
-      implicit_index: True
   - macros:
-      include_dir: docs/include
       module_name: docs/scripts/macros
 
 
 markdown_extensions:
+  - meta
   - admonition
   - attr_list
+  - def_list
   - md_in_html
   - pymdownx.details
   - pymdownx.emoji:
@@ -270,6 +122,7 @@ extra_javascript:
   - 'https://unpkg.com/@rive-app/canvas'
   - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
   - 'assets/home.js'
+  - "https://app.roboflow.com/scripts/utm.js"
   - 'js/segment.js'
 
 hooks:

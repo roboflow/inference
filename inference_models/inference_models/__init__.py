@@ -14,6 +14,13 @@ https://github.com/roboflow/inference/issues/new
 """
 
 import importlib.metadata as importlib_metadata
+import os
+
+# The single process-wide OFFLINE_MODE owner. Must be the first import so
+# the dependency environment (Hugging Face, Ultralytics) is published
+# before any heavy library gets imported.
+from inference_models._offline import OFFLINE_MODE  # noqa: F401  isort: skip
+
 
 try:
     # This will read version from pyproject.toml
@@ -21,17 +28,27 @@ try:
 except importlib_metadata.PackageNotFoundError:
     __version__ = "development"
 
-import os
-
 if os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") is None:
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 if os.environ.get("TOKENIZERS_PARALLELISM") is None:
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-from inference_models.entities import ColorFormat
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.model_pipelines.auto_loaders.core import AutoModelPipeline
-from inference_models.models.auto_loaders.core import AutoModel
-from inference_models.models.auto_loaders.entities import AnyModel, BackendType
+from inference_models.models.auto_loaders.core import (
+    AutoModel,
+    find_cached_model_package_dir,
+)
+from inference_models.models.auto_loaders.entities import (
+    AnyModel,
+    BackendType,
+    PreProcessingOverrides,
+)
+from inference_models.models.base.action_recognition import (
+    ActionRecognitionModel,
+    ActionRecognitionPrediction,
+    VideoSampling,
+)
 from inference_models.models.base.classification import (
     ClassificationModel,
     ClassificationPrediction,
@@ -44,8 +61,10 @@ from inference_models.models.base.documents_parsing import (
     TextOnlyOCRModel,
 )
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
+from inference_models.models.base.image_embeddings import ImageEmbeddingModel
 from inference_models.models.base.instance_segmentation import (
     InstanceDetections,
+    InstanceSegmentationMaskFormat,
     InstanceSegmentationModel,
 )
 from inference_models.models.base.keypoints_detection import (
@@ -58,4 +77,12 @@ from inference_models.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
 from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
+from inference_models.models.base.types import InstancesRLEMasks
 from inference_models.weights_providers.entities import Quantization
+from inference_models.weights_providers.offline_registry import (
+    OfflinePackagePresence,
+    OfflineArtefactStatus,
+    OfflinePackageStatus,
+    OfflineModelStatus,
+    OfflineArtefactVerification
+)

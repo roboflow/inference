@@ -1,8 +1,9 @@
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from rich.console import Console
 from rich.tree import Tree
 
+from inference_models.configuration import FILE_LOCK_ACQUIRE_TIMEOUT
 from inference_models.errors import ModelPipelineInitializationError
 from inference_models.logger import verbose_info
 from inference_models.model_pipelines.auto_loaders.pipelines_registry import (
@@ -20,6 +21,9 @@ from inference_models.models.auto_loaders.dependency_models import (
     prepare_dependency_model_parameters,
 )
 from inference_models.models.auto_loaders.entities import AnyModel
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+)
 
 
 class AutoModelPipeline:
@@ -43,8 +47,7 @@ class AutoModelPipeline:
             >>> AutoModelPipeline.list_available_pipelines()
             # Displays:
             # Available Model Pipelines:
-            # ├── face-and-gaze-detection
-            # └── ... (other registered pipelines)
+            # └── ... (registered pipelines)
 
         See Also:
             - `AutoModelPipeline.from_pretrained()`: Load a pipeline
@@ -66,7 +69,7 @@ class AutoModelPipeline:
         api_key: Optional[str] = None,
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
-        model_download_file_lock_acquire_timeout: int = 10,
+        model_download_file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
         allow_untrusted_packages: bool = False,
         trt_engine_host_code_allowed: bool = True,
         allow_local_code_packages: bool = True,
@@ -76,13 +79,17 @@ class AutoModelPipeline:
         auto_resolution_cache: Optional[AutoResolutionCache] = None,
         allow_direct_local_storage_loading: bool = True,
         model_access_manager: Optional[ModelAccessManager] = None,
+        weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+        weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+        content_addressed_artifact_cache: Optional[
+            ContentAddressedArtifactCache
+        ] = None,
         **kwargs,
     ) -> AnyModel:
         """Load and initialize a multi-model pipeline.
 
         Pipelines are pre-configured workflows that combine multiple models to solve
-        complex computer vision tasks. For example, the "face-and-gaze-detection"
-        pipeline combines a face detector with a gaze estimation model.
+        complex computer vision tasks.
 
         Each pipeline has default model configurations, but you can override them by
         providing custom `models_parameters`. All models in the pipeline are loaded
@@ -90,7 +97,7 @@ class AutoModelPipeline:
 
         Args:
             pipline_id: Pipeline identifier. Use `list_available_pipelines()` to see
-                available options. Examples: "face-and-gaze-detection".
+                available options.
 
             models_parameters: Optional list of parameters for each model in the pipeline.
                 Can be:
@@ -114,7 +121,8 @@ class AutoModelPipeline:
                 Default: False.
 
             model_download_file_lock_acquire_timeout: Timeout in seconds for acquiring
-                file locks during concurrent downloads. Default: 10.
+                file locks during concurrent downloads. Default:
+                FILE_LOCK_ACQUIRE_TIMEOUT (600).
 
             allow_untrusted_packages: Allow loading model packages with custom code that
                 haven't been verified. **Security risk**. Default: False.
@@ -131,6 +139,9 @@ class AutoModelPipeline:
             download_files_without_hash: Allow downloading files without checksums.
                 **Security risk**. Default: False.
 
+            content_addressed_artifact_cache: Optional content-addressed cache shared
+                by every model loaded for the pipeline. Defaults to no remote cache.
+
             use_auto_resolution_cache: Enable caching of model resolution results.
                 Default: True.
 
@@ -140,6 +151,12 @@ class AutoModelPipeline:
                 paths. Default: True.
 
             model_access_manager: Custom model access control manager. Advanced usage only.
+
+            weights_provider_extra_query_params: Extra query parameters to pass to the weights' provider. Advanced
+                usage only.
+
+            weights_provider_extra_headers: Extra headers to pass to the weights' provider. Advanced
+                usage only.
 
             **kwargs: Additional pipeline-specific parameters passed to the pipeline's
                 `with_models()` method.
@@ -156,24 +173,24 @@ class AutoModelPipeline:
             Load pipeline with default models:
 
             >>> from inference_models import AutoModelPipeline
-            >>> pipeline = AutoModelPipeline.from_pretrained("face-and-gaze-detection")
+            >>> pipeline = AutoModelPipeline.from_pretrained("<pipeline-id>")
             >>> results = pipeline(image)
 
             Load pipeline with custom model parameters:
 
             >>> pipeline = AutoModelPipeline.from_pretrained(
-            ...     "face-and-gaze-detection",
+            ...     "<pipeline-id>",
             ...     models_parameters=[
-            ...         "mediapipe/face-detector",  # Use specific face detector
-            ...         {"model_id_or_path": "l2cs-net/rn50", "device": "cuda"}  # Custom gaze model
-            ...     ]
+            ...         "<model-id-1>",
+            ...         {"model_id_or_path": "<model-id-2>", "device": "cuda"},
+            ...     ],
             ... )
 
             Load with verbose logging:
 
             >>> pipeline = AutoModelPipeline.from_pretrained(
-            ...     "face-and-gaze-detection",
-            ...     verbose=True
+            ...     "<pipeline-id>",
+            ...     verbose=True,
             ... )
 
         See Also:
@@ -193,7 +210,7 @@ class AutoModelPipeline:
                 f"default values not registered in the library. If you run locally, please verify your "
                 f"integration - it must specify the models to be used by the pipeline. If you use Roboflow "
                 f"hosted solution, contact us to get help.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpipelineinitializationerror",
             )
         if models_parameters is None:
             models_parameters = default_parameters
@@ -232,6 +249,7 @@ class AutoModelPipeline:
                 allow_local_code_packages=allow_local_code_packages,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
+                content_addressed_artifact_cache=content_addressed_artifact_cache,
                 use_auto_resolution_cache=use_auto_resolution_cache,
                 auto_resolution_cache=auto_resolution_cache,
                 allow_direct_local_storage_loading=allow_direct_local_storage_loading,
@@ -239,6 +257,8 @@ class AutoModelPipeline:
                 nms_fusion_preferences=resolved_model_parameters.nms_fusion_preferences,
                 model_type=resolved_model_parameters.model_type,
                 task_type=resolved_model_parameters.task_type,
+                weights_provider_extra_query_params=weights_provider_extra_query_params,
+                weights_provider_extra_headers=weights_provider_extra_headers,
                 **resolved_model_parameters.kwargs,
             )
             models.append(model)

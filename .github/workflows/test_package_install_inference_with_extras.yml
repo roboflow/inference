@@ -9,6 +9,14 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 jobs:
   call_is_mergeable:
     uses: ./.github/workflows/check_if_branch_is_mergeable.yml
@@ -17,45 +25,45 @@ jobs:
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
-      labels: depot-ubuntu-22.04-8
+      labels: depot-ubuntu-22.04-4
       group: public-depot
     timeout-minutes: 35
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
-      - name: 🐍 Set up Python 3.9 to create wheels
-        uses: actions/setup-python@v2
+        uses: actions/checkout@v6
+      - name: 🐍 Set up Python 3.10 to create wheels
+        uses: actions/setup-python@v6
         with:
-          python-version: "3.9"
+          python-version: "3.10"
       - name: 🚧 Install GDAL OS library
         run: sudo apt-get update && sudo apt-get install libgdal-dev
       - name: 🛞 Create Wheels
         run: |
           make create_wheels
       - name: 🐍 Set up Python ${{ matrix.python-version }} to test package install process
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: 📦 Cache Python packages
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-package-install-inference-with-extras-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference-*-py3-none-any.whl | head -n 1`
-          pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]"
+          pip install --find-links dist/ "${wheel_name}[clip,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]" ./dist/inference_sdk-*-py3-none-any.whl ./dist/inference_models-*-py3-none-any.whl "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
+          # Dependencies were resolved above; now replace any same-version
+          # build-environment installs with the exact checkout artifacts.
+          pip install --force-reinstall --no-deps ./dist/roboflow_workflows-*.whl ./dist/inference_sdk-*.whl ./dist/inference_models-*.whl ./dist/streamvision-*.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
           python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
           python -c "from inference.models.clip import Clip"
-          python -c "from inference.models.gaze import Gaze"
           python -c "from inference.models.sam import SegmentAnything"
           python -c "from inference.models.grounding_dino import GroundingDINO"
           python -c "from inference.models.yolo_world import YOLOWorld"

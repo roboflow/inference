@@ -1,3 +1,6 @@
+import base64
+import os
+import warnings
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -10,6 +13,7 @@ from typing import (
     Tuple,
     Union,
 )
+from urllib.parse import urlencode
 
 import aiohttp
 import numpy as np
@@ -17,24 +21,35 @@ import requests
 from aiohttp import ClientConnectionError, ClientResponseError
 from requests import HTTPError, Response
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    InferenceSDKGuidanceWarning,
+    execution_id,
+    usage_source_tags,
+)
 from inference_sdk.http.entities import (
+    ACTION_RECOGNITION_TASK,
     ALL_ROBOFLOW_API_URLS,
     CLASSIFICATION_TASK,
     INSTANCE_SEGMENTATION_TASK,
     KEYPOINTS_DETECTION_TASK,
     OBJECT_DETECTION_TASK,
+    ApiKeyTransport,
     HTTPClientMode,
     ImagesReference,
     InferenceConfiguration,
     ModelDescription,
     RegisteredModels,
     ServerInfo,
+    VideoReference,
 )
 from inference_sdk.http.errors import (
     APIKeyNotProvided,
+    FeatureDeprecatedError,
     HTTPCallErrorError,
     HTTPClientError,
+    HTTPServerConnectionError,
+    InvalidInputFormatError,
     InvalidModelIdentifier,
     InvalidParameterError,
     ModelNotInitializedError,
@@ -47,8 +62,16 @@ from inference_sdk.http.utils.aliases import (
     resolve_ocr_path,
     resolve_roboflow_model_alias,
 )
+from inference_sdk.http.utils.anomaly_maps import decode_anomaly_detection_result
+from inference_sdk.http.utils.depth_maps import (
+    decode_depth_estimation_result,
+    warn_depth_map_json_format_deprecated,
+)
 from inference_sdk.http.utils.executors import (
+    UNKNOWN_MODEL_ID,
     RequestMethod,
+    collect_remote_processing_metadata_from_headers,
+    collect_remote_processing_metadata_from_response,
     execute_requests_packages,
     execute_requests_packages_async,
     send_post_request,
@@ -59,14 +82,15 @@ from inference_sdk.http.utils.loaders import (
     load_static_inference_input,
     load_static_inference_input_async,
     load_stream_inference_input,
+    uri_is_http_link,
 )
 from inference_sdk.http.utils.post_processing import (
     adjust_prediction_to_client_scaling_factor,
     combine_clip_embeddings,
-    combine_gaze_detections,
     decode_workflow_outputs,
     filter_model_descriptions,
     response_contains_jpeg_image,
+    split_image_embeddings,
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
@@ -88,11 +112,38 @@ SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
     "Content-Type": "application/json",
 }
+
+_DEFAULT_API_KEY_TRANSPORT_WARNED = False
+
+
+def _warn_about_default_api_key_transport_once() -> None:
+    global _DEFAULT_API_KEY_TRANSPORT_WARNED
+    if _DEFAULT_API_KEY_TRANSPORT_WARNED:
+        return
+    _DEFAULT_API_KEY_TRANSPORT_WARNED = True
+    warnings.warn(
+        "This client sends the Roboflow API key through the legacy channel "
+        "(query parameter / request body). Sending it as the "
+        "`Authorization: Bearer <api_key>` header is recommended and works "
+        "with inference servers from release 1.5.0 onward. Opt in with "
+        "InferenceConfiguration(api_key_transport='header'); use 'both' for "
+        "a transition period safe with every server version. Set "
+        "api_key_transport='legacy' "
+        "explicitly to keep the current behaviour and silence this warning.",
+        InferenceSDKGuidanceWarning,
+    )
+
+
+# Routes taking an image
 NEW_INFERENCE_ENDPOINTS = {
     INSTANCE_SEGMENTATION_TASK: "/infer/instance_segmentation",
     OBJECT_DETECTION_TASK: "/infer/object_detection",
     CLASSIFICATION_TASK: "/infer/classification",
     KEYPOINTS_DETECTION_TASK: "/infer/keypoints_detection",
+}
+# Routes taking a video clip
+VIDEO_INFERENCE_ENDPOINTS = {
+    ACTION_RECOGNITION_TASK: "/infer/action_recognition",
 }
 CLIP_ARGUMENT_TYPES = {"image", "text"}
 
@@ -105,7 +156,31 @@ if TYPE_CHECKING:
     from inference_sdk.webrtc.client import WebRTCClient
 
 
+def _collect_processing_time_from_response(
+    response: requests.Response,
+    model_id: str = UNKNOWN_MODEL_ID,
+) -> None:
+    collect_remote_processing_metadata_from_response(
+        response=response,
+        model_id=model_id,
+    )
+
+
 def wrap_errors(function: callable) -> callable:
+    """Translate synchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Client operation to wrap.
+
+    Returns:
+        callable: Operation preserving HTTP status and connection error categories.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails, including after retries.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If retries fail for another reason.
+    """
+
     def decorate(*args, **kwargs) -> Any:
         try:
             return function(*args, **kwargs)
@@ -117,13 +192,24 @@ def wrap_errors(function: callable) -> callable:
                     status_code=error.status_code,
                     api_message=None,
                 ) from error
+            if isinstance(
+                error.inner_error,
+                (ConnectionError, requests.exceptions.ConnectionError),
+            ):
+                raise HTTPServerConnectionError(
+                    "Error with server connection: "
+                    f"{deduct_api_key_from_string(str(error.inner_error))}"
+                ) from error
+
             raise HTTPClientError(
                 f"Original request failed and retry did not succeed. Details: {error}"
             ) from error
         except HTTPError as error:
             if "application/json" in error.response.headers.get("Content-Type", ""):
                 error_data = error.response.json()
-                api_message = error_data.get("message", "N/A")
+                api_message = (
+                    error_data.get("message") or error_data.get("detail") or "N/A"
+                )
                 if "inner_error_message" in error_data:
                     more_details = error_data["inner_error_message"]
                     api_message = f"{api_message}. More details: {more_details}"
@@ -134,8 +220,8 @@ def wrap_errors(function: callable) -> callable:
                 status_code=error.response.status_code,
                 api_message=api_message,
             ) from error
-        except ConnectionError as error:
-            raise HTTPClientError(
+        except (ConnectionError, requests.exceptions.ConnectionError) as error:
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
@@ -143,6 +229,20 @@ def wrap_errors(function: callable) -> callable:
 
 
 def wrap_errors_async(function: callable) -> callable:
+    """Translate asynchronous request failures into SDK exceptions.
+
+    Args:
+        function (callable): Async client operation to wrap.
+
+    Returns:
+        callable: Operation distinguishing connection failures from server timeouts.
+
+    Raises:
+        HTTPServerConnectionError: If a server connection fails.
+        HTTPCallErrorError: If the request receives an HTTP error status.
+        HTTPClientError: If the request times out while communicating with the server.
+    """
+
     async def decorate(*args, **kwargs) -> Any:
         try:
             return await function(*args, **kwargs)
@@ -152,8 +252,13 @@ def wrap_errors_async(function: callable) -> callable:
                 status_code=error.status,
                 api_message=deduct_api_key_from_string(error.message),
             ) from error
-        except ClientConnectionError as error:
+        except aiohttp.ServerTimeoutError as error:
+            # Includes read timeouts, which do not imply an unreachable server.
             raise HTTPClientError(
+                f"Server request timed out: {deduct_api_key_from_string(str(error))}"
+            ) from error
+        except ClientConnectionError as error:
+            raise HTTPServerConnectionError(
                 f"Error with server connection: {deduct_api_key_from_string(str(error))}"
             ) from error
 
@@ -220,6 +325,11 @@ class InferenceHTTPClient:
     ):
         """Initialize a new InferenceHTTPClient instance.
 
+        The channel used to send the API key (query/body vs
+        `Authorization: Bearer` header) is controlled by the
+        `api_key_transport` field of `InferenceConfiguration` - see
+        `configure()` / `use_configuration()`.
+
         Args:
             api_url (str): The base URL for the inference API.
             api_key (Optional[str], optional): API key for authentication. Defaults to None.
@@ -230,6 +340,8 @@ class InferenceHTTPClient:
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
         self.__webrtc_client: Optional["WebRTCClient"] = None
+        self.__webrtc_client_transport: Optional[ApiKeyTransport] = None
+        self.__webrtc_transport_stickiness_warned = False
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
@@ -268,7 +380,14 @@ class InferenceHTTPClient:
         from inference_sdk.webrtc.client import WebRTCClient
 
         if self.__webrtc_client is None:
-            self.__webrtc_client = WebRTCClient(self.__api_url, self.__api_key)
+            # The transport is captured ONCE here - later configuration
+            # changes do not re-sync it (see __warn_if_webrtc_transport_is_stale).
+            self.__webrtc_client_transport = self.__resolved_api_key_transport()
+            self.__webrtc_client = WebRTCClient(
+                self.__api_url,
+                self.__api_key,
+                api_key_transport=self.__webrtc_client_transport.value,
+            )
         return self.__webrtc_client
 
     @contextmanager
@@ -285,10 +404,12 @@ class InferenceHTTPClient:
         """
         previous_configuration = self.__inference_configuration
         self.__inference_configuration = inference_configuration
+        self.__warn_if_webrtc_transport_is_stale()
         try:
             yield self
         finally:
             self.__inference_configuration = previous_configuration
+            self.__warn_if_webrtc_transport_is_stale()
 
     def configure(
         self, inference_configuration: InferenceConfiguration
@@ -302,6 +423,7 @@ class InferenceHTTPClient:
             InferenceHTTPClient: The client instance with updated configuration.
         """
         self.__inference_configuration = inference_configuration
+        self.__warn_if_webrtc_transport_is_stale()
         return self
 
     def select_api_v0(self) -> "InferenceHTTPClient":
@@ -518,6 +640,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -560,9 +683,7 @@ class InferenceHTTPClient:
             max_height=max_height,
             max_width=max_width,
         )
-        params = {
-            "api_key": self.__api_key,
-        }
+        params = self.__legacy_api_key_payload()
         params.update(self.__inference_configuration.to_legacy_call_parameters())
 
         execution_id_value = execution_id.get()
@@ -574,7 +695,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -620,9 +741,7 @@ class InferenceHTTPClient:
             max_height=max_height,
             max_width=max_width,
         )
-        params = {
-            "api_key": self.__api_key,
-        }
+        params = self.__legacy_api_key_payload()
         params.update(self.__inference_configuration.to_legacy_call_parameters())
 
         execution_id_value = execution_id.get()
@@ -634,7 +753,7 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
             parameters=params,
             payload=None,
             max_batch_size=1,
@@ -660,6 +779,7 @@ class InferenceHTTPClient:
                         visualisation=parsed_response["visualization"],
                         expected_format=self.__inference_configuration.output_visualisation_format,
                     )
+                parsed_response = decode_anomaly_detection_result(parsed_response)
             parsed_response = adjust_prediction_to_client_scaling_factor(
                 prediction=parsed_response,
                 scaling_factor=request_data.image_scaling_factors[0],
@@ -694,6 +814,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
@@ -716,17 +839,14 @@ class InferenceHTTPClient:
             model_description=model_description,
             default_max_input_size=self.__inference_configuration.default_max_input_size,
         )
-        if model_description.task_type not in NEW_INFERENCE_ENDPOINTS:
-            raise ModelTaskTypeNotSupportedError(
-                f"Model task {model_description.task_type} is not supported by API v1 client."
-            )
+        _ensure_task_takes_an_image(task_type=model_description.task_type)
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
             max_height=max_height,
             max_width=max_width,
         )
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "model_id": model_id_to_be_used,
         }
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
@@ -736,11 +856,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
-            parameters=None,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -764,17 +885,16 @@ class InferenceHTTPClient:
             model_description=model_description,
             default_max_input_size=self.__inference_configuration.default_max_input_size,
         )
-        if model_description.task_type not in NEW_INFERENCE_ENDPOINTS:
-            raise ModelTaskTypeNotSupportedError(
-                f"Model task {model_description.task_type} is not supported by API v1 client."
-            )
+        _ensure_task_takes_an_image(
+            task_type=model_description.task_type, asynchronous=True
+        )
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
             max_height=max_height,
             max_width=max_width,
         )
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "model_id": model_id_to_be_used,
         }
         endpoint = NEW_INFERENCE_ENDPOINTS[model_description.task_type]
@@ -784,11 +904,12 @@ class InferenceHTTPClient:
                 task_type=model_description.task_type,
             )
         )
+        query_params = self.__inference_configuration.to_api_v1_query_parameters()
         requests_data = prepare_requests_data(
             url=f"{self.__api_url}{endpoint}",
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
-            parameters=None,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            parameters=query_params,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
             image_placement=ImagePlacement.JSON,
@@ -812,6 +933,9 @@ class InferenceHTTPClient:
                             expected_format=self.__inference_configuration.output_visualisation_format,
                         )
                     )
+                parsed_response_element = decode_anomaly_detection_result(
+                    parsed_response_element
+                )
                 parsed_response_element = adjust_prediction_to_client_scaling_factor(
                     prediction=parsed_response_element,
                     scaling_factor=scaling_factor,
@@ -906,9 +1030,10 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
-        response = requests.get(
-            f"{self.__api_url}/model/registry?api_key={self.__api_key}"
-        )
+        url = f"{self.__api_url}/model/registry"
+        if self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER:
+            url = f"{url}?api_key={self.__api_key}"
+        response = requests.get(url, headers=self.__headers_with_auth(None))
         response.raise_for_status()
         response_payload = response.json()
         return RegisteredModels.from_dict(response_payload)
@@ -926,9 +1051,12 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
+        url = f"{self.__api_url}/model/registry"
+        if self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER:
+            url = f"{url}?api_key={self.__api_key}"
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{self.__api_url}/model/registry?api_key={self.__api_key}"
+                url, headers=self.__headers_with_auth(None)
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
@@ -958,9 +1086,9 @@ class InferenceHTTPClient:
             f"{self.__api_url}/model/add",
             json={
                 "model_id": de_aliased_model_id,
-                "api_key": self.__api_key,
+                **self.__legacy_api_key_payload(),
             },
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -990,13 +1118,13 @@ class InferenceHTTPClient:
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         payload = {
             "model_id": de_aliased_model_id,
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.__api_url}/model/add",
                 json=payload,
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
@@ -1026,7 +1154,7 @@ class InferenceHTTPClient:
             json={
                 "model_id": de_aliased_model_id,
             },
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1047,7 +1175,7 @@ class InferenceHTTPClient:
                 json={
                     "model_id": de_aliased_model_id,
                 },
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
@@ -1061,7 +1189,10 @@ class InferenceHTTPClient:
     @wrap_errors
     def unload_all_models(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
-        response = requests.post(f"{self.__api_url}/model/clear")
+        response = requests.post(
+            f"{self.__api_url}/model/clear",
+            headers=self.__headers_with_auth(None),
+        )
         response.raise_for_status()
         response_payload = response.json()
         self.__selected_model = None
@@ -1071,7 +1202,10 @@ class InferenceHTTPClient:
     async def unload_all_models_async(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.__api_url}/model/clear") as response:
+            async with session.post(
+                f"{self.__api_url}/model/clear",
+                headers=self.__headers_with_auth(None),
+            ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
         self.__selected_model = None
@@ -1091,9 +1225,15 @@ class InferenceHTTPClient:
 
         Args:
             inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for OCR.
-            model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
+            model (str, optional): OCR model to use ('doctr', 'trocr', 'easy_ocr' or 'pp_ocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
+                For pp_ocr, the version selects the detection and recognition stages as
+                '{detection}-{recognition}', where each stage is one of 'none', 'tiny', 'small' or 'medium'
+                (default 'small-small'). Passing a single token (e.g. 'small') applies it to both stages.
+                Setting a stage to 'none' skips it: 'small-none' runs detection only (boxes without text),
+                'none-small' runs recognition only (each full input image is read as a single text line).
+                'none-none' is invalid.
             quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
             generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
                 with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
@@ -1126,7 +1266,10 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1154,9 +1297,15 @@ class InferenceHTTPClient:
 
         Args:
             inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for OCR.
-            model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
+            model (str, optional): OCR model to use ('doctr', 'trocr', 'easy_ocr' or 'pp_ocr'). Defaults to "doctr".
             version (Optional[str], optional): Model version to use. Defaults to None.
                 For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
+                For pp_ocr, the version selects the detection and recognition stages as
+                '{detection}-{recognition}', where each stage is one of 'none', 'tiny', 'small' or 'medium'
+                (default 'small-small'). Passing a single token (e.g. 'small') applies it to both stages.
+                Setting a stage to 'none' skips it: 'small-none' runs detection only (boxes without text),
+                'none-small' runs recognition only (each full input image is read as a single text line).
+                'none-none' is invalid.
             quantize: (Optional[bool]): flag of EasyOCR to decide which version of model to load
             generate_bounding_boxes: (Optional[bool]): flag of some models (like DocTR) to decide if output variant
                 with sv.Detections(...) compatible bounding boxes should be returned (due to historical reasons, some
@@ -1189,7 +1338,10 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1202,53 +1354,43 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
-    @wrap_errors
     def detect_gazes(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        """Detect gazes in input image(s).
+        """Deprecated. Always raises FeatureDeprecatedError.
 
-        Args:
-            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
-
-        Returns:
-            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+        Gaze detection has been removed from inference along with the
+        MediaPipe dependency. This helper short-circuits client-side and
+        never issues a network call.
 
         Raises:
-            WrongClientModeError: If not in API v1 mode.
-            HTTPCallErrorError: If there is an error in the HTTP call.
-            HTTPClientError: If there is an error with the server connection.
+            FeatureDeprecatedError: Always.
         """
-        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        result = self._post_images(
-            inference_input=inference_input, endpoint="/gaze/gaze_detection"
+        raise FeatureDeprecatedError(
+            feature="InferenceHTTPClient.detect_gazes",
+            reason="MediaPipe dependency removed from inference.",
+            removal_release="end of Q2 2026",
         )
-        return combine_gaze_detections(detections=result)
 
-    @wrap_errors_async
     async def detect_gazes_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
-        """Detect gazes in input image(s) asynchronously.
+        """Deprecated. Always raises FeatureDeprecatedError.
 
-        Args:
-            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
-
-        Returns:
-            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+        Gaze detection has been removed from inference along with the
+        MediaPipe dependency. This helper short-circuits client-side and
+        never issues a network call.
 
         Raises:
-            WrongClientModeError: If not in API v1 mode.
-            HTTPCallErrorError: If there is an error in the HTTP call.
-            HTTPClientError: If there is an error with the server connection.
+            FeatureDeprecatedError: Always.
         """
-        self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
-        result = await self._post_images_async(
-            inference_input=inference_input, endpoint="/gaze/gaze_detection"
+        raise FeatureDeprecatedError(
+            feature="InferenceHTTPClient.detect_gazes_async",
+            reason="MediaPipe dependency removed from inference.",
+            removal_release="end of Q2 2026",
         )
-        return combine_gaze_detections(detections=result)
 
     @wrap_errors
     def get_clip_image_embeddings(
@@ -1279,6 +1421,98 @@ class InferenceHTTPClient:
         )
         result = combine_clip_embeddings(embeddings=result)
         return unwrap_single_element_list(result)
+
+    @wrap_errors
+    def get_image_embeddings(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Get classifier features or logits with embedding-space metadata.
+
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
+        """
+        result = self._post_images(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload=self._image_embedding_payload(output_type=output_type),
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
+
+    @wrap_errors_async
+    async def get_image_embeddings_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        output_type: Literal["feature_vector", "logits"] = "feature_vector",
+    ) -> Union[dict, List[dict]]:
+        """Get classifier features or logits asynchronously.
+
+        Requires a server exposing ``POST /infer/embeddings``. Compare vectors
+        only when their ``embedding_info.space_id`` values match.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Image
+                or images to embed, using supported SDK image references.
+            model_id (str): Workspace model version or pretrained classification
+                alias, such as ``resnet101``.
+            output_type (Literal["feature_vector", "logits"]): Select features
+                before the final linear layer or logits before Softmax/Sigmoid.
+                Defaults to ``feature_vector``.
+
+        Returns:
+            Union[dict, List[dict]]: One result per image, in input order, with
+                ``embeddings`` containing one vector and ``embedding_info``
+                describing its space. A single-image result is returned as a dict.
+
+        Raises:
+            HTTPCallErrorError: If the server rejects the request, including an
+                unsupported model, unavailable embedding package, or invalid key.
+            HTTPClientError: If connecting to the inference server fails.
+        """
+        result = await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/infer/embeddings",
+            model_id=model_id,
+            extra_payload=self._image_embedding_payload(output_type=output_type),
+        )
+        return unwrap_single_element_list(split_image_embeddings(result))
+
+    def _image_embedding_payload(self, *, output_type: str) -> dict:
+        preprocessing = {
+            name: value
+            for name, value in self.__inference_configuration.to_classification_parameters().items()
+            if name.startswith("disable_preproc_")
+        }
+        payload = {
+            **preprocessing,
+            **self.__inference_configuration.to_source_parameters(),
+            "output_type": output_type,
+        }
+
+        return payload
 
     @wrap_errors_async
     async def get_clip_image_embeddings_async(
@@ -1337,11 +1571,13 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
+        )
+        _collect_processing_time_from_response(
+            response, model_id=clip_version or "clip"
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
@@ -1373,9 +1609,15 @@ class InferenceHTTPClient:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
                 json=payload,
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
+                # Billing parameters travel on the URL via __wrap_url_with_api_key; kept explicit because aioresponses tests pin this kwarg.
+                params=None,
             ) as response:
                 response.raise_for_status()
+                collect_remote_processing_metadata_from_headers(
+                    headers=response.headers,
+                    fallback_model_id=clip_version or "clip",
+                )
                 response_payload = await response.json()
         return unwrap_single_element_list(sequence=response_payload)
 
@@ -1440,11 +1682,13 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-
         response = requests.post(
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
+        )
+        _collect_processing_time_from_response(
+            response, model_id=clip_version or "clip"
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -1510,9 +1754,15 @@ class InferenceHTTPClient:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
                 json=payload,
-                headers=DEFAULT_HEADERS,
+                headers=self.__headers_with_auth(DEFAULT_HEADERS),
+                # Billing parameters travel on the URL via __wrap_url_with_api_key; kept explicit because aioresponses tests pin this kwarg.
+                params=None,
             ) as response:
                 response.raise_for_status()
+                collect_remote_processing_metadata_from_headers(
+                    headers=response.headers,
+                    fallback_model_id=clip_version or "clip",
+                )
                 return await response.json()
 
     @wrap_errors
@@ -1548,13 +1798,16 @@ class InferenceHTTPClient:
         execution_id_value = execution_id.get()
         if execution_id_value is not None:
             headers[EXECUTION_ID_HEADER] = execution_id_value
-
         response = requests.post(
             self.__wrap_url_with_api_key(
                 f"{self.__api_url}/perception_encoder/embed_text"
             ),
             json=payload,
-            headers=headers,
+            headers=self.__headers_with_auth(headers),
+        )
+        _collect_processing_time_from_response(
+            response,
+            model_id=perception_encoder_version or "perception_encoder",
         )
         api_key_safe_raise_for_status(response=response)
         return unwrap_single_element_list(sequence=response.json())
@@ -1566,6 +1819,8 @@ class InferenceHTTPClient:
         model_id: str,
         prompt: Optional[str] = None,
         model_id_in_path: bool = False,
+        max_new_tokens: Optional[int] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference using a Large Multimodal Model (LMM).
 
@@ -1585,6 +1840,10 @@ class InferenceHTTPClient:
             model_id_in_path (bool, optional): If True, includes model_id in the URL path
                 (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
                 If False (default), model_id is only sent in the request body.
+            max_new_tokens (Optional[int], optional): Maximum number of tokens to generate.
+                If not provided, the server-side model default is used.
+            enable_thinking (Optional[bool], optional): Enables reasoning mode for models
+                that support it. If not provided, the server-side model default is used.
 
         Returns:
             Union[dict, List[dict]]: Inference results containing the model response.
@@ -1597,6 +1856,10 @@ class InferenceHTTPClient:
         extra_payload = {"model_id": model_id}
         if prompt is not None:
             extra_payload["prompt"] = prompt
+        if max_new_tokens is not None:
+            extra_payload["max_new_tokens"] = max_new_tokens
+        if enable_thinking is not None:
+            extra_payload["enable_thinking"] = enable_thinking
 
         if model_id_in_path:
             endpoint = f"/infer/lmm/{model_id}"
@@ -1617,6 +1880,8 @@ class InferenceHTTPClient:
         model_id: str,
         prompt: Optional[str] = None,
         model_id_in_path: bool = False,
+        max_new_tokens: Optional[int] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> Union[dict, List[dict]]:
         """Run inference using a Large Multimodal Model (LMM) asynchronously.
 
@@ -1631,6 +1896,10 @@ class InferenceHTTPClient:
             model_id_in_path (bool, optional): If True, includes model_id in the URL path
                 (e.g., /infer/lmm/florence-2-base) which enables path-based routing.
                 If False (default), model_id is only sent in the request body.
+            max_new_tokens (Optional[int], optional): Maximum number of tokens to generate.
+                If not provided, the server-side model default is used.
+            enable_thinking (Optional[bool], optional): Enables reasoning mode for models
+                that support it. If not provided, the server-side model default is used.
 
         Returns:
             Union[dict, List[dict]]: Inference results containing the model response.
@@ -1642,6 +1911,10 @@ class InferenceHTTPClient:
         extra_payload = {"model_id": model_id}
         if prompt is not None:
             extra_payload["prompt"] = prompt
+        if max_new_tokens is not None:
+            extra_payload["max_new_tokens"] = max_new_tokens
+        if enable_thinking is not None:
+            extra_payload["enable_thinking"] = enable_thinking
 
         if model_id_in_path:
             endpoint = f"/infer/lmm/{model_id}"
@@ -1660,6 +1933,8 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
+        model_id_in_path: bool = False,
+        depth_map_format: str = "json",
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s).
 
@@ -1674,29 +1949,62 @@ class InferenceHTTPClient:
                 - "depth-anything-v2/small"
                 - "depth-anything-v3/small"
                 - "depth-anything-v3/base"
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                (e.g., /infer/depth-estimation/depth-anything-v3/small), which enables
+                path-based routing. If False (default), model_id is only sent in the
+                request body.
+            depth_map_format (str, optional): Requested serialization for
+                `normalized_depth` on the wire: "json" (default, legacy nested
+                float list), "png16" (compact base64 16-bit PNG, typically >10x
+                smaller payload, decoded client-side to a numpy array) or "png8"
+                (smaller still, 256 depth levels). The "json" default is
+                deprecated: in one of the first `inference` releases of 2027 the
+                default becomes "png16" in a breaking way (`normalized_depth`
+                turns into a numpy.ndarray), and an
+                InferenceSDKDeprecationWarning is emitted when "json" is used
+                (shown once per process under default warning filters).
+                Servers that predate this field ignore it and return the
+                legacy list.
 
         Returns:
             Union[dict, List[dict]]: Depth estimation results containing:
-                - normalized_depth: The normalized depth map as a list
+                - normalized_depth: Per-image normalized ordinal depth as a list,
+                  where 1 is nearest and 0 is farthest. Values are not physical
+                  distances or directly comparable across images or model families
+                  without calibration. Nested float list for "json" (default);
+                  numpy array for "png16"/"png8" (PNG payloads are decoded
+                  automatically; legacy servers returning float lists pass
+                  through unchanged regardless of the requested format)
                 - image: Hex-encoded visualization of the depth map
 
         Raises:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        extra_payload = {"model_id": model_id}
+        if depth_map_format == "json":
+            warn_depth_map_json_format_deprecated()
+        extra_payload = {
+            "model_id": model_id,
+            "depth_map_format": depth_map_format,
+        }
+        if model_id_in_path:
+            endpoint = f"/infer/depth-estimation/{model_id}"
+        else:
+            endpoint = "/infer/depth-estimation"
         result = self._post_images(
             inference_input=inference_input,
-            endpoint="/infer/depth-estimation",
+            endpoint=endpoint,
             extra_payload=extra_payload,
         )
-        return result
+        return decode_depth_estimation_result(result)
 
     @wrap_errors_async
     async def depth_estimation_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str = "depth-anything-v3/small",
+        model_id_in_path: bool = False,
+        depth_map_format: str = "json",
     ) -> Union[dict, List[dict]]:
         """Run depth estimation on input image(s) asynchronously.
 
@@ -1705,21 +2013,47 @@ class InferenceHTTPClient:
                 for depth estimation.
             model_id (str, optional): The depth estimation model to use. Defaults to
                 "depth-anything-v3/small".
+            model_id_in_path (bool, optional): If True, includes model_id in the URL path
+                for path-based routing. If False (default), model_id is only sent in the
+                request body.
+            depth_map_format (str, optional): Requested serialization for
+                `normalized_depth` on the wire: "json" (default, legacy nested
+                float list), "png16" (compact base64 16-bit PNG decoded
+                client-side to a numpy array) or "png8" (smaller still, 256
+                depth levels). The "json" default is deprecated: in one of the
+                first `inference` releases of 2027 the default becomes "png16"
+                in a breaking way (`normalized_depth` turns into a
+                numpy.ndarray), and an InferenceSDKDeprecationWarning is
+                emitted when "json" is used (shown once per process under
+                default warning filters). Servers that predate this field
+                ignore it and return the legacy list.
 
         Returns:
-            Union[dict, List[dict]]: Depth estimation results.
+            Union[dict, List[dict]]: Depth estimation results containing per-image
+                normalized ordinal depth, where 1 is nearest and 0 is farthest. `normalized_depth`
+                is a nested float list for "json" (default) and a numpy array for
+                "png16"/"png8".
 
         Raises:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        extra_payload = {"model_id": model_id}
+        if depth_map_format == "json":
+            warn_depth_map_json_format_deprecated()
+        extra_payload = {
+            "model_id": model_id,
+            "depth_map_format": depth_map_format,
+        }
+        if model_id_in_path:
+            endpoint = f"/infer/depth-estimation/{model_id}"
+        else:
+            endpoint = "/infer/depth-estimation"
         result = await self._post_images_async(
             inference_input=inference_input,
-            endpoint="/infer/depth-estimation",
+            endpoint=endpoint,
             extra_payload=extra_payload,
         )
-        return result
+        return decode_depth_estimation_result(result)
 
     @wrap_errors
     def sam2_segment_image(
@@ -1820,6 +2154,12 @@ class InferenceHTTPClient:
         inference_input: ImagesReference,
         mask_input: Any,
         model_id: str = "sam3-3d-objects",
+        *,
+        output_meshes: bool = True,
+        output_scene: bool = True,
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        use_distillations: bool = False,
     ) -> dict:
         """Generate 3D meshes and Gaussian splatting from a 2D image with mask prompts.
 
@@ -1835,14 +2175,21 @@ class InferenceHTTPClient:
                 - RLE dictionary
                 - List of any of the above for multiple masks
             model_id (str, optional): The SAM3 3D model to use. Defaults to "sam3-3d-objects".
+            output_meshes (bool, optional): SAM3 3D always outputs object gaussians, and can
+                optionally output object meshes if output_meshes is True. Defaults to True.
+            output_scene (bool, optional): Output the combined scene reconstruction in
+                addition to individual object reconstructions. Defaults to True.
+            with_mesh_postprocess (bool, optional): Enable mesh postprocessing. Defaults to True.
+            with_texture_baking (bool, optional): Enable texture baking for meshes. Defaults to True.
+            use_distillations (bool, optional): Use the distilled versions of the model components.
 
         Returns:
             dict: Response containing base64-encoded 3D outputs:
-                - mesh_glb: Scene mesh in GLB format (base64 encoded)
+                - mesh_glb: Scene mesh in GLB format (base64 encoded) if output_meshes=True, otherwise None.
                 - gaussian_ply: Combined Gaussian splatting in PLY format (base64 encoded)
                 - objects: List of individual objects, each containing:
-                    - mesh_glb: Object mesh (base64)
-                    - gaussian_ply: Object Gaussian (base64)
+                    - mesh_glb: Object mesh (base64) if output_scene=True and output_meshes=True, otherwise None.
+                    - gaussian_ply: Object Gaussian (base64) if output_scene=True, otherwise None.
                     - metadata: {"rotation": [...], "translation": [...], "scale": [...]}
                 - time: Inference time in seconds
 
@@ -1856,12 +2203,20 @@ class InferenceHTTPClient:
         payload = self.__initialise_payload()
         payload["model_id"] = model_id
         payload["mask_input"] = mask_input
+        payload["output_meshes"] = output_meshes
+        payload["output_scene"] = output_scene
+        payload["with_mesh_postprocess"] = with_mesh_postprocess
+        payload["with_texture_baking"] = with_texture_baking
+        payload["use_distillations"] = use_distillations
 
         url = self.__wrap_url_with_api_key(f"{self.__api_url}/sam3_3d/infer")
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1880,6 +2235,12 @@ class InferenceHTTPClient:
         inference_input: ImagesReference,
         mask_input: Any,
         model_id: str = "sam3-3d-objects",
+        *,
+        output_meshes: bool = True,
+        output_scene: bool = True,
+        with_mesh_postprocess: bool = True,
+        with_texture_baking: bool = True,
+        use_distillations: bool = False,
     ) -> dict:
         """Generate 3D meshes and Gaussian splatting from a 2D image asynchronously.
 
@@ -1887,9 +2248,23 @@ class InferenceHTTPClient:
             inference_input (ImagesReference): Input image for 3D generation.
             mask_input (Any): Mask input in any supported format.
             model_id (str, optional): The SAM3 3D model to use. Defaults to "sam3-3d-objects".
+            output_meshes (bool, optional): SAM3 3D always outputs object gaussians, and can
+                optionally output object meshes if output_meshes is True. Defaults to True.
+            output_scene (bool, optional): Output the combined scene reconstruction in
+                addition to individual object reconstructions. Defaults to True.
+            with_mesh_postprocess (bool, optional): Enable mesh postprocessing. Defaults to True.
+            with_texture_baking (bool, optional): Enable texture baking for meshes. Defaults to True.
+            use_distillations (bool, optional): Use the distilled versions of the model components.
 
         Returns:
-            dict: Response containing base64-encoded 3D outputs.
+            dict: Response containing base64-encoded 3D outputs:
+                - mesh_glb: Scene mesh in GLB format (base64 encoded) if output_meshes=True, otherwise None.
+                - gaussian_ply: Combined Gaussian splatting in PLY format (base64 encoded)
+                - objects: List of individual objects, each containing:
+                    - mesh_glb: Object mesh (base64) if output_scene=True and output_meshes=True, otherwise None.
+                    - gaussian_ply: Object Gaussian (base64) if output_scene=True, otherwise None.
+                    - metadata: {"rotation": [...], "translation": [...], "scale": [...]}
+                - time: Inference time in seconds
 
         Raises:
             HTTPCallErrorError: If there is an error in the HTTP call.
@@ -1901,12 +2276,20 @@ class InferenceHTTPClient:
         payload = self.__initialise_payload()
         payload["model_id"] = model_id
         payload["mask_input"] = mask_input
+        payload["output_meshes"] = output_meshes
+        payload["output_scene"] = output_scene
+        payload["with_mesh_postprocess"] = with_mesh_postprocess
+        payload["with_texture_baking"] = with_texture_baking
+        payload["use_distillations"] = use_distillations
 
         url = self.__wrap_url_with_api_key(f"{self.__api_url}/sam3_3d/infer")
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -1918,6 +2301,197 @@ class InferenceHTTPClient:
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
         return responses[0]
+
+    @wrap_errors
+    def sam3_concept_segment(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: List[dict],
+        model_id: str = "sam3/sam3_final",
+        output_prob_thresh: float = 0.5,
+        nms_iou_threshold: Optional[float] = None,
+        format: str = "polygon",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable concept segmentation (PCS) on input image(s).
+
+        Performs zero-shot instance segmentation using text or visual prompts.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts, each with keys like "type", "text",
+                "output_prob_thresh", "boxes", "box_labels".
+            model_id: SAM3 model to use. Defaults to "sam3/sam3_final".
+            output_prob_thresh: Global confidence threshold. Defaults to 0.5.
+            nms_iou_threshold: IoU threshold for cross-prompt NMS. None disables NMS.
+            format: Output mask format, "polygon" or "rle". Defaults to "polygon".
+
+        Returns:
+            Segmentation results with prompt_results containing predictions.
+        """
+        extra_payload = {
+            "model_id": model_id,
+            "prompts": prompts,
+            "output_prob_thresh": output_prob_thresh,
+            "format": format,
+        }
+        if nms_iou_threshold is not None:
+            extra_payload["nms_iou_threshold"] = nms_iou_threshold
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/concept_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors_async
+    async def sam3_concept_segment_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: List[dict],
+        model_id: str = "sam3/sam3_final",
+        output_prob_thresh: float = 0.5,
+        nms_iou_threshold: Optional[float] = None,
+        format: str = "polygon",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable concept segmentation (PCS) asynchronously.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts.
+            model_id: SAM3 model to use. Defaults to "sam3/sam3_final".
+            output_prob_thresh: Global confidence threshold. Defaults to 0.5.
+            nms_iou_threshold: IoU threshold for cross-prompt NMS. None disables NMS.
+            format: Output mask format, "polygon" or "rle". Defaults to "polygon".
+
+        Returns:
+            Segmentation results with prompt_results containing predictions.
+        """
+        extra_payload = {
+            "model_id": model_id,
+            "prompts": prompts,
+            "output_prob_thresh": output_prob_thresh,
+            "format": format,
+        }
+        if nms_iou_threshold is not None:
+            extra_payload["nms_iou_threshold"] = nms_iou_threshold
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/concept_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors
+    def sam3_visual_segment(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable visual segmentation (PVS) on input image(s).
+
+        Performs instance segmentation using point or box prompts.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts with "box" and/or "points" keys.
+                Defaults to None (automatic segmentation).
+            multimask_output: Whether to output multiple masks per prompt.
+                Defaults to True.
+            mask_input_format: Format for mask output. Defaults to "json".
+
+        Returns:
+            Segmentation results containing predictions with masks.
+        """
+        extra_payload = {
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/visual_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors_async
+    async def sam3_visual_segment_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        prompts: Optional[List[dict]] = None,
+        multimask_output: bool = True,
+        mask_input_format: str = "json",
+    ) -> Union[dict, List[dict]]:
+        """Run SAM3 promptable visual segmentation (PVS) asynchronously.
+
+        Args:
+            inference_input: Input image(s) for segmentation.
+            prompts: List of prompt dicts. Defaults to None.
+            multimask_output: Whether to output multiple masks. Defaults to True.
+            mask_input_format: Format for mask output. Defaults to "json".
+
+        Returns:
+            Segmentation results containing predictions with masks.
+        """
+        extra_payload = {
+            "multimask_output": multimask_output,
+            "format": mask_input_format,
+        }
+        if prompts is not None:
+            extra_payload["prompts"] = {"prompts": prompts}
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/visual_segment",
+            extra_payload=extra_payload,
+        )
+
+    @wrap_errors
+    def sam3_embed_image(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        image_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Generate SAM3 image embeddings.
+
+        Args:
+            inference_input: Input image(s) to embed.
+            image_id: Optional cache ID for embeddings. Defaults to None.
+
+        Returns:
+            Embedding results with image_id and processing time.
+        """
+        extra_payload = {}
+        if image_id is not None:
+            extra_payload["image_id"] = image_id
+        return self._post_images(
+            inference_input=inference_input,
+            endpoint="/sam3/embed_image",
+            extra_payload=extra_payload if extra_payload else None,
+        )
+
+    @wrap_errors_async
+    async def sam3_embed_image_async(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        image_id: Optional[str] = None,
+    ) -> Union[dict, List[dict]]:
+        """Generate SAM3 image embeddings asynchronously.
+
+        Args:
+            inference_input: Input image(s) to embed.
+            image_id: Optional cache ID for embeddings. Defaults to None.
+
+        Returns:
+            Embedding results with image_id and processing time.
+        """
+        extra_payload = {}
+        if image_id is not None:
+            extra_payload["image_id"] = image_id
+        return await self._post_images_async(
+            inference_input=inference_input,
+            endpoint="/sam3/embed_image",
+            extra_payload=extra_payload if extra_payload else None,
+        )
 
     @deprecated(
         reason="Please use run_workflow(...) method. This method will be removed end of Q2 2024"
@@ -1933,6 +2507,8 @@ class InferenceHTTPClient:
         excluded_fields: Optional[List[str]] = None,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -1956,6 +2532,8 @@ class InferenceHTTPClient:
             excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
+            disable_sinks (bool, optional): Whether to disable sink writes and outbound
+                notifications/uploads. Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.
@@ -1975,6 +2553,8 @@ class InferenceHTTPClient:
             legacy_endpoints=True,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
+            disable_sinks=disable_sinks,
         )
 
     @wrap_errors
@@ -1988,6 +2568,8 @@ class InferenceHTTPClient:
         excluded_fields: Optional[List[str]] = None,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> List[Dict[str, Any]]:
         """Run inference using a workflow specification.
 
@@ -2019,6 +2601,8 @@ class InferenceHTTPClient:
             excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
             use_cache (bool, optional): Whether to use cached results. Defaults to True.
             enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
+            disable_sinks (bool, optional): Whether to disable sink writes and outbound
+                notifications/uploads. Defaults to False.
 
         Returns:
             List[Dict[str, Any]]: Results of the workflow execution.
@@ -2038,6 +2622,8 @@ class InferenceHTTPClient:
             legacy_endpoints=False,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
+            disable_sinks=disable_sinks,
         )
 
     def _run_workflow(
@@ -2051,6 +2637,8 @@ class InferenceHTTPClient:
         legacy_endpoints: bool = False,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> List[Dict[str, Any]]:
         response = self._execute_workflow_request(
             workspace_name=workspace_name,
@@ -2062,6 +2650,8 @@ class InferenceHTTPClient:
             legacy_endpoints=legacy_endpoints,
             use_cache=use_cache,
             enable_profiling=enable_profiling,
+            workflow_version_id=workflow_version_id,
+            disable_sinks=disable_sinks,
         )
         response_data = response.json()
         workflow_outputs = response_data["outputs"]
@@ -2087,6 +2677,8 @@ class InferenceHTTPClient:
         legacy_endpoints: bool = False,
         use_cache: bool = True,
         enable_profiling: bool = False,
+        workflow_version_id: Optional[str] = None,
+        disable_sinks: bool = False,
     ) -> Response:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
@@ -2101,10 +2693,12 @@ class InferenceHTTPClient:
         if parameters is None:
             parameters = {}
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "use_cache": use_cache,
             "enable_profiling": enable_profiling,
         }
+        if disable_sinks:
+            payload["disable_sinks"] = True
         inputs = {}
         for image_name, image in images.items():
             loaded_image = load_nested_batches_of_inference_input(
@@ -2127,6 +2721,8 @@ class InferenceHTTPClient:
             else:
                 url = f"{self.__api_url}/workflows/run"
         else:
+            if workflow_version_id is not None:
+                payload["workflow_version_id"] = workflow_version_id
             if legacy_endpoints:
                 url = f"{self.__api_url}/infer/workflows/{workspace_name}/{workflow_id}"
             else:
@@ -2134,10 +2730,193 @@ class InferenceHTTPClient:
         response = send_post_request(
             url=url,
             payload=payload,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
             enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
         )
         return response
+
+    @wrap_errors
+    def infer_on_video(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        """Run a video model over one clip, sent whole.
+
+        Args:
+            video_reference (VideoReference): URL or local path of the clip.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Returns:
+            dict: `timeline` over the clip, with `source_fps`, `frame_count` and `windows_classified`.
+
+        Raises:
+            InvalidInputFormatError: If the reference is neither a URL nor an existing path.
+            ModelTaskTypeNotSupportedError: If the model takes images (API v1 only).
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        if self.__client_mode is HTTPClientMode.V0:
+            return self.infer_on_video_from_api_v0(
+                video_reference=video_reference,
+                model_id=model_id,
+            )
+        return self.infer_on_video_from_api_v1(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+
+    @wrap_errors_async
+    async def infer_on_video_async(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        """Run a video model over one clip asynchronously. See ``infer_on_video``.
+
+        Args:
+            video_reference (VideoReference): URL or local path of the clip.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Returns:
+            dict: `timeline` over the clip, with `source_fps`, `frame_count` and `windows_classified`.
+
+        Raises:
+            InvalidInputFormatError: If the reference is neither a URL nor an existing path.
+            ModelTaskTypeNotSupportedError: If the model takes images (API v1 only).
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
+        if self.__client_mode is HTTPClientMode.V0:
+            return await self.infer_on_video_from_api_v0_async(
+                video_reference=video_reference,
+                model_id=model_id,
+            )
+        return await self.infer_on_video_from_api_v1_async(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+
+    def infer_on_video_from_api_v0(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        url, params, data, headers = self.__build_v0_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+        response = requests.post(url, params=params, data=data, headers=headers)
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    async def infer_on_video_from_api_v0_async(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        url, params, data, headers = self.__build_v0_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url, params=params, data=data, headers=headers
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+
+    def infer_on_video_from_api_v1(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        model_id = self.__resolve_video_model_id(model_id=model_id)
+        task_type = self.get_model_description(model_id=model_id).task_type
+        url, payload = self.__build_v1_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+            task_type=task_type,
+        )
+        response = requests.post(
+            url, json=payload, headers=self.__headers_with_auth(DEFAULT_HEADERS)
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    async def infer_on_video_from_api_v1_async(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str] = None,
+    ) -> dict:
+        model_id = self.__resolve_video_model_id(model_id=model_id)
+        description = await self.get_model_description_async(model_id=model_id)
+        url, payload = self.__build_v1_video_request(
+            video_reference=video_reference,
+            model_id=model_id,
+            task_type=description.task_type,
+            asynchronous=True,
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url, json=payload, headers=self.__headers_with_auth(DEFAULT_HEADERS)
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+
+    def __resolve_video_model_id(self, model_id: Optional[str]) -> str:
+        model_id_to_be_used = model_id or self.__selected_model
+        _ensure_model_is_selected(model_id=model_id_to_be_used)
+        return resolve_roboflow_model_alias(model_id=model_id_to_be_used)
+
+    def __build_v0_video_request(
+        self,
+        video_reference: VideoReference,
+        model_id: Optional[str],
+    ) -> Tuple[str, dict, Optional[str], dict]:
+        video_type, video = _resolve_video_payload(video_reference=video_reference)
+        model_id = self.__resolve_video_model_id(model_id=model_id)
+        model_id_chunks = model_id.split("/")
+        if len(model_id_chunks) != 2:
+            raise InvalidModelIdentifier(
+                f"Invalid model id: {model_id}. Expected format: project_id/model_version_id."
+            )
+        params = self.__legacy_api_key_payload()
+        class_filter = self.__inference_configuration.class_filter
+        if class_filter:
+            params["class_filter"] = ",".join(class_filter)
+        url = f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}"
+        headers = dict(self.__headers_with_auth(DEFAULT_HEADERS) or {})
+        if video_type == "url":
+            params["image"] = video
+            return url, params, None, headers
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        return url, params, video, headers
+
+    def __build_v1_video_request(
+        self,
+        video_reference: VideoReference,
+        model_id: str,
+        task_type: str,
+        asynchronous: bool = False,
+    ) -> Tuple[str, dict]:
+        if task_type not in VIDEO_INFERENCE_ENDPOINTS:
+            image_door = "infer_async()" if asynchronous else "infer()"
+            raise ModelTaskTypeNotSupportedError(
+                f"Model task {task_type} takes images, not a clip. Use {image_door} "
+                f"for one image or infer_on_stream() to classify a video frame by frame."
+            )
+        video_type, video = _resolve_video_payload(video_reference=video_reference)
+        payload = self.__initialise_payload()
+        payload["model_id"] = model_id
+        payload["video"] = {"type": video_type, "value": video}
+        class_filter = self.__inference_configuration.class_filter
+        if class_filter is not None:
+            payload["class_filter"] = class_filter
+        url = self.__wrap_url_with_api_key(
+            f"{self.__api_url}{VIDEO_INFERENCE_ENDPOINTS[task_type]}"
+        )
+        return url, payload
 
     @wrap_errors
     def infer_from_yolo_world(
@@ -2180,7 +2959,10 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2234,7 +3016,10 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=1,
@@ -2266,7 +3051,7 @@ class InferenceHTTPClient:
         source_buffer_consumption_strategy: Optional[
             BufferConsumptionStrategy
         ] = "EAGER",
-        video_source_properties: Optional[Dict[str, float]] = None,
+        video_source_properties: Optional[Dict[str, Union[float, str]]] = None,
         batch_collection_timeout: Optional[float] = None,
         results_buffer_size: int = 64,
     ) -> dict:
@@ -2315,7 +3100,7 @@ class InferenceHTTPClient:
                 "`workflow_specification`, but at least one must be set."
             )
         payload = {
-            "api_key": self.__api_key,
+            **self.__legacy_api_key_payload(),
             "video_configuration": {
                 "type": "VideoConfiguration",
                 "video_reference": video_reference,
@@ -2344,6 +3129,7 @@ class InferenceHTTPClient:
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/initialise",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         response.raise_for_status()
         return response.json()
@@ -2366,10 +3152,11 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/list",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2393,10 +3180,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2423,10 +3211,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/pause",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2453,10 +3242,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/resume",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2483,10 +3273,11 @@ class InferenceHTTPClient:
             ValueError: If pipeline_id is empty or None.
         """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
-        payload = {"api_key": self.__api_key}
+        payload = self.__legacy_api_key_payload()
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/terminate",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2518,10 +3309,14 @@ class InferenceHTTPClient:
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         if excluded_fields is None:
             excluded_fields = []
-        payload = {"api_key": self.__api_key, "excluded_fields": excluded_fields}
+        payload = {
+            **self.__legacy_api_key_payload(),
+            "excluded_fields": excluded_fields,
+        }
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/consume",
             json=payload,
+            headers=self.__headers_with_auth(None),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2549,7 +3344,10 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -2582,7 +3380,10 @@ class InferenceHTTPClient:
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
-            headers=DEFAULT_HEADERS,
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            # Billing parameters travel on the URL query string instead - see
+            # __wrap_url_with_api_key - so passing them here too would
+            # double-append them onto the final request.
             parameters=None,
             payload=payload,
             max_batch_size=self.__inference_configuration.max_batch_size,
@@ -2595,19 +3396,151 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
+    def __warn_if_webrtc_transport_is_stale(self) -> None:
+        # The webrtc namespace captures the api-key transport once, at first
+        # `client.webrtc` access, and deliberately keeps it (a streaming
+        # session should not change auth mid-flight). This warns - once per
+        # client - when a configuration change diverges from that captured
+        # value, so the change is not silently ignored for streaming.
+        if self.__webrtc_client is None or self.__webrtc_transport_stickiness_warned:
+            return
+        configured = (
+            self.__inference_configuration.api_key_transport or ApiKeyTransport.LEGACY
+        )
+        if configured is self.__webrtc_client_transport:
+            return
+        self.__webrtc_transport_stickiness_warned = True
+        warnings.warn(
+            f"api_key_transport changed to '{configured.value}', but this "
+            f"client's WebRTC namespace was already initialised with "
+            f"'{self.__webrtc_client_transport.value}' and keeps it - the "
+            "transport is captured once at first `client.webrtc` access. "
+            "Build a new InferenceHTTPClient to stream with a different "
+            "transport.",
+            InferenceSDKGuidanceWarning,
+        )
+
+    def __resolved_api_key_transport(self) -> ApiKeyTransport:
+        # None means the user made no choice - resolve to the legacy channel
+        # (today's default) and recommend moving to the header transport once
+        # per process. An explicit "legacy" stays silent.
+        transport = self.__inference_configuration.api_key_transport
+        if transport is None:
+            _warn_about_default_api_key_transport_once()
+            return ApiKeyTransport.LEGACY
+        return transport
+
+    def __auth_headers(self) -> Dict[str, str]:
+        # Non-empty only in "both" / "header" transport modes - the header is
+        # the same form the SDK already uses toward the platform API
+        # (inference_sdk/webrtc/model_workflows.py). The key travels in a
+        # header - never in the URL - so request exceptions (whose text embeds
+        # the URL) cannot leak it.
+        if (
+            self.__resolved_api_key_transport() is ApiKeyTransport.LEGACY
+            or self.__api_key is None
+        ):
+            return {}
+        return {"Authorization": f"Bearer {self.__api_key}"}
+
+    def __headers_with_auth(
+        self, headers: Optional[Dict[str, str]]
+    ) -> Optional[Dict[str, str]]:
+        # Returns the input untouched in legacy mode so shared dicts
+        # (DEFAULT_HEADERS) are never mutated and wire behaviour stays
+        # byte-identical for the default transport.
+        auth_headers = self.__auth_headers()
+        if not auth_headers:
+            return headers
+        if headers is None:
+            return auth_headers
+        return {**headers, **auth_headers}
+
+    def __legacy_api_key_payload(self) -> dict:
+        # The `api_key` entry for query-params / JSON-body dicts. Suppressed
+        # only in "header" mode - "both" keeps the legacy channels intact.
+        if self.__resolved_api_key_transport() is ApiKeyTransport.HEADER:
+            return {}
+        return {"api_key": self.__api_key}
+
     def __initialise_payload(self) -> dict:
-        if self.__client_mode is not HTTPClientMode.V0:
-            return {"api_key": self.__api_key}
-        return {}
+        payload = self.__inference_configuration.to_source_parameters()
+        if (
+            self.__client_mode is not HTTPClientMode.V0
+            and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
+        ):
+            payload["api_key"] = self.__api_key
+        return payload
 
     def __wrap_url_with_api_key(self, url: str) -> str:
-        if self.__client_mode is not HTTPClientMode.V0:
+        # The one URL seam every hand-built request method routes through, so
+        # it also appends the current billing query parameters (explicit
+        # configuration, or the outbound forwarding-authority context read at
+        # send time) - the standard v0/v1 `infer()` methods serialize those
+        # through `InferenceConfiguration` instead, and never call this.
+        query_params: Dict[str, Any] = {}
+        if usage_source_tags.get():
+            query_params.update(
+                self.__inference_configuration.to_source_parameters(include_origin=True)
+            )
+        if (
+            self.__client_mode is HTTPClientMode.V0
+            and self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER
+        ):
+            query_params["api_key"] = self.__api_key
+        billing_query_parameters = (
+            self.__inference_configuration.to_billing_query_parameters()
+        )
+        if billing_query_parameters:
+            query_params.update(billing_query_parameters)
+        if not query_params:
             return url
-        return f"{url}?api_key={self.__api_key}"
+        return f"{url}?{urlencode(query_params)}"
 
     def __ensure_v1_client_mode(self) -> None:
         if self.__client_mode is not HTTPClientMode.V1:
             raise WrongClientModeError("Use client mode `v1` to run this operation.")
+
+
+def _resolve_video_payload(video_reference: VideoReference) -> Tuple[str, str]:
+    """Turn what the caller handed over into a transport and a value.
+
+    A URL is forwarded for the server to fetch. A local path is read here on
+    purpose, rather than by falling through an image loader that happens to
+    skip decoding. Anything else is an error, not a guess. Encoded bytes are
+    not accepted, because an image reference does not accept them either.
+    """
+    if not isinstance(video_reference, str):
+        raise InvalidInputFormatError(
+            f"Unknown type of video reference ({type(video_reference).__name__}). "
+            "Pass a URL or a local path."
+        )
+    if uri_is_http_link(uri=video_reference):
+        return "url", video_reference
+    if os.path.isfile(video_reference):
+        with open(video_reference, "rb") as clip:
+            return "base64", base64.b64encode(clip.read()).decode("utf-8")
+    raise InvalidInputFormatError(
+        f"Video reference is neither a URL nor an existing file: {video_reference!r}. "
+        "Pass a URL or a local path."
+    )
+
+
+def _ensure_task_takes_an_image(task_type: str, asynchronous: bool = False) -> None:
+    """Refuse a video model at the image door, and say where the clip goes."""
+    if task_type in NEW_INFERENCE_ENDPOINTS:
+        return
+    if task_type in VIDEO_INFERENCE_ENDPOINTS:
+        clip_door = "infer_on_video_async()" if asynchronous else "infer_on_video()"
+        # infer_on_stream has no async twin, so it keeps its name either way.
+        raise ModelTaskTypeNotSupportedError(
+            f"Model task {task_type} takes a clip, not an image. Use {clip_door} "
+            f"to send a clip whole, or infer_on_stream() to classify a video "
+            f"frame by frame with an image model."
+        )
+    raise ModelTaskTypeNotSupportedError(
+        f"Model task {task_type} is not supported by API v1 client."
+    )
 
 
 def _determine_client_downsizing_parameters(

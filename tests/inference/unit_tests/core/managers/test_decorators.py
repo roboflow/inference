@@ -1,0 +1,170 @@
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from inference.core.managers.base import ModelManager
+from inference.core.managers.decorators import fixed_size_cache
+from inference.core.managers.decorators.base import ModelManagerDecorator
+from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
+from inference.core.managers.decorators.locked_load import (
+    LockedLoadModelManagerDecorator,
+)
+from inference.core.managers.model_load_collector import (
+    RequestModelIds,
+    current_request_path,
+    request_model_ids,
+)
+from inference.core.models.embeddings import model_cache_key
+
+
+def test_model_manager_decorator_records_request_metadata_for_warm_model() -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model_manager._models = {"some/1": MagicMock()}
+    decorator = ModelManagerDecorator(model_manager)
+    request_path_token = current_request_path.set("/sam3/concept_segment")
+    ids = RequestModelIds()
+    ids_token = request_model_ids.set(ids)
+
+    try:
+        decorator.add_model(
+            model_id="some/1",
+            api_key="key",
+            model_id_alias="sam3/sam3_final",
+        )
+    finally:
+        request_model_ids.reset(ids_token)
+        current_request_path.reset(request_path_token)
+
+    [description] = model_manager.describe_models()
+    assert description.model_id == "some/1"
+    assert description.request_aliases == ["sam3/sam3_final"]
+    assert description.request_paths == ["/sam3/concept_segment"]
+    assert ids.get_ids() == {"some/1"}
+
+
+def test_model_manager_decorator_exposes_owned_artifact_cache() -> None:
+    artifact_cache = MagicMock()
+    model_manager = ModelManager(
+        model_registry=MagicMock(),
+        content_addressed_artifact_cache=artifact_cache,
+    )
+
+    decorator = ModelManagerDecorator(model_manager)
+
+    assert decorator.content_addressed_artifact_cache is artifact_cache
+
+
+def test_fixed_size_cache_records_request_metadata_for_warm_model() -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model_manager._models = {"sam3/sam3_interactive": MagicMock()}
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+    token = current_request_path.set("/sam3/embed_image")
+
+    try:
+        decorator.add_model(
+            model_id="sam3/sam3_final",
+            api_key="key",
+            model_id_alias="sam3/sam3_interactive",
+        )
+        decorator.add_model(
+            model_id="sam3/sam3_final",
+            api_key="key",
+            model_id_alias="sam3/sam3_interactive",
+        )
+    finally:
+        current_request_path.reset(token)
+
+    [description] = model_manager.describe_models()
+    assert description.model_id == "sam3/sam3_interactive"
+    assert description.request_aliases == ["sam3/sam3_final"]
+    assert description.request_paths == ["/sam3/embed_image"]
+
+
+def test_fixed_size_cache_skips_online_authorization_in_offline_mode() -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+
+    with patch.object(
+        fixed_size_cache,
+        "MODELS_CACHE_AUTH_ENABLED",
+        True,
+    ), patch.object(
+        fixed_size_cache,
+        "OFFLINE_MODE",
+        True,
+    ), patch.object(
+        fixed_size_cache,
+        "_check_if_api_key_has_access_to_model",
+    ) as access_check_mock:
+        decorator.add_model(model_id="some/1", api_key="key")
+
+    access_check_mock.assert_not_called()
+    assert "some/1" in model_manager.models()
+
+
+def test_nested_decorators_refresh_native_embedding_model_cache() -> None:
+    embedding_key = model_cache_key("some/1", ["image_embeddings"], "logits")
+    model = MagicMock()
+    result = {"embeddings": object(), "embedding_info": {"output_type": "logits"}}
+    model.run_tensor_native_embeddings.return_value = result
+    base_manager = ModelManager(model_registry=MagicMock())
+    base_manager._models = {embedding_key: model, "other/1": MagicMock()}
+    decorator = WithFixedSizeCache(
+        LockedLoadModelManagerDecorator(base_manager), max_size=2
+    )
+    images = [object()]
+
+    actual = decorator.run_tensor_native_embeddings(
+        model_id=embedding_key,
+        images=images,
+        output_type="logits",
+        input_color_format="rgb",
+    )
+
+    assert actual is result
+    assert list(decorator._key_queue) == ["other/1", embedding_key]
+    model.run_tensor_native_embeddings.assert_called_once_with(
+        images=images, output_type="logits", input_color_format="rgb"
+    )
+
+
+def test_nested_decorators_record_request_metadata_for_warm_model() -> None:
+    base_manager = ModelManager(model_registry=MagicMock())
+    base_manager._models = {"some/1": MagicMock()}
+    decorator = WithFixedSizeCache(
+        LockedLoadModelManagerDecorator(base_manager), max_size=8
+    )
+    path_token = current_request_path.set("/infer/object_detection")
+    ids = RequestModelIds()
+    ids_token = request_model_ids.set(ids)
+
+    try:
+        decorator.add_model(model_id="some/1", api_key="key")
+    finally:
+        request_model_ids.reset(ids_token)
+        current_request_path.reset(path_token)
+
+    [description] = base_manager.describe_models()
+    assert description.model_id == "some/1"
+    assert description.request_aliases == []
+    assert description.request_paths == ["/infer/object_detection"]
+    assert ids.get_ids() == {"some/1"}
+
+
+@pytest.mark.parametrize("disk_cache_cleanup", [True, False])
+def test_fixed_size_cache_clear_passes_disk_cache_cleanup_to_models(
+    disk_cache_cleanup: bool,
+) -> None:
+    # given
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+
+    # when
+    with patch.object(fixed_size_cache, "DISK_CACHE_CLEANUP", disk_cache_cleanup):
+        decorator.clear()
+
+    # then
+    model.clear_cache.assert_called_once_with(delete_from_disk=disk_cache_cleanup)
+    assert model_manager.models() == {}

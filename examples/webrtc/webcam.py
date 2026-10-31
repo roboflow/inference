@@ -224,7 +224,7 @@ async def init_rtc_peer_connection_with_local_description(
 
     if webrtc_turn_config:
         turn_server = RTCIceServer(
-            urls=[webrtc_turn_config.urls],
+            urls=webrtc_turn_config.urls,
             username=webrtc_turn_config.username,
             credential=webrtc_turn_config.credential,
         )
@@ -415,6 +415,7 @@ def main():
                         data_output=None,
                     ).model_dump()
                 )
+                # codeql[py/clear-text-logging-sensitive-data]: Workflow output names.
                 logger.info("Setting stream output via data channel: %s", output_name)
             peer_connection.data_channel.send(message)
 
@@ -439,6 +440,7 @@ def main():
                         data_output=output_name,
                     ).model_dump()
                 )
+                # codeql[py/clear-text-logging-sensitive-data]: Workflow output names.
                 logger.info("Setting data output via data channel: %s", output_name)
             peer_connection.data_channel.send(message)
     webcam_frames_grabber.stop()

@@ -61,6 +61,23 @@ def masks2poly(masks: np.ndarray) -> List[np.ndarray]:
     return segments
 
 
+def bitpacked_masks2poly(bitpacked_masks: np.ndarray, width: int) -> List[np.ndarray]:
+    """Convert bit-packed masks with 8 pixels per byte into polygons."""
+    segments = []
+    for packed_mask in bitpacked_masks:
+        packed = (
+            packed_mask
+            if packed_mask.flags.c_contiguous
+            else np.ascontiguousarray(packed_mask)
+        )
+        unpacked = np.unpackbits(packed, axis=-1, bitorder="little")[..., :width]
+        if not np.any(unpacked):
+            segments.append(np.zeros((0, 2), dtype=np.float32))
+            continue
+        segments.append(mask2poly(unpacked))
+    return segments
+
+
 def masks2multipoly(masks: np.ndarray) -> List[np.ndarray]:
     """Converts binary masks to polygonal segments.
 

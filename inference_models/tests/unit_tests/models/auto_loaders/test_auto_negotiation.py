@@ -16,14 +16,14 @@ from inference_models.errors import (
 )
 from inference_models.models.auto_loaders import auto_negotiation
 from inference_models.models.auto_loaders.auto_negotiation import (
+    coreml_package_matches_runtime_environment,
     determine_default_allowed_quantization,
     filter_model_packages_based_on_model_features,
     filter_model_packages_by_requested_batch_size,
     filter_model_packages_by_requested_quantization,
-    hf_transformers_package_matches_runtime_environment,
-    mediapipe_package_matches_runtime_environment,
     model_package_matches_batch_size_request,
     model_package_matches_runtime_environment,
+    negotiate_model_packages,
     onnx_package_matches_runtime_environment,
     parse_backend_type,
     parse_batch_size,
@@ -33,17 +33,14 @@ from inference_models.models.auto_loaders.auto_negotiation import (
     remove_packages_not_matching_implementation,
     remove_untrusted_packages,
     select_model_package_by_id,
-    torch_package_matches_runtime_environment,
     torch_script_package_matches_runtime_environment,
     trt_package_matches_runtime_environment,
-    ultralytics_package_matches_runtime_environment,
     verify_trt_package_compatibility_with_cuda_device,
     verify_versions_up_to_major_and_minor,
 )
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.runtime_introspection.core import RuntimeXRayResult
 from inference_models.weights_providers.entities import (
-    FileDownloadSpecs,
     JetsonEnvironmentRequirements,
     ModelPackageMetadata,
     ONNXPackageDetails,
@@ -441,9 +438,7 @@ def test_trt_package_matches_runtime_environment_when_trt_not_detected_in_env() 
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
 
     # when
@@ -495,9 +490,7 @@ def test_trt_package_matches_runtime_environment_when_trt_python_package_not_det
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
 
     # when
@@ -541,9 +534,7 @@ def test_trt_package_matches_runtime_environment_when_environment_requirements_n
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -596,9 +587,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_version_not_declared_in
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -649,9 +638,7 @@ def test_trt_package_matches_runtime_for_jetson_when_cpu_device_declared() -> No
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -705,9 +692,7 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -761,9 +746,7 @@ def test_trt_package_matches_runtime_for_jetson_when_device_not_declared_but_doe
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -813,9 +796,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch() ->
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -866,9 +847,7 @@ def test_trt_package_matches_runtime_for_jetson_when_l4t_versions_missmatch() ->
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -921,9 +900,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_desp
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -977,9 +954,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_but_
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1034,9 +1009,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_forw
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1089,9 +1062,7 @@ def test_trt_package_matches_runtime_for_jetson_when_trt_versions_missmatch_with
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1138,9 +1109,7 @@ def test_trt_package_matches_runtime_when_unknown_environment_requirements_decla
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1187,9 +1156,7 @@ def test_trt_package_matches_runtime_for_server_when_trt_version_not_declared() 
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1242,9 +1209,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1297,9 +1262,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_package_exclude
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1353,9 +1316,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1409,9 +1370,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1465,9 +1424,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_selected_device
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1521,9 +1478,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_no_trt_forward_
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1577,9 +1532,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1634,9 +1587,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1692,9 +1643,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1748,9 +1697,7 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -1764,274 +1711,6 @@ def test_trt_package_matches_runtime_environment_for_server_when_trt_forward_com
     # then
     assert result is False
     assert reason is not None
-
-
-def test_ultralytics_package_matches_runtime_environment_when_ultralytics_not_available() -> (
-    None
-):
-    # given
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id-1",
-        backend=BackendType.ULTRALYTICS,
-        quantization=Quantization.FP32,
-        package_artefacts=[],
-    )
-    runtime_x_ray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["tesla-t4"],
-        gpu_devices_cc=[Version("7.5")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=Version("10.5.1.11"),
-        jetson_type=None,
-        l4t_version=None,
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.7.0"),
-        torchvision_version=Version("0.22.0"),
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        ultralytics_available=False,
-        trt_python_package_available=True,
-        mediapipe_available=False,
-    )
-
-    # when
-    result, reason = ultralytics_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_x_ray,
-    )
-
-    # then
-    assert result is False
-    assert reason is not None
-
-
-def test_ultralytics_package_matches_runtime_environment_when_ultralytics_available() -> (
-    None
-):
-    # given
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id-1",
-        backend=BackendType.ULTRALYTICS,
-        quantization=Quantization.FP32,
-        package_artefacts=[],
-    )
-    runtime_x_ray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["tesla-t4"],
-        gpu_devices_cc=[Version("7.5")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=Version("10.5.1.11"),
-        jetson_type=None,
-        l4t_version=None,
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.7.0"),
-        torchvision_version=Version("0.22.0"),
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        ultralytics_available=True,
-        trt_python_package_available=True,
-        mediapipe_available=False,
-    )
-
-    # when
-    result, reason = ultralytics_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_x_ray,
-    )
-
-    # then
-    assert result is True
-    assert reason is None
-
-
-def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_not_available() -> (
-    None
-):
-    # given
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id-1",
-        backend=BackendType.ULTRALYTICS,
-        quantization=Quantization.FP32,
-        package_artefacts=[],
-    )
-    runtime_x_ray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["tesla-t4"],
-        gpu_devices_cc=[Version("7.5")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=Version("10.5.1.11"),
-        jetson_type=None,
-        l4t_version=None,
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.7.0"),
-        torchvision_version=Version("0.22.0"),
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=False,
-        ultralytics_available=False,
-        trt_python_package_available=True,
-        mediapipe_available=False,
-    )
-
-    # when
-    result, reason = hf_transformers_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_x_ray,
-    )
-
-    # then
-    assert result is False
-    assert reason is not None
-
-
-def test_hf_transformers_package_matches_runtime_environment_when_ultralytics_available() -> (
-    None
-):
-    # given
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id-1",
-        backend=BackendType.ULTRALYTICS,
-        quantization=Quantization.FP32,
-        package_artefacts=[],
-    )
-    runtime_x_ray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["tesla-t4"],
-        gpu_devices_cc=[Version("7.5")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=Version("10.5.1.11"),
-        jetson_type=None,
-        l4t_version=None,
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.7.0"),
-        torchvision_version=Version("0.22.0"),
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        ultralytics_available=True,
-        trt_python_package_available=True,
-        mediapipe_available=False,
-    )
-
-    # when
-    result, reason = hf_transformers_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_x_ray,
-    )
-
-    # then
-    assert result is True
-    assert reason is None
-
-
-def test_torch_package_matches_runtime_environment_when_ultralytics_not_available() -> (
-    None
-):
-    # given
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id-1",
-        backend=BackendType.ULTRALYTICS,
-        quantization=Quantization.FP32,
-        package_artefacts=[],
-    )
-    runtime_x_ray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["tesla-t4"],
-        gpu_devices_cc=[Version("7.5")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=Version("10.5.1.11"),
-        jetson_type=None,
-        l4t_version=None,
-        os_version="ubuntu-20.04",
-        torch_available=False,
-        torch_version=Version("2.7.0"),
-        torchvision_version=Version("0.22.0"),
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=False,
-        ultralytics_available=False,
-        trt_python_package_available=True,
-        mediapipe_available=False,
-    )
-
-    # when
-    result, reason = torch_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_x_ray,
-    )
-
-    # then
-    assert result is False
-    assert reason is not None
-
-
-def test_torch_package_matches_runtime_environment_when_ultralytics_available() -> None:
-    # given
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id-1",
-        backend=BackendType.ULTRALYTICS,
-        quantization=Quantization.FP32,
-        package_artefacts=[],
-    )
-    runtime_x_ray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["tesla-t4"],
-        gpu_devices_cc=[Version("7.5")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=Version("10.5.1.11"),
-        jetson_type=None,
-        l4t_version=None,
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.7.0"),
-        torchvision_version=Version("0.22.0"),
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        ultralytics_available=True,
-        trt_python_package_available=True,
-        mediapipe_available=False,
-    )
-
-    # when
-    result, reason = torch_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_x_ray,
-    )
-
-    # then
-    assert result is True
-    assert reason is None
 
 
 def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_environment() -> (
@@ -2064,9 +1743,7 @@ def test_onnx_package_matches_runtime_environment_when_onnx_not_detected_in_envi
             "CPUExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2105,9 +1782,7 @@ def test_onnx_package_matches_runtime_environment_when_no_available_onnx_ep() ->
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers=None,
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2148,9 +1823,7 @@ def test_onnx_package_matches_runtime_environment_when_no_onnx_package_details()
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2193,9 +1866,7 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2236,9 +1907,7 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
         onnxruntime_version=Version("1.15.0"),
         available_onnx_execution_providers={"CPUExecutionProvider"},
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2286,9 +1955,7 @@ def test_onnx_package_matches_runtime_environment_when_no_matching_execution_pro
             "CUDAExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2334,9 +2001,7 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
             "CUDAExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2382,9 +2047,7 @@ def test_onnx_package_matches_runtime_environment_when_unknown_onnx_version_spot
             "CUDAExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2428,9 +2091,7 @@ def test_onnx_package_matches_runtime_environment_when_opset_matches() -> None:
             "CUDAExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2474,9 +2135,7 @@ def test_onnx_package_matches_runtime_environment_when_opset_to_high() -> None:
             "CUDAExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2522,9 +2181,7 @@ def test_model_package_matches_runtime_environment_when_backend_is_not_registere
             "CUDAExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2565,9 +2222,7 @@ def test_model_package_matches_runtime_environment_when_package_should_be_allowe
             "CUDAExecutionProvider",
         },
         hf_transformers_available=False,
-        ultralytics_available=False,
         trt_python_package_available=True,
-        mediapipe_available=False,
     )
 
     # when
@@ -2908,6 +2563,49 @@ def test_select_model_package_by_id_when_there_is_single_match() -> None:
     assert result.package_id == "my-package-id-2"
 
 
+def test_negotiate_rejects_explicit_untrusted_package_without_opt_in() -> None:
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="localtrtabc",
+            backend=BackendType.TRT,
+            quantization=Quantization.FP16,
+            static_batch_size=1,
+            package_artefacts=[],
+            trusted_source=False,
+        ),
+    ]
+
+    with pytest.raises(NoModelPackagesAvailableError):
+        negotiate_model_packages(
+            model_architecture="rfdetr",
+            task_type="object-detection",
+            model_packages=model_packages,
+            requested_model_package_id="localtrtabc",
+            allow_untrusted_packages=False,
+        )
+
+
+def test_negotiate_allows_explicit_untrusted_package_with_opt_in() -> None:
+    package = ModelPackageMetadata(
+        package_id="localtrtabc",
+        backend=BackendType.TRT,
+        quantization=Quantization.FP16,
+        static_batch_size=1,
+        package_artefacts=[],
+        trusted_source=False,
+    )
+
+    result = negotiate_model_packages(
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        model_packages=[package],
+        requested_model_package_id="localtrtabc",
+        allow_untrusted_packages=True,
+    )
+
+    assert [p.package_id for p in result] == ["localtrtabc"]
+
+
 def test_remove_untrusted_packages() -> None:
     # given
     model_packages = [
@@ -3059,9 +2757,7 @@ def test_determine_default_allowed_quantization_for_cuda_device_detected_in_runt
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     determine_default_allowed_quantization.cache_clear()
 
@@ -3103,9 +2799,7 @@ def test_determine_default_allowed_quantization_for_no_cuda_device_detected_in_r
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     determine_default_allowed_quantization.cache_clear()
 
@@ -3250,9 +2944,7 @@ def test_torch_script_package_matches_runtime_environment_when_no_torch_availabl
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3304,9 +2996,7 @@ def test_torch_script_package_matches_runtime_environment_when_no_torch_script_p
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3354,9 +3044,7 @@ def test_torch_script_package_matches_runtime_environment_when_device_not_availa
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3408,9 +3096,7 @@ def test_torch_script_package_matches_runtime_environment_when_device_not_suppor
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3462,9 +3148,7 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_not
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3516,9 +3200,7 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_doe
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3570,9 +3252,7 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_equ
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3624,9 +3304,7 @@ def test_torch_script_package_matches_runtime_environment_when_torch_version_hig
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3678,9 +3356,7 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3732,9 +3408,7 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3786,9 +3460,7 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -3840,9 +3512,7 @@ def test_torch_script_package_matches_runtime_environment_when_torchvision_versi
             "CPUExecutionProvider",
         },
         hf_transformers_available=True,
-        ultralytics_available=True,
         trt_python_package_available=False,
-        mediapipe_available=False,
     )
     model_package = ModelPackageMetadata(
         package_id="my-package-id",
@@ -4695,107 +4365,116 @@ def test_filter_model_packages_based_on_model_features_when_package_not_should_b
     assert len(discarded_packages) == 0
 
 
-def test_mediapipe_package_matches_runtime_environment_when_mediapipe_not_found() -> (
+def test_filter_model_packages_by_requested_quantization_keeps_coreml_packages_under_default_quantization() -> (
     None
 ):
     # given
-    runtime_xray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["nvidia-l4"],
-        gpu_devices_cc=[Version("8.7")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=None,
-        jetson_type=None,
-        l4t_version=Version("36.4.0"),
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.6.0"),
-        torchvision_version=None,
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        ultralytics_available=True,
-        trt_python_package_available=False,
-        mediapipe_available=False,
-    )
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id",
-        backend=BackendType.TORCH_SCRIPT,
-        dynamic_batch_size_supported=False,
-        static_batch_size=2,
-        package_artefacts=[],
-        quantization=Quantization.FP32,
-        trusted_source=True,
-        torch_script_package_details=TorchScriptPackageDetails(
-            supported_device_types={"cuda", "cpu", "mps"},
-            torch_version=Version("2.6.0"),
-            torch_vision_version=Version("0.22.0"),
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="onnx-fp16",
+            backend=BackendType.ONNX,
+            quantization=Quantization.FP16,
+            onnx_package_details=ONNXPackageDetails(opset=17),
+            package_artefacts=[],
         ),
-    )
+        ModelPackageMetadata(
+            package_id="coreml-fp16",
+            backend=BackendType.COREML,
+            quantization=Quantization.FP16,
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+    ]
 
     # when
-    result = mediapipe_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_xray,
-        device=torch.device("cpu"),
+    result, discarded = filter_model_packages_by_requested_quantization(
+        model_packages=model_packages,
+        requested_quantization=["fp32", "unknown"],
+        default_quantization_used=True,
     )
 
     # then
-    assert result[0] is False
-    assert result[1] is not None
+    assert [p.package_id for p in result] == ["coreml-fp16"]
+    assert [p.package_id for p in discarded] == ["onnx-fp16"]
 
 
-def test_mediapipe_package_matches_runtime_environment_when_mediapipe_found() -> None:
+def test_filter_model_packages_by_requested_quantization_applies_explicit_request_to_coreml_packages() -> (
+    None
+):
     # given
-    runtime_xray = RuntimeXRayResult(
-        gpu_available=True,
-        gpu_devices=["nvidia-l4"],
-        gpu_devices_cc=[Version("8.7")],
-        driver_version=Version("510.0.4"),
-        cuda_version=Version("12.6"),
-        trt_version=None,
-        jetson_type=None,
-        l4t_version=Version("36.4.0"),
-        os_version="ubuntu-20.04",
-        torch_available=True,
-        torch_version=Version("2.6.0"),
-        torchvision_version=None,
-        onnxruntime_version=Version("1.21.0"),
-        available_onnx_execution_providers={
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        },
-        hf_transformers_available=True,
-        ultralytics_available=True,
-        trt_python_package_available=False,
-        mediapipe_available=True,
-    )
-    model_package = ModelPackageMetadata(
-        package_id="my-package-id",
-        backend=BackendType.TORCH_SCRIPT,
-        dynamic_batch_size_supported=False,
-        static_batch_size=2,
-        package_artefacts=[],
-        quantization=Quantization.FP32,
-        trusted_source=True,
-        torch_script_package_details=TorchScriptPackageDetails(
-            supported_device_types={"cuda", "cpu", "mps"},
-            torch_version=Version("2.6.0"),
-            torch_vision_version=Version("0.22.0"),
+    model_packages = [
+        ModelPackageMetadata(
+            package_id="coreml-fp16",
+            backend=BackendType.COREML,
+            quantization=Quantization.FP16,
+            static_batch_size=1,
+            package_artefacts=[],
         ),
-    )
+        ModelPackageMetadata(
+            package_id="coreml-fp32",
+            backend=BackendType.COREML,
+            quantization=Quantization.FP32,
+            static_batch_size=1,
+            package_artefacts=[],
+        ),
+    ]
 
     # when
-    result = mediapipe_package_matches_runtime_environment(
-        model_package=model_package,
-        runtime_x_ray=runtime_xray,
-        device=torch.device("cpu"),
+    result, discarded = filter_model_packages_by_requested_quantization(
+        model_packages=model_packages,
+        requested_quantization="fp32",
+        default_quantization_used=False,
     )
 
     # then
-    assert result[0] is True
-    assert result[1] is None
+    assert [p.package_id for p in result] == ["coreml-fp32"]
+    assert [p.package_id for p in discarded] == ["coreml-fp16"]
+
+
+@pytest.mark.parametrize(
+    "coremltools_version, expected_result",
+    [(None, False), (Version("9.0"), True)],
+)
+def test_coreml_package_matches_runtime_environment(
+    coremltools_version, expected_result: bool
+) -> None:
+    # given
+    model_package = ModelPackageMetadata(
+        package_id="coreml",
+        backend=BackendType.COREML,
+        quantization=Quantization.FP16,
+        static_batch_size=1,
+        package_artefacts=[],
+    )
+    runtime_x_ray = RuntimeXRayResult(
+        gpu_available=False,
+        gpu_devices=[],
+        gpu_devices_cc=[],
+        driver_version=None,
+        cuda_version=None,
+        trt_version=None,
+        jetson_type=None,
+        l4t_version=None,
+        os_version="darwin",
+        torch_available=True,
+        torch_version=Version("2.7.0"),
+        torchvision_version=Version("0.22.0"),
+        onnxruntime_version=Version("1.22.1"),
+        available_onnx_execution_providers={
+            "CoreMLExecutionProvider",
+            "CPUExecutionProvider",
+        },
+        hf_transformers_available=False,
+        trt_python_package_available=False,
+        coremltools_version=coremltools_version,
+    )
+
+    # when
+    result, reason = coreml_package_matches_runtime_environment(
+        model_package=model_package,
+        runtime_x_ray=runtime_x_ray,
+    )
+
+    # then
+    assert result is expected_result
+    assert (reason is None) is expected_result

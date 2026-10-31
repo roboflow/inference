@@ -1,9 +1,15 @@
+import os
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    ENABLE_INTERNAL_REMOTE_EXEC_HEADER,
+    EXECUTION_ID_HEADER,
+    INTERNAL_REMOTE_EXEC_REQ_HEADER,
+    execution_id,
+)
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.requests import inject_images_into_payload
 
@@ -114,15 +120,19 @@ def assembly_request_data(
     elif image_placement is ImagePlacement.DATA:
         data = batch_inference_inputs[0][0]
     else:
-        raise NotImplemented(
+        raise NotImplementedError(
             f"Not implemented request building method for {image_placement}"
         )
     scaling_factors = [e[1] for e in batch_inference_inputs]
 
     execution_id_value = execution_id.get()
     if execution_id_value:
-        headers = headers.copy()
+        headers = headers.copy() if headers is not None else {}
         headers[EXECUTION_ID_HEADER] = execution_id_value
+        if ENABLE_INTERNAL_REMOTE_EXEC_HEADER:
+            _internal_secret = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
+            if _internal_secret:
+                headers[INTERNAL_REMOTE_EXEC_REQ_HEADER] = _internal_secret
 
     return RequestData(
         url=url,

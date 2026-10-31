@@ -1,12 +1,19 @@
+from threading import Lock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torchvision  # DO NOT REMOVE, THIS IMPORT ENABLES NMS OPERATION
 
-from inference_models import Detections, ObjectDetectionModel
-from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.entities import ColorFormat
+from inference_models import Detections, ObjectDetectionModel, PreProcessingOverrides
+from inference_models.configuration import (
+    DEFAULT_DEVICE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+    INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+)
+from inference_models.entities import ColorFormat, Confidence
 from inference_models.errors import CorruptedModelPackageError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.model_packages import (
@@ -17,6 +24,7 @@ from inference_models.models.common.roboflow.model_packages import (
     parse_inference_config,
 )
 from inference_models.models.common.roboflow.post_processing import (
+    ConfidenceFilter,
     post_process_nms_fused_model_output,
     rescale_detections,
     run_nms_for_object_detection,
@@ -24,7 +32,11 @@ from inference_models.models.common.roboflow.post_processing import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
-from inference_models.models.common.torch import generate_batch_chunks
+from inference_models.models.common.torch import (
+    generate_batch_chunks,
+    torchscript_global_lock,
+)
+from inference_models.weights_providers.entities import RecommendedParameters
 
 
 class YOLOv8ForObjectDetectionTorchScript(
@@ -36,6 +48,8 @@ class YOLOv8ForObjectDetectionTorchScript(
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        recommended_parameters: Optional[RecommendedParameters] = None,
+        torchscript_state_global_lock: Optional[Lock] = None,
         **kwargs,
     ) -> "YOLOv8ForObjectDetectionTorchScript":
         model_package_content = get_model_package_contents(
@@ -57,25 +71,38 @@ class YOLOv8ForObjectDetectionTorchScript(
                 ResizeMode.CENTER_CROP,
                 ResizeMode.LETTERBOX_REFLECT_EDGES,
             },
+            implicit_resize_mode_substitutions={
+                ResizeMode.FIT_LONGER_EDGE: (
+                    ResizeMode.LETTERBOX,
+                    127,
+                    "YOLOv8 Object Detection model running with TorchScript backend was trained with "
+                    "`fit-longer-edge` input resize mode. This transform cannot be applied properly for "
+                    "models with input dimensions fixed during weights export. To ensure interoperability, `letterbox` "
+                    "resize mode with gray edges will be used instead. If model was trained on Roboflow platform, "
+                    "we recommend using preprocessing method different that `fit-longer-edge`.",
+                )
+            },
         )
         if inference_config.post_processing.type != "nms":
             raise CorruptedModelPackageError(
                 message="Expected NMS to be the post-processing",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         if inference_config.forward_pass.static_batch_size is None:
             raise CorruptedModelPackageError(
                 message="Expected static batch size to be registered in the inference configuration.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        model = torch.jit.load(
-            model_package_content["weights.torchscript"], map_location=device
-        ).eval()
+        with torchscript_global_lock(torchscript_state_global_lock):
+            model = torch.jit.load(
+                model_package_content["weights.torchscript"], map_location=device
+            ).eval()
         return cls(
             model=model,
             class_names=class_names,
             inference_config=inference_config,
             device=device,
+            recommended_parameters=recommended_parameters,
         )
 
     def __init__(
@@ -84,11 +111,14 @@ class YOLOv8ForObjectDetectionTorchScript(
         inference_config: InferenceConfig,
         class_names: List[str],
         device: torch.device,
+        recommended_parameters=None,
     ):
         self._model = model
         self._inference_config = inference_config
         self._class_names = class_names
         self._device = device
+        self._lock = Lock()
+        self.recommended_parameters = recommended_parameters
 
     @property
     def class_names(self) -> List[str]:
@@ -99,6 +129,7 @@ class YOLOv8ForObjectDetectionTorchScript(
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: Optional[ColorFormat] = None,
         image_size: Optional[Union[Tuple[int, int], int]] = None,
+        pre_processing_overrides: Optional[PreProcessingOverrides] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
@@ -108,10 +139,11 @@ class YOLOv8ForObjectDetectionTorchScript(
             target_device=self._device,
             input_color_format=input_color_format,
             image_size_wh=image_size,
+            pre_processing_overrides=pre_processing_overrides,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             if (
                 pre_processed_images.shape[0]
                 == self._inference_config.forward_pass.static_batch_size
@@ -132,23 +164,29 @@ class YOLOv8ForObjectDetectionTorchScript(
         self,
         model_results: torch.Tensor,
         pre_processing_meta: List[PreProcessingMetadata],
-        conf_thresh: float = 0.25,
-        iou_thresh: float = 0.45,
-        max_detections: int = 100,
-        class_agnostic: bool = False,
+        confidence: Confidence = "default",
+        iou_threshold: float = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD,
+        max_detections: int = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS,
+        class_agnostic_nms: bool = INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS,
         **kwargs,
     ) -> List[Detections]:
+        confidence_filter = ConfidenceFilter(
+            confidence=confidence,
+            recommended_parameters=self.recommended_parameters,
+            default_confidence=INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE,
+        )
+        confidence = confidence_filter.get_threshold(self.class_names)
         if self._inference_config.post_processing.fused:
             nms_results = post_process_nms_fused_model_output(
-                output=model_results, conf_thresh=conf_thresh
+                output=model_results, conf_thresh=confidence
             )
         else:
             nms_results = run_nms_for_object_detection(
                 output=model_results,
-                conf_thresh=conf_thresh,
-                iou_thresh=iou_thresh,
+                conf_thresh=confidence,
+                iou_thresh=iou_threshold,
                 max_detections=max_detections,
-                class_agnostic=class_agnostic,
+                class_agnostic=class_agnostic_nms,
             )
         rescaled_results = rescale_detections(
             detections=nms_results,

@@ -7,6 +7,11 @@ from pathlib import Path
 import pytest
 import requests
 
+from tests.inference.integration_tests.conftest import (
+    api_key_auth_headers,
+    without_api_key_in_header_mode,
+)
+
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
@@ -143,12 +148,13 @@ def bool_env(val):
     reason="Skipping grounding dino test",
 )
 @pytest.mark.parametrize("test", TESTS)
-def test_grounding_dino(test, clean_loaded_models_fixture):
+def test_grounding_dino(test, auth_mode, clean_loaded_models_fixture):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
         f"{base_url}:{port}/grounding_dino/infer",
-        json=payload,
+        json=without_api_key_in_header_mode(auth_mode, payload),
+        headers=api_key_auth_headers(auth_mode, api_key),
     )
     try:
         response.raise_for_status()

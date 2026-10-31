@@ -569,3 +569,34 @@ This error occurs when you request a model pipeline by name, but no pipeline wit
 2. **Check pipeline name spelling**
 
 ---
+
+## ModelPackageRestrictedError
+
+**Configuration of runtime environment prevents package from being loaded.**
+
+### Overview
+
+This error occurs when certain settings of runtime environment prevents model package from being loaded. 
+
+### When It Occurs
+
+**Scenario: RF-DETR model limit on max input resolution which is menat to prevent excessive memory use**
+ 
+  - Model was loaded with `rf_detr_max_input_resolution` smaller than input resolution denoted in 
+   `inference_config.json` in model package.
+
+
+### What To Check
+
+1. **Verify and change max input resolution:**
+   ```python
+   from inference_models import AutoModel
+
+   # Get all registered pipelines
+   model = AutoModel.from_pretrained(
+    "your-model-id", 
+    rf_detr_max_input_resolution=2048,  # set this to reasonable value that matches your package and device memory!
+   )
+   ```
+
+---

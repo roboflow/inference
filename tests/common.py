@@ -1,5 +1,9 @@
+import base64
+import io
+
 import numpy as np
 import supervision as sv
+from PIL import Image
 
 
 def assert_localized_predictions_match(
@@ -127,3 +131,74 @@ def assert_classification_predictions_match(
             f"Confidences must match with a tolerance of {confidence_tolerance}, "
             f"got {result_prediction['confidence']} and {reference_prediction['confidence']}"
         )
+
+
+def _decode_b64_mask(b64_str: str) -> np.ndarray:
+    """Decode a base64-encoded PNG string into a uint8 numpy array."""
+    raw = base64.b64decode(b64_str)
+    img = Image.open(io.BytesIO(raw))
+    return np.array(img, dtype=np.uint8)
+
+
+def assert_semantic_segmentation_predictions_match(
+    result_prediction: dict,
+    reference_prediction: dict,
+    segmentation_mask_iou_threshold: float = 0.999,
+    confidence_mask_pixel_tolerance: int = 1,
+) -> None:
+    """Assert that two SemanticSegmentationInferenceResponse dicts match.
+
+    Compares:
+    - class_map equality
+    - segmentation_mask pixel-level IoU (per class)
+    - confidence_mask pixel-level closeness
+    - image dimensions
+    """
+    result_preds = result_prediction["predictions"]
+    reference_preds = reference_prediction["predictions"]
+
+    # class_map must match exactly
+    assert result_preds["class_map"] == reference_preds["class_map"], (
+        f"Class maps must match, got {result_preds['class_map']} "
+        f"and {reference_preds['class_map']}"
+    )
+
+    # decode masks
+    result_seg = _decode_b64_mask(result_preds["segmentation_mask"])
+    reference_seg = _decode_b64_mask(reference_preds["segmentation_mask"])
+
+    assert result_seg.shape == reference_seg.shape, (
+        f"Segmentation mask shapes must match, "
+        f"got {result_seg.shape} and {reference_seg.shape}"
+    )
+
+    # compute IoU over the full segmentation mask (treating matching pixels as intersection)
+    matching = result_seg == reference_seg
+    iou = np.sum(matching) / matching.size
+    assert iou >= segmentation_mask_iou_threshold, (
+        f"Segmentation mask IoU must be >= {segmentation_mask_iou_threshold}, got {iou}"
+    )
+
+    # confidence masks should be close
+    result_conf = _decode_b64_mask(result_preds["confidence_mask"])
+    reference_conf = _decode_b64_mask(reference_preds["confidence_mask"])
+
+    assert result_conf.shape == reference_conf.shape, (
+        f"Confidence mask shapes must match, "
+        f"got {result_conf.shape} and {reference_conf.shape}"
+    )
+
+    assert np.allclose(
+        result_conf.astype(np.int16),
+        reference_conf.astype(np.int16),
+        atol=confidence_mask_pixel_tolerance,
+    ), (
+        f"Confidence masks must match within tolerance of "
+        f"{confidence_mask_pixel_tolerance} intensity levels"
+    )
+
+    # image dimensions
+    assert result_prediction["image"] == reference_prediction["image"], (
+        f"Image dimensions must match, got {result_prediction['image']} "
+        f"and {reference_prediction['image']}"
+    )

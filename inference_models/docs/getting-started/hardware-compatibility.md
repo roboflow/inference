@@ -6,22 +6,28 @@ Platform-specific compatibility and testing status for `inference-models`.
 
 The following table shows the current testing and support status for different platforms:
 
-| Platform | OS/Distribution | Installation Method | Support Status |
-|----------|----------------|---------------------|----------------|
-| **CPU (x86_64)** | Linux (general) | Bare-metal, Docker | ✅ **Stable** |
-| **CPU (x86_64)** | macOS | Bare-metal, Docker | ✅ **Stable** |
-| **CPU (Apple Silicon)** | macOS | Bare-metal, Docker | ✅ **Stable** |
-| **NVIDIA GPU** | Ubuntu 22.04 LTS | Bare-metal, Docker | ✅ **Stable** |
-| **NVIDIA GPU** | Ubuntu 24.04 LTS | Bare-metal, Docker | ✅ **Stable** |
-| **NVIDIA GPU** | Other Linux distros | Bare-metal, Docker | ⚠️ **Requires verification** |
-| **Jetson (JetPack 6.1)** | Ubuntu 22.04 (Jetson) | Docker | ✅ **Stable** |
-| **Jetson (JetPack 6.1)** | Ubuntu 22.04 (Jetson) | Bare-metal | ⚠️ **Experimental** |
-| **Jetson (JetPack 5.1)** | Ubuntu 20.04 (Jetson) | Docker (custom build) | ✅ **Stable** |
-| **Jetson (JetPack 5.1)** | Ubuntu 20.04 (Jetson) | Bare-metal | ❌ **Not possible** |
-| **Windows** | Windows 10/11 | Any | ❓ **Not tested** |
+| Platform | OS/Distribution | Installation Method | Support Status                |
+|----------|----------------|---------------------|-------------------------------|
+| **CPU (x86_64)** | Linux (general) | Bare-metal, Docker | ✅ **Stable**                  |
+| **CPU (x86_64)** | macOS | Bare-metal, Docker | ✅ **Stable**                  |
+| **CPU (Apple Silicon)** | macOS | Bare-metal, Docker | ✅ **Stable**                  |
+| **NVIDIA GPU** | Ubuntu 22.04 LTS | Bare-metal, Docker | ✅ **Stable**                  |
+| **NVIDIA GPU** | Ubuntu 24.04 LTS | Bare-metal, Docker | ✅ **Stable**                  |
+| **NVIDIA GPU** | Other Linux distros | Bare-metal, Docker | ⚠️ **Requires verification**  |
+| **Jetson (JetPack 6.1)** | Ubuntu 22.04 (Jetson) | Docker | ✅ **Stable**                  |
+| **Jetson (JetPack 6.1)** | Ubuntu 22.04 (Jetson) | Bare-metal | ⚠️ **Experimental**           |
+| **Jetson (JetPack 5.1)** | Ubuntu 20.04 (Jetson) | Docker (custom build) | ✅ **Stable**                  |
+| **Jetson (JetPack 5.1)** | Ubuntu 20.04 (Jetson) | Bare-metal | ❌ **Not possible**            |
+| **Windows** | Windows 10/11 | Any | ❓ **Tested in limited scope** |
 
 !!! warning "Windows Support"
-    **Windows is not tested at all.** While the package may install and run on Windows, we have not performed any testing on this platform. Use at your own risk.
+    
+    **Windows support is experimental for now.** While the package may install and run on Windows, 
+    we have performed limited testing on this platform. Use at your own risk.
+
+    We've evaluated that `inference-models` cache management, relying on symlinks creation, requires 
+    elevated admin access or [developer mode](https://learn.microsoft.com/en-us/windows/advanced-settings/developer-mode)
+    enabled.
 
 ## 💻 CPU Support
 

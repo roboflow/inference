@@ -1,0 +1,47 @@
+from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from roboflow_workflows.execution_engine.profiling.core import WorkflowsProfiler
+
+
+class BaseExecutionEngine(ABC):
+
+    @classmethod
+    @abstractmethod
+    def init(
+        cls,
+        workflow_definition: dict,
+        init_parameters: Optional[Dict[str, Any]] = None,
+        max_concurrent_steps: int = 1,
+        prevent_local_images_loading: bool = False,
+        workflow_id: Optional[str] = None,
+        profiler: Optional[WorkflowsProfiler] = None,
+        executor: Optional[ThreadPoolExecutor] = None,
+        step_error_handler: Optional[
+            Union[str, Callable[[str, Exception], None]]
+        ] = None,
+        dependencies_pre_init: Optional[List[str]] = None,
+    ) -> "BaseExecutionEngine":
+        pass
+
+    @abstractmethod
+    def run(
+        self,
+        runtime_parameters: Dict[str, Any],
+        fps: float = 0,
+        _is_preview: bool = False,
+        serialize_results: bool = False,
+        defer_stream_pipeline_flush: bool = False,
+        resolve_output_futures: bool = True,
+    ) -> List[Dict[str, Any]]:
+        pass
+
+    def close(self) -> None:
+        """Release resources the workflow's blocks hold between runs.
+
+        Called once the engine will not run again, for example when an
+        InferencePipeline ends. Engines without such resources keep this default,
+        which does nothing.
+        """
+        return None

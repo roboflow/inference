@@ -331,7 +331,7 @@ def inference_models_speed(
         Optional[str],
         typer.Option(
             "--model_package_id",
-            "-o",
+            "-mpi",
             help="Selected model package ID (leave blank to run auto-negotiation)",
         ),
     ] = None,
@@ -347,10 +347,10 @@ def inference_models_speed(
         bool,
         typer.Option(
             "--allow-untrusted-packages/--no-allow-untrusted-packages",
-            help="Boolean flag to decide if untrusted packages (for example the ones registered by clients) are "
-            "allowed to be loaded.",
+            help="Explicit unsafe opt-in: untrusted model packages may execute code. Only allow packages "
+            "from sources you trust.",
         ),
-    ] = True,
+    ] = False,
 ):
     try:
         run_inference_models_benchmark(

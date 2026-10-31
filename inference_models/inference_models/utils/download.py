@@ -1,6 +1,8 @@
 import hashlib
 import math
 import os
+import re
+import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from threading import Lock
 from typing import Callable, Dict, List, Literal, Optional, Set, Tuple, Union
@@ -10,6 +12,7 @@ import backoff
 import requests
 from filelock import FileLock
 from requests import Response, Timeout
+from requests.exceptions import ChunkedEncodingError
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -17,20 +20,31 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from urllib3.exceptions import ProtocolError
 
 from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
+    CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
+    CHUNK_DOWNLOAD_MAX_ATTEMPTS,
+    CHUNK_DOWNLOAD_READ_TIMEOUT,
     DISABLE_INTERACTIVE_PROGRESS_BARS,
+    FILE_LOCK_ACQUIRE_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
 )
 from inference_models.errors import (
     FileHashSumMissmatch,
     InvalidParameterError,
+    RangeRequestNotSupportedError,
     RetryError,
     UntrustedFileError,
 )
 from inference_models.logger import LOGGER
+from inference_models.utils.content_addressed_artifact_cache import (
+    ContentAddressedArtifactCache,
+    NullContentAddressedArtifactCache,
+)
 from inference_models.utils.file_system import (
     ensure_parent_dir_exists,
     pre_allocate_file,
@@ -42,9 +56,45 @@ FileHandle = str
 DownloadUrl = str
 MD5Hash = Optional[str]
 
+_MD5_HASH_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def is_valid_md5_hash(value: object) -> bool:
+    return isinstance(value, str) and _MD5_HASH_PATTERN.fullmatch(value) is not None
+
+
 MIN_SIZE_FOR_THREADED_DOWNLOAD = 32 * 1024 * 1024  # 32MB
 MIN_THREAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16MB
 DEFAULT_STREAM_DOWNLOAD_CHUNK = 1 * 1024 * 1024  # 1MB
+
+_CONNECTIVITY_ERRORS = (
+    ChunkedEncodingError,
+    ProtocolError,
+    ConnectionError,
+    Timeout,
+    requests.exceptions.ConnectionError,
+)
+
+
+def _ensure_online_download_allowed() -> None:
+    if OFFLINE_MODE:
+        raise RuntimeError(
+            "Cannot download files - OFFLINE_MODE is enabled. "
+            "All model weights must be pre-cached locally."
+        )
+
+
+class PartialDownloadError(Exception):
+    """Raised when the remote end closes mid-body after some bytes were written."""
+
+    __slots__ = ("bytes_written",)
+
+    def __init__(self, bytes_written: int) -> None:
+        self.bytes_written = bytes_written
+
+
+def _chunk_download_backoff_sleep(attempt_index: int) -> None:
+    time.sleep(2 ** min(attempt_index, 5))
 
 
 class HashNullObject:
@@ -64,12 +114,13 @@ def download_files_to_directory(
     request_timeout: Optional[int] = None,
     max_parallel_downloads: int = 8,
     max_threads_per_download: int = 8,
-    file_lock_acquire_timeout: int = 10,
+    file_lock_acquire_timeout: int = FILE_LOCK_ACQUIRE_TIMEOUT,
     verify_hash_while_download: bool = True,
     download_files_without_hash: bool = False,
     name_after: Literal["file_handle", "md5_hash"] = "file_handle",
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> Dict[str, str]:
     """Download multiple files to a directory with parallel downloads and hash verification.
 
@@ -100,7 +151,7 @@ def download_files_to_directory(
             single large file. Default: 8.
 
         file_lock_acquire_timeout: Timeout in seconds for acquiring file locks during
-            concurrent downloads. Default: 10.
+            concurrent downloads. Default: FILE_LOCK_ACQUIRE_TIMEOUT (600).
 
         verify_hash_while_download: Verify MD5 hash during download. Default: True.
 
@@ -117,6 +168,9 @@ def download_files_to_directory(
 
         on_file_renamed: Optional callback called when a file is renamed.
             Receives old and new paths as arguments.
+
+        content_addressed_artifact_cache: Optional cache used for files with
+            declared hashes. Defaults to a no-op cache.
 
     Returns:
         Dictionary mapping file handles to their absolute paths in the target directory.
@@ -172,7 +226,7 @@ def download_files_to_directory(
             f"invalid value of parameter `name_after` - received value `{name_after}`. "
             f"This is a bug in `inference-models` - submit new issue under "
             f"https://github.com/roboflow/inference/issues/",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#invalidparametererror",
         )
     if DISABLE_INTERACTIVE_PROGRESS_BARS:
         verbose = False
@@ -187,6 +241,7 @@ def download_files_to_directory(
     )
     if not files_specs:
         return files_mapping
+    _ensure_online_download_allowed()
     if response_codes_to_retry is None:
         response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
     if request_timeout is None:
@@ -199,7 +254,7 @@ def download_files_to_directory(
                 f"without MD5 hash sum to verify the download content. The download method was used with "
                 f"`download_files_without_hash=False` - which prevents from downloading such files. If you see "
                 f"this error while using hosted Roboflow serving option - contact us to get support.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/file-download/#untrustedfileerror",
             )
     os.makedirs(target_dir, exist_ok=True)
     progress = Progress(
@@ -229,6 +284,7 @@ def download_files_to_directory(
                     file_lock_acquire_timeout=file_lock_acquire_timeout,
                     on_file_created=on_file_created,
                     on_file_renamed=on_file_renamed,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
                 )
                 futures.append(future)
             done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
@@ -257,7 +313,7 @@ def construct_files_path_mapping(
                 "If you see this error using hosted Roboflow solution - contact us to get "
                 "help. Running locally, verify the download code and raise an issue if you see "
                 "a bug: https://github.com/roboflow/inference/issues/",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/file-download/#untrustedfileerror",
             )
         if name_after == "md5_hash":
             target_path = os.path.join(target_dir, content_hash)
@@ -292,6 +348,7 @@ def safe_download_file(
     file_lock_acquire_timeout: int,
     on_file_created: Optional[Callable[[str], None]] = None,
     on_file_renamed: Optional[Callable[[str, str], None]] = None,
+    content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
 ) -> None:
     ensure_parent_dir_exists(path=target_file_path)
     target_file_dir, target_file_name = os.path.split(target_file_path)
@@ -301,6 +358,33 @@ def safe_download_file(
     )
     try:
         with FileLock(lock_path, timeout=file_lock_acquire_timeout):
+            if os.path.isfile(target_file_path):
+                LOGGER.debug(
+                    f"File {target_file_path} already exists after acquiring lock, "
+                    f"skipping download."
+                )
+                return
+            artifact_cache = content_addressed_artifact_cache
+            if md5_hash is None or artifact_cache is None:
+                artifact_cache = NullContentAddressedArtifactCache()
+            restored_from_blob_cache = False
+            try:
+                restored_from_blob_cache = artifact_cache.restore(
+                    content_hash=md5_hash,
+                    target_path=tmp_download_file,
+                )
+            except Exception as error:
+                LOGGER.warning(
+                    "Model blob cache lookup failed; using original model source: %s",
+                    error,
+                )
+            if restored_from_blob_cache:
+                if on_file_created:
+                    on_file_created(tmp_download_file)
+                os.replace(tmp_download_file, target_file_path)
+                if on_file_renamed:
+                    on_file_renamed(tmp_download_file, target_file_path)
+                return
             safe_execute_download(
                 download_url=download_url,
                 tmp_download_file=tmp_download_file,
@@ -315,6 +399,16 @@ def safe_download_file(
                 on_file_created=on_file_created,
                 on_file_renamed=on_file_renamed,
             )
+            if verify_hash_while_download:
+                try:
+                    artifact_cache.schedule_store(
+                        content_hash=md5_hash,
+                        source_path=target_file_path,
+                    )
+                except Exception as error:
+                    LOGGER.warning(
+                        "Could not schedule model blob cache upload: %s", error
+                    )
     finally:
         remove_file_if_exists(path=tmp_download_file)
 
@@ -401,7 +495,7 @@ def safe_execute_download(
             on_hash_calculation_started=on_hash_calculation_started,
             on_hash_chunk_calculated=on_hash_chunk_calculated,
         )
-    os.rename(tmp_download_file, target_file_path)
+    os.replace(tmp_download_file, target_file_path)
     if on_file_renamed:
         on_file_renamed(tmp_download_file, target_file_path)
 
@@ -427,16 +521,18 @@ def safe_check_range_download_option(
 def check_range_download_option(
     url: str, timeout: int, response_codes_to_retry: Set[int]
 ) -> Optional[int]:
+    _ensure_online_download_allowed()
     try:
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
-            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+            message=f"Connectivity error for URL: {url}",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     response.raise_for_status()
     accept_ranges = response.headers.get("accept-ranges", "none")
@@ -459,6 +555,7 @@ def get_content_length(
     timeout: Optional[int] = None,
     response_codes_to_retry: Optional[Set[int]] = None,
 ) -> Optional[int]:
+    _ensure_online_download_allowed()
     if response_codes_to_retry is None:
         response_codes_to_retry = IDEMPOTENT_API_REQUEST_CODES_TO_RETRY
     if timeout is None:
@@ -467,12 +564,13 @@ def get_content_length(
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
-            message=f"Connectivity error for URL: {url}", help_url="https://todo"
+            message=f"Connectivity error for URL: {url}",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     if response.status_code in response_codes_to_retry:
         raise RetryError(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     response.raise_for_status()
     content_length = response.headers.get("content-length")
@@ -513,8 +611,11 @@ def threaded_download_file(
                 start=start,
                 end=end,
                 target_path=target_path,
-                timeout=request_timeout,
+                connect_timeout=CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
+                read_timeout=request_timeout,  # TODO: this needs to be updated further upstream to allow for providing read and connect timeouts
                 response_codes_to_retry=response_codes_to_retry,
+                max_chunk_fetch_passes=CHUNK_DOWNLOAD_MAX_ATTEMPTS,
+                max_consecutive_retryable_http=API_CALLS_MAX_TRIES,
                 on_chunk_downloaded=on_chunk_downloaded,
             )
             futures.append(future)
@@ -555,7 +656,7 @@ def verify_hash_sum_of_local_file(
         raise FileHashSumMissmatch(
             f"Could not confirm the validity of file content for url: {url}. "
             f"Expected MD5: {expected_md5_hash}, calculated hash: {computed_hash.hexdigest()}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#filehashsummissmatch",
         )
 
 
@@ -578,58 +679,156 @@ def generate_chunks_boundaries(
     return ranges
 
 
-@backoff.on_exception(
-    backoff.constant,
-    exception=RetryError,
-    max_tries=API_CALLS_MAX_TRIES,
-    interval=1,
-)
 def download_chunk(
     url: str,
     start: int,
     end: int,
     target_path: str,
-    timeout: int,
     response_codes_to_retry: Set[int],
+    connect_timeout: int = CHUNK_DOWNLOAD_CONNECT_TIMEOUT,
+    read_timeout: int = CHUNK_DOWNLOAD_READ_TIMEOUT,
+    max_chunk_fetch_passes: int = CHUNK_DOWNLOAD_MAX_ATTEMPTS,
+    max_consecutive_retryable_http: int = API_CALLS_MAX_TRIES,
     file_chunk: int = DEFAULT_STREAM_DOWNLOAD_CHUNK,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
 ) -> None:
-    headers = {"Range": f"bytes={start}-{end}"}
-    try:
-        with requests.get(
-            url, headers=headers, stream=True, timeout=timeout
-        ) as response:
-            if response.status_code in response_codes_to_retry:
-                raise RetryError(
-                    message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
-                )
-            response.raise_for_status()
-            if response.status_code != 206:
-                raise RetryError(
-                    message=f"Server does not support range requests (returned {response.status_code} instead of 206)",
-                    help_url="https://todo",
-                )
-            _handle_stream_download(
-                response=response,
-                target_path=target_path,
-                file_chunk=file_chunk,
-                on_chunk_downloaded=on_chunk_downloaded,
-                file_open_mode="r+b",
-                offset=start,
+    """Download the inclusive byte range ``[start, end]`` into ``target_path``.
+
+    The file must already exist and span at least ``end + 1`` bytes (typically
+    pre-allocated by :func:`threaded_download_file`). Uses ``GET`` with
+    ``Range: bytes=…`` and expects ``206 Partial Content`` for each request.
+
+    Retries on retryable HTTP statuses (from ``response_codes_to_retry``), partial
+    reads, and connectivity errors, up to ``max_chunk_fetch_passes`` loop iterations.
+    Consecutive retryable HTTP responses without advancing the range offset are
+    limited to ``max_consecutive_retryable_http``; that counter resets whenever
+    bytes are written for the current sub-range.
+
+    Args:
+        url: Resource URL.
+        start: First byte index (inclusive).
+        end: Last byte index (inclusive).
+        target_path: Path to the pre-allocated file.
+        response_codes_to_retry: HTTP status codes that trigger sleep-and-retry.
+        connect_timeout: Connect phase timeout (seconds) for each ``GET``.
+        read_timeout: Read idle timeout (seconds) for each ``GET``.
+        max_chunk_fetch_passes: Maximum outer-loop iterations for this chunk.
+        max_consecutive_retryable_http: Cap on consecutive retryable HTTP responses
+            without advancing the downloaded byte offset (counter resets on progress).
+        file_chunk: ``iter_content`` read size for streaming the response body.
+        on_chunk_downloaded: Optional callback with bytes written per read.
+    """
+    _ensure_online_download_allowed()
+    current_start = start
+    retryable_http_since_last_range_advance = 0
+
+    for attempt in range(max_chunk_fetch_passes):
+        if current_start > end:
+            return None
+
+        headers = {"Range": f"bytes={current_start}-{end}"}
+        try:
+            with requests.get(
+                url,
+                headers=headers,
+                stream=True,
+                timeout=(connect_timeout, read_timeout),
+            ) as response:
+                if response.status_code in response_codes_to_retry:
+                    retryable_http_since_last_range_advance += 1
+                    if (
+                        retryable_http_since_last_range_advance
+                        >= max_consecutive_retryable_http
+                    ):
+                        raise RetryError(
+                            message=(
+                                f"File hosting returned retryable HTTP status "
+                                f"{response.status_code} {max_consecutive_retryable_http} "
+                                f"consecutive time(s) for bytes={current_start}-{end} "
+                                f"without advancing the downloaded byte offset."
+                            ),
+                            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+                        )
+                    LOGGER.warning(
+                        f"Download chunk got status {response.status_code} for "
+                        f"bytes={current_start}-{end}, retrying…"
+                    )
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                response.raise_for_status()
+
+                if response.status_code != 206:
+                    raise RangeRequestNotSupportedError(
+                        message=(
+                            "Server does not support range requests "
+                            f"(returned {response.status_code} instead of 206)"
+                        ),
+                        help_url="https://inference-models.roboflow.com/errors/file-download/#rangerequestnotsupportederror",
+                    )
+
+                segment_len = end - current_start + 1
+                try:
+                    written = _handle_range_request_download(
+                        response=response,
+                        target_path=target_path,
+                        file_chunk=file_chunk,
+                        offset=current_start,
+                        on_chunk_downloaded=on_chunk_downloaded,
+                    )
+                except PartialDownloadError as error:
+                    current_start += error.bytes_written
+                    retryable_http_since_last_range_advance = 0
+                    LOGGER.warning(
+                        f"Download chunk interrupted after {error.bytes_written} bytes "
+                        f"(bytes={current_start - error.bytes_written}-{end}), resuming…"
+                    )
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                # Sanity check: the server should have returned the correct content length
+                # Doesn't run in the unlikely scenario the content-length header is missing or malformed
+                content_length = response.headers.get("Content-Length")
+                if (
+                    content_length
+                    and content_length.isdigit()
+                    and written < int(content_length)
+                ):
+                    current_start += written
+                    retryable_http_since_last_range_advance = 0
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                # Sanity check: the server should have returned the length we asked for
+                if written < segment_len:
+                    current_start += written
+                    retryable_http_since_last_range_advance = 0
+                    _chunk_download_backoff_sleep(attempt)
+                    continue
+
+                return None
+
+        except _CONNECTIVITY_ERRORS as error:
+            LOGGER.warning(
+                f"Download chunk failed ({type(error).__name__}: {error}), retrying…"
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(
-            message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            _chunk_download_backoff_sleep(attempt)
+            continue
+
+    raise RetryError(
+        message=(
+            f"Connectivity error. Exhausted {max_chunk_fetch_passes} fetch pass(es) "
+            f"for bytes={start}-{end}."
+        ),
+        help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+    )
 
 
 @backoff.on_exception(
     backoff.constant,
     exception=RetryError,
     max_tries=API_CALLS_MAX_TRIES,
-    interval=1,
+    interval=10,
 )
 def stream_download(
     url: str,
@@ -642,6 +841,7 @@ def stream_download(
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
+    _ensure_online_download_allowed()
     ensure_parent_dir_exists(path=target_path)
     computed_hash = (
         HashNullObject()
@@ -653,7 +853,7 @@ def stream_download(
             if response.status_code in response_codes_to_retry:
                 raise RetryError(
                     message=f"File hosting returned {response.status_code}",
-                    help_url="https://todo",
+                    help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
             response.raise_for_status()
             _handle_stream_download(
@@ -664,18 +864,26 @@ def stream_download(
                 content_storage=computed_hash,
                 on_file_created=on_file_created,
             )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+    except (
+        ConnectionError,
+        Timeout,
+        requests.exceptions.ConnectionError,
+        ChunkedEncodingError,
+    ) as error:
+        LOGGER.warning(
+            f"Download failed ({type(error).__name__}: {error}), retrying in 10s..."
+        )
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
     if not verify_hash_while_download:
         return None
     if computed_hash.hexdigest() != md5_hash:
         raise FileHashSumMissmatch(
             f"Could not confirm the validity of file content for url: {url}. Expected MD5: {md5_hash}, "
             f"calculated hash: {computed_hash.hexdigest()}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#filehashsummissmatch",
         )
     return None
 
@@ -686,18 +894,49 @@ def _handle_stream_download(
     file_chunk: int,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
     file_open_mode: str = "wb",
-    offset: Optional[int] = None,
     content_storage: Optional[Union[hashlib.md5, HashNullObject]] = None,
     on_file_created: Optional[Callable[[str], None]] = None,
 ) -> None:
     with open(target_path, file_open_mode) as file:
         if on_file_created:
             on_file_created(target_path)
-        if offset:
-            file.seek(offset)
         for chunk in response.iter_content(file_chunk):
+            if not chunk:
+                continue
             file.write(chunk)
             if content_storage is not None:
                 content_storage.update(chunk)
             if on_chunk_downloaded:
                 on_chunk_downloaded(len(chunk))
+
+
+def _handle_range_request_download(
+    response: Response,
+    target_path: str,
+    file_chunk: int,
+    offset: int,
+    on_chunk_downloaded: Optional[Callable[[int], None]] = None,
+) -> int:
+    bytes_written = 0
+
+    try:
+        with open(target_path, "r+b") as file:
+            file.seek(offset)
+
+            for chunk in response.iter_content(file_chunk):
+                if not chunk:
+                    continue
+
+                file.write(chunk)
+
+                if on_chunk_downloaded:
+                    on_chunk_downloaded(len(chunk))
+
+                bytes_written += len(chunk)
+
+    except _CONNECTIVITY_ERRORS as error:
+        if bytes_written > 0:
+            raise PartialDownloadError(bytes_written) from error
+        raise
+
+    return bytes_written

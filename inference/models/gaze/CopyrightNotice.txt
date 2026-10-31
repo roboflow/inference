@@ -1,8 +1,0 @@
-1. This software is under MIT license, the license file is LICENSE.txt.
-2. This software is using MediaPipe which is under Apache License 2.0, the license file is LICENSE_Apache2.0.txt.
-   This is no modification to MediaPipe source code.
-   MediaPipe link: https://github.com/googlesamples/mediapipe/
-3. This software is using L2CS-Net, which is under MIT License, the license file is LICENSE.txt.
-   This is no modification to L2CS-Net source code.
-   L2CS-Net link: https://github.com/Ahmednull/L2CS-Net
-

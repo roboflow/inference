@@ -1,0 +1,213 @@
+"""Universal Triton RF-DETR preprocessing choice."""
+
+import torch
+
+from inference_models.models.common.roboflow.model_packages import (
+    ColorMode,
+    ImagePreProcessing,
+    NetworkInputDefinition,
+)
+from inference_models.models.optimization.contracts import (
+    CompatibilityResult,
+    DeviceCompatibility,
+    ExecutionContext,
+    InputCompatibility,
+    OptimizationMetadata,
+    OptimizationStage,
+    immutable_mapping,
+    metadata_supports_context,
+)
+from inference_models.models.rfdetr.optimization.contracts import (
+    PreprocessRequest,
+    PreprocessResult,
+)
+from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
+    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+)
+from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
+    UniversalFastPreprocessRuntime,
+)
+
+
+class TritonUniversalPreprocessor:
+    """Run the universal CUDA/Triton preprocessing path selected by the plan."""
+
+    metadata = OptimizationMetadata(
+        implementation_id=RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+        stage=OptimizationStage.PREPROCESS,
+        version="1",
+        target=DeviceCompatibility(device_kind="gpu", device_types=("cuda",)),
+        inputs=InputCompatibility(
+            scenarios=("*",),
+            axis_constraints=immutable_mapping(
+                {
+                    "batch": ">=1",
+                    "channels": 3,
+                    "source_dimensions": "homogeneous",
+                    "resize_mode": "stretch",
+                }
+            ),
+            dtypes=("uint8", "floating"),
+            layouts=("HWC", "NHWC", "CHW", "NCHW"),
+        ),
+        dependencies=("torch", "torchvision", "triton"),
+        fallback_id=RFDETR_PREPROCESSOR_PILLOW_SIMD_V1,
+        changes_numerics=False,
+        supports_concurrency=True,
+        supports_cuda_graphs=False,
+        output_contract=immutable_mapping(
+            {
+                "device": "selected CUDA device",
+                "dtype": "float32",
+                "layout": "contiguous NCHW",
+                "ownership": "per-call tensor from PyTorch CUDA allocator",
+            }
+        ),
+        numerical_behavior=(
+            "PIL byte-exact fixed-point resize for uint8; floating tensors preserve "
+            "RF-DETR tensor-input CUDA resize semantics"
+        ),
+        stream_behavior=(
+            "submits preprocessing to the caller stream and returns a completion event"
+        ),
+    )
+
+    def __init__(self, *, device: torch.device) -> None:
+        self._runtime = UniversalFastPreprocessRuntime(device=device)
+
+    def is_compatible(self, context: ExecutionContext) -> bool:
+        """Return whether the Triton path supports the runtime context.
+
+        Args:
+            context (ExecutionContext): Runtime target and request context.
+
+        Returns:
+            Whether the target is compatible.
+        """
+        compatible = torch.device(
+            context.device
+        ).type == "cuda" and metadata_supports_context(self.metadata, context)
+
+        return compatible
+
+    def check_model_compatibility(
+        self,
+        *,
+        image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
+    ) -> CompatibilityResult:
+        """Check static model configuration supported by Triton preprocessing.
+
+        Args:
+            image_pre_processing: Model-package image transformations.
+            network_input: Model-package network input definition.
+
+        Returns:
+            Compatibility result with actionable reasons.
+        """
+        result = self._runtime.check_model_compatibility(
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+        )
+
+        return result
+
+    def check_request_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check request-specific constraints supported by Triton preprocessing.
+
+        Args:
+            request (PreprocessRequest): Typed preprocessing request.
+            context (ExecutionContext): Runtime target and request context.
+
+        Returns:
+            Compatibility result with actionable reasons.
+        """
+        del context
+        if request.image_size_wh is not None:
+            result = CompatibilityResult.incompatible("custom image_size override")
+
+            return result
+
+        if (
+            request.input_color_format is None
+            and request.network_input.color_mode == ColorMode.BGR
+        ):
+            result = CompatibilityResult.incompatible(
+                "implicit color order for a BGR network requires the legacy base semantics"
+            )
+
+            return result
+
+        result = self._runtime.check_request_compatibility(
+            images=request.images,
+            pre_processing_overrides=request.pre_processing_overrides,
+        )
+
+        return result
+
+    def check_runtime_compatibility(
+        self,
+        *,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> CompatibilityResult:
+        """Check whether this implementation remains available after execution.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime target and request context.
+
+        Returns:
+            Compatibility result carrying any recorded runtime failure reason.
+        """
+        del context
+        result = self._runtime.check_runtime_compatibility(images=request.images)
+
+        return result
+
+    def preprocess(
+        self,
+        request: PreprocessRequest,
+        context: ExecutionContext,
+    ) -> PreprocessResult:
+        """Run universal Triton preprocessing after execution-plan validation.
+
+        Args:
+            request: Typed preprocessing request.
+            context: Runtime context containing the preprocessing stream.
+
+        Returns:
+            Typed preprocessing result and completion event.
+        """
+        stream = context.current_stream
+        if stream is None:
+            from inference_models.errors import ModelRuntimeError
+
+            raise ModelRuntimeError(
+                message="triton-universal-v1 requires a preprocessing CUDA stream.",
+                help_url=(
+                    "https://inference-models.roboflow.com/errors/models-runtime/"
+                    "#modelruntimeerror"
+                ),
+            )
+        runtime_result = self._runtime._preprocess_validated(
+            images=request.images,
+            input_color_format=request.input_color_format,
+            network_input=request.network_input,
+            stream=stream,
+        )
+        result = PreprocessResult(
+            tensor=runtime_result.tensor,
+            metadata=runtime_result.metadata,
+            ready_event=runtime_result.ready_event,
+            input_kind=runtime_result.input_kind,
+            implementation_id=self.metadata.implementation_id,
+        )
+
+        return result

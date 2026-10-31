@@ -20,7 +20,13 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -84,7 +90,13 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -116,8 +128,8 @@ def test_onnx_package_with_dynamic_batch_size_and_letterbox_torch(
             [1735, 2288, 1920, 2477],
             [1161, 2616, 1386, 2861],
             [921, 1836, 1094, 2008],
-            [1247, 2049, 1431, 2236],
             [2671, 792, 2874, 977],
+            [1247, 2049, 1431, 2236],
             [1086, 2341, 1270, 2533],
             [1497, 1870, 1730, 2104],
             [1455, 2292, 1632, 2485],
@@ -148,7 +160,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -212,7 +230,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -303,7 +327,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -335,8 +365,8 @@ def test_onnx_package_with_static_batch_size_and_letterbox_torch(
             [1735, 2288, 1920, 2477],
             [1161, 2616, 1386, 2861],
             [921, 1836, 1094, 2008],
-            [1247, 2049, 1431, 2236],
             [2671, 792, 2874, 977],
+            [1247, 2049, 1431, 2236],
             [1086, 2341, 1270, 2533],
             [1497, 1870, 1730, 2104],
             [1455, 2292, 1632, 2485],
@@ -368,7 +398,11 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -423,8 +457,8 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch(
             [1735, 2288, 1920, 2477],
             [1161, 2616, 1386, 2861],
             [921, 1836, 1094, 2008],
-            [1247, 2049, 1431, 2236],
             [2671, 792, 2874, 977],
+            [1247, 2049, 1431, 2236],
             [1086, 2341, 1270, 2533],
             [1497, 1870, 1730, 2104],
             [1455, 2292, 1632, 2485],
@@ -460,7 +494,13 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -514,8 +554,8 @@ def test_onnx_package_with_static_batch_size_and_letterbox_batch_torch_list(
             [1735, 2288, 1920, 2477],
             [1161, 2616, 1386, 2861],
             [921, 1836, 1094, 2008],
-            [1247, 2049, 1431, 2236],
             [2671, 792, 2874, 977],
+            [1247, 2049, 1431, 2236],
             [1086, 2341, 1270, 2533],
             [1497, 1870, 1730, 2104],
             [1455, 2292, 1632, 2485],
@@ -551,7 +591,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -594,7 +640,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_batch_n
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -651,7 +703,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -695,7 +753,11 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch_b
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -753,7 +815,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_center_crop_torch_l
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -810,7 +878,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -878,7 +952,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_numpy
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -976,7 +1056,14 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
+
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
@@ -1004,18 +1091,18 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_torch(
     )
     expected_xyxy = torch.tensor(
         [
-            [1273, 213, 3015, 2175],
-            [1706, 2552, 1891, 2778],
+            [1275, 221, 3014, 2175],
+            [1706, 2552, 1891, 2779],
             [922, 1825, 1104, 2015],
             [1247, 2039, 1426, 2243],
             [1160, 2613, 1379, 2867],
             [1739, 2281, 1914, 2483],
             [1461, 2288, 1632, 2486],
-            [1499, 1862, 1723, 2111],
+            [1499, 1863, 1723, 2111],
             [2672, 786, 2870, 991],
             [1086, 2338, 1268, 2538],
-            [179, 1202, 263, 1296],
-            [350, 911, 430, 997],
+            [180, 1202, 263, 1296],
+            [350, 911, 431, 997],
         ],
         dtype=torch.int32,
     ).cpu()
@@ -1045,7 +1132,11 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
     # then
     assert torch.allclose(
@@ -1098,18 +1189,18 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_batch_torch
     )
     expected_xyxy = torch.tensor(
         [
-            [1273, 213, 3015, 2175],
-            [1706, 2552, 1891, 2778],
+            [1275, 221, 3014, 2175],
+            [1706, 2552, 1891, 2779],
             [922, 1825, 1104, 2015],
             [1247, 2039, 1426, 2243],
             [1160, 2613, 1379, 2867],
             [1739, 2281, 1914, 2483],
             [1461, 2288, 1632, 2486],
-            [1499, 1862, 1723, 2111],
+            [1499, 1863, 1723, 2111],
             [2672, 786, 2870, 991],
             [1086, 2338, 1268, 2538],
-            [179, 1202, 263, 1296],
-            [350, 911, 430, 997],
+            [180, 1202, 263, 1296],
+            [350, 911, 431, 997],
         ],
         dtype=torch.int32,
     ).cpu()
@@ -1138,7 +1229,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_of_tor
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
     # then
     assert torch.allclose(
         predictions[0].confidence.cpu(),
@@ -1190,18 +1287,18 @@ def test_onnx_package_with_static_batch_size_and_static_crop_stretch_list_of_tor
     )
     expected_xyxy = torch.tensor(
         [
-            [1273, 213, 3015, 2175],
-            [1706, 2552, 1891, 2778],
+            [1275, 221, 3014, 2175],
+            [1706, 2552, 1891, 2779],
             [922, 1825, 1104, 2015],
             [1247, 2039, 1426, 2243],
             [1160, 2613, 1379, 2867],
             [1739, 2281, 1914, 2483],
             [1461, 2288, 1632, 2486],
-            [1499, 1862, 1723, 2111],
+            [1499, 1863, 1723, 2111],
             [2672, 786, 2870, 991],
             [1086, 2338, 1268, 2538],
-            [179, 1202, 263, 1296],
-            [350, 911, 430, 997],
+            [180, 1202, 263, 1296],
+            [350, 911, 431, 997],
         ],
         dtype=torch.int32,
     ).cpu()
@@ -1229,7 +1326,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1293,7 +1396,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_batch_num
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1384,7 +1493,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1416,8 +1531,8 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_torch(
             [1735, 2288, 1920, 2477],
             [1161, 2616, 1385, 2861],
             [921, 1836, 1095, 2008],
-            [1247, 2049, 1431, 2236],
             [2671, 792, 2874, 977],
+            [1247, 2049, 1431, 2236],
             [1086, 2341, 1270, 2533],
             [1497, 1870, 1730, 2104],
             [1455, 2293, 1632, 2485],
@@ -1449,7 +1564,11 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_batch_tor
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -1482,8 +1601,8 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_batch_tor
             [1735, 2288, 1920, 2477],
             [1161, 2616, 1385, 2861],
             [921, 1836, 1095, 2008],
-            [1247, 2049, 1431, 2236],
             [2671, 792, 2874, 977],
+            [1247, 2049, 1431, 2236],
             [1086, 2341, 1270, 2533],
             [1497, 1870, 1730, 2104],
             [1455, 2293, 1632, 2485],
@@ -1514,7 +1633,13 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_list_torc
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1546,8 +1671,8 @@ def test_onnx_package_with_static_batch_size_and_static_crop_letterbox_list_torc
             [1735, 2288, 1920, 2477],
             [1161, 2616, 1385, 2861],
             [921, 1836, 1095, 2008],
-            [1247, 2049, 1431, 2236],
             [2671, 792, 2874, 977],
+            [1247, 2049, 1431, 2236],
             [1086, 2341, 1270, 2533],
             [1497, 1870, 1730, 2104],
             [1455, 2293, 1632, 2485],
@@ -1578,7 +1703,13 @@ def test_onnx_package_with_static_batch_size_and_center_crop_numpy(
     )
 
     # when
-    predictions = model(coins_counting_image_numpy)
+    predictions = model(
+        coins_counting_image_numpy,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1624,7 +1755,13 @@ def test_onnx_package_with_static_batch_size_and_center_crop_batch_numpy(
     )
 
     # when
-    predictions = model([coins_counting_image_numpy, coins_counting_image_numpy])
+    predictions = model(
+        [coins_counting_image_numpy, coins_counting_image_numpy],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1684,7 +1821,13 @@ def test_onnx_package_with_static_batch_size_and_center_crop_torch(
     )
 
     # when
-    predictions = model(coins_counting_image_torch)
+    predictions = model(
+        coins_counting_image_torch,
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1731,7 +1874,11 @@ def test_onnx_package_with_static_batch_size_and_center_crop_batch_torch(
 
     # when
     predictions = model(
-        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0)
+        torch.stack([coins_counting_image_torch, coins_counting_image_torch], dim=0),
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
     )
 
     # then
@@ -1792,7 +1939,13 @@ def test_onnx_package_with_static_batch_size_and_center_crop_list_torch(
     )
 
     # when
-    predictions = model([coins_counting_image_torch, coins_counting_image_torch])
+    predictions = model(
+        [coins_counting_image_torch, coins_counting_image_torch],
+        confidence=0.25,
+        iou_threshold=0.45,
+        max_detections=100,
+        class_agnostic_nms=False,
+    )
 
     # then
     assert torch.allclose(
@@ -1833,3 +1986,30 @@ def test_onnx_package_with_static_batch_size_and_center_crop_list_torch(
         expected_xyxy,
         atol=2,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.onnx_extras
+def test_onnx_per_class_confidence_blocks_specific_class(
+    coin_counting_yolo_nas_onnx_dynamic_bs_letterbox_package: str,
+    coins_counting_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_onnx_package_with_dynamic_batch_size_and_letterbox_numpy`
+    above) returns 10 detections: one class 4, nine class 1. Setting a 0.99
+    per-class threshold on class 1 leaves only the class 4 detection."""
+    from inference_models.models.yolonas.yolonas_object_detection_onnx import (
+        YOLONasForObjectDetectionOnnx,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLONasForObjectDetectionOnnx.from_pretrained(
+        model_name_or_path=coin_counting_yolo_nas_onnx_dynamic_bs_letterbox_package,
+        onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[1]: 0.99},
+    )
+    predictions = model(coins_counting_image_numpy, confidence="best")
+    assert 1 not in predictions[0].class_id.cpu().tolist()

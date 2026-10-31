@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from inference.models.rfdetr.rfdetr import RFDETRObjectDetection
 
@@ -159,3 +160,90 @@ def test_sigmoid_stable_edge_case_nan():
 
     # then
     assert np.isnan(result)
+
+
+def _make_model_for_preproc(resize_method: str = "Stretch to") -> RFDETRObjectDetection:
+    model = RFDETRObjectDetection.__new__(RFDETRObjectDetection)
+    model.preproc = {"auto-orient": {"enabled": True}}
+    model.resize_method = resize_method
+    model.img_size_w = 64
+    model.img_size_h = 64
+    model._needs_nonsquare_preproc = False
+    return model
+
+
+def test_preproc_image_normalizes_numpy_bgr_in_rgb_channel_order():
+    # given - an image with distinct per-channel constant values so the
+    # channel each mean/std is applied to is unambiguous
+    r, g, b = 200, 100, 50
+    rgb_image = np.zeros((64, 64, 3), dtype=np.uint8)
+    rgb_image[..., 0], rgb_image[..., 1], rgb_image[..., 2] = r, g, b
+    bgr_image = rgb_image[..., ::-1].copy()  # numpy input is treated as BGR
+    model = _make_model_for_preproc()
+
+    # when
+    img_in, _ = model.preproc_image(bgr_image)
+
+    # then - output must be RGB-ordered and normalized with RGB-ordered stats
+    means, stds = model.preprocess_means, model.preprocess_stds
+    expected = np.array(
+        [(v / 255.0 - m) / s for v, m, s in zip((r, g, b), means, stds)],
+        dtype=np.float32,
+    )
+    assert tuple(img_in.shape) == (1, 3, 64, 64)
+    assert np.allclose(img_in[0].mean(axis=(1, 2)), expected, atol=1e-4)
+
+
+def test_preproc_image_numpy_bgr_and_pil_rgb_inputs_produce_identical_tensors():
+    # given - the same picture provided as numpy (BGR) and PIL (RGB)
+    from PIL import Image
+
+    rng = np.random.default_rng(0)
+    rgb_image = rng.integers(0, 256, size=(48, 80, 3), dtype=np.uint8)
+    bgr_image = rgb_image[..., ::-1].copy()
+    pil_image = Image.fromarray(rgb_image)
+    model = _make_model_for_preproc()
+
+    # when
+    from_numpy, _ = model.preproc_image(bgr_image)
+    from_pil, _ = model.preproc_image(pil_image)
+
+    # then
+    assert np.allclose(from_numpy, from_pil, atol=1e-5)
+
+
+def test_preproc_image_torch_branch_normalizes_numpy_bgr_in_rgb_channel_order(
+    monkeypatch,
+):
+    # given - force the torch preprocessing branch (module globals are read at
+    # import time, so patch both the model module and `prepare()`'s module)
+    torch = pytest.importorskip("torch")
+    import inference.core.utils.preprocess as preprocess_module
+    import inference.models.rfdetr.rfdetr as rfdetr_module
+
+    monkeypatch.setattr(rfdetr_module, "USE_PYTORCH_FOR_PREPROCESSING", True)
+    monkeypatch.setattr(preprocess_module, "USE_PYTORCH_FOR_PREPROCESSING", True)
+    # `torch` is only imported in these modules when the flag is set at import
+    # time, so inject it for the patched branch.
+    monkeypatch.setattr(rfdetr_module, "torch", torch, raising=False)
+    monkeypatch.setattr(preprocess_module, "torch", torch, raising=False)
+    monkeypatch.setattr(rfdetr_module, "CUDA_IS_AVAILABLE", False, raising=False)
+    r, g, b = 200, 100, 50
+    rgb_image = np.zeros((64, 64, 3), dtype=np.uint8)
+    rgb_image[..., 0], rgb_image[..., 1], rgb_image[..., 2] = r, g, b
+    bgr_image = rgb_image[..., ::-1].copy()  # numpy input is treated as BGR
+    model = _make_model_for_preproc()
+
+    # when
+    img_in, _ = model.preproc_image(bgr_image)
+
+    # then - the HWC channel swap on the tensor branch must yield RGB-ordered,
+    # RGB-normalized output (assert on img_in only; img_dims is out of scope)
+    means, stds = model.preprocess_means, model.preprocess_stds
+    expected = np.array(
+        [(v / 255.0 - m) / s for v, m, s in zip((r, g, b), means, stds)],
+        dtype=np.float32,
+    )
+    img_in = img_in.cpu().numpy() if hasattr(img_in, "cpu") else np.asarray(img_in)
+    assert tuple(img_in.shape) == (1, 3, 64, 64)
+    assert np.allclose(img_in[0].mean(axis=(1, 2)), expected, atol=1e-4)

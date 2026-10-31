@@ -1,0 +1,33 @@
+# Optional dependencies for Mage-VL's codec video backend.
+#
+# Install with --no-deps:
+#
+#   pip install --no-deps -r requirements/requirements.magevl.txt
+#
+# codec-video-prep declares two pins that must not reach the resolver:
+#
+#   numpy<2.0            - stale. Its compiled `cv_reader_fast` extension is built
+#                          against the NumPy 2 headers targeting the 1.23 C-API, so
+#                          it is forward compatible. Verified on numpy 2.4.4:
+#                          import, run_preinfer() over a real mp4, and end-to-end
+#                          Mage-VL inference all pass. Honouring it would drag the
+#                          whole tree back to numpy 1.26.
+#   opencv-python-headless<4.12
+#                        - installing headless alongside the opencv-python this
+#                          repo already pins puts two packages behind `cv2`.
+#
+# Both of codec-video-prep's real runtime needs (numpy, opencv) are already
+# satisfied by requirements/_requirements.txt, hence --no-deps. This file is
+# therefore intentionally NOT wired into the pypi extras (see
+# .release/pypi/*.setup.py), same as requirements.cosmos.txt.
+#
+# codec-video-prep also ships the `cv-preinfer` console script that the default
+# `hevc` engine shells out to by name, so the environment's bin directory must be
+# on PATH (or CV_PREINFER_BIN must point at the binary). ffmpeg and ffprobe must
+# be on PATH too - they already are in every docker/dockerfiles/* image.
+#
+# The opt-in `dcvc-rt` engine (neural codec, ~14x slower prep than `hevc` on its
+# pytorch-fallback path) additionally needs `scipy` - an undeclared requirement of
+# the DCVC source bundled in the model package. Deliberately not listed here:
+# `hevc` is the default and the only engine with a production case today.
+codec-video-prep>=0.2.5,<0.3.0

@@ -82,7 +82,7 @@ We aim to keep extra dependencies minimal while covering as broad a range of mod
 **Optional Extras** add:
 - ONNX Runtime (CPU or GPU)
 - TensorRT (GPU only)
-- Specialized models (MediaPipe, Grounding DINO)
+- Specialized models (Grounding DINO)
 
 ### ⚡ 4. Runtime Backend Selection
 
@@ -93,7 +93,7 @@ Backend selection happens **dynamically at runtime** based on:
 3. **Hardware detection**: What devices are available?
 4. **User override**: Explicit backend specification
 
-**Default preference order**: TensorRT → PyTorch → Hugging Face → ONNX
+**Default preference order**: TensorRT → ONNX → PyTorch → Hugging Face → others
 
 ### 🎯 5. Behavior-Based Interfaces
 

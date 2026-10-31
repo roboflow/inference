@@ -1,5 +1,12 @@
+from unittest.mock import patch
+
 import pytest
 
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    INTERNAL_REMOTE_EXEC_REQ_HEADER,
+    execution_id,
+)
 from inference_sdk.http.utils.request_building import (
     ImagePlacement,
     RequestData,
@@ -151,3 +158,133 @@ def test_prepare_requests_data() -> None:
         },
         image_scaling_factors=[0.75],
     )
+
+
+def test_assembly_request_data_when_execution_id_is_set_and_headers_are_empty() -> None:
+    # given
+    token = execution_id.set("test-exec-id")
+
+    try:
+        # when
+        result = assembly_request_data(
+            url="https://some.com",
+            batch_inference_inputs=[("image_1", None)],
+            headers=None,
+            parameters=None,
+            payload=None,
+            image_placement=ImagePlacement.DATA,
+        )
+
+        # then
+        assert result.headers == {EXECUTION_ID_HEADER: "test-exec-id"}
+    finally:
+        execution_id.reset(token)
+
+
+def test_assembly_request_data_when_image_placement_is_not_supported() -> None:
+    # when / then
+    with pytest.raises(
+        NotImplementedError,
+        match="Not implemented request building method",
+    ):
+        assembly_request_data(
+            url="https://some.com",
+            batch_inference_inputs=[("image_1", None)],
+            headers=None,
+            parameters=None,
+            payload=None,
+            image_placement=object(),
+        )
+
+
+class TestInternalRemoteExecHeader:
+    @patch(
+        "inference_sdk.http.utils.request_building.ENABLE_INTERNAL_REMOTE_EXEC_HEADER",
+        True,
+    )
+    @patch.dict("os.environ", {"ROBOFLOW_INTERNAL_SERVICE_SECRET": "my-secret"})
+    def test_header_sent_when_enabled_and_execution_id_set(self) -> None:
+        """When toggle is on, secret is set, and execution_id is active,
+        the internal execution header should be injected."""
+        token = execution_id.set("test-exec-id")
+        try:
+            result = assembly_request_data(
+                url="https://some.com",
+                batch_inference_inputs=[("image_1", None)],
+                headers={"some": "header"},
+                parameters=None,
+                payload=None,
+                image_placement=ImagePlacement.DATA,
+            )
+            assert result.headers[INTERNAL_REMOTE_EXEC_REQ_HEADER] == "my-secret"
+        finally:
+            execution_id.reset(token)
+
+    @patch(
+        "inference_sdk.http.utils.request_building.ENABLE_INTERNAL_REMOTE_EXEC_HEADER",
+        False,
+    )
+    @patch.dict("os.environ", {"ROBOFLOW_INTERNAL_SERVICE_SECRET": "my-secret"})
+    def test_header_not_sent_when_toggle_disabled(self) -> None:
+        """When toggle is off, the header should not be sent even if
+        secret and execution_id are present."""
+        token = execution_id.set("test-exec-id")
+        try:
+            result = assembly_request_data(
+                url="https://some.com",
+                batch_inference_inputs=[("image_1", None)],
+                headers={"some": "header"},
+                parameters=None,
+                payload=None,
+                image_placement=ImagePlacement.DATA,
+            )
+            assert INTERNAL_REMOTE_EXEC_REQ_HEADER not in (result.headers or {})
+        finally:
+            execution_id.reset(token)
+
+    @patch(
+        "inference_sdk.http.utils.request_building.ENABLE_INTERNAL_REMOTE_EXEC_HEADER",
+        True,
+    )
+    @patch.dict("os.environ", {}, clear=False)
+    def test_header_not_sent_when_no_secret(self) -> None:
+        """When toggle is on but no secret is configured, the header should not
+        be sent."""
+        import os
+
+        os.environ.pop("ROBOFLOW_INTERNAL_SERVICE_SECRET", None)
+        token = execution_id.set("test-exec-id")
+        try:
+            result = assembly_request_data(
+                url="https://some.com",
+                batch_inference_inputs=[("image_1", None)],
+                headers={"some": "header"},
+                parameters=None,
+                payload=None,
+                image_placement=ImagePlacement.DATA,
+            )
+            assert INTERNAL_REMOTE_EXEC_REQ_HEADER not in (result.headers or {})
+        finally:
+            execution_id.reset(token)
+
+    @patch(
+        "inference_sdk.http.utils.request_building.ENABLE_INTERNAL_REMOTE_EXEC_HEADER",
+        True,
+    )
+    @patch.dict("os.environ", {"ROBOFLOW_INTERNAL_SERVICE_SECRET": "my-secret"})
+    def test_header_not_sent_when_no_execution_id(self) -> None:
+        """When toggle is on and secret is set but no execution_id is active,
+        the header should not be sent (not in a server request context)."""
+        token = execution_id.set(None)
+        try:
+            result = assembly_request_data(
+                url="https://some.com",
+                batch_inference_inputs=[("image_1", None)],
+                headers={"some": "header"},
+                parameters=None,
+                payload=None,
+                image_placement=ImagePlacement.DATA,
+            )
+            assert INTERNAL_REMOTE_EXEC_REQ_HEADER not in (result.headers or {})
+        finally:
+            execution_id.reset(token)

@@ -1,0 +1,75 @@
+---
+description: Google-style docstrings for public Python APIs
+globs: **/*.py
+alwaysApply: false
+---
+
+# Docstrings (Google style)
+
+Match [CONTRIBUTING.md](CONTRIBUTING.md) and `mkdocs.yml` (`docstring_style: google`).
+Use full Google sections on **public** symbols; keep **private** helpers light.
+
+## Public vs private
+
+**Public** (require full Google docstrings):
+
+- Functions, methods, and classes whose names do **not** start with `_`
+- Symbols meant for import by other packages or workflow blocks
+
+**Private** (no full Google template required):
+
+- Names starting with `_` (including `_helper` nested functions)
+- May use a one-line summary, a short narrative docstring, or targeted `#` comments
+  where behavior is non-obvious
+
+## Public function template
+
+```python
+def collect_items(
+    workflow_definition: Dict[str, Any],
+    *,
+    include_nested: bool = True,
+) -> List[dict]:
+    """Collect dynamic block definitions from a workflow tree.
+
+    Walks ``workflow_definition`` and nested inner workflows depth-first.
+    When the same ``block_type`` appears twice, the first occurrence wins.
+
+    Args:
+        workflow_definition: Parsed workflow JSON (steps, nested definitions).
+        include_nested: If False, only read the root ``dynamic_blocks_definitions``.
+
+    Returns:
+        Merged list of dynamic block definition dicts, deduplicated by block type.
+
+    Raises:
+        WorkflowDefinitionError: If ``workflow_definition`` is not a mapping.
+    """
+```
+
+Rules:
+
+- Opening summary: imperative or descriptive, one line; add a blank line before sections.
+- Document every parameter in ``Args:`` as ``name (type): description`` (type may match annotations).
+- Add ``Returns:`` when the return value is not ``None`` or needs explanation.
+- Add ``Raises:`` only for exceptions callers should handle; omit the section if none apply.
+- Optional: ``Note:`` / ``Notes:`` / ``Example:`` for non-obvious behavior (same as existing core code).
+
+## Classes and modules
+
+- **Public classes**: class docstring plus Google sections on public methods.
+- **Modules**: a short module docstring at the top when the file exposes a cohesive API
+  (common in workflows and core).
+
+## When editing
+
+- Adding or changing a **public** function → add or update the full Google docstring.
+- Refactoring only **private** helpers → brief comment or narrative docstring is enough.
+- Do not convert private helpers to verbose Google docstrings unless the user asks.
+
+## Avoid
+
+- NumPy style (``Parameters:``, ``Attributes:``) and Sphinx reST (``:param:``).
+- Narrative-only public docstrings that skip ``Args:`` / ``Returns:`` when parameters or
+  return values exist.
+- Docstrings that duplicate types with no extra meaning (e.g. ``x (int): An int.``).

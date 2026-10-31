@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pytest
 import supervision as sv
@@ -397,6 +399,78 @@ def test_classes_replacement_when_empty_classification_predictions_fallback_clas
     ), "class name expected to be set to value passed with fallback_class_name parameter"
 
 
+def test_classes_replacement_when_empty_classification_predictions_fallback_class_provided_with_default_class_id():
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    first_cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[
+            ClassificationPrediction(
+                **{"class": "cat", "class_id": 0, "confidence": 0.6}
+            ),
+            ClassificationPrediction(
+                **{"class": "dog", "class_id": 1, "confidence": 0.4}
+            ),
+        ],
+        top="cat",
+        confidence=0.6,
+        parent_id="some",
+    ).dict(by_alias=True, exclude_none=True)
+    first_cls_prediction["parent_id"] = "zero"
+    second_cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[],
+        top="cat",
+        confidence=0.6,
+        parent_id="some",
+    ).dict(by_alias=True, exclude_none=True)
+    second_cls_prediction["parent_id"] = "one"
+    classification_predictions = Batch(
+        content=[
+            first_cls_prediction,
+            second_cls_prediction,
+        ],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unknown",
+        fallback_class_id=None,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 2
+    ), "Expected both detections to be preserved via fallback class"
+    detections = result["predictions"]
+    assert (
+        detections.confidence[1] == 0
+    ), "Fallback class confidence expected to be set to 0"
+    assert (
+        detections.class_id[1] == sys.maxsize
+    ), "class id expected to fall back to sys.maxsize when fallback_class_id left as None"
+    assert (
+        detections.data["class_name"][1] == "unknown"
+    ), "class name expected to be set to value passed with fallback_class_name parameter"
+
+
 def test_extract_leading_class_from_prediction_when_prediction_is_multi_label() -> None:
     # given
     prediction = ClassificationInferenceResponse(
@@ -500,3 +574,356 @@ def test_extract_leading_class_from_prediction_when_prediction_is_multi_class_wi
 
     # then
     assert result is None
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_string() -> None:
+    # given
+    prediction = "K619879"
+
+    # when
+    result = extract_leading_class_from_prediction(prediction=prediction)
+
+    # then
+    assert result == ("K619879", 0, 1.0)
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_list_of_strings() -> (
+    None
+):
+    # given
+    prediction = ["K619879"]
+
+    # when
+    result = extract_leading_class_from_prediction(prediction=prediction)
+
+    # then
+    assert result == ("K619879", 0, 1.0)
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_empty_list() -> None:
+    # given
+    prediction = []
+
+    # when
+    result = extract_leading_class_from_prediction(prediction=prediction)
+
+    # then
+    assert result is None
+
+
+def test_extract_leading_class_from_prediction_when_prediction_is_empty_list_with_fallback() -> (
+    None
+):
+    # given
+    prediction = []
+
+    # when
+    result = extract_leading_class_from_prediction(
+        prediction=prediction,
+        fallback_class_name="unknown",
+        fallback_class_id=99,
+    )
+
+    # then
+    assert result == ("unknown", 99, 0.0)
+
+
+def test_classes_replacement_with_list_of_strings_gemini_style() -> None:
+    """Test the user's exact use case: Gemini outputs nested arrays like
+    [["K619879"], ["C98191P"], ["K657648"]] which become a Batch of List[str].
+    """
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 10, 50, 50],
+                [60, 60, 100, 100],
+                [110, 110, 150, 150],
+            ]
+        ),
+        class_id=np.array([1, 1, 1]),
+        confidence=np.array([0.9, 0.8, 0.85]),
+        data={
+            "class_name": np.array(["license_plate", "license_plate", "license_plate"]),
+            "detection_id": np.array(["id1", "id2", "id3"]),
+        },
+    )
+    # Gemini output: [["K619879"], ["C98191P"], ["K657648"]]
+    classification_predictions = Batch(
+        content=[
+            ["K619879"],
+            ["C98191P"],
+            ["K657648"],
+        ],
+        indices=[(0, 0), (0, 1), (0, 2)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
+    )
+
+    # then
+    assert len(result["predictions"]) == 3, "Expected all 3 detections to remain"
+    assert np.allclose(
+        result["predictions"].xyxy,
+        np.array([[10, 10, 50, 50], [60, 60, 100, 100], [110, 110, 150, 150]]),
+    ), "Expected coordinates not to be touched"
+    assert result["predictions"].data["class_name"].tolist() == [
+        "K619879",
+        "C98191P",
+        "K657648",
+    ], "Expected LP numbers as class names"
+    assert np.allclose(
+        result["predictions"].confidence, np.array([1.0, 1.0, 1.0])
+    ), "Expected confidence to be 1.0 for string predictions"
+    assert np.allclose(
+        result["predictions"].class_id, np.array([0, 0, 0])
+    ), "Expected class_id to be 0 for string predictions"
+    assert result["predictions"].data["detection_id"].tolist() != [
+        "id1",
+        "id2",
+        "id3",
+    ], "Expected new detection ids"
+
+
+def test_classes_replacement_with_plain_strings() -> None:
+    """Test with plain string predictions (not wrapped in lists)."""
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    classification_predictions = Batch(
+        content=["golden_retriever", "labrador"],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
+    )
+
+    # then
+    assert len(result["predictions"]) == 2
+    assert result["predictions"].data["class_name"].tolist() == [
+        "golden_retriever",
+        "labrador",
+    ]
+    assert np.allclose(result["predictions"].confidence, np.array([1.0, 1.0]))
+    assert np.allclose(result["predictions"].class_id, np.array([0, 0]))
+
+
+def test_classes_replacement_with_strings_and_none_no_fallback() -> None:
+    """Test that None predictions are filtered out when no fallback is set."""
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["plate", "plate"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    classification_predictions = Batch(
+        content=["K619879", None],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name=None,
+        fallback_class_id=None,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 1
+    ), "Expected only one detection (second had None)"
+    assert result["predictions"].data["class_name"].tolist() == ["K619879"]
+
+
+def test_classes_replacement_with_strings_and_none_with_fallback() -> None:
+    """Test that None predictions use fallback class when provided."""
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["plate", "plate"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    classification_predictions = Batch(
+        content=["K619879", None],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unreadable",
+        fallback_class_id=99,
+    )
+
+    # then
+    assert len(result["predictions"]) == 2
+    assert result["predictions"].data["class_name"].tolist() == [
+        "K619879",
+        "unreadable",
+    ]
+    assert result["predictions"].confidence[1] == 0.0
+    assert result["predictions"].class_id[1] == 99
+
+
+def test_classes_replacement_tensor_native_empty_prediction_with_fallback_and_none_class_id() -> (
+    None
+):
+    # fallback_class_id=None must not raise TypeError on int(None)
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1 as TensorBlock,
+    )
+    from inference_models.models.base.classification import (
+        ClassificationPrediction as NativeClassificationPrediction,
+    )
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    # given
+    step = TensorBlock()
+    detections = NativeDetections(
+        xyxy=torch.tensor(
+            [
+                [10.0, 20.0, 30.0, 40.0],
+                [11.0, 21.0, 31.0, 41.0],
+            ]
+        ),
+        class_id=torch.tensor([7, 7]),
+        confidence=torch.tensor([0.36, 0.91]),
+        image_metadata={"class_names": {7: "animal"}},
+        bboxes_metadata=[{"detection_id": "zero"}, {"detection_id": "one"}],
+    )
+    first_cls_prediction = NativeClassificationPrediction(
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([[0.6, 0.4]]),
+        images_metadata=[{"parent_id": "zero", "class_names": {0: "cat", 1: "dog"}}],
+    )
+    second_cls_prediction = NativeClassificationPrediction(
+        class_id=torch.tensor([0]),
+        confidence=torch.zeros((1, 0)),
+        images_metadata=[{"parent_id": "one"}],
+    )
+    classification_predictions = Batch(
+        content=[first_cls_prediction, second_cls_prediction],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unknown",
+        fallback_class_id=None,
+    )
+
+    # then
+    predictions = result["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected both detections to be preserved via fallback class"
+    assert predictions.confidence[1] == 0, "Fallback confidence expected to be 0"
+    assert (
+        int(predictions.class_id[1]) == sys.maxsize
+    ), "class id expected to fall back to sys.maxsize when fallback_class_id left as None"
+    assert (
+        predictions.image_metadata["class_names"][sys.maxsize] == "unknown"
+    ), "class_names map expected to resolve the fallback id to fallback_class_name"
+
+
+def test_classes_replacement_tensor_native_string_predictions_with_negative_fallback_class_id() -> (
+    None
+):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1 as TensorBlock,
+    )
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    # given
+    step = TensorBlock()
+    detections = NativeDetections(
+        xyxy=torch.tensor(
+            [
+                [10.0, 20.0, 30.0, 40.0],
+                [11.0, 21.0, 31.0, 41.0],
+            ]
+        ),
+        class_id=torch.tensor([7, 7]),
+        confidence=torch.tensor([0.36, 0.91]),
+        image_metadata={"class_names": {7: "animal"}},
+        bboxes_metadata=[{"detection_id": "zero"}, {"detection_id": "one"}],
+    )
+    classification_predictions = Batch(
+        content=["K619879", None],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+        fallback_class_name="unreadable",
+        fallback_class_id=-5,
+    )
+
+    # then
+    predictions = result["predictions"]
+    assert len(predictions) == 2
+    assert (
+        int(predictions.class_id[1]) == sys.maxsize
+    ), "negative fallback_class_id expected to normalise to sys.maxsize"
+    assert predictions.confidence[1] == 0.0
+    assert (
+        predictions.image_metadata["class_names"][sys.maxsize] == "unreadable"
+    ), "class_names map expected to resolve the fallback id to fallback_class_name"

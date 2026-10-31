@@ -54,6 +54,12 @@ class HTTPCallErrorError(HTTPClientError):
         return self.__repr__()
 
 
+class HTTPServerConnectionError(HTTPClientError):
+    """Error for failing to connect to the inference server (no response received)."""
+
+    pass
+
+
 class InvalidInputFormatError(HTTPClientError):
     """Error for invalid input format."""
 
@@ -108,6 +114,31 @@ class InvalidParameterError(HTTPClientError):
     pass
 
 
+class FeatureDeprecatedError(HTTPClientError):
+    """Raised when a deprecated SDK helper is invoked."""
+
+    def __init__(
+        self,
+        feature: str,
+        *,
+        reason: Optional[str] = None,
+        removal_release: Optional[str] = None,
+        replacement: Optional[str] = None,
+    ):
+        self.feature = feature
+        self.reason = reason
+        self.removal_release = removal_release
+        self.replacement = replacement
+        public = f"SDK helper '{feature}' has been removed."
+        if reason:
+            public += f" {reason}"
+        if removal_release:
+            public += f" Removed in {removal_release}."
+        if replacement:
+            public += f" Closest replacement: {replacement}."
+        super().__init__(public)
+
+
 class RetryError(Exception):
 
     def __init__(
@@ -143,3 +174,11 @@ class RetryError(Exception):
 
     def __str__(self) -> str:
         return self.__repr__()
+
+
+class InvalidURLImageInput(HTTPClientError):
+    """Raised when a URL image reference fails the SDK URL-string policy."""
+
+
+class URLAddressNotAllowedError(HTTPClientError):
+    """Raised when a URL resolves to a destination that is not permitted."""

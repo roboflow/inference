@@ -1,13 +1,19 @@
 import os
+import warnings
+from typing import Any, Callable, Optional
 
 import torch
 
+from inference_models._offline import OFFLINE_MODE
+from inference_models.errors import InvalidEnvVariable
 from inference_models.utils.environment import (
     get_boolean_from_env,
     get_comma_separated_list_of_integers_from_env,
+    get_float_from_env,
     get_integer_from_env,
     parse_comma_separated_values,
 )
+from inference_models.utils.secure_gateway import normalize_secure_gateway_configuration
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     values=os.getenv(
@@ -16,6 +22,27 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     )
     .strip("[")
     .strip("]")
+)
+DISABLED_INFERENCE_MODELS_BACKENDS = set(
+    parse_comma_separated_values(
+        values=os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS", "")
+    )
+)
+# CoreMLExecutionProvider options applied to models that opt in (currently RF-DETR). NeuralNetwork is ORT's
+# default format but lacks LayerNorm/GELU/GridSample support, so transformer graphs fall back to CPU and end up
+# slower than CPU-only. MLProgram keeps them on the GPU. FP32 MLProgram never runs on the Neural Engine, so
+# CPUAndGPU matches ALL on latency while skipping the Neural Engine compile at session creation.
+INFERENCE_MODELS_COREML_MODEL_FORMAT = os.getenv(
+    "INFERENCE_MODELS_COREML_MODEL_FORMAT", "MLProgram"
+)
+INFERENCE_MODELS_COREML_COMPUTE_UNITS = os.getenv(
+    "INFERENCE_MODELS_COREML_COMPUTE_UNITS", "CPUAndGPU"
+)
+INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED", default=True
+)
+INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV", default=True
 )
 DEFAULT_DEVICE_STR = os.getenv(
     "DEFAULT_DEVICE",
@@ -34,17 +61,71 @@ IDEMPOTENT_API_REQUEST_CODES_TO_RETRY = set(
     )
 )
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", "prod")
+# Region / environment matrix mirroring inference_sdk.regions - inference-models
+# is a standalone distribution and cannot depend on inference_sdk.
+_ROBOFLOW_API_HOSTS = {
+    ("us", "prod"): "https://api.roboflow.com",
+    ("us", "staging"): "https://api.roboflow.one",
+    ("eu", "prod"): "https://api.roboflow.eu",
+    ("eu", "staging"): "https://api.roboflow-eu.one",
+}
+ROBOFLOW_REGION = os.getenv("ROBOFLOW_REGION", "us").strip().lower()
+if ROBOFLOW_REGION not in {region for region, _ in _ROBOFLOW_API_HOSTS}:
+    warnings.warn(
+        f"Unknown ROBOFLOW_REGION {ROBOFLOW_REGION!r} - falling back to 'us'. "
+        "Supported regions: eu, us.",
+    )
+    ROBOFLOW_REGION = "us"
 ROBOFLOW_API_HOST = os.getenv(
     "ROBOFLOW_API_HOST",
-    (
-        "https://api.roboflow.com"
-        if ROBOFLOW_ENVIRONMENT.lower() == "prod"
-        else "https://api.roboflow.one"
-    ),
+    _ROBOFLOW_API_HOSTS[
+        (
+            ROBOFLOW_REGION,
+            "prod" if ROBOFLOW_ENVIRONMENT.lower() == "prod" else "staging",
+        )
+    ],
 )
+_legacy_license_server = os.getenv("LICENSE_SERVER")
+# Bare hosts use HTTPS with a migration warning; explicit HTTP is loopback-only.
+SECURE_GATEWAY = os.getenv("SECURE_GATEWAY") or _legacy_license_server or None
+if SECURE_GATEWAY:
+    SECURE_GATEWAY = normalize_secure_gateway_configuration(SECURE_GATEWAY)
+if _legacy_license_server and not os.getenv("SECURE_GATEWAY"):
+    warnings.warn(
+        "`LICENSE_SERVER` env variable is deprecated, use `SECURE_GATEWAY` instead. "
+        "`LICENSE_SERVER` will be removed end of Q3 2026.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 L4T_VERSION = os.getenv("L4T_VERSION")
-INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")
+# Fall back to the inference server's MODEL_CACHE_DIR so that both cache
+# layouts live on the same (typically mounted) volume without relying on
+# import order between `inference` and `inference_models`.
+INFERENCE_HOME = (
+    os.getenv("INFERENCE_HOME") or os.getenv("MODEL_CACHE_DIR") or "/tmp/cache"
+)
+HF_HUB_CACHE = os.environ["HF_HUB_CACHE"]
+# The package initializer establishes the dependency-light process-wide latch
+# before importing this configuration module. Reloads only compare the public
+# environment request with that immutable state.
+try:
+    _requested_offline_mode = get_boolean_from_env(
+        variable_name="OFFLINE_MODE", default=False
+    )
+except InvalidEnvVariable:
+    # Ignore malformed runtime mutations once the process-wide state exists.
+    _requested_offline_mode = None
+if _requested_offline_mode is None or OFFLINE_MODE != _requested_offline_mode:
+    warnings.warn(
+        "Changing OFFLINE_MODE at runtime is not supported. The new value is "
+        "being ignored; restart the process to change offline mode.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+OFFLINE_MODE_WARM_UP = get_boolean_from_env(
+    variable_name="OFFLINE_MODE_WARM_UP", default=False
+)
 DISABLE_INTERACTIVE_PROGRESS_BARS = get_boolean_from_env(
     variable_name="DISABLE_INTERACTIVE_PROGRESS_BARS",
     default=False,
@@ -56,6 +137,76 @@ DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
 )
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
+)
+SAM3_IMAGE_SIZE = get_integer_from_env(variable_name="SAM3_IMAGE_SIZE", default=1008)
+INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE", default=8
+)
+if INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_SAM3_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
+CHUNK_DOWNLOAD_CONNECT_TIMEOUT = get_float_from_env(
+    variable_name="CHUNK_DOWNLOAD_CONNECT_TIMEOUT",
+    default=30.0,
+)
+CHUNK_DOWNLOAD_READ_TIMEOUT = get_float_from_env(
+    variable_name="CHUNK_DOWNLOAD_READ_TIMEOUT",
+    default=60.0,
+)
+CHUNK_DOWNLOAD_MAX_ATTEMPTS = get_integer_from_env(
+    variable_name="CHUNK_DOWNLOAD_MAX_ATTEMPTS",
+    default=60,
+)
+FILE_LOCK_ACQUIRE_TIMEOUT = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT", default=600
+)
+
+
+# Single source of truth for the optional shared model blob cache. Values are
+# only parsed here - `ModelBlobCacheConfig` validates them on construction so a
+# misconfigured cache falls open instead of breaking the library import.
+MODEL_BLOB_CACHE_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_ENABLED", default=False
+)
+MODEL_BLOB_CACHE_BUCKET = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_BUCKET")
+MODEL_BLOB_CACHE_PREFIX = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX", "model-blobs"
+)
+MODEL_BLOB_CACHE_ENDPOINT_URL = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ENDPOINT_URL"
+)
+MODEL_BLOB_CACHE_REGION = os.getenv("INFERENCE_MODELS_MODEL_BLOB_CACHE_REGION")
+MODEL_BLOB_CACHE_ACCESS_KEY_ID = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ACCESS_KEY_ID"
+)
+MODEL_BLOB_CACHE_SECRET_ACCESS_KEY = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_SECRET_ACCESS_KEY"
+)
+MODEL_BLOB_CACHE_ADDRESSING_STYLE = os.getenv(
+    "INFERENCE_MODELS_MODEL_BLOB_CACHE_ADDRESSING_STYLE", "auto"
+)
+MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_CONNECT_TIMEOUT_SECONDS",
+    default=1.0,
+)
+MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_READ_TIMEOUT_SECONDS",
+    default=2.0,
+)
+MODEL_BLOB_CACHE_FAILURE_THRESHOLD = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_FAILURE_THRESHOLD", default=3
+)
+MODEL_BLOB_CACHE_COOLDOWN_SECONDS = get_float_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_COOLDOWN_SECONDS", default=60.0
+)
+MODEL_BLOB_CACHE_MAX_OBJECT_BYTES = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MODEL_BLOB_CACHE_MAX_OBJECT_BYTES",
+    default=20 * 1024**3,  # 20 GiB
 )
 ALLOW_URL_INPUT = get_boolean_from_env(variable_name="ALLOW_URL_INPUT", default=True)
 ALLOW_NON_HTTPS_URL_INPUT = get_boolean_from_env(
@@ -83,3 +234,599 @@ if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
 ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA = os.getenv(
     "ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA"
 )
+
+# General model parameters defaults
+
+INFERENCE_MODELS_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_CONFIDENCE",
+    default=0.4,
+)
+INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD",
+    default=0.3,
+)
+INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS",
+    default=300,
+)
+INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE",
+    default=16,
+)
+if INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE < 1:
+    raise InvalidEnvVariable(
+        message=(
+            "Expected environment variable `INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE` "
+            f"to be >= 1 but got '{INFERENCE_MODELS_INSTANCE_SEG_MASK_PROCESSING_CHUNK_SIZE}'"
+        ),
+        help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+    )
+INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=False,
+)
+INFERENCE_MODELS_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_MAX_NEW_TOKENS",
+    default=4096,
+)
+INFERENCE_MODELS_DEFAULT_NUM_BEAMS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_NUM_BEAMS",
+    default=3,
+)
+INFERENCE_MODELS_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_DO_SAMPLE",
+    default=False,
+)
+INFERENCE_MODELS_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_DEFAULT_SKIP_SPECIAL_TOKENS",
+    default=False,
+)
+
+
+# Model-specific parameters defaults
+INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE",
+    default=0.5,
+)
+INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_DINOV3_DEFAULT_CONFIDENCE",
+    default=0.5,
+)
+INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_EASYOCR_DEFAULT_CONFIDENCE",
+    default=0.3,
+)
+INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_FLORENCE2_DEFAULT_MAX_NEW_TOKENS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_NEW_TOKENS,
+)
+INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_FLORENCE2_DEFAULT_NUM_BEAMS",
+    default=INFERENCE_MODELS_DEFAULT_NUM_BEAMS,
+)
+INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_FLORENCE2_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_BOX_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_BOX_CONFIDENCE",
+    default=0.5,
+)
+INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GROUNDING_DINO_DEFAULT_IOU_THRESHOLD",
+    default=0.5,
+)
+INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MOONDREAM2_DEFAULT_MAX_NEW_TOKENS",
+    default=700,
+)
+INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE",
+    default=0.99,
+)
+INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD",
+    default=INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD,
+)
+INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_OWLV2_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_OWLV2_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS,
+)
+INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_PALIGEMMA_DEFAULT_MAX_NEW_TOKENS",
+    default=400,
+)
+INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_PALIGEMMA_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_PALIGEMMA_DEFAULT_SKIP_SPECIAL_TOKENS",
+    default=True,
+)
+INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_VL_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_VL_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_COSMOS3_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+MAGE_VL_CODEC_ENGINES = {"hevc", "dcvc-rt"}
+
+
+def _parse_mage_vl_codec_engine(variable_name: str, default: str) -> str:
+    value = os.getenv(variable_name, default)
+    if value not in MAGE_VL_CODEC_ENGINES:
+        raise InvalidEnvVariable(
+            message=f"Expected environment variable `{variable_name}` to be one of "
+            f"{sorted(MAGE_VL_CODEC_ENGINES)} but got '{value}'",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return value
+
+
+def _parse_positive_integer_from_env(variable_name: str, default: int) -> int:
+    value = get_integer_from_env(variable_name=variable_name, default=default)
+    if value <= 0:
+        raise InvalidEnvVariable(
+            message=f"Expected environment variable `{variable_name}` to be a "
+            f"positive integer but got '{value}'",
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return value
+
+
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+# "hevc" runs the cv-preinfer binary on CPU; "dcvc-rt" runs the bundled neural
+# codec and is an order of magnitude slower without its compiled CUDA kernels.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE = _parse_mage_vl_codec_engine(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_CODEC_ENGINE",
+    default="hevc",
+)
+# Number of codec canvases packed out of the video and handed to the model.
+INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS = _parse_positive_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_TARGET_CANVAS",
+    default=16,
+)
+INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS = _parse_positive_integer_from_env(
+    variable_name="INFERENCE_MODELS_MAGE_VL_DEFAULT_MAX_PIXELS",
+    default=153664,
+)
+INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GLM_OCR_DEFAULT_MAX_NEW_TOKENS",
+    default=8192,
+)
+INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GLM_OCR_DEFAULT_DO_SAMPLE",
+    default=False,
+)
+INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_5_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_5_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_8_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN3_8_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_QWEN25_VL_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN25_VL_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_QWEN25_VL_DEFAULT_SKIP_SPECIAL_TOKENS",
+    default=True,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_MAX_NEW_TOKENS",
+    default=512,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_ENABLE_THINKING",
+    default=False,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_SKIP_SPECIAL_TOKENS",
+    default=True,
+)
+# Official Gemma 4 sampling recommendations when ``do_sample`` is True (HF model cards).
+INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TEMPERATURE",
+    default=1.0,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P = get_float_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_P",
+    default=0.95,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_GEMMA4_DEFAULT_TOP_K",
+    default=64,
+)
+INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_RFDETR_SEMANTIC_SEGMENTATION_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_SEMANTIC_SEGMENTATION_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = False
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED",
+    default=DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_ENABLED,
+)
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_PIXELS",
+    default=4096 * 2160,
+)
+INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_POSTPROC_MAX_RUNS",
+    default=32768,
+)
+INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS",
+    default=8192 * 4320,
+)
+INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION",
+    default=8192,
+)
+INFERENCE_MODELS_RFDETR_DEFAULT_KEY_POINTS_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_DETR_DEFAULT_KEY_POINTS_THRESHOLD",
+    default=0.3,
+)
+INFERENCE_MODELS_RFDETR_STAGE2_DEFAULT_KEY_POINTS_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_STAGE2_DEFAULT_KEY_POINTS_THRESHOLD",
+    default=0.2,
+)
+DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = False
+INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED",
+    default=DEFAULT_INFERENCE_MODELS_RFDETR_TRITON_PREPROC_ENABLED,
+)
+RFDETR_PIPELINE_DEPTH_ENV_NAME = "RFDETR_PIPELINE_DEPTH"
+DEFAULT_RFDETR_PIPELINE_DEPTH = 1
+MIN_RFDETR_PIPELINE_DEPTH = 1
+MAX_RFDETR_PIPELINE_DEPTH = 2
+
+
+def parse_rfdetr_pipeline_depth(value: Optional[str]) -> int:
+    """Parse and validate the RF-DETR streaming pipeline depth.
+
+    Depth is the number of in-flight CPU/GPU stages the stream adapter may keep
+    alive. ``1`` preserves the original synchronous behavior; values greater
+    than one enable delayed response finalization. Values above the supported
+    maximum are normalized to ``2``. Zero, negative, and non-integer values are
+    rejected instead of being silently clamped.
+    """
+    if value is None:
+        return DEFAULT_RFDETR_PIPELINE_DEPTH
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be an integer but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    if parsed < MIN_RFDETR_PIPELINE_DEPTH:
+        raise InvalidEnvVariable(
+            message=(
+                f"Expected environment variable `{RFDETR_PIPELINE_DEPTH_ENV_NAME}` "
+                f"to be >= {MIN_RFDETR_PIPELINE_DEPTH} but got '{value}'"
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    return min(parsed, MAX_RFDETR_PIPELINE_DEPTH)
+
+
+def get_rfdetr_pipeline_depth() -> int:
+    """Read and validate ``RFDETR_PIPELINE_DEPTH`` from the environment."""
+    return parse_rfdetr_pipeline_depth(os.getenv(RFDETR_PIPELINE_DEPTH_ENV_NAME))
+
+
+RFDETR_PIPELINE_DEPTH = get_rfdetr_pipeline_depth()
+INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_CONFIDENCE",
+    default=0.99,
+)
+INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_ROBOFLOW_INSTANT_DEFAULT_IOU_THRESHOLD",
+    default=0.3,
+)
+INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_ROBOFLOW_INSTANT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_SMOL_VLM_DEFAULT_MAX_NEW_TOKENS",
+    default=400,
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT = os.getenv(
+    "INFERENCE_MODELS_GEMMA4_DEFAULT_IMAGE_PROMPT",
+    "Describe what you see in this image.",
+)
+INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT = os.getenv(
+    "INFERENCE_MODELS_GEMMA4_DEFAULT_SYSTEM_PROMPT",
+    "You are Gemma 4, a helpful multimodal assistant. Answer clearly and accurately.",
+)
+INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_SMOL_VLM_DEFAULT_DO_SAMPLE",
+    default=INFERENCE_MODELS_DEFAULT_DO_SAMPLE,
+)
+INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_SMOL_VLM_DEFAULT_SKIP_SPECIAL_TOKENS",
+    default=True,
+)
+INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_VIT_CLASSIFIER_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLACT_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLACT_DEFAULT_IOU_THRESHOLD",
+    default=INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD,
+)
+INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_YOLACT_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_YOLACT_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS,
+)
+INFERENCE_MODELS_YOLONAS_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLONAS_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_YOLONAS_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLONAS_DEFAULT_IOU_THRESHOLD",
+    default=INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD,
+)
+INFERENCE_MODELS_YOLONAS_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_YOLONAS_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_YOLONAS_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_YOLONAS_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS,
+)
+INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV5_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV5_DEFAULT_IOU_THRESHOLD",
+    default=INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD,
+)
+INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV5_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV5_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS,
+)
+INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV7_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV7_DEFAULT_IOU_THRESHOLD",
+    default=INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD,
+)
+INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV7_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV7_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS,
+)
+INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_IOU_THRESHOLD",
+    default=INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD,
+)
+INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS,
+)
+INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED",
+    default=True,
+)
+INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_BINARIZATION_THRESHOLD",
+    default=(
+        0.5
+        if INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_MASKS_SMOOTHING_ENABLED
+        else 0.0
+    ),
+)
+INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLO_ULTRALYTICS_DEFAULT_KEY_POINTS_THRESHOLD",
+    default=0.0,
+)
+INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV10_DEFAULT_CONFIDENCE",
+    default=INFERENCE_MODELS_DEFAULT_CONFIDENCE,
+)
+INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_YOLOV10_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLO26_DEFAULT_CONFIDENCE",
+    default=0.25,
+)
+INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLO26_DEFAULT_KEY_POINTS_THRESHOLD",
+    default=0.3,
+)
+INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLOLITE_DEFAULT_CONFIDENCE",
+    default=0.25,
+)
+INFERENCE_MODELS_YOLOLITE_DEFAULT_IOU_THRESHOLD = get_float_from_env(
+    variable_name="INFERENCE_MODELS_YOLOLITE_DEFAULT_IOU_THRESHOLD",
+    default=INFERENCE_MODELS_DEFAULT_IOU_THRESHOLD,
+)
+INFERENCE_MODELS_YOLOLITE_DEFAULT_MAX_DETECTIONS = get_integer_from_env(
+    variable_name="INFERENCE_MODELS_YOLOLITE_DEFAULT_MAX_DETECTIONS",
+    default=INFERENCE_MODELS_DEFAULT_MAX_DETECTIONS,
+)
+INFERENCE_MODELS_YOLOLITE_DEFAULT_CLASS_AGNOSTIC_NMS = get_boolean_from_env(
+    variable_name="INFERENCE_MODELS_YOLOLITE_DEFAULT_CLASS_AGNOSTIC_NMS",
+    default=INFERENCE_MODELS_DEFAULT_CLASS_AGNOSTIC_NMS,
+)
+
+ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND_ENV_NAME = (
+    "ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND"
+)
+DEFAULT_ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND = False
+
+
+def _parse_vllm_proxy_enabled() -> bool:
+    return get_boolean_from_env(variable_name="VLLM_PROXY_ENABLED", default=False)
+
+
+def _parse_vllm_request_timeout_s() -> float:
+    return get_float_from_env(variable_name="VLLM_REQUEST_TIMEOUT_S", default=120.0)
+
+
+def _parse_vllm_max_lora_rank() -> int:
+    return get_integer_from_env(variable_name="VLLM_MAX_LORA_RANK", default=64)
+
+
+def _parse_vllm_max_registered_adapters() -> int:
+    return get_integer_from_env(
+        variable_name="VLLM_MAX_REGISTERED_ADAPTERS", default=64
+    )
+
+
+def _parse_vllm_vision_lora_norm_threshold() -> float:
+    return get_float_from_env(
+        variable_name="VLLM_VISION_LORA_NORM_THRESHOLD", default=0.0
+    )
+
+
+def _vllm_setting_or_raw_value(parser: Callable[[], Any], variable_name: str) -> Any:
+    try:
+        return parser()
+    except InvalidEnvVariable:
+        return os.environ[variable_name]
+
+
+VLLM_PROXY_ENABLED = _vllm_setting_or_raw_value(
+    _parse_vllm_proxy_enabled, "VLLM_PROXY_ENABLED"
+)
+VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://127.0.0.1:8000")
+VLLM_REQUEST_TIMEOUT_S = _vllm_setting_or_raw_value(
+    _parse_vllm_request_timeout_s, "VLLM_REQUEST_TIMEOUT_S"
+)
+VLLM_MAX_LORA_RANK = _vllm_setting_or_raw_value(
+    _parse_vllm_max_lora_rank, "VLLM_MAX_LORA_RANK"
+)
+VLLM_MAX_REGISTERED_ADAPTERS = _vllm_setting_or_raw_value(
+    _parse_vllm_max_registered_adapters, "VLLM_MAX_REGISTERED_ADAPTERS"
+)
+VLLM_VISION_LORA_NORM_THRESHOLD = _vllm_setting_or_raw_value(
+    _parse_vllm_vision_lora_norm_threshold, "VLLM_VISION_LORA_NORM_THRESHOLD"
+)
+VLLM_DORA_POLICY = os.getenv("VLLM_DORA_POLICY", "reject").strip().lower()
+VLLM_SERVED_BASE_VARIANT = os.getenv("VLLM_SERVED_BASE_VARIANT", "qwen3_5-0.8b")
+VLLM_SERVED_BASE_NAME = os.getenv("VLLM_SERVED_BASE_NAME", VLLM_SERVED_BASE_VARIANT)
+VLLM_ADAPTER_KEY_TEMPLATE = os.getenv(
+    "VLLM_ADAPTER_KEY_TEMPLATE",
+    "base_model.model.model.language_model.layers.{suffix}",
+)
+
+
+def validate_vllm_proxy_settings() -> None:
+    """Validate the vLLM proxy settings once the proxy implementation is selected.
+
+    Importing the package never fails on these settings; malformed values are
+    kept as their raw strings until the proxy is used.
+
+    Raises:
+        InvalidEnvVariable: If a `VLLM_*` value is malformed, or if the proxy is
+            enabled while `OFFLINE_MODE` is active.
+    """
+    if isinstance(VLLM_PROXY_ENABLED, str):
+        _parse_vllm_proxy_enabled()
+    if OFFLINE_MODE and VLLM_PROXY_ENABLED:
+        raise InvalidEnvVariable(
+            message=(
+                "VLLM_PROXY_ENABLED is not supported while OFFLINE_MODE is enabled. "
+                "Disable the vLLM HTTP proxy or restart without OFFLINE_MODE."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/runtime-environment/#invalidenvvariable",
+        )
+    for value, parser in (
+        (VLLM_REQUEST_TIMEOUT_S, _parse_vllm_request_timeout_s),
+        (VLLM_MAX_LORA_RANK, _parse_vllm_max_lora_rank),
+        (VLLM_MAX_REGISTERED_ADAPTERS, _parse_vllm_max_registered_adapters),
+        (VLLM_VISION_LORA_NORM_THRESHOLD, _parse_vllm_vision_lora_norm_threshold),
+    ):
+        if isinstance(value, str):
+            parser()

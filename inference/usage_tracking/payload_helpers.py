@@ -1,10 +1,33 @@
 import hashlib
+import os
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 import requests
 
 # NOTE: This module is used in isolation, no imports from inference are allowed
 # NOTE: Any change made to this file should be matched to changes in redis offloader
+
+_OFFLINE_MODE_PROCESS_LATCH_ENV = "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START"
+# This module is also reused by an isolated offloader and must not import
+# inference or inference_models. The private marker published by
+# inference_models._offline is the process-wide latched decision; fall back
+# to the public variable when running fully standalone. Re-publishing the
+# marker makes the snapshot survive module re-execution and propagate to
+# descendant processes.
+_offline_mode_value = os.getenv(
+    _OFFLINE_MODE_PROCESS_LATCH_ENV, os.getenv("OFFLINE_MODE", "False")
+)
+_normalized_offline_mode_value = _offline_mode_value.lower()
+if _normalized_offline_mode_value == "true":
+    OFFLINE_MODE = True
+elif _normalized_offline_mode_value == "false":
+    OFFLINE_MODE = False
+else:
+    raise ValueError(
+        "Expected OFFLINE_MODE to be a boolean (true or false), "
+        f"got {_offline_mode_value!r}"
+    )
+os.environ[_OFFLINE_MODE_PROCESS_LATCH_ENV] = str(OFFLINE_MODE)
 
 
 ResourceID = str
@@ -17,6 +40,44 @@ ResourceCategory = str
 ResourceDetails = Dict[str, Any]
 SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
+
+
+def merge_megapixel_buckets(
+    left: Optional[Dict[str, Any]],
+    right: Optional[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Sum per-bucket frame and duration counters.
+
+    Kept local to this module so the redis usage offloader can mirror it without
+    importing the rest of inference.
+    """
+    if not left:
+        return {key: dict(value) for key, value in (right or {}).items()}
+    if not right:
+        return {key: dict(value) for key, value in left.items()}
+
+    merged: Dict[str, Dict[str, Any]] = {
+        key: {
+            "processed_frames": int(value.get("processed_frames", 0) or 0),
+            "execution_duration": float(value.get("execution_duration", 0) or 0),
+        }
+        for key, value in left.items()
+    }
+    for key, value in right.items():
+        frames = int(value.get("processed_frames", 0) or 0)
+        duration = float(value.get("execution_duration", 0) or 0)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = {
+                "processed_frames": frames,
+                "execution_duration": duration,
+            }
+            continue
+        existing["processed_frames"] = int(existing["processed_frames"]) + frames
+        existing["execution_duration"] = (
+            float(existing["execution_duration"]) + duration
+        )
+    return merged
 
 
 def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
@@ -34,6 +95,11 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
     merged["execution_duration"] = d1.get("execution_duration", 0) + d2.get(
         "execution_duration", 0
     )
+    if "megapixel_buckets" in d1 or "megapixel_buckets" in d2:
+        merged["megapixel_buckets"] = merge_megapixel_buckets(
+            d1.get("megapixel_buckets"),
+            d2.get("megapixel_buckets"),
+        )
     return {**d1, **d2, **merged}
 
 
@@ -153,6 +219,11 @@ def send_usage_payload(
     ssl_verify: bool = False,
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> Set[APIKeyHash]:
+    if OFFLINE_MODE:
+        # Report every hash as failed so callers that delete on "no failures"
+        # (including the Redis usage offloader) retain the payload instead of
+        # treating the offline no-op as a successful delivery.
+        return set(payload.keys())
     hashes_to_api_keys = hashes_to_api_keys or {}
     api_keys_hashes_failed = set()
     for api_key_hash, workflow_payloads in payload.items():
@@ -170,6 +241,9 @@ def send_usage_payload(
             for workflow_payload in complete_workflow_payloads:
                 if "api_key_hash" in workflow_payload:
                     del workflow_payload["api_key_hash"]
+                stream_session_id = workflow_payload.pop("stream_session_id", None)
+                if stream_session_id:
+                    workflow_payload["exec_session_id"] = stream_session_id
                 workflow_payload["api_key"] = api_key
             if not extra_headers:
                 extra_headers = {}

@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import List, Tuple, Union
 
 import numpy as np
@@ -42,6 +43,7 @@ class DepthAnythingV2HF(
         self._model = model
         self._processor = processor
         self._device = device
+        self._lock = Lock()
 
     def pre_process(
         self,
@@ -57,7 +59,7 @@ class DepthAnythingV2HF(
         pre_processed_images: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
-        with torch.inference_mode():
+        with self._lock, torch.inference_mode():
             return self._model(pre_processed_images)
 
     def post_process(

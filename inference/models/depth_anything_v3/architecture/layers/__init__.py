@@ -5,9 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 from inference.models.depth_anything_v3.architecture.layers.block import Block
-from inference.models.depth_anything_v3.architecture.layers.layer_scale import LayerScale
+from inference.models.depth_anything_v3.architecture.layers.layer_scale import (
+    LayerScale,
+)
 from inference.models.depth_anything_v3.architecture.layers.mlp import Mlp
-from inference.models.depth_anything_v3.architecture.layers.patch_embed import PatchEmbed
+from inference.models.depth_anything_v3.architecture.layers.patch_embed import (
+    PatchEmbed,
+)
 from inference.models.depth_anything_v3.architecture.layers.rope import (
     PositionGetter,
     RotaryPositionEmbedding2D,
@@ -21,4 +25,3 @@ __all__ = [
     "PositionGetter",
     "RotaryPositionEmbedding2D",
 ]
-

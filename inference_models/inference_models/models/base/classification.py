@@ -11,11 +11,16 @@ from inference_models.models.base.types import PreprocessedInputs, RawPrediction
 @dataclass
 class ClassificationPrediction:
     class_id: torch.Tensor  # (bs, )
-    confidence: torch.Tensor  # (bs, )
+    confidence: torch.Tensor  # (bs, num_classes) — full softmax distribution
     images_metadata: Optional[List[dict]] = None  # if given, list of size equal to bs
 
 
 class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
+
+    # Single-label classification deliberately opts out of recommendedParameters.
+    # Top-1 always wins regardless of confidence, so per-class refinement isn't
+    # a meaningful semantic for this task type. (Multi-label classification opts
+    # in below — that's where per-class thresholds actually filter the result.)
 
     @classmethod
     @abstractmethod
@@ -68,8 +73,10 @@ class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
 
 @dataclass
 class MultiLabelClassificationPrediction:
-    class_ids: torch.Tensor  # (predicted_labels_ids, )
-    confidence: torch.Tensor  # (predicted_labels_confidence, )
+    class_ids: (
+        torch.Tensor
+    )  # (predicted_labels_ids, ) — indices of above-threshold classes
+    confidence: torch.Tensor  # (num_classes, ) — full sigmoid distribution
     image_metadata: Optional[dict] = None
 
 

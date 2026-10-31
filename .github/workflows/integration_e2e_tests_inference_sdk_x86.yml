@@ -4,9 +4,29 @@ permissions:
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "theme/**"
+      - "theme_build/**"
+      - "mkdocs.yml"
+      - "**.md"
   workflow_dispatch:
+
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   call_is_mergeable:
@@ -22,21 +42,19 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 📦 Cache Python packages
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
@@ -63,21 +81,19 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 📦 Cache Python packages
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock', 'inference_models/pyproject.toml') }}
 
       - name: 🐍 Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
@@ -86,12 +102,30 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
-          pip install -r requirements/_requirements.txt \
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+                      -r requirements/_requirements.txt \
                       -r requirements/requirements.cpu.txt \
                       -r requirements/requirements.http.txt \
                       -r requirements/requirements.sdk.http.txt \
                       -r requirements/requirements.sdk.webrtc.txt \
-                      -r requirements/requirements.test.unit.txt
+                      -r requirements/requirements.test.unit.txt \
+                      -r requirements/requirements.transformers.txt
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
+
+      - name: 🏗️ Build and install same-checkout server dependencies
+        run: |
+          make create_isolation_wheels
+          pip install --find-links "${{ github.workspace }}/dist" \
+            "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" \
+            "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]" \
+            "${{ github.workspace }}"/dist/inference_sdk-*.whl \
+            "${{ github.workspace }}"/dist/inference_models-*.whl
+          # pip skips wheels matching installed release versions. Test this checkout.
+          pip install --force-reinstall --no-deps \
+            "${{ github.workspace }}"/dist/roboflow_workflows-*.whl \
+            "${{ github.workspace }}"/dist/streamvision-*.whl \
+            "${{ github.workspace }}"/dist/inference_sdk-*.whl \
+            "${{ github.workspace }}"/dist/inference_models-*.whl
 
       - name: 🧪 E2E Tests - WebRTC SDK (real server)
         timeout-minutes: 15

@@ -7,11 +7,13 @@ import PIL
 import torch
 from PIL.Image import Image
 from skimage import exposure
-from torchvision.transforms import Grayscale, functional
+from torchvision.transforms import functional
 
+from inference_models.configuration import INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV
 from inference_models.entities import ColorFormat, ImageDimensions
-from inference_models.errors import ModelRuntimeError
+from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.logger import LOGGER
+from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.common.roboflow.model_packages import (
     AnySizePadding,
     ColorMode,
@@ -24,6 +26,9 @@ from inference_models.models.common.roboflow.model_packages import (
     StaticCrop,
     StaticCropOffset,
 )
+from inference_models.models.common.roboflow.opencv_resize import (
+    resize_uint8_tensor_like_opencv,
+)
 
 
 def pre_process_network_input(
@@ -33,12 +38,33 @@ def pre_process_network_input(
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
     image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    """Pre-process model images into a dense tensor batch.
+
+    Args:
+        images: A single image, dense tensor batch, or list of images.
+        image_pre_processing: Roboflow preprocessing operations to apply.
+        network_input: Model input sizing and color configuration.
+        target_device: Device on which the processed tensor should reside.
+        input_color_format: Color format of the supplied images, when known.
+        image_size_wh: Optional requested output size as width and height.
+        pre_processing_overrides: Per-request preprocessing overrides.
+
+    Returns:
+        A dense ``B x C x H x W`` tensor and matching preprocessing metadata.
+
+    Raises:
+        ModelInputError: If the input is unsupported, empty, or produces images
+            with dimensions that cannot be represented in a dense tensor.
+        ModelRuntimeError: If the model's preprocessing configuration is not
+            supported.
+    """
     if network_input.input_channels != 3:
         raise ModelRuntimeError(
             message=f"`inference` currently does not support Roboflow pre-processing for model inputs with "
-            f"channels numbers different than 1. Let us know if you need this feature.",
-            help_url="https://todo",
+            f"channels numbers different than 3. Let us know if you need this feature.",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     input_color_mode = None
     if input_color_format is not None:
@@ -53,6 +79,7 @@ def pre_process_network_input(
             target_device=target_device,
             input_color_mode=input_color_mode,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
     if isinstance(images, torch.Tensor):
         return pre_process_images_tensor(
@@ -62,22 +89,47 @@ def pre_process_network_input(
             input_color_mode=input_color_mode,
             target_device=target_device,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
-        raise ModelRuntimeError(
-            message="Detected empty input to the model", help_url="https://todo"
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if network_input.resize_mode is ResizeMode.FIT_LONGER_EDGE:
         raise ModelRuntimeError(
             message="Model input resize type (fit-longer-edge) cannot be applied equally for "
             "all input batch elements arbitrarily - this type of model does not support input batches.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
+    if network_input.training_input_size is None:
+        processed_images, metadata = pre_process_network_input_to_image_list(
+            images=images,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=target_device,
+            input_color_format=input_color_format,
+            image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        image_shapes = {tuple(image.shape) for image in processed_images}
+        if len(image_shapes) != 1:
+            raise ModelInputError(
+                message="Pre-processing produced images with different spatial "
+                "dimensions, which cannot be represented as a dense tensor batch. "
+                "Use `pre_process_network_input_to_image_list` for models that "
+                "accept variable-size image lists.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+
+        dense_batch = torch.stack(processed_images, dim=0).contiguous()
+
+        return dense_batch, metadata
     if isinstance(images[0], np.ndarray):
         return pre_process_numpy_images_list(
             images=images,
@@ -86,6 +138,7 @@ def pre_process_network_input(
             input_color_mode=input_color_mode,
             target_device=target_device,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
     if isinstance(images[0], torch.Tensor):
         return pre_process_images_tensor_list(
@@ -95,24 +148,116 @@ def pre_process_network_input(
             input_color_mode=input_color_mode,
             target_device=target_device,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 
-@torch.inference_mode()
-def pre_process_images_tensor(
-    images: torch.Tensor,
+def pre_process_network_input_to_image_list(
+    images: Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]],
+    *,
     image_pre_processing: ImagePreProcessing,
     network_input: NetworkInputDefinition,
     target_device: torch.device,
-    input_color_mode: Optional[ColorMode] = None,
-    image_size_wh: Optional[Tuple[int, int]] = None,
-) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
-    if input_color_mode is None:
-        input_color_mode = ColorMode.RGB
+    input_color_format: Optional[ColorFormat] = None,
+    image_size_wh: Optional[Union[int, Tuple[int, int]]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+) -> Tuple[List[torch.Tensor], List[PreProcessingMetadata]]:
+    """Pre-process images for a model that accepts an image tensor list.
+
+    Fixed-size configurations and uniform four-dimensional tensor batches use
+    the established dense preprocessing path. Ragged any-size inputs are
+    processed separately so each image can retain its own post-processing
+    dimensions.
+
+    Args:
+        images: A single image, dense tensor batch, or list of images.
+        image_pre_processing: Roboflow preprocessing operations to apply.
+        network_input: Model input sizing and color configuration.
+        target_device: Device on which the processed tensors should reside.
+        input_color_format: Color format of the supplied images, when known.
+        image_size_wh: Optional requested output size as width and height.
+        pre_processing_overrides: Per-request preprocessing overrides.
+
+    Returns:
+        Processed ``C x H x W`` tensors and matching preprocessing metadata.
+
+    Raises:
+        ModelInputError: If the input is an empty list or has an unsupported type.
+    """
+    is_dense_tensor_batch = isinstance(images, torch.Tensor) and images.ndim == 4
+    if network_input.training_input_size is not None or is_dense_tensor_batch:
+        dense_batch, metadata = pre_process_network_input(
+            images=images,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=target_device,
+            input_color_format=input_color_format,
+            image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        processed_images = list(dense_batch.unbind(dim=0))
+
+        return processed_images, metadata
+
+    if isinstance(images, torch.Tensor) and images.ndim == 4:
+        individual_images = [image for image in images]
+    elif isinstance(images, list):
+        individual_images = images
+    else:
+        individual_images = [images]
+
+    if not individual_images:
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
+
+    processed_images, result_metadata = [], []
+    for image in individual_images:
+        dense_image, metadata = pre_process_network_input(
+            images=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=target_device,
+            input_color_format=input_color_format,
+            image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
+        )
+        processed_images.append(dense_image[0])
+        result_metadata.extend(metadata)
+
+    return processed_images, result_metadata
+
+
+def resolve_target_dimensions(
+    network_input: NetworkInputDefinition,
+    image_size_wh: Optional[Tuple[int, int]],
+    fallback_size_wh: Tuple[int, int],
+) -> Tuple[int, int]:
+    """Resolve the width and height at which an input is prepared.
+
+    A model that accepts any input size may ship no training_input_size (a VLM
+    fine-tuned on a version without a resize); its images keep their own size
+    unless one is requested.
+
+    Args:
+        network_input: Model input sizing configuration.
+        image_size_wh: Explicitly requested width and height, when supplied.
+        fallback_size_wh: Post-preprocessing width and height to preserve for an
+            any-size model when no explicit size is requested.
+
+    Returns:
+        The target width and height for geometric input preparation.
+
+    Raises:
+        ModelRuntimeError: If a requested dynamic-size mode is unsupported.
+    """
+    if network_input.training_input_size is None:
+        return image_size_wh if image_size_wh is not None else fallback_size_wh
     target_dimensions = (
         network_input.training_input_size.width,
         network_input.training_input_size.height,
@@ -138,8 +283,29 @@ def pre_process_images_tensor(
             raise ModelRuntimeError(
                 message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
                 f"is not implemented.",
-                help_url="",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
+    return target_dimensions
+
+
+def _tensor_size_wh(image: torch.Tensor) -> Tuple[int, int]:
+    if image.shape[0] != 3 and image.shape[-1] == 3:
+        return image.shape[1], image.shape[0]
+    return image.shape[2], image.shape[1]
+
+
+@torch.inference_mode()
+def pre_process_images_tensor(
+    images: torch.Tensor,
+    image_pre_processing: ImagePreProcessing,
+    network_input: NetworkInputDefinition,
+    target_device: torch.device,
+    input_color_mode: Optional[ColorMode] = None,
+    image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
+    if input_color_mode is None:
+        input_color_mode = ColorMode.RGB
     if images.device != target_device:
         images = images.to(target_device)
     if len(images.shape) == 3:
@@ -154,11 +320,18 @@ def pre_process_images_tensor(
         image=images,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
+        input_color_mode=input_color_mode,
+        pre_processing_overrides=pre_processing_overrides,
+    )
+    target_dimensions = resolve_target_dimensions(
+        network_input,
+        image_size_wh,
+        (image.shape[3], image.shape[2]),
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return TORCH_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
         image,
@@ -174,33 +347,90 @@ def apply_pre_processing_to_torch_image(
     image: torch.Tensor,
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    *,
+    input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[torch.Tensor, StaticCropOffset]:
+    if input_color_mode is None:
+        input_color_mode = ColorMode.RGB
     static_crop_offset = StaticCropOffset(
         offset_x=0,
         offset_y=0,
         crop_width=image.shape[3],
         crop_height=image.shape[2],
     )
-    if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
+    static_crop_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_static_crop
+    )
+    if (
+        image_pre_processing.static_crop
+        and image_pre_processing.static_crop.enabled
+        and not static_crop_overridden
+    ):
         image, static_crop_offset = apply_static_crop_to_torch_image(
             image=image,
             config=image_pre_processing.static_crop,
         )
-    if image_pre_processing.grayscale and image_pre_processing.grayscale.enabled:
-        image = Grayscale(num_output_channels=network_input_channels)(image)
-    if image_pre_processing.contrast and image_pre_processing.contrast.enabled:
+    grayscale_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_grayscale
+    )
+    if (
+        image_pre_processing.grayscale
+        and image_pre_processing.grayscale.enabled
+        and not grayscale_overridden
+    ):
+        image = apply_grayscale_to_torch_image(
+            image=image,
+            input_color_mode=input_color_mode,
+            num_output_channels=network_input_channels,
+        )
+    contrast_enhancement_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_contrast_enhancement
+    )
+    if (
+        image_pre_processing.contrast
+        and image_pre_processing.contrast.enabled
+        and not contrast_enhancement_overridden
+    ):
         if (
             image_pre_processing.contrast.type
             not in CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH
         ):
             raise ModelRuntimeError(
                 message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         image = CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH[
             image_pre_processing.contrast.type
         ](image)
     return image, static_crop_offset
+
+
+def apply_grayscale_to_torch_image(
+    image: torch.Tensor,
+    input_color_mode: ColorMode,
+    num_output_channels: int,
+) -> torch.Tensor:
+    if image.shape[1] == 1:
+        return image
+
+    if input_color_mode is ColorMode.BGR:
+        blue, green, red = image[:, 0], image[:, 1], image[:, 2]
+    else:
+        red, green, blue = image[:, 0], image[:, 1], image[:, 2]
+    if image.dtype == torch.uint8:
+        gray = (
+            red.int() * 9798 + green.int() * 19235 + blue.int() * 3735 + 16384
+        ) >> 15
+    else:
+        gray = red * 0.299 + green * 0.587 + blue * 0.114
+    gray = gray.to(dtype=image.dtype).unsqueeze(1)
+    gray = gray.expand(-1, num_output_channels, -1, -1)
+
+    return gray
 
 
 def apply_static_crop_to_torch_image(
@@ -254,7 +484,9 @@ def apply_histogram_equalization_to_torch_image(image: torch.Tensor) -> torch.Te
     for single_image in image:
         single_image_numpy = np.transpose(single_image.cpu().numpy(), (1, 2, 0))
         single_image_numpy = single_image_numpy.astype(np.float32) / 255
-        image_equalized = exposure.equalize_hist(single_image_numpy) * 255
+        image_equalized = (exposure.equalize_hist(single_image_numpy) * 255).astype(
+            np.uint8
+        )
         results.append(torch.from_numpy(image_equalized).to(original_device))
     return torch.stack(results, dim=0).permute(0, 3, 1, 2)
 
@@ -264,6 +496,25 @@ CONTRAST_ADJUSTMENT_METHODS_FOR_TORCH = {
     ContrastType.CONTRAST_STRETCHING: apply_contrast_stretching_to_torch_image,
     ContrastType.HISTOGRAM_EQUALIZATION: apply_histogram_equalization_to_torch_image,
 }
+
+
+def _resize_image_tensor(
+    image: torch.Tensor, *, height: int, width: int
+) -> torch.Tensor:
+    if INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV and image.dtype == torch.uint8:
+        image = resize_uint8_tensor_like_opencv(image, height=height, width=width)
+        if image.device.type == "cuda":
+            image = image.float()
+        return image
+
+    if image.device.type == "cuda":
+        image = image.float()
+    resized = torch.nn.functional.interpolate(
+        image,
+        size=[height, width],
+        mode="bilinear",
+    )
+    return resized
 
 
 def handle_tensor_input_preparation_with_stretch(
@@ -277,12 +528,8 @@ def handle_tensor_input_preparation_with_stretch(
     size_after_pre_processing = ImageDimensions(
         height=image.shape[2], width=image.shape[3]
     )
-    if image.device.type == "cuda":
-        image = image.float()
-    image = torch.nn.functional.interpolate(
-        image,
-        size=[target_size.height, target_size.width],
-        mode="bilinear",
+    image = _resize_image_tensor(
+        image, height=target_size.height, width=target_size.width
     )
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
@@ -330,13 +577,7 @@ def handle_torch_input_preparation_with_letterbox(
     new_height = int(original_height * scale)
     pad_top = int((target_size.height - new_height) / 2)
     pad_left = int((target_size.width - new_width) / 2)
-    if image.device.type == "cuda":
-        image = image.float()
-    image = torch.nn.functional.interpolate(
-        image,
-        [new_height, new_width],
-        mode="bilinear",
-    )
+    image = _resize_image_tensor(image, height=new_height, width=new_width)
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
     final_batch = torch.full(
@@ -423,9 +664,9 @@ def handle_torch_input_preparation_with_center_crop(
         image = functional.pad(image, padding_ltrb, fill=0)
     crop_ltrb = [0, 0, 0, 0]
     if target_size.width != image.shape[3] or target_size.height != image.shape[2]:
-        crop_top = int(round((image.shape[2] - target_size.height) / 2.0))
+        crop_top = (image.shape[2] - target_size.height) // 2
         crop_bottom = image.shape[2] - target_size.height - crop_top
-        crop_left = int(round((image.shape[3] - target_size.width) / 2.0))
+        crop_left = (image.shape[3] - target_size.width) // 2
         crop_right = image.shape[3] - target_size.width - crop_left
         crop_ltrb = [crop_left, crop_top, crop_right, crop_bottom]
         image = functional.crop(
@@ -492,12 +733,8 @@ def handle_torch_input_preparation_fitting_longer_edge(
         height=actual_target_height,
         width=actual_target_width,
     )
-    if image.device.type == "cuda":
-        image = image.float()
-    image = torch.nn.functional.interpolate(
-        image,
-        [actual_target_size.height, actual_target_size.width],
-        mode="bilinear",
+    image = _resize_image_tensor(
+        image, height=actual_target_size.height, width=actual_target_size.width
     )
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
@@ -543,47 +780,26 @@ def pre_process_images_tensor_list(
     target_device: torch.device,
     input_color_mode: Optional[ColorMode] = None,
     image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if network_input.resize_mode not in TORCH_LIST_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     if input_color_mode is None:
         input_color_mode = ColorMode.RGB
-    target_dimensions = (
-        network_input.training_input_size.width,
-        network_input.training_input_size.height,
+    target_dimensions = resolve_target_dimensions(
+        network_input, image_size_wh, _tensor_size_wh(images[0])
     )
-    if image_size_wh is not None and image_size_wh != target_dimensions:
-        if not network_input.dynamic_spatial_size_supported:
-            LOGGER.warning(
-                f"Requested image size: {image_size_wh} cannot be applied for model input, as model was trained with "
-                f"input resolution and does not support inputs of a different shape. `image_size_wh` gets ignored."
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
-            target_dimensions = (
-                make_the_value_divisible(
-                    x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value
-                ),
-                make_the_value_divisible(
-                    x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value
-                ),
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
-            target_dimensions = image_size_wh
-        else:
-            raise ModelRuntimeError(
-                message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
-                f"is not implemented.",
-                help_url="",
-            )
     images, static_crop_offsets, original_sizes = (
         apply_pre_processing_to_list_of_torch_image(
             images=images,
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input.input_channels,
             target_device=target_device,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
         )
     )
     return TORCH_LIST_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
@@ -602,13 +818,16 @@ def apply_pre_processing_to_list_of_torch_image(
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
     target_device: torch.device,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
+    *,
+    input_color_mode: Optional[ColorMode] = None,
 ) -> Tuple[List[torch.Tensor], List[StaticCropOffset], List[ImageDimensions]]:
     result_images, result_offsets, original_sizes = [], [], []
     for image in images:
         if len(image.shape) != 3:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         image = image.to(target_device)
         if image.shape[0] != 3 and image.shape[-1] == 3:
@@ -620,6 +839,8 @@ def apply_pre_processing_to_list_of_torch_image(
             image=image.unsqueeze(0),
             image_pre_processing=image_pre_processing,
             network_input_channels=network_input_channels,
+            input_color_mode=input_color_mode,
+            pre_processing_overrides=pre_processing_overrides,
         )
         result_images.append(result_image)
         result_offsets.append(result_offset)
@@ -643,12 +864,8 @@ def handle_tensor_list_input_preparation_with_stretch(
         )
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
-        if img.device.type == "cuda":
-            img = img.float()
-        img = torch.nn.functional.interpolate(
-            img,
-            size=[target_size.height, target_size.width],
-            mode="bilinear",
+        img = _resize_image_tensor(
+            img, height=target_size.height, width=target_size.width
         )
         if network_input.scaling_factor is not None:
             img = img / network_input.scaling_factor
@@ -693,23 +910,13 @@ def handle_tensor_list_input_preparation_with_letterbox(
         dtype=torch.float32,
         device=target_device,
     )
-    original_shapes = torch.tensor(
-        [[img.shape[2], img.shape[3]] for img in images], dtype=torch.float32
-    )
-    scale_w = target_size.width / original_shapes[:, 1]
-    scale_h = target_size.height / original_shapes[:, 0]
-    scales = torch.minimum(scale_w, scale_h)
-    new_ws = (original_shapes[:, 1] * scales).int()
-    new_hs = (original_shapes[:, 0] * scales).int()
-    pad_tops = ((target_size.height - new_hs) / 2).int()
-    pad_lefts = ((target_size.width - new_ws) / 2).int()
     images_metadata = []
     for i in range(num_images):
         img = images[i]
         if len(img.shape) != 4:
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         original_size = original_sizes[i]
         size_after_pre_processing = ImageDimensions(
@@ -717,15 +924,15 @@ def handle_tensor_list_input_preparation_with_letterbox(
         )
         if input_color_mode != network_input.color_mode:
             img = img[:, [2, 1, 0], :, :]
-        new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
-        if img.device.type == "cuda":
-            img = img.float()
-        img = torch.nn.functional.interpolate(
-            img,
-            size=[new_h_i, new_w_i],
-            mode="bilinear",
+        scale = min(
+            target_size.width / size_after_pre_processing.width,
+            target_size.height / size_after_pre_processing.height,
         )
-        pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
+        new_w_i = int(size_after_pre_processing.width * scale)
+        new_h_i = int(size_after_pre_processing.height * scale)
+        pad_top_i = int((target_size.height - new_h_i) / 2)
+        pad_left_i = int((target_size.width - new_w_i) / 2)
+        img = _resize_image_tensor(img, height=new_h_i, width=new_w_i)
         final_batch[
             i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
         ] = img
@@ -739,8 +946,8 @@ def handle_tensor_list_input_preparation_with_letterbox(
             original_size=original_size,
             size_after_pre_processing=size_after_pre_processing,
             inference_size=target_size,
-            scale_width=scales[i].item(),
-            scale_height=scales[i].item(),
+            scale_width=scale,
+            scale_height=scale,
             static_crop_offset=static_crop_offsets[i],
         )
         images_metadata.append(image_metadata)
@@ -771,10 +978,9 @@ def handle_tensor_list_input_preparation_with_center_crop(
         images, static_crop_offsets, original_sizes
     ):
         if len(image.shape) != 4:
-            # TODO!
-            raise ModelRuntimeError(
+            raise ModelInputError(
                 message="When providing List[torch.Tensor] as input, model requires tensors to have 3 dimensions.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
         image = image.to(target_device)
         if (
@@ -810,6 +1016,7 @@ def pre_process_numpy_images_list(
     target_device: torch.device,
     input_color_mode: Optional[ColorMode] = None,
     image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     result_tensors, result_metadata = [], []
     for image in images:
@@ -820,6 +1027,7 @@ def pre_process_numpy_images_list(
             target_device=target_device,
             input_color_mode=input_color_mode,
             image_size_wh=image_size_wh,
+            pre_processing_overrides=pre_processing_overrides,
         )
         result_tensors.append(tensor)
         result_metadata.extend(metadata)
@@ -834,47 +1042,27 @@ def pre_process_numpy_image(
     target_device: torch.device,
     input_color_mode: Optional[ColorMode] = None,
     image_size_wh: Optional[Tuple[int, int]] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
-    target_dimensions = (
-        network_input.training_input_size.width,
-        network_input.training_input_size.height,
-    )
-    if image_size_wh is not None and image_size_wh != target_dimensions:
-        if not network_input.dynamic_spatial_size_supported:
-            LOGGER.warning(
-                f"Requested image size: {image_size_wh} cannot be applied for model input, as model was trained with "
-                f"input resolution and does not support inputs of a different shape. `image_size_wh` gets ignored."
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, DivisiblePadding):
-            target_dimensions = (
-                make_the_value_divisible(
-                    x=image_size_wh[0], by=network_input.dynamic_spatial_size_mode.value
-                ),
-                make_the_value_divisible(
-                    x=image_size_wh[1], by=network_input.dynamic_spatial_size_mode.value
-                ),
-            )
-        elif isinstance(network_input.dynamic_spatial_size_mode, AnySizePadding):
-            target_dimensions = image_size_wh
-        else:
-            raise ModelRuntimeError(
-                message=f"Handler for dynamic spatial mode of type {type(network_input.dynamic_spatial_size_mode)} "
-                f"is not implemented.",
-                help_url="",
-            )
     original_size = ImageDimensions(width=image.shape[1], height=image.shape[0])
     image, static_crop_offset = apply_pre_processing_to_numpy_image(
         image=image,
         image_pre_processing=image_pre_processing,
         network_input_channels=network_input.input_channels,
         input_color_mode=input_color_mode,
+        pre_processing_overrides=pre_processing_overrides,
+    )
+    target_dimensions = resolve_target_dimensions(
+        network_input,
+        image_size_wh,
+        (image.shape[1], image.shape[0]),
     )
     if network_input.resize_mode not in NUMPY_IMAGES_PREPARATION_HANDLERS:
         raise ModelRuntimeError(
             message=f"Unsupported model input resize mode: {network_input.resize_mode}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
         )
     return NUMPY_IMAGES_PREPARATION_HANDLERS[network_input.resize_mode](
         image,
@@ -892,6 +1080,7 @@ def apply_pre_processing_to_numpy_image(
     image_pre_processing: ImagePreProcessing,
     network_input_channels: int,
     input_color_mode: Optional[ColorMode] = None,
+    pre_processing_overrides: Optional[PreProcessingOverrides] = None,
 ) -> Tuple[np.ndarray, StaticCropOffset]:
     if input_color_mode is None:
         input_color_mode = ColorMode.BGR
@@ -901,12 +1090,28 @@ def apply_pre_processing_to_numpy_image(
         crop_width=image.shape[1],
         crop_height=image.shape[0],
     )
-    if image_pre_processing.static_crop and image_pre_processing.static_crop.enabled:
+    static_crop_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_static_crop
+    )
+    if (
+        image_pre_processing.static_crop
+        and image_pre_processing.static_crop.enabled
+        and not static_crop_overridden
+    ):
         image, static_crop_offset = apply_static_crop_to_numpy_image(
             image=image,
             config=image_pre_processing.static_crop,
         )
-    if image_pre_processing.grayscale and image_pre_processing.grayscale.enabled:
+    grayscale_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_grayscale
+    )
+    if (
+        image_pre_processing.grayscale
+        and image_pre_processing.grayscale.enabled
+        and not grayscale_overridden
+    ):
         mode = (
             cv2.COLOR_BGR2GRAY
             if input_color_mode is ColorMode.BGR
@@ -914,14 +1119,22 @@ def apply_pre_processing_to_numpy_image(
         )
         image = cv2.cvtColor(image, mode)
         image = np.stack([image] * network_input_channels, axis=2)
-    if image_pre_processing.contrast and image_pre_processing.contrast.enabled:
+    contrast_enhancement_overridden = (
+        pre_processing_overrides is not None
+        and pre_processing_overrides.disable_contrast_enhancement
+    )
+    if (
+        image_pre_processing.contrast
+        and image_pre_processing.contrast.enabled
+        and not contrast_enhancement_overridden
+    ):
         if (
             image_pre_processing.contrast.type
             not in CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY
         ):
             raise ModelRuntimeError(
                 message=f"Unsupported image contrast adjustment type: {image_pre_processing.contrast.type.value}",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/models-runtime/#modelruntimeerror",
             )
         image = CONTRAST_ADJUSTMENT_METHODS_FOR_NUMPY[
             image_pre_processing.contrast.type
@@ -1242,13 +1455,14 @@ def extract_input_images_dimensions(
             )
         return image_dimensions
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
-        raise ModelRuntimeError(
-            message="Detected empty input to the model", help_url="https://todo"
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if isinstance(images[0], np.ndarray):
         return [ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images]
@@ -1259,9 +1473,9 @@ def extract_input_images_dimensions(
                 ImageDimensions(height=image.shape[1], width=image.shape[2])
             )
         return image_dimensions
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 
@@ -1292,13 +1506,14 @@ def images_to_pillow(
             )
         return result, dimensions
     if not isinstance(images, list):
-        raise ModelRuntimeError(
+        raise ModelInputError(
             message="Pre-processing supports only np.array or torch.Tensor or list of above.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if not len(images):
-        raise ModelRuntimeError(
-            message="Detected empty input to the model", help_url="https://todo"
+        raise ModelInputError(
+            message="Detected empty input to the model",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"
@@ -1322,9 +1537,9 @@ def images_to_pillow(
                 ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
             )
         return result, dimensions
-    raise ModelRuntimeError(
+    raise ModelInputError(
         message=f"Detected unknown input batch element: {type(images[0])}",
-        help_url="https://todo",
+        help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
     )
 
 

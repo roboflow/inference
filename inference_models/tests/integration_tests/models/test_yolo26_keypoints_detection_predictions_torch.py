@@ -96,7 +96,7 @@ STRETCH_EXPECTED_KP_CONF = (
     [0.0] * 9 + [0.5310] + [0.0] + [0.3717] + [0.0] * 11 + [0.4403] + [0.0] * 9
 )
 
-CPU_LETTERBOX_BOX_XYXY = [[-33, 246, 1732, 1076], [-8, 252, 1798, 1076]]
+CPU_LETTERBOX_BOX_XYXY = [[0, 246, 1732, 1076], [0, 252, 1798, 1076]]
 CPU_LETTERBOX_BOX_CONF = [0.9278, 0.4429]
 
 
@@ -111,7 +111,9 @@ def test_yolo26n_pose_torchscript_letterbox_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -149,7 +151,11 @@ def test_yolo26n_pose_torchscript_letterbox_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor(
         [LETTERBOX_EXPECTED_KP_XY_1, LETTERBOX_EXPECTED_KP_XY_2],
@@ -188,7 +194,9 @@ def test_yolo26n_pose_torchscript_letterbox_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -226,7 +234,9 @@ def test_yolo26n_pose_torchscript_stretch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_numpy)
+    predictions = model(
+        basketball_image_numpy, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -240,7 +250,7 @@ def test_yolo26n_pose_torchscript_stretch_numpy(
     )
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
-        torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32),
+        torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(
@@ -261,11 +271,15 @@ def test_yolo26n_pose_torchscript_stretch_batch_numpy(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model([basketball_image_numpy, basketball_image_numpy])
+    predictions = model(
+        [basketball_image_numpy, basketball_image_numpy],
+        confidence=0.25,
+        key_points_threshold=0.3,
+    )
 
     expected_kp_xy = torch.tensor([STRETCH_EXPECTED_KP_XY], dtype=torch.int32)
     expected_kp_conf = torch.tensor([STRETCH_EXPECTED_KP_CONF])
-    expected_box_xyxy = torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32)
+    expected_box_xyxy = torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32)
     expected_box_conf = torch.tensor([0.9262])
 
     for i in range(2):
@@ -294,7 +308,9 @@ def test_yolo26n_pose_torchscript_stretch_torch(
         device=DEFAULT_DEVICE,
     )
 
-    predictions = model(basketball_image_torch)
+    predictions = model(
+        basketball_image_torch, confidence=0.25, key_points_threshold=0.3
+    )
 
     assert torch.allclose(
         predictions[0][0].xy.cpu(),
@@ -308,7 +324,7 @@ def test_yolo26n_pose_torchscript_stretch_torch(
     )
     assert torch.allclose(
         predictions[1][0].xyxy.cpu(),
-        torch.tensor([[21, 259, 1929, 1078]], dtype=torch.int32),
+        torch.tensor([[21, 259, 1920, 1078]], dtype=torch.int32),
         atol=COORD_TOLERANCE,
     )
     assert torch.allclose(
@@ -316,3 +332,24 @@ def test_yolo26n_pose_torchscript_stretch_torch(
         torch.tensor([0.9262]),
         atol=CONF_TOLERANCE,
     )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_torchscript_per_class_confidence_filters_detections(
+    yolo26n_pose_basketball_letterbox_torch_script_package: str,
+    basketball_image_numpy: np.ndarray,
+) -> None:
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = YOLO26ForKeyPointsDetectionTorchScript.from_pretrained(
+        model_name_or_path=yolo26n_pose_basketball_letterbox_torch_script_package,
+        device=DEFAULT_DEVICE,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.25,
+        per_class_confidence={class_names[0]: 1.01},
+    )
+    _, predictions_det = model(basketball_image_numpy, confidence="best")
+    assert predictions_det[0].class_id.numel() == 0

@@ -25,6 +25,9 @@ extra:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
+
 nav:
   - Home: index.md
   - Getting Started:
@@ -60,35 +63,48 @@ nav:
           - ResNet: models/resnet-classification.md
           - ViT: models/vit-classification.md
           - DINOv3: models/dinov3-classification.md
+          - PatchCore: models/patchcore-anomaly-detection.md
+          - FoundAD: models/foundad-anomaly-detection.md
       - OCR:
           - DocTR: models/doctr.md
           - EasyOCR: models/easyocr.md
           - TrOCR: models/trocr.md
+          - GLM-OCR: models/glm-ocr.md
+          - PP-OCRv6: models/pp-ocrv6.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md
           - YOLO26: models/yolo26-keypoint-detection.md
-          - MediaPipe Face Detection: models/mediapipe-face.md
       - Interactive Segmentation:
           - SAM: models/sam-interactive-segmentation.md
           - SAM2: models/sam2-interactive-segmentation.md
           - SAM2 RT: models/sam2-rt-video-tracking.md
+          - SAM3 Video: models/sam3-video-concept-tracking.md
       - Vision-Language Models:
           - Florence-2: models/florence2.md
+          - Gemma 4: models/gemma4.md
+          - Mage-VL: models/mage-vl.md
           - PaliGemma: models/paligemma.md
           - Qwen2.5-VL: models/qwen25vl.md
           - Qwen3-VL: models/qwen3vl.md
+          - Qwen3.5: models/qwen35.md
+          - Qwen3.8: models/qwen38.md
           - SmolVLM: models/smolvlm.md
           - Moondream2: models/moondream2.md
+          - Cosmos 3 Edge: models/cosmos3.md
+      - Action Recognition:
+          - V-JEPA 2.1: models/vjepa2-1-action-recognition.md
       - Embeddings:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
       - Semantic Segmentation:
+          - YOLO26: models/yolo26-semantic-segmentation.md
           - DeepLabV3+: models/deeplabv3plus.md
       - Open-Vocabulary Object Detection:
           - Grounding DINO: models/grounding-dino.md
           - OWLv2: models/owlv2.md
       - Depth Estimation:
+          - YOLO26: models/yolo26-depth-estimation.md
           - Depth Anything V2: models/depth-anything-v2.md
           - Depth Anything V3: models/depth-anything-v3.md
       - Gaze Detection:
@@ -97,14 +113,19 @@ nav:
       - Understand Core Concepts: how-to/understand-core-concepts.md
       - Choose the Right Backend: how-to/choose-backend.md
       - Work with Model Predictions: how-to/work-with-predictions.md
+      - Understand Prediction Parameters: how-to/prediction-parameters.md
       - Debug Model Loading Issues: how-to/debug-model-loading.md
       - Configure Environment Variables: how-to/environment-variables.md
       - Load Models Locally: how-to/local-packages.md
       - Understand Roboflow Model Packages: how-to/roboflow-model-packages.md
       - Manage Cache: how-to/cache-management.md
+      - Use CUDA Graphs: how-to/use-cuda-graphs.md
   - Contributors:
       - Development Environment: contributors/dev-environment.md
       - Core Architecture: contributors/core-architecture.md
+      - Inference-Path Optimization Architecture:
+          - Component Overview: contributors/inference-path-optimization-architecture.md
+          - RF-DETR Integration: contributors/inference-path-optimization-architectures/rfdetr.md
       - Dependencies and Backends: contributors/dependencies-and-backends.md
       - Adding a Model: contributors/adding-model.md
       - Writing Tests: contributors/writing-tests.md
@@ -138,6 +159,7 @@ nav:
                   - use_cuda_context: api-reference/developer-tools/cuda/use-cuda-context.md
               - ONNX:
                   - set_onnx_execution_provider_defaults: api-reference/developer-tools/onnx/set-onnx-execution-provider-defaults.md
+                  - align_device_with_onnx_session: api-reference/developer-tools/onnx/align-device-with-onnx-session.md
                   - run_onnx_session_with_batch_size_limit: api-reference/developer-tools/onnx/run-onnx-session-with-batch-size-limit.md
                   - run_onnx_session_via_iobinding: api-reference/developer-tools/onnx/run-onnx-session-via-iobinding.md
               - PyTorch:
@@ -146,6 +168,8 @@ nav:
                   - get_trt_engine_inputs_and_outputs: api-reference/developer-tools/trt/get-trt-engine-inputs-and-outputs.md
                   - infer_from_trt_engine: api-reference/developer-tools/trt/infer-from-trt-engine.md
                   - load_trt_model: api-reference/developer-tools/trt/load-trt-model.md
+                  - establish_trt_cuda_graph_cache: api-reference/developer-tools/trt/establish-trt-cuda-graph-cache.md
+                  - TRTCudaGraphCache: api-reference/developer-tools/trt/trt-cuda-graph-cache.md
           - Entities:
               - RuntimeXRayResult: api-reference/developer-tools/runtime-xray-result.md
               - ModelMetadata: api-reference/developer-tools/model-metadata.md
@@ -231,9 +255,12 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - toc:
       permalink: true
-

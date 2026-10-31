@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "inputs": [
+      {"type": "WorkflowBatchInput", "name": "names", "dimensionality": 1}
+  ],
+  "steps": [
+    {
+      "type": "ContinueIf",
+      "name": "continue_if",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "BinaryStatement",
+            "left_operand": {
+              "type": "DynamicOperand",
+              "operand_name": "name",
+              "operations": [{"type": "SequenceLength"}]
+            },
+            "comparator": {"type": "(Number) >="},
+            "right_operand": {
+              "type": "StaticOperand",
+              "value": 4
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {"name": "$inputs.names"},
+      "next_steps": ["$steps.echo"]
+    },
+    {
+      "type": "scalar_only_echo",
+      "name": "echo",
+      "value": "$inputs.names"
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "result",
+      "selector": "$steps.echo.output"
+    }
+  ]
+}

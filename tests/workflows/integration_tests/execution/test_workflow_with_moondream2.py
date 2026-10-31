@@ -53,8 +53,9 @@ MOONDREAM2_ZERO_SHOT_OBJECT_DETECTION_WORKFLOW_DEFINITION = {
     workflow_definition=MOONDREAM2_ZERO_SHOT_OBJECT_DETECTION_WORKFLOW_DEFINITION,
 )
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_MOONDREAM2_TEST", False)),
-    reason="Skipping Moondream 2 test",
+    bool_env(os.getenv("SKIP_MOONDREAM2_TEST", False))
+    or bool_env(os.getenv("USE_INFERENCE_MODELS", False)),
+    reason="Skipping Moondream 2 test (either disabled or turned off due to malfunctional inference-models checkpoint)",
 )
 @pytest.mark.parametrize("task_type", ["phrase-grounded-object-detection"])
 def test_moondream2_object_detection(

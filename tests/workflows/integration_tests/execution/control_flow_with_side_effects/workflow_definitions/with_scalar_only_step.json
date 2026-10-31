@@ -1,0 +1,29 @@
+{
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "run_scalar_step"}
+    ],
+    "steps": [
+      {
+        "type": "ContinueIf",
+        "name": "continue_if",
+        "condition_statement": {
+          "type": "StatementGroup",
+          "statements": [{"type": "UnaryStatement", "operand": {"type": "DynamicOperand", "operand_name": "left"}, "operator": {"type": "(Boolean) is True"}}]
+        },
+        "evaluation_parameters": {"left": "$inputs.run_scalar_step"},
+        "next_steps": ["$steps.echo"]
+      },
+      {
+        "type": "scalar_only_echo",
+        "name": "echo"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "JsonField",
+        "name": "result",
+        "selector": "$steps.echo.output"
+      }
+    ]
+  }

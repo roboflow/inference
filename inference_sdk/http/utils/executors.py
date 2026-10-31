@@ -1,9 +1,12 @@
 import asyncio
+import contextvars
+import json
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from functools import partial
-from typing import List, Tuple, Union
+from typing import List, Mapping, Optional, Tuple, Union
 
 import aiohttp
 import backoff
@@ -16,13 +19,25 @@ from aiohttp import (
 )
 from requests import Response, Timeout
 
-from inference_sdk.config import EXECUTION_ID_HEADER, execution_id
+from inference_sdk.config import (
+    EXECUTION_ID_HEADER,
+    PROCESSING_TIME_HEADER,
+    execution_id,
+    remote_processing_times,
+)
 from inference_sdk.http.errors import RetryError
 from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData
 from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
 RETRYABLE_STATUS_CODES = {429, 503, 504}
+UNKNOWN_MODEL_ID = "unknown"
+MODEL_COLD_START_HEADER = "X-Model-Cold-Start"
+MODEL_COLD_START_COUNT_HEADER = "X-Model-Cold-Start-Count"
+MODEL_LOAD_TIME_HEADER = "X-Model-Load-Time"
+MODEL_LOAD_DETAILS_HEADER = "X-Model-Load-Details"
+MODEL_ID_HEADER = "X-Model-Id"
+_REQUESTS_SESSION_LOCAL = threading.local()
 
 
 class RequestMethod(Enum):
@@ -57,15 +72,194 @@ def execute_requests_packages(
         batch_size=max_concurrent_requests,
     )
     results = []
+    all_request_data = []
     for requests_data_package in requests_data_packages:
         responses = make_parallel_requests(
             requests_data=requests_data_package,
             request_method=request_method,
         )
         results.extend(responses)
+        all_request_data.extend(requests_data_package)
+    _collect_remote_processing_times(results, all_request_data)
     for response in results:
         api_key_safe_raise_for_status(response=response)
     return results
+
+
+def _extract_model_id_from_request_data(request_data: RequestData) -> str:
+    if request_data.payload and isinstance(request_data.payload, dict):
+        model_id = request_data.payload.get("model_id")
+        if model_id:
+            return str(model_id)
+    try:
+        from urllib.parse import urlparse
+
+        path = urlparse(request_data.url).path
+        return path.strip("/")
+    except Exception:
+        return UNKNOWN_MODEL_ID
+
+
+def _extract_model_ids_from_headers(
+    headers: Mapping[str, str],
+    request_data: Optional[RequestData] = None,
+    fallback_model_id: Optional[str] = None,
+) -> List[str]:
+    model_ids_header = headers.get(MODEL_ID_HEADER)
+    if model_ids_header:
+        return [
+            model_id.strip()
+            for model_id in model_ids_header.split(",")
+            if model_id.strip()
+        ]
+    if (
+        request_data is not None
+        and request_data.payload
+        and isinstance(request_data.payload, dict)
+    ):
+        model_id = request_data.payload.get("model_id")
+        if model_id:
+            return [str(model_id)]
+    if fallback_model_id not in (None, "", UNKNOWN_MODEL_ID):
+        return [str(fallback_model_id)]
+    return []
+
+
+def _parse_model_load_details(
+    details_header: str,
+) -> Optional[List[Tuple[Optional[str], float]]]:
+    try:
+        parsed = json.loads(details_header)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    result = []
+    for entry in parsed:
+        if not isinstance(entry, dict) or "t" not in entry:
+            return None
+        try:
+            load_time = float(entry["t"])
+        except (TypeError, ValueError):
+            return None
+        model_id = entry.get("m")
+        model_id = str(model_id) if model_id not in (None, "") else None
+        result.append((model_id, load_time))
+    return result
+
+
+def _collect_remote_processing_times(
+    responses: List[Response],
+    requests_data: List[RequestData],
+) -> None:
+    if len(responses) != len(requests_data):
+        logging.warning(
+            "Response count (%d) does not match request count (%d); "
+            "only pairing the first %d entries",
+            len(responses),
+            len(requests_data),
+            min(len(responses), len(requests_data)),
+        )
+    for response, request_data in zip(responses, requests_data):
+        collect_remote_processing_metadata_from_headers(
+            headers=response.headers,
+            request_data=request_data,
+        )
+
+
+def collect_remote_processing_metadata_from_response(
+    response: Response,
+    model_id: str = UNKNOWN_MODEL_ID,
+) -> None:
+    collect_remote_processing_metadata_from_headers(
+        headers=response.headers,
+        fallback_model_id=model_id,
+    )
+
+
+def collect_remote_processing_metadata_from_headers(
+    headers: Mapping[str, str],
+    request_data: Optional[RequestData] = None,
+    fallback_model_id: str = UNKNOWN_MODEL_ID,
+) -> None:
+    collector = remote_processing_times.get()
+    if collector is None:
+        return
+    pt = headers.get(PROCESSING_TIME_HEADER)
+    if pt is not None:
+        model_id = (
+            _extract_model_id_from_request_data(request_data)
+            if request_data is not None
+            else fallback_model_id
+        )
+        try:
+            collector.add(float(pt), model_id=model_id)
+        except (ValueError, TypeError):
+            logging.warning("Malformed %s header value: %r", PROCESSING_TIME_HEADER, pt)
+    model_ids = _extract_model_ids_from_headers(
+        headers=headers,
+        request_data=request_data,
+        fallback_model_id=fallback_model_id,
+    )
+    collector.add_model_ids(model_ids=model_ids)
+    if headers.get(MODEL_COLD_START_HEADER, "").lower() != "true":
+        return
+    details_header = headers.get(MODEL_LOAD_DETAILS_HEADER)
+    if details_header:
+        parsed_details = _parse_model_load_details(details_header)
+        if parsed_details is None:
+            logging.warning(
+                "Malformed %s header value: %r",
+                MODEL_LOAD_DETAILS_HEADER,
+                details_header,
+            )
+        else:
+            for entry_model_id, load_time in parsed_details:
+                collector.record_cold_start(
+                    load_time=load_time,
+                    model_id=entry_model_id,
+                )
+            return
+    load_time = 0.0
+    load_time_header = headers.get(MODEL_LOAD_TIME_HEADER)
+    if load_time_header is not None:
+        try:
+            load_time = float(load_time_header)
+        except (ValueError, TypeError):
+            logging.warning(
+                "Malformed %s header value: %r",
+                MODEL_LOAD_TIME_HEADER,
+                load_time_header,
+            )
+    synthesized_model_id = model_ids[0] if len(model_ids) == 1 else None
+    collector.record_cold_start(
+        load_time=load_time,
+        count=_extract_cold_start_count_from_headers(headers=headers),
+        model_id=synthesized_model_id,
+    )
+
+
+def _extract_cold_start_count_from_headers(headers: Mapping[str, str]) -> int:
+    count_header = headers.get(MODEL_COLD_START_COUNT_HEADER)
+    if count_header is None:
+        return 1
+    try:
+        count = int(count_header)
+    except (TypeError, ValueError):
+        logging.warning(
+            "Malformed %s header value: %r",
+            MODEL_COLD_START_COUNT_HEADER,
+            count_header,
+        )
+        return 1
+    if count < 1:
+        logging.warning(
+            "Unexpected %s header value for cold start response: %r",
+            MODEL_COLD_START_COUNT_HEADER,
+            count_header,
+        )
+        return 1
+    return count
 
 
 def make_parallel_requests(
@@ -81,10 +275,56 @@ def make_parallel_requests(
     Returns:
         The list of responses.
     """
+    if len(requests_data) == 1:
+        return [
+            make_request(
+                request_data=requests_data[0],
+                request_method=request_method,
+            )
+        ]
+
+    # Capture the current contextvars snapshot so OTel trace context
+    # propagates into the thread pool workers. Must capture here (caller
+    # thread) not inside the worker — workers run in fresh threads that
+    # don't inherit the caller's context.
+    parent_ctx = contextvars.copy_context()
     workers = len(requests_data)
     make_request_closure = partial(make_request, request_method=request_method)
+
+    def _run_in_parent_context(rd: RequestData) -> Response:
+        # Restore all context vars from the parent thread snapshot.
+        # We iterate and set each var individually since Context.run()
+        # is not reentrant.
+        tokens = []
+        for var in parent_ctx:
+            tokens.append((var, var.set(parent_ctx[var])))
+        try:
+            return make_request_closure(rd)
+        finally:
+            try:
+                _reset_thread_local_requests_session()
+            finally:
+                for var, tok in tokens:
+                    var.reset(tok)
+
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(executor.map(make_request_closure, requests_data))
+        return list(executor.map(_run_in_parent_context, requests_data))
+
+
+def _get_thread_local_requests_session() -> requests.Session:
+    session = getattr(_REQUESTS_SESSION_LOCAL, "session", None)
+    if session is None:
+        session = requests.Session()
+        _REQUESTS_SESSION_LOCAL.session = session
+    return session
+
+
+def _reset_thread_local_requests_session() -> None:
+    session = getattr(_REQUESTS_SESSION_LOCAL, "session", None)
+    if session is None:
+        return
+    session.close()
+    del _REQUESTS_SESSION_LOCAL.session
 
 
 @backoff.on_predicate(
@@ -97,7 +337,7 @@ def make_parallel_requests(
 )
 @backoff.on_exception(
     backoff.constant,
-    exception=ConnectionError,
+    exception=(ConnectionError, requests.exceptions.ConnectionError),
     max_tries=3,
     interval=1,
     backoff_log_level=logging.DEBUG,
@@ -113,14 +353,21 @@ def make_request(request_data: RequestData, request_method: RequestMethod) -> Re
     Returns:
         The response from the API.
     """
-    method = requests.get if request_method is RequestMethod.GET else requests.post
-    return method(
-        request_data.url,
-        headers=request_data.headers,
-        params=request_data.parameters,
-        data=request_data.data,
-        json=request_data.payload,
-    )
+    session = _get_thread_local_requests_session()
+    method = session.get if request_method is RequestMethod.GET else session.post
+    # Preserve the old requests.get/post cookie behavior while still reusing
+    # the session's connection pool.
+    session.cookies.clear()
+    try:
+        return method(
+            request_data.url,
+            headers=request_data.headers,
+            params=request_data.parameters,
+            data=request_data.data,
+            json=request_data.payload,
+        )
+    finally:
+        session.cookies.clear()
 
 
 async def execute_requests_packages_async(
@@ -251,6 +498,11 @@ async def make_request_async(
             response_data = await response.read()
         if response_is_not_retryable_error(response=response):
             response.raise_for_status()
+        if response.status == 200:
+            collect_remote_processing_metadata_from_headers(
+                headers=response.headers,
+                request_data=request_data,
+            )
         return response.status, response_data
 
 
@@ -294,7 +546,10 @@ def send_post_request(
         raise error
     if enable_retries and response.status_code in RETRYABLE_STATUS_CODES:
         raise RetryError(
-            f"Transient error in HTTP request - response with status code: {response.status_code} received.",
+            (
+                "Transient error in HTTP request - response with status code: "
+                f"{response.status_code} received."
+            ),
             status_code=response.status_code,
         )
     api_key_safe_raise_for_status(response=response)

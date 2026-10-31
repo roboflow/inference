@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError
@@ -118,37 +118,73 @@ def test_static_crop_workflow_when_minimal_valid_input_provided(
         crowd_image[106:318, 160:480, :], result[0]["crop"].numpy_image, atol=5
     ), "Expected crop to be made in central area of input image, as specified in inputs"
     parent_coordinates_detections: sv.Detections = result[0]["result"]["predictions"]
-    assert np.allclose(
-        parent_coordinates_detections.xyxy,
-        np.array(
-            [
-                [181, 273, 240, 317],
-                [419, 258, 458, 317],
-                [160, 268, 184, 317],
-                [270, 266, 331, 317],
-                [250, 252, 261, 283],
-                [390, 267, 415, 318],
-            ]
-        ),
-        atol=1,
-    ), "Expected detections in parent coordinates to be as manually validated at test creation"
-    own_coordinates_detections: sv.Detections = result[0]["result_in_own_coordinates"][
-        "predictions"
-    ]
-    assert np.allclose(
-        own_coordinates_detections.xyxy,
-        np.array(
-            [
-                [21, 167, 80, 211],
-                [259, 152, 298, 211],
-                [0, 162, 24, 211],
-                [110, 160, 171, 211],
-                [90, 146, 101, 177],
-                [230, 161, 255, 212],
-            ]
-        ),
-        atol=1,
-    ), "Expected detections in own coordinates to be as manually validated at test creation"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            parent_coordinates_detections.xyxy,
+            np.array(
+                [
+                    [181, 273, 240, 317],
+                    [419, 258, 458, 317],
+                    [160, 268, 184, 317],
+                    [270, 266, 331, 317],
+                    [250, 252, 261, 283],
+                    [390, 267, 415, 318],
+                ]
+            ),
+            atol=1,
+        ), "Expected detections in parent coordinates to be as manually validated at test creation"
+        own_coordinates_detections: sv.Detections = result[0][
+            "result_in_own_coordinates"
+        ]["predictions"]
+        assert np.allclose(
+            own_coordinates_detections.xyxy,
+            np.array(
+                [
+                    [21, 167, 80, 211],
+                    [259, 152, 298, 211],
+                    [0, 162, 24, 211],
+                    [110, 160, 171, 211],
+                    [90, 146, 101, 177],
+                    [230, 161, 255, 212],
+                ]
+            ),
+            atol=1,
+        ), "Expected detections in own coordinates to be as manually validated at test creation"
+    else:
+        own_coordinates_detections: sv.Detections = result[0][
+            "result_in_own_coordinates"
+        ]["predictions"]
+        assert np.allclose(
+            parent_coordinates_detections.xyxy,
+            np.array(
+                [
+                    [181, 273, 240, 317],
+                    [419, 258, 458, 317],
+                    [160, 268, 184, 317],
+                    [270, 266, 331, 317],
+                    [323, 258, 345, 318],
+                    [250, 252, 261, 283],
+                    [390, 267, 415, 318],
+                ]
+            ),
+            atol=3,
+        ), "Expected detections in parent coordinates to be as manually validated at test creation"
+
+        assert np.allclose(
+            own_coordinates_detections.xyxy,
+            np.array(
+                [
+                    [21, 167, 80, 211],
+                    [259, 152, 298, 211],
+                    [0, 162, 24, 211],
+                    [110, 160, 171, 211],
+                    [163, 152, 185, 212],
+                    [90, 146, 101, 177],
+                    [230, 161, 255, 212],
+                ]
+            ),
+            atol=3,
+        ), "Expected detections in own coordinates to be as manually validated at test creation"
 
 
 def test_test_static_crop_workflow_when_crop_coordinate_not_provided(

@@ -14,33 +14,6 @@ def test_yolonas_object_detection_trt_resolution() -> None:
 
 
 @pytest.mark.trt_extras
-def test_yolov5_object_detection_trt_resolution() -> None:
-    _ = resolve_model_class(
-        model_architecture="yolov5",
-        task_type="object-detection",
-        backend=BackendType.TRT,
-    )
-
-
-@pytest.mark.trt_extras
-def test_yolov5_instance_segmentation_trt_resolution() -> None:
-    _ = resolve_model_class(
-        model_architecture="yolov5",
-        task_type="instance-segmentation",
-        backend=BackendType.TRT,
-    )
-
-
-@pytest.mark.trt_extras
-def test_yolov7_instance_segmentation_trt_resolution() -> None:
-    _ = resolve_model_class(
-        model_architecture="yolov7",
-        task_type="instance-segmentation",
-        backend=BackendType.TRT,
-    )
-
-
-@pytest.mark.trt_extras
 def test_yolov8_object_detection_trt_resolution() -> None:
     _ = resolve_model_class(
         model_architecture="yolov8",
@@ -117,5 +90,23 @@ def test_yolov12_object_detection_trt_resolution() -> None:
     _ = resolve_model_class(
         model_architecture="yolov12",
         task_type="object-detection",
+        backend=BackendType.TRT,
+    )
+
+
+@pytest.mark.trt_extras
+def test_rfdetr_keypoint_detection_trt_resolution() -> None:
+    _ = resolve_model_class(
+        model_architecture="rfdetr",
+        task_type="keypoint-detection",
+        backend=BackendType.TRT,
+    )
+
+
+@pytest.mark.trt_extras
+def test_rfdetr_semantic_segmentation_trt_resolution() -> None:
+    _ = resolve_model_class(
+        model_architecture="rfdetr",
+        task_type="semantic-segmentation",
         backend=BackendType.TRT,
     )

@@ -2,6 +2,6 @@ LICENSE.core (Apache 2.0) applies to all files in this repository
 except for files in or under any directory that contains a superseding
 license file (such as the models located in `inference/models/`
 which are governed by their own individual licenses and
-the files and folders in the `inference/enterprise/` directory which are
+the files and folders in the `inference/enterprise/` and `inference_cli/lib/enterprise/` directories which are
 governed by the Roboflow Enterprise License located at
 `inference/enterprise/LICENSE.txt`).

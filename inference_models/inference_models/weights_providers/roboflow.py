@@ -1,47 +1,75 @@
 import json
-from typing import Annotated, Callable, Dict, List, Literal, Optional, Union
+import urllib.parse
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import backoff
 import requests
-from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, Discriminator, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from requests import Response, Timeout
 
 from inference_models.configuration import (
     API_CALLS_MAX_TRIES,
     API_CALLS_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    OFFLINE_MODE,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
+    SECURE_GATEWAY,
 )
+from inference_models.utils.secure_gateway import validate_secure_gateway_url
+
+LOCAL_API_KEY = "local"
+
 from inference_models.errors import (
-    BaseInferenceError,
+    AssumptionError,
+    BaseInferenceModelsError,
+    ForbiddenModelAccessError,
     ModelMetadataConsistencyError,
     ModelMetadataHandlerNotImplementedError,
+    ModelNotFoundError,
     ModelRetrievalError,
+    PaymentRequiredModelAccessError,
     RetryError,
     UnauthorizedModelAccessError,
+    UsagePausedModelAccessError,
 )
 from inference_models.logger import LOGGER
 from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.runtime_introspection.core import get_coreml_runtime_version
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    MemoryProfile,
     ModelDependency,
     ModelMetadata,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
+    RecommendedParameters,
     ServerEnvironmentRequirements,
     TorchScriptPackageDetails,
     TRTPackageDetails,
+)
+from inference_models.weights_providers.local_trt_packages import (
+    discover_local_trt_packages,
+)
+from inference_models.weights_providers.trt_manifest import (
+    GPUServerSpecsV1,
+    JetsonMachineSpecsV1,
+    TrtModelPackageV1,
+    as_version,
 )
 
 MAX_MODEL_PACKAGE_PAGES = 10
 MODEL_PACKAGES_TO_IGNORE = {
     "oak-model-package-v1",
     "tfjs-model-package-v1",
+    "mediapipe-model-package-v1",
 }
+
+ProxyUrlBuilder = Optional[
+    Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]
+]
 
 
 class RoboflowModelPackageFile(BaseModel):
@@ -57,6 +85,22 @@ class RoboflowModelPackageV1(BaseModel):
     model_features: Optional[dict] = Field(alias="modelFeatures", default=None)
     package_files: List[RoboflowModelPackageFile] = Field(alias="packageFiles")
     trusted_source: bool = Field(alias="trustedSource", default=False)
+    recommended_parameters: Optional[RecommendedParameters] = Field(
+        alias="recommendedParameters", default=None
+    )
+    memory_profile: MemoryProfile = Field(
+        alias="memoryProfile", default_factory=MemoryProfile
+    )
+
+    @field_validator("memory_profile", mode="before")
+    @classmethod
+    def _drop_malformed_memory_profile(cls, value: Any) -> MemoryProfile:
+        try:
+            memory_profile = MemoryProfile.model_validate(value)
+        except ValidationError:
+            return MemoryProfile()
+
+        return memory_profile
 
 
 class RoboflowModelDependencyV1(BaseModel):
@@ -78,19 +122,63 @@ class RoboflowModelMetadata(BaseModel):
     model_packages: List[Union[RoboflowModelPackageV1, dict]] = Field(
         alias="modelPackages",
     )
+    recommended_parameters: Optional[RecommendedParameters] = Field(
+        alias="recommendedParameters", default=None
+    )
+    model_latency_ms: Optional[float] = Field(alias="modelLatencyMs", default=None)
     next_page: Optional[str] = Field(alias="nextPage", default=None)
+
+    @field_validator("model_latency_ms", mode="before")
+    @classmethod
+    def _drop_non_numeric_latency(cls, value: Any) -> Any:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+
+        try:
+            latency_ms = float(value)
+        except OverflowError:
+            return None
+
+        return latency_ms
 
 
 def get_roboflow_model(
-    model_id: str, api_key: Optional[str] = None, **kwargs
+    model_id: str,
+    api_key: Optional[str] = None,
+    weights_provider_extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    weights_provider_extra_headers: Optional[Dict[str, str]] = None,
+    **kwargs,
 ) -> ModelMetadata:
-    model_metadata = get_model_metadata(model_id=model_id, api_key=api_key)
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message="Cannot fetch Roboflow model metadata - OFFLINE_MODE is "
+            "enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
+    proxy_url_builder = None
+    if SECURE_GATEWAY:
+        proxy_url_builder = roboflow_secure_gateway_proxy_url_builder
+    model_metadata = get_model_metadata(
+        model_id=model_id,
+        api_key=api_key,
+        extra_query_params=weights_provider_extra_query_params,
+        extra_headers=weights_provider_extra_headers,
+        proxy_url_builder=proxy_url_builder,
+    )
     parsed_model_packages = []
     for model_package in model_metadata.model_packages:
-        parsed_model_package = parse_model_package_metadata(metadata=model_package)
+        parsed_model_package = parse_model_package_metadata(
+            metadata=model_package,
+            proxy_url_builder=proxy_url_builder,
+        )
         if parsed_model_package is None:
             continue
         parsed_model_packages.append(parsed_model_package)
+    _merge_local_trt_packages(
+        parsed_model_packages=parsed_model_packages,
+        requested_model_id=model_id,
+        resolved_model_id=model_metadata.model_id,
+    )
     model_dependencies = None
     if model_metadata.model_dependencies:
         model_dependencies = []
@@ -109,21 +197,83 @@ def get_roboflow_model(
         task_type=model_metadata.task_type,
         model_variant=model_metadata.model_variant,
         model_dependencies=model_dependencies,
+        recommended_parameters=model_metadata.recommended_parameters,
     )
+
+
+def _merge_local_trt_packages(
+    parsed_model_packages: List[ModelPackageMetadata],
+    requested_model_id: str,
+    resolved_model_id: str,
+) -> None:
+    """Augment platform packages with locally-discovered TRT packages.
+
+    Best-effort: a corrupt local cache must never break loading of a model that
+    has valid platform packages.
+    """
+    known_package_ids = {package.package_id for package in parsed_model_packages}
+    # Discover the resolved (canonical) id first: that is where the compiler
+    # installs engines, so it wins over any same-id package under the alias dir.
+    discovery_model_ids = [resolved_model_id]
+    if requested_model_id != resolved_model_id:
+        discovery_model_ids.append(requested_model_id)
+    for discovery_model_id in discovery_model_ids:
+        try:
+            local_packages = discover_local_trt_packages(model_id=discovery_model_id)
+        except Exception as error:
+            LOGGER.warning(
+                "Skipping local TRT discovery for model_id=%s due to error: %s",
+                discovery_model_id,
+                error,
+            )
+            continue
+        for local_package in local_packages:
+            if local_package.package_id in known_package_ids:
+                continue
+            parsed_model_packages.append(local_package)
+            known_package_ids.add(local_package.package_id)
+
+
+def roboflow_secure_gateway_proxy_url_builder(
+    url: str, query: Optional[Dict[str, Union[str, List[str]]]]
+) -> str:
+    """
+    When this wrapper is used, query params are added to returned url -
+    no need to make request repeating those params in downstream library, like `requests`.
+    """
+    if query is not None:
+        url = _add_query_params_to_url(url=url, query=query)
+    if not SECURE_GATEWAY:
+        return url
+    gateway_base = validate_secure_gateway_url(SECURE_GATEWAY)
+    gateway_prefix = f"{gateway_base}/proxy?url="
+    # Idempotent: an already-wrapped URL (e.g. a download_url proxied upstream)
+    # must not be proxied twice.
+    if url.startswith(gateway_prefix):
+        return url
+    return gateway_prefix + urllib.parse.quote(url, safe="~()*!'")
 
 
 def get_model_metadata(
     model_id: str,
     api_key: Optional[str],
     max_pages: int = MAX_MODEL_PACKAGE_PAGES,
+    extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> RoboflowModelMetadata:
-    if api_key is None:
+    if api_key is None or api_key == LOCAL_API_KEY:
         api_key = ROBOFLOW_API_KEY
     fetched_pages = []
     start_after = None
     while len(fetched_pages) < max_pages:
         pagination_result = get_one_page_of_model_metadata(
-            model_id=model_id, api_key=api_key, start_after=start_after
+            model_id=model_id,
+            api_key=api_key,
+            start_after=start_after,
+            extra_query_params=extra_query_params,
+            extra_headers=extra_headers,
+            proxy_url_builder=proxy_url_builder,
         )
         fetched_pages.append(pagination_result)
         start_after = pagination_result.next_page
@@ -136,7 +286,7 @@ def get_model_metadata(
         raise ModelRetrievalError(
             message=f"Could not retrieve model {model_id} from Roboflow API. Backend provided empty list of model "
             f"packages `inference-models` library could load. Contact Roboflow to solve the problem.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
     fetched_pages[-1].model_packages = all_model_packages
     return fetched_pages[-1]
@@ -152,27 +302,52 @@ def get_one_page_of_model_metadata(
     api_key: Optional[str] = None,
     page_size: Optional[int] = None,
     start_after: Optional[str] = None,
+    extra_query_params: Optional[List[Tuple[str, str]]] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> RoboflowModelMetadata:
+    if OFFLINE_MODE:
+        raise ModelRetrievalError(
+            message="Cannot fetch Roboflow model metadata - OFFLINE_MODE is "
+            "enabled. All models must be pre-cached locally.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
+        )
     query = {
         "modelId": model_id,
     }
-    if api_key:
-        query["api_key"] = api_key
+    if get_coreml_runtime_version() is not None:
+        # The API lists Core ML packages only on request: they run on macOS alone, and releases
+        # that predate them warn about every package type they cannot parse.
+        query["includeCoreMLPackages"] = "true"
+    headers = {}
+    if api_key and api_key != LOCAL_API_KEY:
+        headers = {"Authorization": f"Bearer {api_key}"}
     if page_size:
-        query["pageSize"] = page_size
+        query["pageSize"] = str(page_size)
     if start_after:
         query["startAfter"] = start_after
+    query = append_extra_query_params(
+        query=query, extra_query_params=extra_query_params
+    )
+    headers = append_extra_headers(headers=headers, extra_headers=extra_headers)
+    if not headers:
+        headers = None
+    url = f"{ROBOFLOW_API_HOST}/models/v1/external/weights"
+    if proxy_url_builder:
+        full_url = proxy_url_builder(url, query)
+    else:
+        full_url = _add_query_params_to_url(url=url, query=query)
     try:
         response = requests.get(
-            f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
-            params=query,
+            full_url,
+            headers=headers,
             timeout=API_CALLS_TIMEOUT,
         )
-    except (OSError, Timeout, requests.exceptions.ConnectionError):
+    except (OSError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             message=f"Connectivity error",
-            help_url="https://todo",
-        )
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
+        ) from error
     handle_response_errors(response=response, operation_name="get model weights")
     try:
         return RoboflowModelMetadata.model_validate(response.json()["modelMetadata"])
@@ -181,30 +356,103 @@ def get_one_page_of_model_metadata(
         raise ModelRetrievalError(
             message=f"Could not decode Roboflow API response when trying to retrieve model {model_id}. If that problem "
             f"is not ephemeral - contact Roboflow.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         ) from error
 
 
+def append_extra_query_params(
+    query: Dict[str, Union[str, List[str]]],
+    extra_query_params: Optional[List[Tuple[str, str]]],
+) -> Dict[str, Union[str, List[str]]]:
+    if not extra_query_params:
+        return query
+    extra_query_params_dict = {}
+    for param_name, param_value in extra_query_params:
+        if param_name in extra_query_params_dict:
+            if isinstance(extra_query_params_dict[param_name], list):
+                extra_query_params_dict[param_name].append(param_value)
+            else:
+                extra_query_params_dict[param_name] = [
+                    extra_query_params_dict[param_name],
+                    param_value,
+                ]
+        else:
+            extra_query_params_dict[param_name] = param_value
+    extra_query_params_dict.update(query)
+    return extra_query_params_dict
+
+
+def append_extra_headers(
+    headers: Dict[str, str], extra_headers: Optional[Dict[str, str]]
+) -> Dict[str, str]:
+    if not extra_headers:
+        return headers
+    return {**extra_headers, **headers}
+
+
+def _add_query_params_to_url(url: str, query: Dict[str, List[str]]) -> str:
+    if not query:
+        return url
+    parsed = urllib.parse.urlparse(url)
+    existing_params = urllib.parse.parse_qs(parsed.query)
+    overlap = set(existing_params) & set(query)
+    if overlap:
+        raise AssumptionError(
+            message=f"Detected overlapping query parameters in request URL to "
+            f"{parsed.scheme}://{parsed.netloc}{parsed.path} in scope of Roboflow Weights Provider - "
+            f"overlapping parameters: {overlap}. This problem indicates bug - "
+            f"please report https://github.com/roboflow/inference/issues",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#assumptionerror",
+        )
+    merged = {**existing_params, **query}
+    new_query = urllib.parse.urlencode(merged, doseq=True)
+    return urllib.parse.urlunparse(parsed._replace(query=new_query))
+
+
 def handle_response_errors(response: Response, operation_name: str) -> None:
-    if response.status_code == 401 or response.status_code == 403:
+    if response.status_code == 401:
         raise UnauthorizedModelAccessError(
             message=f"Could not {operation_name}. Request unauthorised. Are you sure you use valid Roboflow API key? "
             "See details here: https://docs.roboflow.com/api-reference/authentication and "
             "export key to `ROBOFLOW_API_KEY` environment variable",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#unauthorizedmodelaccesserror",
+        )
+    if response.status_code == 402:
+        raise PaymentRequiredModelAccessError(
+            message=f"Could not {operation_name}. Not enough credits to perform this request. "
+            "Verify your workspace billing page.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#paymentrequiredmodelaccesserror",
+        )
+    if response.status_code == 403:
+        raise ForbiddenModelAccessError(
+            message=f"Could not {operation_name}. Access forbidden. Check that the API key has the required scopes "
+            "and that the workspace is active.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#forbiddenmodelaccesserror",
+        )
+    if response.status_code == 404:
+        raise ModelNotFoundError(
+            message=f"Could not {operation_name}. Model not found. Are you sure that the identifier is correct "
+            f"and provided credentials ensure access to the model?",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelnotfounderror",
+        )
+    if response.status_code == 423:
+        raise UsagePausedModelAccessError(
+            message=f"Could not {operation_name}. Roboflow API usage is paused. Contact your workspace administrator "
+            "to re-enable API keys.",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#usagepausedmodelaccesserror",
         )
     if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(
             message=f"Roboflow API returned invalid response code for {operation_name} operation "
             f"{response.status_code}. If that problem is not ephemeral - contact Roboflow.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
     if response.status_code >= 400:
         response_payload = get_error_response_payload(response=response)
         raise ModelRetrievalError(
             message=f"Roboflow API returned invalid response code for {operation_name} operation "
             f"{response.status_code}.\n\nResponse:\n{response_payload}",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelretrievalerror",
         )
 
 
@@ -217,6 +465,7 @@ def get_error_response_payload(response: Response) -> str:
 
 def parse_model_package_metadata(
     metadata: Union[RoboflowModelPackageV1, dict],
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> Optional[ModelPackageMetadata]:
     if isinstance(metadata, dict):
         metadata_type = metadata.get("type", "unknown")
@@ -242,15 +491,14 @@ def parse_model_package_metadata(
         )
         return None
     try:
-        return MODEL_PACKAGE_PARSERS[manifest_type](metadata)
-    except BaseInferenceError as error:
-        raise error
+        return MODEL_PACKAGE_PARSERS[manifest_type](metadata, proxy_url_builder)
     except Exception as error:
-        raise ModelMetadataConsistencyError(
-            message="Roboflow API returned model package metadata which cannot be parsed. Contact Roboflow to "
-            f"solve the problem. Error details: {error}. Error type: {error.__class__.__name__}",
-            help_url="https://todo",
-        ) from error
+        LOGGER.warning(
+            f"Roboflow API returned model package with manifest of type `{manifest_type}` which cannot be parsed. "
+            f"Silently skipping this package in favour of system stability, but Roboflow support should be contacted "
+            f"to validate the issue. Error type: {type(error)}. Model Package ID: \n{metadata.package_id}."
+        )
+        return None
 
 
 class OnnxModelPackageV1(BaseModel):
@@ -265,14 +513,18 @@ class OnnxModelPackageV1(BaseModel):
     )
 
 
-def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
+def parse_onnx_model_package(
+    metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
+) -> ModelPackageMetadata:
     parsed_manifest = OnnxModelPackageV1.model_validate(metadata.package_manifest)
     validate_batch_settings(
         dynamic_batch_size=parsed_manifest.dynamic_batch_size,
         static_batch_size=parsed_manifest.static_batch_size,
     )
     package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
     )
     return ModelPackageMetadata(
         package_id=metadata.package_id,
@@ -287,48 +539,15 @@ def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMe
         ),
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
-class JetsonMachineSpecsV1(BaseModel):
-    type: Literal["jetson-machine-specs-v1"]
-    l4t_version: str = Field(alias="l4tVersion")
-    device_name: str = Field(alias="deviceName")
-    driver_version: str = Field(alias="driverVersion")
-
-
-class GPUServerSpecsV1(BaseModel):
-    type: Literal["gpu-server-specs-v1"]
-    driver_version: str = Field(alias="driverVersion")
-    os_version: str = Field(alias="osVersion")
-
-
-class TrtModelPackageV1(BaseModel):
-    type: Literal["trt-model-package-v1"]
-    backend_type: Literal["trt"] = Field(alias="backendType")
-    dynamic_batch_size: bool = Field(alias="dynamicBatchSize", default=False)
-    static_batch_size: Optional[int] = Field(alias="staticBatchSize", default=None)
-    min_batch_size: Optional[int] = Field(alias="minBatchSize", default=None)
-    opt_batch_size: Optional[int] = Field(alias="optBatchSize", default=None)
-    max_batch_size: Optional[int] = Field(alias="maxBatchSize", default=None)
-    quantization: Quantization
-    cuda_device_type: str = Field(alias="cudaDeviceType")
-    cuda_device_cc: str = Field(alias="cudaDeviceCC")
-    cuda_version: str = Field(alias="cudaVersion")
-    trt_version: str = Field(alias="trtVersion")
-    same_cc_compatible: bool = Field(alias="sameCCCompatible", default=False)
-    trt_forward_compatible: bool = Field(alias="trtForwardCompatible", default=False)
-    trt_lean_runtime_excluded: bool = Field(
-        alias="trtLeanRuntimeExcluded", default=False
-    )
-    machine_type: Literal["gpu-server", "jetson"] = Field(alias="machineType")
-    machine_specs: Annotated[
-        Union[JetsonMachineSpecsV1, GPUServerSpecsV1],
-        Discriminator(discriminator="type"),
-    ] = Field(alias="machineSpecs")
-
-
-def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
+def parse_trt_model_package(
+    metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
+) -> ModelPackageMetadata:
     parsed_manifest = TrtModelPackageV1.model_validate(metadata.package_manifest)
     validate_batch_settings(
         dynamic_batch_size=parsed_manifest.dynamic_batch_size,
@@ -346,7 +565,7 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
             message="While downloading model weights, Roboflow API provided inconsistent metadata "
             "describing model package - TRT package declared support for dynamic batch size, but did not "
             "specify min / opt / max batch size supported which is required.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
         )
     if parsed_manifest.machine_type == "gpu-server":
         if not isinstance(parsed_manifest.machine_specs, GPUServerSpecsV1):
@@ -354,7 +573,7 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
                 message="While downloading model weights, Roboflow API provided inconsistent metadata "
                 "describing model package - expected GPU Server specification for TRT model package registered as "
                 "compiled on gpu-server. Contact Roboflow to solve the problem.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
             )
         environment_requirements = ServerEnvironmentRequirements(
             cuda_device_cc=as_version(parsed_manifest.cuda_device_cc),
@@ -370,7 +589,7 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
                 message="While downloading model weights, Roboflow API provided inconsistent metadata "
                 "describing model package - expected Jetson Device specification for TRT model package registered as "
                 "compiled on Jetson. Contact Roboflow to solve the problem.",
-                help_url="https://todo",
+                help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
             )
         environment_requirements = JetsonEnvironmentRequirements(
             cuda_device_cc=as_version(parsed_manifest.cuda_device_cc),
@@ -386,10 +605,11 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
             message="While downloading model weights, Roboflow API provided metadata which are not handled by current version "
             "of inference detected while parsing TRT model package. This problem may indicate that your inference "
             "package is outdated. Try to upgrade - if that does not help, contact Roboflow to solve the problem.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
         )
     package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
     )
     trt_package_details = TRTPackageDetails(
         min_dynamic_batch_size=parsed_manifest.min_batch_size,
@@ -410,6 +630,8 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
         environment_requirements=environment_requirements,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -421,14 +643,18 @@ class TorchModelPackageV1(BaseModel):
     quantization: Quantization
 
 
-def parse_torch_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
+def parse_torch_model_package(
+    metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
+) -> ModelPackageMetadata:
     parsed_manifest = TorchModelPackageV1.model_validate(metadata.package_manifest)
     validate_batch_settings(
         dynamic_batch_size=parsed_manifest.dynamic_batch_size,
         static_batch_size=parsed_manifest.static_batch_size,
     )
     package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
     )
     return ModelPackageMetadata(
         package_id=metadata.package_id,
@@ -439,6 +665,8 @@ def parse_torch_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageM
         package_artefacts=package_artefacts,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -448,10 +676,14 @@ class HFModelPackageV1(BaseModel):
     quantization: Quantization
 
 
-def parse_hf_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMetadata:
+def parse_hf_model_package(
+    metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
+) -> ModelPackageMetadata:
     parsed_manifest = HFModelPackageV1.model_validate(metadata.package_manifest)
     package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
     )
     return ModelPackageMetadata(
         package_id=metadata.package_id,
@@ -460,14 +692,18 @@ def parse_hf_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMeta
         package_artefacts=package_artefacts,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
 def parse_ultralytics_model_package(
     metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
     )
     return ModelPackageMetadata(
         package_id=metadata.package_id,
@@ -476,6 +712,8 @@ def parse_ultralytics_model_package(
         quantization=Quantization.UNKNOWN,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
     )
 
 
@@ -494,6 +732,7 @@ class TorchScriptModelPackageV1(BaseModel):
 
 def parse_torch_script_model_package(
     metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
     parsed_manifest = TorchScriptModelPackageV1.model_validate(
         metadata.package_manifest
@@ -503,7 +742,8 @@ def parse_torch_script_model_package(
         static_batch_size=parsed_manifest.static_batch_size,
     )
     package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
     )
     torch_vision_version = None
     if parsed_manifest.torch_vision_version is not None:
@@ -522,29 +762,75 @@ def parse_torch_script_model_package(
         quantization=parsed_manifest.quantization,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
+        memory_profile=metadata.memory_profile,
         torch_script_package_details=torch_script_package_details,
     )
 
 
-class MediapipeModelPackageV1(BaseModel):
-    type: Literal["mediapipe-model-package-v1"]
-    backend_type: Literal["mediapipe"] = Field(alias="backendType")
+class CoreMLModelPackageV1(BaseModel):
+    type: Literal["coreml-model-package-v1"] = Field(
+        description="Manifest type of a native Core ML (.mlpackage) model package.",
+        examples=["coreml-model-package-v1"],
+    )
+    backend_type: Literal["coreml"] = Field(
+        alias="backendType",
+        description="Backend that runs the package.",
+        examples=["coreml"],
+    )
+    dynamic_batch_size: bool = Field(
+        alias="dynamicBatchSize",
+        default=False,
+        description="Whether the model accepts a variable batch size.",
+        examples=[False],
+    )
+    static_batch_size: Optional[int] = Field(
+        alias="staticBatchSize",
+        default=None,
+        description="Fixed batch size the model was exported for, when the batch size is not dynamic.",
+        examples=[1],
+    )
+    quantization: Quantization = Field(
+        description="Numeric precision of the model's weights and compute.",
+        examples=["fp16"],
+    )
 
 
-def parse_mediapipe_model_package(
+def parse_coreml_model_package(
     metadata: RoboflowModelPackageV1,
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> ModelPackageMetadata:
-    _ = MediapipeModelPackageV1.model_validate(metadata.package_manifest)
+    """Parse a ``coreml-model-package-v1`` package listed by the Roboflow API.
+
+    Args:
+        metadata (RoboflowModelPackageV1): Package entry returned by the weights endpoint.
+        proxy_url_builder (ProxyUrlBuilder): Optional rewriter for artefact download URLs.
+
+    Returns:
+        ModelPackageMetadata: Package metadata with the ``coreml`` backend.
+
+    Raises:
+        ModelMetadataConsistencyError: If the batch size settings are inconsistent.
+    """
+    parsed_manifest = CoreMLModelPackageV1.model_validate(metadata.package_manifest)
+    validate_batch_settings(
+        dynamic_batch_size=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
+    )
     package_artefacts = parse_package_artefacts(
-        package_artefacts=metadata.package_files
+        package_artefacts=metadata.package_files,
+        proxy_url_builder=proxy_url_builder,
     )
     return ModelPackageMetadata(
         package_id=metadata.package_id,
-        backend=BackendType.MEDIAPIPE,
+        backend=BackendType.COREML,
+        quantization=parsed_manifest.quantization,
+        dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
+        static_batch_size=parsed_manifest.static_batch_size,
         package_artefacts=package_artefacts,
-        quantization=Quantization.UNKNOWN,
         trusted_source=metadata.trusted_source,
         model_features=metadata.model_features,
+        recommended_parameters=metadata.recommended_parameters,
     )
 
 
@@ -556,30 +842,44 @@ def validate_batch_settings(
             message="While downloading model weights, Roboflow API provided inconsistent metadata "
             "describing model package - model package declared not to support dynamic batch size and "
             "supported static batch size not provided. Contact Roboflow to solve the problem.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
         )
     if dynamic_batch_size and static_batch_size is not None:
         raise ModelMetadataConsistencyError(
             message="While downloading model weights, Roboflow API provided inconsistent metadata "
             "describing model package - model package declared not to support dynamic batch size and "
             "supported static batch size not provided. Contact Roboflow to solve the problem.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-retrieval/#modelmetadataconsistencyerror",
         )
 
 
 def parse_package_artefacts(
     package_artefacts: List[RoboflowModelPackageFile],
+    proxy_url_builder: ProxyUrlBuilder = None,
 ) -> List[FileDownloadSpecs]:
     return [
         FileDownloadSpecs(
-            download_url=f.download_url, file_handle=f.file_handle, md5_hash=f.md5_hash
+            download_url=(
+                f.download_url
+                if proxy_url_builder is None
+                else proxy_url_builder(f.download_url, None)
+            ),
+            file_handle=f.file_handle,
+            md5_hash=f.md5_hash,
         )
         for f in package_artefacts
     ]
 
 
 MODEL_PACKAGE_PARSERS: Dict[
-    str, Callable[[RoboflowModelPackageV1], ModelPackageMetadata]
+    str,
+    Callable[
+        [
+            RoboflowModelPackageV1,
+            Optional[Callable[[str, Optional[Dict[str, Union[str, List[str]]]]], str]],
+        ],
+        ModelPackageMetadata,
+    ],
 ] = {
     "onnx-model-package-v1": parse_onnx_model_package,
     "trt-model-package-v1": parse_trt_model_package,
@@ -587,17 +887,5 @@ MODEL_PACKAGE_PARSERS: Dict[
     "hf-model-package-v1": parse_hf_model_package,
     "ultralytics-model-package-v1": parse_ultralytics_model_package,
     "torch-script-model-package-v1": parse_torch_script_model_package,
-    "mediapipe-model-package-v1": parse_mediapipe_model_package,
+    "coreml-model-package-v1": parse_coreml_model_package,
 }
-
-
-def as_version(value: str) -> Version:
-    try:
-        return Version(value)
-    except InvalidVersion as error:
-        raise ModelMetadataConsistencyError(
-            message="Roboflow API returned model package manifest that is expected to provide valid version specification for "
-            "one of the field of package manifest, but instead provides value that cannot be parsed. This is most "
-            "likely Roboflow API bug - contact Roboflow to solve the problem.",
-            help_url="https://todo",
-        ) from error

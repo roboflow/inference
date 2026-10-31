@@ -25,6 +25,7 @@ from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
+from inference.usage_tracking.collector import usage_collector
 
 
 class SegmentAnything(RoboflowCoreModel):
@@ -54,6 +55,8 @@ class SegmentAnything(RoboflowCoreModel):
         )
         self.sam.to(device="cuda" if torch.cuda.is_available() else "cpu")
         self.predictor = SamPredictor(self.sam)
+        # Usage telemetry reads the fixed canvas from `image_size`.
+        self.image_size = self.sam.image_encoder.img_size
         self.ort_session = onnxruntime.InferenceSession(
             self.cache_file("decoder.onnx"),
             providers=[
@@ -122,6 +125,7 @@ class SegmentAnything(RoboflowCoreModel):
                 del self.image_size_cache[cache_key]
         return (embedding, img_in.shape[:2])
 
+    @usage_collector("model")
     def infer_from_request(self, request: SamInferenceRequest):
         """Performs inference based on the request type.
 
@@ -137,16 +141,20 @@ class SegmentAnything(RoboflowCoreModel):
                 embedding, _ = self.embed_image(**request.dict())
                 inference_time = perf_counter() - t1
                 if request.format == "json":
-                    return SamEmbeddingResponse(
+                    response = SamEmbeddingResponse(
                         embeddings=embedding.tolist(), time=inference_time
                     )
+                    self._attach_resolved_model_metadata(response)
+                    return response
                 elif request.format == "binary":
                     binary_vector = BytesIO()
                     np.save(binary_vector, embedding)
                     binary_vector.seek(0)
-                    return SamEmbeddingResponse(
+                    response = SamEmbeddingResponse(
                         embeddings=binary_vector.getvalue(), time=inference_time
                     )
+                    self._attach_resolved_model_metadata(response)
+                    return response
             elif isinstance(request, SamSegmentationRequest):
                 masks, low_res_masks = self.segment_image(**request.dict())
                 if request.format == "json":
@@ -170,6 +178,7 @@ class SegmentAnything(RoboflowCoreModel):
                     low_res_masks=[m.tolist() for m in low_res_masks],
                     time=perf_counter() - t1,
                 )
+                self._attach_resolved_model_metadata(response)
                 return response
 
     def preproc_image(self, image: InferenceRequestImage):
@@ -194,8 +203,8 @@ class SegmentAnything(RoboflowCoreModel):
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
         mask_input_format: Optional[str] = "json",
         orig_im_size: Optional[List[int]] = None,
-        point_coords: Optional[List[List[float]]] = [],
-        point_labels: Optional[List[int]] = [],
+        point_coords: Optional[List[List[float]]] = None,
+        point_labels: Optional[List[int]] = None,
         use_mask_input_cache: Optional[bool] = True,
         **kwargs,
     ):
@@ -213,8 +222,8 @@ class SegmentAnything(RoboflowCoreModel):
             mask_input (Optional[Union[np.ndarray, List[List[List[float]]]]]): Input mask for the image.
             mask_input_format (Optional[str]): Format of the provided mask input; either 'json' or 'binary'. Defaults to 'json'.
             orig_im_size (Optional[List[int]]): Original size of the image when providing embeddings directly.
-            point_coords (Optional[List[List[float]]]): Coordinates of points in the image. Defaults to an empty list.
-            point_labels (Optional[List[int]]): Labels associated with the provided points. Defaults to an empty list.
+            point_coords (Optional[List[List[float]]]): Coordinates of points in the image. Defaults to None (no points).
+            point_labels (Optional[List[int]]): Labels associated with the provided points. Defaults to None (no labels).
             use_mask_input_cache (Optional[bool]): Flag to determine if cached mask input should be used. Defaults to True.
             **kwargs: Additional keyword arguments.
 
@@ -254,7 +263,7 @@ class SegmentAnything(RoboflowCoreModel):
             elif embeddings_format == "binary":
                 embedding = np.load(BytesIO(embeddings))
 
-        point_coords = point_coords
+        point_coords = list(point_coords) if point_coords is not None else []
         point_coords.append([0, 0])
         point_coords = np.array(point_coords, dtype=np.float32)
         point_coords = np.expand_dims(point_coords, axis=0)
@@ -263,7 +272,7 @@ class SegmentAnything(RoboflowCoreModel):
             original_image_size,
         )
 
-        point_labels = point_labels
+        point_labels = list(point_labels) if point_labels is not None else []
         point_labels.append(-1)
         point_labels = np.array(point_labels, dtype=np.float32)
         point_labels = np.expand_dims(point_labels, axis=0)

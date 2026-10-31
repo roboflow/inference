@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 
 import torch
 import torchvision
@@ -6,11 +6,15 @@ import torchvision
 
 def run_nms_yolov5(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     top_classes_conf = output[:, 4, :]
@@ -19,7 +23,10 @@ def run_nms_yolov5(
     for b in range(bs):
         class_scores = scores[b]
         class_conf, class_ids = class_scores.max(0)
-        mask = top_classes_conf[b] > conf_thresh
+        if isinstance(conf_thresh, torch.Tensor):
+            mask = top_classes_conf[b] > conf_thresh.to(output.device)[class_ids]
+        else:
+            mask = top_classes_conf[b] > conf_thresh
         if not torch.any(mask):
             results.append(torch.zeros((0, 6), device=output.device))
             continue
@@ -51,11 +58,17 @@ def run_nms_yolov5(
 
 def run_yolov5_nms_for_instance_segmentation(
     output: torch.Tensor,
-    conf_thresh: float = 0.25,
+    conf_thresh: Union[float, torch.Tensor] = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
     class_agnostic: bool = False,
 ) -> List[torch.Tensor]:
+    """
+    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
+    (num_classes,) indexed by class_id for per-class thresholds.
+    Objectness-dominated rows (class_id==0 in slice-space) bypass the
+    per-class check and are kept.
+    """
     bs = output.shape[0]
     boxes = output[:, :4, :]
     top_classes_conf = output[:, 4, :]
@@ -68,7 +81,16 @@ def run_yolov5_nms_for_instance_segmentation(
         class_scores = scores[b].T
         box_masks = masks[b].T
         class_conf, class_ids = class_scores.max(1)
-        mask = top_classes_conf[b] > conf_thresh
+        if isinstance(conf_thresh, torch.Tensor):
+            # class_ids are slice-indexed: 0 is objectness, k>=1 is class_{k-1}.
+            # Keep objectness-dominated rows (no real class to threshold) and
+            # filter class-dominated rows against the real class's threshold.
+            thresh = conf_thresh.to(output.device)
+            real_class = (class_ids - 1).clamp(min=0, max=thresh.shape[0] - 1)
+            is_obj = class_ids == 0
+            mask = is_obj | (top_classes_conf[b] > thresh[real_class])
+        else:
+            mask = top_classes_conf[b] > conf_thresh
         if mask.sum() == 0:
             results.append(torch.zeros((0, 38), device=output.device))
             continue

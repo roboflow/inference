@@ -1,26 +1,35 @@
-import asyncio
-import datetime
 import os
 import subprocess
 import time
 from pathlib import Path
 from queue import Empty
-from typing import Callable, Dict, Optional
+from typing import Dict, Optional
+
+from streamvision.webrtc_worker.modal_session import run_modal_session
 
 from inference.core import logger
 from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
+    ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     LOG_LEVEL,
     MODAL_TOKEN_ID,
     MODAL_TOKEN_SECRET,
+    MODAL_WEB_ENDPOINT_URL,
     MODAL_WORKSPACE_NAME,
+    MODAL_WS_ENDPOINT_URL,
     MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
     PROJECT,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    WEBEXEC_TRANSPORT,
+    WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
+    WEBEXEC_WS_CONNECTION_POOL_SIZE,
+    WEBEXEC_WS_FAIL_ON_SESSION_LOSS,
+    WEBEXEC_WS_IDLE_RELEASE_SECONDS,
+    WEBEXEC_WS_READ_TIMEOUT_SECONDS,
     WEBRTC_DATA_CHANNEL_ACK_WINDOW,
     WEBRTC_DATA_CHANNEL_BUFFER_SIZE_LIMIT,
     WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION,
@@ -32,6 +41,7 @@ from inference.core.env import (
     WEBRTC_MODAL_FUNCTION_MAX_TIME_LIMIT,
     WEBRTC_MODAL_FUNCTION_MIN_CONTAINERS,
     WEBRTC_MODAL_FUNCTION_SCALEDOWN_WINDOW,
+    WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT,
     WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
     WEBRTC_MODAL_GCP_SECRET_NAME,
     WEBRTC_MODAL_IMAGE_NAME,
@@ -43,13 +53,17 @@ from inference.core.env import (
     WEBRTC_MODAL_PRELOAD_MODELS,
     WEBRTC_MODAL_RESPONSE_TIMEOUT,
     WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
+    WEBRTC_MODAL_ROUTING_REGION,
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
+    WEBRTC_MODAL_VOLUME_NAME,
     WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
+    WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS,
+    WEBRTC_SESSION_HEARTBEAT_URL,
     WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -60,18 +74,17 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.request_utils import (
+    reuse_resolved_workspace_id_for_webrtc_request,
+)
 from inference.core.interfaces.webrtc_worker.utils import (
     warmup_cuda,
     workflow_contains_instant_model,
     workflow_contains_preloaded_model,
 )
-from inference.core.interfaces.webrtc_worker.watchdog import Watchdog
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
-from inference.core.roboflow_api import (
-    get_roboflow_workspace,
-    get_workflow_specification,
-)
+from inference.core.roboflow_api import get_workflow_specification
 from inference.core.version import __version__
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.owlv2.owlv2 import PRELOADED_HF_MODELS, preload_owlv2_model
@@ -83,15 +96,6 @@ try:
     import modal
 except ImportError:
     modal = None
-
-
-# https://modal.com/docs/guide/environment_variables#environment-variables
-MODAL_CLOUD_PROVIDER = os.getenv("MODAL_CLOUD_PROVIDER")
-MODAL_IMAGE_ID = os.getenv("MODAL_IMAGE_ID")
-MODAL_REGION = os.getenv("MODAL_REGION")
-MODAL_TASK_ID = os.getenv("MODAL_TASK_ID")
-MODAL_ENVIRONMENT = os.getenv("MODAL_ENVIRONMENT")
-MODAL_IDENTITY_TOKEN = os.getenv("MODAL_IDENTITY_TOKEN")
 
 
 def check_nvidia_smi_gpu() -> str:
@@ -123,11 +127,15 @@ if modal is not None:
         )
 
     video_processing_image = (
-        video_processing_image.apt_install("ffmpeg").pip_install("modal").entrypoint([])
+        video_processing_image.apt_install("ffmpeg", "python3-pip")
+        .pip_install("modal", "msgpack", "websocket-client")
+        .entrypoint([])
     )
 
     # https://modal.com/docs/reference/modal.Volume
-    rfcache_volume = modal.Volume.from_name("rfcache", create_if_missing=True)
+    rfcache_volume = modal.Volume.from_name(
+        WEBRTC_MODAL_VOLUME_NAME, create_if_missing=True
+    )
 
     # https://modal.com/docs/reference/modal.App
     app = modal.App(
@@ -143,11 +151,16 @@ if modal is not None:
         "memory": WEBRTC_MODAL_MIN_RAM_MB,
         "cpu": WEBRTC_MODAL_MIN_CPU_CORES,
         "timeout": WEBRTC_MODAL_FUNCTION_TIME_LIMIT,
+        # with_options(timeout=...) only changes execution time, not startup.
+        "startup_timeout": WEBRTC_MODAL_FUNCTION_STARTUP_TIMEOUT,
         "enable_memory_snapshot": WEBRTC_MODAL_FUNCTION_ENABLE_MEMORY_SNAPSHOT,
         "max_inputs": WEBRTC_MODAL_FUNCTION_MAX_INPUTS,
         "env": {
             "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": str(
                 ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+            ),
+            "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES": str(
+                ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
             ),
             "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES": "False",
             "DISABLE_INFERENCE_CACHE": "True",
@@ -157,7 +170,9 @@ if modal is not None:
             "METRICS_ENABLED": "False",
             "MODAL_TOKEN_ID": MODAL_TOKEN_ID,
             "MODAL_TOKEN_SECRET": MODAL_TOKEN_SECRET,
+            "MODAL_WEB_ENDPOINT_URL": MODAL_WEB_ENDPOINT_URL,
             "MODAL_WORKSPACE_NAME": MODAL_WORKSPACE_NAME,
+            "MODAL_WS_ENDPOINT_URL": MODAL_WS_ENDPOINT_URL,
             "MODEL_CACHE_DIR": MODEL_CACHE_DIR,
             "MODELS_CACHE_AUTH_CACHE_MAX_SIZE": str(MODELS_CACHE_AUTH_CACHE_MAX_SIZE),
             "MODELS_CACHE_AUTH_CACHE_TTL": str(MODELS_CACHE_AUTH_CACHE_TTL),
@@ -165,10 +180,21 @@ if modal is not None:
             "LOG_LEVEL": LOG_LEVEL,
             "ONNXRUNTIME_EXECUTION_PROVIDERS": "[CUDAExecutionProvider,CPUExecutionProvider]",
             "PROJECT": PROJECT,
-            "PYTHONASYNCIODEBUG": str(os.getenv("PYTHONASYNCIODEBUG", "0")),
+            "PYTHONASYNCIODEBUG": os.getenv("PYTHONASYNCIODEBUG", ""),
+            "ROBOFLOW_ENVIRONMENT": (
+                "prod" if PROJECT == "roboflow-platform" else "staging"
+            ),
             "ROBOFLOW_INTERNAL_SERVICE_NAME": WEBRTC_MODAL_ROBOFLOW_INTERNAL_SERVICE_NAME,
             "ROBOFLOW_INTERNAL_SERVICE_SECRET": ROBOFLOW_INTERNAL_SERVICE_SECRET,
             "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE": WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE,
+            "WEBEXEC_TRANSPORT": WEBEXEC_TRANSPORT,
+            "WEBEXEC_WS_CONNECTION_POOL_SIZE": str(WEBEXEC_WS_CONNECTION_POOL_SIZE),
+            "WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS": str(
+                WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS
+            ),
+            "WEBEXEC_WS_FAIL_ON_SESSION_LOSS": str(WEBEXEC_WS_FAIL_ON_SESSION_LOSS),
+            "WEBEXEC_WS_IDLE_RELEASE_SECONDS": str(WEBEXEC_WS_IDLE_RELEASE_SECONDS),
+            "WEBEXEC_WS_READ_TIMEOUT_SECONDS": str(WEBEXEC_WS_READ_TIMEOUT_SECONDS),
             "TELEMETRY_USE_PERSISTENT_QUEUE": "False",
             "TELEMETRY_API_PLAN_CACHE_TTL_SECONDS": str(
                 os.getenv("TELEMETRY_API_PLAN_CACHE_TTL_SECONDS", 60)
@@ -210,52 +236,20 @@ if modal is not None:
             "WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION": str(
                 WEBRTC_GZIP_PREVIEW_FRAME_COMPRESSION
             ),
+            "WEBRTC_SESSION_HEARTBEAT_URL": (
+                WEBRTC_SESSION_HEARTBEAT_URL if WEBRTC_SESSION_HEARTBEAT_URL else ""
+            ),
+            "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS": str(
+                WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS
+            ),
         },
         "volumes": {MODEL_CACHE_DIR: rfcache_volume},
     }
 
-    async def run_rtc_peer_connection_with_watchdog(
-        webrtc_request: WebRTCWorkerRequest,
-        send_answer: Callable[[WebRTCWorkerResult], None],
-        model_manager: ModelManager,
-        watchdog: Watchdog,
-    ):
-        from inference.core.interfaces.webrtc_worker.webrtc import (
-            init_rtc_peer_connection_with_loop,
-        )
-
-        rtc_peer_connection_task = asyncio.create_task(
-            init_rtc_peer_connection_with_loop(
-                webrtc_request=webrtc_request,
-                send_answer=send_answer,
-                model_manager=model_manager,
-                heartbeat_callback=watchdog.heartbeat,
-            )
-        )
-
-        loop = asyncio.get_running_loop()
-
-        def on_timeout(message: Optional[str] = ""):
-            msg = "Cancelled by watchdog"
-            if message:
-                msg += f": {message}"
-            # Use call_soon_threadsafe since this callback is invoked from the watchdog thread
-            loop.call_soon_threadsafe(rtc_peer_connection_task.cancel, msg)
-
-        watchdog.on_timeout = on_timeout
-        watchdog.start()
-
-        try:
-            await rtc_peer_connection_task
-            logger.info("Task completed uninterrupted")
-        except modal.exception.InputCancellation:
-            logger.warning("Modal function was cancelled")
-        except asyncio.CancelledError as exc:
-            logger.warning("WebRTC connection task was cancelled (%s)", exc)
-        except Exception as exc:
-            logger.error(exc)
-        finally:
-            watchdog.stop()
+    # with_options() cannot set routing_region, so it must be baked into the
+    # class decorator at deploy time
+    if WEBRTC_MODAL_ROUTING_REGION:
+        decorator_kwargs["routing_region"] = WEBRTC_MODAL_ROUTING_REGION
 
     class RTCPeerConnectionModal:
         _model_manager: Optional[ModelManager] = modal.parameter(
@@ -270,13 +264,23 @@ if modal is not None:
         )
         _cold_start: Optional[bool] = modal.parameter(default=True, init=False)
 
+        @modal.enter(snap=True)
+        def _preload_workflow_dependencies(self) -> None:
+            # Cancelling a first-session import can leave pandas submodules cached
+            # without their parent. Finish imports before accepting any inputs.
+            from inference.core.workflows.execution_engine.core import (  # noqa: F401
+                ExecutionEngine,
+            )
+
         @modal.method()
         def rtc_peer_connection_modal(
             self,
             webrtc_request: WebRTCWorkerRequest,
             q: modal.Queue,
         ):
-            _workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
+            _workspace_id = reuse_resolved_workspace_id_for_webrtc_request(
+                webrtc_request
+            )
 
             workflow_id = webrtc_request.workflow_configuration.workflow_id
             if not workflow_id:
@@ -312,139 +316,15 @@ if modal is not None:
             logger.info(
                 "Container startup time: %s", self._container_startup_time_seconds
             )
-            _exec_session_started = datetime.datetime.now()
-            webrtc_request.processing_session_started = _exec_session_started
-            # Modal cancels based on time taken during entry hook
-            if self._function_call_number_on_container == 1 and self._cold_start:
-                logger.info(
-                    "Subtracting container startup time (%s) from processing session started (%s)",
-                    self._container_startup_time_seconds,
-                    webrtc_request.processing_session_started,
-                )
-                webrtc_request.processing_session_started -= datetime.timedelta(
-                    seconds=self._container_startup_time_seconds
-                )
-            logger.info(
-                "WebRTC session started at %s", _exec_session_started.isoformat()
+            run_modal_session(
+                webrtc_request,
+                q,
+                workflow_id=workflow_id,
+                model_manager=self._model_manager,
+                cold_start=self._cold_start,
+                function_call_number_on_container=self._function_call_number_on_container,
+                container_startup_time_seconds=self._container_startup_time_seconds,
             )
-            logger.info(
-                "webrtc_realtime_processing: %s",
-                webrtc_request.webrtc_realtime_processing,
-            )
-            logger.info("stream_output: %s", webrtc_request.stream_output)
-            logger.info("data_output: %s", webrtc_request.data_output)
-            logger.info("declared_fps: %s", webrtc_request.declared_fps)
-            logger.info("rtsp_url: %s", webrtc_request.rtsp_url)
-            logger.info("processing_timeout: %s", webrtc_request.processing_timeout)
-            logger.info("watchdog_timeout: %s", WEBRTC_MODAL_WATCHDOG_TIMEMOUT)
-            logger.info("requested_plan: %s", webrtc_request.requested_plan)
-            logger.info("requested_region: %s", webrtc_request.requested_region)
-            logger.info(
-                "ICE servers: %s",
-                len(
-                    webrtc_request.webrtc_config.iceServers
-                    if webrtc_request.webrtc_config
-                    else []
-                ),
-            )
-            logger.info(
-                "WEBRTC_MODAL_MIN_CPU_CORES: %s",
-                WEBRTC_MODAL_MIN_CPU_CORES or "not set",
-            )
-            logger.info(
-                "WEBRTC_MODAL_MIN_RAM_MB: %s", WEBRTC_MODAL_MIN_RAM_MB or "not set"
-            )
-            logger.info("MODAL_CLOUD_PROVIDER: %s", MODAL_CLOUD_PROVIDER)
-            logger.info("MODAL_IMAGE_ID: %s", MODAL_IMAGE_ID)
-            logger.info("MODAL_REGION: %s", MODAL_REGION)
-            logger.info("MODAL_TASK_ID: %s", MODAL_TASK_ID)
-            logger.info("MODAL_ENVIRONMENT: %s", MODAL_ENVIRONMENT)
-            logger.info("MODAL_IDENTITY_TOKEN: %s", MODAL_IDENTITY_TOKEN)
-
-            def send_answer(obj: WebRTCWorkerResult):
-                logger.info("Sending webrtc answer")
-                if obj.error_message:
-                    logger.error(
-                        "Error: %s (%s)", obj.error_message, obj.exception_type
-                    )
-                # Queue with no limit, below will never block
-                q.put(obj)
-
-            if webrtc_request.processing_timeout == 0:
-                error_msg = "Processing timeout is 0, skipping processing"
-                logger.info(error_msg)
-                send_answer(WebRTCWorkerResult(error_message=error_msg))
-                return
-            if (
-                not webrtc_request.webrtc_offer
-                or not webrtc_request.webrtc_offer.sdp
-                or not webrtc_request.webrtc_offer.type
-            ):
-                error_msg = "Webrtc offer is missing, skipping processing"
-                logger.info(error_msg)
-                send_answer(WebRTCWorkerResult(error_message=error_msg))
-                return
-
-            watchdog = Watchdog(
-                api_key=webrtc_request.api_key,
-                timeout_seconds=WEBRTC_MODAL_WATCHDOG_TIMEMOUT,
-            )
-
-            try:
-                asyncio.run(
-                    run_rtc_peer_connection_with_watchdog(
-                        webrtc_request=webrtc_request,
-                        send_answer=send_answer,
-                        model_manager=self._model_manager,
-                        watchdog=watchdog,
-                    )
-                )
-            except modal.exception.InputCancellation:
-                logger.warning("Modal function was cancelled")
-            except asyncio.CancelledError as exc:
-                logger.warning("WebRTC connection task was cancelled (%s)", exc)
-            except Exception as exc:
-                logger.warning("Unhandled exception: %s", exc)
-            finally:
-                watchdog.stop()
-
-            _exec_session_stopped = datetime.datetime.now()
-            logger.info(
-                "WebRTC session stopped at %s",
-                _exec_session_stopped.isoformat(),
-            )
-            if watchdog.total_heartbeats == 0:
-                raise Exception(
-                    "WebRTC worker was terminated before processing a single frame"
-                )
-
-            # requested plan is guaranteed to be set due to validation in spawn_rtc_peer_connection_modal
-            webrtc_plan = webrtc_request.requested_plan
-
-            video_source = "realtime browser stream"
-            if webrtc_request.rtsp_url:
-                video_source = "rtsp"
-            elif not webrtc_request.webrtc_realtime_processing:
-                video_source = "buffered browser stream"
-            else:
-                video_source = "realtime browser stream"
-
-            usage_collector.record_usage(
-                source=workflow_id,
-                category="modal",
-                api_key=webrtc_request.api_key,
-                resource_details={
-                    "plan": webrtc_plan,
-                    "billable": True,
-                    "video_source": video_source,
-                    "is_preview": webrtc_request.is_preview,
-                },
-                execution_duration=(
-                    _exec_session_stopped - _exec_session_started
-                ).total_seconds(),
-            )
-            usage_collector.push_usage_payloads()
-            logger.info("Function completed")
 
         @modal.exit()
         def stop(self):
@@ -573,17 +453,13 @@ if modal is not None:
             logger.info("Deploying webrtc modal app %s", WEBRTC_MODAL_APP_NAME)
             app.deploy(name=WEBRTC_MODAL_APP_NAME, client=client, tag=docker_tag)
 
-        workspace_id = webrtc_request.workflow_configuration.workspace_name
-        if not workspace_id:
-            workspace_id = get_roboflow_workspace(api_key=webrtc_request.api_key)
-            webrtc_request.workflow_configuration.workspace_name = workspace_id
+        workspace_id = reuse_resolved_workspace_id_for_webrtc_request(webrtc_request)
         if not webrtc_request.workflow_configuration.workflow_specification:
-            webrtc_request.workflow_configuration.workflow_specification = (
-                get_workflow_specification(
-                    api_key=webrtc_request.api_key,
-                    workspace_id=webrtc_request.workflow_configuration.workspace_name,
-                    workflow_id=webrtc_request.workflow_configuration.workflow_id,
-                )
+            webrtc_request.workflow_configuration.workflow_specification = get_workflow_specification(
+                api_key=webrtc_request.api_key,
+                workspace_id=webrtc_request.workflow_configuration.workspace_name,
+                workflow_id=webrtc_request.workflow_configuration.workflow_id,
+                workflow_version_id=webrtc_request.workflow_configuration.workflow_version_id,
             )
         tags = {"tag": docker_tag}
         if workspace_id:
@@ -687,8 +563,14 @@ if modal is not None:
                     q.get(block=True, timeout=WEBRTC_MODAL_RESPONSE_TIMEOUT)
                 )
             except Empty:
-                logger.error("Modal function call timed out, terminating containers")
-                function_call.cancel(terminate_containers=True)
+                logger.error("Modal function call timed out, cancelling function call")
+                try:
+                    function_call.cancel()
+                except Exception as cancel_exc:
+                    logger.warning(
+                        "Failed to cancel timed-out Modal function call: %s",
+                        cancel_exc,
+                    )
                 raise RoboflowAPITimeoutError("Modal function call timed out")
             except Exception as exc:
                 logger.error(exc)

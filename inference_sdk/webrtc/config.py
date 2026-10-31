@@ -38,6 +38,9 @@ class StreamConfig:
     Provide this configuration when your network requires a TURN server for WebRTC connectivity.
     TURN is automatically skipped for localhost connections. If not provided, the connection
     will attempt to establish directly without TURN relay.
+
+    When several TURN URLs are given (as with the auto-fetched Roboflow config), the SDK
+    uses the first one that answers, so networks that block UDP fall back to TCP or TLS.
     """
 
     # Workflow parameters
@@ -56,4 +59,12 @@ class StreamConfig:
 
     Must be a valid Modal region. Only applicable when connecting to Roboflow serverless endpoints.
     See: https://modal.com/docs/guide/region-selection#region-options
+    """
+
+    processing_timeout: Optional[int] = None
+    """Timeout in seconds for the server-side processing session.
+
+    Controls how long the serverless function or worker process is allowed to run.
+    If not set, the server uses its default (WEBRTC_MODAL_FUNCTION_TIME_LIMIT).
+    Only applicable when connecting to Roboflow serverless endpoints.
     """

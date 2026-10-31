@@ -1,12 +1,34 @@
 import numpy as np
 import pytest
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.constants import CLASS_NAMES_KEY
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference_models.models.base.classification import ClassificationPrediction
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
+)
+
+# Under ENABLE_TENSOR_DATA_REPRESENTATION the classification block emits a list of native
+# inference_models.ClassificationPrediction objects instead of sv-shaped dicts. The
+# numpy-shaped assertions below run only with the flag off; an equivalent *_tensor_native
+# test asserts the same facts against the native carrier with the flag on.
+_NUMPY_ONLY = pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="classification dict output; native ClassificationPrediction under "
+    "ENABLE_TENSOR_DATA_REPRESENTATION — see the *_tensor_native parity test",
+)
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 LEGACY_DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
@@ -44,6 +66,7 @@ LEGACY_DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
 }
 
 
+@_NUMPY_ONLY
 def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -82,65 +105,12 @@ def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_
     ], "Expected predictions to be as measured in reference run"
 
 
-DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS = {
-    "version": "1.0",
-    "inputs": [{"type": "WorkflowImage", "name": "image"}],
-    "steps": [
-        {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
-            "name": "general_detection",
-            "image": "$inputs.image",
-            "model_id": "yolov8n-640",
-            "class_filter": ["dog"],
-        },
-        {
-            "type": "roboflow_core/dynamic_crop@v1",
-            "name": "cropping",
-            "image": "$inputs.image",
-            "predictions": "$steps.general_detection.predictions",
-        },
-        {
-            "type": "roboflow_core/roboflow_classification_model@v2",
-            "name": "breds_classification",
-            "image": "$steps.cropping.crops",
-            "model_id": "dog-breed-xpaq6/1",
-            "confidence": 0.09,
-        },
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": "predictions",
-            "selector": "$steps.breds_classification.predictions",
-        },
-    ],
-}
-
-
-@add_to_workflows_gallery(
-    category="Workflows with multiple models",
-    use_case_title="Workflow detection model followed by classifier",
-    use_case_description="""
-This example showcases how to stack models on top of each other - in this particular
-case, we detect objects using object detection models, requesting only "dogs" bounding boxes
-in the output of prediction. 
-
-Based on the model predictions, we take each bounding box with dog and apply dynamic cropping
-to be able to run classification model for each and every instance of dog separately.
-Please note that for each inserted image we will have nested batch of crops (with size 
-dynamically determined in runtime, based on first model predictions) and for each crop
-we apply secondary model.
-
-Secondary model is supposed to make prediction from dogs breed classifier model 
-to assign detailed class for each dog instance.
-    """,
-    workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS,
-    workflow_name_in_app="detection-plus-classification",
-)
-def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
+@_TENSOR_ONLY
+def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_provided_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -149,7 +119,207 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS,
+        workflow_definition=LEGACY_DETECTION_PLUS_CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": image_as_workflow_input(dogs_image),
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    # Under the flag, predictions is a Python list of native ClassificationPrediction
+    # objects (one per crop); list length is unchanged.
+    predictions = result[0]["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+    for pred in predictions:
+        assert isinstance(
+            pred, ClassificationPrediction
+        ), "Each crop prediction must be a native ClassificationPrediction"
+    # Native equivalent of ['top']: class name at the top class id. Note images_metadata
+    # is PLURAL and indexed [0]; top class id comes from class_id.
+    top_names = [
+        pred.images_metadata[0][CLASS_NAMES_KEY][int(pred.class_id.reshape(-1)[0])]
+        for pred in predictions
+    ]
+    assert top_names == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+
+
+@_TENSOR_ONLY
+def test_legacy_detection_plus_classification_workflow_when_minimal_valid_input_provided_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # Same as the *_tensor_native test, but the image arrives ALREADY materialised as a CHW
+    # RGB device tensor (is_tensor_materialised() == True), so the OD block runs its on-device
+    # tensor path. Results must match the numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=LEGACY_DETECTION_PLUS_CLASSIFICATION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    # Under the flag, predictions is a Python list of native ClassificationPrediction
+    # objects (one per crop); list length is unchanged.
+    predictions = result[0]["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+    for pred in predictions:
+        assert isinstance(
+            pred, ClassificationPrediction
+        ), "Each crop prediction must be a native ClassificationPrediction"
+    # Native equivalent of ['top']: class name at the top class id. Note images_metadata
+    # is PLURAL and indexed [0]; top class id comes from class_id.
+    top_names = [
+        pred.images_metadata[0][CLASS_NAMES_KEY][int(pred.class_id.reshape(-1)[0])]
+        for pred in predictions
+    ]
+    assert top_names == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+
+
+# Matched pairs only — OD and classification blocks are bumped together.
+DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS = [
+    (
+        "roboflow_core/roboflow_object_detection_model@v2",
+        "roboflow_core/roboflow_classification_model@v2",
+    ),
+    (
+        "roboflow_core/roboflow_object_detection_model@v3",
+        "roboflow_core/roboflow_classification_model@v3",
+    ),
+]
+
+
+def _build_detection_plus_classification_workflow(
+    od_block_type: str, cls_block_type: str
+) -> dict:
+    if cls_block_type.endswith("@v3"):
+        cls_step_confidence = {
+            "confidence_mode": "custom",
+            "custom_confidence": 0.09,
+        }
+    else:
+        cls_step_confidence = {"confidence": 0.09}
+    return {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "steps": [
+            {
+                "type": od_block_type,
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "roboflow_core/dynamic_crop@v1",
+                "name": "cropping",
+                "image": "$inputs.image",
+                "predictions": "$steps.general_detection.predictions",
+            },
+            {
+                "type": cls_block_type,
+                "name": "breds_classification",
+                "image": "$steps.cropping.crops",
+                "model_id": "dog-breed-xpaq6/1",
+                **cls_step_confidence,
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.breds_classification.predictions",
+            },
+        ],
+    }
+
+
+# Gallery registration uses the latest block pair.
+DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS = (
+    _build_detection_plus_classification_workflow(
+        *DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS[-1]
+    )
+)
+
+
+@_NUMPY_ONLY
+@add_to_workflows_gallery(
+    category="Workflows with multiple models",
+    use_case_title="Workflow detection model followed by classifier",
+    use_case_description="""
+This example showcases how to stack models on top of each other - in this particular
+case, we detect objects using object detection models, requesting only "dogs" bounding boxes
+in the output of prediction.
+
+Based on the model predictions, we take each bounding box with dog and apply dynamic cropping
+to be able to run classification model for each and every instance of dog separately.
+Please note that for each inserted image we will have nested batch of crops (with size
+dynamically determined in runtime, based on first model predictions) and for each crop
+we apply secondary model.
+
+Secondary model is supposed to make prediction from dogs breed classifier model
+to assign detailed class for each dog instance.
+    """,
+    workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS,
+    workflow_name_in_app="detection-plus-classification",
+)
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -175,10 +345,17 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     ], "Expected predictions to be as measured in reference run"
 
 
-def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_and_serialization_requested(
+@_TENSOR_ONLY
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_tensor_native(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
+    image_as_workflow_input,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -187,7 +364,129 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS,
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": image_as_workflow_input(dogs_image),
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    # Under the flag, predictions is a Python list of native ClassificationPrediction
+    # objects (one per crop); list length is unchanged.
+    predictions = result[0]["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+    for pred in predictions:
+        assert isinstance(
+            pred, ClassificationPrediction
+        ), "Each crop prediction must be a native ClassificationPrediction"
+    # Native equivalent of ['top']: class name at the top class id. Note images_metadata
+    # is PLURAL and indexed [0]; top class id comes from class_id.
+    top_names = [
+        pred.images_metadata[0][CLASS_NAMES_KEY][int(pred.class_id.reshape(-1)[0])]
+        for pred in predictions
+    ]
+    assert top_names == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_with_tensor_input(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
+) -> None:
+    # Same as the *_tensor_native test, but the image arrives ALREADY materialised as a CHW
+    # RGB device tensor (is_tensor_materialised() == True), so the OD block runs its on-device
+    # tensor path. Results must match the numpy-input variant.
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": numpy_image_as_tensor(dogs_image),
+        }
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    # Under the flag, predictions is a Python list of native ClassificationPrediction
+    # objects (one per crop); list length is unchanged.
+    predictions = result[0]["predictions"]
+    assert (
+        len(predictions) == 2
+    ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+    for pred in predictions:
+        assert isinstance(
+            pred, ClassificationPrediction
+        ), "Each crop prediction must be a native ClassificationPrediction"
+    # Native equivalent of ['top']: class name at the top class id. Note images_metadata
+    # is PLURAL and indexed [0]; top class id comes from class_id.
+    top_names = [
+        pred.images_metadata[0][CLASS_NAMES_KEY][int(pred.class_id.reshape(-1)[0])]
+        for pred in predictions
+    ]
+    assert top_names == [
+        "116.Parson_russell_terrier",
+        "131.Wirehaired_pointing_griffon",
+    ], "Expected predictions to be as measured in reference run"
+
+
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided_and_serialization_requested(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -214,10 +513,15 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
     ], "Expected predictions to be as measured in reference run"
 
 
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_nothing_gets_predicted(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -226,7 +530,9 @@ def test_detection_plus_classification_workflow_when_nothing_gets_predicted(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW_V2_BLOCKS,
+        workflow_definition=_build_detection_plus_classification_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -248,52 +554,60 @@ def test_detection_plus_classification_workflow_when_nothing_gets_predicted(
     ), "Expected no prediction from 2nd model, as no dogs detected"
 
 
-DETECTION_PLUS_CLASSIFICATION_PLUS_CONSENSUS_WORKFLOW = {
-    "version": "1.0",
-    "inputs": [{"type": "WorkflowImage", "name": "image"}],
-    "steps": [
-        {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
-            "name": "general_detection",
-            "image": "$inputs.image",
-            "model_id": "yolov8n-640",
-            "class_filter": ["dog"],
-        },
-        {
-            "type": "roboflow_core/detections_consensus@v1",
-            "name": "detections_consensus",
-            "predictions_batches": [
-                "$steps.general_detection.predictions",
-            ],
-            "required_votes": 1,
-        },
-        {
-            "type": "roboflow_core/dynamic_crop@v1",
-            "name": "cropping",
-            "image": "$inputs.image",
-            "predictions": "$steps.detections_consensus.predictions",
-        },
-        {
-            "type": "roboflow_core/roboflow_classification_model@v2",
-            "name": "breds_classification",
-            "image": "$steps.cropping.crops",
-            "model_id": "dog-breed-xpaq6/1",
-        },
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": "predictions",
-            "selector": "$steps.breds_classification.predictions",
-        },
-    ],
-}
+def _build_detection_plus_classification_plus_consensus_workflow(
+    od_block_type: str, cls_block_type: str
+) -> dict:
+    return {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "steps": [
+            {
+                "type": od_block_type,
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "roboflow_core/detections_consensus@v1",
+                "name": "detections_consensus",
+                "predictions_batches": [
+                    "$steps.general_detection.predictions",
+                ],
+                "required_votes": 1,
+            },
+            {
+                "type": "roboflow_core/dynamic_crop@v1",
+                "name": "cropping",
+                "image": "$inputs.image",
+                "predictions": "$steps.detections_consensus.predictions",
+            },
+            {
+                "type": cls_block_type,
+                "name": "breds_classification",
+                "image": "$steps.cropping.crops",
+                "model_id": "dog-breed-xpaq6/1",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.breds_classification.predictions",
+            },
+        ],
+    }
 
 
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_empty_sv_detections_produced_without_metadata(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -302,7 +616,9 @@ def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=DETECTION_PLUS_CLASSIFICATION_PLUS_CONSENSUS_WORKFLOW,
+        workflow_definition=_build_detection_plus_classification_plus_consensus_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -324,10 +640,15 @@ def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_
     ), "Expected no prediction from 2nd model, as no dogs detected"
 
 
+@pytest.mark.parametrize(
+    "od_block_type, cls_block_type", DETECTION_PLUS_CLASSIFICATION_BLOCK_PAIRS
+)
 def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_serialization_requested(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     roboflow_api_key: str,
+    od_block_type: str,
+    cls_block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -336,7 +657,9 @@ def test_detection_plus_classification_workflow_when_nothing_gets_predicted_and_
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=DETECTION_PLUS_CLASSIFICATION_PLUS_CONSENSUS_WORKFLOW,
+        workflow_definition=_build_detection_plus_classification_plus_consensus_workflow(
+            od_block_type, cls_block_type
+        ),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )

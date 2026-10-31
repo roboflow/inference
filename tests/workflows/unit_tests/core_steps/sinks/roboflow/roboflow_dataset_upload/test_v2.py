@@ -6,18 +6,27 @@ import numpy as np
 import pytest
 from fastapi import BackgroundTasks
 from pydantic import ValidationError
-
-from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import v2
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload import v2
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     BlockManifest,
     RoboflowDatasetUploadBlockV2,
     maybe_register_datapoint_at_roboflow,
 )
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v2_tensor import (
+    RoboflowDatasetUploadBlockV2 as TensorRoboflowDatasetUploadBlockV2,
+)
+
+from inference.core.cache import MemoryCache
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
+)
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
@@ -51,6 +60,7 @@ def test_maybe_register_datapoint_at_roboflow_when_data_sampled_off(
         background_tasks=MagicMock(),
         thread_pool_executor=MagicMock(),
         api_key="XXX",
+        platform_client=MagicMock(),
     )
 
     # then
@@ -89,6 +99,7 @@ def test_maybe_register_datapoint_at_roboflow_when_data_sample_accepted(
         background_tasks=MagicMock(),
         thread_pool_executor=MagicMock(),
         api_key="XXX",
+        platform_client=MagicMock(),
     )
 
     # then
@@ -319,6 +330,109 @@ def test_manifest_parsing_when_data_percentage_invalid(data_percentage: float) -
         _ = BlockManifest.model_validate(raw_manifest)
 
 
+@pytest.mark.parametrize("disable_sink", [False, True])
+def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
+    data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+
+    with pytest.raises(ValueError):
+        data_collector_block.run(
+            images=Batch(content=[], indices=[]),
+            predictions=None,
+            target_project="my_project",
+            usage_quota_name="my_quota",
+            data_percentage=100.0,
+            persist_predictions=True,
+            minutely_usage_limit=10,
+            hourly_usage_limit=100,
+            daily_usage_limit=1000,
+            max_image_size=(128, 128),
+            compression_level=75,
+            registration_tags=["some"],
+            disable_sink=disable_sink,
+            fire_and_forget=False,
+            labeling_batch_prefix="my_batch",
+            labeling_batches_recreation_frequency="never",
+        )
+
+
+def test_execution_policy_noops_without_api_key() -> None:
+    data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+        disable_sinks=True,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=100.0,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
+
+
+@_TENSOR_ONLY
+def test_execution_policy_noops_without_api_key_tensor_native() -> None:
+    data_collector_block = TensorRoboflowDatasetUploadBlockV2(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+        disable_sinks=True,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=100.0,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
+
+
 @mock.patch.object(v2, "register_datapoint_at_roboflow")
 def test_run_sink_when_data_sampled_off(
     register_datapoint_at_roboflow_mock: MagicMock,
@@ -425,3 +539,182 @@ def test_run_sink_when_data_sampled(
         * 3
     ), "Expected data registered"
     assert register_datapoint_at_roboflow_mock.call_count == 3
+
+
+@mock.patch.object(v2, "register_datapoint_at_roboflow")
+def test_run_sink_with_image_name_parameter(
+    register_datapoint_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    background_tasks = BackgroundTasks()
+    cache = MemoryCache()
+    data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=cache,
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    indices = [(0,), (1,)]
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=[image, image], indices=indices),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=100.0,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+        image_name=Batch(content=["serial_001", "serial_002"], indices=indices),
+    )
+
+    # then
+    assert result == [
+        {"error_status": False, "message": "OK"},
+        {"error_status": False, "message": "OK"},
+    ], "Expected data registered"
+    assert register_datapoint_at_roboflow_mock.call_count == 2
+
+    # Verify image_name was passed correctly
+    calls = register_datapoint_at_roboflow_mock.call_args_list
+    assert calls[0].kwargs["image_name"] == "serial_001"
+    assert calls[1].kwargs["image_name"] == "serial_002"
+
+
+def test_manifest_parsing_with_image_name_field() -> None:
+    # given
+    raw_manifest = {
+        "type": "roboflow_core/roboflow_dataset_upload@v2",
+        "name": "some",
+        "images": "$inputs.image",
+        "predictions": None,
+        "target_project": "some1",
+        "usage_quota_name": "my_quota",
+        "data_percentage": 100.0,
+        "persist_predictions": True,
+        "minutely_usage_limit": 10,
+        "hourly_usage_limit": 100,
+        "daily_usage_limit": 1000,
+        "max_image_size": (100, 200),
+        "compression_level": 95,
+        "registration_tags": [],
+        "disable_sink": False,
+        "fire_and_forget": False,
+        "labeling_batch_prefix": "my_batch",
+        "labeling_batches_recreation_frequency": "never",
+        "image_name": "$inputs.filename",
+    }
+
+    # when
+    result = BlockManifest.model_validate(raw_manifest)
+
+    # then
+    assert result.image_name == "$inputs.filename"
+
+
+def test_manifest_parsing_with_static_image_name() -> None:
+    # given
+    raw_manifest = {
+        "type": "roboflow_core/roboflow_dataset_upload@v2",
+        "name": "some",
+        "images": "$inputs.image",
+        "predictions": None,
+        "target_project": "some1",
+        "usage_quota_name": "my_quota",
+        "data_percentage": 100.0,
+        "persist_predictions": True,
+        "minutely_usage_limit": 10,
+        "hourly_usage_limit": 100,
+        "daily_usage_limit": 1000,
+        "max_image_size": (100, 200),
+        "compression_level": 95,
+        "registration_tags": [],
+        "disable_sink": False,
+        "fire_and_forget": False,
+        "labeling_batch_prefix": "my_batch",
+        "labeling_batches_recreation_frequency": "never",
+        "image_name": "my_static_image_name",
+    }
+
+    # when
+    result = BlockManifest.model_validate(raw_manifest)
+
+    # then
+    assert result.image_name == "my_static_image_name"
+
+
+@mock.patch.object(v2, "register_datapoint_at_roboflow")
+def test_run_sink_with_metadata_parameter(
+    register_datapoint_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    background_tasks = BackgroundTasks()
+    cache = MemoryCache()
+    data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=cache,
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    indices = [(0,), (1,)]
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=[image, image], indices=indices),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=100.0,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+        metadata={
+            "camera_id": "cam_01",
+            "location": "warehouse_a",
+        },
+    )
+
+    # then
+    assert result == [
+        {"error_status": False, "message": "OK"},
+        {"error_status": False, "message": "OK"},
+    ], "Expected data registered"
+    assert register_datapoint_at_roboflow_mock.call_count == 2
+
+    # Verify metadata was passed to both calls
+    calls = register_datapoint_at_roboflow_mock.call_args_list
+    assert calls[0].kwargs["metadata"] == {
+        "camera_id": "cam_01",
+        "location": "warehouse_a",
+    }
+    assert calls[1].kwargs["metadata"] == {
+        "camera_id": "cam_01",
+        "location": "warehouse_a",
+    }

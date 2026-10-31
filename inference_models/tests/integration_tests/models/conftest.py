@@ -1,5 +1,6 @@
-import os.path
+import os
 import zipfile
+from pathlib import Path
 
 import pytest
 import requests
@@ -17,6 +18,9 @@ FLORENCE2_LARGE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/f
 QWEN25VL_3B_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/qwen/qwen25vl-3b.zip"
 )
+QWEN35_08B_FT_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/qwen/qwen35-0.8b.zip"
+)
 PALIGEMMA_BASE_FT_URL = "https://storage.googleapis.com/roboflow-tests-assets/paligemma/paligemma2-3b-pt-224.zip"
 SMOLVLM_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/smolvlm/smolvlm-256m.zip"
@@ -24,6 +28,11 @@ SMOLVLM_BASE_FT_URL = (
 MOONDREAM2_BASE_FT_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/moondream2/moondream2-2b.zip"
 )
+GLM_OCR_BASE_FT_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/glm-ocr/glm-ocr.zip"
+)
+VJEPA_ACTION_RECOGNITION_T23_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/action-recognition-vitb-384-t23.zip"
+VJEPA_PREDICTION_VIDEO_URL = "https://storage.googleapis.com/roboflow-tests-assets/vjepa2_1/synthetic-086-first-window-h264-v1.mp4"
 COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-nano-torch-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_CS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-cs-stretch-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-letterbox-640.zip"
@@ -33,6 +42,11 @@ COIN_COUNTING_RFDETR_NANO_ONNX_CENTER_CROP_URL = "https://storage.googleapis.com
 COIN_COUNTING_RFDETR_NANO_TORCH_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
+COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
+COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
+RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
+RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV = "INFERENCE_MODELS_RFDETR_KP_TRT_PACKAGE"
+
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
 COIN_COUNTING_YOLOV8N_ONNX_DYNAMIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-onnx-dynamic-bs-letterbox.zip"
@@ -63,6 +77,10 @@ COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_CENTER_CROP_URL = "https://storage.googlea
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-letterbox-onnx.zip"
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STATIC_CROP_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-static-crop-stretch-onnx.zip"
 COIN_COUNTING_YOLACT_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolact-static-bs-stretch-onnx.zip"
+
+COIN_COUNTING_YOLOLITE_EDGE_N_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-yololite-edge-n-onnx-static-bs-stretch.zip"
+COIN_COUNTING_YOLOLITE_EDGE_N_ONNX_DYNAMIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-yololite-edge-n-onnx-dynamic-bs-stretch.zip"
+COIN_COUNTING_YOLOLITE_EDGE_N_ONNX_DYNAMIC_BS_STRETCH_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-yololite-edge-n-onnx-dynamic-bs-stretch-fused-nms.zip"
 
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch.zip"
 ASL_YOLOV8N_SEG_ONNX_DYNAMIC_BS_STRETCH_FUSED_NMS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-seg-onnx-dynamic-bs-stretch-fused-nms.zip"
@@ -139,6 +157,12 @@ SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-letterbox.zip"
 SNAKES_RFDETR_SEG_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-crop-center-crop.zip"
 SNAKES_RFDETR_SEG_ONNX_STATIC_BS_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-static-crop-center-crop.zip"
+SNAKES_RFDETR_SEG_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-onnx-static-bs-nonsquare-letterbox.zip"
+SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-torch-static-bs-nonsquare-letterbox.zip"
+
+BALLOONS_RFDETR_SEM_NANO_ONNX_STATIC_BS_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-onnx-static-bs-stretch.zip"
+BALLOONS_RFDETR_SEM_NANO_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-torch-stretch.zip"
+BALLOONS_RFDETR_SEM_NANO_T4_TRT_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-sem-nano-t4-trt.zip"
 
 DINOV3_CLASSIFICATION_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-onnx.zip"
 DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-onnx.zip"
@@ -151,6 +175,12 @@ YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/ro
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-static.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-onnx-dynamic.zip"
 YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-letterbox-torch-script.zip"
+YOLO26N_SEM_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-static.zip"
+YOLO26N_SEM_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-onnx-dynamic.zip"
+YOLO26N_SEM_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-sem-torch-script.zip"
+YOLO26N_DEPTH_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-onnx-static.zip"
+YOLO26N_DEPTH_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-onnx-dynamic.zip"
+YOLO26N_DEPTH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-depth-torch-script.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-static.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-onnx-dynamic.zip"
 YOLO26N_POSE_BASKETBALL_LETTERBOX_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-pose-basketball-letterbox-torch-script.zip"
@@ -167,10 +197,9 @@ YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL = "https://storag
 DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v2.zip"
 DEPTH_ANYTHING_V3_SMALL_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-small.zip"
 DEPTH_ANYTHING_V3_BASE_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/depth-anything-v3-base.zip"
-DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16.zip"
+DOCTR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/doctr-dbnet-rn50-crnn-vgg16-v2.zip"
 EASY_OCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/easy-ocr-english.zip"
 TROCR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/tr-ocr-small-printed.zip"
-MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/mediapipe-face-detector.zip"
 L2CS_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/l2cs-net.zip"
 OWLv2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/owlv2.zip"
@@ -181,6 +210,36 @@ SAM_PACKAGE_URL = (
 )
 SAM2_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam2.zip"
+)
+SAM2_VIDEO_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/"
+    "sam2video-small.zip"
+)
+
+RFDETR_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-t4-trt.zip"
+RFDETR_SEG_NANO_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-seg-nano-t4-trt.zip"
+YOLOV8N_640_T4_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-640-t4-trt.zip"
+COIN_COUNTING_TRT_PACKAGE_YOLO_V8_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-coin-counting-trt-t4-package.zip"
+COIN_COUNTING_TRT_PACKAGE_RF_DETR_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-coin-counting-trt-t4-package.zip"
+COIN_COUNTING_TRT_PACKAGE_YOLO_NAS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo-nas-coin-counting-trt-t4-package.zip"
+COIN_COUNTING_TRT_PACKAGE_YOLO_26_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo26-coin-counting-trt-t4-package.zip"
+
+ASL_TRT_PACKAGE_RFDETR_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rf-detr-seg-asl-trt-t4-package.zip"
+ASL_TRT_PACKAGE_YOLO26_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolo26-seg-asl-trt-t4-package.zip"
+ASL_TRT_PACKAGE_YOLOV8_SEG_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8-seg-asl-trt-t4-package.zip"
+
+YOLOV8N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov8n-pose-trt-t4-package.zip"
+YOLO26N_POSE_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov26n-pose-trt-t4-package.zip"
+
+RESNET_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-single-label-cls-trt-t4-package.zip"
+RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/resnet-multi-label-cls-trt-t4-package.zip"
+
+VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-single-label-cls-trt-t4-package.zip"
+VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/vit-multi-label-cls-trt-t4-package.zip"
+
+YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/yolov10-trt-t4-package.zip"
+SAM3_PACKAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam3.zip"
 )
 
 
@@ -282,6 +341,21 @@ def qwen25vl_3b_path() -> str:
 
 
 @pytest.fixture(scope="module")
+def qwen35_08b_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "qwen35-0.8b")
+    unzipped_package_path = os.path.join(package_dir, "weights")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "qwen35-0.8b.zip")
+    _download_if_not_exists(file_path=zip_path, url=QWEN35_08B_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=180):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
+    return unzipped_package_path
+
+
+@pytest.fixture(scope="module")
 def paligemma_3b_224_path() -> str:
     package_dir = os.path.join(MODELS_DIR, "paligemma2-3b-pt-224")
     unzipped_package_path = os.path.join(package_dir, "weights")
@@ -326,6 +400,21 @@ def moondream2_path() -> str:
     return unzipped_package_path
 
 
+@pytest.fixture(scope="module")
+def glm_ocr_path() -> str:
+    package_dir = os.path.join(MODELS_DIR, "glm-ocr")
+    unzipped_package_path = os.path.join(package_dir, "weights")
+    os.makedirs(package_dir, exist_ok=True)
+    zip_path = os.path.join(package_dir, "glm-ocr.zip")
+    _download_if_not_exists(file_path=zip_path, url=GLM_OCR_BASE_FT_URL)
+    lock_path = f"{unzipped_package_path}.lock"
+    with FileLock(lock_path, timeout=180):
+        if not os.path.exists(unzipped_package_path):
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(package_dir)
+    return unzipped_package_path
+
+
 def download_model_package(
     model_package_zip_url: str,
     package_name: str,
@@ -344,11 +433,70 @@ def download_model_package(
 
 
 @pytest.fixture(scope="module")
+def vjepa_action_recognition_package() -> Path:
+    """Locate the trained t23 package, or download the published test fixture.
+
+    Returns:
+        Directory containing the flat V-JEPA export.
+    """
+    local_dir = os.environ.get("VJEPA_ACTION_RECOGNITION_PACKAGE_DIR")
+    if local_dir:
+        package_dir = Path(local_dir).expanduser().resolve()
+    else:
+        package_dir = Path(
+            download_model_package(
+                model_package_zip_url=VJEPA_ACTION_RECOGNITION_T23_URL,
+                package_name="vjepa2-1-action-recognition-t23",
+            )
+        ).resolve()
+
+    return package_dir
+
+
+@pytest.fixture(scope="module")
+def vjepa_prediction_video() -> Path:
+    """Locate the H.264 clip for the prediction regression.
+
+    Returns:
+        Path to the 16-second clip at 4 fps from synthetic test video 086.
+    """
+    local_path = os.environ.get("VJEPA_ACTION_RECOGNITION_VIDEO_PATH")
+    if local_path:
+        path = Path(local_path).expanduser()
+    else:
+        path = Path(ASSETS_DIR) / "synthetic-086-first-window-h264-v1.mp4"
+        _download_if_not_exists(file_path=str(path), url=VJEPA_PREDICTION_VIDEO_URL)
+
+    return path
+
+
+@pytest.fixture(scope="module")
 def coin_counting_rfdetr_nano_torch_cs_stretch_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL,
         package_name="coin-counting-rfdetr-nano-torch-cs-stretch",
     )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_onnx_glue_sticks_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL,
+        package_name="rfdetr-kp-preview-onnx-glue-sticks",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_kp_preview_trt_package() -> str:
+    package_path = os.getenv(RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV)
+    if not package_path or not os.path.isdir(package_path):
+        pytest.skip(
+            "RF-DETR keypoint TRT package is not published yet. Set "
+            f"{RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV} to a local flat package directory "
+            "(class_names.txt, inference_config.json, trt_config.json, engine.plan, "
+            "keypoints_metadata.json) or wait for Core-team Surface 2 upload."
+        )
+    return package_path
 
 
 @pytest.fixture(scope="module")
@@ -404,6 +552,46 @@ def coin_counting_rfdetr_nano_torch_static_crop_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL,
         package_name="coin-counting-rfdetr-nano-torch-static-crop-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_NANO_T4_TRT_PACKAGE_URL,
+        package_name="rfdetr-nano-t4-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_seg_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RFDETR_SEG_NANO_T4_TRT_PACKAGE_URL,
+        package_name="rfdetr-seg-nano-t4-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8n_640_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_640_T4_TRT_PACKAGE_URL,
+        package_name="yolov8n-640-t4-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_nano_onnx_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="coin-counting-rfdetr-nano-onnx-static-bs-nonsquare-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_nano_torch_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="coin-counting-rfdetr-nano-torch-static-bs-nonsquare-letterbox",
     )
 
 
@@ -590,6 +778,30 @@ def coin_counting_yolo_nas_onnx_static_bs_center_crop_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_YOLO_NAS_ONNX_STATIC_BS_CENTER_CROP_URL,
         package_name="coin-counting-yolo-nas-static-bs-center-crop",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yololite_edge_n_onnx_static_bs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOLITE_EDGE_N_ONNX_STATIC_BS_STRETCH_URL,
+        package_name="coin-counting-yololite-edge-n-onnx-static-bs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yololite_edge_n_onnx_dynamic_bs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOLITE_EDGE_N_ONNX_DYNAMIC_BS_STRETCH_URL,
+        package_name="coin-counting-yololite-edge-n-onnx-dynamic-bs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_yololite_edge_n_onnx_dynamic_bs_stretch_fused_nms_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_YOLOLITE_EDGE_N_ONNX_DYNAMIC_BS_STRETCH_FUSED_NMS_URL,
+        package_name="coin-counting-yololite-edge-n-onnx-dynamic-bs-stretch-fused-nms",
     )
 
 
@@ -1170,6 +1382,46 @@ def snakes_rfdetr_seg_onnx_static_bs_static_crop_center_crop_package() -> str:
 
 
 @pytest.fixture(scope="module")
+def snakes_rfdetr_seg_onnx_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-onnx-static-bs-nonsquare-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def snakes_rfdetr_seg_torch_static_bs_nonsquare_letterbox_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SNAKES_RFDETR_SEG_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL,
+        package_name="snakes-rfdetr-seg-torch-static-bs-nonsquare-letterbox",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_onnx_static_bs_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_ONNX_STATIC_BS_STRETCH_URL,
+        package_name="balloons-rfdetr-sem-nano-onnx-static-bs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_TORCH_STRETCH_URL,
+        package_name="balloons-rfdetr-sem-nano-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def balloons_rfdetr_sem_nano_t4_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=BALLOONS_RFDETR_SEM_NANO_T4_TRT_URL,
+        package_name="balloons-rfdetr-sem-nano-t4-trt",
+    )
+
+
+@pytest.fixture(scope="module")
 def depth_anything_v2_small_package() -> str:
     return download_model_package(
         model_package_zip_url=DEPTH_ANYTHING_V2_SMALL_PACKAGE_URL,
@@ -1211,14 +1463,6 @@ def easy_ocr_package() -> str:
 def tr_ocr_package() -> str:
     return download_model_package(
         model_package_zip_url=TROCR_PACKAGE_URL, package_name="tr-ocr"
-    )
-
-
-@pytest.fixture(scope="module")
-def mediapipe_face_detector_package() -> str:
-    return download_model_package(
-        model_package_zip_url=MEDIAPIPE_FACE_DETECTOR_PACKAGE_URL,
-        package_name="mediapipe-face-detector",
     )
 
 
@@ -1295,6 +1539,24 @@ def sam2_package() -> str:
 
 
 @pytest.fixture(scope="module")
+def sam2_video_package() -> str:
+    """Streaming SAM2 via HuggingFace ``Sam2VideoModel``.
+
+    Expected contents of the zip (standard HF transformers export):
+
+    - ``config.json``
+    - ``preprocessor_config.json``
+    - ``model.safetensors`` (or sharded ``model-00001-of-NNNNN.safetensors``
+      + ``model.safetensors.index.json``)
+    - any additional processor files the published checkpoint ships.
+    """
+    return download_model_package(
+        model_package_zip_url=SAM2_VIDEO_PACKAGE_URL,
+        package_name="sam2video",
+    )
+
+
+@pytest.fixture(scope="module")
 def yolo26n_seg_snakes_stretch_onnx_static_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_SEG_SNAKES_STRETCH_ONNX_STATIC_URL,
@@ -1339,6 +1601,54 @@ def yolo26n_seg_snakes_letterbox_torch_script_package() -> str:
     return download_model_package(
         model_package_zip_url=YOLO26N_SEG_SNAKES_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-seg-snakes-letterbox-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_STATIC_URL,
+        package_name="yolo26n-sem-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-sem-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_sem_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_SEM_TORCH_SCRIPT_URL,
+        package_name="yolo26n-sem-torch-script",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_onnx_static_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_ONNX_STATIC_URL,
+        package_name="yolo26n-depth-onnx-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_onnx_dynamic_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_ONNX_DYNAMIC_URL,
+        package_name="yolo26n-depth-onnx-dynamic",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26n_depth_torch_script_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_DEPTH_TORCH_SCRIPT_URL,
+        package_name="yolo26n-depth-torch-script",
     )
 
 
@@ -1436,3 +1746,195 @@ def yolo26n_object_detection_sunflowers_letterbox_torch_script_package() -> str:
         model_package_zip_url=YOLO26N_object_detection_sunflowers_LETTERBOX_TORCH_SCRIPT_URL,
         package_name="yolo26n-object-detection-sunflowers-letterbox-torch-script",
     )
+
+
+@pytest.fixture(scope="module")
+def yolov8_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_V8_URL,
+        package_name="coin-counting-yolov8-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_RF_DETR_URL,
+        package_name="coin-counting-rfdetr-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo_nas_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_NAS_URL,
+        package_name="coin-counting-yolo-nas-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def rfdetr_seg_asl_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_TRT_PACKAGE_RFDETR_SEG_URL,
+        package_name="asl-rfdetr-seg-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26_seg_asl_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_TRT_PACKAGE_YOLO26_SEG_URL,
+        package_name="asl-yolo26-seg-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26_object_detections_coin_counting_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_TRT_PACKAGE_YOLO_26_URL,
+        package_name="coin-counting-yolo26-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_seg_asl_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=ASL_TRT_PACKAGE_YOLOV8_SEG_URL,
+        package_name="asl-yolov8-seg-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov8_pose_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV8N_POSE_TRT_PACKAGE_URL,
+        package_name="yolov8-pose-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolo26_pose_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLO26N_POSE_TRT_PACKAGE_URL,
+        package_name="yolo26-pose-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def resnet_single_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RESNET_SINGLE_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="resnet-single-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def resnet_multi_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=RESNET_MULTI_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="resnet-multi-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def vit_single_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VIT_SINGLE_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="vit-single-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def vit_multi_label_cls_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=VIT_MULTI_LABEL_CLS_TRT_PACKAGE_URL,
+        package_name="vit-multi-label-cls-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def yolov10_object_detection_trt_package() -> str:
+    return download_model_package(
+        model_package_zip_url=YOLOV10_TRT_PACKAGE_URL,
+        package_name="yolov10-object-detection-trt",
+    )
+
+
+@pytest.fixture(scope="module")
+def sam3_package() -> str:
+    return download_model_package(
+        model_package_zip_url=SAM3_PACKAGE_URL,
+        package_name="sam3",
+    )
+
+
+PP_OCRV6_TINY_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-det-tiny.zip"
+PP_OCRV6_TINY_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-rec-tiny.zip"
+PP_OCRV6_SMALL_DET_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-det-small.zip"
+PP_OCRV6_SMALL_REC_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/pp-ocrv6-rec-small.zip"
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_det_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_TINY_DET_PACKAGE_URL,
+        package_name="pp-ocrv6-det-tiny",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_tiny_rec_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_TINY_REC_PACKAGE_URL,
+        package_name="pp-ocrv6-rec-tiny",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_small_det_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_SMALL_DET_PACKAGE_URL,
+        package_name="pp-ocrv6-det-small",
+    )
+
+
+@pytest.fixture(scope="module")
+def pp_ocrv6_small_rec_onnx_package() -> str:
+    return download_model_package(
+        model_package_zip_url=PP_OCRV6_SMALL_REC_PACKAGE_URL,
+        package_name="pp-ocrv6-rec-small",
+    )
+
+
+@pytest.fixture(autouse=True)
+def cuda_memory_probe(request):
+    # Per-test GPU memory telemetry for the integration suite: after each test, log
+    # this process's torch allocator state and device-wide free memory to a
+    # per-xdist-worker file (cuda_memory_probe_<worker>.log in the CWD). Kept
+    # permanently to make GPU OOMs and memory growth attributable to specific tests.
+    # Set CUDA_MEMORY_PROBE_EMPTY_CACHE=True to also flush the torch cache after
+    # each test (counterfactual run - proves/disproves cache-growth attribution).
+    yield
+    try:
+        from datetime import datetime, timezone
+
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        free, total = torch.cuda.mem_get_info()
+        line = (
+            f"{datetime.now(timezone.utc).isoformat()} | pid={os.getpid()} | "
+            f"{request.node.nodeid} | "
+            f"torch_reserved={torch.cuda.memory_reserved() >> 20}MiB | "
+            f"torch_allocated={torch.cuda.memory_allocated() >> 20}MiB | "
+            f"device_free={free >> 20}MiB | "
+            f"device_total={total >> 20}MiB"
+        )
+        if os.environ.get("CUDA_MEMORY_PROBE_EMPTY_CACHE", "False").lower() == "true":
+            torch.cuda.empty_cache()
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+        with open(f"cuda_memory_probe_{worker}.log", "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass

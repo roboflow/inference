@@ -34,6 +34,8 @@ from inference.core.env import (
     DISABLE_SAM3_LOGITS_CACHE,
     INFER_BUCKET,
     MODELS_CACHE_AUTH_ENABLED,
+    OFFLINE_MODE,
+    SAM3_IMAGE_SIZE,
     SAM3_MAX_EMBEDDING_CACHE_SIZE,
     SAM3_MAX_LOGITS_CACHE_SIZE,
 )
@@ -52,6 +54,9 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2multipoly
 from inference.core.utils.torchscript_guard import _temporarily_disable_torch_jit_script
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 
 # from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
 # from sam3.sam3_video_model_builder import build_sam3_tracking_predictor
@@ -101,6 +106,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             compile=False,
             enable_inst_interactivity=True,
         )
+        self.image_size = int(SAM3_IMAGE_SIZE)
         self.low_res_logits_cache_size = low_res_logits_cache_size
         self.embedding_cache_size = embedding_cache_size
         self.embedding_cache = {}
@@ -117,7 +123,10 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         Returns:
             List[str]: List of file names.
         """
-        return ["weights.pt"]
+        return [
+            "weights.pt",
+            "bpe_simple_vocab_16e6.txt.gz",
+        ]
 
     @torch.inference_mode()
     def embed_image(
@@ -197,18 +206,23 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         Returns:
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
+        record_fixed_model_input_for_request(self, request)
         t1 = perf_counter()
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())
             inference_time = perf_counter() - t1
-            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            response = Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
+            self._attach_resolved_model_metadata(response)
+            return response
         elif isinstance(request, Sam2SegmentationRequest):
             masks, scores, low_resolution_logits = self.segment_image(**request.dict())
             predictions = _masks_to_predictions(masks, scores, request.format)
-            return Sam2SegmentationResponse(
+            response = Sam2SegmentationResponse(
                 time=perf_counter() - t1,
                 predictions=predictions,
             )
+            self._attach_resolved_model_metadata(response)
+            return response
         else:
             raise ValueError(f"Invalid request type {type(request)}")
 
@@ -283,13 +297,6 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            # with _temporarily_disable_torch_jit_script():
-            # processor = Sam3Processor(self.sam_model)
-
-            # processor._is_image_set = True
-            # processor._features = embedding
-            # processor._orig_hw = [original_image_size]
-            # processor._is_batch = False
             args = dict()
             prompt_set: Sam2PromptSet
             if prompts:
@@ -311,14 +318,21 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             if not any(args.values()):
                 args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
 
-            masks, scores, low_resolution_logits = self.sam_model.predict_inst(
-                embedding,
-                mask_input=mask_input,
-                multimask_output=multimask_output,
-                return_logits=True,
-                normalize_coords=True,
-                **args,
-            )
+            # predict_inst internally sets/clears _is_image_set and _features
+            # on the shared inst_interactive_predictor (see sam3_image.py:627-635).
+            # Without a lock, concurrent requests race: one thread's cleanup
+            # (setting _is_image_set=False) can hit between another thread's
+            # set (_is_image_set=True) and its _predict() check, causing
+            # "An image must be set with .set_image(...)".
+            with self._state_lock:
+                masks, scores, low_resolution_logits = self.sam_model.predict_inst(
+                    embedding,
+                    mask_input=mask_input,
+                    multimask_output=multimask_output,
+                    return_logits=True,
+                    normalize_coords=True,
+                    **args,
+                )
             masks, scores, low_resolution_logits = choose_most_confident_sam_prediction(
                 masks=masks,
                 scores=scores,
@@ -365,7 +379,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         infer_bucket_files = self.get_infer_bucket_file_list()
 
         # Auth check aligned with chosen endpoint type
-        if MODELS_CACHE_AUTH_ENABLED:
+        if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             endpoint_type = (
                 ModelEndpointType.CORE_MODEL
                 if self._is_core_sam3_endpoint()
@@ -375,6 +389,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 api_key=self.api_key,
                 model_id=self.endpoint,
                 endpoint_type=endpoint_type,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {self.api_key} does not have access to model {self.endpoint}"
@@ -382,6 +398,11 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         # Already cached
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             return None
+        if OFFLINE_MODE:
+            raise ModelArtefactError(
+                f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
+                "or more required artifacts are missing from the local cache."
+            )
         # S3 path works for both; keys are {endpoint}/<file>
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
@@ -397,6 +418,8 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
+            countinference=self.countinference,
+            service_secret=self.service_secret,
         )
 
         ort = api_data.get("ort") if isinstance(api_data, dict) else None
@@ -407,9 +430,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
         weights_map = ort.get("weights")
         if isinstance(weights_map, dict) and len(weights_map) > 0:
             for filename, url in weights_map.items():
-                resp = get_from_url(
-                    url, json_response=False, verify_content_length=True
-                )
+                resp = get_from_url(url, json_response=False)
                 save_bytes_in_cache(
                     content=resp.content,
                     file=str(filename),
@@ -448,11 +469,14 @@ def find_prior_prompt_in_cache(
     """
     Performs search over the cache to see if prior used prompts are subset of this one.
     """
+    num_points = initial_prompt_set.num_points()
+    if num_points <= 1:
+        return None  # there is only 1 point, hence no prior prompt can be found
 
     logits_for_image = [cache[k] for k in cache if k[0] == image_id]
     maxed_size = 0
     best_match: Optional[np.ndarray] = None
-    desired_size = initial_prompt_set.num_points() - 1
+    desired_size = num_points - 1
     for cached_dict in logits_for_image[::-1]:
         logits = cached_dict["logits"]
         prompt_set: Sam2PromptSet = cached_dict["prompt_set"]

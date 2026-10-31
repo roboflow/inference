@@ -1,4 +1,19 @@
-from typing import Optional
+from roboflow_workflows.prototypes.platform_errors import (
+    FeatureDeprecatedError,
+    RoboflowAPIConnectionError,
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPINotNotFoundError,
+    RoboflowAPIRequestError,
+    RoboflowAPITimeoutError,
+    RoboflowAPIUnsuccessfulRequestError,
+)
+from streamvision.stream.exceptions import (
+    CannotInitialiseModelError,
+    InvalidEnvironmentVariableError,
+    MissingApiKeyError,
+    WebRTCConfigurationError,
+)
 
 
 class ContentTypeInvalid(Exception):
@@ -33,24 +48,8 @@ class InferenceModelNotFound(Exception):
     """
 
 
-class InvalidEnvironmentVariableError(Exception):
-    """Raised when an environment variable is invalid.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
 class InvalidMaskDecodeArgument(Exception):
     """Raised when an invalid argument is provided for mask decoding.
-
-    Attributes:
-        message (str): Optional message describing the error.
-    """
-
-
-class MissingApiKeyError(Exception):
-    """Raised when the API key is missing.
 
     Attributes:
         message (str): Optional message describing the error.
@@ -79,6 +78,17 @@ class WorkspaceLoadError(Exception):
     Attributes:
         message (str): Optional message describing the error.
     """
+
+
+class PayloadTooLargeError(Exception):
+    """Caller-supplied content exceeded the size this deployment accepts."""
+
+    def __init__(self, message: str, public_message: str):
+        super().__init__(message)
+        self._public_message = public_message
+
+    def get_public_error_details(self) -> str:
+        return self._public_message
 
 
 class InputImageLoadError(Exception):
@@ -119,11 +129,26 @@ class InvalidModelIDError(Exception):
     pass
 
 
+class RequestDataContradiction(Exception):
+    pass
+
+
 class MalformedRoboflowAPIResponseError(Exception):
     pass
 
 
 class ServiceConfigurationError(Exception):
+    pass
+
+
+FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
+    "Fine-tuned SAM 3 models are not supported on Serverless. "
+    "Use the base SAM 3 model (sam3/sam3_final), a Dedicated Deployment, "
+    "or self-hosted Inference."
+)
+
+
+class ModelDeploymentNotSupportedError(ServiceConfigurationError):
     pass
 
 
@@ -135,39 +160,23 @@ class ModelNotRecognisedError(ServiceConfigurationError):
     pass
 
 
-class RoboflowAPIRequestError(Exception):
-    pass
-
-
 class ModelManagerLockAcquisitionError(RoboflowAPIRequestError):
     pass
 
 
-class RoboflowAPIUnsuccessfulRequestError(RoboflowAPIRequestError):
+class PaymentRequiredError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
-class RoboflowAPINotAuthorizedError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
-class RoboflowAPIForbiddenError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
-class RoboflowAPINotNotFoundError(RoboflowAPIUnsuccessfulRequestError):
-    pass
-
-
-class RoboflowAPIConnectionError(RoboflowAPIRequestError):
-    pass
-
-
-class RoboflowAPITimeoutError(RoboflowAPIRequestError):
+class RoboflowAPIUsagePausedError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
 class RoboflowAPIImageUploadRejectionError(RoboflowAPIRequestError):
+    pass
+
+
+class RoboflowAPIImageUploadUncertainError(RoboflowAPIRequestError):
     pass
 
 
@@ -177,6 +186,10 @@ class RoboflowAPIIAnnotationRejectionError(RoboflowAPIRequestError):
 
 class MalformedWorkflowResponseError(RoboflowAPIRequestError):
     pass
+
+
+class CacheUnavailableError(Exception):
+    """Raised when the ephemeral cache (e.g. Redis/Dragonfly) cannot be reached."""
 
 
 class RoboflowAPIIAlreadyAnnotatedError(RoboflowAPIIAnnotationRejectionError):
@@ -203,7 +216,7 @@ class ActiveLearningConfigurationError(ActiveLearningError):
     pass
 
 
-class CannotInitialiseModelError(Exception):
+class CannotInitialiseModelDueToInputSizeError(CannotInitialiseModelError):
     pass
 
 
@@ -218,9 +231,16 @@ class RetryRequestError(Exception):
         return self._inner_error
 
 
-class WebRTCConfigurationError(Exception):
+class CreditsExceededError(Exception):
     pass
 
 
-class CreditsExceededError(Exception):
+class WorkspaceStreamQuotaError(Exception):
+    """Raised when the workspace stream quota has been exceeded.
+
+    This error is returned when a workspace has reached its maximum number
+    of concurrent WebRTC streams. This is to prevent that a single user
+    uses all our modal resources.
+    """
+
     pass

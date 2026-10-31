@@ -1,0 +1,67 @@
+import importlib
+from unittest.mock import patch
+
+import pytest
+
+from inference.core.env import USE_INFERENCE_MODELS
+from inference.models.utils import ROBOFLOW_MODEL_TYPES
+
+
+@pytest.mark.skipif(
+    not USE_INFERENCE_MODELS, reason="Requires the inference-models bridge."
+)
+@pytest.mark.parametrize("enabled", [True, False])
+def test_vjepa_registry_respects_enablement(enabled) -> None:
+    from inference.core import env
+
+    utils = importlib.import_module("inference.models.utils")
+    original = env.VJEPA2_1_ENABLED
+    try:
+        with patch.object(env, "VJEPA2_1_ENABLED", enabled):
+            importlib.reload(utils)
+            for model_type in ("vjepa2-1-vitb-384", "vjepa2_1"):
+                assert (
+                    ("action-recognition", model_type) in utils.ROBOFLOW_MODEL_TYPES
+                ) == enabled
+    finally:
+        with patch.object(env, "VJEPA2_1_ENABLED", original):
+            importlib.reload(utils)
+
+
+@pytest.mark.skipif(
+    not USE_INFERENCE_MODELS,
+    reason="Registry bridge only applies when USE_INFERENCE_MODELS is enabled.",
+)
+def test_inference_models_registry_pairs_are_registered_in_outer_lookup() -> None:
+    expected_pairs = {
+        ("classification", "resnet"),
+        ("multi-label-classification", "dinov3_probe"),
+        ("multi-label-classification", "resnet"),
+        ("multi-label-classification", "vit"),
+        ("instance-segmentation", "segment-anything-2-rt"),
+        ("semantic-segmentation", "deep-lab-v3-plus"),
+        ("semantic-segmentation", "rfdetr"),
+        ("semantic-segmentation", "rfdetr-sem-nano"),
+        ("semantic-segmentation", "rfdetr-nas-sem"),
+    }
+
+    missing_pairs = expected_pairs.difference(ROBOFLOW_MODEL_TYPES)
+
+    assert missing_pairs == set()
+
+
+@pytest.mark.skipif(
+    not USE_INFERENCE_MODELS,
+    reason="Registry bridge only applies when USE_INFERENCE_MODELS is enabled.",
+)
+def test_inference_models_registry_bridge_preserves_legacy_outer_aliases() -> None:
+    expected_legacy_pairs = {
+        ("classification", "resnet50"),
+        ("classification", "vit"),
+        ("object-detection", "rfdetr-nano"),
+        ("semantic-segmentation", "deeplabv3plus"),
+    }
+
+    missing_pairs = expected_legacy_pairs.difference(ROBOFLOW_MODEL_TYPES)
+
+    assert missing_pairs == set()

@@ -5,15 +5,24 @@ for different video streaming sources (webcam, RTSP, video files, manual frames)
 """
 
 import asyncio
+import hashlib
+import os
+import tempfile
+import threading
+import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, VideoStreamTrack
+from aiortc.contrib.media import MediaPlayer
+from aiortc.mediastreams import VIDEO_CLOCK_RATE, VIDEO_PTIME, VIDEO_TIME_BASE
 from av import VideoFrame
 
 from inference_sdk.http.errors import InvalidParameterError
+from inference_sdk.http.utils.url_utils import fetch_url_to_file
 from inference_sdk.webrtc.datachannel import VideoFileUploader
 
 if TYPE_CHECKING:
@@ -23,6 +32,61 @@ if TYPE_CHECKING:
 
 # Type alias for upload progress callback
 UploadProgressCallback = Callable[[int, int], None]  # (uploaded_chunks, total_chunks)
+
+# Cache directory for videos downloaded from http(s) URLs
+VIDEO_DOWNLOAD_CACHE_DIR = os.getenv(
+    "INFERENCE_SDK_VIDEO_CACHE_DIR",
+    os.path.join(os.path.expanduser("~"), ".cache", "inference-sdk", "videos"),
+)
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = int(
+    os.getenv("INFERENCE_SDK_VIDEO_DOWNLOAD_TIMEOUT", "300")
+)
+
+
+def _download_video(url: str, use_cache: bool) -> str:
+    """Download a video from an http(s) URL to a local file.
+
+    The download goes through fetch_url_to_file, which applies the SDK's
+    URL-input policy and SSRF protections. With use_cache=True the file lands
+    in VIDEO_DOWNLOAD_CACHE_DIR keyed by a hash of the URL and is reused on
+    subsequent calls. With use_cache=False it lands in a fresh temporary file
+    which the caller is expected to delete.
+
+    Returns:
+        Path to the local video file.
+    """
+    ext = os.path.splitext(urlparse(url).path)[1] or ".mp4"
+    if use_cache:
+        os.makedirs(VIDEO_DOWNLOAD_CACHE_DIR, exist_ok=True)
+        cache_key = hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
+        target_path = os.path.join(VIDEO_DOWNLOAD_CACHE_DIR, f"{cache_key}{ext}")
+        if os.path.isfile(target_path) and os.path.getsize(target_path) > 0:
+            return target_path
+    else:
+        fd, target_path = tempfile.mkstemp(suffix=ext, prefix="inference-sdk-video-")
+        os.close(fd)
+
+    # Download to a unique sibling temp file (same filesystem, so os.replace
+    # stays atomic), then move into place. Uniqueness matters: concurrent
+    # downloads of the same URL must not interleave writes into one staging
+    # file, and a partially-downloaded file must never look like a cached video.
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(target_path), suffix=".part")
+    os.close(fd)
+    try:
+        fetch_url_to_file(
+            url=url,
+            destination_path=tmp_path,
+            request_timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS,
+        )
+        os.replace(tmp_path, target_path)
+    except Exception:
+        for stale in (tmp_path,) if use_cache else (tmp_path, target_path):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+        raise
+    return target_path
 
 
 class StreamSource(ABC):
@@ -181,6 +245,137 @@ class WebcamSource(StreamSource):
             self._track.release()
 
 
+class _PacedTrack(VideoStreamTrack):
+    """Wraps a source track and paces frame delivery like VideoStreamTrack.
+
+    MediaPlayer's PlayerStreamTrack does NOT pace RTSP frames (RTSP is in
+    REAL_TIME_FORMATS so _throttle_playback is False).  This means frames
+    are pulled from FFmpeg and forwarded to the RTP sender as fast as
+    possible, causing packet bursts that overflow the receiver's jitter
+    buffer.
+
+    This wrapper adds the same ~33 ms sleep between frames that the base
+    VideoStreamTrack uses, preventing bursts.
+    """
+
+    def __init__(self, source):  # noqa: ANN001
+        super().__init__()
+        self._source = source
+        self._start_time: float = 0.0
+        self._pts = 0
+
+    async def recv(self) -> VideoFrame:
+        from aiortc.mediastreams import MediaStreamError
+
+        if self.readyState != "live":
+            raise MediaStreamError
+
+        frame = await self._source.recv()
+
+        # Pace delivery: sleep until the next frame slot (~33 ms apart)
+        if self._pts == 0:
+            self._start_time = time.time()
+        else:
+            wait = self._start_time + (self._pts / VIDEO_CLOCK_RATE) - time.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
+
+        frame.pts = self._pts
+        frame.time_base = VIDEO_TIME_BASE
+        self._pts += int(VIDEO_PTIME * VIDEO_CLOCK_RATE)
+        return frame
+
+    def stop(self) -> None:
+        super().stop()
+        self._source.stop()
+
+
+class LocalStreamSource(StreamSource):
+    """Stream source for locally captured RTSP/RTMP camera streams.
+
+    Unlike RTSPSource (where the server captures the RTSP stream), this source
+    captures the stream locally using aiortc's MediaPlayer (FFmpeg-based) and
+    sends frames to the server via WebRTC, similar to WebcamSource.
+
+    Supported protocols:
+    - RTSP: rtsp://host/path or rtsps://host/path
+    - RTMP: rtmp://host/path or rtmps://host/path
+
+    Use this when:
+    - The camera is only accessible from the client machine (e.g., local network)
+    - You want to preprocess frames before sending to the server
+    - The server cannot access the stream URL directly
+    """
+
+    # Supported URL schemes
+    SUPPORTED_SCHEMES = ("rtsp://", "rtsps://", "rtmp://", "rtmps://")
+
+    def __init__(self, url: str):
+        """Initialize local stream source.
+
+        Args:
+            url: Stream URL. Supported formats:
+                - RTSP: "rtsp://host/stream" or "rtsps://host/stream"
+                - RTMP: "rtmp://host/stream" or "rtmps://host/stream"
+                Credentials can be included: "rtsp://user:pass@host/stream"
+        """
+        if not url.startswith(self.SUPPORTED_SCHEMES):
+            raise InvalidParameterError(
+                f"Invalid stream URL: {url}. "
+                f"Must start with one of: {', '.join(self.SUPPORTED_SCHEMES)}"
+            )
+        self.url = url
+        self._player: Optional[MediaPlayer] = None
+
+    async def configure_peer_connection(self, pc: RTCPeerConnection) -> None:
+        """Create MediaPlayer for stream and add video track to peer connection."""
+
+        if self.url.startswith(("rtsp://", "rtsps://")):
+            self._player = await asyncio.to_thread(
+                MediaPlayer,
+                self.url,
+                format="rtsp",
+                options={
+                    "rtsp_transport": "tcp",
+                    "rtsp_flags": "prefer_tcp",
+                    "stimeout": "5000000",  # 5s RTSP socket timeout
+                    "timeout": "5000000",  # 5s TCP connection timeout
+                },
+            )
+        else:
+            self._player = await asyncio.to_thread(
+                MediaPlayer,
+                self.url,
+                options={
+                    "rw_timeout": "5000000",  # 5s socket timeout
+                },
+            )
+
+        if self._player.video is None:
+            raise RuntimeError(f"No video track available from stream: {self.url}")
+
+        # Wrap in a pacing track — MediaPlayer does not pace RTSP frames
+        # (RTSP is in REAL_TIME_FORMATS so _throttle_playback is False).
+        # Without pacing the RTP sender bursts all packets at once,
+        # overflowing the receiver's jitter buffer → truncated VP8 frames.
+        self._paced_track = _PacedTrack(self._player.video)
+        pc.addTrack(self._paced_track)
+
+    def get_initialization_params(self, config: "StreamConfig") -> Dict[str, Any]:
+        """Return empty params - stream is captured locally, not by server."""
+        return {}
+
+    async def cleanup(self) -> None:
+        """Stop the paced track and MediaPlayer."""
+        if hasattr(self, "_paced_track") and self._paced_track:
+            self._paced_track.stop()
+            self._paced_track = None
+        if self._player:
+            if self._player.video:
+                self._player.video.stop()
+            self._player = None
+
+
 class RTSPSource(StreamSource):
     """Stream source for RTSP camera streams.
 
@@ -250,11 +445,14 @@ class VideoFileSource(StreamSource):
         on_upload_progress: Optional[UploadProgressCallback] = None,
         use_datachannel_frames: bool = True,
         realtime_processing: bool = False,
+        use_cache: bool = True,
     ):
         """Initialize video file source.
 
         Args:
-            path: Path to video file (any format supported by FFmpeg)
+            path: Path to video file (any format supported by FFmpeg), or an
+                http(s) URL to a video file. URLs are downloaded before upload;
+                see use_cache.
             on_upload_progress: Optional callback called during upload with
                 (uploaded_chunks, total_chunks). Use to track upload progress.
             use_datachannel_frames: If enabled, frames are received through the
@@ -265,8 +463,15 @@ class VideoFileSource(StreamSource):
             realtime_processing: If True, process frames at original video FPS
                 (throttled playback for live preview). If False (default),
                 process all frames as fast as possible (batch mode).
+            use_cache: Only relevant when path is an http(s) URL. If True
+                (default), the downloaded video is cached on disk (keyed by
+                URL) and reused on subsequent runs. If False, it is downloaded
+                to a temporary file and deleted when the session ends.
         """
         self.path = path
+        self.use_cache = use_cache
+        self._is_url = path.startswith(("http://", "https://"))
+        self._temp_download_path: Optional[str] = None
         self.on_upload_progress = on_upload_progress
         self.use_datachannel_frames = use_datachannel_frames
         self.realtime_processing = realtime_processing
@@ -336,13 +541,26 @@ class VideoFileSource(StreamSource):
         if not self._upload_channel:
             raise RuntimeError("Upload channel not configured")
 
-        self._uploader = VideoFileUploader(self.path, self._upload_channel)
+        local_path = self.path
+        if self._is_url:
+            local_path = await asyncio.to_thread(
+                _download_video, self.path, self.use_cache
+            )
+            if not self.use_cache:
+                self._temp_download_path = local_path
+
+        self._uploader = VideoFileUploader(local_path, self._upload_channel)
         await self._uploader.upload(on_progress=self.on_upload_progress)
         # self._upload_complete.set()
 
     async def cleanup(self) -> None:
-        """No cleanup needed - upload channel is managed by peer connection."""
-        pass
+        """Remove temporary download (URL source with use_cache=False)."""
+        if self._temp_download_path:
+            try:
+                os.remove(self._temp_download_path)
+            except OSError:
+                pass
+            self._temp_download_path = None
 
 
 # Configuration constants for manual source

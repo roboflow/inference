@@ -22,12 +22,12 @@ from inference_models.weights_providers.entities import (
 )
 
 BACKEND_PRIORITY = {
+    BackendType.COREML: 8,
     BackendType.TRT: 7,
-    BackendType.TORCH: 6,
-    BackendType.HF: 5,
-    BackendType.ONNX: 3,
+    BackendType.ONNX: 6,
+    BackendType.TORCH: 5,
+    BackendType.HF: 4,
     BackendType.TORCH_SCRIPT: 3,
-    BackendType.MEDIAPIPE: 2,
     BackendType.ULTRALYTICS: 1,
     BackendType.CUSTOM: 0,
 }

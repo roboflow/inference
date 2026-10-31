@@ -1,12 +1,27 @@
 import asyncio
 import multiprocessing
+import uuid
+
+from inference._workflows_compat import install as _install_compat_finder
+
+# Moved submodules resolve through the compat finder; it must exist first.
+_install_compat_finder()
 
 from inference.core.env import (
+    WEBRTC_MODAL_ENFORCE_REGION,
+    WEBRTC_MODAL_REQUIRED_REGION,
     WEBRTC_MODAL_TOKEN_ID,
     WEBRTC_MODAL_TOKEN_SECRET,
     WEBRTC_MODAL_USAGE_QUOTA_ENABLED,
+    WEBRTC_WORKSPACE_STREAM_QUOTA,
+    WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED,
+    WEBRTC_WORKSPACE_STREAM_TTL_SECONDS,
 )
-from inference.core.exceptions import CreditsExceededError
+from inference.core.exceptions import (
+    CreditsExceededError,
+    WebRTCConfigurationError,
+    WorkspaceStreamQuotaError,
+)
 from inference.core.interfaces.webrtc_worker.cpu import rtc_peer_connection_process
 from inference.core.interfaces.webrtc_worker.entities import (
     RTCIceServer,
@@ -14,7 +29,12 @@ from inference.core.interfaces.webrtc_worker.entities import (
     WebRTCWorkerRequest,
     WebRTCWorkerResult,
 )
+from inference.core.interfaces.webrtc_worker.request_utils import (
+    resolve_workspace_id_for_webrtc_request,
+)
 from inference.core.logger import logger
+
+ALLOWED_EU_REGIONS = {"eu", "eu-west", "eu-north", "eu-south"}
 
 
 async def start_worker(
@@ -24,7 +44,7 @@ async def start_worker(
         webrtc_request.webrtc_config = WebRTCConfig(
             iceServers=[
                 RTCIceServer(
-                    urls=[webrtc_request.webrtc_turn_config.urls],
+                    urls=webrtc_request.webrtc_turn_config.urls,
                     username=webrtc_request.webrtc_turn_config.username,
                     credential=webrtc_request.webrtc_turn_config.credential,
                 )
@@ -36,7 +56,12 @@ async def start_worker(
             from inference.core.interfaces.webrtc_worker.modal import (
                 spawn_rtc_peer_connection_modal,
             )
-            from inference.core.interfaces.webrtc_worker.utils import is_over_quota
+            from inference.core.interfaces.webrtc_worker.utils import (
+                get_total_concurrent_sessions,
+                is_over_quota,
+                is_over_workspace_session_quota,
+                register_webrtc_session,
+            )
         except ImportError:
             raise ImportError(
                 "Modal not installed, please install it using 'pip install modal'"
@@ -45,6 +70,55 @@ async def start_worker(
             if is_over_quota(webrtc_request.api_key):
                 logger.error("API key over quota")
                 raise CreditsExceededError("API key over quota")
+
+        session_id = str(uuid.uuid4())
+        workspace_id = resolve_workspace_id_for_webrtc_request(webrtc_request)
+        webrtc_request.session_id = session_id
+
+        if WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED:
+            if workspace_id and is_over_workspace_session_quota(
+                workspace_id=workspace_id,
+                quota=WEBRTC_WORKSPACE_STREAM_QUOTA,
+                ttl_seconds=WEBRTC_WORKSPACE_STREAM_TTL_SECONDS,
+            ):
+                logger.warning(
+                    "Workspace %s has exceeded the stream quota of %d",
+                    workspace_id,
+                    WEBRTC_WORKSPACE_STREAM_QUOTA,
+                )
+                raise WorkspaceStreamQuotaError(
+                    f"You have reached the maximum of {WEBRTC_WORKSPACE_STREAM_QUOTA} "
+                    f"concurrent streams."
+                )
+
+            if workspace_id:
+                register_webrtc_session(
+                    workspace_id=workspace_id,
+                    session_id=session_id,
+                )
+
+                total_sessions = get_total_concurrent_sessions(
+                    ttl_seconds=WEBRTC_WORKSPACE_STREAM_TTL_SECONDS
+                )
+                logger.info(
+                    "Total concurrent WebRTC sessions: %d",
+                    total_sessions,
+                )
+
+        logger.info(
+            "Started WebRTC session %s for workspace %s",
+            session_id,
+            workspace_id,
+        )
+
+        if WEBRTC_MODAL_ENFORCE_REGION:
+            if WEBRTC_MODAL_REQUIRED_REGION not in ALLOWED_EU_REGIONS:
+                raise WebRTCConfigurationError(
+                    f"WEBRTC_MODAL_REQUIRED_REGION must be one of "
+                    f"{sorted(ALLOWED_EU_REGIONS)} when WEBRTC_MODAL_ENFORCE_REGION "
+                    f"is enabled, got {WEBRTC_MODAL_REQUIRED_REGION!r}"
+                )
+            webrtc_request.requested_region = WEBRTC_MODAL_REQUIRED_REGION
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(

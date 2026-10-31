@@ -1,4 +1,3 @@
-import json
 import os
 
 import torch
@@ -7,11 +6,16 @@ from PIL import Image
 from transformers import AutoModelForImageTextToText
 from transformers.utils import is_flash_attn_2_available
 
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, MODEL_CACHE_DIR, OFFLINE_MODE
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-from inference.models.transformers import LoRATransformerModel, TransformerModel
+from inference.models.transformers import (
+    LoRATransformerModel,
+    TransformerModel,
+    load_compatible_adapter_config,
+    remove_extracted_archive_if_online,
+)
 
 
 class SmolVLM(TransformerModel):
@@ -73,22 +77,16 @@ class LoRASmolVLM(LoRATransformerModel):
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, "r") as file:
-            config = json.load(file)
-
-        keys_to_remove = [
-            "eva_config",
-            "corda_config",
-            "lora_bias",
-            "exclude_modules",
-            "trainable_token_indices",
-        ]
-
-        for key in keys_to_remove:
-            config.pop(key, None)
-
-        with open(config_file, "w") as file:
-            json.dump(config, file, indent=2)
+        config = load_compatible_adapter_config(
+            config_file=config_file,
+            unsupported_keys=[
+                "eva_config",
+                "corda_config",
+                "lora_bias",
+                "exclude_modules",
+                "trainable_token_indices",
+            ],
+        )
 
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
@@ -110,8 +108,7 @@ class LoRASmolVLM(LoRATransformerModel):
                 MODEL_CACHE_DIR, "lora-bases/smolvlm2/main/weights.tar.gz"
             )
 
-        if os.path.exists(rm_weights):
-            os.remove(rm_weights)
+        remove_extracted_archive_if_online(rm_weights)
 
         attn_implementation = (
             "flash_attention_2"
@@ -126,10 +123,15 @@ class LoRASmolVLM(LoRATransformerModel):
             cache_dir=cache_dir,
             token=token,
             attn_implementation=attn_implementation,
+            local_files_only=OFFLINE_MODE,
         )
 
         self.model = (
-            PeftModel.from_pretrained(self.base_model, self.cache_dir)
+            PeftModel.from_pretrained(
+                self.base_model,
+                self.cache_dir,
+                config=lora_config,
+            )
             .eval()
             .to(self.dtype)
         )
@@ -138,11 +140,16 @@ class LoRASmolVLM(LoRATransformerModel):
 
         if is_smolvlm_256m:
             self.processor = self.processor_class.from_pretrained(
-                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/smolvlm-256m/main")
+                os.path.join(
+                    MODEL_CACHE_DIR,
+                    "lora-bases/smolvlm2/smolvlm-256m/main",
+                ),
+                local_files_only=OFFLINE_MODE,
             )
         else:
             self.processor = self.processor_class.from_pretrained(
-                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
+                os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main"),
+                local_files_only=OFFLINE_MODE,
             )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):

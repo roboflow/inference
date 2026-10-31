@@ -4,17 +4,14 @@ from inference_models.errors import ModelPipelineNotFound
 from inference_models.utils.imports import LazyClass
 
 REGISTERED_PIPELINES: Dict[str, LazyClass] = {
-    "face-and-gaze-detection": LazyClass(
-        module_name="inference_models.model_pipelines.face_and_gaze_detection.mediapipe_l2cs",
-        class_name="FaceAndGazeDetectionMPAndL2CS",
-    )
+    "pp-ocrv6": LazyClass(
+        module_name="inference_models.models.pp_ocrv6.pp_ocrv6_pipeline",
+        class_name="PPOCRv6Pipeline",
+    ),
 }
 
 DEFAULT_PIPELINES_PARAMETERS: Dict[str, List[Union[str, dict]]] = {
-    "face-and-gaze-detection": [
-        "mediapipe/face-detector",
-        "l2cs-net/rn50",
-    ]
+    "pp-ocrv6": ["pp-ocrv6-det/small", "pp-ocrv6-rec/small"],
 }
 
 
@@ -25,7 +22,7 @@ def resolve_pipeline_class(pipline_id: str) -> type:
             f"Registered pipelines: {list(REGISTERED_PIPELINES.keys())}. This error ma be caused by typo "
             f"in the identifier, or pipeline is not registered / not supported in the environment you try to "
             f"run it.",
-            help_url="https://todo",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelpipelinenotfound",
         )
     return REGISTERED_PIPELINES[pipline_id].resolve()
 

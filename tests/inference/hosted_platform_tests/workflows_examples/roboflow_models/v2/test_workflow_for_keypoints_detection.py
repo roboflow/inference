@@ -6,6 +6,7 @@ from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
     ROBOFLOW_API_KEY,
     PlatformEnvironment,
+    apply_auth_mode,
 )
 
 KEYPOINTS_DETECTION_WORKFLOW = {
@@ -38,16 +39,7 @@ KEYPOINTS_DETECTION_WORKFLOW = {
 
 KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: np.array(
-        [
-            0.83561897,
-            0.81181437,
-            0.7810185,
-            0.7713989,
-            0.75499356,
-            0.66378689,
-            0.59428531,
-            0.5382458,
-        ]
+        [0.84744745, 0.83828652, 0.7608133, 0.75357497, 0.71568894, 0.46073216]
     ),
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: np.array(
         [
@@ -90,12 +82,14 @@ def test_keypoints_detection_workflow(
     object_detection_service_url: str,
     yolov8n_pose_640_model_id: str,
     crowd_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(

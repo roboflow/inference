@@ -1,15 +1,9 @@
-cairosvg
-mike
-mkdocs-gen-files
-mkdocs-jupyter
-mkdocs-literate-nav
-mkdocs-macros-plugin
-mkdocs-material[imaging]
-mkdocs-material
+zensical==0.0.33
+mkdocs-git-revision-date-localized-plugin
 mkdocs-ezlinks-plugin
+mkdocs-macros-plugin
+mkdocs-jupyter
 mkdocs-swagger-ui-tag
-mkdocs
-mkdocstrings[python]
 pillow
 jinja2
 
@@ -19,5 +13,5 @@ jinja2
 # library is trying to access a method parse_axt_heading,
 # which likely stems from a typo or mismatch in versions
 # between the libraries.
-mistune==2.0.4
-nbconvert==7.7.4
+mistune==3.3.3
+nbconvert==7.17.2

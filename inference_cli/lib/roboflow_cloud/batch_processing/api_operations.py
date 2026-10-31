@@ -4,7 +4,7 @@ import random
 import string
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Generator, List, Optional, Set, Union
+from typing import Dict, Generator, List, Optional, Set, Union
 
 import backoff
 import requests
@@ -22,6 +22,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     CompilationDevice,
     ComputeConfigurationV2,
     GetJobMetadataResponse,
+    InferenceBackend,
     JobLog,
     JobLogsResponse,
     JobMetadata,
@@ -398,6 +399,11 @@ def trigger_job_with_workflows_images_processing(
     job_id: Optional[str],
     notifications_url: Optional[str],
     api_key: str,
+    inference_backend: Optional[InferenceBackend] = None,
+    job_name: Optional[str] = None,
+    max_image_failure_rate: Optional[float] = None,
+    images_metadata_part_name: Optional[str] = None,
+    image_metadata_mapping: Optional[Dict[str, str]] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -407,6 +413,7 @@ def trigger_job_with_workflows_images_processing(
     input_configuration = StagingBatchInputV1(
         batch_id=batch_id,
         part_name=part_name,
+        images_metadata_part=images_metadata_part_name,
     )
     workflow_parameters = None
     if workflow_parameters_path:
@@ -419,6 +426,7 @@ def trigger_job_with_workflows_images_processing(
         persist_images_outputs=save_image_outputs,
         images_outputs_to_be_persisted=image_outputs_to_save,
         aggregation_format=aggregation_format,
+        images_metadata_inputs_mapping=image_metadata_mapping,
     )
     if not job_id:
         job_id = f"job-{_generate_random_string(length=12)}"
@@ -428,14 +436,17 @@ def trigger_job_with_workflows_images_processing(
         compute_configuration=compute_configuration,
         processing_timeout_seconds=max_runtime_seconds,
         max_parallel_tasks=max_parallel_tasks,
+        max_image_failure_rate=max_image_failure_rate,
         processing_specification=processing_specification,
         notifications_url=notifications_url,
+        inference_backend=inference_backend,
     )
     create_batch_job(
         workspace=workspace,
         job_id=job_id,
         job_configuration=job_configuration,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -457,6 +468,8 @@ def trigger_job_with_workflows_videos_processing(
     job_id: Optional[str],
     notifications_url: Optional[str],
     api_key: str,
+    inference_backend: Optional[InferenceBackend] = None,
+    job_name: Optional[str] = None,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV2(
@@ -490,12 +503,14 @@ def trigger_job_with_workflows_videos_processing(
         max_parallel_tasks=max_parallel_tasks,
         processing_specification=processing_specification,
         notifications_url=notifications_url,
+        inference_backend=inference_backend,
     )
     create_batch_job(
         workspace=workspace,
         job_id=job_id,
         job_configuration=job_configuration,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -506,6 +521,7 @@ def trigger_trt_compilation_job(
     compilation_devices: Optional[List[CompilationDevice]],
     notifications_url: Optional[str],
     api_key: str,
+    job_name: Optional[str] = None,
 ) -> str:
     if not job_id:
         job_id = f"trt-{_generate_random_string(length=12)}"
@@ -523,6 +539,7 @@ def trigger_trt_compilation_job(
         job_id=job_id,
         job_configuration=compilation_specification,
         api_key=api_key,
+        job_name=job_name,
     )
     return job_id
 
@@ -538,8 +555,11 @@ def create_batch_job(
     job_id: str,
     job_configuration: Union[WorkflowProcessingJobV1, TRTCompilationJobV1],
     api_key: str,
+    job_name: Optional[str] = None,
 ) -> None:
     params = {"api_key": api_key}
+    if job_name:
+        params["name"] = job_name
     try:
         response = requests.post(
             f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}",
@@ -741,6 +761,7 @@ def restart_batch_job(
     workers_per_machine: Optional[int] = None,
     max_runtime_seconds: Optional[float] = None,
     max_parallel_tasks: Optional[int] = None,
+    max_image_failure_rate: Optional[float] = None,
 ) -> None:
     workspace = get_workspace(api_key=api_key)
     response = send_restart_job_request(
@@ -751,6 +772,7 @@ def restart_batch_job(
         workers_per_machine=workers_per_machine,
         max_runtime_seconds=max_runtime_seconds,
         max_parallel_tasks=max_parallel_tasks,
+        max_image_failure_rate=max_image_failure_rate,
     )
     console = Console()
     console.print(JSON.from_data(response, indent=2))
@@ -770,6 +792,7 @@ def send_restart_job_request(
     workers_per_machine: Optional[int] = None,
     max_runtime_seconds: Optional[float] = None,
     max_parallel_tasks: Optional[int] = None,
+    max_image_failure_rate: Optional[float] = None,
 ) -> dict:
     payload = {
         "type": "parameters-override-v1",
@@ -785,6 +808,8 @@ def send_restart_job_request(
         payload["maxParallelTasks"] = max_parallel_tasks
     if max_runtime_seconds is not None:
         payload["processingTimeoutSeconds"] = max_runtime_seconds
+    if max_image_failure_rate is not None:
+        payload["maxImageFailureRate"] = max_image_failure_rate
     params = {"api_key": api_key}
     try:
         response = requests.post(

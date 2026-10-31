@@ -2,7 +2,10 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import USE_INFERENCE_MODELS, WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
@@ -15,32 +18,48 @@ from tests.workflows.integration_tests.execution.workflows_gallery_collector.dec
     add_to_workflows_gallery,
 )
 
-OBJECT_DETECTION_WORKFLOW = {
-    "version": "1.0",
-    "inputs": [
-        {"type": "WorkflowImage", "name": "image"},
-        {
-            "type": "WorkflowParameter",
-            "name": "model_id",
-            "default_value": "yolov8n-640",
-        },
-        {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
-    ],
-    "steps": [
-        {
-            "type": "RoboflowObjectDetectionModel",
-            "name": "detection",
-            "image": "$inputs.image",
-            "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
-        }
-    ],
-    "outputs": [
-        {"type": "JsonField", "name": "result", "selector": "$steps.detection.*"}
-    ],
-}
+OBJECT_DETECTION_BLOCK_TYPES = [
+    "roboflow_core/roboflow_object_detection_model@v2",
+    "roboflow_core/roboflow_object_detection_model@v3",
+]
 
-EXPECTED_OBJECT_DETECTION_BBOXES = np.array(
+
+def _build_object_detection_workflow(block_type: str) -> dict:
+    step = {
+        "type": block_type,
+        "name": "detection",
+        "image": "$inputs.image",
+        "model_id": "$inputs.model_id",
+    }
+    if block_type.endswith("@v3"):
+        step["confidence_mode"] = "custom"
+        step["custom_confidence"] = "$inputs.confidence"
+    else:
+        step["confidence"] = "$inputs.confidence"
+    return {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {
+                "type": "WorkflowParameter",
+                "name": "model_id",
+                "default_value": "yolov8n-640",
+            },
+            {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
+        ],
+        "steps": [step],
+        "outputs": [
+            {"type": "JsonField", "name": "result", "selector": "$steps.detection.*"}
+        ],
+    }
+
+
+# Gallery definition uses the latest block version.
+OBJECT_DETECTION_WORKFLOW = _build_object_detection_workflow(
+    OBJECT_DETECTION_BLOCK_TYPES[-1]
+)
+
+EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE = np.array(
     [
         [180, 273, 244, 383],
         [271, 266, 328, 383],
@@ -56,7 +75,7 @@ EXPECTED_OBJECT_DETECTION_BBOXES = np.array(
         [239, 251, 249, 282],
     ]
 )
-EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
+EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE = np.array(
     [
         0.84284,
         0.83957,
@@ -73,23 +92,64 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
     ]
 )
 
+EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE = np.array(
+    [
+        [180, 273, 244, 384],
+        [271, 267, 328, 384],
+        [552, 260, 598, 365],
+        [113, 270, 145, 348],
+        [416, 259, 457, 365],
+        [521, 257, 555, 360],
+        [387, 264, 414, 342],
+        [158, 268, 183, 350],
+        [324, 257, 345, 321],
+        [341, 262, 362, 338],
+        [247, 251, 262, 285],
+        [240, 251, 250, 282],
+        [412, 265, 432, 337],
+        [145, 265, 165, 329],
+        [300, 264, 319, 296],
+    ]
+)
+EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE = np.array(
+    [
+        0.84284,
+        0.83957,
+        0.81555,
+        0.80455,
+        0.75804,
+        0.75794,
+        0.71715,
+        0.71408,
+        0.71003,
+        0.56938,
+        0.54092,
+        0.51359,
+        0.36387,
+        0.35772,
+        0.34012,
+    ]
+)
+
 
 @add_to_workflows_gallery(
     category="Basic Workflows",
     use_case_title="Workflow with single object detection model",
     use_case_description="""
-This is the basic workflow that only contains a single object detection model. 
+This is the basic workflow that only contains a single object detection model.
 
-Please take a look at how batch-oriented WorkflowImage data is plugged to 
+Please take a look at how batch-oriented WorkflowImage data is plugged to
 detection step via input selector (`$inputs.image`) and how non-batch parameters
 are dynamically specified - via `$inputs.model_id` and `$inputs.confidence` selectors.
     """,
     workflow_definition=OBJECT_DETECTION_WORKFLOW,
     workflow_name_in_app="basic-object-detection",
 )
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -98,7 +158,7 @@ def test_object_detection_workflow_when_minimal_valid_input_provided(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -112,21 +172,35 @@ def test_object_detection_workflow_when_minimal_valid_input_provided(
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single image provided - single output expected"
     detections: sv.Detections = result[0]["result"]["predictions"]
-    assert np.allclose(
-        detections.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences to match what was validated manually as workflow outcome"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            detections.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences to match what was validated manually as workflow outcome"
+    else:
+        assert np.allclose(
+            detections.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_batch_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -135,7 +209,7 @@ def test_object_detection_workflow_when_batch_input_provided(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -153,31 +227,55 @@ def test_object_detection_workflow_when_batch_input_provided(
     assert len(result) == 2, "Two images provided - two outputs expected"
     detections_1: sv.Detections = result[0]["result"]["predictions"]
     detections_2: sv.Detections = result[1]["result"]["predictions"]
-    assert np.allclose(
-        detections_1.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_1.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    else:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_batch_input_provided_and_serialization_requested(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -186,7 +284,7 @@ def test_object_detection_workflow_when_batch_input_provided_and_serialization_r
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -205,31 +303,55 @@ def test_object_detection_workflow_when_batch_input_provided_and_serialization_r
     assert len(result) == 2, "Two images provided - two outputs expected"
     detections_1 = sv.Detections.from_inference(result[0]["result"]["predictions"])
     detections_2 = sv.Detections.from_inference(result[1]["result"]["predictions"])
-    assert np.allclose(
-        detections_1.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_1.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for first image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES,
-        atol=1,
-    ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
-    assert np.allclose(
-        detections_2.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
-        atol=0.01,
-    ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    if not USE_INFERENCE_MODELS:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+    else:
+        assert np.allclose(
+            detections_1.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_1.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.xyxy,
+            EXPECTED_OBJECT_DETECTION_BBOXES_NEW_INFERENCE,
+            atol=1,
+        ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+        assert np.allclose(
+            detections_2.confidence,
+            EXPECTED_OBJECT_DETECTION_CONFIDENCES_NEW_INFERENCE,
+            atol=0.01,
+        ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_confidence_is_restricted_by_input_parameter(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -238,7 +360,7 @@ def test_object_detection_workflow_when_confidence_is_restricted_by_input_parame
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -258,18 +380,20 @@ def test_object_detection_workflow_when_confidence_is_restricted_by_input_parame
     detections: sv.Detections = result[0]["result"]["predictions"]
     assert np.allclose(
         detections.xyxy,
-        EXPECTED_OBJECT_DETECTION_BBOXES[:4],
+        EXPECTED_OBJECT_DETECTION_BBOXES_OLD_INFERENCE[:4],
         atol=1,
     ), "Expected bboxes to match what was validated manually as workflow outcome"
     assert np.allclose(
         detections.confidence,
-        EXPECTED_OBJECT_DETECTION_CONFIDENCES[:4],
+        EXPECTED_OBJECT_DETECTION_CONFIDENCES_OLD_INFERENCE[:4],
         atol=0.01,
     ), "Expected confidences to match what was validated manually as workflow outcome"
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_image_not_provided_in_input(
     model_manager: ModelManager,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -278,7 +402,7 @@ def test_object_detection_workflow_when_image_not_provided_in_input(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -292,9 +416,11 @@ def test_object_detection_workflow_when_image_not_provided_in_input(
         )
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_confidence_provided_with_invalid_type(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -303,7 +429,7 @@ def test_object_detection_workflow_when_confidence_provided_with_invalid_type(
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
@@ -319,9 +445,11 @@ def test_object_detection_workflow_when_confidence_provided_with_invalid_type(
         )
 
 
+@pytest.mark.parametrize("block_type", OBJECT_DETECTION_BLOCK_TYPES)
 def test_object_detection_workflow_when_model_id_cannot_be_resolved_to_valid_model(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    block_type: str,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -330,9 +458,10 @@ def test_object_detection_workflow_when_model_id_cannot_be_resolved_to_valid_mod
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
     execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        workflow_definition=_build_object_detection_workflow(block_type),
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        step_error_handler=resolve_step_error_handler(),
     )
 
     # when

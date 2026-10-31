@@ -20,7 +20,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
-    requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.parallel.txt \
     requirements/requirements.vino.txt \
@@ -34,35 +33,56 @@ COPY requirements/requirements.sam.txt \
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+
+# Keep later pip installs (including wheel builds) on the CPU variants.
+COPY requirements/requirements.torch-cpu.txt /requirements.torch-cpu.txt
+ARG PIP_CONSTRAINT=/requirements.torch-cpu.txt
+RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu -r /requirements.torch-cpu.txt
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
-    -r requirements.gaze.txt \
     -r requirements.doctr.txt \
     -r requirements.parallel.txt \
     -r requirements.cli.txt \
     -r requirements.sdk.http.txt \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
-    "setuptools<=75.5.0" \
+    "setuptools~=84.2.1" \
     --upgrade \
     && rm -rf ~/.cache/pip
+
+# Build & install roboflow-workflows from source (see Dockerfile.onnx.cpu.slim
+# for rationale — wheel install brings all runtime deps + fonts).
+COPY workflows workflows
+COPY stream_vision stream_vision
+RUN pip3 install uv \
+    && python3 workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && cd stream_vision \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && pip3 install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]" \
+    && rm -rf ~/.cache/pip
+
 RUN apt-get update && apt-get install -y lsb-release curl gpg
 RUN curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
 RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
 RUN apt-get update && apt-get install -y redis
 
-FROM scratch
-COPY --from=base / /
-
 WORKDIR /app/
 COPY inference inference
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
 COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -86,4 +106,4 @@ ENTRYPOINT redis-server --io-threads 3 --save --port $REDIS_PORT & \
     celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \
     celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 8 --concurrency $NUM_CELERY_WORKERS -Q post --loglevel=WARNING & \
     python3 inference/enterprise/parallel/infer.py & \
-    uvicorn parallel_http:app --workers $NUM_WORKERS --host $HOST --port $PORT && fg
+    /usr/local/bin/run_uvicorn.sh parallel_http:app && fg

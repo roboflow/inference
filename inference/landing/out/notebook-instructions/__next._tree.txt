@@ -1,0 +1,8 @@
+:HL["/_next/static/chunks/07cws3vcq-lm9.css","style"]
+:HL["/_next/static/media/07c7676b89ed2778-s.p.2bn3s6zvc0dyp.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/_next/static/media/af77a86cf1e51fa0-s.p.22iyan98j1_2e.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/_next/static/chunks/3i6mxp85wuaqq.css","style"]
+:HL["https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css","style"]
+2:[["children",{"s":"__PAGE__","h":160}]]
+1:[["children",{"s":"notebook-instructions","h":96,"c":"$Q2"}]]
+0:{"b":"tOfEhGdOLkxTPTvFjNmqD","t":{"t":{"s":"","h":80,"c":"$Q1"}}}

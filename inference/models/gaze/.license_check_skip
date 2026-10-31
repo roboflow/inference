@@ -1,0 +1,10 @@
+This directory holds a deprecation stub for the legacy L2CS-Net + MediaPipe
+Gaze model. The underlying model code and bundled license files
+(l2cs.py, LICENSE_l2cs.txt, LICENSE_mediapipe.txt) have been deleted; only
+the stub `Gaze` and `InferenceModelsGazeAdapter` classes remain, both of
+which raise `FeatureDeprecatedError` on construction.
+
+The model license validation CI workflow at
+`.github/workflows/check_model_licenses.yml` skips directories containing
+this file. Remove this marker when the directory itself is removed at
+end of Q2 2026 alongside the `/gaze/gaze_detection` HTTP stub.

@@ -1,5 +1,5 @@
 from .clip import *
-from .gaze import *
+from .embeddings import *
 from .inference import *
 from .notebooks import *
 from .ocr import *

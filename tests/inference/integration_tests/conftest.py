@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pytest
 import requests
@@ -13,6 +13,49 @@ port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
 print(base_url, port)
+
+# The two API-key transports every authenticated test runs under. Trimming this
+# list back to ["legacy"] is the single switch disabling the header-auth lane.
+API_KEY_AUTH_MODES = ["legacy", "header"]
+
+
+@pytest.fixture(params=API_KEY_AUTH_MODES)
+def auth_mode(request) -> str:
+    """Duplicate a test over the two API-key transports.
+
+    "legacy" - api_key travels in the query string / JSON body, byte-identical
+    to how the tests always sent it. "header" - api_key is stripped from
+    query/body and travels as `Authorization: Bearer <api_key>` instead.
+    """
+    return request.param
+
+
+def api_key_auth_headers(auth_mode: str, api_key: Optional[str]) -> Dict[str, str]:
+    """Return headers carrying the api key - non-empty only in "header" mode."""
+    if auth_mode == "header" and api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    return {}
+
+
+def without_api_key_in_header_mode(
+    auth_mode: str, payload: Optional[dict]
+) -> Optional[dict]:
+    """Strip `api_key` from a JSON payload / query-params dict in "header" mode.
+
+    In "legacy" mode the payload is returned unchanged (same object), keeping
+    the wire bytes identical to the pre-dual-mode tests.
+    """
+    if auth_mode != "header" or payload is None:
+        return payload
+    return {key: value for key, value in payload.items() if key != "api_key"}
+
+
+def api_key_query_fragments(auth_mode: str, api_key: Optional[str]) -> List[str]:
+    """`api_key=...` fragments for hand-assembled query strings ("legacy" only)."""
+    if auth_mode == "header":
+        return []
+    return [f"api_key={api_key}"]
+
 
 @pytest.fixture(scope="session", autouse=True)
 def server_url() -> str:

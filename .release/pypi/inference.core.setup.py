@@ -6,7 +6,10 @@ from setuptools import find_packages
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
-from inference.core.version import __version__
+_version_namespace = {"__name__": "inference.core.version"}
+with open(os.path.join(root, "inference", "core", "version.py")) as _version_file:
+    exec(_version_file.read(), _version_namespace)
+__version__ = _version_namespace["__version__"]
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -42,7 +45,21 @@ setuptools.setup(
             "development",
             "development.*",
             "inference_models",
-            "inference_models.*"
+            "inference_models.*",
+            "stream_vision",
+            "stream_vision.*",
+            "streamvision",
+            "streamvision.*",
+            "inference_sdk",
+            "inference_sdk.*",
+            "roboflow_workflows",
+            "roboflow_workflows.*",
+            "workflows",
+            "workflows.*",
+            "inference_model_manager",
+            "inference_model_manager.*",
+            "inference_server",
+            "inference_server.*"
         ),
     ),
     package_data={
@@ -60,13 +77,15 @@ setuptools.setup(
             "requirements/_requirements.txt",
             "requirements/requirements.cli.txt",
             "requirements/requirements.sdk.http.txt",
+            "requirements/requirements.workflows.txt",
+            "requirements/requirements.streamvision.txt",
         ]
-    ),
+    )
+    + [f"inference-sdk=={__version__}"],
     extras_require={
         "clip": read_requirements("requirements/requirements.clip.txt"),
         "easy-ocr": read_requirements("requirements/requirements.easyocr.txt"),
         "cpu": read_requirements("requirements/requirements.cpu.txt"),
-        "gaze": read_requirements("requirements/requirements.gaze.txt"),
         "gpu": read_requirements("requirements/requirements.gpu.txt"),
         "grounding-dino": read_requirements(
             "requirements/requirements.groundingdino.txt"
@@ -92,5 +111,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.9,<3.13"
+    python_requires=">=3.10,<3.14",
 )

@@ -157,7 +157,6 @@ def create_batch_of_images(
         Optional[str],
         typer.Option(
             "--images-dir",
-            "-i",
             help="Path to your images directory to upload (required if data source is 'local-directory')",
         ),
     ] = None,
@@ -176,6 +175,15 @@ def create_batch_of_images(
             "-bp",
             help="Cloud storage path with optional glob pattern (e.g., 's3://bucket/path/**/*.jpg', 'gs://bucket/images/'). "
             "Required for cloud-storage source. Supports S3, GCS, and Azure.",
+        ),
+    ] = None,
+    query: Annotated[
+        Optional[str],
+        typer.Option(
+            "--query",
+            "-q",
+            help="RoboQL query selecting images from the Roboflow platform (required if data source is 'roboql'). "
+            "The batch is materialised asynchronously by the data-staging worker.",
         ),
     ] = None,
     ingest_id: Annotated[
@@ -274,6 +282,24 @@ def create_batch_of_images(
                 ingest_id=ingest_id,
                 notifications_url=notifications_url,
                 notification_categories=notification_categories,
+            )
+        elif source is DataSource.ROBOQL:
+            if query is None:
+                raise ValueError(
+                    "`query` not provided when `roboql` specified as a data source"
+                )
+            if notification_categories:
+                print(
+                    "--notification-category option is not supported for RoboQL ingests - system emits a "
+                    "webhook at the end of ingest."
+                )
+            api_operations.create_images_batch_from_roboql_query(
+                query=query,
+                batch_id=batch_id,
+                api_key=api_key,
+                ingest_id=ingest_id,
+                batch_name=batch_name,
+                notifications_url=notifications_url,
             )
         else:
             if references is None:

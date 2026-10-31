@@ -16,6 +16,14 @@ on:
           - regression_without_torch
           - regression_with_torch
 
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
 jobs:
   build:
     if: ${{ !github.event.act }}
@@ -25,13 +33,13 @@ jobs:
 
     steps:
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: 📦 Cache Python packages
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
@@ -50,7 +58,7 @@ jobs:
       - name: 🔋 Start Test Docker without Torch Preprocessing - Parallel GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          USE_INFERENCE_MODELS=false PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
       - name: 🧪 Regression Tests without Torch Preprocessing - Parallel GPU
         id: regression_tests_with_python_preprocessing
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
@@ -67,7 +75,7 @@ jobs:
       - name: 🔋 Start Test Docker with Torch Preprocessing - Parallel GPU
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
         run: |
-          PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          USE_INFERENCE_MODELS=false PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
       - name: 🧪 Regression Tests with Torch Preprocessing - Parallel GPU
         id: regression_tests_without_python_preprocessing
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}

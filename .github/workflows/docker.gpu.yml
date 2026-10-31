@@ -4,8 +4,6 @@ permissions:
 on:
   release:
     types: [created]
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       force_push:
@@ -16,6 +14,33 @@ on:
         type: string
         description: "Custom tag to use for the image (overrides VERSION)"
         default: ""
+  workflow_call:
+    # Called by fast_track_integration_tests.yml. A non-empty custom_tag is
+    # mandatory on this path: an empty one would publish to the bare
+    # :$VERSION tag and overwrite the released image.
+    inputs:
+      force_push:
+        type: boolean
+        description: "Push the image after build"
+        default: false
+      custom_tag:
+        type: string
+        description: "Tag suffix; final tag is <VERSION>-<custom_tag>"
+        required: true
+    outputs:
+      image_tag:
+        description: "Tag (without repository) the image was pushed under, e.g. 1.6.2-post3-rc1"
+        value: ${{ jobs.docker.outputs.image_tag }}
+
+concurrency:
+  # One live run per workflow per ref. A newer push to the same PR, or a newer
+  # merge to main, cancels the older run. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
+  # runs. Release runs are keyed by the tag ref and are never cancelled.
+  # The literal file id keeps groups distinct when this workflow is called
+  # (github.workflow is the caller's name inside a called workflow).
+  group: ${{ github.workflow }}-docker_gpu-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 env:
   VERSION: "0.0.0" # Default version, will be overwritten
@@ -24,74 +49,89 @@ env:
 
 jobs:
   docker:
+    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'workflow_dispatch' || github.event_name == 'release') }}
     runs-on:
       labels: ubuntu-latest
     timeout-minutes: 120
     permissions:
       id-token: write
       contents: read
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.image_tag }}
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Refuse a called build without a custom tag
+        # Inside a called workflow github.workflow is the caller's name.
+        # Also refuse a called build outside a manual dispatch: determine-tags
+        # derives the tag from the caller's event, so only workflow_dispatch
+        # callers produce <VERSION>-<custom_tag>.
+        if: ${{ github.workflow != 'Build and Push GPU Container' && (inputs.custom_tag == '' || github.event_name != 'workflow_dispatch') }}
+        run: |
+          echo "::error::custom_tag is required when this workflow is called; an empty tag would overwrite the released :VERSION image"
+          exit 1
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Determine Image Tags
         id: tags
         uses: ./.github/actions/determine-tags
         with:
-          custom_tag: ${{ github.event.inputs.custom_tag }}
+          custom_tag: ${{ inputs.custom_tag }}
           version: ${{ env.VERSION }}
           base_image: ${{ env.BASE_IMAGE }}
-          force_push: ${{ github.event.inputs.force_push }}
+          force_push: ${{ inputs.force_push }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Expose image tag
+        id: image_tag
+        env:
+          IMAGE_TAGS: ${{ steps.tags.outputs.image_tags }}
+          BASE_IMAGE: ${{ env.BASE_IMAGE }}
+        run: |
+          first="${IMAGE_TAGS%%,*}"
+          echo "image_tag=${first#"$BASE_IMAGE:"}" >> "$GITHUB_OUTPUT"
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-      - name: Build and Push
-        uses: depot/build-push-action@v1
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
+      - name: Login to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
-          project: grl7ffzxd7
-          tags: ${{ steps.tags.outputs.image_tags }}
-          platforms: linux/amd64
-          file: ${{ env.DOCKERFILE }}
-      - name: 'Authenticate gcloud'
-        uses: 'google-github-actions/auth@v2'
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Authenticate gcloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         id: auth
         with:
-          workload_identity_provider: 'projects/391662651862/locations/global/workloadIdentityPools/github-actions/providers/github'
-          service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
-          token_format: 'access_token'
+          workload_identity_provider: "projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github"
+          service_account: "gha-inference@roboflow-staging.iam.gserviceaccount.com"
+          token_format: access_token
       - name: Login to Google Artifact Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: us-docker.pkg.dev
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
-      - name: Set up build variables
-        id: set_up_build_variables
+      - name: Combine Docker Hub and Artifact Registry tags
+        id: all_tags
         run: |
-          TAGS=""
-          IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
+          DH_TAGS="${{ steps.tags.outputs.image_tags }}"
+          GCP_PREFIX="us-docker.pkg.dev/roboflow-artifacts/"
+          GCP_TAGS=""
+          IFS=',' read -ra TAG_ARRAY <<< "$DH_TAGS"
           for tag in "${TAG_ARRAY[@]}"; do
-            if [ -n "$TAGS" ]; then
-              TAGS="${TAGS}","us-docker.pkg.dev/roboflow-artifacts/${tag}"
+            [ -z "$tag" ] && continue
+            if [ -n "$GCP_TAGS" ]; then
+              GCP_TAGS="${GCP_TAGS},${GCP_PREFIX}${tag}"
             else
-              TAGS="us-docker.pkg.dev/roboflow-artifacts/${tag}"
+              GCP_TAGS="${GCP_PREFIX}${tag}"
             fi
           done
-          echo "PROCESSED_TAGS=${TAGS}" >> "$GITHUB_OUTPUT"
-          echo "GCP artifacts to be pushed:"
-          echo "$TAGS"
-      - name: Build and push GPU image to GCP Artifact Registry
-        uses: depot/build-push-action@v1
+          echo "all_tags=${DH_TAGS},${GCP_TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Single build will push to Docker Hub and Artifact Registry:"
+          echo "${DH_TAGS},${GCP_TAGS}"
+      - name: Build and push (Docker Hub and GCP from one build)
+        uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+          push: ${{ github.event_name == 'release' || inputs.force_push == true }}
           project: grl7ffzxd7
-          tags: ${{ steps.set_up_build_variables.outputs.PROCESSED_TAGS }}
+          tags: ${{ steps.all_tags.outputs.all_tags }}
           platforms: linux/amd64
           file: ${{ env.DOCKERFILE }}

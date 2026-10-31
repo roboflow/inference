@@ -9,7 +9,8 @@ The library uses two types of caching:
 - **Auto-Resolution Cache** - Stores backend selection decisions to avoid repeated API calls and package negotiation
 - **Model Package Cache** - Stores downloaded model files (weights, configs, class names) to avoid re-downloading
 
-Both caches are stored under `$INFERENCE_HOME` (defaults to `/tmp/cache/`).
+Both caches are stored under `$INFERENCE_HOME`. When `INFERENCE_HOME` is unset,
+the library uses `$MODEL_CACHE_DIR`, then falls back to `/tmp/cache/`.
 
 ## 🔄 Auto-Resolution Cache
 
@@ -70,12 +71,18 @@ Downloaded model files (weights, configs, class names, etc.) are cached locally 
 
 !!! warning "Cache Access and API Key Assumptions"
 
-    **Important:** The model package cache operates with an implicit assumption that **once a model is stored on the local filesystem, it can be accessed without requiring an API key**, even if the original download required authentication.
+    **Important:** The default local access manager assumes that a canonically
+    attributed model already stored on the local filesystem may be used by a
+    credential-free process, even if the original download required
+    authentication.
 
     This means:
 
-    - If a model was downloaded using an API key and cached locally, subsequent loads from cache will succeed **even without providing the API key**
-    - The library itself does **not implement access control guards** for cached files
+    - The default library access manager does **not add tenant authorization**
+      for otherwise eligible local files
+    - `OFFLINE_MODE` loads serve the offline-weights registry with no
+      credential revalidation; plug a custom `ModelAccessManager` into
+      `AutoModel.from_pretrained` when offline auth checks are required
     - In single-user environments, this is typically the desired behavior for convenience
 
     **Multi-tenant environments:**
@@ -98,13 +105,14 @@ Model IDs are slugified and hashed to create safe, unique, yet human-readable di
 ```
 /tmp/cache/
 ├── models-cache/
-│   ├── yolov8n-640-a1b2c3d4/          # Slugified model ID + hash
+│   ├── v2-yolov8n-640-0123456789abcdef0123456789abcdef/
+│   │                                   # Slugified model ID + 128-bit hash
 │   │   ├── onnxfp32/                   # Package ID from provider
 │   │   │   ├── model.onnx -> ../../shared-blobs/e4f5a6b7...
 │   │   │   └── class_names.txt
 │   │   └── trtfp16/                    # Another package ID
 │   │       └── model.engine -> ../../shared-blobs/c8d9e0f1...
-│   └── rfdetr-base-e5f6g7h8/
+│   └── v2-rfdetr-base-fedcba9876543210fedcba9876543210/
 │       └── torchfp32/
 │           └── model.pt -> ../../shared-blobs/a2b3c4d5...
 └── shared-blobs/                       # Content-addressed blob storage
@@ -125,9 +133,44 @@ When the weights provider supplies a content hash (MD5) for a file, the library 
 
 Files without content hashes are stored directly in the model package directory.
 
+An optional S3-compatible shared cache can back these content-addressed blobs
+when the caller injects a cache instance. Roboflow Inference holds one shared
+instance per process (`get_shared_model_blob_cache()`), consumed automatically
+by the model manager and by model preloading. See
+[Environment Variables](environment-variables.md#shared-s3-compatible-blob-cache)
+for standalone injection, configuration, and fail-open behavior. Objects use
+the key `<INFERENCE_MODELS_MODEL_BLOB_CACHE_PREFIX>/<md5>`.
+
 ### Cache Expiration
 
 Model package cache **does not expire automatically** - files remain until manually deleted.
+
+### Offline loading
+
+`OFFLINE_MODE=True` serves models from the **offline-weights registry**
+(`$INFERENCE_HOME/offline-weights-registry/`, one JSON record per canonical
+model). Records are written while running online with
+`OFFLINE_MODE_WARM_UP=True`: every model that package auto-negotiation
+selected and that initialized successfully is recorded together with the full
+provider metadata — every available package with its backend, quantization,
+batch limits and TensorRT/CUDA environment requirements. Offline loads re-run
+the same auto-negotiation against those records and verify that every recorded
+artefact file is present; there is no per-load hashing (use
+`AutoModel.verify_offline_model(model_id, check_hashes=True)` for an explicit
+integrity pass and `AutoModel.list_offline_models()` to inspect the
+registry).
+
+Before disconnecting a deployment, run the full workload once with
+`OFFLINE_MODE_WARM_UP=True` on the same machine (or an identical fleet image)
+with the same backend, device, quantization, batch, ONNX-provider, and
+dependency settings that the offline process will use. Caches warmed by
+`inference-models <= 0.35` contain no registry records and need that warm-up
+run once.
+
+Model-cache paths use the V2 layout with a 128-bit identity digest. V1 paths
+with the older 32-bit digest (`inference-models < 0.32.0`) are no longer read
+at all — models cached under them re-download into V2 paths on the next
+online load, and the stale V1 directories can be deleted to reclaim space.
 
 **Purge model cache:**
 ```bash
@@ -148,4 +191,3 @@ rm -rf /tmp/cache/shared-blobs/
 - [Understand Core Concepts](understand-core-concepts.md) - Understand the design philosophy
 - [Supported Models](../models/index.md) - Browse available models
 - [How-To: Local Packages](../how-to/local-packages.md) - Working with local model packages
-

@@ -8,7 +8,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
-
 WORKFLOW_WITH_SELECTOR_TO_LIST = {
     "version": "1.0",
     "inputs": [

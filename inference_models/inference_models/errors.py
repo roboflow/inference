@@ -1,7 +1,7 @@
-from typing import Optional
+from typing import List, Optional
 
 
-class BaseInferenceError(Exception):
+class BaseInferenceModelsError(Exception):
 
     def __init__(self, message: str, help_url: Optional[str] = None):
         super().__init__(message)
@@ -17,40 +17,62 @@ class BaseInferenceError(Exception):
         return f"{super().__str__()} - VISIT {self._help_url} FOR FURTHER SUPPORT"
 
 
-class AssumptionError(BaseInferenceError):
+class AssumptionError(BaseInferenceModelsError):
     pass
 
 
-class EnvironmentConfigurationError(BaseInferenceError):
+class EnvironmentConfigurationError(BaseInferenceModelsError):
     pass
 
 
-class ModelRuntimeError(BaseInferenceError):
+class ModelRuntimeError(BaseInferenceModelsError):
     pass
 
 
-class ModelInputError(BaseInferenceError):
+class ModelInputError(BaseInferenceModelsError):
     pass
 
 
-class RetryError(BaseInferenceError):
+class RetryError(BaseInferenceModelsError):
     pass
 
 
-class ModelRetrievalError(BaseInferenceError):
+class RangeRequestNotSupportedError(BaseInferenceModelsError):
+    """HTTP ranged GET did not return 206 Partial Content (threaded downloads)."""
+
     pass
 
 
-class UntrustedFileError(BaseInferenceError):
+class ModelRetrievalError(BaseInferenceModelsError):
     pass
 
 
-class FileHashSumMissmatch(BaseInferenceError):
+class UntrustedFileError(BaseInferenceModelsError):
+    pass
+
+
+class FileHashSumMissmatch(BaseInferenceModelsError):
+    pass
+
+
+class ModelNotFoundError(ModelRetrievalError):
     pass
 
 
 class UnauthorizedModelAccessError(ModelRetrievalError):
     pass
+
+
+class PaymentRequiredModelAccessError(ModelRetrievalError):
+    status_code = 402
+
+
+class ForbiddenModelAccessError(ModelRetrievalError):
+    status_code = 403
+
+
+class UsagePausedModelAccessError(ModelRetrievalError):
+    status_code = 423
 
 
 class ModelMetadataConsistencyError(ModelRetrievalError):
@@ -61,11 +83,11 @@ class ModelMetadataHandlerNotImplementedError(ModelRetrievalError):
     pass
 
 
-class InvalidEnvVariable(BaseInferenceError):
+class InvalidEnvVariable(BaseInferenceModelsError):
     pass
 
 
-class ModelPackageNegotiationError(BaseInferenceError):
+class ModelPackageNegotiationError(BaseInferenceModelsError):
     pass
 
 
@@ -97,12 +119,24 @@ class AmbiguousModelPackageResolutionError(ModelPackageNegotiationError):
     pass
 
 
-class ModelLoadingError(BaseInferenceError):
+class ModelLoadingError(BaseInferenceModelsError):
     pass
 
 
 class ModelPackageAlternativesExhaustedError(ModelLoadingError):
-    pass
+
+    def __init__(
+        self,
+        message: str,
+        help_url: Optional[str] = None,
+        alternatives_errors: Optional[List[Exception]] = None,
+    ):
+        super().__init__(message, help_url)
+        self._alternatives_errors = alternatives_errors
+
+    @property
+    def alternatives_errors(self) -> Optional[List[Exception]]:
+        return self._alternatives_errors
 
 
 class MissingModelInitParameterError(ModelLoadingError):
@@ -133,11 +167,19 @@ class CorruptedModelPackageError(ModelLoadingError):
     pass
 
 
-class MissingDependencyError(BaseInferenceError):
+class ModelPackageRestrictedError(ModelLoadingError):
     pass
 
 
-class InvalidParameterError(BaseInferenceError):
+class MissingDependencyError(BaseInferenceModelsError):
+    pass
+
+
+class InvalidParameterError(BaseInferenceModelsError):
+    pass
+
+
+class PreloadedDependencyMismatchError(InvalidParameterError):
     pass
 
 

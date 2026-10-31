@@ -78,6 +78,11 @@ class MachineSize(str, Enum):
     XL = "xl"
 
 
+class InferenceBackend(str, Enum):
+    OLD_INFERENCE = "old-inference"
+    INFERENCE_MODELS = "inference-models"
+
+
 class ComputeConfigurationV2(BaseModel):
     type: Literal["compute-configuration-v2"] = Field(
         default="compute-configuration-v2"
@@ -94,6 +99,9 @@ class StagingBatchInputV1(BaseModel):
     type: Literal["staging-batch-input-v1"] = Field(default="staging-batch-input-v1")
     batch_id: str = Field(serialization_alias="batchId")
     part_name: Optional[str] = Field(serialization_alias="partName", default=None)
+    images_metadata_part: Optional[str] = Field(
+        serialization_alias="imagesMetadataPart", default=None
+    )
 
 
 class AggregationFormat(str, Enum):
@@ -125,6 +133,10 @@ class WorkflowsProcessingSpecificationV1(BaseModel):
     max_video_fps: Optional[Union[int, float]] = Field(
         serialization_alias="maxVideoFPS", default=None
     )
+    images_metadata_inputs_mapping: Optional[Dict[str, str]] = Field(
+        serialization_alias="imagesMetadataInputsMapping",
+        default=None,
+    )
 
 
 class WorkflowProcessingJobV1(BaseModel):
@@ -139,6 +151,9 @@ class WorkflowProcessingJobV1(BaseModel):
     max_parallel_tasks: Optional[int] = Field(
         serialization_alias="maxParallelTasks", default=None
     )
+    max_image_failure_rate: Optional[float] = Field(
+        serialization_alias="maxImageFailureRate", default=None
+    )
     processing_specification: WorkflowsProcessingSpecificationV1 = Field(
         serialization_alias="processingSpecification"
     )
@@ -146,11 +161,15 @@ class WorkflowProcessingJobV1(BaseModel):
         serialization_alias="notificationsURL",
         default=None,
     )
+    inference_backend: Optional[InferenceBackend] = Field(
+        serialization_alias="inferenceBackend", default=None
+    )
 
 
 class CompilationDevice(str, Enum):
     NVIDIA_L4 = "nvidia-l4"
     NVIDIA_T4 = "nvidia-t4"
+    NVIDIA_L40S = "nvidia-l40s"
 
 
 class TRTCompilationJobV1(BaseModel):

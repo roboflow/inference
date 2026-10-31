@@ -1,4 +1,7 @@
+import sys
 from subprocess import CompletedProcess
+from types import ModuleType, SimpleNamespace
+from typing import Optional
 from unittest import mock
 from unittest.mock import MagicMock, mock_open
 
@@ -28,7 +31,6 @@ from inference_models.runtime_introspection.core import (
     is_running_on_jetson,
     is_torch_available,
     is_trt_python_package_available,
-    is_ultralytics_available,
     resolve_jetson_type,
 )
 
@@ -126,9 +128,13 @@ def test_get_available_gpu_devices_cc(torch_mock: MagicMock) -> None:
     assert result == [Version("7.5"), Version("8.9")]
 
 
+@mock.patch.object(core, "_get_cuda_version_from_torch", return_value=None)
+@mock.patch.object(core, "_get_cuda_version_loading_shared_library", return_value=None)
 @mock.patch.object(core, "subprocess")
 def test_get_cuda_version_when_sub_process_raise_error(
     subprocess_mock: MagicMock,
+    shared_library_mock: MagicMock,
+    torch_helper_mock: MagicMock,
 ) -> None:
     # given
     subprocess_mock.run.side_effect = Exception()
@@ -144,9 +150,13 @@ def test_get_cuda_version_when_sub_process_raise_error(
     assert result is None
 
 
+@mock.patch.object(core, "_get_cuda_version_from_torch", return_value=None)
+@mock.patch.object(core, "_get_cuda_version_loading_shared_library", return_value=None)
 @mock.patch.object(core, "subprocess")
 def test_get_cuda_version_when_sub_process_return_error_code(
     subprocess_mock: MagicMock,
+    shared_library_mock: MagicMock,
+    torch_helper_mock: MagicMock,
 ) -> None:
     # given
     subprocess_mock.run.return_value = CompletedProcess(
@@ -165,9 +175,13 @@ def test_get_cuda_version_when_sub_process_return_error_code(
     assert result is None
 
 
+@mock.patch.object(core, "_get_cuda_version_from_torch", return_value=None)
+@mock.patch.object(core, "_get_cuda_version_loading_shared_library", return_value=None)
 @mock.patch.object(core, "subprocess")
 def test_get_cuda_version_when_sub_process_return_not_parsable_output(
     subprocess_mock: MagicMock,
+    shared_library_mock: MagicMock,
+    torch_helper_mock: MagicMock,
 ) -> None:
     # given
     subprocess_mock.run.return_value = CompletedProcess(
@@ -208,6 +222,148 @@ ii  cuda-cudart-dev-12-6                       12.6.68-1                        
 
     # then
     assert result == Version("12.6.68.post1")
+
+
+@mock.patch.object(core, "_get_cuda_version_from_torch")
+@mock.patch.object(core, "_get_cuda_version_loading_shared_library")
+@mock.patch.object(core, "_get_cuda_version_with_dpkg")
+def test_get_cuda_version_falls_back_to_shared_library_when_dpkg_unavailable(
+    dpkg_mock: MagicMock,
+    shared_library_mock: MagicMock,
+    torch_helper_mock: MagicMock,
+) -> None:
+    # given
+    dpkg_mock.return_value = None
+    shared_library_mock.return_value = Version("11.8.0")
+    torch_helper_mock.return_value = Version("9.9.9")
+    get_cuda_version.cache_clear()
+
+    # when
+    try:
+        result = get_cuda_version()
+    finally:
+        get_cuda_version.cache_clear()
+
+    # then
+    assert result == Version("11.8.0")
+    torch_helper_mock.assert_not_called()
+
+
+@mock.patch.object(core, "_get_cuda_version_from_torch")
+@mock.patch.object(core, "_get_cuda_version_loading_shared_library")
+@mock.patch.object(core, "_get_cuda_version_with_dpkg")
+def test_get_cuda_version_falls_back_to_torch_when_dpkg_and_shared_library_unavailable(
+    dpkg_mock: MagicMock,
+    shared_library_mock: MagicMock,
+    torch_helper_mock: MagicMock,
+) -> None:
+    # given
+    dpkg_mock.return_value = None
+    shared_library_mock.return_value = None
+    torch_helper_mock.return_value = Version("12.1")
+    get_cuda_version.cache_clear()
+
+    # when
+    try:
+        result = get_cuda_version()
+    finally:
+        get_cuda_version.cache_clear()
+
+    # then
+    assert result == Version("12.1")
+
+
+@pytest.mark.parametrize(
+    "runtime_version, expected",
+    [
+        (11080, Version("11.8.0")),
+        (12011, Version("12.1.1")),
+        (12060, Version("12.6.0")),
+    ],
+)
+@mock.patch.object(core, "ctypes")
+def test_get_cuda_version_loading_shared_library_returns_parsed_version(
+    ctypes_mock: MagicMock,
+    runtime_version: int,
+    expected: Version,
+) -> None:
+    # given — cudaRuntimeGetVersion sets the int via the out-pointer; simulate by
+    # pre-seeding the c_int holder's value (the mocked C call leaves it untouched).
+    version_holder = MagicMock()
+    version_holder.value = runtime_version
+    ctypes_mock.c_int.return_value = version_holder
+    lib = MagicMock()
+    lib.cudaRuntimeGetVersion.return_value = 0
+    ctypes_mock.CDLL.return_value = lib
+
+    # when
+    result = core._get_cuda_version_loading_shared_library()
+
+    # then
+    assert result == expected
+
+
+@mock.patch.object(core, "ctypes")
+def test_get_cuda_version_loading_shared_library_when_runtime_api_returns_error(
+    ctypes_mock: MagicMock,
+) -> None:
+    # given — a non-zero cudaError_t means the call failed
+    version_holder = MagicMock()
+    version_holder.value = 11080
+    ctypes_mock.c_int.return_value = version_holder
+    lib = MagicMock()
+    lib.cudaRuntimeGetVersion.return_value = 1
+    ctypes_mock.CDLL.return_value = lib
+
+    # when
+    result = core._get_cuda_version_loading_shared_library()
+
+    # then
+    assert result is None
+
+
+@mock.patch.object(core, "ctypes")
+def test_get_cuda_version_loading_shared_library_when_library_cannot_be_loaded(
+    ctypes_mock: MagicMock,
+) -> None:
+    # given — libcudart.so not present (the unversioned dev symlink is missing)
+    ctypes_mock.CDLL.side_effect = OSError(
+        "libcudart.so: cannot open shared object file"
+    )
+
+    # when
+    result = core._get_cuda_version_loading_shared_library()
+
+    # then
+    assert result is None
+
+
+@mock.patch.object(core, "torch")
+def test_get_cuda_version_from_torch_when_cuda_available(
+    torch_mock: MagicMock,
+) -> None:
+    # given
+    torch_mock.version.cuda = "12.1"
+
+    # when
+    result = core._get_cuda_version_from_torch()
+
+    # then
+    assert result == Version("12.1")
+
+
+@mock.patch.object(core, "torch")
+def test_get_cuda_version_from_torch_when_cuda_is_none(
+    torch_mock: MagicMock,
+) -> None:
+    # given — a CPU-only torch build reports None
+    torch_mock.version.cuda = None
+
+    # when
+    result = core._get_cuda_version_from_torch()
+
+    # then
+    assert result is None
 
 
 @mock.patch.object(core, "subprocess")
@@ -283,6 +439,51 @@ def test_get_trt_version_when_libnvifer_not_found_and_trt_can_be_imported(
 
     # then
     assert result == Version("10.2.0.1")
+
+
+def _fake_trt_module(name: str, version: str) -> ModuleType:
+    module = ModuleType(name)
+    module.__version__ = version
+    return module
+
+
+@pytest.mark.parametrize(
+    "full_runtime_version, expected_version",
+    [("10.2.0.1", Version("10.2.0.1")), (None, Version("10.1.0.5"))],
+)
+@mock.patch.object(core, "subprocess")
+def test_get_trt_version_prefers_full_runtime_over_lean_runtime(
+    subprocess_mock: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    full_runtime_version: Optional[str],
+    expected_version: Version,
+) -> None:
+    # given
+    subprocess_mock.run.return_value = CompletedProcess(
+        args=(),
+        returncode=1,
+    )
+    full_runtime = (
+        _fake_trt_module("tensorrt", full_runtime_version)
+        if full_runtime_version is not None
+        else None
+    )
+    monkeypatch.setitem(sys.modules, "tensorrt", full_runtime)
+    monkeypatch.setitem(
+        sys.modules, "tensorrt_lean", _fake_trt_module("tensorrt_lean", "10.1.0.5")
+    )
+    get_trt_version.cache_clear()
+    get_trt_version_from_libnvinfer.cache_clear()
+
+    # when
+    try:
+        result = get_trt_version()
+    finally:
+        get_trt_version.cache_clear()
+        get_trt_version_from_libnvinfer.cache_clear()
+
+    # then
+    assert result == expected_version
 
 
 @mock.patch.object(core, "subprocess")
@@ -527,8 +728,7 @@ def test_get_os_version_for_linux_when_etc_release_available(
     # given
     platform_mock.system.return_value = "Linux"
     get_os_version.cache_clear()
-    mocked_open_results = mock_open(
-        read_data="""
+    mocked_open_results = mock_open(read_data="""
 PRETTY_NAME="Ubuntu 22.04.5 LTS"
 NAME="Ubuntu"
 VERSION_ID="22.04"
@@ -540,8 +740,7 @@ HOME_URL="https://www.ubuntu.com/"
 SUPPORT_URL="https://help.ubuntu.com/"
 BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
 PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
-UBUNTU_CODENAME=jammy"""
-    )
+UBUNTU_CODENAME=jammy""")
     try:
         with mock.patch("builtins.open", mocked_open_results):
             # when
@@ -609,7 +808,9 @@ def test_get_driver_version_when_file_not_found() -> None:
     # given
     get_driver_version.cache_clear()
     try:
-        with mock.patch("builtins.open") as open_mock:
+        with mock.patch("builtins.open") as open_mock, mock.patch.object(
+            core, "is_running_on_jetson", return_value=False
+        ):
             open_mock.side_effect = FileNotFoundError()
             # when
             result = get_driver_version()
@@ -625,7 +826,9 @@ def test_get_driver_version_when_file_not_parsable() -> None:
     get_driver_version.cache_clear()
     mocked_open_results = mock_open(read_data="invalid")
     try:
-        with mock.patch("builtins.open", mocked_open_results):
+        with mock.patch("builtins.open", mocked_open_results), mock.patch.object(
+            core, "is_running_on_jetson", return_value=False
+        ):
             # when
             result = get_driver_version()
     finally:
@@ -654,6 +857,25 @@ GCC version:  collect2: error: ld returned 1 exit status
     assert result == Version("540.4.0")
 
 
+def test_get_driver_version_falls_back_to_l4t_version_on_jetson_when_file_missing() -> (
+    None
+):
+    # given
+    get_driver_version.cache_clear()
+    try:
+        with mock.patch("builtins.open") as open_mock, mock.patch.object(
+            core, "is_running_on_jetson", return_value=True
+        ), mock.patch.object(core, "get_l4t_version", return_value=Version("36.4.0")):
+            open_mock.side_effect = FileNotFoundError()
+            # when
+            result = get_driver_version()
+    finally:
+        get_driver_version.cache_clear()
+
+    # then
+    assert result == Version("36.4.0")
+
+
 def test_is_trt_python_package_available_when_trt_cannot_be_imported() -> None:
     # given
     is_trt_python_package_available.cache_clear()
@@ -676,6 +898,26 @@ def test_is_trt_python_package_available_when_trt_can_be_imported() -> None:
         with mock.patch("builtins.__import__"):
             # when
             result = is_trt_python_package_available()
+    finally:
+        is_trt_python_package_available.cache_clear()
+
+    # then
+    assert result is True
+
+
+def test_is_trt_python_package_available_when_only_lean_runtime_is_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    monkeypatch.setitem(sys.modules, "tensorrt", None)
+    monkeypatch.setitem(
+        sys.modules, "tensorrt_lean", _fake_trt_module("tensorrt_lean", "10.1.0.5")
+    )
+    is_trt_python_package_available.cache_clear()
+
+    # when
+    try:
+        result = is_trt_python_package_available()
     finally:
         is_trt_python_package_available.cache_clear()
 
@@ -741,35 +983,6 @@ def test_is_hf_transformers_available_when_trt_can_be_imported() -> None:
     assert result is True
 
 
-def test_is_ultralytics_available_when_trt_cannot_be_imported() -> None:
-    # given
-    is_ultralytics_available.cache_clear()
-    try:
-        with mock.patch("builtins.__import__") as mocked_import:
-            mocked_import.side_effect = ImportError()
-            # when
-            result = is_ultralytics_available()
-    finally:
-        is_ultralytics_available.cache_clear()
-
-    # then
-    assert result is False
-
-
-def test_is_ultralytics_available_when_trt_can_be_imported() -> None:
-    # given
-    is_ultralytics_available.cache_clear()
-    try:
-        with mock.patch("builtins.__import__"):
-            # when
-            result = is_ultralytics_available()
-    finally:
-        is_ultralytics_available.cache_clear()
-
-    # then
-    assert result is True
-
-
 def test_get_onnxruntime_info_when_onnxruntime_not_available() -> None:
     # given
     get_onnxruntime_info.cache_clear()
@@ -783,6 +996,20 @@ def test_get_onnxruntime_info_when_onnxruntime_not_available() -> None:
 
     # then
     assert result is None
+
+
+def test_get_onnxruntime_info_when_onnxruntime_is_incomplete_raises() -> None:
+    # given
+    get_onnxruntime_info.cache_clear()
+    try:
+        with mock.patch("builtins.__import__") as import_mock:
+            import_mock.return_value = ModuleType("onnxruntime")
+
+            # when
+            with pytest.raises(AttributeError):
+                get_onnxruntime_info()
+    finally:
+        get_onnxruntime_info.cache_clear()
 
 
 def test_get_onnxruntime_info_when_onnxruntime_available() -> None:
@@ -958,3 +1185,73 @@ def test_ensure_jetson_l4t_declared_for_jetson_hardware_when_valid_configuration
         gpu_devices=["some"],
         l4t_version=None,
     )
+
+
+COREML_WHEEL_FILES = [
+    SimpleNamespace(name="__init__.py"),
+    SimpleNamespace(name="libcoremlpython.so"),
+    SimpleNamespace(name="libmilstoragepython.so"),
+]
+
+
+def _coreml_runtime_version(
+    system: str = "Darwin",
+    machine: str = "arm64",
+    mac_version: str = "14.5",
+    files=COREML_WHEEL_FILES,
+    version_side_effect=None,
+):
+    core.get_coreml_runtime_version.cache_clear()
+    try:
+        with mock.patch.object(
+            core.platform, "system", return_value=system
+        ), mock.patch.object(
+            core.platform, "machine", return_value=machine
+        ), mock.patch.object(
+            core.platform, "mac_ver", return_value=(mac_version, ("", "", ""), "")
+        ), mock.patch.object(
+            core.importlib_metadata, "files", return_value=files
+        ), mock.patch.object(
+            core.importlib_metadata,
+            "version",
+            return_value="9.0",
+            side_effect=version_side_effect,
+        ):
+            return core.get_coreml_runtime_version()
+    finally:
+        core.get_coreml_runtime_version.cache_clear()
+
+
+def test_get_coreml_runtime_version_on_apple_silicon_with_coremltools() -> None:
+    assert _coreml_runtime_version() == Version("9.0")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"system": "Linux", "machine": "x86_64"},
+        {"system": "Linux", "machine": "aarch64"},
+        {"machine": "x86_64"},
+        {"mac_version": "12.7"},
+        {"mac_version": "not-a-version"},
+        {"files": [SimpleNamespace(name="__init__.py")]},
+        {"files": None},
+        {
+            "version_side_effect": core.importlib_metadata.PackageNotFoundError(
+                "coremltools"
+            )
+        },
+    ],
+    ids=[
+        "linux",
+        "linux-arm",
+        "intel-mac",
+        "macos-12",
+        "unparseable-macos-version",
+        "no-core-ml-runtime-bindings",
+        "no-package-files",
+        "coremltools-missing",
+    ],
+)
+def test_get_coreml_runtime_version_when_core_ml_cannot_run(overrides: dict) -> None:
+    assert _coreml_runtime_version(**overrides) is None

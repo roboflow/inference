@@ -1,3 +1,4 @@
-ultralytics>=8.1.27,<=8.3.40
+# YOLO_OFFLINE support was added in 8.1.44.
+ultralytics>=8.1.44,<=8.3.40
 dill==0.3.8
 rf-clip==1.1

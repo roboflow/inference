@@ -1,5 +1,4 @@
 import base64
-import itertools
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -209,18 +208,39 @@ def adjust_prediction_to_client_scaling_factor(
 
     Args:
         prediction: The prediction to adjust.
-        scaling_factor: The scaling factor.
+        scaling_factor: The scaling factor applied to the input image.
 
     Returns:
-        The adjusted prediction.
+        Predictions mapped to the client image, or opted-in grid predictions
+        unchanged with their original-image dimensions and mapping updated.
     """
     if scaling_factor is None or prediction.get("is_stub", False):
         return prediction
+    mask_metadata = prediction.get("mask_metadata")
+    original_image = prediction.get("original_image")
+    if (
+        mask_metadata
+        and mask_metadata.get("coordinate_system") == "mask_grid"
+        and original_image is not None
+    ):
+        prediction["original_image"] = {
+            "width": round(original_image["width"] / scaling_factor),
+            "height": round(original_image["height"] / scaling_factor),
+        }
+        mask_metadata["scale_x"] = (
+            prediction["original_image"]["width"] / mask_metadata["width"]
+        )
+        mask_metadata["scale_y"] = (
+            prediction["original_image"]["height"] / mask_metadata["height"]
+        )
+        return prediction
+
     if "image" in prediction:
         prediction["image"] = {
             "width": round(prediction["image"]["width"] / scaling_factor),
             "height": round(prediction["image"]["height"] / scaling_factor),
         }
+
     if predictions_should_not_be_post_processed(prediction=prediction):
         return prediction
     if "points" in prediction["predictions"][0]:
@@ -358,21 +378,16 @@ def adjust_points_coordinates_to_client_scaling_factor(
     return result
 
 
-def combine_gaze_detections(
-    detections: Union[dict, List[Union[dict, List[dict]]]],
-) -> Union[dict, List[Dict]]:
-    """Combine gaze detections.
-
-    Args:
-        detections: The detections to combine.
-
-    Returns:
-        The combined detections.
-    """
-    if not issubclass(type(detections), list):
-        return detections
-    detections = [e if issubclass(type(e), list) else [e] for e in detections]
-    return list(itertools.chain.from_iterable(detections))
+def split_image_embeddings(responses: Union[dict, List[dict]]) -> List[dict]:
+    """Keep one result per image and retain embedding-space metadata."""
+    if isinstance(responses, list):
+        return [
+            item for response in responses for item in split_image_embeddings(response)
+        ]
+    return [
+        {**responses, "embeddings": [embedding]}
+        for embedding in responses["embeddings"]
+    ]
 
 
 def combine_clip_embeddings(embeddings: Union[dict, List[dict]]) -> List[dict]:

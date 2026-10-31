@@ -1,9 +1,20 @@
 import sys
 import uvicorn
 from inference.core.cache import cache
-from inference.core.env import MAX_ACTIVE_MODELS, ENABLE_STREAM_API
+from inference.core.env import (
+    ENABLE_HTTPS,
+    ENABLE_STREAM_API,
+    HOST,
+    MAX_ACTIVE_MODELS,
+    PORT,
+    SSL_CA_CERTS,
+    SSL_CERTFILE,
+    SSL_KEYFILE,
+    SSL_KEYFILE_PASSWORD,
+)
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference.core.interfaces.http.http_api import HttpInterface
+from inference.core.interfaces.http.uvicorn_config import build_ssl_uvicorn_kwargs
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
@@ -45,8 +56,15 @@ if __name__ == "__main__":
     stream_manager_process.start()
 
     print("Starting server...")
+    ssl_kwargs = build_ssl_uvicorn_kwargs(
+        enable_https=ENABLE_HTTPS,
+        ssl_certfile=SSL_CERTFILE,
+        ssl_keyfile=SSL_KEYFILE,
+        ssl_keyfile_password=SSL_KEYFILE_PASSWORD,
+        ssl_ca_certs=SSL_CA_CERTS,
+    )
     try:
-        uvicorn.run(app, host="0.0.0.0", port=9001)
+        uvicorn.run(app, host=HOST, port=PORT, **ssl_kwargs)
     except Exception as e:
         print("Error starting server:", e)
         sys.exit(1)

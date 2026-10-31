@@ -2,17 +2,18 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import Optional
 from unittest import mock
 from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
+import requests.exceptions
 import supervision as sv
 from fastapi import BackgroundTasks
-
-from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import v1
-from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
+from requests_mock import Mocker
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload import v1, v1_tensor
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     BatchCreationFrequency,
     RoboflowDatasetUploadBlockV1,
     encode_prediction,
@@ -22,10 +23,27 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
     is_prediction_registration_forbidden,
     register_datapoint,
 )
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+    RoboflowDatasetUploadBlockV1 as TensorRoboflowDatasetUploadBlockV1,
+)
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+    execute_registration as tensor_execute_registration,
+)
+
+from inference.core import roboflow_api
+from inference.core.cache import MemoryCache
+from inference.core.env import API_BASE_URL, ENABLE_TENSOR_DATA_REPRESENTATION
+from inference.core.interfaces.roboflow_platform_client import SERVER_PLATFORM_CLIENT
+from inference.core.utils.url_utils import wrap_url
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
+)
+
+_TENSOR_ONLY = pytest.mark.skipif(
+    not ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="tensor-native variant; runs only with ENABLE_TENSOR_DATA_REPRESENTATION=True",
 )
 
 
@@ -173,10 +191,9 @@ def test_is_prediction_registration_forbidden_when_non_empty_sv_detection_provid
     assert result is False
 
 
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_duplicate_found(
-    register_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_duplicate_found() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"duplicate": True}
     detections = sv.Detections(
@@ -190,6 +207,7 @@ def test_register_datapoint_when_duplicate_found(
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -207,17 +225,16 @@ def test_register_datapoint_when_duplicate_found(
     ), "No inference id found in sv detection"
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_is_not_delivered(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_is_not_delivered() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"duplicate": True}
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -236,16 +253,16 @@ def test_register_datapoint_when_prediction_is_not_delivered(
     annotate_image_at_roboflow.assert_not_called()
 
 
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_registration_should_be_forbidden(
-    register_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_registration_should_be_forbidden() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = None
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -265,12 +282,10 @@ def test_register_datapoint_when_prediction_registration_should_be_forbidden(
     ), "No inference id found in sv detection"
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_registration_should_be_successful(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_registration_should_be_successful() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = sv.Detections(
@@ -331,6 +346,7 @@ def test_register_datapoint_when_prediction_registration_should_be_successful(
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -359,12 +375,12 @@ def test_register_datapoint_when_prediction_registration_should_be_successful(
     )
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_registration_should_be_successful_but_without_inference_id(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_registration_should_be_successful_but_without_inference_id() -> (
+    None
+):
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = sv.Detections(
@@ -424,6 +440,7 @@ def test_register_datapoint_when_prediction_registration_should_be_successful_bu
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -452,10 +469,9 @@ def test_register_datapoint_when_prediction_registration_should_be_successful_bu
     )
 
 
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_prediction_is_empty(
-    register_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_prediction_is_empty() -> None:
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     detections = sv.Detections.empty()
@@ -471,6 +487,7 @@ def test_register_datapoint_when_prediction_is_empty(
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -488,12 +505,12 @@ def test_register_datapoint_when_prediction_is_empty(
     ), "Expected inference ID not to be denoted"
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_classification_prediction_registration_should_be_successful_with_inference_id(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_with_inference_id() -> (
+    None
+):
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     prediction = {
@@ -507,6 +524,7 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -535,12 +553,12 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
     )
 
 
-@mock.patch.object(v1, "annotate_image_at_roboflow")
-@mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_classification_prediction_registration_should_be_successful_without_inference_id(
-    register_image_at_roboflow_mock: MagicMock,
-    annotate_image_at_roboflow_mock: MagicMock,
-) -> None:
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_without_inference_id() -> (
+    None
+):
+    platform_client = MagicMock()
+    register_image_at_roboflow_mock = platform_client.register_image_at_roboflow
+    annotate_image_at_roboflow_mock = platform_client.annotate_image_at_roboflow
     # given
     register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
     prediction = {
@@ -553,6 +571,7 @@ def test_register_datapoint_when_classification_prediction_registration_should_b
 
     # when
     result = register_datapoint(
+        platform_client=platform_client,
         target_project="my_project",
         encoded_image=b"image",
         local_image_id="local_id",
@@ -613,13 +632,16 @@ def test_generate_batch_name(
 def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
     cache.set(key=expected_cache_key, value="my_workspace")
 
     # when
-    result = get_workspace_name(api_key=api_key, cache=cache)
+    result = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=MagicMock()
+    )
 
     # then
     assert (
@@ -627,19 +649,21 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     ), "Expected return value from the cache to be returned"
 
 
-@mock.patch.object(v1, "get_roboflow_workspace")
-def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
-    get_roboflow_workspace_mock: MagicMock,
-) -> None:
+def test_get_workspace_name_when_cache_does_not_contain_workspace_name() -> None:
+    platform_client = MagicMock()
+    get_roboflow_workspace_mock = platform_client.get_roboflow_workspace
     # given
     api_key = "my_api_key"
     cache = MemoryCache()
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     get_roboflow_workspace_mock.return_value = "workspace_from_api"
 
     # when
-    result = get_workspace_name(api_key=api_key, cache=cache)
+    result = get_workspace_name(
+        api_key=api_key, cache=cache, platform_client=platform_client
+    )
 
     # then
     assert (
@@ -656,6 +680,7 @@ def test_execute_registration_when_quota_limit_exceeded(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -675,6 +700,7 @@ def test_execute_registration_when_quota_limit_exceeded(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=prediction,
         target_project="my_project",
@@ -709,6 +735,7 @@ def test_execute_registration_when_error_in_registration_happened(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -729,6 +756,7 @@ def test_execute_registration_when_error_in_registration_happened(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=prediction,
         target_project="my_project",
@@ -766,6 +794,7 @@ def test_execute_registration_when_registration_should_be_successful(
 ) -> None:
     # given
     api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache = MemoryCache()
@@ -801,6 +830,7 @@ def test_execute_registration_when_registration_should_be_successful(
 
     # when
     result = execute_registration(
+        platform_client=MagicMock(),
         image=image,
         prediction=detections,
         target_project="my_project",
@@ -828,7 +858,160 @@ def test_execute_registration_when_registration_should_be_successful(
     return_strategy_credit_mock.assert_not_called()
 
 
-def test_run_sink_when_api_key_is_not_specified() -> None:
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "register_datapoint")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
+def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropically(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    register_datapoint_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+) -> None:
+    # Ultra-wide 4000x1080 → max 2080x2080 yields 2080x561 (scale_x != scale_y)
+    api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    cache = MemoryCache()
+    cache.set(
+        key=f"workflows:api_key_to_workspace:{api_key_hash}", value="my_workspace"
+    )
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    register_datapoint_mock.return_value = "STATUS OK"
+
+    orig_w, orig_h = 4000, 1080
+    target_w, target_h = 2080, 561
+    mask = np.zeros((orig_h, orig_w), dtype=bool)
+    mask[:, orig_w - 400 : orig_w] = True
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((orig_h, orig_w, 3), dtype=np.uint8),
+    )
+    detections = sv.Detections(
+        xyxy=np.array([[orig_w - 400, 0, orig_w - 1, orig_h - 1]], dtype=np.float64),
+        mask=np.array([mask]),
+        class_id=np.array([0]),
+        confidence=np.array([0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["edge"]),
+            "detection_id": np.array(["first"]),
+            "image_dimensions": np.array([[orig_h, orig_w]]),
+        },
+    )
+
+    result = execute_registration(
+        platform_client=MagicMock(),
+        image=image,
+        prediction=detections,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(2080, 2080),
+        compression_level=95,
+        registration_tags=[],
+        labeling_batch_prefix="my_batch",
+        new_labeling_batch_frequency="never",
+        cache=cache,
+        api_key=api_key,
+    )
+
+    assert result == (False, "STATUS OK")
+    scaled = register_datapoint_mock.call_args[1]["prediction"]
+    assert scaled.mask.shape == (1, target_h, target_w)
+    assert np.allclose(scaled["image_dimensions"], [[target_h, target_w]])
+    assert scaled.xyxy[0, 2] <= target_w
+    assert scaled.xyxy[0, 3] <= target_h
+    assert scaled.mask[0][:, -1].any(), "Edge mask must remain flush to JPEG right edge"
+    return_strategy_credit_mock.assert_not_called()
+
+
+@_TENSOR_ONLY
+@mock.patch.object(v1_tensor, "return_strategy_credit")
+@mock.patch.object(v1_tensor, "register_datapoint")
+@mock.patch.object(v1_tensor, "use_credit_of_matching_strategy")
+def test_execute_registration_scales_predictions_to_exact_jpeg_canvas_anisotropically_tensor_native(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    register_datapoint_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+) -> None:
+    # Ultra-wide 4000x1080 → max 2080x2080 yields 2080x561 (scale_x != scale_y)
+    import torch
+
+    from inference.core.workflows.execution_engine.constants import (
+        CLASS_NAMES_KEY,
+        IMAGE_DIMENSIONS_KEY,
+    )
+    from inference_models.models.base.instance_segmentation import InstanceDetections
+
+    api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    cache = MemoryCache()
+    cache.set(
+        key=f"workflows:api_key_to_workspace:{api_key_hash}", value="my_workspace"
+    )
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    register_datapoint_mock.return_value = "STATUS OK"
+
+    orig_w, orig_h = 4000, 1080
+    target_w, target_h = 2080, 561
+    mask = np.zeros((orig_h, orig_w), dtype=bool)
+    mask[:, orig_w - 400 : orig_w] = True
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((orig_h, orig_w, 3), dtype=np.uint8),
+    )
+    detections = InstanceDetections(
+        xyxy=torch.tensor(
+            [[orig_w - 400, 0, orig_w - 1, orig_h - 1]], dtype=torch.float64
+        ),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.9], dtype=torch.float64),
+        mask=torch.from_numpy(np.array([mask])),
+        image_metadata={
+            CLASS_NAMES_KEY: {0: "edge"},
+            IMAGE_DIMENSIONS_KEY: [orig_h, orig_w],
+        },
+        bboxes_metadata=[{"detection_id": "first", "class_name": "edge"}],
+    )
+
+    result = tensor_execute_registration(
+        platform_client=MagicMock(),
+        image=image,
+        prediction=detections,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(2080, 2080),
+        compression_level=95,
+        registration_tags=[],
+        labeling_batch_prefix="my_batch",
+        new_labeling_batch_frequency="never",
+        cache=cache,
+        api_key=api_key,
+    )
+
+    assert result == (False, "STATUS OK")
+    scaled = register_datapoint_mock.call_args[1]["prediction"]
+    assert tuple(scaled.mask.shape) == (1, target_h, target_w)
+    assert np.allclose(
+        np.asarray(scaled.image_metadata[IMAGE_DIMENSIONS_KEY]),
+        [target_h, target_w],
+    )
+    assert float(scaled.xyxy[0, 2]) <= target_w
+    assert float(scaled.xyxy[0, 3]) <= target_h
+    assert bool(
+        scaled.mask[0][:, -1].any()
+    ), "Edge mask must remain flush to JPEG right edge"
+    return_strategy_credit_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("disable_sink", [False, True])
+def test_run_sink_when_api_key_is_not_specified(disable_sink: bool) -> None:
     # given
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
@@ -851,11 +1034,82 @@ def test_run_sink_when_api_key_is_not_specified() -> None:
             max_image_size=(128, 128),
             compression_level=75,
             registration_tags=["some"],
-            disable_sink=False,
+            disable_sink=disable_sink,
             fire_and_forget=True,
             labeling_batch_prefix="my_batch",
             labeling_batches_recreation_frequency="never",
         )
+
+
+def test_execution_policy_noops_without_api_key() -> None:
+    data_collector_block = RoboflowDatasetUploadBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+        disable_sinks=True,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=Batch(content=[MagicMock()], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=True,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
+
+
+@_TENSOR_ONLY
+def test_execution_policy_noops_without_api_key_tensor_native() -> None:
+    data_collector_block = TensorRoboflowDatasetUploadBlockV1(
+        cache=MemoryCache(),
+        api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
+        disable_sinks=True,
+    )
+
+    result = data_collector_block.run(
+        images=Batch(content=[MagicMock()], indices=[(0,)]),
+        predictions=Batch(content=[MagicMock()], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=True,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    assert result == [
+        {
+            "error_status": False,
+            "message": "Sink was disabled by workflow execution policy",
+        }
+    ]
 
 
 def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
@@ -1035,11 +1289,13 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
     # given
     background_tasks = BackgroundTasks()
     cache = MemoryCache()
+    platform_client = MagicMock()
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=cache,
         api_key="my_api_key",
         background_tasks=background_tasks,
         thread_pool_executor=None,
+        platform_client=platform_client,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -1105,11 +1361,100 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                platform_client=platform_client,
+                image_name=None,
+                metadata=None,
             )
         ]
         * 3
     )
     assert len(background_tasks.tasks) == 0, "Async tasks not to be added"
+
+
+@pytest.mark.parametrize(
+    "first_attempt_fails, prediction, expect_error",
+    [
+        (True, {"top": "car", "predictions": []}, True),
+        (True, None, False),
+        (False, {"top": "car", "predictions": []}, False),
+    ],
+)
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
+def test_run_sink_when_upload_retry_reports_duplicate(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+    requests_mock: Mocker,
+    monkeypatch: pytest.MonkeyPatch,
+    first_attempt_fails: bool,
+    prediction: Optional[dict],
+    expect_error: bool,
+) -> None:
+    # given
+    monkeypatch.setattr(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
+    duplicate = {"json": {"duplicate": True, "id": "roboflow_id"}}
+    upload_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/upload"),
+        response_list=(
+            [{"exc": requests.exceptions.ReadTimeout}, duplicate]
+            if first_attempt_fails
+            else [duplicate]
+        ),
+    )
+    annotate_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/annotate/roboflow_id"),
+        json={"success": True},
+    )
+    api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    cache = MemoryCache()
+    cache.set(
+        key=f"workflows:api_key_to_workspace:{api_key_hash}", value="my_workspace"
+    )
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    data_collector_block = RoboflowDatasetUploadBlockV1(
+        cache=cache,
+        api_key=api_key,
+        background_tasks=None,
+        thread_pool_executor=None,
+        platform_client=SERVER_PLATFORM_CLIENT,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 128, 3), dtype=np.uint8),
+    )
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=[image], indices=[(0,)]),
+        predictions=Batch(content=[prediction], indices=[(0,)]),
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=[],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    # then
+    assert upload_mock.call_count == (2 if first_attempt_fails else 1)
+    assert annotate_mock.call_count == 0
+    assert len(result) == 1
+    if expect_error:
+        assert result[0]["error_status"] is True
+        assert "may already have been uploaded" in result[0]["message"]
+        assert "annotation was not uploaded" in result[0]["message"]
+    else:
+        assert result[0] == {"error_status": False, "message": "Duplicated image"}
+    return_strategy_credit_mock.assert_called_once()
 
 
 @mock.patch.object(v1, "execute_registration")
@@ -1119,11 +1464,13 @@ def test_run_sink_when_predictions_not_provided(
     # given
     background_tasks = BackgroundTasks()
     cache = MemoryCache()
+    platform_client = MagicMock()
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=cache,
         api_key="my_api_key",
         background_tasks=background_tasks,
         thread_pool_executor=None,
+        platform_client=platform_client,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -1180,8 +1527,120 @@ def test_run_sink_when_predictions_not_provided(
                 new_labeling_batch_frequency="never",
                 cache=cache,
                 api_key="my_api_key",
+                platform_client=platform_client,
+                image_name=None,
+                metadata=None,
             )
         ]
         * 3
     )
     assert len(background_tasks.tasks) == 0, "Async tasks not to be added"
+
+
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "register_datapoint")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
+def test_execute_registration_with_custom_image_name(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    register_datapoint_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+) -> None:
+    # given
+    api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
+    cache = MemoryCache()
+    cache.set(key=expected_cache_key, value="my_workspace")
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_mock.return_value = "STATUS OK"
+
+    # when
+    result = execute_registration(
+        platform_client=MagicMock(),
+        image=image,
+        prediction=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 64),
+        compression_level=75,
+        registration_tags=["some"],
+        labeling_batch_prefix="my_batch",
+        new_labeling_batch_frequency="never",
+        cache=cache,
+        api_key=api_key,
+        image_name="custom_serial_number_123",
+    )
+
+    # then
+    assert result == (False, "STATUS OK"), "Expected correct status to be marked"
+    register_datapoint_mock.assert_called_once()
+    # Verify custom image_name was used as local_image_id
+    assert (
+        register_datapoint_mock.call_args[1]["local_image_id"]
+        == "custom_serial_number_123"
+    ), "Expected custom image_name to be used as local_image_id"
+    return_strategy_credit_mock.assert_not_called()
+
+
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "register_datapoint")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
+def test_execute_registration_without_image_name_uses_uuid(
+    use_credit_of_matching_strategy_mock: MagicMock,
+    register_datapoint_mock: MagicMock,
+    return_strategy_credit_mock: MagicMock,
+) -> None:
+    # given
+    api_key = "my_api_key"
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
+    cache = MemoryCache()
+    cache.set(key=expected_cache_key, value="my_workspace")
+    use_credit_of_matching_strategy_mock.return_value = "my_strategy"
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 256, 3), dtype=np.uint8),
+    )
+    register_datapoint_mock.return_value = "STATUS OK"
+
+    # when
+    result = execute_registration(
+        platform_client=MagicMock(),
+        image=image,
+        prediction=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 64),
+        compression_level=75,
+        registration_tags=["some"],
+        labeling_batch_prefix="my_batch",
+        new_labeling_batch_frequency="never",
+        cache=cache,
+        api_key=api_key,
+        # No image_name provided, should fall back to UUID
+    )
+
+    # then
+    assert result == (False, "STATUS OK"), "Expected correct status to be marked"
+    register_datapoint_mock.assert_called_once()
+    # Verify UUID format is used when no image_name provided
+    local_image_id = register_datapoint_mock.call_args[1]["local_image_id"]
+    # UUID4 has format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx (36 chars with hyphens)
+    assert (
+        len(local_image_id) == 36 and local_image_id.count("-") == 4
+    ), "Expected UUID format to be used when image_name not provided"
+    return_strategy_credit_mock.assert_not_called()

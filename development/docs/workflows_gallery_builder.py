@@ -34,7 +34,7 @@ DOCS_ROOT = os.path.abspath(os.path.join(
 WORKFLOWS_DOCS_ROOT_PATH = os.path.join(DOCS_ROOT, "workflows")
 
 GALLERY_DIR = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery")
-GALLERY_INDEX_TEMPLATE = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery_index_template.md")
+GALLERY_INDEX_TEMPLATE = os.path.join(os.path.dirname(__file__), "templates", "gallery_index_template.md")
 GALLERY_INDEX_PATH = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery", "index.md")
 GALLERY_DIR_PATH = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery")
 
@@ -234,7 +234,7 @@ def generate_preview_iframe(workflow_name_in_app: str, workflow_definition: dict
     )
     human_readable_name = workflow_name_in_app.replace("-", " ")
     return (
-        f'<div style="height: 768px;">'
+        f'<div style="height: 768px; min-height: 400px; min-width: 768px; overflow: hidden;">'
         f'<iframe src="https://app.roboflow.com/workflows/embed/{iframe_token}?showGraph=true" '
         f'loading="lazy" title="Roboflow Workflow for {human_readable_name}"'
         f' style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>'

@@ -1,6 +1,7 @@
 import os
+import re
 import subprocess
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import typer
 from docker.errors import ImageNotFound
@@ -8,18 +9,123 @@ from docker.models.containers import Container
 from rich.progress import Progress, TaskID
 
 import docker
+from inference_cli.lib import podman_adapter
 from inference_cli.lib.exceptions import DockerConnectionErrorException
+from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.utils import read_env_file
 
+DEFAULT_BIND_ADDRESS = "127.0.0.1"
+LOOPBACK_BIND_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
+SECURITY_DOCS_URL = (
+    "https://docs.roboflow.com/deployment/self-hosted/inference-server/"
+    "configuration/security"
+)
 
-def ensure_docker_is_running() -> None:
+CONTAINER_RUNTIME_DOCKER = "docker"
+CONTAINER_RUNTIME_PODMAN = "podman"
+CONTAINER_RUNTIME_ENV_VAR = "INFERENCE_CONTAINER_RUNTIME"
+_SUPPORTED_CONTAINER_RUNTIMES = (CONTAINER_RUNTIME_DOCKER, CONTAINER_RUNTIME_PODMAN)
+
+
+def detect_container_runtime() -> str:
+    """Pick the container runtime the CLI drives for this machine.
+
+    Order of precedence:
+
+    1. ``INFERENCE_CONTAINER_RUNTIME`` env var (``docker`` | ``podman``), for
+       explicit control and testing.
+    2. The Docker SDK endpoint that ``docker.from_env()`` connects to. It may
+       be the Podman compatibility socket, which is detected via the
+       ``version()`` components and treated as the podman runtime so GPU
+       requests take the CLI path (the compatibility API ignores
+       ``DeviceRequest`` silently).
+    3. ``podman`` binary on PATH when no Docker endpoint answers.
+
+    Raises:
+        DockerConnectionErrorException: when neither runtime is usable.
+    """
+    override = os.getenv(CONTAINER_RUNTIME_ENV_VAR, "").strip().lower()
+    if override:
+        if override not in _SUPPORTED_CONTAINER_RUNTIMES:
+            raise DockerConnectionErrorException(
+                f"{CONTAINER_RUNTIME_ENV_VAR}={override!r} is not supported. "
+                f"Expected one of: {', '.join(_SUPPORTED_CONTAINER_RUNTIMES)}."
+            )
+        if (
+            override == CONTAINER_RUNTIME_PODMAN
+            and not podman_adapter.podman_is_installed()
+        ):
+            raise DockerConnectionErrorException(
+                f"{CONTAINER_RUNTIME_ENV_VAR}=podman was requested but the podman "
+                "binary was not found on PATH. Install podman "
+                "(https://podman.io/getting-started/installation) or unset the "
+                "override."
+            )
+        if override == CONTAINER_RUNTIME_DOCKER:
+            try:
+                docker.from_env().ping()
+            except docker.errors.DockerException as error:
+                raise DockerConnectionErrorException(
+                    f"{CONTAINER_RUNTIME_ENV_VAR}=docker was requested but the "
+                    "Docker daemon is not reachable. Start Docker or unset the "
+                    "override to auto-detect the runtime."
+                ) from error
+        return override
     try:
-        _ = docker.from_env()
-    except docker.errors.DockerException as e:
-        raise DockerConnectionErrorException(
-            "Error connecting to Docker daemon. Is docker installed and running? "
-            "See https://www.docker.com/get-started/ for installation instructions."
-        ) from e
+        client = docker.from_env()
+        if _docker_endpoint_is_podman(client):
+            endpoint_runtime = CONTAINER_RUNTIME_PODMAN
+        else:
+            endpoint_runtime = CONTAINER_RUNTIME_DOCKER
+    except docker.errors.DockerException:
+        if podman_adapter.podman_is_installed():
+            return CONTAINER_RUNTIME_PODMAN
+        endpoint_runtime = None
+    if endpoint_runtime == CONTAINER_RUNTIME_PODMAN:
+        # The podman CLI is used for the launch/kill paths even when the
+        # runtime was detected through the compat socket — a remote
+        # DOCKER_HOST pointing at podman without a local binary would
+        # otherwise surface a raw FileNotFoundError later.
+        if not podman_adapter.podman_is_installed():
+            raise DockerConnectionErrorException(
+                "The Docker-compatible endpoint at DOCKER_HOST is a Podman "
+                "socket, but the podman binary was not found on PATH. The "
+                "CLI drives podman through its command line, so install "
+                "podman locally, set "
+                f"{CONTAINER_RUNTIME_ENV_VAR}=docker to force the "
+                "compatibility API (GPU requests are ignored there), or "
+                "point DOCKER_HOST at a Docker daemon."
+            )
+        return CONTAINER_RUNTIME_PODMAN
+    if endpoint_runtime == CONTAINER_RUNTIME_DOCKER:
+        return CONTAINER_RUNTIME_DOCKER
+    raise DockerConnectionErrorException(
+        "Error connecting to Docker daemon and no podman binary was found. "
+        "Install and start Docker (https://www.docker.com/get-started/) or "
+        "podman (https://podman.io/getting-started/installation), or point "
+        "DOCKER_HOST at a running container engine."
+    )
+
+
+def _docker_endpoint_is_podman(client: "docker.DockerClient") -> bool:
+    try:
+        components = client.version().get("Components", [])
+    except docker.errors.DockerException:
+        return False
+    for component in components:
+        if "podman" in str(component.get("Name", "")).lower():
+            return True
+    return False
+
+
+def ensure_container_runtime_is_running() -> None:
+    """Validate that a usable container runtime is reachable."""
+    detect_container_runtime()
+
+
+# Kept as the historical entry point: podman hosts previously failed here
+# before the runtime probe existed.
+ensure_docker_is_running = ensure_container_runtime_is_running
 
 
 def ask_user_to_kill_container(container: Container) -> bool:
@@ -76,6 +182,8 @@ def kill_containers(containers: List[Container]) -> None:
 
 
 def find_running_inference_containers() -> List[Container]:
+    if detect_container_runtime() == CONTAINER_RUNTIME_PODMAN:
+        return podman_adapter.find_running_podman_inference_containers()
     docker_client = docker.from_env()
     containers = []
     for c in docker_client.containers.list():
@@ -85,29 +193,122 @@ def find_running_inference_containers() -> List[Container]:
     return containers
 
 
+class _JetsonImage(NamedTuple):
+    l4t_major: int
+    l4t_minor_min: int
+    jetpack_prefix: str
+    image: str
+
+
+# Single source of truth for L4T version -> JetPack version -> Docker image.
+# Ordered by (l4t_major DESC, l4t_minor_min DESC).  First match wins.
+# See https://developer.nvidia.com/embedded/jetpack-archive for the full mapping.
+_JETSON_IMAGES: List[_JetsonImage] = [
+    _JetsonImage(
+        39, 2, "7.2", "roboflow/roboflow-inference-server-jetson-7.2.0:latest"
+    ),
+    _JetsonImage(
+        38, 4, "7.1", "roboflow/roboflow-inference-server-jetson-7.1.0:latest"
+    ),
+    _JetsonImage(
+        36, 4, "6.2", "roboflow/roboflow-inference-server-jetson-6.2.0:latest"
+    ),
+    _JetsonImage(
+        36, 3, "6.1", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
+    ),
+    _JetsonImage(
+        36, 0, "6.0", "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
+    ),
+    _JetsonImage(35, 0, "5", "roboflow/roboflow-inference-server-jetson-5.1.1:latest"),
+    _JetsonImage(
+        32, 6, "4.6", "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
+    ),
+    _JetsonImage(
+        32, 0, "4.5", "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
+    ),
+]
+
+
 def get_image() -> str:
     jetpack_version = os.getenv("JETSON_JETPACK")
     if jetpack_version:
-        return _get_jetpack_image(jetpack_version=jetpack_version)
+        return _get_jetpack_image(jetpack_version)
+    detected = _detect_jetson()
+    if detected is not None:
+        image, source = detected
+        CLI_LOGGER.info(f"Jetson detected via {source}. Using image: {image}")
+        return image
     try:
         subprocess.check_output("nvidia-smi")
-        print("GPU detected. Using a GPU image.")
+        CLI_LOGGER.info("GPU detected. Using a GPU image.")
         return "roboflow/roboflow-inference-server-gpu:latest"
-    except:
-        print("No GPU detected. Using a CPU image.")
+    except Exception:
+        CLI_LOGGER.info("No GPU detected. Using a CPU image.")
         return "roboflow/roboflow-inference-server-cpu:latest"
 
 
 def _get_jetpack_image(jetpack_version: str) -> str:
-    if jetpack_version.startswith("4.5"):
-        return "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
-    if jetpack_version.startswith("4.6"):
-        return "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
-    if jetpack_version.startswith("5."):
-        return "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
-    if jetpack_version.startswith("6."):
-        return "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
+    """Resolve a JetPack version string (e.g. from JETSON_JETPACK env or dpkg)
+    to a Docker image using ``_JETSON_IMAGES``."""
+    for entry in _JETSON_IMAGES:
+        if jetpack_version.startswith(entry.jetpack_prefix):
+            return entry.image
     raise RuntimeError(f"Jetpack version: {jetpack_version} not supported")
+
+
+def _image_for_l4t(l4t_major: int, l4t_minor: int) -> Optional[str]:
+    """Resolve an L4T (major, minor) pair to a Docker image."""
+    for entry in _JETSON_IMAGES:
+        if entry.l4t_major == l4t_major and l4t_minor >= entry.l4t_minor_min:
+            return entry.image
+    return None
+
+
+def _detect_jetson() -> Optional[Tuple[str, str]]:
+    """Auto-detect Jetson hardware and return ``(docker_image, source)``."""
+    l4t = _parse_tegra_release()
+    if l4t is not None:
+        l4t_major, l4t_minor = l4t
+        image = _image_for_l4t(l4t_major, l4t_minor)
+        if image is not None:
+            return image, f"/etc/nv_tegra_release (L4T R{l4t_major}.{l4t_minor})"
+
+    dpkg_version = _get_jetpack_version_from_dpkg()
+    if dpkg_version is not None:
+        return _get_jetpack_image(dpkg_version), "dpkg (nvidia-jetpack)"
+
+    return None
+
+
+def _parse_tegra_release() -> Optional[Tuple[int, int]]:
+    """Parse L4T version from ``/etc/nv_tegra_release``.
+
+    Returns ``(major, minor)`` as ints, e.g. ``(36, 4)``, or ``None``.
+    """
+    try:
+        with open("/etc/nv_tegra_release") as f:
+            header = f.readline()
+            match = re.search(r"R(\d+).*REVISION:\s*(\d+)", header)
+            if match:
+                return int(match.group(1)), int(match.group(2))
+    except Exception:
+        pass
+    return None
+
+
+def _get_jetpack_version_from_dpkg() -> Optional[str]:
+    """Query dpkg for the nvidia-jetpack package version."""
+    try:
+        output = subprocess.check_output(
+            ["dpkg-query", "--showformat=${Version}", "--show", "nvidia-jetpack"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if output:
+            return output
+    except Exception:
+        pass
+    return None
 
 
 def start_inference_container(
@@ -122,6 +323,8 @@ def start_inference_container(
     env_file_path: Optional[str] = None,
     development: bool = False,
     use_local_images: bool = False,
+    volumes: Optional[Dict[str, dict]] = None,
+    bind_address: Optional[str] = None,
 ) -> None:
     containers = find_running_inference_containers()
     if len(containers) > 0:
@@ -133,11 +336,16 @@ def start_inference_container(
     if image is None:
         image = get_image()
 
+    runtime = detect_container_runtime()
+
     device_requests = None
     privileged = False
     docker_run_kwargs = {}
     is_gpu = "gpu" in image and "jetson" not in image
     is_jetson = "jetson" in image
+
+    if runtime == CONTAINER_RUNTIME_PODMAN and is_jetson:
+        raise podman_adapter.PodmanJetsonUnsupportedError()
 
     if is_gpu:
         device_requests = [
@@ -146,6 +354,8 @@ def start_inference_container(
     if is_jetson:
         privileged = True
         docker_run_kwargs = {"runtime": "nvidia"}
+
+    bind_address = resolve_bind_address(bind_address=bind_address, is_jetson=is_jetson)
 
     environment = prepare_container_environment(
         port=port,
@@ -159,9 +369,22 @@ def start_inference_container(
     )
     pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
-    ports = {"9001": port}
+    announce_bind_address(bind_address=bind_address, port=port)
+    ports = {str(port): (bind_address, port)}
     if development:
-        ports["9002"] = 9002
+        ports["9002"] = (bind_address, 9002)
+    if runtime == CONTAINER_RUNTIME_PODMAN:
+        podman_adapter.launch_inference_container_with_podman(
+            image=image,
+            development=development,
+            environment=environment,
+            bind_address=bind_address,
+            port=port,
+            volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}, **(volumes or {})},
+            labels=labels,
+            require_gpu=is_gpu,
+        )
+        return
     docker_client = docker.from_env()
     docker_client.containers.run(
         image=image,
@@ -189,10 +412,35 @@ def start_inference_container(
             else None
         ),
         read_only=not is_jetson,
-        volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}},
+        volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}, **(volumes or {})},
         network_mode="bridge",
         ipc_mode="private" if not is_jetson else None,
         **docker_run_kwargs,
+    )
+
+
+def resolve_bind_address(bind_address: Optional[str], is_jetson: bool) -> str:
+    if bind_address is not None:
+        return bind_address
+    # Jetson images run on headless edge devices that are almost always driven from another
+    # machine on the LAN, so loopback-only would break their default use case.
+    return "0.0.0.0" if is_jetson else DEFAULT_BIND_ADDRESS
+
+
+def announce_bind_address(bind_address: str, port: int) -> None:
+    if bind_address in LOOPBACK_BIND_ADDRESSES:
+        print(
+            f"Inference server will only accept connections from this machine "
+            f"({bind_address}:{port}). Use --bind-address 0.0.0.0 to expose it to your "
+            f"network - see {SECURITY_DOCS_URL} first."
+        )
+        return None
+    print(
+        f"WARNING: the inference server is being published on {bind_address}:{port}, so it will accept "
+        f"connections from other machines. The server requires no authentication by default and executes "
+        f"Workflows Custom Python blocks, which is remote code execution for anyone who can reach the port. "
+        f"Set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own auth in front of the server) and "
+        f"set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False unless you need it. See {SECURITY_DOCS_URL}"
     )
 
 
@@ -238,7 +486,10 @@ def check_inference_server_status():
         for c in containers:
             container_name = c.attrs.get("Name", "")
             created = c.attrs.get("Created", "")
-            exposed_port = list(c.attrs.get("Config").get("ExposedPorts", {}).keys())[0]
+            # Containers started without published ports (e.g. host networking)
+            # expose an empty mapping; there is no published port to report.
+            exposed_ports = c.attrs.get("Config", {}).get("ExposedPorts") or {}
+            exposed_port = next(iter(exposed_ports), "not published")
             status = c.attrs.get("State", {}).get("Status", "unknown")
             image = c.attrs.get("Image", "")
             container_status_message = """
@@ -262,12 +513,17 @@ Image: {image}
 
 
 def pull_image(image: str, use_local_images: bool = False) -> None:
+    if detect_container_runtime() == CONTAINER_RUNTIME_PODMAN:
+        podman_adapter.pull_image_with_podman(
+            image=image, use_local_images=use_local_images
+        )
+        return
     docker_client = docker.from_env()
     progress_tasks = {}
     try:
         _ = docker_client.images.get(image)
         if use_local_images:
-            print(f"Using locally cached image: {use_local_images}")
+            print(f"Using locally cached image: {image}")
             return None
     except ImageNotFound:
         pass

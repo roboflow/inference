@@ -1,10 +1,17 @@
+from streamvision.stream.warnings import InferenceExperimentalFeatureWarning
+
+
 class InferenceDeprecationWarning(Warning):
     pass
 
 
-class InferenceExperimentalFeatureWarning(Warning):
+class InferenceConfigurationWarning(Warning):
     pass
 
 
 class ModelDependencyMissing(Warning):
+    pass
+
+
+class InferenceModelsStackMissing(Warning):
     pass

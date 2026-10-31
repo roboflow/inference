@@ -105,6 +105,7 @@ STANDARD_MODELS = {
     "YOLO26InstanceSegmentation": "inference.models.yolo26",
     "YOLO26KeypointsDetection": "inference.models.yolo26",
     "YOLO26ObjectDetection": "inference.models.yolo26",
+    "DeepLabV3PlusSemanticSegmentation": "inference.models.deep_lab_v3_plus",
 }
 
 

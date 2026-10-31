@@ -144,9 +144,9 @@ This design means you write the same code (`AutoModel.from_pretrained("model-id"
 
 **Location:** `inference_models/model_pipelines/auto_loaders/core.py`
 
-Some computer vision tasks require multiple models working together in sequence or parallel. For example, detecting faces and then estimating where each person is looking requires two separate models: one for face detection and another for gaze estimation. AutoModelPipeline provides a unified interface for these multi-model workflows.
+Some computer vision tasks require multiple models working together in sequence or parallel. AutoModelPipeline provides a unified interface for these multi-model workflows.
 
-When you load a pipeline using `AutoModelPipeline.from_pretrained()`, you specify a pipeline identifier (like "face-and-gaze-detection"). The library maintains a registry of known pipelines, each with a default configuration that specifies which models to use. For the face-and-gaze pipeline, the defaults might be a MediaPipe face detector and an L2CS gaze estimation model.
+When you load a pipeline using `AutoModelPipeline.from_pretrained()`, you specify a pipeline identifier. The library maintains a registry of known pipelines, each with a default configuration that specifies which models to use.
 
 The pipeline loader uses AutoModel internally to load each constituent model, which means all the same auto-negotiation and caching logic applies. You can override the default models by providing custom parameters - for instance, you might want to run one model on CPU and another on GPU, or use different model variants.
 
@@ -160,16 +160,16 @@ Pipelines are registered in a central registry that maps pipeline identifiers to
 from inference_models import AutoModelPipeline
 
 # Load pipeline with default models
-pipeline = AutoModelPipeline.from_pretrained("face-and-gaze-detection")
+pipeline = AutoModelPipeline.from_pretrained("<pipeline-id>")
 results = pipeline(image)
 
 # Load pipeline with custom model parameters
 pipeline = AutoModelPipeline.from_pretrained(
-    "face-and-gaze-detection",
+    "<pipeline-id>",
     models_parameters=[
-        "mediapipe/face-detector",
-        {"model_id_or_path": "l2cs-net/rn50", "device": "cuda"}
-    ]
+        "<model-id-1>",
+        {"model_id_or_path": "<model-id-2>", "device": "cuda"},
+    ],
 )
 ```
 

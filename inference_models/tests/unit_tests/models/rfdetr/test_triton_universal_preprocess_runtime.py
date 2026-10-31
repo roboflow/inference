@@ -1,0 +1,624 @@
+import threading
+from itertools import product
+
+import numpy as np
+import pytest
+import torch
+
+from inference_models import PreProcessingOverrides
+from inference_models.errors import ModelRuntimeError
+from inference_models.models.common.roboflow.model_packages import (
+    ColorMode,
+    Contrast,
+    ContrastType,
+    Grayscale,
+    ImagePreProcessing,
+    NetworkInputDefinition,
+    ResizeMode,
+    StaticCrop,
+    TrainingInputSize,
+)
+from inference_models.models.optimization.errors import RecoverableStageExecutionError
+from inference_models.models.rfdetr import triton_universal_preprocess_runtime
+from inference_models.models.rfdetr.optimization.catalog import (
+    RFDETR_PREPROCESSOR_IMPLEMENTATIONS,
+)
+from inference_models.models.rfdetr.optimization.ids import (
+    RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1,
+)
+from inference_models.models.rfdetr.pre_processing import pre_process_network_input
+from inference_models.models.rfdetr.triton_universal_preprocess_runtime import (
+    UniversalFastPreprocessRuntime,
+    _build_metadata_batch,
+    _canonicalize_batch,
+)
+
+_IMAGENET_MEAN = (0.485, 0.456, 0.406)
+_IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
+def _network_input(
+    *,
+    resize_mode: ResizeMode = ResizeMode.STRETCH_TO,
+) -> NetworkInputDefinition:
+    return NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=64),
+        dataset_version_resize_dimensions=None,
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.RGB,
+        resize_mode=resize_mode,
+        input_channels=3,
+        scaling_factor=255,
+        normalization=[list(_IMAGENET_MEAN), list(_IMAGENET_STD)],
+    )
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        np.zeros((2, 8, 9, 3), dtype=np.uint8),
+        [np.zeros((8, 9, 3), dtype=np.uint8) for _ in range(2)],
+        torch.zeros((2, 3, 8, 9), dtype=torch.uint8),
+        torch.zeros((2, 8, 9, 3), dtype=torch.uint8),
+    ],
+)
+def test_canonicalize_uint8_cpu_batches(images) -> None:
+    batch = _canonicalize_batch(images)
+
+    assert batch.kind == "uint8"
+    assert (batch.height, batch.width) == (8, 9)
+    assert len(batch.items) == 2
+    assert all(tuple(item.shape) == (8, 9, 3) for item in batch.items)
+
+
+@pytest.mark.parametrize(
+    "images",
+    [
+        torch.zeros((2, 3, 8, 9), dtype=torch.float32),
+        torch.zeros((2, 8, 9, 3), dtype=torch.float16),
+    ],
+)
+def test_canonicalize_float_cpu_batches(images) -> None:
+    batch = _canonicalize_batch(images)
+
+    assert batch.kind == "float"
+    assert (batch.height, batch.width) == (8, 9)
+    assert all(tuple(item.shape) == (3, 8, 9) for item in batch.items)
+
+
+def test_canonicalize_float_numpy_matches_reference_uint8_conversion() -> None:
+    image = np.array([[[0.0, 0.5, 1.5]]], dtype=np.float32)
+
+    batch = _canonicalize_batch(image)
+
+    np.testing.assert_array_equal(
+        batch.items[0],
+        np.array([[[0, 127, 255]]], dtype=np.uint8),
+    )
+
+
+def test_canonicalize_rejects_mixed_semantics() -> None:
+    with pytest.raises(ModelRuntimeError, match="homogeneous batch"):
+        _canonicalize_batch(
+            [
+                torch.zeros((3, 8, 9), dtype=torch.uint8),
+                torch.zeros((3, 8, 9), dtype=torch.float32),
+            ]
+        )
+
+
+def test_canonicalize_rejects_mixed_source_dimensions() -> None:
+    with pytest.raises(ModelRuntimeError, match="equal source dimensions"):
+        _canonicalize_batch(
+            [
+                np.zeros((8, 9, 3), dtype=np.uint8),
+                np.zeros((10, 9, 3), dtype=np.uint8),
+            ]
+        )
+
+
+def test_metadata_batch_describes_stretch() -> None:
+    metadata = _build_metadata_batch(
+        batch_size=2,
+        source_h=8,
+        source_w=10,
+        target_h=16,
+        target_w=40,
+    )
+
+    assert len(metadata) == 2
+    assert metadata[0].scale_height == 2
+    assert metadata[0].scale_width == 4
+    assert metadata[0].static_crop_offset.crop_width == 10
+    assert metadata[0].static_crop_offset.crop_height == 8
+
+
+def test_universal_candidate_is_explicitly_selectable() -> None:
+    metadata = RFDETR_PREPROCESSOR_IMPLEMENTATIONS[
+        RFDETR_PREPROCESSOR_TRITON_UNIVERSAL_V1
+    ]
+    assert metadata.validation_records == ()
+    assert metadata.fallback_id == "pillow-simd-v1"
+
+
+@pytest.mark.parametrize(
+    ("image_pre_processing", "reason"),
+    [
+        (
+            ImagePreProcessing.model_validate(
+                {
+                    "static-crop": StaticCrop(
+                        enabled=True,
+                        x_min=10,
+                        x_max=90,
+                        y_min=10,
+                        y_max=90,
+                    )
+                }
+            ),
+            "static crop",
+        ),
+        (ImagePreProcessing(grayscale=Grayscale(enabled=True)), "grayscale"),
+        (
+            ImagePreProcessing(
+                contrast=Contrast(
+                    enabled=True,
+                    type=ContrastType.CONTRAST_STRETCHING,
+                )
+            ),
+            "contrast",
+        ),
+    ],
+)
+def test_model_compatibility_reports_base_supported_transformations(
+    image_pre_processing: ImagePreProcessing,
+    reason: str,
+) -> None:
+    compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
+        image_pre_processing=image_pre_processing,
+        network_input=_network_input(),
+    )
+
+    assert not compatibility.supported
+    assert reason in compatibility.reasons
+
+
+@pytest.mark.parametrize("dataset_size", [None, 32, 128])
+def test_model_compatibility_reports_non_stretch_resize(
+    dataset_size: int | None,
+) -> None:
+    """Keep non-stretch resize incompatible even with dataset resize metadata.
+
+    Args:
+        dataset_size: Optional dataset resize dimension.
+    """
+    network = _network_input(resize_mode=ResizeMode.LETTERBOX)
+    if dataset_size is not None:
+        network = network.model_copy(
+            update={
+                "dataset_version_resize_dimensions": TrainingInputSize(
+                    height=dataset_size, width=dataset_size
+                )
+            }
+        )
+    compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network,
+    )
+
+    assert not compatibility.supported
+    assert any(reason.startswith("resize_mode=") for reason in compatibility.reasons)
+
+
+def test_request_compatibility_rejects_heterogeneous_shapes_with_disable_flags() -> (
+    None
+):
+    """Keep rejecting mixed image sizes when harmless disable flags are present."""
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=[
+            np.zeros((8, 9, 3), dtype=np.uint8),
+            np.zeros((10, 9, 3), dtype=np.uint8),
+        ],
+        pre_processing_overrides=PreProcessingOverrides(disable_static_crop=True),
+    )
+
+    assert not compatibility.supported
+    assert any(
+        reason.startswith("heterogeneous source dimensions")
+        for reason in compatibility.reasons
+    )
+
+
+def test_request_compatibility_accepts_no_op_overrides(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        True,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=PreProcessingOverrides(),
+    )
+
+    assert compatibility.supported
+
+
+@pytest.mark.parametrize(
+    "pre_processing_overrides",
+    [
+        PreProcessingOverrides(disable_contrast_enhancement=True),
+        PreProcessingOverrides(disable_grayscale=True),
+        PreProcessingOverrides(disable_static_crop=True),
+    ],
+)
+def test_request_compatibility_accepts_each_disable_override(
+    monkeypatch: pytest.MonkeyPatch,
+    pre_processing_overrides: PreProcessingOverrides,
+) -> None:
+    """Accept flags that cannot enable an unsupported model transformation.
+
+    Args:
+        monkeypatch: Fixture simulating Triton availability for compatibility checks.
+        pre_processing_overrides: One transformation-disable override.
+    """
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        True,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=pre_processing_overrides,
+    )
+
+    assert compatibility.supported
+
+
+@pytest.mark.parametrize("input_kind", ["numpy", "uint8_tensor", "float_tensor"])
+@pytest.mark.parametrize("dataset_size", [32, 64, 128])
+@pytest.mark.parametrize("disable_flags", list(product([False, True], repeat=3)))
+def test_workspace_metadata_and_disable_flags_preserve_reference_pixels(
+    monkeypatch: pytest.MonkeyPatch,
+    input_kind: str,
+    dataset_size: int,
+    disable_flags: tuple[bool, bool, bool],
+) -> None:
+    """Verify that accepted metadata and disable flags leave reference output intact.
+
+    Args:
+        monkeypatch: Fixture simulating availability for compatibility checks only.
+        input_kind: Decoded NumPy, uint8 tensor, or floating tensor input.
+        dataset_size: Dataset resize dimension, independent of the network size.
+        disable_flags: Contrast, grayscale, and crop disable flags.
+    """
+    monkeypatch.setattr(triton_universal_preprocess_runtime, "TRITON_AVAILABLE", True)
+    image = np.random.default_rng(7).integers(0, 256, (48, 80, 3), dtype=np.uint8)
+    if input_kind != "numpy":
+        image = torch.from_numpy(image).permute(2, 0, 1)
+        if input_kind == "float_tensor":
+            image = image.float() / 255
+
+    network = _network_input()
+    workspace_network = network.model_copy(
+        update={
+            "dataset_version_resize_dimensions": TrainingInputSize(
+                height=dataset_size, width=dataset_size
+            )
+        }
+    )
+    transforms = ImagePreProcessing.model_validate({"auto-orient": {"enabled": True}})
+    overrides = PreProcessingOverrides(
+        disable_contrast_enhancement=disable_flags[0],
+        disable_grayscale=disable_flags[1],
+        disable_static_crop=disable_flags[2],
+    )
+    model_compatibility = UniversalFastPreprocessRuntime.check_model_compatibility(
+        image_pre_processing=transforms,
+        network_input=workspace_network,
+    )
+    request_compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=image,
+        pre_processing_overrides=overrides,
+    )
+    assert model_compatibility.supported, model_compatibility.reasons
+    assert request_compatibility.supported, request_compatibility.reasons
+
+    expected, expected_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+    actual, actual_metadata = pre_process_network_input(
+        images=image,
+        image_pre_processing=transforms,
+        network_input=workspace_network,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+        pre_processing_overrides=overrides,
+    )
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert actual_metadata == expected_metadata
+
+
+def test_supported_uint8_request_is_compatible_when_triton_is_available(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        True,
+    )
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((2, 8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=None,
+    )
+
+    assert compatibility.supported
+
+
+@pytest.mark.parametrize(
+    ("shape", "max_dimension", "max_pixels"),
+    [
+        ((9, 8, 3), 8, 1_000),
+        ((8, 9, 3), 10, 64),
+    ],
+)
+def test_uint8_request_exceeding_source_budget_is_incompatible(
+    monkeypatch,
+    shape,
+    max_dimension: int,
+    max_pixels: int,
+) -> None:
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "TRITON_AVAILABLE",
+        True,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION",
+        max_dimension,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS",
+        max_pixels,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros(shape, dtype=np.uint8),
+        pre_processing_overrides=None,
+    )
+
+    assert not compatibility.supported
+    assert "exceed the Triton preprocessing budget" in compatibility.reason
+
+
+def test_default_source_budget_accepts_full_8k_dci() -> None:
+    assert not triton_universal_preprocess_runtime._source_shape_exceeds_triton_budget(
+        height=4320,
+        width=8192,
+    )
+    assert triton_universal_preprocess_runtime._source_shape_exceeds_triton_budget(
+        height=4321,
+        width=8192,
+    )
+
+
+def test_float_request_is_not_subject_to_uint8_staging_budget(monkeypatch) -> None:
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "TRITON_AVAILABLE",
+        True,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION",
+        1,
+    )
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_PIXELS",
+        1,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=torch.zeros((3, 8, 9), dtype=torch.float32),
+        pre_processing_overrides=None,
+    )
+
+    assert compatibility.supported
+
+
+def test_uint8_request_reports_missing_triton(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        False,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        pre_processing_overrides=None,
+    )
+
+    assert not compatibility.supported
+    assert "Triton is not installed" in compatibility.reasons
+
+
+def test_float_request_reports_missing_triton(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "inference_models.models.rfdetr.triton_universal_preprocess_runtime."
+        "TRITON_AVAILABLE",
+        False,
+    )
+
+    compatibility = UniversalFastPreprocessRuntime.check_request_compatibility(
+        images=torch.zeros((3, 8, 9), dtype=torch.float32),
+        pre_processing_overrides=None,
+    )
+
+    assert not compatibility.supported
+    assert "Triton is not installed" in compatibility.reasons
+
+
+@pytest.mark.gpu_only
+@pytest.mark.trt_extras
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+def test_runtime_disables_jit_after_recognized_compilation_failure(monkeypatch) -> None:
+    runtime = UniversalFastPreprocessRuntime(device=torch.device("cuda"))
+    stream = torch.cuda.Stream(device=torch.device("cuda"))
+
+    def failing_kernel(*args, **kwargs):
+        raise RuntimeError(
+            "Failed to find C compiler. Please specify via CC environment variable."
+        )
+
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "triton_preprocess_rfdetr_stretch_two_pass_preallocated",
+        failing_kernel,
+    )
+
+    with pytest.raises(
+        RecoverableStageExecutionError,
+        match="Failed to find C compiler",
+    ):
+        runtime.preprocess(
+            images=np.zeros((8, 9, 3), dtype=np.uint8),
+            input_color_format=ColorMode.BGR,
+            image_pre_processing=ImagePreProcessing(),
+            network_input=_network_input(),
+            pre_processing_overrides=None,
+            stream=stream,
+        )
+
+    compatibility = runtime.check_runtime_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8)
+    )
+
+    assert not compatibility.supported
+    assert "Failed to find C compiler" in compatibility.reason
+    assert "Category: missing_compiler" in compatibility.reason
+    assert "Suggested action:" in compatibility.reason
+
+
+def test_recorded_uint8_jit_failure_preserves_float_runtime_path() -> None:
+    runtime = UniversalFastPreprocessRuntime.__new__(UniversalFastPreprocessRuntime)
+    runtime._uint8_jit_failure_reason = "compiler unavailable"
+    runtime._uint8_jit_failure_lock = threading.Lock()
+
+    uint8_compatibility = runtime.check_runtime_compatibility(
+        images=np.zeros((8, 9, 3), dtype=np.uint8)
+    )
+    float_compatibility = runtime.check_runtime_compatibility(
+        images=torch.zeros((1, 3, 8, 9), dtype=torch.float32)
+    )
+
+    assert not uint8_compatibility.supported
+    assert float_compatibility.supported
+
+
+def test_standalone_runtime_retains_checks_and_selected_stage_does_not_repeat_them(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from inference_models.models.optimization.contracts import (
+        CompatibilityResult,
+        ExecutionContext,
+    )
+    from inference_models.models.rfdetr.optimization.contracts import PreprocessRequest
+    from inference_models.models.rfdetr.optimization.preprocessors.triton_universal import (
+        TritonUniversalPreprocessor,
+    )
+
+    stage = TritonUniversalPreprocessor(device=torch.device("cuda"))
+    runtime = stage._runtime
+    model_check = Mock(return_value=CompatibilityResult.compatible())
+    request_check = Mock(return_value=CompatibilityResult.compatible())
+    execute = Mock(
+        return_value=SimpleNamespace(
+            tensor=torch.zeros((1, 3, 64, 64)),
+            metadata=[],
+            ready_event=None,
+            input_kind="uint8",
+        )
+    )
+    monkeypatch.setattr(runtime, "check_model_compatibility", model_check)
+    monkeypatch.setattr(runtime, "check_request_compatibility", request_check)
+    monkeypatch.setattr(runtime, "_preprocess_validated", execute)
+    request = PreprocessRequest(
+        images=np.zeros((8, 9, 3), dtype=np.uint8),
+        input_color_format="rgb",
+        image_pre_processing=ImagePreProcessing(),
+        network_input=_network_input(),
+        pre_processing_overrides=None,
+    )
+    stream = object()
+    runtime.preprocess(
+        images=request.images,
+        input_color_format=request.input_color_format,
+        image_pre_processing=request.image_pre_processing,
+        network_input=request.network_input,
+        pre_processing_overrides=None,
+        stream=stream,
+    )
+    model_check.assert_called_once()
+    request_check.assert_called_once()
+    stage.preprocess(
+        request,
+        ExecutionContext(device_kind="gpu", device="cuda", current_stream=stream),
+    )
+    model_check.assert_called_once()
+    request_check.assert_called_once()
+    assert execute.call_count == 2
+    model_check.return_value = CompatibilityResult.incompatible("unsupported model")
+    with pytest.raises(ModelRuntimeError, match="unsupported model"):
+        runtime.preprocess(
+            images=request.images,
+            input_color_format=request.input_color_format,
+            image_pre_processing=request.image_pre_processing,
+            network_input=request.network_input,
+            pre_processing_overrides=None,
+            stream=stream,
+        )
+    assert execute.call_count == 2
+
+
+def test_runtime_compatibility_inspects_only_first_validated_batch_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = UniversalFastPreprocessRuntime.__new__(UniversalFastPreprocessRuntime)
+    runtime._uint8_jit_failure_reason = "compiler unavailable"
+    runtime._uint8_jit_failure_lock = threading.Lock()
+    inspect_calls = 0
+    original_inspect = triton_universal_preprocess_runtime._inspect_item_contract
+
+    def inspect_item_contract(item):
+        nonlocal inspect_calls
+        inspect_calls += 1
+        return original_inspect(item)
+
+    monkeypatch.setattr(
+        triton_universal_preprocess_runtime,
+        "_inspect_item_contract",
+        inspect_item_contract,
+    )
+
+    compatibility = runtime.check_runtime_compatibility(
+        images=[np.zeros((8, 9, 3), dtype=np.uint8) for _ in range(8)]
+    )
+
+    assert not compatibility.supported
+    assert inspect_calls == 1
+
+
+def test_universal_runtime_requires_cuda_device() -> None:
+    with pytest.raises(ModelRuntimeError, match="requires a CUDA target"):
+        UniversalFastPreprocessRuntime(device=torch.device("cpu"))

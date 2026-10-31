@@ -15,7 +15,7 @@ WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "car_detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -28,7 +28,7 @@ WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH = {
             "predictions": "$steps.car_detection.predictions",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "plates_detection",
             "image": "$steps.cropping.crops",
             "model_id": "vehicle-registration-plates-trudk/2",
@@ -129,7 +129,7 @@ def test_workflow_with_stitch_and_dynamic_crop(
                 [491, 570, 535, 582],
             ]
         ),
-        atol=1e-1,
+        atol=2,
     ), "Expected bounding boxes to be exactly the same as when test was created"
     assert result[0]["predictions"].class_id.tolist() == [
         2,

@@ -1,28 +1,39 @@
-FROM nvcr.io/nvidia/l4t-ml:r35.2.1-py3
-#installs python 3.9
+# syntax=docker/dockerfile:1.7
+FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.4-experimental AS jetson-tensor-bridge-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ENV LANG en_US.UTF-8 
 
-RUN apt-get update -y && apt-get install -y \
-    python3.9 \
-    python3.9-dev \
-    lshw \
-    git \
-    python3-pip \
-    python3-matplotlib \
-    gfortran \
-    build-essential \
-    libatlas-base-dev \
-    libsm6 \
-    libxext6 \
-    wget \
-    python3-shapely \
-    gdal-bin \
-    libgdal-dev \
-    rustc \
-    cargo \
-    && rm -rf /var/lib/apt/lists/*
+# JP5 (r35 / CUDA 11.8) build of the native tensor bridge - same source and
+# scripts as the JP6 image. JetPack 5 runs on Xavier (sm_72) and Orin (sm_87),
+# so fatbin both. The base ships nvcc, the jetson_multimedia_api headers and
+# the GStreamer dev stack; nvv4l2decoder and libnvbufsurface come from the
+# host L4T mount at runtime (--runtime nvidia), and the bridge's dlopen
+# candidates already include the r35 /tegra/ library path.
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        libglib2.0-dev \
+        pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY docker/native/jetson_tensor_bridge /src/jetson_tensor_bridge
+COPY docker/scripts/build_jetson_tensor_bridge.sh /usr/local/bin/build_jetson_tensor_bridge
+COPY docker/scripts/verify_jetson_tensor_bridge.sh /usr/local/bin/verify_jetson_tensor_bridge
+
+RUN chmod +x \
+        /usr/local/bin/build_jetson_tensor_bridge \
+        /usr/local/bin/verify_jetson_tensor_bridge && \
+    JETSON_TENSOR_BRIDGE_CUDA_ARCHITECTURES="72;87" build_jetson_tensor_bridge && \
+    verify_jetson_tensor_bridge && \
+    du -sh /opt/roboflow/lib
+
+FROM roboflow/l4t-ml:r35.2.1-py3.12-cu118-trt-10-v0.0.4-experimental
+
+ARG TRITON_VERSION=3.0.0
+
+COPY --from=jetson-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
+
+RUN apt-get update -y && apt-get install -y ffmpeg
 
 COPY requirements/requirements.clip.txt \
     requirements/requirements.http.txt \
@@ -32,21 +43,10 @@ COPY requirements/requirements.clip.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.easyocr.txt \
+    requirements/requirements.gpu.txt \
     ./
 
-RUN python3.9 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
-
-# We needed to take statically compiled library for last known stable build and put it into hosting
-# That was due to faulty builds started 26.06.2024, probably due to release of new version
-# of pybind11, which gets automatically pulled while build of zxing_cpp library making
-# cmake to fail
-RUN wget https://storage.googleapis.com/roboflow-tests-assets/zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
-    && tar -xvzf zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
-    && mv zxing_cpp-2.2.0.dist-info /usr/local/lib/python3.9/dist-packages/zxing_cpp-2.2.0.dist-info \
-    && mv zxingcpp.cpython-39-aarch64-linux-gnu.so /usr/local/lib/python3.9/dist-packages/ \
-    && rm zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz
-
-RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
+RUN python -m pip install \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
@@ -55,29 +55,90 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     -r requirements.easyocr.txt \
-    jupyterlab \
-    "setuptools<=75.5.0" \
-    --upgrade \
-    && rm -rf ~/.cache/pip
+    -r requirements.gpu.txt \
+    "pycuda>=2025.0.0,<2026.0.0" \
+    "torch==2.4.1" \
+    "torchvision==0.19.1"
+
+# Build Triton from source. Torch 2.4.1 on JP5.1 pairs with Triton ${TRITON_VERSION}.
+# Single-stage image: clone + wheel build share one RUN (cache-mounted src is not
+# persisted across RUN instructions). LLVM lives in a cache mount (not in the
+# image layer); do not rm that path - it is mounted and busy during the RUN.
+RUN --mount=type=cache,target=/tmp/triton-build/src,sharing=locked,id=triton-src-${TRITON_VERSION}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.triton/llvm,sharing=locked,id=triton-llvm-${TRITON_VERSION}-${TARGETARCH} \
+    set -eux; \
+    apt-get update -y; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        libxml2-dev \
+        ninja-build \
+        python3-dev \
+        zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/*; \
+    if [ ! -d /tmp/triton-build/src/.git ]; then \
+        git clone --depth 1 --branch v${TRITON_VERSION} https://github.com/triton-lang/triton.git /tmp/triton-build/src; \
+    else \
+        git -C /tmp/triton-build/src fetch --depth 1 origin tag v${TRITON_VERSION} && \
+        git -C /tmp/triton-build/src checkout v${TRITON_VERSION}; \
+    fi; \
+    git -C /tmp/triton-build/src submodule update --init --recursive; \
+    mkdir -p /tmp/triton-wheels; \
+    python -m pip install --no-cache-dir \
+        "setuptools~=84.2.1" \
+        wheel \
+        "cmake>=3.18,<4.0" \
+        "ninja>=1.11.1"; \
+    MAX_JOBS=4 python -m pip wheel --no-cache-dir \
+        --no-build-isolation \
+        --no-deps \
+        /tmp/triton-build/src/python \
+        --wheel-dir /tmp/triton-wheels; \
+    set -- /tmp/triton-wheels/triton-${TRITON_VERSION}-*.whl; \
+    if [ ! -e "$1" ]; then \
+        echo "Expected source-built Triton wheel for ${TRITON_VERSION} was not found" >&2; \
+        exit 1; \
+    fi; \
+    python -m pip install --no-cache-dir "$1"; \
+    rm -rf /tmp/triton-wheels; \
+    python -c "import triton; print('triton', triton.__version__)"
 
 WORKDIR /app/
 COPY inference inference
+COPY workflows workflows
+COPY stream_vision stream_vision
+# Build & install roboflow-workflows from source. Torch 2.4.1/torchvision 0.19.1
+# (Jetson-specific wheels) already satisfy workflows' torch/torchvision
+# constraints so pip does NOT re-resolve them; the install pulls in the
+# pure-Python runtime deps (openai/anthropic/boto3/…) plus fonts + metadata.
+RUN python -m pip install uv \
+    && python workflows/build_scripts/download_fonts.py \
+    && cd workflows \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && cd stream_vision \
+    && uv build --out-dir /wheels \
+    && cd - \
+    && python -m pip install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && python -m pip install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]"
+# Force-downgrade transformers: torch 2.4.1 cannot run transformers >= 5.10.
+# Must stay AFTER the roboflow-workflows install above - that step depends on
+# inference-models (transformers>=5.10) and re-resolves transformers upward.
+RUN python -m pip install "transformers==5.7.0"
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY inference_cli inference_cli
 COPY inference_sdk inference_sdk
 COPY docker/config/gpu_http.py gpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 COPY .release .release
 COPY requirements requirements
 COPY Makefile Makefile
+COPY README.md LICENSE LICENSE.core ./
 
-RUN make create_inference_cli_whl PYTHON=python3.9
-RUN python3.9 -m pip install dist/inference_cli*.whl
-
-# BE CAREFUL, WE ENFORCE numpy 1.x for the sake of compatibility with onnxruntime
-RUN python3.9 -m pip uninstall --yes onnxruntime numpy
-RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
-RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
-    && rm -rf ~/.cache/pip \
-    && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
+RUN make create_inference_cli_whl PYTHON=python3.12
+RUN python -m pip install dist/inference_cli*.whl dist/inference_sdk*.whl
 
 ENV VERSION_CHECK_MODE=continuous \
     PROJECT=roboflow-platform \
@@ -89,7 +150,10 @@ ENV VERSION_CHECK_MODE=continuous \
     HOST=0.0.0.0 \
     PORT=9001 \
     OPENBLAS_CORETYPE=ARMV8 \
-    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    # libGLdispatch must claim its static TLS at process start: loaded late
+    # (torch/ort/cv2 exhaust the r35 glibc surplus first) the tensor bridge's
+    # deferred EGL load dies with 'cannot allocate memory in static TLS block'.
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1:/usr/lib/aarch64-linux-gnu/libGLdispatch.so.0 \
     WORKFLOWS_STEP_EXECUTION_MODE=local \
     WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
     API_LOGGING_ENABLED=True \
@@ -99,6 +163,14 @@ ENV VERSION_CHECK_MODE=continuous \
     ENABLE_STREAM_API=True \
     STREAM_API_PRELOADED_PROCESSES=2 \
     PYTHONPATH=/app:$PYTHONPATH
-ENV CORE_MODEL_SAM3_ENABLED=False
+# Triton imports in this deprecated JP 5.1.1 image, but cannot JIT-compile the
+# RF-DETR kernels. Keep those stages on their non-Triton implementations.
+ENV CORE_MODEL_SAM3_ENABLED=False \
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES=False \
+    USE_INFERENCE_MODELS=True \
+    RUNNING_ON_JETSON=True \
+    INFERENCE_MODELS_RFDETR_PREPROCESSOR=base \
+    INFERENCE_MODELS_RFDETR_POSTPROCESSOR=base \
+    L4T_VERSION=35.2.1
 
-ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "gpu_http:app"]

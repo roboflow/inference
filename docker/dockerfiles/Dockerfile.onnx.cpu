@@ -8,6 +8,7 @@ RUN apt update -y && apt install -y \
     uvicorn \
     python3-pip \
     git \
+    ffmpeg \
     libgdal-dev \
     libvips-dev \
     cmake \
@@ -21,7 +22,6 @@ COPY requirements/_requirements.txt \
     requirements/requirements.cpu.txt \
     requirements/requirements.vino.txt \
     requirements/requirements.http.txt \
-    requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
@@ -31,13 +31,17 @@ COPY requirements/_requirements.txt \
     ./
 
 RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+
+# Keep later pip installs (including wheel builds) on the CPU variants.
+COPY requirements/requirements.torch-cpu.txt /requirements.torch-cpu.txt
+ARG PIP_CONSTRAINT=/requirements.torch-cpu.txt
+RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu -r /requirements.torch-cpu.txt
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
-    -r requirements.gaze.txt \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
@@ -45,21 +49,26 @@ RUN pip3 install \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
     jupyterlab \
-    "setuptools<=75.5.0" \
+    "setuptools~=84.2.1" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-FROM scratch
 ARG TARGETPLATFORM
 
-COPY --from=base / /
 
 WORKDIR /build
 COPY . .
 RUN make create_wheels
-RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install --find-links dist/ dist/roboflow_workflows*.whl dist/streamvision*.whl dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools~=84.2.1"
+RUN pip3 install "inference-models[model-blob-cache]"
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
+
+# Pillow-SIMD (x86-64 only), beside Pillow under /opt so the wheel stays the `PIL` package.
+RUN mkdir -p /opt/pillow_simd && if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then \
+      pip3 install --no-cache-dir --no-deps --target /opt/pillow_simd -r requirements/requirements.pillow-simd.txt && \
+      python3 docker/scripts/verify_pillow_simd.py; \
+    fi
 
 
 WORKDIR /notebooks
@@ -67,7 +76,10 @@ COPY examples/notebooks .
 
 WORKDIR /app
 COPY inference inference
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/cpu_http.py cpu_http.py
+COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
+RUN chmod +x /usr/local/bin/run_uvicorn.sh
 
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
@@ -83,4 +95,4 @@ ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
 ENV CORE_MODEL_SAM3_ENABLED=False
 
-ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["/usr/local/bin/run_uvicorn.sh", "cpu_http:app"]

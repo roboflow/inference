@@ -1,3 +1,59 @@
+"""Perspective-correction demo, and the reference for what a direct Python
+caller may bind.
+
+Two supported wirings, permanent. Pick either:
+
+1. Pass a raw `ModelManager` (or `ModelManagerDecorator`) as
+   `workflows_core.model_manager`. `ExecutionEngine.init` invokes the
+   manager's `__workflows_bind__` hook, which installs the historical server
+   bindings (platform client / cache / workspace / inner-workflow resolver,
+   image codec, usage-tracking observer, process configuration and the
+   server's step-error handler). Explicit keys the caller already set
+   survive.
+
+2. Pass an explicit `ModelManagerModelsProvider` (or any other
+   `ModelsProvider` implementation) as `workflows_core.model_manager` and
+   bind the rest of the services yourself. Suits standalone / custom-host
+   integrations that keep provider object identity.
+
+This applies to passing a manager INTO the engine, not to direct
+construction of individual workflow block classes. The script below uses
+form (2); form (1) works without any of the extra `workflows_core.*` calls
+made here.
+
+The Execution Engine takes the server's capabilities as explicit
+`workflows_core.*` init parameters instead of reaching for them itself. Its
+standalone defaults refuse or no-op whatever is missing; the services below
+restore them for a caller who is wiring things by hand:
+
+* `install_workflows_platform_bindings` - Roboflow-managed VLM and notification
+  proxy calls, workflows referenced by ID, workspace identity for authenticated
+  Modal execution, and the shared cache behind sink cooldown/dedup. Unbound, the
+  offline platform client raises and the cache is process-local.
+* `bind_image_codec` - `{"type": "file"}` / `{"type": "url"}` and serialized
+  numpy inputs, plus the later re-load of a stored image reference; the default
+  codec refuses them. Call it AFTER merging overrides, so input deserialization
+  and reference loading share one codec and one SSRF/local-file policy.
+* `UsageTrackingExecutionObserver()` - workflow and custom-block usage plus the
+  run's tracing spans; the default observer records nothing.
+* `resolve_step_error_handler()` - the server's error classification; the
+  engine's own default is the mapping-free legacy handler.
+* `server_workflows_configuration()` - the object the rest of the process uses,
+  so a mis-wire is reported instead of silently diverging.
+
+The usage categories are separate scopes, not substitutes: `request` (one HTTP
+handler call), `workflows` (one observed engine run, with workflow identity, FPS
+and preview), `workflow_block` (one custom-Python block execution) and `model`
+(the existing model-level accounting). Server entry points keep their existing
+layers; a direct caller gets the workflow and block scopes only from the
+observer above. Leaving the observer out on purpose stays supported - execution
+still runs, without workflow/custom-block collection.
+
+An offline platform client is not "no network": blocks calling a third party
+with the user's own provider key, and the REMOTE branches that go through
+`inference_sdk`, keep working on their own terms.
+"""
+
 import argparse
 import os
 from pathlib import Path
@@ -6,6 +62,22 @@ import cv2 as cv
 import numpy as np
 import supervision as sv
 
+from inference.core.interfaces.roboflow_platform_client import (
+    install_workflows_platform_bindings,
+)
+from inference.core.interfaces.workflows_configuration import (
+    server_workflows_configuration,
+)
+from inference.core.interfaces.workflows_execution_observer import (
+    UsageTrackingExecutionObserver,
+)
+from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
+from inference.core.interfaces.workflows_step_error_handlers import (
+    resolve_step_error_handler,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -224,13 +296,22 @@ if __name__ == "__main__":
     model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
     model_manager = ModelManager(model_registry=model_registry)
 
+    init_parameters = {
+        "workflows_core.model_manager": ModelManagerModelsProvider(model_manager),
+        "workflows_core.api_key": os.getenv("ROBOFLOW_API_KEY"),
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        "workflows_core.execution_observer": UsageTrackingExecutionObserver(),
+    }
+    install_workflows_platform_bindings(init_parameters)
+    bind_image_codec(init_parameters)
+    init_parameters.setdefault(
+        "workflows_core.configuration", server_workflows_configuration()
+    )
+
     execution_engine = ExecutionEngine.init(
         workflow_definition=WORKFLOW_DEFINITION,
-        init_parameters={
-            "workflows_core.model_manager": model_manager,
-            "workflows_core.api_key": os.getenv("ROBOFLOW_API_KEY"),
-            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-        },
+        init_parameters=init_parameters,
+        step_error_handler=resolve_step_error_handler(),
     )
 
     result = execution_engine.run(

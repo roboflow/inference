@@ -89,3 +89,10 @@ def test_import_yolov11_key_points_detection_trt() -> None:
 @pytest.mark.trt_extras
 def test_import_yolov12_object_detection_trt() -> None:
     from inference_models.models.yolov12.yolov12_trt import YOLOv12ForObjectDetectionTRT
+
+
+@pytest.mark.trt_extras
+def test_import_rfdetr_key_points_detection_trt() -> None:
+    from inference_models.models.rfdetr.rfdetr_key_points_detection_trt import (
+        RFDetrForKeyPointsTRT,
+    )

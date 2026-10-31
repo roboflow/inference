@@ -1,4 +1,4 @@
-2# get_trt_engine_inputs_and_outputs
+# get_trt_engine_inputs_and_outputs
 
 ::: inference_models.models.common.trt.get_trt_engine_inputs_and_outputs
     options:

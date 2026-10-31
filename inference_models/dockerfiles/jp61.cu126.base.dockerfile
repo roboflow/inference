@@ -15,6 +15,10 @@ RUN apt-get update -y && \
     libsm6 \
     libxext6 \
     wget \
+    ffmpeg \
+    libavcodec58 \
+    libavformat58 \
+    libswscale5 \
     gdal-bin \
     libgdal-dev \
     rustc \

@@ -1,6 +1,7 @@
 import base64
 import os.path
-from typing import Tuple
+from pathlib import Path
+from typing import List, Optional, Tuple
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -59,37 +60,29 @@ def test_uri_is_http_link_when_https_url_provided() -> None:
     assert result is True
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_file_from_url_on_unsuccessful_image_download(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 404
-    requests_get_mock.return_value = response
+    url = "https://some.com/file.jpg"
+    requests_mock.get(url, status_code=404)
 
     # when
     with pytest.raises(HTTPError):
-        _ = load_image_from_url(url="http://some/file.jpg")
-
-    # then
-    requests_get_mock.assert_called_once_with("http://some/file.jpg")
+        _ = load_image_from_url(url=url)
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_file_from_url_on_successful_image_download_without_resize(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 200
+    url = "https://some.com/file.jpg"
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode(".jpg", image)
-    response._content = encoded_image
-    requests_get_mock.return_value = response
+    requests_mock.get(url, content=encoded_image.tobytes())
 
     # when
-    serialised_image, scaling_factor = load_image_from_url(url="http://some/file.jpg")
+    serialised_image, scaling_factor = load_image_from_url(url=url)
     recovered_image = base64.b64decode(serialised_image)
     bytes_array = np.frombuffer(recovered_image, dtype=np.uint8)
     decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
@@ -98,7 +91,6 @@ def test_load_file_from_url_on_successful_image_download_without_resize(
     assert scaling_factor is None
     assert decoding_result.shape == image.shape
     assert np.allclose(decoding_result, image)
-    requests_get_mock.assert_called_once_with("http://some/file.jpg")
 
 
 @pytest.mark.asyncio
@@ -125,21 +117,18 @@ async def test_load_file_from_url_async_on_successful_image_download_without_res
         assert np.allclose(decoding_result, image)
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_file_from_url_on_successful_image_download_with_resize(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 200
+    url = "https://some.com/file.jpg"
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode(".jpg", image)
-    response._content = encoded_image
-    requests_get_mock.return_value = response
+    requests_mock.get(url, content=encoded_image.tobytes())
 
     # when
     serialised_image, scaling_factor = load_image_from_url(
-        url="http://some/file.jpg",
+        url=url,
         max_width=64,
         max_height=128,
     )
@@ -151,7 +140,6 @@ def test_load_file_from_url_on_successful_image_download_with_resize(
     assert abs(scaling_factor - 0.5) < 1e-5
     assert decoding_result.shape == (64, 64, 3)
     assert (decoding_result == 0).all()
-    requests_get_mock.assert_called_once_with("http://some/file.jpg")
 
 
 @pytest.mark.asyncio
@@ -180,22 +168,17 @@ async def test_load_file_from_url_async_on_successful_image_download_with_resize
         assert (decoding_result == 0).all()
 
 
-@mock.patch.object(loaders.requests, "get")
 def test_load_image_from_string_when_file_to_be_downloaded(
-    requests_get_mock: MagicMock,
+    requests_mock,
 ) -> None:
     # given
-    response = Response()
-    response.status_code = 200
+    url = "https://some.com/file.jpg"
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode(".jpg", image)
-    response._content = encoded_image
-    requests_get_mock.return_value = response
+    requests_mock.get(url, content=encoded_image.tobytes())
 
     # when
-    serialised_image, scaling_factor = load_image_from_string(
-        reference="https://some/file.jpg"
-    )
+    serialised_image, scaling_factor = load_image_from_string(reference=url)
 
     # then
     recovered_image = base64.b64decode(serialised_image)
@@ -206,7 +189,6 @@ def test_load_image_from_string_when_file_to_be_downloaded(
     assert scaling_factor is None
     assert decoding_result.shape == image.shape
     assert np.allclose(decoding_result, image)
-    requests_get_mock.assert_called_once_with("https://some/file.jpg")
 
 
 @pytest.mark.asyncio
@@ -629,6 +611,111 @@ def test_load_directory_inference_input_when_filtering_by_extension_is_enabled(
     # then
     assert len(results) == 1
     assert file_name2results["file_1.jpg"].shape == (128, 128, 3)
+
+
+@pytest.mark.parametrize(
+    "directory_name,file_name,image_extensions",
+    [
+        ("images", "frame.jpg", None),
+        ("Images", "FRAME.JPG", None),
+        ("images", "Frame.PNG", None),
+        ("Images", "frame.jpg", ["jpg"]),
+        ("Images", "FRAME.PNG", ["png", "PNG"]),
+    ],
+)
+def test_load_directory_inference_input_preserves_path_case(
+    tmp_path: Path,
+    directory_name: str,
+    file_name: str,
+    image_extensions: Optional[List[str]],
+) -> None:
+    """Read real images using the original directory and file name casing."""
+    directory = tmp_path / directory_name
+    directory.mkdir()
+    file_path = directory / file_name
+    image = np.zeros((16, 24, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(file_path), image)
+
+    with mock.patch.object(loaders.cv2, "imread", wraps=cv2.imread) as imread_mock:
+        results = list(
+            load_directory_inference_input(
+                directory_path=str(directory),
+                image_extensions=image_extensions,
+            )
+        )
+
+    assert [reference for reference, _ in results] == [file_path.as_posix()]
+    imread_mock.assert_called_once_with(file_path.as_posix())
+    assert np.array_equal(results[0][1], image)
+
+
+def test_load_directory_inference_input_filters_repeated_extension_patterns(
+    tmp_path: Path,
+) -> None:
+    """Filter real images without returning one file for each matching pattern."""
+    image = np.zeros((16, 24, 3), dtype=np.uint8)
+    png_path = tmp_path / "image.png"
+    assert cv2.imwrite(str(png_path), image)
+    assert cv2.imwrite(str(tmp_path / "ignored.jpg"), image)
+
+    results = list(
+        load_directory_inference_input(
+            directory_path=str(tmp_path),
+            image_extensions=["png", "PNG", "png"],
+        )
+    )
+
+    assert [reference for reference, _ in results] == [png_path.as_posix()]
+    assert np.array_equal(results[0][1], image)
+
+
+@mock.patch.object(loaders.sv, "list_files_with_extensions")
+def test_load_directory_inference_input_deduplicates_discovered_paths(
+    list_files_mock: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Read one real image once if overlapping patterns discover its path twice."""
+    file_path = tmp_path / "image.png"
+    image = np.zeros((16, 24, 3), dtype=np.uint8)
+    assert cv2.imwrite(str(file_path), image)
+    list_files_mock.return_value = [file_path, file_path]
+
+    with mock.patch.object(loaders.cv2, "imread", wraps=cv2.imread) as imread_mock:
+        results = list(
+            load_directory_inference_input(
+                directory_path=str(tmp_path),
+                image_extensions=["png", "PNG"],
+            )
+        )
+
+    assert [reference for reference, _ in results] == [file_path.as_posix()]
+    imread_mock.assert_called_once_with(file_path.as_posix())
+    assert np.array_equal(results[0][1], image)
+
+
+def test_load_directory_inference_input_keeps_case_distinct_files(
+    tmp_path: Path,
+) -> None:
+    """Keep both real images when the filesystem supports case-distinct names."""
+    upper_path = tmp_path / "FRAME.PNG"
+    lower_path = tmp_path / "frame.png"
+    upper_image = np.zeros((16, 24, 3), dtype=np.uint8)
+    lower_image = np.full((16, 24, 3), 255, dtype=np.uint8)
+    assert cv2.imwrite(str(upper_path), upper_image)
+    if lower_path.exists():
+        pytest.skip("The filesystem does not support case-distinct file names")
+
+    assert cv2.imwrite(str(lower_path), lower_image)
+    results = dict(
+        load_directory_inference_input(
+            directory_path=str(tmp_path),
+            image_extensions=["png", "PNG"],
+        )
+    )
+
+    assert set(results) == {upper_path.as_posix(), lower_path.as_posix()}
+    assert np.array_equal(results[upper_path.as_posix()], upper_image)
+    assert np.array_equal(results[lower_path.as_posix()], lower_image)
 
 
 @mock.patch.object(loaders.sv, "get_video_frames_generator")

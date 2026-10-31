@@ -1,3 +1,6 @@
-from inference.models.rfdetr_nas.rfdetr_nas import RFDETRNasObjectDetection, RFDETRNasInstanceSegmentation
+from inference.models.rfdetr_nas.rfdetr_nas import (
+    RFDETRNasInstanceSegmentation,
+    RFDETRNasObjectDetection,
+)
 
 __all__ = ["RFDETRNasObjectDetection", "RFDETRNasInstanceSegmentation"]

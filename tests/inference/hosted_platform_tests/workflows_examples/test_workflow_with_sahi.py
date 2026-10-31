@@ -5,6 +5,7 @@ from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
     ROBOFLOW_API_KEY,
     PlatformEnvironment,
+    apply_auth_mode,
 )
 
 WORKFLOW_WITH_SAHI = {
@@ -52,12 +53,14 @@ def test_workflow_with_sahi(
     object_detection_service_url: str,
     yolov8n_640_model_id: str,
     crowd_image: np.ndarray,
+    auth_mode: str,
 ) -> None:
     # given
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    client = apply_auth_mode(client, auth_mode)
 
     # when
     result = client.run_workflow(
@@ -71,26 +74,59 @@ def test_workflow_with_sahi(
     # then
     assert len(result) == 1, "1 image submitted, expected one output"
     confidences = [p["confidence"] for p in result[0]["predictions"]["predictions"]]
-    np.allclose(
-        confidences,
-        [
-            0.8529196977615356,
-            0.7524353265762329,
-            0.6803092956542969,
-            0.5056378245353699,
-            0.850996732711792,
-            0.7510667443275452,
-            0.6945700645446777,
-            0.467992901802063,
-            0.9452757239341736,
-            0.8821572065353394,
-            0.7479097843170166,
-            0.5607050657272339,
-            0.5313479900360107,
-            0.806734561920166,
-            0.5743240118026733,
-            0.9005401134490967,
-            0.8576444387435913,
-        ],
-        atol=1e-4,
-    ), "Expected predictions to be as measured while test creation"
+    if platform_environment in {
+        PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS,
+        PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA,
+        PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS,
+    }:
+        np.allclose(
+            confidences,
+            [
+                0.853515625,
+                0.8115234375,
+                0.751953125,
+                0.68017578125,
+                0.56396484375,
+                0.751953125,
+                0.6953125,
+                0.4658203125,
+                0.9453125,
+                0.8818359375,
+                0.74609375,
+                0.65234375,
+                0.56201171875,
+                0.533203125,
+                0.85107421875,
+                0.8115234375,
+                0.806640625,
+                0.61328125,
+                0.57373046875,
+                0.89990234375,
+                0.857421875,
+            ],
+            atol=1e-4,
+        )
+    else:
+        np.allclose(
+            confidences,
+            [
+                0.8529196977615356,
+                0.7524353265762329,
+                0.6803092956542969,
+                0.5056378245353699,
+                0.850996732711792,
+                0.7510667443275452,
+                0.6945700645446777,
+                0.467992901802063,
+                0.9452757239341736,
+                0.8821572065353394,
+                0.7479097843170166,
+                0.5607050657272339,
+                0.5313479900360107,
+                0.806734561920166,
+                0.5743240118026733,
+                0.9005401134490967,
+                0.8576444387435913,
+            ],
+            atol=1e-4,
+        ), "Expected predictions to be as measured while test creation"

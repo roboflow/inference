@@ -1,0 +1,188 @@
+from typing import List, Literal, Optional, Type, Union
+
+from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.workload_presets import (
+    DEPRECATED_BLOCK_ALWAYS_RAISES,
+    REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+    hosted_endpoint_disabled_by_flag,
+)
+from roboflow_workflows.environment import CORE_MODEL_GAZE_ENABLED
+from roboflow_workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
+from roboflow_workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
+    FLOAT_KIND,
+    IMAGE_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    ImageInputField,
+    Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    RuntimeRestriction,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    BlockResult,
+    DependentResource,
+    Runtime,
+    Severity,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+    actual_restrictions_of,
+)
+from roboflow_workflows.prototypes.platform_errors import FeatureDeprecatedError
+
+LONG_DESCRIPTION = """
+**DEPRECATED.** L2CS Gaze detection has been removed from inference along
+with the MediaPipe dependency. Invoking this block raises
+`FeatureDeprecatedError` (HTTP 410 Gone).
+"""
+
+
+class BlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Gaze Detection",
+            "version": "v1",
+            "short_description": "Detect faces and estimate gaze direction (deprecated).",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "search_keywords": ["gaze", "face"],
+            "deprecated": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-eyes",
+                "blockPriority": 13.5,
+            },
+        },
+        protected_namespaces=(),
+    )
+
+    type: Literal["roboflow_core/gaze@v1"]
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    do_run_face_detection: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Whether to run face detection. Set to False if input images are pre-cropped face images.",
+    )
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="face_predictions",
+                kind=[KEYPOINT_DETECTION_PREDICTION_KIND],
+                description="Facial landmark predictions",
+            ),
+            OutputDefinition(
+                name="yaw_degrees",
+                kind=[FLOAT_KIND],
+                description="Yaw angle in degrees (-180 to 180, negative is left)",
+            ),
+            OutputDefinition(
+                name="pitch_degrees",
+                kind=[FLOAT_KIND],
+                description="Pitch angle in degrees (-90 to 90, negative is down)",
+            ),
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """Return the block's coarse execution restrictions.
+
+        Returns:
+            Restrictions that apply on this host, each with a stable ``code``.
+        """
+        restrictions = [
+            RuntimeRestriction(
+                code="requires_gpu_for_local_execution",
+                severity=Severity.HARD,
+                note="Requires a GPU; run_locally() loads a model that needs CUDA.",
+                applies_to_runtimes=[Runtime.SELF_HOSTED_CPU],
+                applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
+            ),
+        ]
+        if not CORE_MODEL_GAZE_ENABLED:
+            restrictions.append(
+                RuntimeRestriction(
+                    code="hosted_endpoint_disabled_by_flag",
+                    severity=Severity.HARD,
+                    note=(
+                        "CORE_MODEL_GAZE_ENABLED=False on Roboflow Hosted Serverless: "
+                        "the gaze endpoint is not registered, so run_remotely() "
+                        "returns 404."
+                    ),
+                    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+                    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+                )
+            )
+        return restrictions
+
+    @classmethod
+    def get_supported_model_variants(cls) -> Optional[List[str]]:
+        """Return list of model_id variants that can satisfy this block."""
+        return ["gaze/L2CS"]
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # run() raises FeatureDeprecatedError before a model is ever fetched,
+        # so the step pulls no external resource on any runtime.
+        return []
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        # run() raises FeatureDeprecatedError before touching a model, so the
+        # step performs no work on any runtime.
+        return []
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        return actual_restrictions_of(
+            declared=[
+                DEPRECATED_BLOCK_ALWAYS_RAISES,
+                REQUIRES_GPU_FOR_LOCAL_EXECUTION,
+                hosted_endpoint_disabled_by_flag("CORE_MODEL_GAZE_ENABLED"),
+            ],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+
+class GazeBlockV1(WorkflowBlock):
+    def __init__(
+        self,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
+    ):
+        self._api_key = api_key
+        self._step_execution_mode = step_execution_mode
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["api_key", "step_execution_mode"]
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        images: Batch[WorkflowImageData],
+        do_run_face_detection: bool,
+    ) -> BlockResult:
+        raise FeatureDeprecatedError(
+            feature="roboflow_core/gaze@v1",
+            reason="MediaPipe dependency removed from inference",
+        )

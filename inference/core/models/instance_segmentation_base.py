@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -75,7 +75,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             max_candidates (int, optional): Maximum number of candidate detections. Defaults to 3000.
             max_detections (int, optional): Maximum number of detections after non-maximum suppression. Defaults to 300.
             return_image_dims (bool, optional): Whether to return the dimensions of the processed images. Defaults to False.
-            tradeoff_factor (float, optional): Tradeoff factor used when `mask_decode_mode` is set to "tradeoff". Must be in [0.0, 1.0]. Defaults to 0.5.
+            tradeoff_factor (float, optional): Tradeoff factor used when `mask_decode_mode` is set to "tradeoff". Must be in [0.0, 1.0]. Defaults to 0.0.
             disable_preproc_auto_orient (bool, optional): If true, the auto orient preprocessing step is disabled for this call. Default is False.
             disable_preproc_contrast (bool, optional): If true, the auto contrast preprocessing step is disabled for this call. Default is False.
             disable_preproc_grayscale (bool, optional): If true, the grayscale preprocessing step is disabled for this call. Default is False.
@@ -221,7 +221,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
         predictions: List[List[List[float]]],
         masks: List[List[List[float]]],
         img_dims: List[Tuple[int, int]],
-        class_filter: List[str] = [],
+        class_filter: Optional[List[str]] = None,
         **kwargs,
     ) -> Union[
         InstanceSegmentationInferenceResponse,
@@ -234,7 +234,7 @@ class InstanceSegmentationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceMo
             predictions (List[List[List[float]]]): List of prediction data, one for each image.
             masks (List[List[List[float]]]): List of masks corresponding to the predictions.
             img_dims (List[Tuple[int, int]]): List of image dimensions corresponding to the processed images.
-            class_filter (List[str], optional): List of class names to filter predictions by. Defaults to an empty list (no filtering).
+            class_filter (Optional[List[str]]): List of class names to filter predictions by. Defaults to None (no filtering).
 
         Returns:
             Union[InstanceSegmentationInferenceResponse, List[InstanceSegmentationInferenceResponse]]: A single instance segmentation response or a list of instance segmentation responses based on the number of processed images.

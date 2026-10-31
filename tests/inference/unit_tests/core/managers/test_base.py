@@ -1,10 +1,20 @@
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 from inference.core.exceptions import InferenceModelNotFound
+from inference.core.managers import base as base_module
 from inference.core.managers.base import ModelManager
 from inference.core.managers.entities import ModelDescription
+from inference.core.managers.model_load_collector import (
+    ModelLoadCollector,
+    RequestModelIds,
+    model_load_info,
+    request_model_ids,
+)
 
 
 def test_add_model_when_model_already_loaded() -> None:
@@ -29,6 +39,55 @@ def test_add_model_when_model_not_loaded() -> None:
     model_manager.add_model(model_id="some/1", api_key="some_api_key")
 
     # then
+    assert "some/1" in model_manager.models()
+
+
+def test_add_model_passes_manager_owned_artifact_cache() -> None:
+    model_class = MagicMock()
+    model_registry = MagicMock()
+    model_registry.get_model.return_value = model_class
+    artifact_cache = MagicMock()
+
+    with patch.object(base_module, "USE_INFERENCE_MODELS", True):
+        model_manager = ModelManager(
+            model_registry=model_registry,
+            content_addressed_artifact_cache=artifact_cache,
+        )
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+        model_manager.add_model(model_id="other/1", api_key="some_api_key")
+
+    assert model_class.call_count == 2
+    for call in model_class.call_args_list:
+        assert call.kwargs["content_addressed_artifact_cache"] is artifact_cache
+
+
+def test_model_manager_uses_shared_artifact_cache() -> None:
+    artifact_cache = MagicMock()
+
+    with patch.object(base_module, "USE_INFERENCE_MODELS", True), patch(
+        "inference_models.utils.model_blob_cache.get_shared_model_blob_cache",
+        return_value=artifact_cache,
+    ) as shared_cache_getter:
+        model_manager = ModelManager(model_registry=MagicMock())
+
+    assert model_manager.content_addressed_artifact_cache is artifact_cache
+    shared_cache_getter.assert_called_once_with()
+
+
+def test_add_model_skips_online_cache_authorization_in_offline_mode() -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+
+    with patch.object(base_module, "MODELS_CACHE_AUTH_ENABLED", True), patch.object(
+        base_module,
+        "OFFLINE_MODE",
+        True,
+    ), patch.object(
+        base_module,
+        "_check_if_api_key_has_access_to_model",
+    ) as access_check_mock:
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+
+    access_check_mock.assert_not_called()
     assert "some/1" in model_manager.models()
 
 
@@ -100,6 +159,236 @@ async def test_infer_from_request_when_model_is_available_but_exception_raised()
     # then
     assert thrown_exception.value is error
     model_manager._models["some/1"].infer_from_request.assert_called_once_with(request)
+
+
+def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=False)
+    cached_item = {"request": {"model_id": "some/1"}, "response": {"time": 0.1}}
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+    monkeypatch.setattr(
+        base_module,
+        "to_cachable_inference_item",
+        lambda _request, _response, model_id: cached_item,
+    )
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+
+    model_manager.infer_from_request_sync(model_id="some/1", request=request)
+
+    assert any(
+        call.args[0].startswith("inference:") for call in cache_mock.zadd.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+async def test_infer_from_request_caches_served_model_id_when_request_has_none(
+    monkeypatch: pytest.MonkeyPatch,
+    use_async: bool,
+) -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    model.infer_from_request.return_value = ObjectDetectionInferenceResponse(
+        predictions=[], image={"width": 1, "height": 1}, time=0.1
+    )
+    model_manager._models = {"yolo_world/l": model}
+    request = YOLOWorldInferenceRequest(
+        image={"type": "url", "value": "https://some/image.jpg"},
+        text=["person"],
+    )
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+
+    if use_async:
+        await model_manager.infer_from_request(model_id="yolo_world/l", request=request)
+    else:
+        model_manager.infer_from_request_sync(model_id="yolo_world/l", request=request)
+
+    cached_items = [
+        call.kwargs["value"]
+        for call in cache_mock.zadd.call_args_list
+        if call.args[0].startswith("inference:")
+    ]
+    assert [item["request"]["model_id"] for item in cached_items] == ["yolo_world/l"]
+
+
+def test_infer_from_request_sync_skips_model_monitoring_cache_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=True)
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+
+    model_manager.infer_from_request_sync(model_id="some/1", request=request)
+
+    cache_mock.zadd.assert_not_called()
+
+
+@pytest.mark.parametrize("raises_error", [False, True], ids=["success", "error"])
+def test_infer_from_request_sync_skips_model_monitoring_cache_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    raises_error: bool,
+) -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    error = RuntimeError("inference failed")
+    if raises_error:
+        model.infer_from_request.side_effect = error
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=False)
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", True)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+
+    if raises_error:
+        with pytest.raises(RuntimeError, match="inference failed"):
+            model_manager.infer_from_request_sync(
+                model_id="some/1",
+                request=request,
+            )
+    else:
+        model_manager.infer_from_request_sync(
+            model_id="some/1",
+            request=request,
+        )
+
+    model.infer_from_request.assert_called_once_with(request)
+    cache_mock.zadd.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raises_error", [False, True], ids=["success", "error"])
+async def test_infer_from_request_skips_model_monitoring_cache_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    raises_error: bool,
+) -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    error = RuntimeError("inference failed")
+    if raises_error:
+        model.infer_from_request.side_effect = error
+    model_manager._models = {"some/1": model}
+    request = SimpleNamespace(api_key="some_api_key", disable_model_monitoring=False)
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", True)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+
+    if raises_error:
+        with pytest.raises(RuntimeError, match="inference failed"):
+            await model_manager.infer_from_request(
+                model_id="some/1",
+                request=request,
+            )
+    else:
+        await model_manager.infer_from_request(
+            model_id="some/1",
+            request=request,
+        )
+
+    model.infer_from_request.assert_called_once_with(request)
+    cache_mock.zadd.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "operation", ["run_tensor_native_inference", "run_tensor_native_embeddings"]
+)
+def test_run_tensor_native_inference_records_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    model = MagicMock()
+    getattr(model, operation).return_value = "result"
+    model_manager = ModelManager(model_registry=MagicMock(), models={"some/1": model})
+    start_span_mock = MagicMock()
+    record_inference_mock = MagicMock()
+    record_error_mock = MagicMock()
+    monkeypatch.setattr(base_module, "start_span", start_span_mock)
+    monkeypatch.setattr(base_module, "record_inference", record_inference_mock)
+    monkeypatch.setattr(base_module, "record_error", record_error_mock)
+
+    result = getattr(model_manager, operation)(model_id="some/1", images="tensor")
+
+    assert result == "result"
+    getattr(model, operation).assert_called_once_with(images="tensor")
+    start_span_mock.assert_called_once_with(
+        "model.infer",
+        {
+            "model.id": "some/1",
+            "model.infer.caller": operation,
+        },
+    )
+    record_inference_mock.assert_called_once()
+    assert record_inference_mock.call_args.args[0] == "some/1"
+    assert record_inference_mock.call_args.args[1] >= 0
+    record_error_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "operation", ["run_tensor_native_inference", "run_tensor_native_embeddings"]
+)
+def test_run_tensor_native_inference_records_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    error = RuntimeError("inference failed")
+    model = MagicMock()
+    getattr(model, operation).side_effect = error
+    model_manager = ModelManager(model_registry=MagicMock(), models={"some/1": model})
+    start_span_mock = MagicMock()
+    record_inference_mock = MagicMock()
+    record_error_mock = MagicMock()
+    monkeypatch.setattr(base_module, "start_span", start_span_mock)
+    monkeypatch.setattr(base_module, "record_inference", record_inference_mock)
+    monkeypatch.setattr(base_module, "record_error", record_error_mock)
+
+    with pytest.raises(RuntimeError) as raised_error:
+        getattr(model_manager, operation)(model_id="some/1", images="tensor")
+
+    assert raised_error.value is error
+    record_inference_mock.assert_not_called()
+    record_error_mock.assert_called_once_with(error)
 
 
 def test_make_response_when_model_available() -> None:
@@ -298,6 +587,28 @@ def test_clear() -> None:
     assert model_manager.models() == {}
 
 
+@pytest.mark.parametrize("disk_cache_cleanup", [True, False])
+def test_clear_passes_disk_cache_cleanup_to_models(
+    disk_cache_cleanup: bool,
+) -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    first_model, second_model = MagicMock(), MagicMock()
+    model_manager._models = {"some/1": first_model, "some/2": second_model}
+
+    # when
+    with patch.object(base_module, "DISK_CACHE_CLEANUP", disk_cache_cleanup):
+        model_manager.clear()
+
+    # then
+    first_model.clear_cache.assert_called_once_with(delete_from_disk=disk_cache_cleanup)
+    second_model.clear_cache.assert_called_once_with(
+        delete_from_disk=disk_cache_cleanup
+    )
+    assert model_manager.models() == {}
+
+
 def test_model_manager_contains_when_result_should_be_positive() -> None:
     # given
     model_registry = MagicMock()
@@ -358,10 +669,12 @@ def test_model_manager_describe_models() -> None:
     model_1.batch_size = 12
     model_1.img_size_w = 640
     model_1.img_size_h = 480
+    model_1._vram_bytes = 1024000
     model_2.task_type = "instance-segmentation"
     model_2.batch_size = 1
     model_2.img_size_w = 480
     model_2.img_size_h = 480
+    model_2._vram_bytes = 2048000
     model_manager._models = {"some/1": model_1, "some/2": model_2}
 
     # when
@@ -375,6 +688,7 @@ def test_model_manager_describe_models() -> None:
             batch_size=12,
             input_width=640,
             input_height=480,
+            vram_bytes=1024000,
         ),
         ModelDescription(
             model_id="some/2",
@@ -382,5 +696,267 @@ def test_model_manager_describe_models() -> None:
             batch_size=1,
             input_width=480,
             input_height=480,
+            vram_bytes=2048000,
         ),
     ]
+
+
+def test_add_model_records_cold_start_when_collector_set() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+    finally:
+        model_load_info.reset(token)
+
+    # then
+    assert "some/1" in model_manager.models()
+    assert collector.has_data() is True
+    total, detail = collector.summarize()
+    assert total > 0
+
+
+def test_add_model_does_not_record_when_model_already_loaded() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"some/1": "A"}
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+    finally:
+        model_load_info.reset(token)
+
+    # then - model was warm, collector should be empty
+    assert collector.has_data() is False
+
+
+def test_add_model_does_not_record_when_no_collector_set() -> None:
+    # given - model_load_info defaults to None (no HTTP context)
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+
+    # when - should not raise even though no collector is set
+    model_manager.add_model(model_id="some/1", api_key="some_api_key")
+
+    # then
+    assert "some/1" in model_manager.models()
+
+
+def test_add_model_records_multiple_cold_starts() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when
+        model_manager.add_model(model_id="model-a/1", api_key="key")
+        model_manager.add_model(model_id="model-b/2", api_key="key")
+    finally:
+        model_load_info.reset(token)
+
+    # then
+    total, detail = collector.summarize()
+    import json
+
+    parsed = json.loads(detail)
+    assert len(parsed) == 2
+    assert {e["m"] for e in parsed} == {"model-a/1", "model-b/2"}
+    assert all(e["t"] > 0 for e in parsed)
+
+
+def test_add_model_records_cold_start_only_for_new_models() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"existing/1": "A"}
+    collector = ModelLoadCollector()
+    token = model_load_info.set(collector)
+
+    try:
+        # when - one warm, one cold
+        model_manager.add_model(model_id="existing/1", api_key="key")
+        model_manager.add_model(model_id="new-model/1", api_key="key")
+    finally:
+        model_load_info.reset(token)
+
+    # then - only the new model should be recorded
+    import json
+
+    total, detail = collector.summarize()
+    parsed = json.loads(detail)
+    assert len(parsed) == 1
+    assert parsed[0]["m"] == "new-model/1"
+
+
+def test_add_model_records_model_id_when_ids_collector_set() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    ids = RequestModelIds()
+    token = request_model_ids.set(ids)
+
+    try:
+        # when
+        model_manager.add_model(model_id="some/1", api_key="key")
+    finally:
+        request_model_ids.reset(token)
+
+    # then
+    assert ids.get_ids() == {"some/1"}
+
+
+def test_add_model_records_model_id_for_warm_model() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"some/1": "A"}
+    ids = RequestModelIds()
+    token = request_model_ids.set(ids)
+
+    try:
+        # when - model already loaded (warm)
+        model_manager.add_model(model_id="some/1", api_key="key")
+    finally:
+        request_model_ids.reset(token)
+
+    # then - model ID should still be recorded
+    assert ids.get_ids() == {"some/1"}
+
+
+def test_add_model_records_all_model_ids() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    model_manager._models = {"warm/1": "A"}
+    ids = RequestModelIds()
+    token = request_model_ids.set(ids)
+
+    try:
+        # when - one warm, one cold
+        model_manager.add_model(model_id="warm/1", api_key="key")
+        model_manager.add_model(model_id="cold/1", api_key="key")
+    finally:
+        request_model_ids.reset(token)
+
+    # then
+    assert ids.get_ids() == {"warm/1", "cold/1"}
+
+
+class _FakeStreamModel:
+    def __init__(self, pipeline_depth=None, has_flush=False, has_shutdown=False):
+        self.key_points_classes = [["nose", "eye"], ["tip"]]
+        if pipeline_depth is not None:
+            self._pipeline_depth = pipeline_depth
+        if has_flush:
+            self.flush = lambda: ["flushed"]
+        if has_shutdown:
+            self.shutdown_called = False
+            self.shutdown_pipeline = self._shutdown
+
+    def _shutdown(self):
+        self.shutdown_called = True
+
+
+def _manager_with(model_id: str, model: object) -> ModelManager:
+    manager = ModelManager(model_registry=MagicMock())
+    manager._models[model_id] = model
+    return manager
+
+
+def test_get_keypoints_classes_returns_model_attribute() -> None:
+    assert _manager_with("m/1", _FakeStreamModel()).get_keypoints_classes("m/1") == [
+        ["nose", "eye"],
+        ["tip"],
+    ]
+
+
+def test_model_supports_stream_pipeline_requires_flush_and_depth_above_one() -> None:
+    assert _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=3, has_flush=True)
+    ).model_supports_stream_pipeline("m/1")
+    assert not _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=1, has_flush=True)
+    ).model_supports_stream_pipeline("m/1")
+    assert not _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=3)
+    ).model_supports_stream_pipeline("m/1")
+    assert not _manager_with(
+        "other", _FakeStreamModel(pipeline_depth=3, has_flush=True)
+    ).model_supports_stream_pipeline("m/1")
+
+
+def test_get_model_pipeline_depth_defaults_to_one() -> None:
+    assert (
+        _manager_with(
+            "m/1", _FakeStreamModel(pipeline_depth=4)
+        ).get_model_pipeline_depth("m/1")
+        == 4
+    )
+    assert _manager_with("m/1", _FakeStreamModel()).get_model_pipeline_depth("m/1") == 1
+    assert (
+        _manager_with("m/1", _FakeStreamModel()).get_model_pipeline_depth("absent") == 1
+    )
+
+
+def test_flush_model_stream_pipeline_returns_none_when_unavailable() -> None:
+    assert _manager_with(
+        "m/1", _FakeStreamModel(pipeline_depth=3, has_flush=True)
+    ).flush_model_stream_pipeline("m/1") == ["flushed"]
+    assert (
+        _manager_with("m/1", _FakeStreamModel()).flush_model_stream_pipeline("m/1")
+        is None
+    )
+    assert (
+        _manager_with("m/1", _FakeStreamModel()).flush_model_stream_pipeline("absent")
+        is None
+    )
+
+
+def test_shutdown_model_stream_pipeline_is_a_noop_when_unsupported() -> None:
+    model = _FakeStreamModel(has_shutdown=True)
+    manager = _manager_with("m/1", model)
+    manager.shutdown_model_stream_pipeline("m/1")
+    assert model.shutdown_called is True
+    manager.shutdown_model_stream_pipeline("absent")
+    _manager_with("m/2", _FakeStreamModel()).shutdown_model_stream_pipeline("m/2")
+
+
+def test_decorator_forwards_the_new_members() -> None:
+    from inference.core.managers.decorators.base import ModelManagerDecorator
+
+    inner = MagicMock()
+    decorator = ModelManagerDecorator(inner)
+    assert (
+        decorator.get_keypoints_classes("m/1")
+        is inner.get_keypoints_classes.return_value
+    )
+    inner.get_keypoints_classes.assert_called_once_with("m/1")
+    assert (
+        decorator.model_supports_stream_pipeline("m/1")
+        is inner.model_supports_stream_pipeline.return_value
+    )
+    assert (
+        decorator.get_model_pipeline_depth("m/1")
+        is inner.get_model_pipeline_depth.return_value
+    )
+    assert (
+        decorator.flush_model_stream_pipeline("m/1")
+        is inner.flush_model_stream_pipeline.return_value
+    )
+    decorator.shutdown_model_stream_pipeline("m/1")
+    inner.shutdown_model_stream_pipeline.assert_called_once_with("m/1")
+    decorator.load_action_recognition_model(model_id="ar/1", api_key="k")
+    inner.load_action_recognition_model.assert_called_once_with(
+        model_id="ar/1", api_key="k"
+    )

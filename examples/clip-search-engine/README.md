@@ -23,7 +23,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Next, set up a Roboflow Inference Docker container. This Docker container will manage inference for the gaze detection system. [Learn how to set up an Inference Docker container](https://inference.roboflow.com/quickstart/docker/).
+Next, set up a Roboflow Inference Docker container. This Docker container will run CLIP inference for the search engine. [Learn how to set up an Inference Docker container](https://inference.roboflow.com/quickstart/docker/).
 
 ## 🔑 keys
 

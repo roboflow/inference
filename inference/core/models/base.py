@@ -5,9 +5,20 @@ import numpy as np
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.entities.responses.inference import (
+    InferenceResponse,
+    InstanceSegmentationInferenceResponseDC,
+    ResolvedModel,
+)
+from inference.core.env import USE_INFERENCE_MODELS
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.telemetry import set_span_attribute, start_span
 from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.megapixel_buckets import (
+    clear_measured_model_input,
+    parse_image_dims_hw,
+    record_measured_model_input,
+)
 
 
 class BaseInference:
@@ -22,14 +33,43 @@ class BaseInference:
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
-        preproc_image, returned_metadata = self.preprocess(image, **kwargs)
-        logger.debug(
-            f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
-        )
-        predicted_arrays = self.predict(preproc_image, **kwargs)
-        postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
+        clear_measured_model_input()
+        with start_span("model.preprocess"):
+            preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+            record_measured_model_input(
+                preproc_image,
+                fallback_hw=parse_image_dims_hw(returned_metadata),
+            )
+            logger.debug(
+                f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
+            )
+            if hasattr(preproc_image, "shape"):
+                set_span_attribute("model.input_shape", str(preproc_image.shape))
+        with start_span("model.predict"):
+            predicted_arrays = self.predict(preproc_image, **kwargs)
+        with start_span("model.postprocess"):
+            postprocessed = self.postprocess(
+                predicted_arrays, returned_metadata, **kwargs
+            )
 
         return postprocessed
+
+    def run_tensor_native_inference(self, **kwargs) -> Any:
+        raise NotImplementedError
+
+    def run_tensor_native_embeddings(self, **kwargs) -> dict:
+        """Generate native embeddings when implemented by a classifier.
+
+        Args:
+            **kwargs: Native images and embedding options.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+
+        Raises:
+            NotImplementedError: If this model has no tensor-embedding operation.
+        """
+        raise NotImplementedError
 
     def preprocess(
         self, image: Any, **kwargs
@@ -84,6 +124,31 @@ class Model(BaseInference):
         clear_cache(): Clears any cache if necessary.
     """
 
+    @property
+    def resolved_model(self) -> Any:
+        model = getattr(self, "_model", None)
+        if USE_INFERENCE_MODELS and model is not None:
+            return getattr(model, "resolved_model", None)
+        model_id = getattr(self, "endpoint", None) or getattr(self, "model_id", None)
+        return ResolvedModel(model_id=model_id) if model_id is not None else None
+
+    def _attach_resolved_model_metadata(self, responses: Any) -> None:
+        metadata = self.resolved_model
+        if metadata is None:
+            return
+        resolved_model = ResolvedModel(
+            model_id=metadata.model_id,
+            model_package_id=metadata.model_package_id,
+            backend=metadata.backend,
+            quantization=metadata.quantization,
+        )
+        responses = responses if isinstance(responses, list) else [responses]
+        for response in responses:
+            if isinstance(
+                response, (InferenceResponse, InstanceSegmentationInferenceResponseDC)
+            ):
+                response.resolved_model = resolved_model
+
     def log(self, m):
         """Prints the given message.
 
@@ -131,7 +196,21 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=False)
+        kwargs = request.dict()
+        stream_pipeline_context_id = getattr(
+            request, "stream_pipeline_context_id", None
+        )
+        if stream_pipeline_context_id is not None:
+            kwargs["stream_pipeline_context_id"] = stream_pipeline_context_id
+        confidence = kwargs.get("confidence")
+        if isinstance(confidence, str) and not USE_INFERENCE_MODELS:
+            logger.warning(
+                "Legacy inference does not support confidence=%r, "
+                "using model default",
+                confidence,
+            )
+            kwargs.pop("confidence")
+        responses = self.infer(**kwargs, return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
             logger.debug(f"model infer time: {response.time * 1000.0} ms")
@@ -145,6 +224,7 @@ class Model(BaseInference):
         if not isinstance(request.image, list) and len(responses) > 0:
             responses = responses[0]
 
+        self._attach_resolved_model_metadata(responses)
         return responses
 
     def make_response(

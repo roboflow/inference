@@ -1,9 +1,12 @@
-from typing import Any, ClassVar, List, Optional, Union
+from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
+from inference.core import logger
 from inference.core.entities.common import ApiKey, ModelID, ModelType
+from inference_sdk.http.entities import Confidence
 
 
 class BaseRequest(BaseModel):
@@ -27,6 +30,14 @@ class BaseRequest(BaseModel):
     start: Optional[float] = None
     source: Optional[str] = None
     source_info: Optional[str] = None
+    stream_pipeline_context_id: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        description=(
+            "Internal stream-pipeline frame pairing id. Not part of the public API."
+        ),
+    )
     disable_model_monitoring: Optional[bool] = Field(
         default=False, description="If true, disables model monitoring for this request"
     )
@@ -100,6 +111,8 @@ class DepthEstimationRequest(InferenceRequest):
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
         model_id (str): The model ID to use for depth estimation.
         depth_version_id (Optional[str]): The version ID of the depth estimation model.
+        depth_map_format (Literal["json", "png16", "png8"]): Serialization format
+            for the normalized depth map in the response.
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
@@ -109,14 +122,35 @@ class DepthEstimationRequest(InferenceRequest):
         examples=["small"],
         description="The version ID of the depth estimation model",
     )
+    depth_map_format: Literal["json", "png16", "png8"] = Field(
+        default="json",
+        description="Serialization format for `normalized_depth` in the response: "
+        "`json` (default, wire-compatible with older clients) returns the nested "
+        "float list; `png16` returns a base64 16-bit grayscale PNG (quantization "
+        "step 1/65535, typically >10x smaller payload - `inference_sdk` decodes "
+        "it back to a numpy array when requested via `depth_map_format='png16'`); "
+        "`png8` returns a base64 8-bit grayscale PNG (256 depth levels, roughly "
+        "another order of magnitude smaller - fine for visualization/thresholding, "
+        "lossy for geometric use).",
+    )
 
-    @validator("model_id", always=True)
-    def validate_model_id(cls, value, values):
-        if value is not None:
-            return value
-        if values.get("depth_version_id") is None:
-            return None
-        return f"depth-anything-v2/{values['depth_version_id']}"
+    @model_validator(mode="after")
+    def validate_model_id(self) -> "DepthEstimationRequest":
+        """Derive the model ID after the depth version has been validated.
+
+        Returns:
+            The request with its explicit or derived model ID.
+        """
+        if (
+            self.model_id is None
+            and "depth_version_id" in self.model_fields_set
+            and self.depth_version_id is not None
+        ):
+            self.model_id = f"depth-anything-v2/{self.depth_version_id}"
+            # A derived ID is not an explicit body ID for path conflict checks.
+            self.model_fields_set.discard("model_id")
+
+        return self
 
 
 class ObjectDetectionInferenceRequest(CVInferenceRequest):
@@ -145,10 +179,13 @@ class ObjectDetectionInferenceRequest(CVInferenceRequest):
         examples=[["class-1", "class-2", "class-n"]],
         description="If provided, only predictions for the listed classes will be returned",
     )
-    confidence: Optional[float] = Field(
+    confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5],
-        description="The confidence threshold used to filter out predictions",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
     )
     fix_batch_size: Optional[bool] = Field(
         default=False,
@@ -203,6 +240,18 @@ class KeypointsDetectionInferenceRequest(ObjectDetectionInferenceRequest):
         description="The confidence threshold used to filter out non visible keypoints",
     )
 
+    # TODO: drop this validator once model eval supports keypoint detection.
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _reject_best_confidence(cls, value: Any) -> Any:
+        if value == "best":
+            raise ValueError(
+                'confidence="best" is not supported for keypoint detection '
+                "— model eval does not yet produce per-class thresholds for "
+                'this task. Use a float or "default".'
+            )
+        return value
+
 
 class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
     """Instance Segmentation inference request.
@@ -215,13 +264,105 @@ class InstanceSegmentationInferenceRequest(ObjectDetectionInferenceRequest):
     mask_decode_mode: Optional[str] = Field(
         default="accurate",
         examples=["accurate"],
-        description="The mode used to decode instance segmentation masks, one of 'accurate', 'fast', 'tradeoff'",
+        description="Mask decoding mode: 'accurate' (default), 'fast', or 'tradeoff'. "
+        "On inference_models, accurate uses full-resolution masks, fast keeps the "
+        "model mask grid, and tradeoff interpolates between those grids. Lower "
+        "resolution factors do not guarantee smaller masks or lower end-to-end latency.",
     )
     tradeoff_factor: Optional[float] = Field(
         default=0.0,
         examples=[0.5],
-        description="The amount to tradeoff between 0='fast' and 1='accurate'",
+        description="Factor in [0.0, 1.0], used only with mask_decode_mode='tradeoff'; "
+        "defaults to 0.0. On inference_models, 0.0 selects the model mask grid and "
+        "1.0 selects image resolution. Intermediate values interpolate mask-grid "
+        "dimensions; the legacy backend uses a different interpolation schedule.",
     )
+    allow_reduced_mask_resolution: bool = Field(
+        default=False,
+        examples=[True],
+        description="Opt into mask_decode_mode and tradeoff_factor on the "
+        "inference_models backend. Without this flag, masks stay at image "
+        "resolution. With it, boxes, polygon points and RLE masks all use the "
+        "selected mask grid, reported in image. original_image retains the input "
+        "dimensions and mask_metadata maps output coordinates back to the input. The legacy "
+        "backend retains its existing decoding behavior regardless of this flag.",
+    )
+    response_mask_format: Literal["polygon", "rle"] = Field(
+        default="polygon",
+        examples=["rle"],
+        description="Requested output mask format - `polygon` is the default Roboflow format, which however is "
+        "not capable representing certain shapes - RLE is compact and more standard representation, yet "
+        "require special decoding on the caller side - currently supported in `opt-in` mode when server is "
+        "running with `USE_INFERENCE_MODELS=True` - otherwise it's ignored. "
+        "RLE size records the encoded mask grid. With allow_reduced_mask_resolution=True, "
+        "both formats and bounding boxes use this grid, matching response image dimensions. "
+        "original_image and mask_metadata provide the mapping to the input image.",
+    )
+    enforce_dense_masks_in_inference_models: Optional[bool] = Field(
+        default=False,
+        examples=[False],
+        description="Flag to enforce dense masks in inference models. Such masks are faster than "
+        "RLE but consume more memory which may be unstable in some cases. This flag cannot be tweaked "
+        "when used on Roboflow serverless platform.",
+    )
+
+
+class SemanticSegmentationInferenceRequest(CVInferenceRequest):
+    """Semantic Segmentation inference request.
+
+    Attributes:
+        response_mask_format (str): Format of the masks in the response, one of 'base64_png', 'numpy'.
+    """
+
+    def __init__(self, **kwargs):
+        kwargs["model_type"] = "semantic-segmentation"
+        super().__init__(**kwargs)
+
+    confidence: Confidence = Field(
+        default=0.4,
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
+    )
+    response_mask_format: SkipJsonSchema[Literal["base64_png", "numpy"]] = Field(
+        default="base64_png",
+        examples=["base64_png"],
+        description=(
+            "[INTERNAL USE ONLY] Format of segmentation_mask / confidence_mask in the response. "
+            "'base64_png' (default) returns base64-encoded PNG strings. "
+            "'numpy' returns raw uint8 numpy arrays and is an in-process "
+            "contract for callers like the workflows semantic segmentation "
+            "block, skipping a full-resolution PNG encode/decode round-trip. "
+            "Wire boundaries coerce 'numpy' back to 'base64_png' (see "
+            "ensure_wire_safe_mask_format), and json-mode serialization of a "
+            "'numpy' response encodes the masks to base64 PNG, so wire "
+            "responses always carry strings."
+        ),
+    )
+
+
+def ensure_wire_safe_mask_format(request: InferenceRequest) -> None:
+    """Coerces the in-process-only 'numpy' mask format to 'base64_png'.
+
+    This guard is load-bearing, not belt-and-braces: the server's wire
+    boundaries (``orjson_response`` and the enterprise parallel
+    ``write_response``) serialize with python-mode ``model_dump``/``dict``,
+    where pydantic's ``when_used='json'`` field serializer does NOT run - a
+    leaked ndarray mask would ship as a giant nested int array with a 200,
+    not fail. Call this at every boundary that ultimately serializes the
+    response for the wire. Safe to call with any request type.
+    """
+    if (
+        isinstance(request, SemanticSegmentationInferenceRequest)
+        and getattr(request, "response_mask_format", None) == "numpy"
+    ):
+        logger.warning(
+            "response_mask_format='numpy' is an in-process contract; "
+            "coercing to 'base64_png' for wire serialization"
+        )
+        request.response_mask_format = "base64_png"
 
 
 class ClassificationInferenceRequest(CVInferenceRequest):
@@ -233,14 +374,22 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         visualize_predictions (Optional[bool]): If true, the predictions will be drawn on the original image and returned as a base64 string.
     """
 
+    include_anomaly_map: bool = Field(
+        default=False,
+        description="Include a raw anomaly heatmap for FoundAD and PatchCore models",
+    )
+
     def __init__(self, **kwargs):
         kwargs["model_type"] = "classification"
         super().__init__(**kwargs)
 
-    confidence: Optional[float] = Field(
+    confidence: Confidence = Field(
         default=0.4,
-        examples=[0.5],
-        description="The confidence threshold used to filter out predictions",
+        examples=[0.5, "best", "default"],
+        description=(
+            'Confidence threshold. "best" uses model-eval thresholds, '
+            '"default" uses the model built-in, or pass a float.'
+        ),
     )
     visualization_stroke_width: Optional[int] = Field(
         default=1,
@@ -271,6 +420,14 @@ class LMMInferenceRequest(CVInferenceRequest):
         examples=["caption"],
         description="If set, use this prompt to guide the LMM",
     )
+    enable_thinking: bool = Field(
+        default=False,
+        description="If true, enables thinking/reasoning mode for models that support it (e.g. Qwen3.5). The model's reasoning will be included in the response.",
+    )
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens to generate. If not set, the model's default will be used.",
+    )
 
 
 def request_from_type(model_type, request_dict):
@@ -281,6 +438,8 @@ def request_from_type(model_type, request_dict):
         request = InstanceSegmentationInferenceRequest(**request_dict)
     elif model_type == "object-detection":
         request = ObjectDetectionInferenceRequest(**request_dict)
+    elif model_type == "semantic-segmentation":
+        request = SemanticSegmentationInferenceRequest(**request_dict)
     else:
         raise ValueError(f"Unknown task type {model_type}")
     request.id = request_dict.get("id", request.id)

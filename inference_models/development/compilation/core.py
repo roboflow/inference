@@ -4,9 +4,13 @@ import shutil
 from typing import List, Literal, Optional, Tuple, Union
 
 import onnxruntime
+
 from inference_models.configuration import ROBOFLOW_API_KEY
 from inference_models.logger import LOGGER
-from inference_models.models.auto_loaders.auto_negotiation import negotiate_model_packages
+from inference_models.models.auto_loaders.auto_negotiation import (
+    negotiate_model_packages,
+)
+from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
 from inference_models.utils.download import download_files_to_directory
 from inference_models.weights_providers.core import get_model_from_provider
@@ -14,7 +18,6 @@ from inference_models.weights_providers.entities import (
     ModelPackageMetadata,
     Quantization,
 )
-from inference_models.models.auto_loaders.entities import BackendType
 
 from .engine_builder import EngineBuilder
 

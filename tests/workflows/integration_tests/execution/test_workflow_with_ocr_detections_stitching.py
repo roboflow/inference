@@ -22,11 +22,12 @@ WORKFLOW_STITCHING_OCR_DETECTIONS = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v3",
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
+            "confidence_mode": "custom",
+            "custom_confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/stitch_ocr_detections@v2",
@@ -88,7 +89,6 @@ def test_detection_plus_classification_workflow_when_minimal_valid_input_provide
             "confidence": 0.6,
         }
     )
-
     assert isinstance(result, list), "Expected list to be delivered"
     assert len(result) == 1, "Expected 1 element in the output for one input image"
     assert set(result[0].keys()) == {

@@ -1,10 +1,11 @@
 import time
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from fastapi import BackgroundTasks
 
 from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
+from inference.core.active_learning.post_processing import project_mask_grid_to_original
 from inference.core.cache.base import BaseCache
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
@@ -12,6 +13,11 @@ from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
+
+if TYPE_CHECKING:
+    from inference_models.utils.content_addressed_artifact_cache import (
+        ContentAddressedArtifactCache,
+    )
 
 ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
 DISABLE_ACTIVE_LEARNING_PARAM = "disable_active_learning"
@@ -24,8 +30,14 @@ class ActiveLearningManager(ModelManager):
         model_registry: ModelRegistry,
         cache: BaseCache,
         middlewares: Optional[Dict[str, ActiveLearningMiddleware]] = None,
+        content_addressed_artifact_cache: Optional[
+            "ContentAddressedArtifactCache"
+        ] = None,
     ):
-        super().__init__(model_registry=model_registry)
+        super().__init__(
+            model_registry=model_registry,
+            content_addressed_artifact_cache=content_addressed_artifact_cache,
+        )
         self._cache = cache
         self._middlewares = middlewares if middlewares is not None else {}
 
@@ -72,6 +84,8 @@ class ActiveLearningManager(ModelManager):
     ) -> None:
         try:
             resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
+            if not hasattr(request, "active_learning_target_dataset"):
+                return None
             target_dataset = (
                 request.active_learning_target_dataset
                 or resolved_model_id.split("/")[0]
@@ -145,7 +159,9 @@ class ActiveLearningManager(ModelManager):
         )
         self._middlewares[middleware_key].register_batch(
             inference_inputs=inference_inputs,
-            predictions=results_dicts,
+            predictions=[
+                project_mask_grid_to_original(result) for result in results_dicts
+            ],
             prediction_type=prediction_type,
             disable_preproc_auto_orient=disable_preproc_auto_orient,
             inference_id=request.id,

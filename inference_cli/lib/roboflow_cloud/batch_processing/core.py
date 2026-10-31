@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import typer
 from typing_extensions import Annotated
@@ -18,6 +18,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.api_operations import (
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     AggregationFormat,
     CompilationDevice,
+    InferenceBackend,
     LogSeverity,
     MachineSize,
     MachineType,
@@ -111,6 +112,24 @@ def show_job_details(
         raise typer.Exit(code=1)
 
 
+def parse_key_value(
+    values: List[str],
+    require_non_empty_keys: bool = True,
+    require_non_empty_values: bool = True,
+) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for item in values:
+        if "=" not in item:
+            raise typer.BadParameter(f"'{item}' must be in key=value format")
+        key, value = item.split("=", 1)  # split once, so values may contain '='
+        if require_non_empty_keys and not key:
+            raise typer.BadParameter(f"Empty key in item '{item}'")
+        if require_non_empty_values and not value:
+            raise typer.BadParameter(f"Empty value in item '{item}'")
+        result[key] = value
+    return result
+
+
 @batch_processing_app.command(help="Trigger batch job to process images with Workflow")
 def process_images_with_workflow(
     batch_id: Annotated[
@@ -155,7 +174,15 @@ def process_images_with_workflow(
         typer.Option(
             "--part-name",
             "-p",
-            help="Name of the batch part " "(relevant for multipart batches",
+            help="Name of the batch part with images (relevant for multipart batches)",
+        ),
+    ] = None,
+    images_metadata_part_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--images-metadata-part-name",
+            "-imp",
+            help="Name of batch part bringing images metadata (relevant for multipart batches)",
         ),
     ] = None,
     machine_type: Annotated[
@@ -186,6 +213,19 @@ def process_images_with_workflow(
         Optional[int],
         typer.Option(
             "--max-parallel-tasks", help="Max number of concurrent processing tasks"
+        ),
+    ] = None,
+    max_image_failure_rate: Annotated[
+        Optional[float],
+        typer.Option(
+            "--max-image-failure-rate",
+            help=(
+                "Maximum fraction of images per shard that may fail before the shard "
+                "is aborted (0.0-1.0). Default: 10 absolute failures per shard "
+                "(~3.9% on a full 256-image shard, higher effective tolerance on "
+                "partial last shards). No client-side validation is performed; "
+                "out-of-range values are rejected by the server with HTTP 400."
+            ),
         ),
     ] = None,
     aggregation_format: Annotated[
@@ -222,7 +262,24 @@ def process_images_with_workflow(
             help="URL of the Webhook to be used for job state notifications.",
         ),
     ] = None,
+    inference_backend: Annotated[
+        Optional[InferenceBackend],
+        typer.Option("--inference-backend", "-ib", help="Inference backend to use"),
+    ] = None,
+    job_name: Annotated[
+        Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
+    ] = None,
+    image_metadata_mapping: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--metadata-mapping",
+            "-mm",
+            help="Key-value mapping of workflow input to metadata key as workflow_input=metadata_key. Repeatable.",
+        ),
+    ] = None,
 ) -> None:
+    if image_metadata_mapping is not None:
+        image_metadata_mapping = parse_key_value(image_metadata_mapping)
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     if workers_per_machine is None and machine_size is not None:
@@ -251,6 +308,11 @@ def process_images_with_workflow(
             job_id=job_id,
             notifications_url=notifications_url,
             api_key=api_key,
+            inference_backend=inference_backend,
+            job_name=job_name,
+            max_image_failure_rate=max_image_failure_rate,
+            images_metadata_part_name=images_metadata_part_name,
+            image_metadata_mapping=image_metadata_mapping,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -307,7 +369,7 @@ def process_videos_with_workflow(
         typer.Option(
             "--part-name",
             "-p",
-            help="Name of the batch part " "(relevant for multipart batches",
+            help="Name of the batch part relevant for multipart batches",
         ),
     ] = None,
     machine_type: Annotated[
@@ -382,6 +444,13 @@ def process_videos_with_workflow(
             help="URL of the Webhook to be used for job state notifications.",
         ),
     ] = None,
+    inference_backend: Annotated[
+        Optional[InferenceBackend],
+        typer.Option("--inference-backend", "-ib", help="Inference backend to use"),
+    ] = None,
+    job_name: Annotated[
+        Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -412,6 +481,8 @@ def process_videos_with_workflow(
             job_id=job_id,
             notifications_url=notifications_url,
             api_key=api_key,
+            inference_backend=inference_backend,
+            job_name=job_name,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -464,6 +535,9 @@ def trt_compile(
             help="URL of the Webhook to be used for job state notifications.",
         ),
     ] = None,
+    job_name: Annotated[
+        Optional[str], typer.Option("--job-name", "-jn", help="Name of your job")
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -475,6 +549,7 @@ def trt_compile(
             compilation_devices=compilation_devices,
             notifications_url=notifications_url,
             api_key=api_key,
+            job_name=job_name,
         )
         print(f"Triggered job with ID: {job_id}")
     except KeyboardInterrupt:
@@ -568,6 +643,19 @@ def restart_job(
             "--max-parallel-tasks", help="Max number of concurrent processing tasks"
         ),
     ] = None,
+    max_image_failure_rate: Annotated[
+        Optional[float],
+        typer.Option(
+            "--max-image-failure-rate",
+            help=(
+                "Maximum fraction of images per shard that may fail before the shard "
+                "is aborted (0.0-1.0). Default: 10 absolute failures per shard "
+                "(~3.9% on a full 256-image shard, higher effective tolerance on "
+                "partial last shards). No client-side validation is performed; "
+                "out-of-range values are rejected by the server with HTTP 400."
+            ),
+        ),
+    ] = None,
     debug_mode: Annotated[
         bool,
         typer.Option(
@@ -587,6 +675,7 @@ def restart_job(
             workers_per_machine=workers_per_machine,
             max_runtime_seconds=max_runtime_seconds,
             max_parallel_tasks=max_parallel_tasks,
+            max_image_failure_rate=max_image_failure_rate,
         )
     except KeyboardInterrupt:
         print("Command interrupted.")

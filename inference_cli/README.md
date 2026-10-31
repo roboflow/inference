@@ -80,7 +80,7 @@ inference infer https://[YOUR_HOSTED_IMAGE_URL] --project-id my-project --model-
 #### Hosted API inference
 
 ```bash
-inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key --host https://detect.roboflow.com
+inference infer ./image.jpg --project-id my-project --model-version 1 --api-key my-api-key --host https://serverless.roboflow.com
 ```
 
 ## Supported Devices
@@ -100,7 +100,6 @@ The Roboflow Inference code is distributed under an [Apache 2.0 license](https:/
 | model                     |                                                                license                                                                |
 | :------------------------ | :-----------------------------------------------------------------------------------------------------------------------------------: |
 | `inference/models/clip`   |                                        [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                                        |
-| `inference/models/gaze`   | [MIT](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE), [Apache 2.0](https://github.com/google/mediapipe/blob/master/LICENSE) |
 | `inference/models/sam`    |                         [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE)                          |
 | `inference/models/vit`    |                         [Apache 2.0](https://github.com/roboflow/inference/main/inference/models/vit/LICENSE)                         |
 | `inference/models/yolact` |                                     [MIT](https://github.com/dbolya/yolact/blob/master/README.md)                                     |
@@ -114,7 +113,7 @@ With a Roboflow Inference Enterprise License, you can access additional Inferenc
 
 - Server cluster deployment
 - Active learning
-- YOLOv5 and YOLOv8 model sub-license
+- Commercial license for self-hosted deployment, available as an Enterprise add-on. Without that add-on, self-hosted deployment follows the model's own license. An AGPL-3.0 model must be used under AGPL-3.0.
 
 To learn more, [contact the Roboflow team](https://roboflow.com/sales).
 
@@ -165,7 +164,7 @@ Visit our [documentation](https://roboflow.github.io/inference) for usage exampl
           />
       </a>
       <img src="https://raw.githubusercontent.com/ultralytics/assets/main/social/logo-transparent.png" width="3%"/>
-      <a href="https://disuss.roboflow.com">
+      <a href="https://discuss.roboflow.com">
           <img
             src="https://media.roboflow.com/notebooks/template/icons/purple/forum.png?ik-sdk-version=javascript-1.4.3&updatedAt=1672949633584"
             width="3%"

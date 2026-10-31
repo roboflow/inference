@@ -360,6 +360,35 @@ def initialise_byte_track(config: Optional[dict]) -> Optional[ByteTrack]:
     return ByteTrack(**config)
 
 
+def _filter_out_invalid_polygons(predictions: List[dict]) -> List[dict]:
+    if not isinstance(predictions, list):
+        return predictions
+
+    valid_predictions = [p for p in predictions if not _is_short_polygon(p)]
+
+    return valid_predictions
+
+
+def _is_short_polygon(prediction: dict) -> bool:
+    # Mirrors supervision: a `points` sequence with < 3 entries is kept as a box-only
+    # detection (which then drops masks of the whole response) unless RLE is valid.
+    if not isinstance(prediction, dict) or _has_valid_rle_payload(prediction):
+        return False
+
+    points = prediction.get("points")
+    is_short_polygon = isinstance(points, (list, tuple)) and len(points) < 3
+
+    return is_short_polygon
+
+
+def _has_valid_rle_payload(prediction: dict) -> bool:
+    # supervision prefers a valid RLE payload over `points`.
+    return any(
+        isinstance(rle_data, dict) and {"size", "counts"}.issubset(rle_data)
+        for rle_data in (prediction.get("rle"), prediction.get("rle_mask"))
+    )
+
+
 def create_visualisation(
     frame: np.ndarray,
     prediction: dict,
@@ -367,7 +396,13 @@ def create_visualisation(
     tracker: Optional[ByteTrack],
 ) -> Optional[np.ndarray]:
     try:
-        detections = Detections.from_inference(prediction)
+        # supervision>=0.30 keeps polygons with < 3 points as box-only and then
+        # drops masks of the whole frame; skip them (without mutating `prediction`).
+        valid_prediction = {
+            **prediction,
+            "predictions": _filter_out_invalid_polygons(prediction["predictions"]),
+        }
+        detections = Detections.from_inference(valid_prediction)
         if tracker is not None:
             detections = tracker.update_with_detections(detections=detections)
         frame_copy = frame.copy()

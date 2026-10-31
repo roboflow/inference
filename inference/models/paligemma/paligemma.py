@@ -1,11 +1,12 @@
 import os
 
+import torch
 from peft import LoraConfig
 from peft.peft_model import PeftModel
 from transformers import PaliGemmaForConditionalGeneration
 from transformers.utils import is_flash_attn_2_available
 
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
 
@@ -19,10 +20,19 @@ def _get_paligemma_attn_implementation():
         try:
             import flash_attn  # noqa: F401
 
-            return "flash_attention_2"
+            if _is_model_running_against_ampere_plus_aarch(device=DEVICE):
+                return "flash_attention_2"
+            return "eager"
         except ImportError:
             pass
     return "eager"
+
+
+def _is_model_running_against_ampere_plus_aarch(device: torch.device) -> bool:
+    if device.type != "cuda":
+        return False
+    major, _ = torch.cuda.get_device_capability(device=device)
+    return major >= 8
 
 
 class PaliGemma(TransformerModel):
@@ -45,13 +55,17 @@ class PaliGemma(TransformerModel):
                 token=self.huggingface_token,
                 torch_dtype=self.default_dtype,
                 attn_implementation=_get_paligemma_attn_implementation(),
+                local_files_only=OFFLINE_MODE,
             )
             .eval()
             .to(self.dtype)
         )
 
         self.processor = self.processor_class.from_pretrained(
-            model_id, cache_dir=self.cache_dir, token=self.huggingface_token
+            model_id,
+            cache_dir=self.cache_dir,
+            token=self.huggingface_token,
+            local_files_only=OFFLINE_MODE,
         )
 
 
@@ -90,6 +104,7 @@ class LoRAPaliGemma(LoRATransformerModel):
             cache_dir=cache_dir,
             token=token,
             attn_implementation=_get_paligemma_attn_implementation(),
+            local_files_only=OFFLINE_MODE,
         ).to(self.dtype)
         self.model = (
             PeftModel.from_pretrained(self.base_model, self.cache_dir)
@@ -100,5 +115,9 @@ class LoRAPaliGemma(LoRATransformerModel):
         self.model.merge_and_unload()
 
         self.processor = self.processor_class.from_pretrained(
-            model_load_id, revision=revision, cache_dir=cache_dir, token=token
+            model_load_id,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            local_files_only=OFFLINE_MODE,
         )

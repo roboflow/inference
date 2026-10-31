@@ -20,7 +20,7 @@ def test_classification_torch_static_package_numpy(
     )
 
     # when
-    predictions = model(chess_piece_image_numpy)
+    predictions = model(chess_piece_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -50,7 +50,7 @@ def test_classification_torch_static_package_numpy_no_detection(
     )
 
     # when
-    predictions = model(flowers_image_numpy)
+    predictions = model(flowers_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -80,7 +80,7 @@ def test_classification_torch_static_package_numpy_custom_image_size(
     )
 
     # when
-    predictions = model(chess_piece_image_numpy, image_size=(100, 100))
+    predictions = model(chess_piece_image_numpy, image_size=(100, 100), confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -111,7 +111,7 @@ def test_classification_torch_static_package_batch_numpy(
     )
 
     # when
-    predictions = model([chess_piece_image_numpy, flowers_image_numpy])
+    predictions = model([chess_piece_image_numpy, flowers_image_numpy], confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -141,13 +141,15 @@ def test_classification_torch_static_package_torch_tensor(
     )
 
     # when
-    predictions = model(chess_piece_image_torch)
+    predictions = model(chess_piece_image_torch, confidence=0.5)
+    numpy_predictions = model(
+        chess_piece_image_torch.permute(1, 2, 0).numpy(),
+        input_color_format="rgb",
+        confidence=0.5,
+    )
 
     # then
-    if torch.cuda.is_available():
-        expected_confidence = torch.tensor([0.3553, 0.6447])
-    else:
-        expected_confidence = torch.tensor([0.3556, 0.6444])
+    expected_confidence = numpy_predictions.confidence
     assert torch.allclose(
         predictions.confidence.cpu(),
         expected_confidence.cpu(),
@@ -178,13 +180,20 @@ def test_classification_torch_static_package_batch_torch_tensor_stack(
     flowers_resized = resize(flowers_image_torch, [target_h, target_w])
 
     # when
-    predictions = model(torch.stack([chess_piece_image_torch, flowers_resized], dim=0))
+    predictions = model(
+        torch.stack([chess_piece_image_torch, flowers_resized], dim=0), confidence=0.5
+    )
+    numpy_predictions = model(
+        [
+            chess_piece_image_torch.permute(1, 2, 0).numpy(),
+            flowers_resized.permute(1, 2, 0).numpy(),
+        ],
+        input_color_format="rgb",
+        confidence=0.5,
+    )
 
     # then
-    if torch.cuda.is_available():
-        expected_confidence = torch.tensor([[0.3553, 0.6447], [0.5261, 0.4739]])
-    else:
-        expected_confidence = torch.tensor([[0.3556, 0.6444], [0.5260, 0.4740]])
+    expected_confidence = numpy_predictions.confidence
     assert torch.allclose(
         predictions.confidence.cpu(),
         expected_confidence.cpu(),
@@ -213,13 +222,18 @@ def test_classification_torch_static_package_batch_torch_tensor_list(
     )
 
     # when
-    predictions = model([chess_piece_image_torch, flowers_image_torch])
+    predictions = model([chess_piece_image_torch, flowers_image_torch], confidence=0.5)
+    numpy_predictions = model(
+        [
+            chess_piece_image_torch.permute(1, 2, 0).numpy(),
+            flowers_image_torch.permute(1, 2, 0).numpy(),
+        ],
+        input_color_format="rgb",
+        confidence=0.5,
+    )
 
     # then
-    if torch.cuda.is_available():
-        expected_confidence = torch.tensor([[0.3553, 0.6447], [0.5261, 0.4739]])
-    else:
-        expected_confidence = torch.tensor([[0.3556, 0.6444], [0.5259, 0.4741]])
+    expected_confidence = numpy_predictions.confidence
     assert torch.allclose(
         predictions.confidence.cpu(),
         expected_confidence.cpu(),
@@ -247,7 +261,7 @@ def test_multi_label_torch_static_package_numpy(
     )
 
     # when
-    predictions = model(chess_set_image_numpy)
+    predictions = model(chess_set_image_numpy, confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -292,7 +306,7 @@ def test_multi_label_torch_static_package_numpy_custom_image_size(
     )
 
     # when
-    predictions = model(chess_set_image_numpy, image_size=(100, 100))
+    predictions = model(chess_set_image_numpy, image_size=(100, 100), confidence=0.5)
 
     # then
     assert torch.allclose(
@@ -338,7 +352,9 @@ def test_multi_label_torch_static_package_batch_numpy(
     )
 
     # when
-    predictions = model([chess_set_image_numpy, chess_piece_image_numpy])
+    predictions = model(
+        [chess_set_image_numpy, chess_piece_image_numpy], confidence=0.5
+    )
 
     # then
     assert torch.allclose(
@@ -407,43 +423,15 @@ def test_multi_label_torch_static_package_torch_tensor(
     )
 
     # when
-    predictions = model(chess_set_image_torch)
+    predictions = model(chess_set_image_torch, confidence=0.5)
+    numpy_predictions = model(
+        chess_set_image_torch.permute(1, 2, 0).numpy(),
+        input_color_format="rgb",
+        confidence=0.5,
+    )
 
     # then
-    if torch.cuda.is_available():
-        expected_confidence = torch.tensor(
-            [
-                0.9892,
-                0.8798,
-                0.9916,
-                0.9998,
-                0.9995,
-                1.0000,
-                0.9998,
-                0.9981,
-                0.9973,
-                0.9999,
-                1.0000,
-                0.9949,
-            ]
-        )
-    else:
-        expected_confidence = torch.tensor(
-            [
-                0.9883,
-                0.8467,
-                0.9904,
-                0.9998,
-                0.9995,
-                1.0000,
-                0.9999,
-                0.9980,
-                0.9973,
-                0.9999,
-                1.0000,
-                0.9949,
-            ]
-        )
+    expected_confidence = numpy_predictions[0].confidence
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         expected_confidence.cpu(),
@@ -473,44 +461,20 @@ def test_multi_label_torch_static_package_batch_torch_tensor_stack(
 
     # when
     predictions = model(
-        torch.stack([chess_set_image_torch, chess_piece_image_torch], dim=0)
+        torch.stack([chess_set_image_torch, chess_piece_image_torch], dim=0),
+        confidence=0.5,
+    )
+    numpy_predictions = model(
+        [
+            chess_set_image_torch.permute(1, 2, 0).numpy(),
+            chess_piece_image_torch.permute(1, 2, 0).numpy(),
+        ],
+        input_color_format="rgb",
+        confidence=0.5,
     )
 
     # then
-    if torch.cuda.is_available():
-        expected_confidence = torch.tensor(
-            [
-                0.9892,
-                0.8798,
-                0.9916,
-                0.9998,
-                0.9995,
-                1.0000,
-                0.9998,
-                0.9981,
-                0.9973,
-                0.9999,
-                1.0000,
-                0.9949,
-            ]
-        )
-    else:
-        expected_confidence = torch.tensor(
-            [
-                0.9883,
-                0.8467,
-                0.9904,
-                0.9998,
-                0.9995,
-                1.0000,
-                0.9999,
-                0.9980,
-                0.9973,
-                0.9999,
-                1.0000,
-                0.9949,
-            ]
-        )
+    expected_confidence = numpy_predictions[0].confidence
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         expected_confidence.cpu(),
@@ -520,40 +484,7 @@ def test_multi_label_torch_static_package_batch_torch_tensor_stack(
         predictions[0].class_ids.cpu(),
         torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
     )
-    if torch.cuda.is_available():
-        expected_confidence_1 = torch.tensor(
-            [
-                0.0000e00,
-                0.0000e00,
-                6.5923e-05,
-                0.0000e00,
-                1.1921e-07,
-                1.1921e-06,
-                4.1614e-03,
-                4.6206e-04,
-                9.9946e-01,
-                2.1595e-04,
-                0.0000e00,
-                1.1921e-07,
-            ]
-        )
-    else:
-        expected_confidence_1 = torch.tensor(
-            [
-                -5.9605e-08,
-                -5.9605e-08,
-                5.3078e-05,
-                -5.9605e-08,
-                5.9605e-08,
-                1.3411e-06,
-                5.6942e-03,
-                3.9130e-04,
-                9.9953e-01,
-                2.3118e-04,
-                -5.9605e-08,
-                1.7881e-07,
-            ]
-        )
+    expected_confidence_1 = numpy_predictions[1].confidence
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         expected_confidence_1.cpu(),
@@ -582,43 +513,20 @@ def test_multi_label_torch_static_package_batch_torch_tensor_list(
     )
 
     # when
-    predictions = model([chess_set_image_torch, chess_piece_image_torch])
+    predictions = model(
+        [chess_set_image_torch, chess_piece_image_torch], confidence=0.5
+    )
+    numpy_predictions = model(
+        [
+            chess_set_image_torch.permute(1, 2, 0).numpy(),
+            chess_piece_image_torch.permute(1, 2, 0).numpy(),
+        ],
+        input_color_format="rgb",
+        confidence=0.5,
+    )
 
     # then
-    if torch.cuda.is_available():
-        expected_confidence = torch.tensor(
-            [
-                0.9892,
-                0.8798,
-                0.9916,
-                0.9998,
-                0.9995,
-                1.0000,
-                0.9998,
-                0.9981,
-                0.9973,
-                0.9999,
-                1.0000,
-                0.9949,
-            ]
-        )
-    else:
-        expected_confidence = torch.tensor(
-            [
-                0.9883,
-                0.8467,
-                0.9904,
-                0.9998,
-                0.9995,
-                1.0000,
-                0.9999,
-                0.9980,
-                0.9973,
-                0.9999,
-                1.0000,
-                0.9949,
-            ]
-        )
+    expected_confidence = numpy_predictions[0].confidence
     assert torch.allclose(
         predictions[0].confidence.cpu(),
         expected_confidence.cpu(),
@@ -628,40 +536,7 @@ def test_multi_label_torch_static_package_batch_torch_tensor_list(
         predictions[0].class_ids.cpu(),
         torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64).cpu(),
     )
-    if torch.cuda.is_available():
-        expected_confidence_1 = torch.tensor(
-            [
-                0.0000e00,
-                0.0000e00,
-                6.5923e-05,
-                0.0000e00,
-                1.1921e-07,
-                1.1921e-06,
-                4.1614e-03,
-                4.6206e-04,
-                9.9946e-01,
-                2.1595e-04,
-                0.0000e00,
-                1.1921e-07,
-            ]
-        )
-    else:
-        expected_confidence_1 = torch.tensor(
-            [
-                -5.9605e-08,
-                -5.9605e-08,
-                5.3078e-05,
-                -5.9605e-08,
-                5.9605e-08,
-                1.3411e-06,
-                5.6942e-03,
-                3.9130e-04,
-                9.9953e-01,
-                2.3118e-04,
-                -5.9605e-08,
-                1.7881e-07,
-            ]
-        )
+    expected_confidence_1 = numpy_predictions[1].confidence
     assert torch.allclose(
         predictions[1].confidence.cpu(),
         expected_confidence_1.cpu(),
@@ -670,4 +545,33 @@ def test_multi_label_torch_static_package_batch_torch_tensor_list(
     assert torch.allclose(
         predictions[1].class_ids.cpu(),
         torch.tensor([8], dtype=torch.int64).cpu(),
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.torch_models
+def test_multi_label_torch_per_class_confidence_blocks_specific_class(
+    dinov3_multi_label_torch_static_package: str,
+    chess_set_image_numpy: np.ndarray,
+) -> None:
+    """Baseline (see `test_multi_label_torch_static_package_numpy` above)
+    returns class_ids=[0..11] (12 classes). Setting a 0.99 per-class threshold
+    on class 0 (conf 0.9897) drops it; classes 1..11 still pass."""
+    from inference_models.models.dinov3.dinov3_classification_torch import (
+        DinoV3ForMultiLabelClassificationTorch,
+    )
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    model = DinoV3ForMultiLabelClassificationTorch.from_pretrained(
+        model_name_or_path=dinov3_multi_label_torch_static_package,
+    )
+    class_names = list(model.class_names)
+    model.recommended_parameters = RecommendedParameters(
+        confidence=0.5,
+        per_class_confidence={class_names[0]: 0.99},
+    )
+    predictions = model(chess_set_image_numpy, confidence="best")
+    assert torch.equal(
+        predictions[0].class_ids.cpu(),
+        torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], dtype=torch.int64),
     )
