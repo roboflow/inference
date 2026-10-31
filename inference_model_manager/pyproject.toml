@@ -5,7 +5,7 @@ description = "Model lifecycle management: load, unload, evict, and dispatch inf
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-  "inference-models>=0.39.5rc2,<1.0",
+  "inference-models>=0.39.7,<1.0",
   "numpy",
   "imagecodecs",
   "filelock",

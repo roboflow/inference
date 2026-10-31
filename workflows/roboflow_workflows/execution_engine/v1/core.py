@@ -28,6 +28,7 @@ from roboflow_workflows.execution_engine.v1.compiler.utils import (
     is_input_selector,
 )
 from roboflow_workflows.execution_engine.v1.executor.core import (
+    close_workflow_blocks,
     flush_stream_pipeline_workflow,
     run_workflow,
 )
@@ -59,7 +60,7 @@ from roboflow_workflows.prototypes.workspace_resolver import NULL_WORKSPACE_RESO
 
 logger = get_logger(__name__)
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.16.1")
+EXECUTION_ENGINE_V1_VERSION = Version("1.17.1")
 
 DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER = os.getenv(
     "DEFAULT_WORKFLOWS_STEP_ERROR_HANDLER", "legacy"
@@ -667,6 +668,10 @@ class ExecutionEngineV1(BaseExecutionEngine):
         )
         self._profiler.end_workflow_run()
         return result
+
+    def close(self) -> None:
+        """Call ``close()`` on every block of the compiled workflow that defines one."""
+        close_workflow_blocks(workflow=self._compiled_workflow)
 
     def flush_stream_pipeline(
         self,

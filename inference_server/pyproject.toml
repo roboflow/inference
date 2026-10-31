@@ -32,9 +32,9 @@ onnx-cu118 = ["inference-model-manager[onnx-cu118]"]
 onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
 onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
 trt10-runtime = ["inference-model-manager[trt10-runtime]"]
-workflows = ["roboflow-workflows>=0.2.11rc1"]
-streams = ["streamvision[webrtc,workflows]>=0.1.2rc3"]
-enterprise = ["roboflow-workflows[enterprise]>=0.2.11rc1"]
+workflows = ["roboflow-workflows>=0.2.15"]
+streams = ["streamvision[webrtc,workflows]>=0.1.5"]
+enterprise = ["roboflow-workflows[enterprise]>=0.2.15"]
 redis = ["redis~=5.0.0"]
 otel = [
   "opentelemetry-api~=1.41.1",
