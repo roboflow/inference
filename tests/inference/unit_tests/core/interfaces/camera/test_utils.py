@@ -394,7 +394,7 @@ def test_get_video_frames_generator_when_fps_modulation_enabled_against_fast_str
     # it observed. Its first arrival is admitted before the first timestamp
     # below is taken, so the interval is measured from before the loop; using
     # the first yielded timestamp under-measures D and makes the bound flaky.
-    started_at = time.monotonic()
+    started_at = clock.monotonic()
     results, results_timestamp = [], []
     for result in get_video_frames_generator(
         video="source-ref",
