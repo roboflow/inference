@@ -5,14 +5,15 @@ the file in place, which needs a real path). Clips up to
 `WORKFLOWS_VIDEO_CLIP_INMEMORY_MAX_BYTES` (default 64 MiB) are then read into
 memory and the file is deleted; larger clips stay on disk under
 `WORKFLOWS_VIDEO_CLIP_TEMP_DIR` (default: the system temp directory) until
-`release()`.
+`release()`. Clip files are created by `tempfile.mkstemp`, so only the owning
+user can read them even in a shared temp directory.
 """
 
 import io
 import logging
+import os
 import tempfile
 import threading
-import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO, Callable, Iterator, Optional, Union
@@ -42,16 +43,24 @@ def clip_temp_dir() -> Path:
 
 
 def allocate_clip_path(directory: Optional[Path] = None) -> Path:
-    """Return a fresh, unused path for a clip file.
+    """Create an empty, private file for a clip and return its path.
+
+    The file is created atomically with mode ``0600`` (`tempfile.mkstemp`), so
+    other users of a shared temp directory can neither read the clip nor
+    pre-create or replace the path. The muxer then writes into it.
 
     Args:
         directory: Target directory; `clip_temp_dir()` when ``None``.
 
     Returns:
-        Path of a not-yet-existing ``.mp4`` file.
+        Path of an empty ``.mp4`` file owned by this process's user.
     """
     target_directory = directory or clip_temp_dir()
-    path = target_directory / f"{TEMP_FILE_PREFIX}{uuid.uuid4().hex}.mp4"
+    descriptor, name = tempfile.mkstemp(
+        suffix=".mp4", prefix=TEMP_FILE_PREFIX, dir=target_directory
+    )
+    os.close(descriptor)
+    path = Path(name)
 
     return path
 

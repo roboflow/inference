@@ -1,4 +1,5 @@
 import io
+import stat
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -8,6 +9,7 @@ import av
 import cv2
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.common.video_clips import artifact as artifact_module
 from roboflow_workflows.core_steps.common.video_clips.admission import Budget
 from roboflow_workflows.core_steps.common.video_clips.artifact import ClipArtifact
 from roboflow_workflows.core_steps.common.video_clips.capture import (
@@ -259,6 +261,25 @@ def test_source_slower_than_real_time_is_not_finalised_as_stalled(ring) -> None:
     assert report.actual_end == _ts(30, source_fps)
     assert report.frames == 20
     artifact.release()
+
+
+def test_clip_kept_on_disk_is_private_to_the_owner(ring, tmp_path, monkeypatch) -> None:
+    # given: every clip stays on disk, in the configured directory
+    monkeypatch.setattr(artifact_module, "WORKFLOWS_VIDEO_CLIP_TEMP_DIR", tmp_path)
+    monkeypatch.setattr(artifact_module, "WORKFLOWS_VIDEO_CLIP_INMEMORY_MAX_BYTES", 0)
+    recorder = ring()
+    _feed(recorder, range(40))
+
+    # when
+    capture = recorder.capture(_ts(5), _ts(30))
+    artifact = capture.future.result(timeout=10)
+
+    # then: the muxed (faststart-rewritten) file keeps mode 0600
+    assert artifact.in_memory is False
+    assert artifact.bytes_or_path.parent == tmp_path
+    assert stat.S_IMODE(artifact.bytes_or_path.stat().st_mode) == 0o600
+    artifact.release()
+    assert list(tmp_path.iterdir()) == []
 
 
 class _SlowX264Ring(X264Ring):

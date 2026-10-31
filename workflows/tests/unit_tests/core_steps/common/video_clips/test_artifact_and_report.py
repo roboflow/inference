@@ -1,7 +1,9 @@
+import stat
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from roboflow_workflows.core_steps.common.video_clips import artifact as artifact_module
 from roboflow_workflows.core_steps.common.video_clips.artifact import (
     ClipArtifact,
     allocate_clip_path,
@@ -124,3 +126,31 @@ def test_report_serialises_with_iso_timestamps() -> None:
         "ring_cost_ms_p95",
         "finalize_ms",
     }
+
+
+def test_clip_files_are_private_to_the_owner(tmp_path: Path) -> None:
+    # when
+    path = allocate_clip_path(tmp_path)
+
+    # then: created atomically, readable and writable by the owner only
+    assert path.exists()
+    assert path.parent == tmp_path
+    assert path.name.startswith(artifact_module.TEMP_FILE_PREFIX)
+    assert path.suffix == ".mp4"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert allocate_clip_path(tmp_path) != path
+
+
+def test_clip_files_honour_the_configured_temp_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # given
+    configured = tmp_path / "clips"
+    monkeypatch.setattr(artifact_module, "WORKFLOWS_VIDEO_CLIP_TEMP_DIR", configured)
+
+    # when
+    path = allocate_clip_path()
+
+    # then
+    assert path.parent == configured
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
