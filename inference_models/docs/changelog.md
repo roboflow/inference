@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## `0.39.7`
+
 ### Fixed
 
 - TensorRT CUDA graph capture and replay wait on the caller's CUDA stream and
