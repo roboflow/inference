@@ -251,3 +251,128 @@ def test_on_pipeline_end_accepts_engines_without_close(
 
     # then
     assert thread_pool_executor._shutdown is True
+
+
+class RecordingEngine:
+    """Engine stand-in recording both close phases against the pools' state."""
+
+    def __init__(self, *pools: ThreadPoolExecutor, fail_prepare: bool = False):
+        self.calls = []
+        self._pools = pools
+        self._fail_prepare = fail_prepare
+
+    def _pools_shut_down(self) -> list:
+        return [pool._shutdown for pool in self._pools]
+
+    def prepare_close(self, deadline_seconds) -> None:
+        self.calls.append(("prepare_close", deadline_seconds, self._pools_shut_down()))
+        if self._fail_prepare:
+            raise RuntimeError("cannot prepare")
+
+    def close(self) -> None:
+        self.calls.append(("close", self._pools_shut_down()))
+
+
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", False)
+def test_on_pipeline_end_prepares_blocks_before_the_pools_and_closes_after(
+    empty_directory: str,
+) -> None:
+    # given
+    blocks_pool = ThreadPoolExecutor(max_workers=1)
+    engine_pool = ThreadPoolExecutor(max_workers=1)
+    execution_engine = RecordingEngine(blocks_pool, engine_pool)
+
+    # when
+    on_pipeline_end(
+        thread_pool_executor=blocks_pool,
+        cancel_thread_pool_tasks_on_exit=True,
+        profiler=MagicMock(),
+        profiling_directory=empty_directory,
+        execution_engine_thread_pool_executor=engine_pool,
+        execution_engine=execution_engine,
+        block_close_deadline_seconds=4.0,
+    )
+
+    # then: prepare_close -> both pools shut down -> close
+    assert execution_engine.calls == [
+        ("prepare_close", 4.0, [False, False]),
+        ("close", [True, True]),
+    ]
+
+
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", False)
+@mock.patch.object(utils, "WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS", 12.5)
+def test_on_pipeline_end_defaults_to_the_configured_block_close_deadline(
+    empty_directory: str,
+) -> None:
+    # given
+    thread_pool_executor = ThreadPoolExecutor(max_workers=1)
+    execution_engine = RecordingEngine(thread_pool_executor)
+
+    # when
+    on_pipeline_end(
+        thread_pool_executor=thread_pool_executor,
+        cancel_thread_pool_tasks_on_exit=True,
+        profiler=MagicMock(),
+        profiling_directory=empty_directory,
+        execution_engine=execution_engine,
+    )
+
+    # then
+    assert execution_engine.calls[0] == ("prepare_close", 12.5, [False])
+
+
+def test_the_standalone_block_close_deadline_is_thirty_seconds() -> None:
+    from streamvision.stream.configuration import StreamsConfiguration
+
+    assert StreamsConfiguration().workflows_block_close_deadline_seconds == 30.0
+
+
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", False)
+def test_on_pipeline_end_still_closes_when_prepare_close_fails(
+    empty_directory: str, caplog
+) -> None:
+    # given
+    thread_pool_executor = ThreadPoolExecutor(max_workers=1)
+    execution_engine = RecordingEngine(thread_pool_executor, fail_prepare=True)
+
+    # when
+    on_pipeline_end(
+        thread_pool_executor=thread_pool_executor,
+        cancel_thread_pool_tasks_on_exit=True,
+        profiler=MagicMock(),
+        profiling_directory=empty_directory,
+        execution_engine=execution_engine,
+        block_close_deadline_seconds=1.0,
+    )
+
+    # then
+    assert thread_pool_executor._shutdown is True
+    assert execution_engine.calls[-1] == ("close", [True])
+    assert "Could not prepare workflow blocks for close: cannot prepare" in caplog.text
+
+
+@mock.patch.object(utils, "ENABLE_WORKFLOWS_PROFILING", False)
+def test_on_pipeline_end_closes_an_older_engine_without_prepare_close(
+    empty_directory: str,
+) -> None:
+    # given an engine from a roboflow-workflows release without prepare_close()
+    thread_pool_executor = ThreadPoolExecutor(max_workers=1)
+    closes = []
+
+    class OlderEngine:
+        def close(self) -> None:
+            closes.append(thread_pool_executor._shutdown)
+
+    # when
+    on_pipeline_end(
+        thread_pool_executor=thread_pool_executor,
+        cancel_thread_pool_tasks_on_exit=True,
+        profiler=MagicMock(),
+        profiling_directory=empty_directory,
+        execution_engine=OlderEngine(),
+        block_close_deadline_seconds=1.0,
+    )
+
+    # then
+    assert closes == [True]

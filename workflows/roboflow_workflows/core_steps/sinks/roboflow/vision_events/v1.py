@@ -27,6 +27,19 @@ from roboflow_workflows.core_steps.common.workload_presets import (
     COOLDOWN_ACTUAL_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_message
+from roboflow_workflows.core_steps.sinks.roboflow.vision_events.clip_attachments import (
+    DEFAULT_CLIP_UPLOAD_TIMEOUT_SECONDS,
+    DEFAULT_VIDEO_LABEL,
+    MAX_CLIP_UPLOAD_TIMEOUT_SECONDS,
+    STATUS_DISABLED,
+    STATUS_THROTTLED,
+    STATUS_UNSUPPORTED_SINK_MODE,
+    ClipAttachments,
+    SinkClipUploads,
+    plan_attachments,
+    redact_signed_urls,
+    skipped_attachments,
+)
 from roboflow_workflows.environment import API_BASE_URL
 from roboflow_workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
@@ -47,9 +60,11 @@ from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_SOLUTION_KIND,
     STRING_KIND,
+    VIDEO_CLIP_ANCHOR_KIND,
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -183,6 +198,36 @@ inference server.
 The default (cloud) mode requires a valid Roboflow API key with `vision-events:write`
 scope, configured in your environment or workflow configuration. No Roboflow API key is
 needed when **Write to Local Event Store** is enabled (see Deployment Modes above).
+
+## Video Clips
+
+Wire one or more **Video Clip Recorder** anchors into `video_clips` to attach short
+video clips to the event (cloud mode only). The clip window and the caption come
+from each recorder (`pre_roll_seconds`, `post_roll_seconds`, `label`); `video_label`
+is used only when a recorder's label is empty. Up to 4 clips are attached in the
+order given; extra anchors are reported as `rejected:too_many_videos`.
+
+The event is created right away and references each clip as a pending video. The
+clip is uploaded in the background as soon as its post-roll has been recorded, so
+the `videos` output reports each clip's immediate `video_status` (`pending`,
+`disabled`, `throttled`, `unavailable:*`, `rejected:*` or `prepare_failed`), never
+a finished upload. Each clip's outcome is logged as a `vision_event_clip_completed`
+record; enable `confirm_ingestion` to also wait for the platform to confirm it.
+In fire-and-forget mode `video_id` is empty because the upload slot is requested
+in the background. Disabled or throttled events capture nothing, and the local
+event store mode does not support clips (`unavailable:unsupported_sink_mode`).
+
+Keep `fire_and_forget` enabled when attaching clips to a video stream: with it
+disabled, each clip's upload slot request (about 0.3 s each in validation) and the
+event POST run on the pipeline thread, which stops processing frames meanwhile.
+
+The completion record carries the event and video ids, the label, a
+`terminal_status` (`put_accepted`, `upload_failed`, `expired`, `clip_failed`,
+`cancelled` or `shutdown_deadline`), the clip report (bounds, frame counts and
+missing frames by cause), timings and, with `confirm_ingestion`, the ingestion
+result (`confirmed`, `pending` or `failed`). `put_accepted` means the upload was
+accepted, not that the platform finished ingesting it. Transient upload errors are
+retried until `clip_upload_timeout_seconds` after the upload slot was requested.
 
 ## Common Use Cases
 
@@ -487,6 +532,53 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
+    video_clips: Optional[
+        Union[
+            Selector(kind=[VIDEO_CLIP_ANCHOR_KIND]),
+            List[Selector(kind=[VIDEO_CLIP_ANCHOR_KIND])],
+        ]
+    ] = Field(
+        default=None,
+        title="Video Clips",
+        description="One Video Clip Recorder anchor, or a list of up to 4, whose "
+        "clips are attached to the event in the given order. Window and caption "
+        "come from each recorder. Cloud mode only.",
+        examples=["$steps.video_clip_recorder.anchor"],
+        json_schema_extra={
+            "relevant_for": {
+                "write_to_event_store": {"values": [False], "required": False},
+            },
+        },
+    )
+    video_label: str = Field(
+        default=DEFAULT_VIDEO_LABEL,
+        title="Video Label",
+        description="Caption used for a clip whose recorder has an empty label.",
+        examples=["Evidence"],
+        min_length=1,
+        max_length=256,
+        json_schema_extra={"additional_section": True},
+    )
+    confirm_ingestion: bool = Field(
+        default=False,
+        title="Confirm Ingestion",
+        description="If True, after a clip is uploaded the block polls the platform "
+        "for up to 5 minutes and reports in the clip's completion record whether "
+        "the video was ingested.",
+        examples=[False, True],
+        json_schema_extra={"additional_section": True},
+    )
+    clip_upload_timeout_seconds: float = Field(
+        default=DEFAULT_CLIP_UPLOAD_TIMEOUT_SECONDS,
+        title="Clip Upload Timeout",
+        description="Seconds, counted from the upload slot request, within which a "
+        "clip must be uploaded; the upload URL expires after 1 hour.",
+        examples=[3300.0],
+        gt=0,
+        le=MAX_CLIP_UPLOAD_TIMEOUT_SECONDS,
+        json_schema_extra={"additional_section": True},
+    )
+
     @field_validator("value_base_units", mode="before")
     @classmethod
     def reject_boolean_value_base_units(cls, value: Any) -> Any:
@@ -503,6 +595,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="throttling_status", kind=[BOOLEAN_KIND]),
             OutputDefinition(name="event_id", kind=[STRING_KIND]),
             OutputDefinition(name="message", kind=[STRING_KIND]),
+            OutputDefinition(name="videos", kind=[LIST_OF_VALUES_KIND]),
         ]
 
     @classmethod
@@ -560,6 +653,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         self._disable_sinks = disable_sinks
         self._platform_client = resolve_platform_blocks_client(platform_client)
         self._last_event_fired: Optional[datetime] = None
+        self._clip_uploads = SinkClipUploads()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -574,6 +668,19 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
+
+    def prepare_close(self, deadline_seconds: Optional[float] = None) -> None:
+        """Stop taking new clips and record the host's close deadline.
+
+        Args:
+            deadline_seconds (Optional[float]): Seconds the host allows for the
+                whole close; None uses the default deadline.
+        """
+        self._clip_uploads.prepare_close(deadline_seconds)
+
+    def close(self) -> None:
+        """Finish clip uploads within the close deadline, then stop the uploader."""
+        self._clip_uploads.close()
 
     def run(
         self,
@@ -602,6 +709,10 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         # Appended last on purpose: inserting it earlier would silently
         # rebind any positional caller's arguments.
         value_base_units: Optional[Union[int, float]] = None,
+        video_clips: Optional[Any] = None,
+        video_label: str = DEFAULT_VIDEO_LABEL,
+        confirm_ingestion: bool = False,
+        clip_upload_timeout_seconds: float = DEFAULT_CLIP_UPLOAD_TIMEOUT_SECONDS,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -610,6 +721,9 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 "event_id": "",
                 "message": disabled_sink_message(
                     disabled_by_execution_policy=self._disable_sinks
+                ),
+                "videos": skipped_attachments(
+                    video_clips, video_label=video_label, video_status=STATUS_DISABLED
                 ),
             }
 
@@ -628,6 +742,9 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 "throttling_status": True,
                 "event_id": "",
                 "message": "Sink cooldown applies",
+                "videos": skipped_attachments(
+                    video_clips, video_label=video_label, video_status=STATUS_THROTTLED
+                ),
             }
 
         event_data = _build_event_data(
@@ -652,7 +769,14 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
             else _normalize_value_base_units(value_base_units)
         )
 
+        clip_attachments: Optional[ClipAttachments] = None
+        videos: List[Dict[str, Any]] = []
         if write_to_event_store:
+            videos = skipped_attachments(
+                video_clips,
+                video_label=video_label,
+                video_status=STATUS_UNSUPPORTED_SINK_MODE,
+            )
             task = partial(
                 _execute_local_event,
                 event_store_url=event_store_url,
@@ -673,6 +797,20 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                     "https://docs.roboflow.com/api-reference/authentication"
                     "#retrieve-an-api-key to learn how to retrieve one."
                 )
+            # Captures are taken here, on the caller's thread, even in
+            # fire-and-forget mode: the anchor refers to this frame.
+            clip_attachments = plan_attachments(video_clips, video_label=video_label)
+            clip_task_parameters: Dict[str, Any] = {}
+            if clip_attachments is not None:
+                clip_attachments.bind_uploader(
+                    self._clip_uploads.get,
+                    clip_upload_timeout_seconds=clip_upload_timeout_seconds,
+                    confirm_ingestion=confirm_ingestion,
+                )
+                videos = clip_attachments.outputs()
+                clip_task_parameters["clip_attachments"] = clip_attachments
+                # Released at close if the event task never runs.
+                self._clip_uploads.track(clip_attachments)
             task = partial(
                 _execute_vision_event,
                 api_base_url=API_BASE_URL,
@@ -686,6 +824,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 event_data=event_data,
                 custom_metadata=custom_metadata,
                 value_base_units=value_base_units,
+                **clip_task_parameters,
             )
 
         self._last_event_fired = datetime.now()
@@ -696,22 +835,34 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 "throttling_status": False,
                 "event_id": "",
                 "message": "Vision event sent in background task",
+                "videos": videos,
             }
         elif fire_and_forget and self._thread_pool_executor:
-            self._thread_pool_executor.submit(task)
+            task_future = self._thread_pool_executor.submit(task)
+            if clip_attachments is not None:
+                task_future.add_done_callback(
+                    partial(
+                        self._clip_uploads.abandon_if_cancelled,
+                        clip_attachments=clip_attachments,
+                    )
+                )
             return {
                 "error_status": False,
                 "throttling_status": False,
                 "event_id": "",
                 "message": "Vision event sent in background task",
+                "videos": videos,
             }
         else:
             error_status, message, event_id = task()
+            if clip_attachments is not None:
+                videos = clip_attachments.outputs()
             return {
                 "error_status": error_status,
                 "throttling_status": False,
                 "event_id": event_id,
                 "message": message,
+                "videos": videos,
             }
 
 
@@ -851,7 +1002,9 @@ def _execute_vision_event(
     custom_metadata: Dict[str, Any],
     platform_client: Optional[RoboflowPlatformClient] = None,
     value_base_units: Optional[int] = None,
+    clip_attachments: Optional[ClipAttachments] = None,
 ) -> Tuple[bool, str, str]:
+    payload: Dict[str, Any] = {}
     try:
         # Step 1: Convert predictions to vision events annotation format
         annotations = _convert_predictions_to_annotations(prediction)
@@ -891,15 +1044,42 @@ def _execute_vision_event(
             custom_metadata=custom_metadata,
             value_base_units=value_base_units,
         )
+        if clip_attachments is not None:
+            # One upload slot per clip; the event references them in order.
+            clip_attachments.prepare_uploads(
+                event_id=payload["eventId"],
+                api_base_url=api_base_url,
+                platform_client=resolve_platform_blocks_client(platform_client),
+                request_headers=_build_cloud_request_headers(
+                    api_key=api_key,
+                    platform_client=platform_client,
+                    explicit_headers={"Content-Type": "application/json"},
+                ),
+                raise_for_status=_api_key_safe_raise_for_status,
+            )
+            videos_field = clip_attachments.videos_field()
+            if videos_field:
+                payload["videos"] = videos_field
 
         error_status, message = _send_event(
             api_base_url, api_key, payload, platform_client=platform_client
         )
+        if clip_attachments is not None:
+            message = redact_signed_urls(message)
+            if error_status:
+                clip_attachments.abandon(event_id=payload["eventId"], reason=message)
+            else:
+                clip_attachments.hand_off(event_id=payload["eventId"])
         # The eventId is generated client-side and sent in the payload, so it is the
         # canonical id of the created event; surface it on success.
         event_id = "" if error_status else payload.get("eventId", "")
         return error_status, message, event_id
     except Exception as error:
+        if clip_attachments is not None:
+            clip_attachments.abandon(
+                event_id=payload.get("eventId", ""),
+                reason=f"{type(error).__name__}: {error}",
+            )
         logger.warning("Failed to create vision event: %s", error)
         return (
             True,

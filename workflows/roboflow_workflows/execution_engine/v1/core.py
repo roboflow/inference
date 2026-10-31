@@ -1,6 +1,7 @@
 import inspect
 import logging
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from functools import partial
@@ -30,6 +31,7 @@ from roboflow_workflows.execution_engine.v1.compiler.utils import (
 from roboflow_workflows.execution_engine.v1.executor.core import (
     close_workflow_blocks,
     flush_stream_pipeline_workflow,
+    prepare_close_workflow_blocks,
     run_workflow,
 )
 from roboflow_workflows.execution_engine.v1.executor.runtime_input_assembler import (
@@ -603,6 +605,11 @@ class ExecutionEngineV1(BaseExecutionEngine):
             if execution_observer is not None
             else NULL_EXECUTION_OBSERVER
         )
+        # Hosts may close from two threads at once (two `pipeline.join()` calls):
+        # one lock serialises both phases, the flags make each run at most once.
+        self._close_lock = threading.RLock()
+        self._close_prepared = False
+        self._closed = False
 
     def run(
         self,
@@ -669,9 +676,36 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self._profiler.end_workflow_run()
         return result
 
+    def prepare_close(self, deadline_seconds: Optional[float] = None) -> None:
+        """Call ``prepare_close(deadline_seconds)`` on the blocks that define one.
+
+        Runs once; later calls, and calls after ``close()``, do nothing.
+
+        Args:
+            deadline_seconds: Seconds the host allows, from now, for the blocks
+                to finish before ``close()``; ``None`` when it sets no limit.
+        """
+        with self._close_lock:
+            if self._close_prepared or self._closed:
+                return None
+
+            self._close_prepared = True
+            prepare_close_workflow_blocks(
+                self._compiled_workflow,
+                deadline_seconds=deadline_seconds,
+            )
+
     def close(self) -> None:
-        """Call ``close()`` on every block of the compiled workflow that defines one."""
-        close_workflow_blocks(workflow=self._compiled_workflow)
+        """Call ``close()`` on every block of the compiled workflow that defines one.
+
+        Runs once. A concurrent call waits for the first to finish, then returns.
+        """
+        with self._close_lock:
+            if self._closed:
+                return None
+
+            self._closed = True
+            close_workflow_blocks(workflow=self._compiled_workflow)
 
     def flush_stream_pipeline(
         self,
