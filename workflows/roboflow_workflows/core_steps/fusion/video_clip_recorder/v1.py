@@ -122,11 +122,28 @@ it into a clip when it actually posts an event, using this recorder's
    keyframe up to one output second earlier. The clip is uploaded as soon as the
    post-roll has been recorded.
 
+## What a Clip Contains
+
+Clips are approximate evidence with reported bounds:
+
+- Frames keep their source timing divided by `playback_speed`; a long gap between
+  processed frames stays a gap. `clip_fps` caps the clip's frame rate by keeping the
+  first frame of each `playback_speed / clip_fps` source-second slot; `max_width`
+  downscales wide frames.
+- The keyframe lead is up to one output second, that is `playback_speed` source
+  seconds.
+- Each clip's outcome is logged as a `vision_event_clip_completed` record whose
+  report gives the actual start and end, the frame count and density, the backend,
+  why a clip is partial, and the frames missing from the window by cause
+  (`decimated`, `ring_drops`, `queue_drops`, `stale_dropped`, `inference_gaps`,
+  `pts_clamped`).
+
 ## Common Use Cases
 
 - Attach evidence footage to safety, quality or security events.
 - Record an annotated clip (wire a visualization output) next to a raw clip (wire the
-  input image) with two recorders and distinct `label`s.
+  input image) with two recorders and distinct `label`s. An event carries at most 4
+  clips.
 
 ## Requirements and Limitations
 
@@ -143,8 +160,13 @@ it into a clip when it actually posts an event, using this recorder's
 - A frame-number restart or a resolution change starts a new recording; a clip in
   progress ends there and is reported as partial.
 - `pre_roll_seconds` and `post_roll_seconds` are capped at 60 s by default (the host
-  may raise the caps up to 300 s). At 1080p the ring holds about 0.9 MB per second of
-  window per stream.
+  may raise the caps up to 300 s with `WORKFLOWS_VIDEO_CLIP_MAX_PRE_ROLL_SECONDS` and
+  `WORKFLOWS_VIDEO_CLIP_MAX_POST_ROLL_SECONDS`). At 1080p the ring holds about 0.9 MB
+  per second of window per stream; annotated content takes about twice that.
+- Recording cost grows with processed fps and resolution. On constrained devices set
+  `max_width` or lower the model fps before adding streams.
+- Keep `fire_and_forget` enabled on the Vision Events sink: otherwise the upload slot
+  requests and the event POST run on the pipeline thread.
 - At most 16 streams are tracked at once; the least recently seen stream's recording
   is discarded beyond that.
 - With `disable_sinks` the recorder idles and anchors are
