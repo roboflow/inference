@@ -659,8 +659,9 @@ class BaseEncodedRing(abc.ABC):
             when ``None``.
         queue_depth: Maximum frames waiting for the encoder.
         byte_cap_bytes: Fixed byte cap overriding the measured cap.
-        stall_grace_seconds: Seconds after the expected post-roll end before a
-            capture is finalised as ``partial="stalled"``.
+        stall_grace_seconds: Seconds without frames (and after the expected
+            post-roll end) before a capture is finalised as
+            ``partial="stalled"``; every submitted frame extends the deadline.
 
     Raises:
         ValueError: If a setting is out of range.
@@ -1017,6 +1018,7 @@ class BaseEncodedRing(abc.ABC):
             self._frames_submitted += 1
             if self._newest_submitted_t is None or t > self._newest_submitted_t:
                 self._newest_submitted_t = t
+            self._extend_stall_deadlines_locked()
             if not self._grid.accept(t):
                 self._decimated += 1
                 self._decimated_times.append(t)
@@ -1185,6 +1187,19 @@ class BaseEncodedRing(abc.ABC):
         for state in list(self._pending):
             if t > state.end_t + TIME_EPSILON:
                 self._complete(state, partial=None)
+
+    def _extend_stall_deadlines_locked(self) -> None:
+        # A stall is `stall_grace_seconds` without frames, not a fixed deadline
+        # from capture time: a source processed slower than real time (a video
+        # file on CPU inference) keeps its pending captures alive while frames
+        # still arrive.
+        if not self._pending:
+            return None
+
+        extended_deadline = time.monotonic() + self._stall_grace_seconds
+        for state in self._pending:
+            if extended_deadline > state.stall_deadline:
+                state.stall_deadline = extended_deadline
 
     def _expire_stalled(self) -> None:
         now = time.monotonic()

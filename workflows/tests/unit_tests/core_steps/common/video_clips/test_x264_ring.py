@@ -236,6 +236,31 @@ def test_stalled_capture_is_finalised_as_partial(ring) -> None:
     artifact.release()
 
 
+def test_source_slower_than_real_time_is_not_finalised_as_stalled(ring) -> None:
+    # given: a 10 fps source processed at 1/3 real time and a 0.5 s grace
+    recorder = ring(stall_grace_seconds=0.5)
+    source_fps = 10
+    for index in range(20):
+        recorder.submit(_ts(index, source_fps), index, _image(index))
+    _wait_for(lambda: recorder.stats().queue_depth == 0)
+
+    # when: a 1 s post-roll needs 3 s of wall time to arrive
+    capture = recorder.capture(
+        _ts(10, source_fps), _ts(19, source_fps) + timedelta(seconds=1)
+    )
+    for index in range(20, 31):
+        time.sleep(0.3)
+        recorder.submit(_ts(index, source_fps), index, _image(index))
+    artifact = capture.future.result(timeout=10)
+
+    # then: the whole post-roll is in the clip
+    report = artifact.report
+    assert report.partial is None
+    assert report.actual_end == _ts(30, source_fps)
+    assert report.frames == 20
+    artifact.release()
+
+
 class _SlowX264Ring(X264Ring):
     def _encode_frame(self, frame, *, pts, force_keyframe):
         time.sleep(0.02)
