@@ -1645,6 +1645,8 @@ def get_workflow_specification(
 
     When ephemeral cache (Redis/Dragonfly) is enabled but unreachable, falls back
     to the Roboflow API instead of failing the request.
+    When file caching is enabled, connection failures, timeouts and server errors
+    fall back to the cached response for the same workflow, version and API key.
 
     Args:
         api_key: Roboflow API key, or None for unauthenticated fetches.
@@ -1723,8 +1725,21 @@ def get_workflow_specification(
             requests.exceptions.ConnectionError,
             ConnectionError,
             requests.exceptions.Timeout,
+            requests.exceptions.HTTPError,
+            RetryRequestError,
         ) as error:
-            if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+            failure = (
+                error.inner_error if isinstance(error, RetryRequestError) else error
+            )
+            unavailable = isinstance(
+                failure,
+                (requests.exceptions.ConnectionError, ConnectionError, Timeout),
+            ) or (
+                isinstance(failure, requests.exceptions.HTTPError)
+                and failure.response is not None
+                and 500 <= failure.response.status_code < 600
+            )
+            if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS or not unavailable:
                 raise error
             response = load_cached_workflow_response(
                 workspace_id=workspace_id,
