@@ -21,6 +21,18 @@ for contributor and maintainer responsibilities.
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 
+- Detections Combine (`roboflow_core/detections_combine@v1`): when **both**
+  inputs are empty, the combined result now keeps the collection metadata the
+  producers attached (for example `image_dimensions` and parent/root lineage on
+  `sv.Detections.metadata`), so a serialised empty prediction reports the real
+  image width and height instead of `null`. `sv.Detections.merge` discards
+  empty inputs before merging; the block now applies supervision's strict
+  metadata merge to metadata-bearing inputs in that case, so agreeing values
+  are preserved and conflicting or asymmetric non-empty metadata dictionaries
+  raise supervision's `ValueError` instead of being dropped silently. A bare
+  empty collection contributes no metadata and can be combined with a
+  metadata-bearing empty. Non-empty inputs are unchanged.
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.
