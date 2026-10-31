@@ -10,7 +10,7 @@ def resize_opencv_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[np.ndarray, Optional[float]]:
-    """Resize an OpenCV image.
+    """Resize an OpenCV image, retaining at least one pixel per dimension.
 
     Args:
         image: The image to resize.
@@ -31,8 +31,16 @@ def resize_opencv_image(
     )
     if scaling_ratio is None:
         return image, None
+
+    new_width = round(scaling_ratio * width)
+    new_height = round(scaling_ratio * height)
+    target_size = None
+    if scaling_ratio > 0 and (new_width == 0 or new_height == 0):
+        target_size = (max(1, new_width), max(1, new_height))
+
+    # Preserve the original sampling scale when neither dimension rounds to zero.
     resized_image = cv2.resize(
-        src=image, dsize=None, fx=scaling_ratio, fy=scaling_ratio
+        src=image, dsize=target_size, fx=scaling_ratio, fy=scaling_ratio
     )
     return resized_image, scaling_ratio
 
@@ -42,7 +50,7 @@ def resize_pillow_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[Image.Image, Optional[float]]:
-    """Resize a Pillow image.
+    """Resize a Pillow image, retaining at least one pixel per dimension.
 
     Args:
         image: The image to resize.
@@ -63,9 +71,15 @@ def resize_pillow_image(
     )
     if scaling_ratio is None:
         return image, None
+
     new_width = round(scaling_ratio * width)
     new_height = round(scaling_ratio * height)
-    return image.resize(size=(new_width, new_height)), scaling_ratio
+    if scaling_ratio > 0:
+        new_width = max(1, new_width)
+        new_height = max(1, new_height)
+
+    resized_image = image.resize(size=(new_width, new_height))
+    return resized_image, scaling_ratio
 
 
 def determine_scaling_aspect_ratio(
