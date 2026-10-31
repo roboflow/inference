@@ -31,11 +31,14 @@ PARTIAL_STALLED = "stalled"
 PARTIAL_RESOLUTION_CHANGE = "resolution_change"
 PARTIAL_SHUTDOWN = "shutdown"
 PARTIAL_RING_EVICTED = "ring_evicted"
+# The source restarted (its frame number went backwards) during the post-roll.
+PARTIAL_RESET = "reset"
 PARTIAL_REASONS = (
     PARTIAL_STALLED,
     PARTIAL_RESOLUTION_CHANGE,
     PARTIAL_SHUTDOWN,
     PARTIAL_RING_EVICTED,
+    PARTIAL_RESET,
 )
 
 STALL_GRACE_SECONDS = 10.0

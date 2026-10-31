@@ -9,9 +9,9 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common.video_clips.capture import (
+    PARTIAL_RESET,
     PARTIAL_RESOLUTION_CHANGE,
     PARTIAL_SHUTDOWN,
-    PARTIAL_STALLED,
     ClipAnchor,
     ClipUnavailableError,
 )
@@ -407,7 +407,7 @@ def test_frame_number_going_backwards_resets_ring(rings) -> None:
     # then
     assert len(rings.rings) == 2
     old_ring, new_ring = rings.rings
-    assert old_ring.retired_with == PARTIAL_STALLED
+    assert old_ring.retired_with == PARTIAL_RESET
     assert [n for _, n, _ in new_ring.submitted] == [3]
     anchor.capture(1.0, 1.0)
     assert old_ring.captures == []

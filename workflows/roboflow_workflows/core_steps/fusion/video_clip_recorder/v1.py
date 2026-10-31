@@ -20,9 +20,9 @@ from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.video_clips import env_positive_float
 from roboflow_workflows.core_steps.common.video_clips.capture import (
+    PARTIAL_RESET,
     PARTIAL_RESOLUTION_CHANGE,
     PARTIAL_SHUTDOWN,
-    PARTIAL_STALLED,
     ClipAnchor,
     bind_capture,
 )
@@ -748,7 +748,7 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         if frame_number < state.last_frame_number:
             # A restarted stream reusing the identifier (e.g. a reconnect): its
             # footage must never be spliced onto the previous recording.
-            reason = PARTIAL_STALLED
+            reason = PARTIAL_RESET
         elif resolution is not None and state.resolution not in (None, resolution):
             reason = PARTIAL_RESOLUTION_CHANGE
         else:

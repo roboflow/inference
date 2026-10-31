@@ -205,6 +205,8 @@ def test_retired_rings_release_themselves_before_close() -> None:
         # when: the pending capture of a retired ring is finalised
         artifact = pending.future.result(timeout=30)
         artifact.release()
+        # a frame-number restart is reported as such, not as a stall
+        assert artifact.report.partial == "reset"
 
         # then: every retired ring left the block, the budget and its threads
         _wait_for(lambda: block._retired_rings == [])

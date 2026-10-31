@@ -71,8 +71,10 @@ class ClipReport:
         width: Output width in pixels.
         height: Output height in pixels.
         backend: Encoder backend, ``"x264"`` or ``"nvenc"``.
-        partial: Why the clip ends or starts early: ``None``, ``"stalled"``,
-            ``"resolution_change"``, ``"shutdown"`` or ``"ring_evicted"``.
+        partial: Why the clip ends or starts early: ``None``, ``"stalled"``
+            (no frames for the grace period), ``"reset"`` (the source restarted:
+            its frame number went backwards), ``"resolution_change"``,
+            ``"shutdown"`` or ``"ring_evicted"``.
         loss: Missing frames by cause.
         wall_clock_jump_flagged: True if the timestamp axis stepped backwards
             by more than a second inside the clip.
