@@ -531,6 +531,10 @@ class SinkClipUploads:
         if not future.cancelled():
             return None
 
+        logger.warning(
+            "Vision Events event task was cancelled before it ran; releasing its "
+            "clips."
+        )
         clip_attachments.abandon(
             event_id="",
             reason="the event task was cancelled before it ran",
@@ -602,6 +606,12 @@ class SinkClipUploads:
             unsettled = list(self._unsettled.values())
         # Hosts close blocks after their pools stopped, so an event task that
         # still holds clips never ran (it was cancelled) and never will.
+        if unsettled:
+            logger.warning(
+                "Vision Events sink closed with %d event(s) whose clips were never "
+                "sent; releasing their clips.",
+                len(unsettled),
+            )
         for clip_attachments in unsettled:
             clip_attachments.abandon(
                 event_id="",

@@ -97,7 +97,9 @@ A clip is approximate evidence with reported bounds.
   5) after their capture timestamp are not recorded, for example the first frames
   after a slow model load. Frames read from video files are exempt.
 * **Restarts.** A frame number going backwards or a resolution change starts a new
-  recording; a clip in progress ends there as partial.
+  recording; a clip in progress ends there as partial (`reset` or
+  `resolution_change`). The previous recording's memory is freed as soon as its
+  last pending clip is finished.
 * **Streams.** State is kept per `video_identifier`, for at most 16 streams per
   recorder; the least recently seen stream's recording is discarded beyond that.
 * No audio.
@@ -179,9 +181,11 @@ The `report` holds `requested_window`, `actual_start`, `actual_end`, `lead_secon
 spent on the pipeline thread per frame) and `finalize_ms`.
 
 `partial` is `null` or the reason a clip is shorter than requested: `stalled` (no
-frames for the remaining post-roll plus 10 s), `resolution_change`, `shutdown` (the
-pipeline stopped during the post-roll) or `ring_evicted` (the window start was no
-longer buffered).
+frames arrived for 10 s, and at least the remaining post-roll plus 10 s passed since
+the capture; a source processed slower than real time is not stalled while frames
+keep arriving), `reset` (the source restarted: its frame number went backwards),
+`resolution_change`, `shutdown` (the pipeline stopped during the post-roll) or
+`ring_evicted` (the window start was no longer buffered).
 
 `loss` counts the frames missing from the window by cause: `decimated` (`clip_fps`
 grid), `ring_drops` (buffer byte cap), `queue_drops` (encoder queue full, or dropped
@@ -237,7 +241,12 @@ the event is still sent.
 When a pipeline stops, the recorder stops taking frames, drops frames not yet
 encoded (counted as `queue_drops`), finishes pending clips as `partial: shutdown`
 and uploads them within the host's close deadline (`WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS`,
-default 30 s).
+default 30 s). An upload still running at the deadline is not cut off: its outcome is
+recorded when it returns. Clips of a fire-and-forget event whose background task
+was cancelled before it ran are released, with a warning in the log.
+
+Behind a secure gateway (`SECURE_GATEWAY`), the upload slot request, the clip upload
+to its signed URL and the ingestion check all go through the gateway.
 
 ## Performance envelope
 
@@ -273,7 +282,7 @@ warning.
 | `WORKFLOWS_VIDEO_CLIP_MAX_UPLOAD_CONCURRENCY` | `2` | Clip uploads running at once in the process |
 | `WORKFLOWS_VIDEO_CLIP_MAX_CLIP_BYTES` | 512 MiB | Largest clip, estimated at capture and checked again after muxing |
 | `WORKFLOWS_VIDEO_CLIP_INMEMORY_MAX_BYTES` | 64 MiB | Clips up to this size are held in memory; larger clips stay on disk until uploaded |
-| `WORKFLOWS_VIDEO_CLIP_TEMP_DIR` | system temp directory | Directory clips are muxed into |
+| `WORKFLOWS_VIDEO_CLIP_TEMP_DIR` | system temp directory | Directory clips are muxed into; each clip file is created readable by its owner only (mode `0600`) |
 | `WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES` | `8` | GPU frames queued per NVENC stream (1 to 256); a full pool counts `queue_drops` |
 | `WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS` | scaled (4000 at 1080p30) | NVENC bitrate in kbit/s (100 to 200000) |
 | `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS` | `30` | Seconds a stopping InferencePipeline gives Workflow blocks to finish, for example to upload pending clips |

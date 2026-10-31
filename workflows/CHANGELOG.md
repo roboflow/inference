@@ -38,11 +38,11 @@ for contributor and maintainer responsibilities.
   outside the process (an inner workflow with remote dispatch, Custom Python running
   remotely, a Roboflow model step running remotely) or is exposed as a workflow
   output, and warns when a recorder runs under flow control, where it loses
-  pre-roll. Tracking is conservative: a wildcard output of a step that receives an
-  anchor through an input not declaring the anchor kind (Expression, Frame Delay)
-  is treated as an anchor, so an Expression that only reads an anchor's metadata
-  cannot feed a remote step or a workflow output. Workflows without a recorder are
-  unaffected.
+  pre-roll. Tracking is conservative: a wildcard, `list_of_values`, `dictionary` or
+  kind-less output of a step that receives an anchor through an input not declaring
+  the anchor kind (Expression, Frame Delay, Buffer, Dimension Collapse) is treated
+  as an anchor, so an Expression that only reads an anchor's metadata cannot feed a
+  remote step or a workflow output. Workflows without a recorder are unaffected.
 
 ### Added
 
