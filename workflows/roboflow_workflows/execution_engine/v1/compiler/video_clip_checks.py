@@ -15,14 +15,17 @@ known:
   executes, so clips lose pre-roll; that is a warning, not an error.
 
 Anchor tracking is conservative. A step output declaring the anchor kind carries an
-anchor, and so does every wildcard (`*` kind) output of a step that receives an
-anchor through an input which does not itself declare the anchor kind (Frame Delay,
-Expression, ...), because the compiler cannot tell what such an output contains.
+anchor. A step that receives an anchor through an input which does not itself
+declare the anchor kind (Frame Delay, Buffer, Dimension Collapse, Expression, ...)
+may pass it on in any output able to hold an arbitrary value: a wildcard (`*`),
+`list_of_values` or `dictionary` output, or one without declared kinds. The
+compiler cannot tell what such an output contains, so it is treated as carrying an
+anchor; scalar outputs of such a step (a boolean, a number, a string) are not.
 Known false positive: an Expression-style block that only reads metadata from an
-anchor (e.g. its `availability`) and outputs a plain value is still treated as
-carrying one, so binding that value into a remote step or a workflow output is
-rejected. Steps that declare the anchor kind on their input (the Vision Events
-sink) are its intended consumers and never pass it through.
+anchor (e.g. its `availability`) and outputs a plain value through a wildcard
+output is still treated as carrying one, so binding that value into a remote step
+or a workflow output is rejected. Steps that declare the anchor kind on their input
+(the Vision Events sink) are its intended consumers and never pass it through.
 """
 
 import warnings
@@ -39,6 +42,8 @@ from roboflow_workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
+    LIST_OF_VALUES_KIND,
     VIDEO_CLIP_ANCHOR_KIND,
     WILDCARD_KIND,
 )
@@ -67,6 +72,10 @@ ROBOFLOW_MODEL_TYPE_MARKER = "_model@"
 LOCAL_EXECUTION_MODE = "local"
 REMOTE_EXECUTION_MODE = "remote"
 ERROR_CONTEXT = "workflow_compilation | video_clip_anchor_boundary"
+# Output kinds able to hold an anchor received through an input of another kind.
+CONTAINER_KIND_NAMES = frozenset(
+    {WILDCARD_KIND.name, LIST_OF_VALUES_KIND.name, DICTIONARY_KIND.name}
+)
 
 
 class VideoClipRecorderUnderFlowControlWarning(UserWarning):
@@ -254,11 +263,11 @@ def warn_on_conditional_video_clip_recorders(execution_graph: nx.DiGraph) -> Lis
 def find_anchor_carrying_selectors(execution_graph: nx.DiGraph) -> Set[str]:
     """Return the step output selectors that may carry an anchor.
 
-    A step output declaring the anchor kind carries one. So does any wildcard
-    output of a step that receives an anchor-carrying selector through an input
-    that does not declare the anchor kind, since the compiler cannot tell what
-    such an output contains (see the module docstring for the known false
-    positive).
+    A step output declaring the anchor kind carries one. So does any container
+    output (wildcard, `list_of_values`, `dictionary`, or no declared kind) of a
+    step that receives an anchor-carrying selector through an input that does
+    not declare the anchor kind, since the compiler cannot tell what such an
+    output contains (see the module docstring for the known false positive).
 
     Args:
         execution_graph: The execution graph built by the compiler.
@@ -272,7 +281,7 @@ def find_anchor_carrying_selectors(execution_graph: nx.DiGraph) -> Set[str]:
         if step_node is None:
             continue
 
-        passes_anchor_through = _receives_anchor_through_wildcard(
+        passes_anchor_through = _receives_anchor_as_opaque_input(
             step_node=step_node, tainted_selectors=tainted
         )
         for output in step_node.step_manifest.get_actual_outputs():
@@ -280,13 +289,19 @@ def find_anchor_carrying_selectors(execution_graph: nx.DiGraph) -> Set[str]:
             selector = f"{step_node.selector}.{output.name}"
             if VIDEO_CLIP_ANCHOR_KIND.name in kind_names:
                 tainted.add(selector)
-            elif passes_anchor_through and WILDCARD_KIND.name in kind_names:
+            elif passes_anchor_through and _may_hold_any_value(kind_names):
                 tainted.add(selector)
 
     return tainted
 
 
-def _receives_anchor_through_wildcard(
+def _may_hold_any_value(kind_names: Set[str]) -> bool:
+    may_hold_any_value = not kind_names or bool(kind_names & CONTAINER_KIND_NAMES)
+
+    return may_hold_any_value
+
+
+def _receives_anchor_as_opaque_input(
     step_node: StepNode, tainted_selectors: Set[str]
 ) -> bool:
     anchor_parameters = _parameters_declaring_anchor_kind(

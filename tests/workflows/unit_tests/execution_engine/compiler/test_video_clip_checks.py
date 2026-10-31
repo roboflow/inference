@@ -258,6 +258,97 @@ def test_untainted_frame_delay_output_is_accepted() -> None:
     assert tainted == {"$steps.recorder.anchor", "$steps.delay.output"}
 
 
+def _buffer(data: str) -> dict:
+    return {
+        "type": "roboflow_core/buffer@v1",
+        "name": "buffer",
+        "data": data,
+        "length": 5,
+    }
+
+
+def _dimension_collapse(data: str) -> dict:
+    return {
+        "type": "roboflow_core/dimension_collapse@v1",
+        "name": "collapse",
+        "data": data,
+    }
+
+
+@pytest.mark.parametrize(
+    "container_step, selector",
+    [
+        (_buffer("$steps.recorder.anchor"), "$steps.buffer.output"),
+        (_dimension_collapse("$steps.recorder.anchor"), "$steps.collapse.output"),
+    ],
+)
+def test_anchor_through_list_output_as_workflow_output_is_rejected(
+    container_step: dict, selector: str
+) -> None:
+    # given - Buffer and Dimension Collapse output `list_of_values`, not `*`
+    definition = _workflow(
+        steps=[RECORDER, container_step],
+        outputs=[_output("anchors", selector)],
+    )
+
+    # when
+    with pytest.raises(ExecutionGraphStructureError) as error:
+        _compile(definition)
+
+    # then
+    message = error.value.public_message
+    assert "Workflow output `anchors`" in message
+    assert f"`{selector}`" in message
+
+
+def test_anchor_through_buffer_into_remote_custom_python_is_rejected() -> None:
+    # given
+    definition = _workflow(
+        steps=[
+            RECORDER,
+            _buffer("$steps.recorder.anchor"),
+            {
+                "type": "AnchorConsumer",
+                "name": "consumer",
+                "anchor": "$steps.buffer.output",
+            },
+        ],
+        outputs=[],
+    )
+    definition["dynamic_blocks_definitions"] = [CUSTOM_PYTHON_DEFINITION]
+    result = _compile(definition)
+
+    # when
+    with pytest.raises(ExecutionGraphStructureError) as error:
+        verify_video_clip_anchors(
+            result.execution_graph,
+            available_blocks=result.available_blocks,
+            custom_python_execution_mode="modal",
+        )
+
+    # then
+    message = error.value.public_message
+    assert "Step `consumer` binds `$steps.buffer.output` to `anchor`" in message
+
+
+def test_buffer_of_non_anchor_data_next_to_a_recorder_compiles() -> None:
+    # given - the normal recorder -> sink wiring beside an unrelated buffer
+    definition = _workflow(
+        steps=[RECORDER, _sink("$steps.recorder.anchor"), _buffer("$inputs.image")],
+        outputs=[
+            _output("videos", "$steps.sink.videos"),
+            _output("frames", "$steps.buffer.output"),
+        ],
+    )
+
+    # when
+    result = _compile(definition)
+
+    # then
+    tainted = find_anchor_carrying_selectors(execution_graph=result.execution_graph)
+    assert tainted == {"$steps.recorder.anchor"}
+
+
 CUSTOM_PYTHON_DEFINITION = {
     "type": "DynamicBlockDefinition",
     "manifest": {
