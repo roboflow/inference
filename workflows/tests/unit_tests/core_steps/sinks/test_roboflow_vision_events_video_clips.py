@@ -7,7 +7,8 @@ the event's `videos` field, the hand-off and the immediate outputs.
 """
 
 import logging
-from concurrent.futures import Future
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from unittest import mock
@@ -730,6 +731,77 @@ def test_fire_and_forget_captures_on_the_caller_thread(
         task()
     assert _event_payload(platform)["videos"] == [{"sourceId": "vid-1", "label": "Raw"}]
     assert len(uploader.submissions) == 1
+
+
+@pytest.mark.parametrize("module", VISION_EVENTS_MODULES)
+def test_close_releases_clips_of_an_event_task_that_never_ran(
+    module: Any, platform: Any, budget: FakeBudget, uploader: FakeUploader
+) -> None:
+    # given: the pool never runs the queued task (cancelled at pipeline end)
+    thread_pool = mock.MagicMock()
+    anchor = FakeAnchor()
+    block = _block(module, thread_pool_executor=thread_pool)
+    _run(block, module, video_clips=anchor, fire_and_forget=True)
+    assert block._clip_uploads.unsettled_count() == 1
+
+    # when
+    block.prepare_close(5.0)
+    block.close()
+
+    # then: the admission ticket and the capture (and its artifact) are released
+    assert budget.decisions[0].ticket.released == 1
+    assert anchor.captures[0].released == 1
+    assert block._clip_uploads.unsettled_count() == 0
+    assert uploader.submissions == []
+    assert platform.request_history == []
+
+
+@pytest.mark.parametrize("module", VISION_EVENTS_MODULES)
+def test_cancelled_event_task_releases_its_clips_at_once(
+    module: Any, platform: Any, budget: FakeBudget, uploader: FakeUploader
+) -> None:
+    # given: a one-worker pool busy with another task
+    thread_pool = ThreadPoolExecutor(max_workers=1)
+    blocker = threading.Event()
+    thread_pool.submit(blocker.wait)
+    anchor = FakeAnchor()
+    block = _block(module, thread_pool_executor=thread_pool)
+    _run(block, module, video_clips=anchor, fire_and_forget=True)
+
+    # when: the host cancels queued tasks
+    thread_pool.shutdown(wait=False, cancel_futures=True)
+
+    # then
+    assert budget.decisions[0].ticket.released == 1
+    assert anchor.captures[0].released == 1
+    assert block._clip_uploads.unsettled_count() == 0
+    blocker.set()
+    thread_pool.shutdown(wait=True)
+    block.close()
+    assert anchor.captures[0].released == 1
+
+
+@pytest.mark.parametrize("module", VISION_EVENTS_MODULES)
+def test_close_leaves_handed_off_clips_to_the_uploader(
+    module: Any, platform: Any, budget: FakeBudget, uploader: FakeUploader
+) -> None:
+    # given
+    thread_pool = mock.MagicMock()
+    anchor = FakeAnchor()
+    block = _block(module, thread_pool_executor=thread_pool)
+    _run(block, module, video_clips=anchor, fire_and_forget=True)
+    task = thread_pool.submit.call_args.args[0]
+    with mock.patch.object(module, "API_BASE_URL", API_BASE_URL):
+        task()
+
+    # when
+    block.close()
+
+    # then: the uploader owns the capture and the ticket
+    assert block._clip_uploads.unsettled_count() == 0
+    assert len(uploader.submissions) == 1
+    assert budget.decisions[0].ticket.released == 0
+    assert anchor.captures[0].released == 0
 
 
 # === Ingestion confirmation ===

@@ -58,6 +58,7 @@ STATUS_THROTTLED = "throttled"
 STATUS_PREPARE_FAILED = "prepare_failed"
 STATUS_TOO_MANY_VIDEOS = "rejected:too_many_videos"
 STATUS_EVENT_FAILED = "rejected:event_failed"
+STATUS_SINK_CLOSED = "rejected:sink_closed"
 STATUS_UPLOADER_UNAVAILABLE = "rejected:uploader_unavailable"
 STATUS_NO_ANCHOR = "unavailable:no_anchor"
 STATUS_INVALID_ANCHOR = "unavailable:invalid_anchor"
@@ -153,6 +154,11 @@ class ClipAttachments:
         self._clip_upload_timeout_seconds = DEFAULT_CLIP_UPLOAD_TIMEOUT_SECONDS
         self._confirm_ingestion = False
         self._handed_off = False
+        # `hand_off` and `abandon` settle the entries exactly once, whichever of
+        # the event task and the sink's `close()` gets there first.
+        self._settle_lock = threading.Lock()
+        self._settled = False
+        self._on_settled: Optional[Callable[["ClipAttachments"], None]] = None
 
     def has_pending(self) -> bool:
         """Tell whether any entry still waits for upload preparation.
@@ -260,13 +266,18 @@ class ClipAttachments:
                     attachment.label,
                     redact_signed_urls(f"{type(error).__name__}: {error}"),
                 )
-                attachment.video_status = STATUS_PREPARE_FAILED
-                _release(attachment)
+                with self._settle_lock:
+                    if attachment.video_status == STATUS_PENDING:
+                        attachment.video_status = STATUS_PREPARE_FAILED
+                        _release(attachment)
                 continue
 
-            attachment.video_id = video_id
-            attachment.signed_url = signed_url
-            attachment.required_headers = required_headers
+            with self._settle_lock:
+                attachment.video_id = video_id
+                if self._settled:
+                    continue
+                attachment.signed_url = signed_url
+                attachment.required_headers = required_headers
 
     def videos_field(self) -> List[Dict[str, str]]:
         """Return the event's `videos` list for the prepared entries, in order.
@@ -293,6 +304,14 @@ class ClipAttachments:
         Args:
             event_id (str): Id of the posted event.
         """
+        with self._settle_lock:
+            if self._settled:
+                return None
+            self._settled = True
+            self._hand_off_locked(event_id=event_id)
+        self._notify_settled()
+
+    def _hand_off_locked(self, *, event_id: str) -> None:
         self._handed_off = True
         uploader = self._uploader
         confirm_ingestion = self._confirm_ingestion
@@ -336,7 +355,13 @@ class ClipAttachments:
             attachment.pending_capture = None
             attachment.admission_ticket = None
 
-    def abandon(self, *, event_id: str, reason: str) -> None:
+    def abandon(
+        self,
+        *,
+        event_id: str,
+        reason: str,
+        video_status: str = STATUS_EVENT_FAILED,
+    ) -> None:
         """Release every pending capture after the event was not created.
 
         Prepared videos stay on the platform without an upload (the platform
@@ -345,26 +370,60 @@ class ClipAttachments:
         Args:
             event_id (str): Id the event would have had.
             reason (str): Why the event failed, for the log.
+            video_status (str): Status given to the released entries.
         """
-        if self._handed_off:
-            return None
+        with self._settle_lock:
+            if self._settled:
+                return None
+            self._settled = True
+            orphaned_video_ids = []
+            for attachment in self.attachments:
+                if attachment.video_status != STATUS_PENDING:
+                    continue
 
-        orphaned_video_ids = []
-        for attachment in self.attachments:
-            if attachment.video_status != STATUS_PENDING:
-                continue
-
-            attachment.video_status = STATUS_EVENT_FAILED
-            attachment.signed_url = None
-            _release(attachment)
-            if attachment.video_id:
-                orphaned_video_ids.append(attachment.video_id)
+                attachment.video_status = video_status
+                attachment.signed_url = None
+                _release(attachment)
+                if attachment.video_id:
+                    orphaned_video_ids.append(attachment.video_id)
+        self._notify_settled()
         if orphaned_video_ids:
             logger.warning(
                 "Vision event %s was not created (%s); orphaned video ids: %s",
                 event_id,
                 redact_signed_urls(reason),
                 ", ".join(orphaned_video_ids),
+            )
+
+    def set_on_settled(
+        self, on_settled: Optional[Callable[["ClipAttachments"], None]]
+    ) -> None:
+        """Register a callback run once `hand_off` or `abandon` settled the entries.
+
+        Runs at once when the entries are already settled.
+
+        Args:
+            on_settled (Optional[Callable[[ClipAttachments], None]]): Receives
+                this object.
+        """
+        with self._settle_lock:
+            self._on_settled = on_settled
+            settled = self._settled
+        if settled:
+            self._notify_settled()
+
+    def _notify_settled(self) -> None:
+        with self._settle_lock:
+            on_settled, self._on_settled = self._on_settled, None
+        if on_settled is None:
+            return None
+
+        try:
+            on_settled(self)
+        except Exception as error:
+            logger.warning(
+                "Vision Events clip bookkeeping failed: %s",
+                f"{type(error).__name__}: {error}",
             )
 
 
@@ -421,6 +480,11 @@ class SinkClipUploads:
     what is left of it (unfinished uploads end as `shutdown_deadline`). Both
     are idempotent and safe to call concurrently.
 
+    Clips captured for an event whose task has not handed them to the uploader
+    yet are tracked (`track`): when the host cancels that task (a queued
+    fire-and-forget task at pipeline end) `close` abandons them, so their
+    admission tickets and artifacts are released.
+
     Args:
         uploader_factory (Optional[Callable[[], Any]]): Creates the uploader;
             defaults to `create_clip_uploader`.
@@ -432,6 +496,55 @@ class SinkClipUploads:
         self._uploader: Any = None
         self._close_deadline: Optional[float] = None
         self._closed = False
+        self._unsettled: Dict[int, ClipAttachments] = {}
+
+    def track(self, clip_attachments: ClipAttachments) -> None:
+        """Remember clips until their event task hands them off or abandons them.
+
+        Args:
+            clip_attachments (ClipAttachments): The clips of one event.
+        """
+        if not clip_attachments.has_pending():
+            return None
+
+        with self._lock:
+            self._unsettled[id(clip_attachments)] = clip_attachments
+        clip_attachments.set_on_settled(self._untrack)
+
+    def abandon_if_cancelled(
+        self, future: Any, *, clip_attachments: ClipAttachments
+    ) -> None:
+        """Abandon the clips of an event task that the executor cancelled.
+
+        Meant as a `Future.add_done_callback` of the submitted event task.
+
+        Args:
+            future (Any): The event task's future.
+            clip_attachments (ClipAttachments): The clips of that event.
+        """
+        if not future.cancelled():
+            return None
+
+        clip_attachments.abandon(
+            event_id="",
+            reason="the event task was cancelled before it ran",
+            video_status=STATUS_SINK_CLOSED,
+        )
+
+    def unsettled_count(self) -> int:
+        """Return how many events still hold clips not handed off.
+
+        Returns:
+            int: Tracked events.
+        """
+        with self._lock:
+            count = len(self._unsettled)
+
+        return count
+
+    def _untrack(self, clip_attachments: ClipAttachments) -> None:
+        with self._lock:
+            self._unsettled.pop(id(clip_attachments), None)
 
     def get(self) -> Any:
         """Return the sink's uploader, creating it on first use.
@@ -480,6 +593,15 @@ class SinkClipUploads:
             self._closed = True
             uploader = self._uploader
             remaining = max(0.0, self._close_deadline - time.monotonic())
+            unsettled = list(self._unsettled.values())
+        # Hosts close blocks after their pools stopped, so an event task that
+        # still holds clips never ran (it was cancelled) and never will.
+        for clip_attachments in unsettled:
+            clip_attachments.abandon(
+                event_id="",
+                reason="the sink closed before the event was sent",
+                video_status=STATUS_SINK_CLOSED,
+            )
         if uploader is None:
             return None
 

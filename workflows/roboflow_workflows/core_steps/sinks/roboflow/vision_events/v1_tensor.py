@@ -825,6 +825,8 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 )
                 videos = clip_attachments.outputs()
                 clip_task_parameters["clip_attachments"] = clip_attachments
+                # Released at close if the event task never runs.
+                self._clip_uploads.track(clip_attachments)
             task = partial(
                 _execute_vision_event,
                 api_base_url=API_BASE_URL,
@@ -853,7 +855,14 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 "videos": videos,
             }
         elif fire_and_forget and self._thread_pool_executor:
-            self._thread_pool_executor.submit(task)
+            task_future = self._thread_pool_executor.submit(task)
+            if clip_attachments is not None:
+                task_future.add_done_callback(
+                    partial(
+                        self._clip_uploads.abandon_if_cancelled,
+                        clip_attachments=clip_attachments,
+                    )
+                )
             return {
                 "error_status": False,
                 "throttling_status": False,
