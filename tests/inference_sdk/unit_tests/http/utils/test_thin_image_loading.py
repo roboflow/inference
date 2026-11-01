@@ -32,10 +32,9 @@ def test_load_static_inference_input_with_thin_image(
         np.frombuffer(base64.b64decode(encoded_image), dtype=np.uint8),
         cv2.IMREAD_UNCHANGED,
     )
-    expected_shape = (1, 640, 3) if height == 1 else (640, 1, 3)
-    assert decoded_image.shape == expected_shape
+    assert decoded_image.shape == pixels.shape
     assert np.all(decoded_image == 128)
-    assert scaling_factor == pytest.approx(640 / max(height, width))
+    assert scaling_factor is None
 
 
 @pytest.mark.asyncio
@@ -60,7 +59,6 @@ async def test_load_static_inference_input_async_with_thin_image(
         np.frombuffer(base64.b64decode(encoded_image), dtype=np.uint8),
         cv2.IMREAD_UNCHANGED,
     )
-    expected_shape = (1, 640, 3) if height == 1 else (640, 1, 3)
-    assert decoded_image.shape == expected_shape
+    assert decoded_image.shape == pixels.shape
     assert np.all(decoded_image == 128)
-    assert scaling_factor == pytest.approx(640 / max(height, width))
+    assert scaling_factor is None

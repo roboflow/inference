@@ -85,7 +85,7 @@ def test_resize_opencv_image_when_resize_is_enabled() -> None:
 
 
 @pytest.mark.parametrize("height,width", [(1, 4096), (4096, 1), (1, 1280), (1280, 1)])
-def test_resize_opencv_image_preserves_nonzero_dimensions(
+def test_resize_opencv_image_skips_when_a_dimension_would_round_to_zero(
     height: int, width: int
 ) -> None:
     # given
@@ -97,14 +97,13 @@ def test_resize_opencv_image_preserves_nonzero_dimensions(
     )
 
     # then
-    expected_shape = (1, 640, 3) if height == 1 else (640, 1, 3)
-    assert resized_image.shape == expected_shape
+    assert resized_image is image
     assert np.all(resized_image == 128)
-    assert scaling_factor == pytest.approx(640 / max(height, width))
+    assert scaling_factor is None
 
 
 @pytest.mark.parametrize("height,width", [(1, 4096), (4096, 1), (1, 1280), (1280, 1)])
-def test_resize_pillow_image_preserves_nonzero_dimensions(
+def test_resize_pillow_image_skips_when_a_dimension_would_round_to_zero(
     height: int, width: int
 ) -> None:
     # given
@@ -116,10 +115,9 @@ def test_resize_pillow_image_preserves_nonzero_dimensions(
     )
 
     # then
-    expected_size = (640, 1) if height == 1 else (1, 640)
-    assert resized_image.size == expected_size
+    assert resized_image is image
     assert np.all(np.asarray(resized_image) == 128)
-    assert scaling_factor == pytest.approx(640 / max(height, width))
+    assert scaling_factor is None
 
 
 def test_resize_opencv_image_preserves_fractional_scaling() -> None:

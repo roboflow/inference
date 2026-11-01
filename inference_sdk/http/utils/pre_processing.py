@@ -10,7 +10,7 @@ def resize_opencv_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[np.ndarray, Optional[float]]:
-    """Resize an OpenCV image, retaining at least one pixel per dimension.
+    """Downsize an OpenCV image unless a dimension would round to zero.
 
     Args:
         image: The image to resize.
@@ -18,7 +18,10 @@ def resize_opencv_image(
         max_width: The maximum width of the image.
 
     Returns:
-        The resized image and the scaling factor.
+        The resized image and the scaling factor, or the original image and
+        None when no resize is needed or a dimension would round to zero.
+        In the latter case, the image may exceed the requested bounds to avoid
+        distorting geometry represented by a single uniform scaling factor.
     """
     if max_width is None or max_height is None:
         return image, None
@@ -34,13 +37,12 @@ def resize_opencv_image(
 
     new_width = round(scaling_ratio * width)
     new_height = round(scaling_ratio * height)
-    target_size = None
     if scaling_ratio > 0 and (new_width == 0 or new_height == 0):
-        target_size = (max(1, new_width), max(1, new_height))
+        return image, None
 
     # Preserve the original sampling scale when neither dimension rounds to zero.
     resized_image = cv2.resize(
-        src=image, dsize=target_size, fx=scaling_ratio, fy=scaling_ratio
+        src=image, dsize=None, fx=scaling_ratio, fy=scaling_ratio
     )
     return resized_image, scaling_ratio
 
@@ -50,7 +52,7 @@ def resize_pillow_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[Image.Image, Optional[float]]:
-    """Resize a Pillow image, retaining at least one pixel per dimension.
+    """Downsize a Pillow image unless a dimension would round to zero.
 
     Args:
         image: The image to resize.
@@ -58,7 +60,10 @@ def resize_pillow_image(
         max_width: The maximum width of the image.
 
     Returns:
-        The resized image and the scaling factor.
+        The resized image and the scaling factor, or the original image and
+        None when no resize is needed or a dimension would round to zero.
+        In the latter case, the image may exceed the requested bounds to avoid
+        distorting geometry represented by a single uniform scaling factor.
     """
     if max_width is None or max_height is None:
         return image, None
@@ -74,9 +79,8 @@ def resize_pillow_image(
 
     new_width = round(scaling_ratio * width)
     new_height = round(scaling_ratio * height)
-    if scaling_ratio > 0:
-        new_width = max(1, new_width)
-        new_height = max(1, new_height)
+    if scaling_ratio > 0 and (new_width == 0 or new_height == 0):
+        return image, None
 
     resized_image = image.resize(size=(new_width, new_height))
     return resized_image, scaling_ratio
