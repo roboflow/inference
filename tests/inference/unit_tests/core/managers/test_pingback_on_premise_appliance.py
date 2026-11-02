@@ -80,3 +80,26 @@ def test_pingback_outside_appliance_mode_still_borrows_the_request_key(
     pingback.post_data(pingback.model_manager)
 
     assert [payload["api_key"] for payload in posted] == ["tenant-request-key"]
+
+
+@pytest.mark.parametrize("appliance", [True, False])
+def test_pingback_logs_never_contain_the_api_key(
+    monkeypatch, posted, caplog, appliance
+) -> None:
+    monkeypatch.setattr(pingback_module, "ON_PREMISE_APPLIANCE", appliance)
+    monkeypatch.setattr(pingback_module, "METRICS_API_KEY", "pingback-key")
+    monkeypatch.setattr(pingback_module, "API_KEY", "pingback-key")
+    caplog.set_level(logging.DEBUG, logger=pingback_module.logger.name)
+    pingback = _pingback()
+
+    pingback.post_data(pingback.model_manager)
+    monkeypatch.setattr(
+        pingback_module.requests,
+        "post",
+        MagicMock(side_effect=ConnectionError("metrics endpoint down")),
+    )
+    pingback.post_data(pingback.model_manager)
+
+    assert "Sent metrics" in caplog.text
+    assert "Data was:" in caplog.text
+    assert "pingback-key" not in caplog.text

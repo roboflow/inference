@@ -47,6 +47,7 @@ class FakeApplianceApi:
         self.workspace_calls: Counter = Counter()
         self.model_data_calls: Counter = Counter()
         self.outage = False
+        self.outage_status = 503
         self.base_url = ""
         self._loop = asyncio.new_event_loop()
         self._runner = None
@@ -57,7 +58,9 @@ class FakeApplianceApi:
         api_key = request.query.get("api_key")
         self.workspace_calls[api_key] += 1
         if self.outage:
-            return web.json_response({"error": "unavailable"}, status=503)
+            return web.json_response(
+                {"error": "unavailable"}, status=self.outage_status
+            )
         if api_key == KEY_A:
             return web.json_response(
                 {
@@ -321,6 +324,22 @@ def test_appliance_outage_answers_503_and_caches_nothing(
 
     assert recovered.status_code == 200
     assert fake_api.workspace_calls[KEY_A] == 3
+
+
+def test_usage_check_404_answers_503_and_caches_nothing(
+    appliance_client, fake_api
+) -> None:
+    # An appliance API without the usage-check route must not let calls through.
+    fake_api.outage = True
+    fake_api.outage_status = 404
+
+    first = _post_workspace_model(appliance_client, KEY_A)
+    second = _post_workspace_model(appliance_client, KEY_A)
+
+    assert first.status_code == second.status_code == 503
+    assert first.headers["Retry-After"] == "5"
+    assert "RoboflowAPINotNotFoundError" in first.json()["message"]
+    assert fake_api.workspace_calls[KEY_A] == 2
 
 
 def test_no_response_body_contains_an_api_key(appliance_client, fake_api) -> None:
