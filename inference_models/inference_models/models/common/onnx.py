@@ -76,9 +76,6 @@ ORT_TYPES_TO_TORCH_TYPES_MAPPING = {
 }
 
 MODEL_INPUT_CASTING = {
-    # bfloat16 only widens: a CUDA bf16 autocast leaked by another model in the
-    # same process hands bf16 tensors to fp32 ONNX sessions.
-    torch.bfloat16: {torch.bfloat16, torch.float32, torch.float64},
     torch.float16: {torch.float16, torch.float32, torch.float64},
     torch.float32: {torch.float16, torch.float32, torch.float64},
     torch.int8: {

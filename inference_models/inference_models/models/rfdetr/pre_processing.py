@@ -264,7 +264,15 @@ def _pre_process_numpy(
     )
     if swap_channels:
         resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    tensor = TF.to_tensor(resized)
+    # Not TF.to_tensor: it converts to torch's default dtype, which a concurrent
+    # Hugging Face load can leave set to bfloat16 process-wide.
+    if resized.ndim == 2:
+        resized = resized[:, :, None]
+    tensor = (
+        torch.from_numpy(np.ascontiguousarray(resized.transpose(2, 0, 1)))
+        .to(dtype=torch.float32)
+        .div(255)
+    )
     tensor = _apply_normalization(tensor, network_input)
     return tensor, meta
 

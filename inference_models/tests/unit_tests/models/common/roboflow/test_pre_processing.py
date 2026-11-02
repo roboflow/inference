@@ -10557,3 +10557,60 @@ def test_histogram_equalization_for_torch_image_matches_numpy_image(
 
     # then
     assert torch.equal(torch_result, numpy_result)
+
+
+@pytest.fixture
+def bfloat16_default_dtype():
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.bfloat16)
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous)
+
+
+@pytest.mark.parametrize(
+    "resize_mode",
+    [
+        ResizeMode.STRETCH_TO,
+        ResizeMode.LETTERBOX,
+        ResizeMode.CENTER_CROP,
+        ResizeMode.FIT_LONGER_EDGE,
+    ],
+)
+@pytest.mark.parametrize("input_kind", ["numpy", "numpy_list", "tensor", "tensor_list"])
+def test_pre_process_network_input_scales_to_float32_when_default_dtype_is_bfloat16(
+    bfloat16_default_dtype, resize_mode: ResizeMode, input_kind: str
+) -> None:
+    if resize_mode is ResizeMode.FIT_LONGER_EDGE and input_kind.endswith("_list"):
+        pytest.skip("fit-longer-edge does not support batches")
+    # given
+    network_input = NetworkInputDefinition(
+        training_input_size=TrainingInputSize(height=64, width=96),
+        dynamic_spatial_size_supported=False,
+        color_mode=ColorMode.BGR,
+        resize_mode=resize_mode,
+        padding_value=114,
+        input_channels=3,
+        scaling_factor=255,
+    )
+    numpy_image = np.full((192, 168, 3), 128, dtype=np.uint8)
+    tensor_image = torch.from_numpy(numpy_image).permute(2, 0, 1)
+    images = {
+        "numpy": numpy_image,
+        "numpy_list": [numpy_image, numpy_image],
+        "tensor": tensor_image,
+        "tensor_list": [tensor_image, tensor_image],
+    }[input_kind]
+
+    # when
+    result_image, _ = pre_process_network_input(
+        images=images,
+        image_pre_processing=ImagePreProcessing(),
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="bgr",
+    )
+
+    # then
+    assert result_image.dtype == torch.float32

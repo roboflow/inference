@@ -7,10 +7,11 @@ import os.path
 import re
 import stat
 import tempfile
+import threading
 import urllib.parse
 from contextvars import ContextVar
 from datetime import datetime
-from functools import partial
+from functools import partial, wraps
 from typing import (
     Any,
     Callable,
@@ -149,6 +150,45 @@ from inference_models.weights_providers.roboflow import LOCAL_API_KEY
 from inference_models.weights_providers.roboflow_offline import (
     ROBOFLOW_OFFLINE_WEIGHTS_PROVIDER,
 )
+
+_DEFAULT_DTYPE_LOCK = threading.Lock()
+_MODEL_LOADS_IN_FLIGHT = 0
+_DEFAULT_DTYPE_BEFORE_LOADS: Optional[torch.dtype] = None
+
+
+def _restore_default_dtype_after_loads(load: Callable) -> Callable:
+    """Put torch's default dtype back once the last overlapping model load ends.
+
+    transformers sets the process-wide default dtype while it builds a model and
+    restores the value it saved on entry. Loads overlapping in different threads
+    can save bfloat16 as that value and leave the whole process in bfloat16.
+    """
+
+    @wraps(load)
+    def wrapper(*args, **kwargs):
+        global _MODEL_LOADS_IN_FLIGHT, _DEFAULT_DTYPE_BEFORE_LOADS
+        with _DEFAULT_DTYPE_LOCK:
+            if _MODEL_LOADS_IN_FLIGHT == 0:
+                _DEFAULT_DTYPE_BEFORE_LOADS = torch.get_default_dtype()
+            _MODEL_LOADS_IN_FLIGHT += 1
+        try:
+            return load(*args, **kwargs)
+        finally:
+            with _DEFAULT_DTYPE_LOCK:
+                _MODEL_LOADS_IN_FLIGHT -= 1
+                current = torch.get_default_dtype()
+                if (
+                    _MODEL_LOADS_IN_FLIGHT == 0
+                    and current != _DEFAULT_DTYPE_BEFORE_LOADS
+                ):
+                    LOGGER.warning(
+                        f"torch default dtype was left as {current} after model loading; "
+                        f"restoring {_DEFAULT_DTYPE_BEFORE_LOADS}."
+                    )
+                    torch.set_default_dtype(_DEFAULT_DTYPE_BEFORE_LOADS)
+
+    return wrapper
+
 
 MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-base",
@@ -1526,6 +1566,7 @@ class AutoModel:
         )
 
     @classmethod
+    @_restore_default_dtype_after_loads
     def from_pretrained(
         cls,
         model_id_or_path: str,
