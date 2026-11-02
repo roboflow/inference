@@ -9,6 +9,7 @@ from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
     with_route_exceptions_async,
 )
+from inference.core.utils import image_utils
 from inference.core.utils.image_utils import load_image_base64
 from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
@@ -49,6 +50,21 @@ def test_with_route_exceptions_reports_non_ascii_image_as_bad_request():
 
     assert response.status_code == 400
     assert "Malformed base64 input image" in response.body.decode()
+
+
+def test_with_route_exceptions_reports_non_ascii_inferred_image_as_bad_request(
+    monkeypatch,
+):
+    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", True)
+
+    @with_route_exceptions
+    def image_route():
+        image_utils.load_image("not-base64-猫")
+
+    response = image_route()
+
+    assert response.status_code == 400
+    assert "not-base64-猫" not in response.body.decode()
 
 
 def test_with_route_exceptions_when_usage_paused_error_raised():

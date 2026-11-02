@@ -439,6 +439,14 @@ def test_load_image_from_numpy_str_when_string_given() -> None:
 
 
 @mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
+def test_load_image_with_inferred_non_ascii_input_when_numpy_allowed() -> None:
+    with pytest.raises(InputFormatInferenceFailed) as error:
+        load_image(value="invalid-猫")
+
+    assert "invalid-猫" not in error.value.get_public_error_details()
+
+
+@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
 def test_load_image_from_numpy_str_when_non_object_bytes_given() -> None:
     # when
     with pytest.raises(InvalidNumpyInput):
