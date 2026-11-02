@@ -140,7 +140,7 @@ def test_reset_leaked_torch_default_dtype_resets_and_warns() -> None:
     # when
     with mock.patch.object(common_torch_module, "LOGGER") as logger_mock:
         result = reset_leaked_torch_default_dtype(
-            model_name_or_path="erik-pe6au/some-cosmos3-edge-t1"
+            model_name_or_path="some-workspace/cosmos3-model"
         )
 
     # then
@@ -148,7 +148,7 @@ def test_reset_leaked_torch_default_dtype_resets_and_warns() -> None:
     assert torch.get_default_dtype() == torch.float32
     logger_mock.warning.assert_called_once()
     assert torch.bfloat16 in logger_mock.warning.call_args.args
-    assert "erik-pe6au/some-cosmos3-edge-t1" in logger_mock.warning.call_args.args
+    assert "some-workspace/cosmos3-model" in logger_mock.warning.call_args.args
 
 
 def test_reset_leaked_torch_default_dtype_does_nothing_when_default_is_float32() -> (
