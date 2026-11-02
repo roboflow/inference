@@ -1,3 +1,4 @@
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -59,6 +60,70 @@ def test_add_model_passes_manager_owned_artifact_cache() -> None:
     assert model_class.call_count == 2
     for call in model_class.call_args_list:
         assert call.kwargs["content_addressed_artifact_cache"] is artifact_cache
+
+
+def test_add_model_resets_leaked_torch_default_dtype_after_load() -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+
+    # when
+    with patch.object(
+        base_module, "_reset_leaked_torch_default_dtype"
+    ) as reset_dtype_mock:
+        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+
+    # then
+    reset_dtype_mock.assert_called_once_with(model_id="some/1")
+
+
+def test_reset_leaked_torch_default_dtype_delegates_to_inference_models() -> None:
+    # given
+    helpers_module = SimpleNamespace(reset_leaked_torch_default_dtype=MagicMock())
+
+    # when
+    with patch.dict(
+        sys.modules,
+        {
+            "torch": sys.modules.get("torch", MagicMock()),
+            "inference_models.models.common.torch": helpers_module,
+        },
+    ):
+        base_module._reset_leaked_torch_default_dtype(model_id="some/1")
+
+    # then
+    helpers_module.reset_leaked_torch_default_dtype.assert_called_once_with(
+        model_name_or_path="some/1"
+    )
+
+
+def test_reset_leaked_torch_default_dtype_skips_when_torch_not_imported() -> None:
+    # given
+    helpers_module = SimpleNamespace(reset_leaked_torch_default_dtype=MagicMock())
+
+    # when
+    with patch.dict(
+        sys.modules, {"inference_models.models.common.torch": helpers_module}
+    ):
+        sys.modules.pop("torch", None)
+        base_module._reset_leaked_torch_default_dtype(model_id="some/1")
+
+    # then
+    helpers_module.reset_leaked_torch_default_dtype.assert_not_called()
+
+
+def test_reset_leaked_torch_default_dtype_skips_when_helper_unavailable() -> None:
+    # when
+    with patch.dict(
+        sys.modules,
+        {
+            "torch": sys.modules.get("torch", MagicMock()),
+            "inference_models.models.common.torch": None,
+        },
+    ):
+        base_module._reset_leaked_torch_default_dtype(model_id="some/1")
+
+    # then nothing is raised
 
 
 def test_model_manager_uses_shared_artifact_cache() -> None:
