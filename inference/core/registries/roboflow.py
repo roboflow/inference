@@ -33,11 +33,13 @@ from inference.core.env import (
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
     OFFLINE_MODE,
+    ON_PREMISE_APPLIANCE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
     USE_INFERENCE_MODELS,
 )
 from inference.core.exceptions import (
     FINE_TUNED_SAM3_DEPLOYMENT_ERROR,
+    InvalidModelIDError,
     MissingApiKeyError,
     ModelArtefactError,
     ModelDeploymentNotSupportedError,
@@ -358,6 +360,11 @@ def _check_if_api_key_has_access_to_model(
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
 ) -> bool:
+    if ON_PREMISE_APPLIANCE and is_generic_core_model_id(model_id=model_id):
+        # On an appliance a core model has no owning workspace. The request
+        # key was already checked by the appliance middleware, and preload
+        # has no key at all (DF-118).
+        return True
     # Workflow blocks pass the plain string `core_model`
     # (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE); coerce BEFORE the
     # ttl cache so the string and the enum share one cache entry.
@@ -427,6 +434,34 @@ def _check_if_api_key_has_access_to_model_cached(
     except RoboflowAPINotAuthorizedError:
         return False
     return True
+
+
+def is_generic_core_model_id(model_id: str) -> bool:
+    """Tell whether the registry serves ``model_id`` as a generic core model.
+
+    This is the registry's own rule in ``_resolve_model_type``: after alias
+    resolution, the model id or its dataset part is a key of ``GENERIC_MODELS``.
+    Such a model (CLIP, SAM, OWLv2 and the other foundation models) belongs to
+    no workspace, whatever version suffix the request names.
+
+    Args:
+        model_id: The requested model id, alias or canonical.
+
+    Returns:
+        True when the registry resolves the id to a generic core model.
+    """
+    if not isinstance(model_id, str):
+        return False
+
+    resolved_model_id = resolve_roboflow_model_alias(model_id=model_id)
+    if resolved_model_id in GENERIC_MODELS:
+        return True
+    try:
+        dataset_id, _ = get_model_id_chunks(model_id=resolved_model_id)
+    except InvalidModelIDError:
+        return False
+
+    return dataset_id in GENERIC_MODELS
 
 
 _check_if_api_key_has_access_to_model.cache_clear = (

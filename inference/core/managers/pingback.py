@@ -7,10 +7,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from inference.core.devices.utils import GLOBAL_DEVICE_ID, GLOBAL_INFERENCE_SERVER_ID
 from inference.core.env import (
     API_KEY,
+    METRICS_API_KEY,
     METRICS_ENABLED,
     METRICS_INTERVAL,
     METRICS_URL,
     OFFLINE_MODE,
+    ON_PREMISE_APPLIANCE,
     ROBOFLOW_API_VERIFY_SSL,
     TAGS,
 )
@@ -56,7 +58,7 @@ class PingbackInfo:
             )  # To correlate with UI container view
             self.window_start_timestamp = str(int(time.time()))
             context = {
-                "api_key": API_KEY,
+                "api_key": _configured_pingback_api_key(),
                 "timestamp": str(int(time.time())),
                 "device_id": GLOBAL_DEVICE_ID,
                 "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
@@ -68,6 +70,7 @@ class PingbackInfo:
             # we will set this from model manager when a new api key is used
             # to use in case there is no global ENV api key configured
             self.fallback_api_key = None
+            self._missing_appliance_key_reported = False
 
         except Exception as e:
             logger.debug(
@@ -115,8 +118,22 @@ class PingbackInfo:
         all_data["inference_results"] = []
 
         # use fallback api key if env didn't have one
-        if self.fallback_api_key and not all_data.get("api_key"):
+        if (
+            self.fallback_api_key
+            and not all_data.get("api_key")
+            and not ON_PREMISE_APPLIANCE
+        ):
             all_data["api_key"] = self.fallback_api_key
+        if ON_PREMISE_APPLIANCE and not all_data.get("api_key"):
+            # A borrowed request key files every workspace's results under one
+            # tenant (DF-41); without a configured key, send nothing.
+            if not self._missing_appliance_key_reported:
+                logger.warning(
+                    "ON_PREMISE_APPLIANCE: device-stats pingback is not sent because "
+                    "neither METRICS_API_KEY nor ROBOFLOW_API_KEY is set."
+                )
+                self._missing_appliance_key_reported = True
+            return
 
         try:
             now = time.time()
@@ -154,3 +171,14 @@ class PingbackInfo:
                 logger.debug(
                     f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}."
                 )
+
+
+def _configured_pingback_api_key():
+    """The key the pingback sends when no request key is borrowed.
+
+    On an on-premise appliance the dedicated METRICS_API_KEY comes first, so
+    device stats never travel under a tenant key.
+    """
+    if ON_PREMISE_APPLIANCE:
+        return METRICS_API_KEY or API_KEY
+    return API_KEY

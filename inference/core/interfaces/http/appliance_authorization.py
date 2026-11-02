@@ -1,0 +1,303 @@
+"""Per-request API key authorization for an on-premise appliance.
+
+An on-premise appliance serves many workspaces from one install. The
+appliance's own API (``API_BASE_URL``) is the authority on which API keys
+exist, so the server asks it about each key it has not seen recently and keeps
+the answer for a bounded time. Any key that API accepts may call the server;
+access to a workspace model is still checked per model by the model manager.
+
+The module is used only when ``ON_PREMISE_APPLIANCE`` is on.
+"""
+
+import asyncio
+import time
+from dataclasses import dataclass
+from typing import Awaitable, Callable, Dict, Optional
+
+from cachetools import TTLCache
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+from inference.core.exceptions import (
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPIUsagePausedError,
+    WorkspaceLoadError,
+)
+from inference.core.interfaces.http.api_key_resolution import (
+    extract_api_key_from_headers,
+)
+from inference.core.logger import logger
+
+MISSING_API_KEY_MESSAGE = (
+    "Missing api_key. Pass it as the api_key query parameter, the api_key JSON "
+    "field or an Authorization: Bearer header."
+)
+UNAUTHORIZED_API_KEY_MESSAGE = "Unauthorized api_key."
+FORBIDDEN_API_KEY_MESSAGE = "The api_key is not allowed to use this inference server."
+PAUSED_API_KEY_MESSAGE = (
+    "Usage of this api_key is paused. Ask your workspace administrator to "
+    "re-enable it."
+)
+APPLIANCE_API_UNAVAILABLE_RETRY_AFTER_SECONDS = 5
+
+_EXEMPT_PATHS = frozenset(
+    {
+        "/",
+        "/docs",
+        "/redoc",
+        "/info",
+        "/healthz",
+        "/readiness",
+        "/metrics",
+        "/openapi.json",
+    }
+)
+# The async consumer and the start-up probe read the registry to learn which
+# models are loaded; it lists model ids only.
+_EXEMPT_GET_PATHS = frozenset({"/model/registry"})
+# Describing blocks runs no model. It needs a key only when the request
+# carries dynamic block definitions, which can hold Python.
+_DYNAMIC_BLOCKS_PATHS = frozenset(
+    {"/workflows/blocks/describe", "/workflows/definition/schema"}
+)
+# HEAD is not exempt: Starlette answers HEAD with the GET handler, which runs.
+_EXEMPT_METHODS = frozenset({"OPTIONS"})
+
+
+@dataclass(frozen=True)
+class ApplianceKeyDecision:
+    """The outcome of checking one API key with the appliance API.
+
+    Attributes:
+        status_code: 200 when the key is accepted, otherwise the HTTP status the
+            server answers with.
+        message: The message of the refusal; None when the key is accepted.
+        workspace_id: The workspace that owns an accepted key.
+        retry_after_seconds: Set when the appliance API did not answer, so the
+            client may retry.
+    """
+
+    status_code: int
+    message: Optional[str] = None
+    workspace_id: Optional[str] = None
+    retry_after_seconds: Optional[int] = None
+
+    @property
+    def is_authorized(self) -> bool:
+        """Whether the request may continue."""
+        return self.status_code == 200
+
+    def to_response(self) -> JSONResponse:
+        """Build the refusal answer for this decision.
+
+        Returns:
+            The JSON answer with the decision's status code and message.
+        """
+        headers = {}
+        if self.retry_after_seconds is not None:
+            headers["Retry-After"] = str(self.retry_after_seconds)
+
+        return JSONResponse(
+            status_code=self.status_code,
+            content={"status": self.status_code, "message": self.message},
+            headers=headers,
+        )
+
+
+WorkspaceLookup = Callable[[str], Awaitable[str]]
+
+
+class ApplianceKeyAuthorizer:
+    """Decides whether an API key may call the server, with bounded caching.
+
+    Accepted keys are kept for ``ttl_seconds`` and refused keys for
+    ``negative_ttl_seconds``; each cache holds at most ``max_size`` keys. When
+    the appliance API does not answer, the key is refused with 503 and nothing
+    is cached. Concurrent requests with the same uncached key share one lookup.
+
+    The authorizer is used from one event loop and is not thread-safe.
+    """
+
+    def __init__(
+        self,
+        lookup_workspace: WorkspaceLookup,
+        *,
+        ttl_seconds: int,
+        negative_ttl_seconds: int,
+        max_size: int,
+        timer: Callable[[], float] = time.monotonic,
+    ):
+        """Create an authorizer.
+
+        Args:
+            lookup_workspace: Coroutine function that returns the workspace of
+                a key, or raises the Roboflow API errors for a refused key.
+            ttl_seconds: How long an accepted key stays accepted.
+            negative_ttl_seconds: How long a refused key stays refused.
+            max_size: Maximum number of keys in each cache.
+            timer: Clock for the caches; tests replace it.
+        """
+        self._lookup_workspace = lookup_workspace
+        self._accepted: TTLCache = TTLCache(
+            maxsize=max_size, ttl=ttl_seconds, timer=timer
+        )
+        self._refused: TTLCache = TTLCache(
+            maxsize=max_size, ttl=negative_ttl_seconds, timer=timer
+        )
+        self._pending: Dict[str, "asyncio.Task[ApplianceKeyDecision]"] = {}
+
+    async def authorize(self, api_key: str) -> ApplianceKeyDecision:
+        """Decide whether ``api_key`` may call the server.
+
+        Args:
+            api_key: The key the request carries.
+
+        Returns:
+            The decision. It never raises for an appliance API failure.
+        """
+        cached = self._accepted.get(api_key) or self._refused.get(api_key)
+        if cached is not None:
+            return cached
+
+        pending = self._pending.get(api_key)
+        if pending is None:
+            pending = asyncio.ensure_future(self._look_up(api_key))
+            self._pending[api_key] = pending
+            pending.add_done_callback(
+                lambda task: self._forget_pending(api_key=api_key, task=task)
+            )
+
+        # A client that disconnects cancels only its own wait, not the lookup
+        # other requests share.
+        return await asyncio.shield(pending)
+
+    async def _look_up(self, api_key: str) -> ApplianceKeyDecision:
+        try:
+            workspace_id = await self._lookup_workspace(api_key)
+        except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+            return self._refuse(
+                api_key, status_code=401, message=UNAUTHORIZED_API_KEY_MESSAGE
+            )
+        except RoboflowAPIUsagePausedError:
+            return self._refuse(
+                api_key, status_code=403, message=PAUSED_API_KEY_MESSAGE
+            )
+        except RoboflowAPIForbiddenError:
+            return self._refuse(
+                api_key, status_code=403, message=FORBIDDEN_API_KEY_MESSAGE
+            )
+        except Exception as error:
+            # Fail closed. The error type tells the operator which dependency
+            # failed; the key is never part of the message.
+            error_type = type(error).__name__
+            logger.warning(
+                "Appliance API key check failed, request refused. Error type: %s",
+                error_type,
+            )
+            return ApplianceKeyDecision(
+                status_code=503,
+                message=(
+                    "The api_key could not be verified because the appliance API "
+                    f"did not answer ({error_type}). The request was refused."
+                ),
+                retry_after_seconds=APPLIANCE_API_UNAVAILABLE_RETRY_AFTER_SECONDS,
+            )
+
+        decision = ApplianceKeyDecision(status_code=200, workspace_id=workspace_id)
+        self._accepted[api_key] = decision
+
+        return decision
+
+    def _forget_pending(
+        self, *, api_key: str, task: "asyncio.Task[ApplianceKeyDecision]"
+    ) -> None:
+        if self._pending.get(api_key) is task:
+            del self._pending[api_key]
+
+    def _refuse(
+        self, api_key: str, *, status_code: int, message: str
+    ) -> ApplianceKeyDecision:
+        decision = ApplianceKeyDecision(status_code=status_code, message=message)
+        self._refused[api_key] = decision
+
+        return decision
+
+
+async def request_skips_api_key_check(request: Request) -> bool:
+    """Tell whether a request may run without an API key in appliance mode.
+
+    Args:
+        request: The incoming request.
+
+    Returns:
+        True for probes, documentation, metrics, the model registry listing,
+        CORS preflight (OPTIONS), and block descriptions that carry no dynamic
+        blocks.
+    """
+    # CVE-2026-48710: use the raw ASGI path, which a Host header cannot change.
+    scope_path = request.scope["path"]
+    method = request.method
+    if method in _EXEMPT_METHODS:
+        return True
+    if scope_path in _EXEMPT_PATHS:
+        return True
+    if scope_path.startswith("/static/") or scope_path.startswith("/_next/"):
+        return True
+    if method == "GET" and scope_path in _EXEMPT_GET_PATHS:
+        return True
+    if scope_path in _DYNAMIC_BLOCKS_PATHS:
+        if method == "GET":
+            return True
+        json_body = await _read_json_body(request)
+        return json_body is not None and not json_body.get("dynamic_blocks_definitions")
+
+    return False
+
+
+async def read_request_api_key(request: Request) -> Optional[str]:
+    """Read the API key of a request, in the order the routes use it.
+
+    The order is the query parameter ``api_key``, then the ``api_key`` field of
+    a JSON body, then the ``Authorization: Bearer`` header. It matches the route
+    handlers (see ``api_key_fallback``), so the key the server checks is the key
+    the route loads models and records usage with.
+
+    Args:
+        request: The incoming request.
+
+    Returns:
+        The key, or None when the request carries none.
+    """
+    api_key = request.query_params.get("api_key")
+    if api_key:
+        return api_key
+
+    json_body = await _read_json_body(request)
+    if json_body is not None:
+        body_api_key = json_body.get("api_key")
+        if isinstance(body_api_key, str) and body_api_key:
+            return body_api_key
+
+    return extract_api_key_from_headers(request.headers)
+
+
+async def _read_json_body(request: Request) -> Optional[dict]:
+    content_type = request.headers.get("content-type", "")
+    if content_type.split(";")[0].strip().lower() != "application/json":
+        return None
+    try:
+        content_length = int(request.headers.get("content-length", 0) or 0)
+    except ValueError:
+        return None
+    if content_length <= 0:
+        return None
+    try:
+        body = await request.json()
+    except Exception:
+        # Some legacy routes send another payload under a JSON content type.
+        return None
+    if not isinstance(body, dict):
+        return None
+
+    return body
