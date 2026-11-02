@@ -101,5 +101,5 @@ def test_pingback_logs_never_contain_the_api_key(
     pingback.post_data(pingback.model_manager)
 
     assert "Sent metrics" in caplog.text
-    assert "Data was:" in caplog.text
+    assert "Error was:" in caplog.text
     assert "pingback-key" not in caplog.text

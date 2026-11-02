@@ -133,6 +133,8 @@ class ApplianceKeyAuthorizer:
         ttl_seconds: int,
         negative_ttl_seconds: int,
         max_size: int,
+        lookup_timeout_seconds: float,
+        max_concurrent_lookups: int,
         timer: Callable[[], float] = time.monotonic,
     ):
         """Create an authorizer.
@@ -143,6 +145,10 @@ class ApplianceKeyAuthorizer:
             ttl_seconds: How long an accepted key stays accepted.
             negative_ttl_seconds: How long a refused key stays refused.
             max_size: Maximum number of keys in each cache.
+            lookup_timeout_seconds: Longest wait for one usage check, including
+                the wait for a free lookup slot. Past it the request gets 503.
+            max_concurrent_lookups: Most usage checks in flight at once, so a
+                flood of distinct keys cannot open unbounded upstream calls.
             timer: Clock for the caches; tests replace it.
         """
         self._usage_check = usage_check
@@ -153,6 +159,8 @@ class ApplianceKeyAuthorizer:
             maxsize=max_size, ttl=negative_ttl_seconds, timer=timer
         )
         self._pending: Dict[str, "asyncio.Task[ApplianceKeyDecision]"] = {}
+        self._lookup_timeout_seconds = lookup_timeout_seconds
+        self._lookup_slots = asyncio.Semaphore(max_concurrent_lookups)
 
     async def authorize(self, api_key: str) -> ApplianceKeyDecision:
         """Decide whether ``api_key`` may call the server.
@@ -181,7 +189,10 @@ class ApplianceKeyAuthorizer:
 
     async def _look_up(self, api_key: str) -> ApplianceKeyDecision:
         try:
-            result = await self._usage_check(api_key)
+            result = await asyncio.wait_for(
+                self._bounded_usage_check(api_key),
+                timeout=self._lookup_timeout_seconds,
+            )
         except RoboflowAPINotAuthorizedError:
             return self._refuse(
                 api_key, status_code=401, message=UNAUTHORIZED_API_KEY_MESSAGE
@@ -225,6 +236,10 @@ class ApplianceKeyAuthorizer:
         self._accepted[api_key] = decision
 
         return decision
+
+    async def _bounded_usage_check(self, api_key: str) -> ServerlessUsageCheckResponse:
+        async with self._lookup_slots:
+            return await self._usage_check(api_key)
 
     def _forget_pending(
         self, *, api_key: str, task: "asyncio.Task[ApplianceKeyDecision]"
@@ -327,10 +342,12 @@ async def request_skips_api_key_check(request: Request) -> bool:
 async def read_request_api_key(request: Request) -> Optional[str]:
     """Read the API key of a request, in the order the routes use it.
 
-    The order is the query parameter ``api_key``, then the ``api_key`` field of
-    a JSON body, then the ``Authorization: Bearer`` header. It matches the route
-    handlers (see ``api_key_fallback``), so the key the server checks is the key
-    the route loads models and records usage with.
+    The order is the query parameter ``api_key``, then the ``Authorization:
+    Bearer`` header, then the ``api_key`` field of a JSON body. It matches the
+    route handlers (``api_key_fallback`` and ``api_key_override``), so the key
+    the server checks is the key the route loads models and records usage with.
+    A present but empty query parameter wins over the other channels, as it does
+    in the routes, and counts as no key.
 
     Args:
         request: The incoming request.
@@ -338,9 +355,12 @@ async def read_request_api_key(request: Request) -> Optional[str]:
     Returns:
         The key, or None when the request carries none.
     """
-    api_key = request.query_params.get("api_key")
-    if api_key:
-        return api_key
+    if "api_key" in request.query_params:
+        return request.query_params["api_key"] or None
+
+    header_api_key = extract_api_key_from_headers(request.headers)
+    if header_api_key:
+        return header_api_key
 
     json_body = await _read_json_body(request)
     if json_body is not None:
@@ -348,7 +368,7 @@ async def read_request_api_key(request: Request) -> Optional[str]:
         if isinstance(body_api_key, str) and body_api_key:
             return body_api_key
 
-    return extract_api_key_from_headers(request.headers)
+    return None
 
 
 async def _read_json_body(request: Request) -> Optional[dict]:

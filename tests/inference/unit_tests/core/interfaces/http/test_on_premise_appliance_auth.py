@@ -148,21 +148,51 @@ def test_bearer_header_key_is_accepted(monkeypatch) -> None:
     lookup.assert_awaited_once_with(api_key=API_KEY)
 
 
-def test_json_body_key_is_checked_before_the_header_key(monkeypatch) -> None:
-    # The routes prefer the body key over the header key, so the middleware must
-    # check the key the route will use.
+def test_header_key_is_checked_before_the_json_body_key(monkeypatch) -> None:
+    # The routes prefer the header key over the body key (api_key_fallback,
+    # api_key_override), so the middleware must check the key the route uses.
+    lookup = AsyncMock(return_value=_under_cap())
+    model_manager = _model_manager()
+    _patch_modes(monkeypatch, appliance=True)
+    monkeypatch.setattr(http_api, "get_serverless_usage_check_async", lookup)
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/model/add",
+            headers={"Authorization": f"Bearer {API_KEY}"},
+            json={"model_id": "project-a/1", "api_key": "body-key"},
+        )
+
+    assert response.status_code == 200
+    lookup.assert_awaited_once_with(api_key=API_KEY)
+    assert model_manager.add_model.call_args.args[1] == API_KEY
+
+
+def test_json_body_key_is_checked_without_a_header(monkeypatch) -> None:
+    lookup = AsyncMock(return_value=_under_cap())
+    interface = _build_appliance_interface(monkeypatch, lookup)
+
+    with TestClient(interface.app) as client:
+        response = client.post(INFER_PATH, json=_inference_body(api_key=API_KEY))
+
+    assert response.status_code == 200
+    lookup.assert_awaited_once_with(api_key=API_KEY)
+
+
+def test_empty_query_key_wins_and_counts_as_no_key(monkeypatch) -> None:
     lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
         response = client.post(
             INFER_PATH,
-            headers={"Authorization": "Bearer header-key"},
+            params={"api_key": ""},
             json=_inference_body(api_key=API_KEY),
         )
 
-    assert response.status_code == 200
-    lookup.assert_awaited_once_with(api_key=API_KEY)
+    assert response.status_code == 401
+    lookup.assert_not_awaited()
 
 
 def test_request_without_key_is_refused(monkeypatch) -> None:
@@ -501,7 +531,13 @@ def test_authorizer_expires_accepted_and_refused_keys() -> None:
         side_effect=[_under_cap(), ServerlessUsageCheckResponse(status_code=401)]
     )
     authorizer = ApplianceKeyAuthorizer(
-        lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=10, timer=clock
+        lookup,
+        ttl_seconds=300,
+        negative_ttl_seconds=30,
+        max_size=10,
+        lookup_timeout_seconds=5,
+        max_concurrent_lookups=8,
+        timer=clock,
     )
 
     async def scenario() -> list:
@@ -529,7 +565,12 @@ def test_authorizer_shares_one_lookup_between_concurrent_requests() -> None:
         return _under_cap()
 
     authorizer = ApplianceKeyAuthorizer(
-        slow_lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=10
+        slow_lookup,
+        ttl_seconds=300,
+        negative_ttl_seconds=30,
+        max_size=10,
+        lookup_timeout_seconds=5,
+        max_concurrent_lookups=8,
     )
 
     async def scenario() -> list:
@@ -552,7 +593,12 @@ def test_authorizer_lookup_survives_a_cancelled_waiter() -> None:
         return _under_cap()
 
     authorizer = ApplianceKeyAuthorizer(
-        slow_lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=10
+        slow_lookup,
+        ttl_seconds=300,
+        negative_ttl_seconds=30,
+        max_size=10,
+        lookup_timeout_seconds=5,
+        max_concurrent_lookups=8,
     )
 
     async def scenario():
@@ -571,7 +617,12 @@ def test_authorizer_lookup_survives_a_cancelled_waiter() -> None:
 def test_authorizer_cache_size_is_bounded() -> None:
     lookup = AsyncMock(return_value=_under_cap())
     authorizer = ApplianceKeyAuthorizer(
-        lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=2
+        lookup,
+        ttl_seconds=300,
+        negative_ttl_seconds=30,
+        max_size=2,
+        lookup_timeout_seconds=5,
+        max_concurrent_lookups=8,
     )
 
     async def scenario() -> None:
@@ -600,6 +651,8 @@ def test_quota_message_leaves_out_amounts_the_api_did_not_send() -> None:
         ttl_seconds=300,
         negative_ttl_seconds=30,
         max_size=10,
+        lookup_timeout_seconds=5,
+        max_concurrent_lookups=8,
     )
 
     decision = asyncio.run(authorizer.authorize(API_KEY))
@@ -609,3 +662,62 @@ def test_quota_message_leaves_out_amounts_the_api_did_not_send() -> None:
         "The workspace has used its inference quota. Ask your organization "
         "administrator to raise the workspace quota."
     )
+
+
+def test_authorizer_answers_503_when_the_usage_check_is_slow() -> None:
+    async def hung_usage_check(api_key: str) -> ServerlessUsageCheckResponse:
+        await asyncio.sleep(10)
+        return _under_cap()
+
+    authorizer = ApplianceKeyAuthorizer(
+        hung_usage_check,
+        ttl_seconds=300,
+        negative_ttl_seconds=30,
+        max_size=10,
+        lookup_timeout_seconds=0.05,
+        max_concurrent_lookups=8,
+    )
+
+    async def scenario() -> list:
+        return await asyncio.wait_for(
+            asyncio.gather(*(authorizer.authorize(API_KEY) for _ in range(5))),
+            timeout=2,
+        )
+
+    decisions = asyncio.run(scenario())
+
+    assert {d.status_code for d in decisions} == {503}
+    assert "TimeoutError" in decisions[0].message
+    assert decisions[0].retry_after_seconds == 5
+
+
+def test_authorizer_bounds_concurrent_usage_checks() -> None:
+    in_flight = 0
+    peak = 0
+
+    async def slow_usage_check(api_key: str) -> ServerlessUsageCheckResponse:
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.02)
+        in_flight -= 1
+        return ServerlessUsageCheckResponse(status_code=401)
+
+    authorizer = ApplianceKeyAuthorizer(
+        slow_usage_check,
+        ttl_seconds=300,
+        negative_ttl_seconds=30,
+        max_size=100,
+        lookup_timeout_seconds=5,
+        max_concurrent_lookups=3,
+    )
+
+    async def scenario() -> list:
+        return await asyncio.gather(
+            *(authorizer.authorize(f"key-{index}") for index in range(20))
+        )
+
+    decisions = asyncio.run(scenario())
+
+    assert peak == 3
+    assert {d.status_code for d in decisions} == {401}

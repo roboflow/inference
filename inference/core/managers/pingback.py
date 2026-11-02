@@ -152,9 +152,9 @@ class PingbackInfo:
             try:
                 api_key_safe_raise_for_status(response=res)
                 logger.debug(
-                    "Sent metrics to Roboflow {} at {}.".format(
-                        METRICS_URL, str(_without_api_key(all_data))
-                    )
+                    "Sent metrics to Roboflow %s: %s inference results.",
+                    METRICS_URL,
+                    len(all_data["inference_results"]),
                 )
             except Exception as e:
                 logger.debug(
@@ -164,20 +164,13 @@ class PingbackInfo:
         except Exception as e:
             try:
                 logger.exception(
-                    f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}. Data was: {_without_api_key(all_data)}"
+                    f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {type(e).__name__}."
                 )
 
             except Exception as e2:
                 logger.debug(
                     f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}."
                 )
-
-
-def _without_api_key(data: dict) -> dict:
-    """Return a copy of the pingback payload that is safe to log."""
-    if not data.get("api_key"):
-        return data
-    return {**data, "api_key": "<redacted>"}
 
 
 def _configured_pingback_api_key():

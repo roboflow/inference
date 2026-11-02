@@ -640,6 +640,16 @@ ON_PREMISE_APPLIANCE_AUTH_NEGATIVE_CACHE_TTL_SECONDS = int(
 ON_PREMISE_APPLIANCE_AUTH_CACHE_MAX_SIZE = int(
     os.getenv("ON_PREMISE_APPLIANCE_AUTH_CACHE_MAX_SIZE", 10_000)
 )
+# Longest wait for one appliance usage check before the request gets 503. The
+# appliance API is in-cluster, so this is much shorter than the 120 s default
+# timeout for calls to the Roboflow API.
+ON_PREMISE_APPLIANCE_AUTH_TIMEOUT_SECONDS = float(
+    os.getenv("ON_PREMISE_APPLIANCE_AUTH_TIMEOUT_SECONDS", 10)
+)
+# Most usage checks in flight at once per process.
+ON_PREMISE_APPLIANCE_AUTH_MAX_CONCURRENT_LOOKUPS = int(
+    os.getenv("ON_PREMISE_APPLIANCE_AUTH_MAX_CONCURRENT_LOOKUPS", 64)
+)
 
 # This variable affects extra headers passed to new weights provider created for
 # `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
