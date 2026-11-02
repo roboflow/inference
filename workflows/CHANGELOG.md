@@ -18,7 +18,7 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
-- Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an optional `reference_examples` input for `object-detection`: up to 10 labeled example images, each `{"image": ..., "boxes": [{"x", "y", "width", "height", "class"}]}` in pixels of that image. The examples go before the image to label in every request, so the model sees what each class looks like and how tightly it is boxed. Gemini gets the example images with their boxes and labels drawn on them; OpenAI gets up to 3 crops per label, grouped by label (the output labels, so `output_classes` when set). Example images load through the host's image codec, with the same URL policy as any workflow image. Other tasks reject the input. Without it the requests are unchanged.
+- Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an optional `reference_examples` input for `object-detection`: up to 10 labeled example images, each `{"image": ..., "annotations": [{"class", "x", "y", "width", "height"}]}` in pixels of that image, the Roboflow prediction format. The examples go before the image to label in every request, so the model sees what each class looks like and how tightly it is boxed. Gemini gets the example images with their boxes and labels drawn on them; OpenAI gets up to 3 crops per label, grouped by label (the output labels, so `output_classes` when set). Example images load through the host's image codec, with the same URL policy as any workflow image. Other tasks reject the input. Without it the requests are unchanged.
 
 ## `0.2.15`
 

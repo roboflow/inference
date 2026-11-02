@@ -39,13 +39,13 @@ def _image_base64(
 def _example(
     width: int = 200,
     height: int = 100,
-    boxes: Optional[List[dict]] = None,
+    annotations: Optional[List[dict]] = None,
 ) -> dict:
     return {
         "image": {"type": "base64", "value": _image_base64(width, height)},
-        "boxes": (
-            boxes
-            if boxes is not None
+        "annotations": (
+            annotations
+            if annotations is not None
             else [{"x": 50, "y": 50, "width": 40, "height": 20, "class": "cat"}]
         ),
     }
@@ -68,15 +68,30 @@ def test_validate_reference_examples_treats_missing_examples_as_none(value) -> N
     assert result == []
 
 
-def test_validate_reference_examples_reads_roboflow_prediction_boxes() -> None:
+def test_validate_reference_examples_reads_a_whole_roboflow_prediction() -> None:
+    # given
+    prediction = {
+        "x": 50,
+        "y": 50,
+        "width": 40,
+        "height": 20,
+        "class": "cat",
+        "class_id": 0,
+        "confidence": 0.9,
+        "detection_id": "first",
+        "points": [{"x": 30, "y": 40}, {"x": 70, "y": 40}, {"x": 50, "y": 60}],
+    }
+
     # when
     result = validate_reference_examples(
-        [_example()], task_type="object-detection", labels=["cat"]
+        [_example(annotations=[prediction])],
+        task_type="object-detection",
+        labels=["cat"],
     )
 
     # then
     assert len(result) == 1
-    box = result[0].boxes[0]
+    box = result[0].annotations[0]
     assert (box.x, box.y, box.width, box.height, box.class_name) == (
         50,
         50,
@@ -93,10 +108,38 @@ def test_validate_reference_examples_rejects_more_than_ten_examples() -> None:
         )
 
 
-def test_validate_reference_examples_rejects_other_tasks() -> None:
+@pytest.mark.parametrize(
+    "task_type, annotations",
+    [
+        ("classification", [{"class": "cat"}]),
+        ("multi-label-classification", [{"class": "cat"}, {"class": "dog"}]),
+        (
+            "instance-segmentation",
+            [
+                {
+                    "class": "cat",
+                    "points": [
+                        {"x": 30, "y": 40},
+                        {"x": 70, "y": 40},
+                        {"x": 50, "y": 60},
+                    ],
+                }
+            ],
+        ),
+        (
+            "instance-segmentation",
+            [{"class": "cat", "rle_mask": {"size": [100, 200], "counts": "abc"}}],
+        ),
+    ],
+)
+def test_validate_reference_examples_rejects_other_tasks(
+    task_type, annotations
+) -> None:
     with pytest.raises(ValueError, match="only supported for the object-detection"):
         validate_reference_examples(
-            [_example()], task_type="classification", labels=["cat"]
+            [_example(annotations=annotations)],
+            task_type=task_type,
+            labels=["cat", "dog"],
         )
 
 
@@ -119,7 +162,7 @@ def test_validate_reference_examples_skips_the_label_check_for_unknown_labels() 
 
 def test_validate_reference_examples_names_the_malformed_field() -> None:
     # given
-    example = _example(boxes=[{"x": 50, "y": 50, "height": 20, "class": "cat"}])
+    example = _example(annotations=[{"x": 50, "y": 50, "height": 20, "class": "cat"}])
 
     # when
     with pytest.raises(ValueError) as error:
@@ -129,7 +172,7 @@ def test_validate_reference_examples_names_the_malformed_field() -> None:
 
     # then
     assert "reference_examples[0]" in str(error.value)
-    assert "boxes.0.width" in str(error.value)
+    assert "annotations.0.width" in str(error.value)
 
 
 def test_load_reference_examples_clips_boxes_to_the_image() -> None:
@@ -137,7 +180,9 @@ def test_load_reference_examples_clips_boxes_to_the_image() -> None:
     examples = validate_reference_examples(
         [
             _example(
-                boxes=[{"x": 190, "y": 10, "width": 40, "height": 40, "class": "cat"}]
+                annotations=[
+                    {"x": 190, "y": 10, "width": 40, "height": 40, "class": "cat"}
+                ]
             )
         ],
         task_type="object-detection",
@@ -157,7 +202,9 @@ def test_load_reference_examples_rejects_a_box_outside_its_image() -> None:
     examples = validate_reference_examples(
         [
             _example(
-                boxes=[{"x": 500, "y": 50, "width": 40, "height": 20, "class": "cat"}]
+                annotations=[
+                    {"x": 500, "y": 50, "width": 40, "height": 20, "class": "cat"}
+                ]
             )
         ],
         task_type="object-detection",
@@ -180,7 +227,7 @@ def test_render_example_crops_keeps_the_largest_boxes_in_label_order() -> None:
     ]
     examples = load_reference_examples(
         validate_reference_examples(
-            [_example(boxes=boxes)],
+            [_example(annotations=boxes)],
             task_type="object-detection",
             labels=["dog", "cat", "bird"],
         )
@@ -207,7 +254,7 @@ def test_render_boxed_examples_downscales_and_draws_in_the_label_color() -> None
                 _example(
                     width=2048,
                     height=1024,
-                    boxes=[
+                    annotations=[
                         {
                             "x": 1024,
                             "y": 512,
@@ -256,7 +303,9 @@ def test_openai_reference_parts_group_crops_by_label() -> None:
     ]
 
     # when
-    parts = openai_reference_parts_for([_example(boxes=boxes)], labels=["cat", "dog"])
+    parts = openai_reference_parts_for(
+        [_example(annotations=boxes)], labels=["cat", "dog"]
+    )
 
     # then
     assert parts[0] == {"type": "input_text", "text": REFERENCE_CROPS_INTRO}

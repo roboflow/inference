@@ -782,7 +782,9 @@ def _reference_example(box_class: str = "cat") -> dict:
             "type": "base64",
             "value": base64.b64encode(encoded.tobytes()).decode("ascii"),
         },
-        "boxes": [{"x": 50, "y": 50, "width": 40, "height": 20, "class": box_class}],
+        "annotations": [
+            {"x": 50, "y": 50, "width": 40, "height": 20, "class": box_class}
+        ],
     }
 
 

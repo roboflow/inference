@@ -1,12 +1,11 @@
 """Labeled example images for VLM object detection ("label by example").
 
-A reference example is an image with its objects boxed and labeled. Detection
-blocks send the examples before the image to label, so the model sees what each
-label looks like and how tightly it is boxed. There are two renderings because
-the providers read them differently: whole images with the boxes drawn on them
-(Gemini) and crops of the boxes grouped by label (OpenAI). The examples go first
-in the request, so every image of a batch shares the same prefix and the
-provider can cache it.
+A reference example is an image with its annotations. Detection blocks send the
+examples before the image to label, so the model sees what each label looks like
+and how tightly it is boxed. There are two renderings because the providers read
+them differently: whole images with the boxes drawn on them (Gemini) and crops of
+the boxes grouped by label (OpenAI). The examples go first in the request, so every
+image of a batch shares the same prefix and the provider can cache it.
 """
 
 import base64
@@ -48,17 +47,17 @@ TARGET_ONLY_RULE = (
 REFERENCE_EXAMPLES_DESCRIPTION = (
     "Labeled example images that show the model what each class looks like and how "
     "tightly it is boxed (object-detection only). Each example is "
-    '`{"image": <URL, base64 or {"type": ..., "value": ...}>, "boxes": '
-    '[{"x": ..., "y": ..., "width": ..., "height": ..., "class": ...}]}`, with box '
-    "centers and sizes in pixels of that example image and `class` one of the "
-    "block's labels. Box every object of those labels in each example. At most "
-    f"{MAX_REFERENCE_EXAMPLES} examples. They are sent with every image, so each "
-    "request costs more input tokens."
+    '`{"image": <URL, base64 or {"type": ..., "value": ...}>, "annotations": '
+    '[{"class": ..., "x": ..., "y": ..., "width": ..., "height": ...}]}`, in the '
+    "Roboflow prediction format: box centers and sizes in pixels of that example "
+    "image, `class` one of the block's labels. Annotate every object of those labels "
+    f"in each example. At most {MAX_REFERENCE_EXAMPLES} examples. They are sent with "
+    "every image, so each request costs more input tokens."
 )
 REFERENCE_EXAMPLES_EXAMPLE = [
     {
         "image": {"type": "url", "value": "https://example.com/labeled.jpg"},
-        "boxes": [{"x": 120, "y": 80, "width": 40, "height": 60, "class": "cat"}],
+        "annotations": [{"class": "cat", "x": 120, "y": 80, "width": 40, "height": 60}],
     }
 ]
 
@@ -82,8 +81,14 @@ _BOX_COLORS = [
 ]
 
 
-class ReferenceBox(BaseModel):
-    """One labeled box of a reference example, in the Roboflow prediction format."""
+class ReferenceAnnotation(BaseModel):
+    """One annotation of a reference example, in the Roboflow prediction format.
+
+    Object detection reads the class and the box. The same list can serve the other
+    tasks, which read other fields of a prediction: `points` or `rle_mask` for
+    instance segmentation, only `class` for classification. Fields a task does not
+    read are ignored, so a whole prediction is a valid annotation.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -100,13 +105,13 @@ class ReferenceBox(BaseModel):
 
 
 class ReferenceExample(BaseModel):
-    """An example image with every object of the block's labels boxed."""
+    """An example image with every object of the block's labels annotated."""
 
     image: Union[str, Dict[str, Any]] = Field(
         description="Image as a URL, a base64 string or an inference image dict.",
         examples=[{"type": "url", "value": "https://example.com/labeled.jpg"}],
     )
-    boxes: List[ReferenceBox] = Field(
+    annotations: List[ReferenceAnnotation] = Field(
         description="Every object of the block's labels in the image."
     )
 
@@ -139,19 +144,24 @@ def validate_reference_examples(
         Parsed examples, empty when there are none.
 
     Raises:
-        ValueError: If an example is malformed, there are too many, the task is not
-            object-detection, or a box uses a label the block does not have.
+        ValueError: If the task is not object-detection, an example is malformed,
+            there are too many, or an annotation uses a label the block does not have.
     """
-    examples = _parse_reference_examples(value)
-    if not examples:
+    if not value:
         return []
 
     if task_type != REFERENCE_EXAMPLES_TASK:
         raise ValueError(
             f"`reference_examples` are only supported for the {REFERENCE_EXAMPLES_TASK} task"
         )
+
+    examples = _parse_reference_examples(value)
     if labels is not None:
-        used_labels = {box.class_name for example in examples for box in example.boxes}
+        used_labels = {
+            annotation.class_name
+            for example in examples
+            for annotation in example.annotations
+        }
         unknown = sorted(used_labels - set(labels))
         if unknown:
             raise ValueError(
@@ -183,7 +193,7 @@ def load_reference_examples(
         pixels, _ = load_image(example.image)
         height, width = pixels.shape[:2]
         boxes = []
-        for box in example.boxes:
+        for box in example.annotations:
             x_min = max(0.0, box.x - box.width / 2)
             y_min = max(0.0, box.y - box.height / 2)
             x_max = min(float(width), box.x + box.width / 2)
