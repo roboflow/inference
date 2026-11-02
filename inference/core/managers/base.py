@@ -1,4 +1,3 @@
-import sys
 import time
 from contextlib import contextmanager
 from threading import Lock
@@ -224,7 +223,9 @@ class ModelManager:
                         service_secret=service_secret,
                         **extra_init_kwargs,
                     )
-                    _reset_leaked_torch_default_dtype(model_id=resolved_identifier)
+                    # Legacy HF loaders do not hold the shared dtype lock. A
+                    # manager-wide reset could overwrite another load's active
+                    # dtype; keep the reset in the AutoModel loading path.
                     bind_usage_model_descriptor(
                         model, model_id, resolved_identifier, model_id_alias
                     )
@@ -915,28 +916,6 @@ def acquire_with_timeout(
     finally:
         if acquired:
             lock.release()
-
-
-def _reset_leaked_torch_default_dtype(model_id: str) -> None:
-    """Reset torch's default dtype to float32 if loading `model_id` left it changed.
-
-    transformers changes the process-global default dtype while it builds a model,
-    and overlapping loads can leave it stuck (e.g. at bfloat16), which silently
-    changes the dtype of later tensor ops in every other model.
-    """
-    if "torch" not in sys.modules:
-        # Nothing has imported torch, so nothing can have changed its default dtype.
-        return
-
-    try:
-        from inference_models.models.common.torch import (
-            reset_leaked_torch_default_dtype,
-        )
-    except ImportError:
-        # torch or an inference-models release without the guard is installed.
-        return
-
-    reset_leaked_torch_default_dtype(model_name_or_path=model_id)
 
 
 def _get_cuda_memory_allocated() -> Optional[int]:

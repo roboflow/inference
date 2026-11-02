@@ -22,6 +22,10 @@
   the default stuck at `torch.bfloat16` for the rest of the process.
 - `AutoModel` loads check the default dtype after each model is built. If it is not
   `torch.float32`, they log a warning naming the model and reset it.
+  `ModelManager` does not perform an additional reset after arbitrary model loads:
+  legacy Hugging Face loaders do not acquire the shared dtype lock, so another
+  model finishing could otherwise reset their temporary dtype mid-construction.
+  Legacy loader locking and recovery remain a follow-up.
 
 ## `0.39.7`
 

@@ -1,4 +1,4 @@
-import sys
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -62,68 +62,62 @@ def test_add_model_passes_manager_owned_artifact_cache() -> None:
         assert call.kwargs["content_addressed_artifact_cache"] is artifact_cache
 
 
-def test_add_model_resets_leaked_torch_default_dtype_after_load() -> None:
-    # given
+@pytest.mark.parametrize("dtype_name", ["float16", "bfloat16"])
+def test_add_model_preserves_dtype_of_concurrent_legacy_load(dtype_name: str) -> None:
+    import torch
+
+    temporary_dtype = getattr(torch, dtype_name)
+    original_dtype = torch.get_default_dtype()
+    construction_started = Event()
+    unrelated_load_finished = Event()
+    constructed_dtypes = []
+    errors = []
+
+    def construct_legacy_model(**kwargs):
+        # Legacy HF loaders change the global default while constructing the
+        # model, but do not acquire inference_models' dtype lock.
+        torch.set_default_dtype(temporary_dtype)
+        try:
+            constructed_dtypes.append(torch.nn.Linear(2, 2).weight.dtype)
+            construction_started.set()
+            assert unrelated_load_finished.wait(timeout=5)
+            constructed_dtypes.append(torch.nn.Linear(2, 2).weight.dtype)
+        finally:
+            torch.set_default_dtype(original_dtype)
+
+        model = MagicMock()
+        return model
+
     model_registry = MagicMock()
-    model_manager = ModelManager(model_registry=model_registry)
+    model_registry.get_model.side_effect = [construct_legacy_model, MagicMock()]
 
-    # when
-    with patch.object(
-        base_module, "_reset_leaked_torch_default_dtype"
-    ) as reset_dtype_mock:
-        model_manager.add_model(model_id="some/1", api_key="some_api_key")
+    with patch.object(base_module, "USE_INFERENCE_MODELS", False), patch.object(
+        base_module, "MODELS_CACHE_AUTH_ENABLED", False
+    ), patch.object(base_module, "_get_cuda_memory_allocated", return_value=None):
+        manager = ModelManager(model_registry=model_registry)
 
-    # then
-    reset_dtype_mock.assert_called_once_with(model_id="some/1")
+        def load_legacy_model():
+            try:
+                manager.add_model(model_id="legacy/1", api_key="some_api_key")
+            except BaseException as error:
+                errors.append(error)
 
+        thread = Thread(target=load_legacy_model)
+        thread.start()
+        try:
+            assert construction_started.wait(timeout=5)
+            # This completes while the other constructor still needs its
+            # temporary dtype. It must not reset that dtype as if it leaked.
+            manager.add_model(model_id="unrelated/1", api_key="some_api_key")
+        finally:
+            unrelated_load_finished.set()
+            thread.join(timeout=5)
+            torch.set_default_dtype(original_dtype)
 
-def test_reset_leaked_torch_default_dtype_delegates_to_inference_models() -> None:
-    # given
-    helpers_module = SimpleNamespace(reset_leaked_torch_default_dtype=MagicMock())
-
-    # when
-    with patch.dict(
-        sys.modules,
-        {
-            "torch": sys.modules.get("torch", MagicMock()),
-            "inference_models.models.common.torch": helpers_module,
-        },
-    ):
-        base_module._reset_leaked_torch_default_dtype(model_id="some/1")
-
-    # then
-    helpers_module.reset_leaked_torch_default_dtype.assert_called_once_with(
-        model_name_or_path="some/1"
-    )
-
-
-def test_reset_leaked_torch_default_dtype_skips_when_torch_not_imported() -> None:
-    # given
-    helpers_module = SimpleNamespace(reset_leaked_torch_default_dtype=MagicMock())
-
-    # when
-    with patch.dict(
-        sys.modules, {"inference_models.models.common.torch": helpers_module}
-    ):
-        sys.modules.pop("torch", None)
-        base_module._reset_leaked_torch_default_dtype(model_id="some/1")
-
-    # then
-    helpers_module.reset_leaked_torch_default_dtype.assert_not_called()
-
-
-def test_reset_leaked_torch_default_dtype_skips_when_helper_unavailable() -> None:
-    # when
-    with patch.dict(
-        sys.modules,
-        {
-            "torch": sys.modules.get("torch", MagicMock()),
-            "inference_models.models.common.torch": None,
-        },
-    ):
-        base_module._reset_leaked_torch_default_dtype(model_id="some/1")
-
-    # then nothing is raised
+    assert not thread.is_alive()
+    assert errors == []
+    assert constructed_dtypes == [temporary_dtype, temporary_dtype]
+    assert set(manager.models()) == {"legacy/1", "unrelated/1"}
 
 
 def test_model_manager_uses_shared_artifact_cache() -> None:
