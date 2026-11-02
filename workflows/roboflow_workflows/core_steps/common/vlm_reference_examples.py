@@ -39,8 +39,9 @@ REFERENCE_BOXED_INTRO = (
     "They show what each label looks like and how tightly it is boxed."
 )
 TARGET_IMAGE_INTRO = "Target image:"
+# On its own line, because a detection prompt can end with the list of labels.
 TARGET_ONLY_RULE = (
-    " The reference images are not part of the task: return detections for the "
+    "\nThe reference images are not part of the task: return detections for the "
     "target image only."
 )
 

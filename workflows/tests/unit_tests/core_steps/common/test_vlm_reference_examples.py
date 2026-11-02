@@ -360,6 +360,7 @@ def test_with_reference_parts_puts_references_first_and_points_at_the_target() -
             + TARGET_ONLY_RULE
         },
     ]
+    assert "labels: cat\nThe reference images" in result[-1]["text"]
     assert parts[1]["text"].startswith("Detect all objects in this image.")
 
 
