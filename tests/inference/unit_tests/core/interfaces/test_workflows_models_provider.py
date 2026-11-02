@@ -963,6 +963,37 @@ def test_run_sam2_segmentation_accepts_an_explicit_request_model_id() -> None:
     assert captured_request(manager).model_id == "sam3-interactive"
 
 
+def test_run_sam2_segmentation_forwards_a_requested_mask_format() -> None:
+    manager = manager_returning(object())
+    ModelManagerModelsProvider(manager).run_sam2_segmentation(
+        model_id="sam3-interactive",
+        image=IMAGE,
+        prompts=[{"box": {"x": 1.0, "y": 1.0, "width": 2.0, "height": 2.0}}],
+        api_key="k",
+        request_model_id="sam3-interactive",
+        multimask_output=False,
+        format="rle",
+    )
+    request = captured_request(manager)
+    assert request.format == "rle"
+    assert "format" in request.model_fields_set
+
+
+def test_run_sam2_segmentation_leaves_the_mask_format_unset_by_default() -> None:
+    manager = manager_returning(object())
+    ModelManagerModelsProvider(manager).run_sam2_segmentation(
+        model_id="sam3-interactive",
+        image=IMAGE,
+        prompts=[{"box": {"x": 1.0, "y": 1.0, "width": 2.0, "height": 2.0}}],
+        api_key="k",
+        request_model_id="sam3-interactive",
+        multimask_output=False,
+    )
+    request = captured_request(manager)
+    assert request.format == "json"
+    assert "format" not in request.model_fields_set
+
+
 def test_run_sam3_segmentation_revives_text_prompts() -> None:
     manager = manager_returning(object())
     ModelManagerModelsProvider(manager).run_sam3_segmentation(

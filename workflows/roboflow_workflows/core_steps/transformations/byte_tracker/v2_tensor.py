@@ -22,9 +22,9 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     Selector,
-    WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
@@ -203,7 +203,7 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/byte_tracker@v2"]
-    image: WorkflowImageSelector = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Input image containing embedded video metadata (fps and video_identifier) required for ByteTrack initialization and tracking state management. The block extracts video_metadata from the WorkflowImageData object. The fps value is used to configure the tracker, and the video_identifier is used to maintain separate tracking state for different videos. If fps is missing or invalid, the block defaults to 0 and logs a warning but continues operation. If processing multiple videos, each video should have a unique video_identifier in its metadata to maintain separate tracking states. The block maintains persistent trackers across frames for each video using the video_identifier. This version simplifies input by embedding metadata in the image object rather than requiring a separate metadata field.",
     )
     detections: Selector(

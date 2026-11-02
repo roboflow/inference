@@ -563,11 +563,13 @@ class ModelManagerModelsProvider:
         request_model_id: Union[str, None, _Unset] = UNSET,
         multimask_output: Union[bool, None, _Unset] = UNSET,
         threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
     ) -> List[Any]:
         # segment_anything2/v1.py passes sam2_version_id, threshold and
         # multimask_output; segment_anything3_interactive/v1.py passes model_id
-        # and multimask_output. Each is forwarded exactly as passed - None
-        # included: `multimask_output: bool` rejects it, as it did inline.
+        # and multimask_output, plus format="rle" for RLE output. Each is
+        # forwarded exactly as passed - None included: `multimask_output: bool`
+        # rejects it, as it did inline.
         request = Sam2SegmentationRequest(
             image=image,
             api_key=api_key,
@@ -578,6 +580,7 @@ class ModelManagerModelsProvider:
                 model_id=request_model_id,
                 multimask_output=multimask_output,
                 threshold=threshold,
+                format=format,
             ),
         )
         return self._infer(model_id=model_id, request=request)

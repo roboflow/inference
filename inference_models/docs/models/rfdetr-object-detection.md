@@ -21,7 +21,7 @@ RF-DETR features:
 
 RF-DETR is released under the Apache 2.0 license, making it free for both commercial and non-commercial use.
 
-Learn more: [Apache 2.0 License](https://github.com/roboflow/inference/blob/main/inference_models/models/rfdetr/LICENSE.txt)
+Learn more: [Apache 2.0 License](https://github.com/roboflow/inference/blob/main/inference_models/inference_models/models/rfdetr/LICENSE.txt)
 
 ## Pre-trained Model IDs
 
