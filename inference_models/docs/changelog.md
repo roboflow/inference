@@ -10,6 +10,10 @@
   `torch.get_default_dtype()`, so a process whose default dtype had been left at
   `torch.bfloat16` sent bfloat16 inputs to ONNX models, which failed with
   `ModelRuntimeError: model requires the input type to be torch.float32`.
+- RF-DETR pre-processing builds its numpy-path input tensor in `torch.float32`
+  instead of `TF.to_tensor`'s default dtype. With the default left at
+  `torch.bfloat16`, RF-DETR models were fed bfloat16-rounded inputs and returned
+  lower-precision predictions without raising an error.
 - Hugging Face model loads run inside a process-wide lock
   (`torch_default_dtype_lock()` in `inference_models.models.common.torch`).
   transformers' `from_pretrained` sets the process-global default dtype while it
