@@ -2,8 +2,9 @@
 
 An on-premise appliance serves many workspaces from one install. The
 appliance's own API (``API_BASE_URL``) is the authority on which API keys
-exist, so the server asks it about each key it has not seen recently and keeps
-the answer for a bounded time. Any key that API accepts may call the server;
+exist and on each workspace's quota. The server asks its usage check about each
+key it has not seen recently and keeps the answer for a bounded time. Any key
+that API accepts, whose workspace is under its quota, may call the server;
 access to a workspace model is still checked per model by the model manager.
 
 The module is used only when ``ON_PREMISE_APPLIANCE`` is on.
@@ -12,7 +13,7 @@ The module is used only when ``ON_PREMISE_APPLIANCE`` is on.
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from cachetools import TTLCache
 from starlette.requests import Request
@@ -22,12 +23,12 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPIUsagePausedError,
-    WorkspaceLoadError,
 )
 from inference.core.interfaces.http.api_key_resolution import (
     extract_api_key_from_headers,
 )
 from inference.core.logger import logger
+from inference.core.roboflow_api import ServerlessUsageCheckResponse
 
 MISSING_API_KEY_MESSAGE = (
     "Missing api_key. Pass it as the api_key query parameter, the api_key JSON "
@@ -39,6 +40,8 @@ PAUSED_API_KEY_MESSAGE = (
     "Usage of this api_key is paused. Ask your workspace administrator to "
     "re-enable it."
 )
+QUOTA_EXCEEDED_REASON = "credit_cap_exceeded"
+WORKSPACE_RESTRICTED_REASON = "workspace_restricted"
 APPLIANCE_API_UNAVAILABLE_RETRY_AFTER_SECONDS = 5
 
 _EXEMPT_PATHS = frozenset(
@@ -74,6 +77,7 @@ class ApplianceKeyDecision:
             server answers with.
         message: The message of the refusal; None when the key is accepted.
         workspace_id: The workspace that owns an accepted key.
+        workspace_db_id: The database id of that workspace, when the API sent it.
         retry_after_seconds: Set when the appliance API did not answer, so the
             client may retry.
     """
@@ -81,6 +85,7 @@ class ApplianceKeyDecision:
     status_code: int
     message: Optional[str] = None
     workspace_id: Optional[str] = None
+    workspace_db_id: Optional[str] = None
     retry_after_seconds: Optional[int] = None
 
     @property
@@ -105,13 +110,15 @@ class ApplianceKeyDecision:
         )
 
 
-WorkspaceLookup = Callable[[str], Awaitable[str]]
+UsageCheck = Callable[[str], Awaitable[ServerlessUsageCheckResponse]]
 
 
 class ApplianceKeyAuthorizer:
     """Decides whether an API key may call the server, with bounded caching.
 
-    Accepted keys are kept for ``ttl_seconds`` and refused keys for
+    The decision comes from the appliance usage check: a valid key whose
+    workspace is under its quota is accepted. A workspace with no quota is
+    always under it. Accepted keys are kept for ``ttl_seconds`` and refused keys for
     ``negative_ttl_seconds``; each cache holds at most ``max_size`` keys. When
     the appliance API does not answer, the key is refused with 503 and nothing
     is cached. Concurrent requests with the same uncached key share one lookup.
@@ -121,7 +128,7 @@ class ApplianceKeyAuthorizer:
 
     def __init__(
         self,
-        lookup_workspace: WorkspaceLookup,
+        usage_check: UsageCheck,
         *,
         ttl_seconds: int,
         negative_ttl_seconds: int,
@@ -131,14 +138,14 @@ class ApplianceKeyAuthorizer:
         """Create an authorizer.
 
         Args:
-            lookup_workspace: Coroutine function that returns the workspace of
-                a key, or raises the Roboflow API errors for a refused key.
+            usage_check: Coroutine function that runs the appliance usage check
+                for a key (``get_serverless_usage_check_async``).
             ttl_seconds: How long an accepted key stays accepted.
             negative_ttl_seconds: How long a refused key stays refused.
             max_size: Maximum number of keys in each cache.
             timer: Clock for the caches; tests replace it.
         """
-        self._lookup_workspace = lookup_workspace
+        self._usage_check = usage_check
         self._accepted: TTLCache = TTLCache(
             maxsize=max_size, ttl=ttl_seconds, timer=timer
         )
@@ -174,8 +181,8 @@ class ApplianceKeyAuthorizer:
 
     async def _look_up(self, api_key: str) -> ApplianceKeyDecision:
         try:
-            workspace_id = await self._lookup_workspace(api_key)
-        except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+            result = await self._usage_check(api_key)
+        except RoboflowAPINotAuthorizedError:
             return self._refuse(
                 api_key, status_code=401, message=UNAUTHORIZED_API_KEY_MESSAGE
             )
@@ -189,22 +196,32 @@ class ApplianceKeyAuthorizer:
             )
         except Exception as error:
             # Fail closed. The error type tells the operator which dependency
-            # failed; the key is never part of the message.
-            error_type = type(error).__name__
-            logger.warning(
-                "Appliance API key check failed, request refused. Error type: %s",
-                error_type,
+            # failed; the key is never part of the message. An incomplete 200
+            # (WorkspaceLoadError) lands here too: it is not the key's fault.
+            return _appliance_api_unavailable(error_type=type(error).__name__)
+
+        if result.status_code == 401:
+            return self._refuse(
+                api_key, status_code=401, message=UNAUTHORIZED_API_KEY_MESSAGE
             )
-            return ApplianceKeyDecision(
-                status_code=503,
-                message=(
-                    "The api_key could not be verified because the appliance API "
-                    f"did not answer ({error_type}). The request was refused."
+        if result.status_code == 402:
+            return self._refuse(
+                api_key,
+                status_code=403,
+                message=_quota_refusal_message(
+                    workspace_id=result.workspace_id, error=result.error
                 ),
-                retry_after_seconds=APPLIANCE_API_UNAVAILABLE_RETRY_AFTER_SECONDS,
+            )
+        if result.status_code != 200 or result.under_cap is not True:
+            return _appliance_api_unavailable(
+                error_type=f"UsageCheckStatus{result.status_code}"
             )
 
-        decision = ApplianceKeyDecision(status_code=200, workspace_id=workspace_id)
+        decision = ApplianceKeyDecision(
+            status_code=200,
+            workspace_id=result.workspace_id,
+            workspace_db_id=result.workspace_db_id,
+        )
         self._accepted[api_key] = decision
 
         return decision
@@ -222,6 +239,58 @@ class ApplianceKeyAuthorizer:
         self._refused[api_key] = decision
 
         return decision
+
+
+def _appliance_api_unavailable(*, error_type: str) -> ApplianceKeyDecision:
+    logger.warning(
+        "Appliance usage check failed, request refused. Error type: %s", error_type
+    )
+
+    return ApplianceKeyDecision(
+        status_code=503,
+        message=(
+            "The api_key could not be verified because the appliance API did not "
+            f"answer ({error_type}). The request was refused."
+        ),
+        retry_after_seconds=APPLIANCE_API_UNAVAILABLE_RETRY_AFTER_SECONDS,
+    )
+
+
+def _quota_refusal_message(*, workspace_id: Optional[str], error: Any) -> str:
+    """Build the 403 message for a usage check that answered 402.
+
+    Only numbers and the workspace slug go into the message, never text from
+    the API, so a key or URL in the API's message cannot leak.
+    """
+    details = error if isinstance(error, dict) else {}
+    workspace = f"Workspace {workspace_id}" if workspace_id else "The workspace"
+    if details.get("reason") == WORKSPACE_RESTRICTED_REASON:
+        return (
+            f"{workspace} is restricted. Ask your organization administrator to "
+            "restore access."
+        )
+
+    used = _credits(details.get("planCycleUsed"))
+    cap = _credits(details.get("cycleCreditCap"))
+    amount = f" ({used} of {cap} credits)" if used and cap else ""
+
+    return (
+        f"{workspace} has used its inference quota{amount}. Ask your organization "
+        "administrator to raise the workspace quota."
+    )
+
+
+def _credits(value: Any) -> Optional[str]:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    if number != number or number < 0:
+        return None
+
+    return f"{number:g}"
 
 
 async def request_skips_api_key_check(request: Request) -> bool:

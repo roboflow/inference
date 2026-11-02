@@ -1,7 +1,7 @@
 """Appliance API key checks against a fake appliance API over real HTTP.
 
 The fake API listens on 127.0.0.1. Nothing that talks to it is mocked, so the
-tests run the real workspace lookup, the real model-data request, the
+tests run the real usage check, the real model-data request, the
 authorization middleware and the per-model access check.
 """
 
@@ -29,8 +29,9 @@ WORKSPACE_MODEL = "project-a/1"
 KEY_A = "key-workspace-a"
 KEY_B = "key-workspace-b"
 KEY_PAUSED = "key-paused"
+KEY_OVER_QUOTA = "key-workspace-over-quota"
 KEY_BOGUS = "key-does-not-exist"
-ALL_KEYS = (KEY_A, KEY_B, KEY_PAUSED, KEY_BOGUS)
+ALL_KEYS = (KEY_A, KEY_B, KEY_PAUSED, KEY_OVER_QUOTA, KEY_BOGUS)
 UNAUTHORIZED_BODY = {
     "error": {
         "message": "This API key does not exist (or has been revoked).",
@@ -40,7 +41,7 @@ UNAUTHORIZED_BODY = {
 
 
 class FakeApplianceApi:
-    """Aiohttp server that answers like the appliance API, on a free port."""
+    """Aiohttp server that answers the appliance usage check, on a free port."""
 
     def __init__(self) -> None:
         self.workspace_calls: Counter = Counter()
@@ -50,19 +51,48 @@ class FakeApplianceApi:
         self._loop = asyncio.new_event_loop()
         self._runner = None
 
-    async def _root(self, request: web.Request) -> web.Response:
+    async def _usage_check(self, request: web.Request) -> web.Response:
+        # Answers like app/functions/services/billingUsage/
+        # billingUsageRequestHandlers.js on the appliance stack.
         api_key = request.query.get("api_key")
         self.workspace_calls[api_key] += 1
         if self.outage:
             return web.json_response({"error": "unavailable"}, status=503)
-        if api_key is None:
-            return web.json_response({"welcome": "Welcome to the Roboflow API."})
         if api_key == KEY_A:
-            return web.json_response({"workspace": "workspace-a"})
+            return web.json_response(
+                {
+                    "workspaceId": "db-workspace-a",
+                    "workspace": "workspace-a",
+                    "underCap": True,
+                    "creditMetering": "not_metered",
+                }
+            )
         if api_key == KEY_B:
-            return web.json_response({"workspace": "workspace-b"})
+            return web.json_response(
+                {
+                    "workspaceId": "db-workspace-b",
+                    "workspace": "workspace-b",
+                    "underCap": True,
+                }
+            )
         if api_key == KEY_PAUSED:
             return web.json_response({"error": {"message": "paused"}}, status=423)
+        if api_key == KEY_OVER_QUOTA:
+            return web.json_response(
+                {
+                    "workspaceId": "db-workspace-c",
+                    "workspace": "workspace-c",
+                    "underCap": False,
+                    "error": {
+                        "type": "AccessException",
+                        "reason": "credit_cap_exceeded",
+                        "message": "Oh no! It seems your workspace ran out of credits.",
+                        "planCycleUsed": 120,
+                        "cycleCreditCap": 100,
+                    },
+                },
+                status=402,
+            )
         return web.json_response(UNAUTHORIZED_BODY, status=401)
 
     async def _model_data(self, request: web.Request) -> web.Response:
@@ -77,7 +107,7 @@ class FakeApplianceApi:
 
         async def serve() -> None:
             app = web.Application()
-            app.router.add_get("/", self._root)
+            app.router.add_get("/serverless/usage-check", self._usage_check)
             app.router.add_get("/ort/{dataset}/{version}", self._model_data)
             self._runner = web.AppRunner(app)
             await self._runner.setup()
@@ -253,6 +283,24 @@ def test_workspace_model_is_checked_per_key(appliance_client, fake_api) -> None:
     assert fake_api.workspace_calls[KEY_B] == 1
     assert fake_api.model_data_calls[KEY_A] == 1
     assert fake_api.model_data_calls[KEY_B] == 1
+
+
+def test_workspace_over_its_quota_is_refused_with_403(
+    appliance_client, fake_api
+) -> None:
+    first = _post_workspace_model(appliance_client, KEY_OVER_QUOTA)
+    second = appliance_client.post(
+        "/clip/embed_text", json=_core_model_request(KEY_OVER_QUOTA)
+    )
+
+    assert first.status_code == second.status_code == 403
+    assert first.json()["message"] == (
+        "Workspace workspace-c has used its inference quota (120 of 100 credits). "
+        "Ask your organization administrator to raise the workspace quota."
+    )
+    # The refusal is cached, and a core model is refused like a workspace model.
+    assert fake_api.workspace_calls[KEY_OVER_QUOTA] == 1
+    assert sum(fake_api.model_data_calls.values()) == 0
 
 
 def test_appliance_outage_answers_503_and_caches_nothing(

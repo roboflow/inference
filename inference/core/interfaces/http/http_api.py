@@ -1445,7 +1445,7 @@ class HttpInterface(BaseInterface):
 
         if ON_PREMISE_APPLIANCE:
             appliance_key_authorizer = ApplianceKeyAuthorizer(
-                lambda api_key: get_roboflow_workspace_async(api_key=api_key),
+                lambda api_key: get_serverless_usage_check_async(api_key=api_key),
                 ttl_seconds=ON_PREMISE_APPLIANCE_AUTH_CACHE_TTL_SECONDS,
                 negative_ttl_seconds=ON_PREMISE_APPLIANCE_AUTH_NEGATIVE_CACHE_TTL_SECONDS,
                 max_size=ON_PREMISE_APPLIANCE_AUTH_CACHE_MAX_SIZE,
@@ -1473,7 +1473,7 @@ class HttpInterface(BaseInterface):
                     await _call_next_with_assume_identity_authorised_workspace_db_id(
                         request=request,
                         call_next=call_next,
-                        workspace_db_id=None,
+                        workspace_db_id=decision.workspace_db_id,
                     )
                 )
                 response.headers[WORKSPACE_ID_HEADER] = decision.workspace_id

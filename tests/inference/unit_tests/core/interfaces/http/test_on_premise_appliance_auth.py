@@ -27,8 +27,36 @@ from inference.core.interfaces.http.appliance_authorization import (
     read_request_api_key,
     request_skips_api_key_check,
 )
+from inference.core.roboflow_api import ServerlessUsageCheckResponse
 
 API_KEY = "appliance-key-7f3a"
+
+
+def _under_cap(workspace_id: str = "workspace-a") -> ServerlessUsageCheckResponse:
+    return ServerlessUsageCheckResponse(
+        status_code=200,
+        workspace_id=workspace_id,
+        workspace_db_id="db-id-a",
+        under_cap=True,
+    )
+
+
+def _over_cap(reason: str = "credit_cap_exceeded") -> ServerlessUsageCheckResponse:
+    return ServerlessUsageCheckResponse(
+        status_code=402,
+        workspace_id="workspace-a",
+        workspace_db_id="db-id-a",
+        under_cap=False,
+        error={
+            "type": "AccessException",
+            "reason": reason,
+            "message": f"api_key={API_KEY} see https://app/settings/plan",
+            "planCycleUsed": 1500.5,
+            "cycleCreditCap": 1500,
+        },
+    )
+
+
 INFER_PATH = "/infer/lmm/florence-2-base"
 
 
@@ -77,15 +105,22 @@ def _model_manager() -> MagicMock:
     return model_manager
 
 
+def _usage_check_mock(outcome) -> AsyncMock:
+    if isinstance(outcome, Exception):
+        return AsyncMock(side_effect=outcome)
+
+    return AsyncMock(return_value=outcome)
+
+
 def _build_appliance_interface(monkeypatch, lookup: AsyncMock):
     _patch_modes(monkeypatch, appliance=True)
-    monkeypatch.setattr(http_api, "get_roboflow_workspace_async", lookup)
+    monkeypatch.setattr(http_api, "get_serverless_usage_check_async", lookup)
 
     return http_api.HttpInterface(model_manager=_model_manager())
 
 
 def test_query_key_is_checked_and_workspace_header_is_set(monkeypatch) -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -99,7 +134,7 @@ def test_query_key_is_checked_and_workspace_header_is_set(monkeypatch) -> None:
 
 
 def test_bearer_header_key_is_accepted(monkeypatch) -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -116,7 +151,7 @@ def test_bearer_header_key_is_accepted(monkeypatch) -> None:
 def test_json_body_key_is_checked_before_the_header_key(monkeypatch) -> None:
     # The routes prefer the body key over the header key, so the middleware must
     # check the key the route will use.
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -131,7 +166,7 @@ def test_json_body_key_is_checked_before_the_header_key(monkeypatch) -> None:
 
 
 def test_request_without_key_is_refused(monkeypatch) -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -143,7 +178,7 @@ def test_request_without_key_is_refused(monkeypatch) -> None:
 
 
 def test_form_body_key_is_not_read(monkeypatch) -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -154,10 +189,27 @@ def test_form_body_key_is_not_read(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    "lookup_error, expected_status, expected_message",
+    "outcome, expected_status, expected_message",
     [
         (RoboflowAPINotAuthorizedError("revoked"), 401, "Unauthorized api_key."),
-        (WorkspaceLoadError("empty workspace"), 401, "Unauthorized api_key."),
+        (
+            ServerlessUsageCheckResponse(status_code=401),
+            401,
+            "Unauthorized api_key.",
+        ),
+        (
+            _over_cap(),
+            403,
+            "Workspace workspace-a has used its inference quota (1500.5 of 1500 "
+            "credits). Ask your organization administrator to raise the workspace "
+            "quota.",
+        ),
+        (
+            _over_cap(reason="workspace_restricted"),
+            403,
+            "Workspace workspace-a is restricted. Ask your organization "
+            "administrator to restore access.",
+        ),
         (
             RoboflowAPIForbiddenError("scope"),
             403,
@@ -172,9 +224,9 @@ def test_form_body_key_is_not_read(monkeypatch) -> None:
     ],
 )
 def test_refused_key_answer_is_cached(
-    monkeypatch, lookup_error, expected_status, expected_message
+    monkeypatch, outcome, expected_status, expected_message
 ) -> None:
-    lookup = AsyncMock(side_effect=lookup_error)
+    lookup = _usage_check_mock(outcome)
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -193,19 +245,30 @@ def test_refused_key_answer_is_cached(
 
 
 @pytest.mark.parametrize(
-    "lookup_error",
+    "outcome, error_type",
     [
-        RoboflowAPIConnectionError("down"),
-        RoboflowAPITimeoutError("slow"),
-        RoboflowAPIUnsuccessfulRequestError("500"),
-        RoboflowAPINotNotFoundError("404"),
-        MalformedRoboflowAPIResponseError("not json"),
+        (RoboflowAPIConnectionError("down"), "RoboflowAPIConnectionError"),
+        (RoboflowAPITimeoutError("slow"), "RoboflowAPITimeoutError"),
+        (
+            RoboflowAPIUnsuccessfulRequestError("500"),
+            "RoboflowAPIUnsuccessfulRequestError",
+        ),
+        (RoboflowAPINotNotFoundError("404"), "RoboflowAPINotNotFoundError"),
+        (
+            MalformedRoboflowAPIResponseError("not json"),
+            "MalformedRoboflowAPIResponseError",
+        ),
+        (WorkspaceLoadError("incomplete usage check"), "WorkspaceLoadError"),
+        (
+            ServerlessUsageCheckResponse(status_code=200, workspace_id="w"),
+            "UsageCheckStatus200",
+        ),
     ],
 )
 def test_unreachable_appliance_api_fails_closed_and_is_not_cached(
-    monkeypatch, lookup_error
+    monkeypatch, outcome, error_type
 ) -> None:
-    lookup = AsyncMock(side_effect=lookup_error)
+    lookup = _usage_check_mock(outcome)
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -214,7 +277,6 @@ def test_unreachable_appliance_api_fails_closed_and_is_not_cached(
             for _ in range(2)
         ]
 
-    error_type = type(lookup_error).__name__
     for response in responses:
         assert response.status_code == 503
         assert response.headers["Retry-After"] == "5"
@@ -226,7 +288,7 @@ def test_unreachable_appliance_api_fails_closed_and_is_not_cached(
 
 
 def test_accepted_key_is_cached(monkeypatch) -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -252,7 +314,7 @@ def test_accepted_key_is_cached(monkeypatch) -> None:
     ],
 )
 def test_probe_and_listing_paths_need_no_key(monkeypatch, method, path) -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -276,7 +338,7 @@ def test_probe_and_listing_paths_need_no_key(monkeypatch, method, path) -> None:
 def test_other_methods_and_management_paths_need_a_key(
     monkeypatch, method, path
 ) -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     interface = _build_appliance_interface(monkeypatch, lookup)
 
     with TestClient(interface.app) as client:
@@ -289,12 +351,13 @@ def test_other_methods_and_management_paths_need_a_key(
 def test_no_answer_or_log_line_contains_the_key(monkeypatch, caplog) -> None:
     caplog.set_level(logging.DEBUG)
     statuses = []
-    for lookup_error in (
+    for outcome in (
         RoboflowAPINotAuthorizedError("revoked"),
         RoboflowAPIUsagePausedError("paused"),
+        _over_cap(),
         RoboflowAPIConnectionError("down"),
     ):
-        lookup = AsyncMock(side_effect=lookup_error)
+        lookup = _usage_check_mock(outcome)
         interface = _build_appliance_interface(monkeypatch, lookup)
         with TestClient(interface.app) as client:
             response = client.post(
@@ -303,7 +366,7 @@ def test_no_answer_or_log_line_contains_the_key(monkeypatch, caplog) -> None:
         statuses.append(response.status_code)
         assert API_KEY not in response.text
 
-    assert statuses == [401, 403, 503]
+    assert statuses == [401, 403, 403, 503]
     # The test client logs its own request URL; only server records count.
     server_records = [
         record.getMessage()
@@ -434,7 +497,9 @@ class _ManualClock:
 
 def test_authorizer_expires_accepted_and_refused_keys() -> None:
     clock = _ManualClock()
-    lookup = AsyncMock(side_effect=["workspace-a", RoboflowAPINotAuthorizedError("x")])
+    lookup = AsyncMock(
+        side_effect=[_under_cap(), ServerlessUsageCheckResponse(status_code=401)]
+    )
     authorizer = ApplianceKeyAuthorizer(
         lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=10, timer=clock
     )
@@ -458,10 +523,10 @@ def test_authorizer_expires_accepted_and_refused_keys() -> None:
 def test_authorizer_shares_one_lookup_between_concurrent_requests() -> None:
     calls = []
 
-    async def slow_lookup(api_key: str) -> str:
+    async def slow_lookup(api_key: str) -> ServerlessUsageCheckResponse:
         calls.append(api_key)
         await asyncio.sleep(0.05)
-        return "workspace-a"
+        return _under_cap()
 
     authorizer = ApplianceKeyAuthorizer(
         slow_lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=10
@@ -473,16 +538,18 @@ def test_authorizer_shares_one_lookup_between_concurrent_requests() -> None:
     decisions = asyncio.run(scenario())
 
     assert len(calls) == 1
-    assert {d.workspace_id for d in decisions} == {"workspace-a"}
+    assert {(d.workspace_id, d.workspace_db_id) for d in decisions} == {
+        ("workspace-a", "db-id-a")
+    }
 
 
 def test_authorizer_lookup_survives_a_cancelled_waiter() -> None:
     calls = []
 
-    async def slow_lookup(api_key: str) -> str:
+    async def slow_lookup(api_key: str) -> ServerlessUsageCheckResponse:
         calls.append(api_key)
         await asyncio.sleep(0.05)
-        return "workspace-a"
+        return _under_cap()
 
     authorizer = ApplianceKeyAuthorizer(
         slow_lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=10
@@ -502,7 +569,7 @@ def test_authorizer_lookup_survives_a_cancelled_waiter() -> None:
 
 
 def test_authorizer_cache_size_is_bounded() -> None:
-    lookup = AsyncMock(return_value="workspace-a")
+    lookup = AsyncMock(return_value=_under_cap())
     authorizer = ApplianceKeyAuthorizer(
         lookup, ttl_seconds=300, negative_ttl_seconds=30, max_size=2
     )
@@ -519,3 +586,26 @@ def test_authorizer_cache_size_is_bounded() -> None:
         "key-3",
         "key-1",
     ]
+
+
+def test_quota_message_leaves_out_amounts_the_api_did_not_send() -> None:
+    over_cap = ServerlessUsageCheckResponse(
+        status_code=402,
+        workspace_id=None,
+        under_cap=False,
+        error={"reason": "credit_cap_exceeded", "cycleCreditCap": "none"},
+    )
+    authorizer = ApplianceKeyAuthorizer(
+        AsyncMock(return_value=over_cap),
+        ttl_seconds=300,
+        negative_ttl_seconds=30,
+        max_size=10,
+    )
+
+    decision = asyncio.run(authorizer.authorize(API_KEY))
+
+    assert decision.status_code == 403
+    assert decision.message == (
+        "The workspace has used its inference quota. Ask your organization "
+        "administrator to raise the workspace quota."
+    )
