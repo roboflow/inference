@@ -533,8 +533,11 @@ def handle_tensor_input_preparation_with_stretch(
     )
     if input_color_mode != network_input.color_mode:
         image = image[:, [2, 1, 0], :, :]
+    # Every scaling division in this module casts first: dividing an integer
+    # tensor yields torch's default dtype, which a concurrent Hugging Face load
+    # can leave set to bfloat16 process-wide.
     if network_input.scaling_factor is not None:
-        image = image / network_input.scaling_factor
+        image = image.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization is not None:
         if not image.is_floating_point():
             image = image.to(dtype=torch.float32)
@@ -609,7 +612,7 @@ def handle_torch_input_preparation_with_letterbox(
         static_crop_offset=static_crop_offset,
     )
     if network_input.scaling_factor is not None:
-        final_batch = final_batch / network_input.scaling_factor
+        final_batch = final_batch.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization is not None:
         if not final_batch.is_floating_point():
             final_batch = final_batch.to(dtype=torch.float32)
@@ -697,7 +700,7 @@ def handle_torch_input_preparation_with_center_crop(
         static_crop_offset=static_crop_offset,
     )
     if network_input.scaling_factor is not None:
-        image = image / network_input.scaling_factor
+        image = image.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization is not None:
         if not image.is_floating_point():
             image = image.to(dtype=torch.float32)
@@ -751,7 +754,7 @@ def handle_torch_input_preparation_fitting_longer_edge(
         static_crop_offset=static_crop_offset,
     )
     if network_input.scaling_factor is not None:
-        image = image / network_input.scaling_factor
+        image = image.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization is not None:
         if not image.is_floating_point():
             image = image.to(dtype=torch.float32)
@@ -868,7 +871,7 @@ def handle_tensor_list_input_preparation_with_stretch(
             img, height=target_size.height, width=target_size.width
         )
         if network_input.scaling_factor is not None:
-            img = img / network_input.scaling_factor
+            img = img.to(dtype=torch.float32) / network_input.scaling_factor
         if network_input.normalization is not None:
             if not img.is_floating_point():
                 img = img.to(dtype=torch.float32)
@@ -952,7 +955,7 @@ def handle_tensor_list_input_preparation_with_letterbox(
         )
         images_metadata.append(image_metadata)
     if network_input.scaling_factor is not None:
-        final_batch = final_batch / network_input.scaling_factor
+        final_batch = final_batch.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization:
         if not final_batch.is_floating_point():
             final_batch = final_batch.to(dtype=torch.float32)
@@ -1203,7 +1206,7 @@ def handle_numpy_input_preparation_with_stretch(
     if input_color_mode != network_input.color_mode:
         tensor = tensor[:, [2, 1, 0], :, :]
     if network_input.scaling_factor is not None:
-        tensor = tensor / network_input.scaling_factor
+        tensor = tensor.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization:
         if not tensor.is_floating_point():
             tensor = tensor.to(dtype=torch.float32)
@@ -1282,7 +1285,7 @@ def handle_numpy_input_preparation_with_letterbox(
         static_crop_offset=static_crop_offset,
     )
     if network_input.scaling_factor is not None:
-        final_batch = final_batch / network_input.scaling_factor
+        final_batch = final_batch.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization is not None:
         if not final_batch.is_floating_point():
             final_batch = final_batch.to(dtype=torch.float32)
@@ -1361,7 +1364,7 @@ def handle_numpy_input_preparation_with_center_crop(
     if input_color_mode != network_input.color_mode:
         tensor = tensor[:, [2, 1, 0], :, :]
     if network_input.scaling_factor is not None:
-        tensor = tensor / network_input.scaling_factor
+        tensor = tensor.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization:
         if not tensor.is_floating_point():
             tensor = tensor.to(dtype=torch.float32)
@@ -1419,7 +1422,7 @@ def handle_numpy_input_preparation_fitting_longer_edge(
     if input_color_mode != network_input.color_mode:
         tensor = tensor[:, [2, 1, 0], :, :]
     if network_input.scaling_factor is not None:
-        tensor = tensor / network_input.scaling_factor
+        tensor = tensor.to(dtype=torch.float32) / network_input.scaling_factor
     if network_input.normalization:
         if not tensor.is_floating_point():
             tensor = tensor.to(dtype=torch.float32)

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, call
 
 import numpy as np
 import pytest
+import torch
 from packaging.version import Version
 
 from inference_models import ClassificationPrediction
@@ -4333,3 +4334,41 @@ def test_runtime_compatibility_content_changes_once_core_ml_can_run() -> None:
     assert {k: v for k, v in with_core_ml.items() if k != "coremltools_version"} == (
         without_core_ml
     )
+
+
+def test_restore_default_dtype_after_loads_when_overlapping_loads_leak_bfloat16() -> (
+    None
+):
+    # given
+    import threading
+    import time
+
+    from inference_models.models.auto_loaders.core import (
+        _restore_default_dtype_after_loads,
+    )
+
+    def transformers_like_load(start_delay: float, hold: float) -> None:
+        # Mirrors transformers' local_torch_dtype: save, set bf16, restore saved.
+        time.sleep(start_delay)
+        saved = torch.get_default_dtype()
+        torch.set_default_dtype(torch.bfloat16)
+        try:
+            time.sleep(hold)
+        finally:
+            torch.set_default_dtype(saved)
+
+    guarded_load = _restore_default_dtype_after_loads(transformers_like_load)
+    threads = [
+        threading.Thread(target=guarded_load, args=(0.0, 0.2)),
+        threading.Thread(target=guarded_load, args=(0.05, 0.2)),
+        threading.Thread(target=guarded_load, args=(0.1, 0.3)),
+    ]
+
+    # when
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # then
+    assert torch.get_default_dtype() == torch.float32
