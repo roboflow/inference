@@ -73,7 +73,8 @@ batches receive the rows one by one.
 ## Requirements
 
 * The `databricks-sql-connector` package must be installed next to the
-  Workflows runtime.
+  Workflows runtime (`pip install "roboflow-workflows[databricks]"`); the
+  Roboflow inference server images ship it.
 * The token needs `SELECT` on the queried table and `CAN USE` on the warehouse.
   Store it as a Workflow **input** or **secret** (`$inputs.databricks_token`),
   never inline in the Workflow definition.
@@ -299,7 +300,8 @@ def fetch_rows(
         raise RuntimeError(
             "`roboflow_core/databricks_sql_image_source@v1` requires the "
             "`databricks-sql-connector` package. Install it in the environment running "
-            "Workflows (pip install databricks-sql-connector)."
+            'Workflows (pip install "roboflow-workflows[databricks]" or '
+            "pip install databricks-sql-connector)."
         ) from error
 
     with databricks_sql.connect(

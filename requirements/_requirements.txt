@@ -30,7 +30,6 @@ zxing-cpp~=2.2.0; python_version < "3.13"
 zxing-cpp==2.3.0; python_version >= "3.13"
 boto3>=1.40.0,<=1.41.5
 botocore>=1.40.0,<=1.41.5
-databricks-sql-connector>=4.0.0,<5.0.0
 typing_extensions>=4.8.0,<=4.15.0
 pydot~=2.0.0
 shapely>=2.0.4,<2.1.0
