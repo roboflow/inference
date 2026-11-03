@@ -29,8 +29,8 @@ DATABRICKS_TO_ROBOFLOW_WORKFLOW = {
         {
             "type": "roboflow_core/databricks_sql_image_source@v1",
             "name": "db",
-            "server_hostname": "dbc-test.cloud.databricks.com",
-            "http_path": "/sql/1.0/warehouses/abc",
+            "server_hostname": "dbc-a1b2c3d4-e5f6.cloud.databricks.com",
+            "http_path": "/sql/1.0/warehouses/abcdef1234567890",
             "access_token": "$inputs.databricks_token",
             "sql_statement": "SELECT id, bytes, raccoon_name FROM c.s.images",
             "image_name_column": "id",
@@ -64,12 +64,15 @@ class FakeRow:
 class FakeCursor:
     def __init__(self, rows: List[Dict[str, Any]]):
         self._rows = rows
+        self._position = 0
 
     def execute(self, statement: str) -> None:
         pass
 
     def fetchmany(self, size: int) -> List[FakeRow]:
-        return [FakeRow(row) for row in self._rows[:size]]
+        batch = self._rows[self._position : self._position + size]
+        self._position += size
+        return [FakeRow(row) for row in batch]
 
     def __enter__(self) -> "FakeCursor":
         return self
@@ -100,6 +103,10 @@ def fake_databricks(rows: List[Dict[str, Any]]) -> Iterator[None]:
     databricks_module.sql = sql_module
     with mock.patch.dict(
         sys.modules, {"databricks": databricks_module, "databricks.sql": sql_module}
+    ), mock.patch(
+        "roboflow_workflows.core_steps.sinks.databricks.sql_image_source.v1"
+        ".resolve_and_validate_ips",
+        return_value=["52.1.2.3"],
     ):
         yield
 
