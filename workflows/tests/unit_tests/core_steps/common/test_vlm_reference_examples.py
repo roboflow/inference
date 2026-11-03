@@ -6,10 +6,12 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 import pytest
+from pydantic import ValidationError
 from roboflow_workflows.core_steps.common import vlm_reference_examples
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     CROP_MAX_EDGE,
     CROP_MIN_EDGE,
+    MAX_REFERENCE_EXAMPLES,
     REFERENCE_BOXED_INTRO,
     REFERENCE_CROPS_INTRO,
     TARGET_IMAGE_INTRO,
@@ -22,6 +24,12 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     render_example_crops,
     validate_reference_examples,
     with_reference_parts,
+)
+from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
+    BlockManifest as GeminiManifest,
+)
+from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
+    BlockManifest as OpenAIManifest,
 )
 from roboflow_workflows.errors import RuntimeInputError
 from roboflow_workflows.prototypes.image_codec import (
@@ -213,6 +221,65 @@ def test_validate_reference_examples_names_the_malformed_field() -> None:
     # then
     assert "reference_examples[0]" in str(error.value)
     assert "annotations.0.width" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("image", "$inputs.reference_image"),
+        ("image", "$steps.crop.crops"),
+        ("image", {"type": "url", "value": "$inputs.reference_url"}),
+        ("annotations", "$steps.detector.predictions"),
+    ],
+)
+def test_validate_reference_examples_refuses_selectors_inside_an_example(
+    field, value
+) -> None:
+    with pytest.raises(ValueError, match="selectors are not resolved inside"):
+        validate_reference_examples(
+            [{**_example(), field: value}],
+            task_type="object-detection",
+            labels=["cat"],
+        )
+
+
+@pytest.mark.parametrize("manifest", [GeminiManifest, OpenAIManifest])
+def test_manifest_schema_describes_the_examples_and_their_limit(manifest) -> None:
+    # when
+    schema = manifest.model_json_schema()
+
+    # then
+    options = schema["properties"]["reference_examples"]["anyOf"]
+    literal = next(option for option in options if option.get("type") == "array")
+    assert literal["items"] == {"$ref": "#/$defs/ReferenceExample"}
+    assert literal["maxItems"] == MAX_REFERENCE_EXAMPLES
+    example = schema["$defs"]["ReferenceExample"]
+    assert sorted(example["required"]) == ["annotations", "image"]
+    annotation = schema["$defs"]["ReferenceAnnotation"]
+    assert sorted(annotation["required"]) == ["class", "height", "width", "x", "y"]
+
+
+@pytest.mark.parametrize(
+    "manifest, block_type",
+    [
+        (GeminiManifest, "roboflow_core/google_gemini@v6"),
+        (OpenAIManifest, "roboflow_core/open_ai@v7"),
+    ],
+)
+def test_manifest_rejects_more_literal_examples_than_the_limit(
+    manifest, block_type
+) -> None:
+    with pytest.raises(ValidationError, match="at most 10 items"):
+        manifest.model_validate(
+            {
+                "type": block_type,
+                "name": "vlm",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": ["cat"],
+                "reference_examples": [_example()] * (MAX_REFERENCE_EXAMPLES + 1),
+            }
+        )
 
 
 def test_load_reference_examples_clips_boxes_to_the_image() -> None:

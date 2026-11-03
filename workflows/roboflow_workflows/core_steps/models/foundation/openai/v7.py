@@ -57,6 +57,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     REFERENCE_EXAMPLES_EXAMPLE,
     REFERENCE_EXAMPLES_TASK,
     TARGET_IMAGE_INTRO,
+    ReferenceExamples,
     ReferencePartsCache,
     openai_reference_parts_for,
     validate_reference_examples,
@@ -484,6 +485,10 @@ with every image, so they add input tokens to each request; they come first, so
 the provider can cache them across a batch. Without examples the request is
 unchanged.
 
+A selector can provide the whole list, such as `$inputs.reference_examples`, but
+selectors inside an example are not resolved: to build the examples from a step's
+predictions, that step has to output the list in this format.
+
 The `instance-segmentation` task asks for one outline polygon per instance of
 the requested classes - a flat `[x1, y1, x2, y2, ...]` vertex list in absolute
 pixel coordinates of the uploaded image, enforced via structured outputs - and
@@ -678,7 +683,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     reference_examples: Optional[
-        Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[Dict[str, Any]]]
+        Union[Selector(kind=[LIST_OF_VALUES_KIND]), ReferenceExamples]
     ] = Field(
         default=None,
         description=REFERENCE_EXAMPLES_DESCRIPTION,

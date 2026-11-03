@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common import vlm_reference_examples
+from roboflow_workflows.core_steps.common.vlm_reference_examples import ReferenceExample
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     DETECTION_BOX_FORMAT,
     BlockManifest,
@@ -535,9 +536,13 @@ def _run_detection_with_mock(
 
 
 @pytest.mark.parametrize(
-    "reference_examples", [[_reference_example()], "$inputs.reference_examples"]
+    "reference_examples, expected",
+    [
+        ([_reference_example()], [ReferenceExample(**_reference_example())]),
+        ("$inputs.reference_examples", "$inputs.reference_examples"),
+    ],
 )
-def test_manifest_accepts_reference_examples(reference_examples) -> None:
+def test_manifest_accepts_reference_examples(reference_examples, expected) -> None:
     # when
     result = BlockManifest.model_validate(
         {
@@ -551,7 +556,7 @@ def test_manifest_accepts_reference_examples(reference_examples) -> None:
     )
 
     # then
-    assert result.reference_examples == reference_examples
+    assert result.reference_examples == expected
 
 
 def test_manifest_rejects_reference_examples_for_other_tasks() -> None:

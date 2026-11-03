@@ -12,12 +12,22 @@ import base64
 import json
 import threading
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from roboflow_workflows.core_steps.common.deserializers import deserialize_image_kind
 from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
@@ -29,6 +39,7 @@ CROP_MARGIN = 0.15
 CROP_MIN_MARGIN = 8
 CROP_MIN_EDGE = 128
 CROP_MAX_EDGE = 384
+SELECTOR_PREFIXES = ("$inputs.", "$steps.")
 
 REFERENCE_CROPS_INTRO = (
     "Reference examples: crops of labeled objects taken from other images of the "
@@ -54,8 +65,9 @@ REFERENCE_EXAMPLES_DESCRIPTION = (
     "Roboflow prediction format: box centers and sizes in pixels of that example "
     "image, `class` one of the block's labels. Annotate every object of those labels "
     "in each example. Local file paths are not read. At most "
-    f"{MAX_REFERENCE_EXAMPLES} examples. They are sent with every image, so each "
-    "request costs more input tokens."
+    f"{MAX_REFERENCE_EXAMPLES} examples, sent with every image, so each request costs "
+    "more input tokens. A selector can provide the whole list, but selectors inside "
+    "an example are not resolved."
 )
 REFERENCE_EXAMPLES_EXAMPLE = [
     {
@@ -111,12 +123,29 @@ class ReferenceExample(BaseModel):
     """An example image with every object of the block's labels annotated."""
 
     image: Union[str, Dict[str, Any]] = Field(
-        description="Image as a URL, a base64 string or an inference image dict.",
+        description='Image as a URL, a base64 string or `{"type": ..., "value": ...}`.',
         examples=[{"type": "url", "value": "https://example.com/labeled.jpg"}],
     )
     annotations: List[ReferenceAnnotation] = Field(
         description="Every object of the block's labels in the image."
     )
+
+    @field_validator("image", "annotations", mode="before")
+    @classmethod
+    def _refuse_selectors(cls, value: Any) -> Any:
+        source = value.get("value") if isinstance(value, dict) else value
+        if isinstance(source, str) and source.startswith(SELECTOR_PREFIXES):
+            raise ValueError(
+                "selectors are not resolved inside an example; pass the whole list "
+                "through one, such as `$inputs.reference_examples`"
+            )
+
+        return value
+
+
+ReferenceExamples = Annotated[
+    List[ReferenceExample], Field(max_length=MAX_REFERENCE_EXAMPLES)
+]
 
 
 @dataclass(frozen=True)

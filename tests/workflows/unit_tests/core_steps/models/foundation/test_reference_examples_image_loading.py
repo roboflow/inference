@@ -14,7 +14,7 @@ import pytest
 
 from inference.core.interfaces.workflows_image_codec import bind_image_codec
 from inference.core.utils import image_utils
-from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.errors import RuntimeInputError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.prototypes.image_codec import reset_image_codec
 
@@ -130,6 +130,23 @@ def test_reference_image_never_reads_a_local_file(
 
     # then
     requests.assert_not_called()
+
+
+@BLOCKS
+def test_selector_inside_a_literal_example_is_refused_when_compiling(
+    block: str,
+) -> None:
+    # given
+    examples = [{"image": "$inputs.reference_image", "annotations": ANNOTATIONS}]
+
+    # when
+    with pytest.raises(WorkflowSyntaxError) as error:
+        _engine(block, examples)
+
+    # then
+    assert "selectors are not resolved inside an example" in str(
+        error.value.inner_error
+    )
 
 
 @BLOCKS
