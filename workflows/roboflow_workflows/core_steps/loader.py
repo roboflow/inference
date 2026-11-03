@@ -1076,6 +1076,9 @@ else:
         VisionEventBundleSinkBlockV1,
     )
 
+from roboflow_workflows.core_steps.sinks.databricks.sql_image_source.v1 import (
+    DatabricksSQLImageSourceBlockV1,
+)
 from roboflow_workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from roboflow_workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1944,6 +1947,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EmailNotificationBlockV1,
         EmailNotificationBlockV2,
         LocalFileSinkBlockV1,
+        DatabricksSQLImageSourceBlockV1,
         S3SinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,

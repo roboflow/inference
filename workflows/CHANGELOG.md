@@ -29,6 +29,8 @@ for contributor and maintainer responsibilities.
   - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
   - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
   - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
+- Databricks SQL Image Source block (`roboflow_core/databricks_sql_image_source@v1`): runs a SQL statement on a Databricks SQL warehouse and emits each returned row as a Workflow image (`images`), with `image_names` taken from an optional key column and the remaining columns as per-row `metadata`. The block has no image input, so it runs once per execution and its outputs are lists (output dimensionality offset 1) that feed batch-aware blocks such as Roboflow Dataset Upload. Credentials are `server_hostname`, `http_path` and a secret `access_token`; `max_rows` caps the fetch and `skip_undecodable` controls whether undecodable rows are skipped or fail the step.
+  - Adds the `databricks-sql-connector>=4.0.0,<5.0.0` dependency (imported lazily by the block).
 
 ### Fixed
 
