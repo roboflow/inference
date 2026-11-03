@@ -32,6 +32,7 @@ from inference_models.models.common.roboflow.post_processing import ConfidenceFi
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 from inference_models.weights_providers.entities import RecommendedParameters
 
 
@@ -123,10 +124,11 @@ class VITForClassificationHF(
                 message="Expected Softmax to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(
-            os.path.join(model_name_or_path, "vit"),
-            local_files_only=local_files_only,
-        ).to(device)
+        with torch_default_dtype_lock():
+            backbone = ViTModel.from_pretrained(
+                os.path.join(model_name_or_path, "vit"),
+                local_files_only=local_files_only,
+            ).to(device)
         classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
         classifier_state_dict = torch.load(
             model_package_content["classifier_layer_weights.pth"],
@@ -288,10 +290,11 @@ class VITForMultiLabelClassificationHF(
                 message="Expected sigmoid to be the post-processing",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        backbone = ViTModel.from_pretrained(
-            os.path.join(model_name_or_path, "vit"),
-            local_files_only=local_files_only,
-        ).to(device)
+        with torch_default_dtype_lock():
+            backbone = ViTModel.from_pretrained(
+                os.path.join(model_name_or_path, "vit"),
+                local_files_only=local_files_only,
+            ).to(device)
         classifier = nn.Linear(backbone.config.hidden_size, num_classes).to(device)
         classifier_state_dict = torch.load(
             model_package_content["classifier_layer_weights.pth"],
