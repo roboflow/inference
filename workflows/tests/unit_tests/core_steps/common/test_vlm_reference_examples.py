@@ -1,5 +1,6 @@
 import base64
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import Any, List, Optional, Tuple
 from unittest.mock import patch
 
 import cv2
@@ -13,6 +14,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     REFERENCE_CROPS_INTRO,
     TARGET_IMAGE_INTRO,
     TARGET_ONLY_RULE,
+    ReferencePartsCache,
     gemini_reference_parts_for,
     load_reference_examples,
     openai_reference_parts_for,
@@ -21,11 +23,49 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     validate_reference_examples,
     with_reference_parts,
 )
+from roboflow_workflows.errors import RuntimeInputError
+from roboflow_workflows.prototypes.image_codec import (
+    WorkflowsLocalImageCodec,
+    reset_image_codec,
+    set_image_codec,
+)
 
 
-@pytest.fixture(autouse=True)
-def clear_reference_parts_cache() -> None:
-    vlm_reference_examples._cached_parts.cache_clear()
+class _ServerLikeCodec(WorkflowsLocalImageCodec):
+    """Reads local files and serves URLs, like the server's codec with its defaults."""
+
+    def __init__(self) -> None:
+        self.url_images: List[np.ndarray] = []
+        self.fetched_urls: List[str] = []
+        self.local_reads: List[str] = []
+
+    def load_image(
+        self, value: Any, disable_preproc_auto_orient: bool = False
+    ) -> Tuple[np.ndarray, bool]:
+        path = value["value"] if isinstance(value, dict) else value
+        is_file_type = isinstance(value, dict) and value.get("type") == "file"
+        if is_file_type or (isinstance(value, str) and Path(path).is_file()):
+            self.local_reads.append(path)
+            return cv2.imread(path), True
+        return super().load_image(
+            value, disable_preproc_auto_orient=disable_preproc_auto_orient
+        )
+
+    def fetch_url(self, value: str, cv_imread_flags: int = cv2.IMREAD_COLOR):
+        self.fetched_urls.append(value)
+        return self.url_images.pop(0)
+
+    def ensure_local_file_load_allowed(self, path: str) -> None:
+        self.local_reads.append(path)
+
+
+@pytest.fixture
+def server_like_codec():
+    codec = _ServerLikeCodec()
+    reset_image_codec()
+    set_image_codec(codec)
+    yield codec
+    reset_image_codec()
 
 
 def _image_base64(
@@ -216,6 +256,49 @@ def test_load_reference_examples_rejects_a_box_outside_its_image() -> None:
         load_reference_examples(examples)
 
 
+@pytest.mark.parametrize(
+    "as_image",
+    [lambda path: path, lambda path: {"type": "file", "value": path}],
+    ids=["bare path", "file dict"],
+)
+def test_load_reference_examples_never_reads_a_local_file(
+    server_like_codec: _ServerLikeCodec, tmp_path: Path, as_image
+) -> None:
+    # given
+    path = tmp_path / "server-file.png"
+    cv2.imwrite(str(path), np.full((100, 200, 3), 255, dtype=np.uint8))
+    examples = validate_reference_examples(
+        [{**_example(), "image": as_image(str(path))}],
+        task_type="object-detection",
+        labels=["cat"],
+    )
+
+    # when / then
+    with pytest.raises(RuntimeInputError, match=r"reference_examples\[0\]\.image"):
+        load_reference_examples(examples)
+    assert server_like_codec.local_reads == []
+
+
+def test_load_reference_examples_fetches_urls_through_the_codec(
+    server_like_codec: _ServerLikeCodec,
+) -> None:
+    # given
+    server_like_codec.url_images = [np.full((100, 200, 3), 7, dtype=np.uint8)]
+    url = "https://example.com/labeled.jpg"
+    examples = validate_reference_examples(
+        [{**_example(), "image": {"type": "url", "value": url}}],
+        task_type="object-detection",
+        labels=["cat"],
+    )
+
+    # when
+    loaded = load_reference_examples(examples)
+
+    # then
+    assert server_like_codec.fetched_urls == [url]
+    assert loaded[0].image[0, 0].tolist() == [7, 7, 7]
+
+
 def test_render_example_crops_keeps_the_largest_boxes_in_label_order() -> None:
     # given
     boxes = [
@@ -316,21 +399,143 @@ def test_openai_reference_parts_group_crops_by_label() -> None:
     assert len(parts) == 5
 
 
-def test_reference_parts_are_built_once_for_the_same_examples() -> None:
+@pytest.mark.parametrize(
+    "parts_for", [gemini_reference_parts_for, openai_reference_parts_for]
+)
+def test_reference_parts_are_built_once_for_the_same_examples(parts_for) -> None:
     # given
     examples = [_example()]
-    real_load_image = vlm_reference_examples.load_image
+    cache = ReferencePartsCache()
 
     # when
     with patch.object(
-        vlm_reference_examples, "load_image", side_effect=real_load_image
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
     ) as load_image:
-        first = gemini_reference_parts_for(examples, labels=["cat"])
-        second = gemini_reference_parts_for(examples, labels=["cat"])
+        first = parts_for(examples, labels=["cat"], cache=cache)
+        second = parts_for(examples, labels=["cat"], cache=cache)
 
     # then
     assert first == second
     assert load_image.call_count == 1
+
+
+def test_reference_parts_are_built_again_for_other_labels_or_examples() -> None:
+    # given
+    cache = ReferencePartsCache()
+    other_labels = ["dog", "cat"]
+    other_example = _example(width=300)
+
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
+    ) as load_image:
+        gemini_reference_parts_for([_example()], labels=["cat"], cache=cache)
+        gemini_reference_parts_for([_example()], labels=other_labels, cache=cache)
+        gemini_reference_parts_for([other_example], labels=["cat"], cache=cache)
+
+    # then
+    assert load_image.call_count == 3
+
+
+def test_reference_parts_load_on_every_call_without_a_cache() -> None:
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
+    ) as load_image:
+        gemini_reference_parts_for([_example()], labels=["cat"])
+        gemini_reference_parts_for([_example()], labels=["cat"])
+
+    # then
+    assert load_image.call_count == 2
+
+
+def test_reference_parts_cache_keeps_nothing_from_a_failed_build(
+    server_like_codec: _ServerLikeCodec,
+) -> None:
+    # given
+    url = {"type": "url", "value": "https://example.com/labeled.jpg"}
+    examples = [{**_example(), "image": url}]
+    cache = ReferencePartsCache()
+    server_like_codec.url_images = [np.full((100, 200, 3), 7, dtype=np.uint8)]
+
+    # when
+    with patch.object(
+        server_like_codec, "fetch_url", side_effect=OSError("connection reset")
+    ):
+        with pytest.raises(RuntimeInputError, match="connection reset"):
+            gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+    parts = gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+
+    # then
+    assert parts[0] == {"text": REFERENCE_BOXED_INTRO}
+    assert server_like_codec.fetched_urls == [url["value"]]
+
+
+def test_reference_parts_of_a_new_cache_see_the_image_a_url_serves_now(
+    server_like_codec: _ServerLikeCodec,
+) -> None:
+    # given
+    url = {"type": "url", "value": "https://example.com/labeled.jpg"}
+    examples = [{**_example(), "image": url}]
+    server_like_codec.url_images = [
+        np.full((100, 200, 3), 30, dtype=np.uint8),
+        np.full((100, 200, 3), 220, dtype=np.uint8),
+    ]
+    first_job, second_job = ReferencePartsCache(), ReferencePartsCache()
+
+    # when
+    first = gemini_reference_parts_for(examples, labels=["cat"], cache=first_job)
+    repeated = gemini_reference_parts_for(examples, labels=["cat"], cache=first_job)
+    second = gemini_reference_parts_for(examples, labels=["cat"], cache=second_job)
+
+    # then
+    assert repeated == first
+    assert len(server_like_codec.fetched_urls) == 2
+    corner = (2, 2)
+    assert abs(int(_decode(first[2]["inline_data"]["data"])[corner][0]) - 30) < 8
+    assert abs(int(_decode(second[2]["inline_data"]["data"])[corner][0]) - 220) < 8
+
+
+@pytest.mark.parametrize(
+    "parts_for", [gemini_reference_parts_for, openai_reference_parts_for]
+)
+def test_reference_parts_of_a_numpy_image_are_rendered_on_every_call(
+    parts_for,
+) -> None:
+    # given
+    pixels = np.full((100, 200, 3), 30, dtype=np.uint8)
+    example = {**_example(), "image": {"type": "numpy_object", "value": pixels}}
+    cache = ReferencePartsCache()
+
+    # when
+    first = parts_for([example], labels=["cat"], cache=cache)
+    pixels[:] = 220
+    second = parts_for([example], labels=["cat"], cache=cache)
+
+    # then
+    assert first != second
+
+
+def test_numpy_image_of_a_reference_example_keeps_its_pixels() -> None:
+    # given
+    pixels = np.full((100, 200, 3), 30, dtype=np.uint8)
+    examples = validate_reference_examples(
+        [{**_example(), "image": {"type": "numpy_object", "value": pixels}}],
+        task_type="object-detection",
+        labels=["cat"],
+    )
+
+    # when
+    loaded = load_reference_examples(examples)
+
+    # then
+    assert np.array_equal(loaded[0].image, pixels)
 
 
 def test_with_reference_parts_puts_references_first_and_points_at_the_target() -> None:

@@ -10,14 +10,15 @@ image of a batch shares the same prefix and the provider can cache it.
 
 import base64
 import json
+import threading
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from roboflow_workflows.core_steps.common.deserializers import deserialize_image_kind
 from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes, load_image
 
 REFERENCE_EXAMPLES_TASK = "object-detection"
@@ -52,8 +53,9 @@ REFERENCE_EXAMPLES_DESCRIPTION = (
     '[{"class": ..., "x": ..., "y": ..., "width": ..., "height": ...}]}`, in the '
     "Roboflow prediction format: box centers and sizes in pixels of that example "
     "image, `class` one of the block's labels. Annotate every object of those labels "
-    f"in each example. At most {MAX_REFERENCE_EXAMPLES} examples. They are sent with "
-    "every image, so each request costs more input tokens."
+    "in each example. Local file paths are not read. At most "
+    f"{MAX_REFERENCE_EXAMPLES} examples. They are sent with every image, so each "
+    "request costs more input tokens."
 )
 REFERENCE_EXAMPLES_EXAMPLE = [
     {
@@ -125,6 +127,46 @@ class LoadedReferenceExample:
     boxes: Tuple[Tuple[str, float, float, float, float], ...]
 
 
+class ReferencePartsCache:
+    """The reference parts one block instance built last.
+
+    A block instance lives as long as its execution engine: one job on a worker, one
+    request on a server. So every image of a job gets the examples without fetching
+    them again, and the next job sees what their URLs serve by then. One entry is
+    enough for a job, and it keeps a long-running pipeline whose examples change from
+    growing.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._key: Optional[str] = None
+        self._parts: List[dict] = []
+
+    def get_or_build(
+        self, key: Optional[str], *, build: Callable[[], List[dict]]
+    ) -> List[dict]:
+        """Return the parts of ``key``, building them unless they were built last.
+
+        Args:
+            key: Identifies the examples and labels; ``None`` builds without caching.
+            build: Fetches and renders the examples.
+
+        Returns:
+            Content parts to place before the target image.
+        """
+        if key is None:
+            parts = build()
+            return parts
+
+        # Threads sharing the block wait for the first fetch instead of repeating it.
+        with self._lock:
+            if key != self._key:
+                self._parts = build()
+                self._key = key
+            parts = self._parts
+        return parts
+
+
 def validate_reference_examples(
     value: Optional[Sequence[Any]],
     *,
@@ -177,8 +219,10 @@ def load_reference_examples(
 ) -> List[LoadedReferenceExample]:
     """Decode the example images and convert their boxes to clipped corners.
 
-    Images go through the installed image codec, so URLs follow the same policy as
-    any other workflow image.
+    Images load like a workflow image input of an HTTP request: URLs follow the host's
+    policy and a local path is never read. The block cannot see the engine's
+    ``prevent_local_images_loading``, and these values come straight from the workflow
+    definition or its inputs.
 
     Args:
         examples: Validated examples.
@@ -187,11 +231,17 @@ def load_reference_examples(
         One loaded example per input, in order.
 
     Raises:
+        RuntimeInputError: If an image cannot be loaded, which includes a local path.
         ValueError: If a box lies entirely outside its image.
     """
     loaded = []
     for index, example in enumerate(examples):
-        pixels, _ = load_image(example.image)
+        image = deserialize_image_kind(
+            f"reference_examples[{index}].image",
+            example.image,
+            prevent_local_images_loading=True,
+        )
+        pixels, _ = load_image(image.to_inference_format(numpy_preferred=True))
         height, width = pixels.shape[:2]
         boxes = []
         for box in example.annotations:
@@ -306,19 +356,26 @@ def gemini_reference_parts_for(
     value: Optional[Sequence[Any]],
     *,
     labels: Sequence[str],
+    cache: Optional[ReferencePartsCache] = None,
 ) -> List[dict]:
     """Build Gemini content parts for validated examples: boxed images.
-
-    Results are cached, because a job runs the same examples on every image.
 
     Args:
         value: Examples accepted by ``validate_reference_examples``.
         labels: Block labels.
+        cache: The block's cache; without one the examples load on every call.
 
     Returns:
         Content parts to place before the target image.
     """
-    parts = list(_cached_parts("gemini", _cache_key(value), tuple(labels)))
+    parts = _reference_parts(
+        value,
+        labels=labels,
+        cache=cache,
+        render=lambda examples: _gemini_parts(
+            render_boxed_examples(examples, labels=labels)
+        ),
+    )
     return parts
 
 
@@ -326,19 +383,26 @@ def openai_reference_parts_for(
     value: Optional[Sequence[Any]],
     *,
     labels: Sequence[str],
+    cache: Optional[ReferencePartsCache] = None,
 ) -> List[dict]:
     """Build OpenAI Responses API content parts for validated examples: crops.
-
-    Results are cached, because a job runs the same examples on every image.
 
     Args:
         value: Examples accepted by ``validate_reference_examples``.
         labels: Labels the model returns.
+        cache: The block's cache; without one the examples load on every call.
 
     Returns:
         Content parts to place before the target image.
     """
-    parts = list(_cached_parts("openai", _cache_key(value), tuple(labels)))
+    parts = _reference_parts(
+        value,
+        labels=labels,
+        cache=cache,
+        render=lambda examples: _openai_parts(
+            render_example_crops(examples, labels=labels)
+        ),
+    )
     return parts
 
 
@@ -426,29 +490,38 @@ def _openai_parts(crop_groups: Sequence[Tuple[str, Sequence[str]]]) -> List[dict
     return parts
 
 
-def _cache_key(value: Optional[Sequence[Any]]) -> str:
+def _reference_parts(
+    value: Optional[Sequence[Any]],
+    *,
+    labels: Sequence[str],
+    cache: Optional[ReferencePartsCache],
+    render: Callable[[List[LoadedReferenceExample]], List[dict]],
+) -> List[dict]:
+    def build() -> List[dict]:
+        built = render(load_reference_examples(_parse_reference_examples(value)))
+        return built
+
+    if cache is None:
+        cache = ReferencePartsCache()
+
+    parts = cache.get_or_build(_cache_key(value, labels=labels), build=build)
+    return parts
+
+
+def _cache_key(
+    value: Optional[Sequence[Any]], *, labels: Sequence[str]
+) -> Optional[str]:
     items = [
         item.model_dump(by_alias=True) if isinstance(item, ReferenceExample) else item
         for item in value or []
     ]
-    key = json.dumps(items, sort_keys=True)
+    try:
+        key = json.dumps([items, list(labels)], sort_keys=True)
+    except TypeError:
+        # An in-memory image has no JSON form, and rendering it needs no fetch.
+        return None
+
     return key
-
-
-# Without the cache every block run would fetch and render the same examples again.
-# The key is the full examples JSON, so a hit needs the same images and boxes.
-@lru_cache(maxsize=4)
-def _cached_parts(
-    provider: str, examples_json: str, labels: Tuple[str, ...]
-) -> Tuple[dict, ...]:
-    examples = load_reference_examples(
-        _parse_reference_examples(json.loads(examples_json))
-    )
-    if provider == "gemini":
-        parts = _gemini_parts(render_boxed_examples(examples, labels=labels))
-    else:
-        parts = _openai_parts(render_example_crops(examples, labels=labels))
-    return tuple(parts)
 
 
 def _area(box: Tuple[float, float, float, float]) -> float:

@@ -57,6 +57,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     REFERENCE_EXAMPLES_EXAMPLE,
     REFERENCE_EXAMPLES_TASK,
     TARGET_IMAGE_INTRO,
+    ReferencePartsCache,
     openai_reference_parts_for,
     validate_reference_examples,
     with_reference_parts,
@@ -887,6 +888,7 @@ class OpenAIBlockV7(WorkflowBlock):
     ):
         self._api_key = api_key
         self._platform_client = platform_client
+        self._reference_parts_cache = ReferencePartsCache()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -938,6 +940,7 @@ class OpenAIBlockV7(WorkflowBlock):
             max_concurrent_requests=max_concurrent_requests,
             service_tier=service_tier,
             reference_examples=reference_examples,
+            reference_parts_cache=self._reference_parts_cache,
         )
         box_format = get_detection_box_format(model_version)
         results = []
@@ -1018,6 +1021,7 @@ def run_openai_prompting(
     max_concurrent_requests: Optional[int],
     service_tier: Optional[str] = None,
     reference_examples: Optional[List[Any]] = None,
+    reference_parts_cache: Optional[ReferencePartsCache] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
@@ -1046,6 +1050,8 @@ def run_openai_prompting(
         service_tier: OpenAI service tier, omitted from the request when ``None``.
         reference_examples: Optional labeled example images for object detection,
             in the format ``validate_reference_examples`` accepts.
+        reference_parts_cache: The block's cache of the parts built for the
+            examples; without one they load on every call.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples, one per input
@@ -1063,7 +1069,9 @@ def run_openai_prompting(
         validate_reference_examples(
             reference_examples, task_type=task_type, labels=labels
         )
-        reference_parts = openai_reference_parts_for(reference_examples, labels=labels)
+        reference_parts = openai_reference_parts_for(
+            reference_examples, labels=labels, cache=reference_parts_cache
+        )
 
     openai_prompts = []
     for image in images:

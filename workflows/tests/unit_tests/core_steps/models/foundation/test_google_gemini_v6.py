@@ -14,6 +14,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.common import vlm_reference_examples
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     DETECTION_BOX_FORMAT,
     BlockManifest,
@@ -507,8 +508,11 @@ def _reference_example(box_class: str = "cat") -> dict:
     }
 
 
-def _run_detection_with_mock(reference_examples: Optional[list]) -> tuple:
-    block = GoogleGeminiBlockV6(api_key="rf-key")
+def _run_detection_with_mock(
+    reference_examples: Optional[list],
+    block: Optional[GoogleGeminiBlockV6] = None,
+) -> tuple:
+    block = block or GoogleGeminiBlockV6(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
         mock_execute.return_value = [(DETECTION_OUTPUT, 11, 3)]
         results = block.run(
@@ -606,6 +610,43 @@ def test_run_without_reference_examples_keeps_the_request(reference_examples) ->
     assert len(parts) == 2
     assert "inline_data" in parts[0]
     assert parts[1]["text"].startswith("Detect all objects in this image. ")
+
+
+def test_run_accepts_a_numpy_reference_image() -> None:
+    # given
+    pixels = np.full((100, 200, 3), 255, dtype=np.uint8)
+    example = {
+        **_reference_example(),
+        "image": {"type": "numpy_object", "value": pixels},
+    }
+
+    # when
+    _, parts = _run_detection_with_mock([example])
+
+    # then
+    assert parts[1] == {"text": "Reference image 1:"}
+    assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
+
+
+def test_reference_images_load_once_per_block_instance() -> None:
+    # given
+    first_block = GoogleGeminiBlockV6(api_key="rf-key")
+    second_block = GoogleGeminiBlockV6(api_key="rf-key")
+
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
+    ) as load_image:
+        _run_detection_with_mock([_reference_example()], block=first_block)
+        _run_detection_with_mock([_reference_example()], block=first_block)
+        loads_of_the_first_block = load_image.call_count
+        _run_detection_with_mock([_reference_example()], block=second_block)
+
+    # then
+    assert loads_of_the_first_block == 1
+    assert load_image.call_count == 2
 
 
 def test_run_rejects_resolved_reference_examples_for_other_tasks() -> None:

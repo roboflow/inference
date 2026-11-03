@@ -50,6 +50,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     REFERENCE_EXAMPLES_EXAMPLE,
     REFERENCE_EXAMPLES_TASK,
     TARGET_IMAGE_INTRO,
+    ReferencePartsCache,
     gemini_reference_parts_for,
     validate_reference_examples,
     with_reference_parts,
@@ -599,6 +600,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
     ):
         self._api_key = api_key
         self._platform_client = platform_client
+        self._reference_parts_cache = ReferencePartsCache()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -645,6 +647,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
             google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
             reference_examples=reference_examples,
+            reference_parts_cache=self._reference_parts_cache,
         )
         results = []
         for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
@@ -695,6 +698,7 @@ def run_gemini_prompting(
     google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
     reference_examples: Optional[List[Any]] = None,
+    reference_parts_cache: Optional[ReferencePartsCache] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
@@ -709,7 +713,9 @@ def run_gemini_prompting(
         validate_reference_examples(
             reference_examples, task_type=task_type, labels=classes
         )
-        reference_parts = gemini_reference_parts_for(reference_examples, labels=classes)
+        reference_parts = gemini_reference_parts_for(
+            reference_examples, labels=classes, cache=reference_parts_cache
+        )
 
     gemini_prompts = []
     for image in images:

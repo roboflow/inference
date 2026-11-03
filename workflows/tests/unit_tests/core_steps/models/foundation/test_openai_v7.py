@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import pytest
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.common import vlm_reference_examples
 from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     INSTANCE_SEGMENTATION_DEFAULT_MODEL,
     STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
@@ -792,8 +793,9 @@ def _run_detection_with_mock(
     reference_examples: Optional[list],
     model_version: str = "gpt-6.1-sol",
     output_classes: Optional[List[str]] = None,
+    block: Optional[OpenAIBlockV7] = None,
 ) -> tuple:
-    block = OpenAIBlockV7(api_key="rf-key")
+    block = block or OpenAIBlockV7(api_key="rf-key")
     raw_output = (
         NORMALIZED_LEGACY_OUTPUT
         if model_version == "gpt-5.1"
@@ -926,3 +928,46 @@ def test_run_without_reference_examples_keeps_the_request(reference_examples) ->
     assert len(content) == 2
     assert content[0]["type"] == "input_image"
     assert content[1]["text"].startswith("Detect all objects in this image. ")
+
+
+def test_run_accepts_a_numpy_reference_image() -> None:
+    # given
+    pixels = np.full((100, 200, 3), 255, dtype=np.uint8)
+    example = {
+        **_reference_example(),
+        "image": {"type": "numpy_object", "value": pixels},
+    }
+
+    # when
+    _, prompt = _run_detection_with_mock([example], output_classes=["cat", "dog"])
+
+    # then
+    content = prompt["input"][0]["content"]
+    assert content[1] == {"type": "input_text", "text": 'Examples of "cat":'}
+    assert content[2]["image_url"].startswith("data:image/jpeg;base64,")
+
+
+def test_reference_images_load_once_per_block_instance() -> None:
+    # given
+    first_block = OpenAIBlockV7(api_key="rf-key")
+    second_block = OpenAIBlockV7(api_key="rf-key")
+    labels = ["cat", "dog"]
+
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
+    ) as load_image:
+        for block in (first_block, first_block):
+            _run_detection_with_mock(
+                [_reference_example()], output_classes=labels, block=block
+            )
+        loads_of_the_first_block = load_image.call_count
+        _run_detection_with_mock(
+            [_reference_example()], output_classes=labels, block=second_block
+        )
+
+    # then
+    assert loads_of_the_first_block == 1
+    assert load_image.call_count == 2
