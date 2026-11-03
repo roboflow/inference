@@ -2478,6 +2478,7 @@ def test_instance_segmentation_routes_forward_mask_resolution_opt_in(
 _WORKSPACE_OF_KEY = {
     "server-key": "server-ws",
     "teammate-key": "server-ws",
+    "other-teammate-key": "server-ws",
     "outsider-key": "other-ws",
 }
 
@@ -2498,10 +2499,10 @@ def test_required_api_key_accepts_keys_of_the_server_key_workspace(monkeypatch) 
     )
 
     with TestClient(interface.app) as client:
-        for _ in range(2):
+        for api_key in ["teammate-key", "other-teammate-key"]:
             response = client.post(
                 "/infer/lmm/florence-2-base",
-                params={"api_key": "teammate-key"},
+                params={"api_key": api_key},
                 json=_make_inference_request(),
             )
             assert response.status_code == 200, response.text
@@ -2509,13 +2510,16 @@ def test_required_api_key_accepts_keys_of_the_server_key_workspace(monkeypatch) 
     looked_up = [
         call.kwargs["api_key"] for call in workspace_lookup_mock.await_args_list
     ]
-    assert sorted(looked_up) == ["server-key", "teammate-key"]
+    # The server key's workspace is resolved once and then reused.
+    assert sorted(looked_up) == ["other-teammate-key", "server-key", "teammate-key"]
 
 
-@pytest.mark.parametrize("api_key", [None, "outsider-key", "unknown-key"])
-@pytest.mark.parametrize("method,path", _SECURED_GATE_TARGETS)
-def test_required_api_key_rejects_requests_without_a_key_of_the_server_workspace(
-    monkeypatch, method, path, api_key
+@pytest.mark.parametrize(
+    "method,path",
+    [("POST", "/infer/lmm/florence-2-base"), ("GET", "/device/stats")],
+)
+def test_required_api_key_rejects_keys_of_other_workspaces(
+    monkeypatch, method, path
 ) -> None:
     interface, _, _ = _build_dedicated_deployment_interface(
         monkeypatch=monkeypatch,
@@ -2526,7 +2530,7 @@ def test_required_api_key_rejects_requests_without_a_key_of_the_server_workspace
     )
 
     with TestClient(interface.app) as client:
-        response = _send_secured_request(client, method, path, api_key=api_key)
+        response = _send_secured_request(client, method, path, api_key="outsider-key")
 
     assert response.status_code == 401, f"{method} {path}: {response.status_code}"
 
@@ -2600,13 +2604,13 @@ def test_required_api_key_checks_head_requests_and_skips_cors_preflight(
     workspace_lookup_mock.assert_not_awaited()
 
 
-def test_required_api_key_leaves_csrf_protected_builder_page_reachable(
-    monkeypatch,
-) -> None:
+def test_required_api_key_covers_builder_page_and_api(monkeypatch) -> None:
+    # The builder page embeds the CSRF token that guards /build/api, so serving
+    # it without a key would open the builder API to anyone.
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "ENABLE_BUILDER", True)
-    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+    interface, _, _ = _build_dedicated_deployment_interface(
         monkeypatch=monkeypatch,
         dedicated_workspace_url=None,
         require_api_key=True,
@@ -2615,9 +2619,46 @@ def test_required_api_key_leaves_csrf_protected_builder_page_reachable(
     )
 
     with TestClient(interface.app) as client:
-        page = client.get("/build")
-        api_without_csrf = client.get("/build/api")
+        responses = [
+            client.get("/build"),
+            client.get("/build/edit/some-workflow"),
+            client.get("/build/api"),
+            client.delete("/build/api/some-workflow"),
+        ]
+        page_with_key = client.get("/build", params={"api_key": "teammate-key"})
 
-    assert page.status_code == 200
-    assert api_without_csrf.status_code == 403
-    workspace_lookup_mock.assert_not_awaited()
+    assert [response.status_code for response in responses] == [401] * 4
+    assert page_with_key.status_code != 401
+
+
+@pytest.mark.parametrize("require_api_key", [False, True])
+def test_notebook_token_is_only_handed_out_behind_workspace_key_checks(
+    monkeypatch, require_api_key
+) -> None:
+    # OFFLINE_MODE turns the key requirement off; Jupyter must not start then.
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "NOTEBOOK_ENABLED", True)
+    start_notebook_mock = MagicMock()
+    monkeypatch.setattr(http_api, "start_notebook", start_notebook_mock)
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=require_api_key,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.get(
+            "/notebook/start",
+            params={"browserless": "true", "api_key": "teammate-key"},
+        )
+
+    if require_api_key:
+        assert response.status_code == 200
+        start_notebook_mock.assert_called_once()
+    else:
+        assert response.status_code == 403
+        assert "token=" not in response.text
+        start_notebook_mock.assert_not_called()

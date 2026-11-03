@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -17,9 +19,10 @@ _ALL_NAMES = [
 
 
 @pytest.fixture(autouse=True)
-def clean_environment(monkeypatch):
+def clean_environment(monkeypatch, tmp_path):
     for name in _ALL_NAMES:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(tmp_path)
 
 
 def test_self_hosted_server_is_locked_down_by_default() -> None:
@@ -70,3 +73,48 @@ def test_offline_mode_does_not_require_api_key(monkeypatch) -> None:
 
     assert "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT" not in os.environ
     assert os.environ["ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS"] == "False"
+
+
+def test_dot_env_file_is_honoured(tmp_path) -> None:
+    (tmp_path / ".env").write_text(
+        "OFFLINE_MODE=True\nALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True\n"
+    )
+
+    apply_self_hosted_server_defaults()
+
+    assert "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT" not in os.environ
+    assert os.environ["ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS"] == "True"
+    assert os.environ["ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM"] == "False"
+
+
+def test_defaults_reach_inference_core_env() -> None:
+    # Catches a misspelled name, which would silently leave a protection off.
+    script = (
+        "from inference.server_defaults import apply_self_hosted_server_defaults\n"
+        "apply_self_hosted_server_defaults()\n"
+        "from inference.core import env\n"
+        "print(env.REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT,"
+        " env.ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,"
+        " env.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM,"
+        " env.ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,"
+        " env.ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,"
+        " env.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,"
+        " env.VALIDATE_IMAGE_URL_REDIRECTS)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+
+    assert result.stdout.split()[-7:] == [
+        "True",
+        "False",
+        "False",
+        "False",
+        "False",
+        "False",
+        "True",
+    ]

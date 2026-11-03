@@ -1300,11 +1300,12 @@ class HttpInterface(BaseInterface):
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
 
-        if (
+        workspace_auth_enabled = bool(
             DEDICATED_DEPLOYMENT_WORKSPACE_URL
             or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
             or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT
-        ):
+        )
+        if workspace_auth_enabled:
             # Without a configured workspace, the server belongs to the workspace
             # of its own ROBOFLOW_API_KEY, resolved on the first checked request.
             server_workspaces = set(WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT or [])
@@ -1316,11 +1317,9 @@ class HttpInterface(BaseInterface):
                     "workspace. Set ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT; "
                     "until then every authenticated route answers 401."
                 )
-            # The local Workflow Builder protects its page and API with its own
-            # CSRF token. The dashboard page is a static file.
+            # The dashboard page is a static file. The Workflow Builder is not
+            # exempt: its page embeds the CSRF token that guards /build/api.
             public_ui_paths = set()
-            if ENABLE_BUILDER:
-                public_ui_paths.add("/build")
             if ENABLE_DASHBOARD:
                 public_ui_paths.update({"/dashboard.html", "/favicon.ico"})
 
@@ -1339,11 +1338,10 @@ class HttpInterface(BaseInterface):
                 # and slip an authenticated route into the allowlist.
                 scope_path = request.scope["path"]
                 skip_check = (
-                    # Starlette answers HEAD with the GET handler, so only CORS
-                    # preflight requests skip the check.
+                    # Only CORS preflight requests skip the check, whatever the
+                    # method of the route behind them.
                     request.method == "OPTIONS"
                     or scope_path in public_ui_paths
-                    or (ENABLE_BUILDER and scope_path.startswith("/build/"))
                     or scope_path
                     in [
                         "/",
@@ -4771,6 +4769,18 @@ class HttpInterface(BaseInterface):
                     NotebookStartResponse: The response containing the URL of the jupyter lab server.
                 """
                 logger.debug(f"Reached /notebook/start")
+                if NOTEBOOK_ENABLED and not workspace_auth_enabled:
+                    # Jupyter runs arbitrary code, so its token is only handed
+                    # to callers that passed the workspace API key check.
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "success": False,
+                            "message": "The notebook needs workspace API key checks. "
+                            "Set ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT "
+                            "and keep REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on (not OFFLINE_MODE).",
+                        },
+                    )
                 if NOTEBOOK_ENABLED:
                     start_notebook()
                     if browserless:

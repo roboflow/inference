@@ -19,6 +19,8 @@ import time.
 
 import os
 
+from dotenv import load_dotenv
+
 HOSTED_RUNTIME_ENV_NAMES = ("LAMBDA", "GCP_SERVERLESS")
 
 SELF_HOSTED_SERVER_DEFAULTS = {
@@ -43,6 +45,9 @@ def _is_true(name: str) -> bool:
 
 
 def apply_self_hosted_server_defaults() -> None:
+    # inference.core.env loads ./.env without overriding the environment. Load it
+    # first so .env settings are checked here and win over these defaults.
+    load_dotenv(os.getcwd() + "/.env")
     if any(_is_true(name) for name in HOSTED_RUNTIME_ENV_NAMES) or os.getenv(
         "DEDICATED_DEPLOYMENT_WORKSPACE_URL"
     ):
