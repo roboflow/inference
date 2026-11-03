@@ -32,7 +32,6 @@ def remote_client(monkeypatch):
     monkeypatch.setattr(http_api, "API_BASE_URL", "https://api.example.test")
     monkeypatch.setattr(http_api, "ROBOFLOW_INTERNAL_SERVICE_NAME", None)
     monkeypatch.setattr(http_api, "ROBOFLOW_INTERNAL_SERVICE_SECRET", None)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "InferenceInstrumentator", MagicMock())

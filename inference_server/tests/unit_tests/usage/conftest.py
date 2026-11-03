@@ -17,7 +17,6 @@ SYSTEM_INFO = {
 def usage_settings(monkeypatch):
     settings = {
         "LEGACY_OFFLINE_MODE": False,
-        "LAMBDA": False,
         "GCP_SERVERLESS": False,
         "REDIS_HOST": None,
         "TELEMETRY_USE_PERSISTENT_QUEUE": False,

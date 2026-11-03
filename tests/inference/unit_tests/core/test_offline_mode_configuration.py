@@ -18,7 +18,6 @@ _CONTROLLED_VARIABLES = [
     "USE_INFERENCE_MODELS",
     "MODELS_CACHE_AUTH_ENABLED",
     "ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS",
-    "LAMBDA",
     "GCP_SERVERLESS",
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL",
     "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
@@ -50,7 +49,6 @@ _CONTROLLED_VARIABLES = [
     "MODEL_CACHE_DIR",
     "SECURE_GATEWAY",
     "LICENSE_SERVER",
-    "ELASTICACHE_ENDPOINT",
     "REDIS_HOST",
     "REDIS_PORT",
     "REDIS_SSL",
@@ -1080,55 +1078,20 @@ assert core_env.ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS is True
     )
 
 
-def test_offline_lambda_http_import_does_not_load_legacy_usage_module() -> None:
+def test_offline_serverless_http_import_fails_closed() -> None:
     _run_with_env(
         """
-import sys
-
 try:
     import inference.core.interfaces.http.http_api
 except ValueError as error:
-    assert "OFFLINE_MODE is not supported together with LAMBDA" in str(error)
+    assert "OFFLINE_MODE is not supported together with GCP_SERVERLESS" in str(error)
 else:
-    raise AssertionError("Expected offline Lambda startup to fail closed")
-
-assert "inference.core.usage" not in sys.modules
+    raise AssertionError("Expected offline serverless startup to fail closed")
 """,
         {
             "OFFLINE_MODE": "True",
-            "LAMBDA": "True",
+            "GCP_SERVERLESS": "True",
         },
-    )
-
-
-def test_direct_usage_import_does_not_discover_elasticache_offline() -> None:
-    _run_with_env(
-        """
-import sys
-import types
-from unittest.mock import MagicMock
-
-discover = MagicMock(name="discover")
-elasticache_module = types.ModuleType("elasticache_auto_discovery")
-elasticache_module.discover = discover
-hash_client = MagicMock(name="HashClient")
-pymemcache_module = types.ModuleType("pymemcache")
-pymemcache_client_module = types.ModuleType("pymemcache.client")
-pymemcache_hash_module = types.ModuleType("pymemcache.client.hash")
-pymemcache_hash_module.HashClient = hash_client
-sys.modules["elasticache_auto_discovery"] = elasticache_module
-sys.modules["pymemcache"] = pymemcache_module
-sys.modules["pymemcache.client"] = pymemcache_client_module
-sys.modules["pymemcache.client.hash"] = pymemcache_hash_module
-
-from inference.core import usage
-
-discover.assert_not_called()
-hash_client.assert_not_called()
-assert usage.memcache_client is None
-assert usage.trackUsage("endpoint", "actor") is None
-""",
-        {"OFFLINE_MODE": "True"},
     )
 
 

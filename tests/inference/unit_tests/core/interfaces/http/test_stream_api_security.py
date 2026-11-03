@@ -36,7 +36,6 @@ def make_interface(
 ):
     monkeypatch.setattr(http_api, "ENABLE_STREAM_API", enabled)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(
         http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", dedicated_workspace
     )

@@ -228,12 +228,6 @@ API_KEY = os.getenv(API_KEY_ENV_NAMES[0], None) or os.getenv(API_KEY_ENV_NAMES[1
 # only removes the header fallback. Default is True.
 ALLOW_API_KEY_FROM_HEADERS = str2bool(os.getenv("ALLOW_API_KEY_FROM_HEADERS", True))
 
-# AWS access key ID, default is None
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
-
-# AWS secret access key, default is None
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
-
 PALIGEMMA_VERSION_ID = os.getenv("PALIGEMMA_VERSION_ID", "paligemma-3b-mix-224")
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
@@ -533,16 +527,6 @@ DISABLE_VERSION_CHECK = str2bool(os.getenv("DISABLE_VERSION_CHECK", False))
 if OFFLINE_MODE:
     DISABLE_VERSION_CHECK = True
 
-# ElastiCache endpoint
-ELASTICACHE_ENDPOINT = os.environ.get(
-    "ELASTICACHE_ENDPOINT",
-    (
-        "roboflow-infer-prod.ljzegl.cfg.use2.cache.amazonaws.com:11211"
-        if PROJECT == "roboflow-platform"
-        else "roboflow-infer.ljzegl.cfg.use2.cache.amazonaws.com:11211"
-    ),
-)
-
 # Flag to enable byte track, default is False
 ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
@@ -605,18 +589,15 @@ IP_BROADCAST_PORT = int(os.getenv("IP_BROADCAST_PORT", 37020))
 # Flag to enable JSON response, default is True
 JSON_RESPONSE = str2bool(os.getenv("JSON_RESPONSE", True))
 
-# Lambda flag, default is False
-LAMBDA = str2bool(os.getenv("LAMBDA", False))
-
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
-if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+if OFFLINE_MODE and GCP_SERVERLESS:
     # Roboflow-hosted serverless runtimes require API connectivity for auth
     # and usage accounting - OFFLINE_MODE would leave that state undefined
     # (e.g. usage checks succeeding with no workspace resolved).
     raise ValueError(
-        "OFFLINE_MODE is not supported together with LAMBDA / GCP_SERVERLESS "
+        "OFFLINE_MODE is not supported together with GCP_SERVERLESS "
         "deployments - authentication and usage accounting require API "
         "connectivity. Unset OFFLINE_MODE for serverless runtimes."
     )
@@ -768,7 +749,7 @@ OTEL_METRIC_EXPORT_INTERVAL_MS = int(
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
-if LAMBDA or GCP_SERVERLESS or OFFLINE_MODE:
+if GCP_SERVERLESS or OFFLINE_MODE:
     METRICS_ENABLED = False
 
 # Interval for metrics aggregation, default is 60
@@ -908,26 +889,6 @@ VERSION_CHECK_MODE = os.getenv("VERSION_CHECK_MODE", "once")
 
 # Metlo key, default is None
 METLO_KEY = os.getenv("METLO_KEY", None)
-
-# Core model bucket
-CORE_MODEL_BUCKET = os.getenv(
-    "CORE_MODEL_BUCKET",
-    (
-        "roboflow-core-model-prod"
-        if PROJECT == "roboflow-platform"
-        else "roboflow-core-model-staging"
-    ),
-)
-
-# Inference bucket
-INFER_BUCKET = os.getenv(
-    "INFER_BUCKET",
-    (
-        "roboflow-infer-prod"
-        if PROJECT == "roboflow-platform"
-        else "roboflow-infer-staging"
-    ),
-)
 
 ACTIVE_LEARNING_ENABLED = str2bool(os.getenv("ACTIVE_LEARNING_ENABLED", True))
 if OFFLINE_MODE:
@@ -1332,7 +1293,7 @@ PRELOAD_MODELS = (
 PRELOAD_API_KEY = os.getenv("PRELOAD_API_KEY") or API_KEY
 
 # Models that must always be loaded at startup and never evicted from cache.
-# Unlike PRELOAD_MODELS, this bypasses the LAMBDA/GCP_SERVERLESS gate.
+# Unlike PRELOAD_MODELS, this bypasses the GCP_SERVERLESS gate.
 # Comma-separated list of model IDs.
 PINNED_MODELS = (
     os.getenv("PINNED_MODELS").split(",") if os.getenv("PINNED_MODELS") else None

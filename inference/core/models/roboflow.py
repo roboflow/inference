@@ -18,13 +18,8 @@ from requests.exceptions import ChunkedEncodingError
 
 from inference.core.env import (
     API_KEY,
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY,
-    CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
     DISK_CACHE_CLEANUP,
-    INFER_BUCKET,
-    LAMBDA,
     MAX_BATCH_SIZE,
     MODEL_CACHE_DIR,
     MODEL_VALIDATION_DISABLED,
@@ -44,7 +39,6 @@ from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
     are_all_files_cached,
     clear_cache,
-    get_cache_dir,
     get_cache_dir_for_read,
     initialise_cache,
     load_json_from_cache,
@@ -87,23 +81,7 @@ from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.model_types import bind_usage_model_descriptor
 
-NUM_S3_RETRY = 5
-SLEEP_SECONDS_BETWEEN_RETRIES = 3
 MODEL_METADATA_CACHE_EXPIRATION_TIMEOUT = 3600  # 1 hour
-
-S3_CLIENT = None
-if not OFFLINE_MODE and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-    try:
-        import boto3
-        from botocore.config import Config
-
-        from inference.core.utils.s3 import download_s3_files_to_directory
-
-        config = Config(retries={"max_attempts": NUM_S3_RETRY, "mode": "standard"})
-        S3_CLIENT = boto3.client("s3", config=config)
-    except:
-        logger.debug("Error loading boto3")
-        pass
 
 DEFAULT_COLOR_PALETTE = [
     "#4892EA",
@@ -249,7 +227,7 @@ class RoboflowInferenceModel(Model):
     ) -> None:
         """Fetch or load the model artifacts.
 
-        Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
+        Downloads the model artifacts from the Roboflow API if they are not already cached.
         """
         if MODELS_CACHE_AUTH_ENABLED and not OFFLINE_MODE:
             if not _check_if_api_key_has_access_to_model(
@@ -284,9 +262,6 @@ class RoboflowInferenceModel(Model):
                 f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
                 "or more required artifacts are missing from the local cache."
             )
-        if is_model_artefacts_bucket_available():
-            self.download_model_artefacts_from_s3()
-            return None
         self.download_model_artifacts_from_roboflow_api(
             countinference=countinference,
             service_secret=service_secret,
@@ -298,31 +273,6 @@ class RoboflowInferenceModel(Model):
         infer_bucket_files.append(self.weights_file)
         logger.debug(f"List of files required to load model: {infer_bucket_files}")
         return [f for f in infer_bucket_files if f is not None]
-
-    def download_model_artefacts_from_s3(self) -> None:
-        with start_span(
-            "model.artifacts.download",
-            {"model.id": self.endpoint, "model.artifacts.source": "s3"},
-        ):
-            try:
-                logger.debug("Downloading model artifacts from S3")
-                infer_bucket_files = self.get_all_required_infer_bucket_file()
-                cache_directory = get_cache_dir()
-                s3_keys = [f"{self.endpoint}/{file}" for file in infer_bucket_files]
-                download_s3_files_to_directory(
-                    bucket=self.model_artifact_bucket,
-                    keys=s3_keys,
-                    target_dir=cache_directory,
-                    s3_client=S3_CLIENT,
-                )
-            except Exception as error:
-                raise ModelArtefactError(
-                    f"Could not obtain model artefacts from S3 with keys {s3_keys}. Cause: {error}"
-                ) from error
-
-    @property
-    def model_artifact_bucket(self):
-        return INFER_BUCKET
 
     def download_model_artifacts_from_roboflow_api(
         self,
@@ -703,9 +653,6 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
                 "or more required artifacts are missing from the local cache."
             )
-        if is_model_artefacts_bucket_available():
-            self.download_model_artefacts_from_s3()
-            return None
         self.download_model_from_roboflow_api()
 
     def download_model_from_roboflow_api(self) -> None:
@@ -812,10 +759,6 @@ class RoboflowCoreModel(RoboflowInferenceModel):
     def weights_file(self) -> str:
         """Abstract property representing the file containing the model weights. For core models, all model artifacts are handled through get_infer_bucket_file_list method."""
         return None
-
-    @property
-    def model_artifact_bucket(self):
-        return CORE_MODEL_BUCKET
 
 
 class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
@@ -1182,17 +1125,6 @@ def color_mapping_available_in_environment(environment: Optional[dict]) -> bool:
         environment is not None
         and "COLORS" in environment
         and issubclass(type(environment["COLORS"]), dict)
-    )
-
-
-def is_model_artefacts_bucket_available() -> bool:
-    # TODO: download from GCS directly if GCP_SERVERLESS is true
-    return (
-        not OFFLINE_MODE
-        and AWS_ACCESS_KEY_ID is not None
-        and AWS_SECRET_ACCESS_KEY is not None
-        and LAMBDA
-        and S3_CLIENT is not None
     )
 
 

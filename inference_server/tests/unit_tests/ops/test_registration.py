@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.unit_tests.legacy.conftest import route_paths
@@ -7,11 +6,10 @@ from tests.unit_tests.ops.test_device_stats import NOT_CONFIGURED_BODY
 GATED_PATHS = ("/device/stats", "/notebook/start", "/secure-gateway/health")
 
 
-@pytest.mark.parametrize(
-    "hosted", [{"LAMBDA": True}, {"GCP_SERVERLESS": True}], ids=["lambda", "gcp"]
-)
-def test_gated_routes_are_absent_in_hosted_modes(reloaded_app, hosted):
-    module = reloaded_app(SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED=True, **hosted)
+def test_gated_routes_are_absent_in_hosted_modes(reloaded_app):
+    module = reloaded_app(
+        SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED=True, GCP_SERVERLESS=True
+    )
 
     paths = route_paths(module.app)
     assert paths.isdisjoint(GATED_PATHS)

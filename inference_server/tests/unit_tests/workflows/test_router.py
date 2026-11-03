@@ -240,7 +240,6 @@ def test_workflow_routes_hand_the_provider_their_scope_path(
     "flag,value,expect_background_tasks",
     [
         (None, False, True),
-        ("LAMBDA", True, False),
         ("GCP_SERVERLESS", True, False),
     ],
 )
@@ -265,7 +264,6 @@ def test_workflow_run_routes_defer_sinks_unless_serverless(
         "inference_server.workflows.host.get_workflow_specification",
         lambda **kwargs: PASSTHROUGH_WF,
     )
-    monkeypatch.setattr(configuration, "LAMBDA", False)
     monkeypatch.setattr(configuration, "GCP_SERVERLESS", False)
     if flag is not None:
         monkeypatch.setattr(configuration, flag, value)

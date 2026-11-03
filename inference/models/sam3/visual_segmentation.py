@@ -29,10 +29,8 @@ from inference.core.entities.responses.sam2 import (
     Sam2SegmentationResponse,
 )
 from inference.core.env import (
-    CORE_MODEL_BUCKET,
     DEVICE,
     DISABLE_SAM3_LOGITS_CACHE,
-    INFER_BUCKET,
     MODELS_CACHE_AUTH_ENABLED,
     OFFLINE_MODE,
     SAM3_IMAGE_SIZE,
@@ -40,10 +38,7 @@ from inference.core.env import (
     SAM3_MAX_LOGITS_CACHE_SIZE,
 )
 from inference.core.exceptions import ModelArtefactError, RoboflowAPINotAuthorizedError
-from inference.core.models.roboflow import (
-    RoboflowCoreModel,
-    is_model_artefacts_bucket_available,
-)
+from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 from inference.core.roboflow_api import (
     ModelEndpointType,
@@ -367,11 +362,6 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                         values=self.low_res_logits_cache, key=cache_key
                     )
 
-    @property
-    def model_artifact_bucket(self):
-        # Use CORE bucket for base SAM3, standard INFER bucket for fine-tuned models
-        return CORE_MODEL_BUCKET if self._is_core_sam3_endpoint() else INFER_BUCKET
-
     def _is_core_sam3_endpoint(self) -> bool:
         return isinstance(self.endpoint, str) and self.endpoint.startswith("sam3/")
 
@@ -403,11 +393,6 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 f"Cannot load model {self.endpoint} in OFFLINE_MODE because one "
                 "or more required artifacts are missing from the local cache."
             )
-        # S3 path works for both; keys are {endpoint}/<file>
-        if is_model_artefacts_bucket_available():
-            self.download_model_artefacts_from_s3()
-            return None
-            # API fallback
         if self._is_core_sam3_endpoint():
             # Base SAM3 from core_model endpoint; preserves filenames
             return super().download_model_from_roboflow_api()

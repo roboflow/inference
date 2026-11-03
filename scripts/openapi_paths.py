@@ -20,7 +20,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 IGNORED_METHODS = {"OPTIONS"}
 
 LEGACY_ENVIRONMENT = {
-    "LAMBDA": "False",
     "GCP_SERVERLESS": "False",
     "OFFLINE_MODE": "False",
     "GET_MODEL_REGISTRY_ENABLED": "True",
@@ -54,7 +53,6 @@ LEGACY_ENVIRONMENT = {
 }
 
 SERVER_ENVIRONMENT = {
-    "LAMBDA": "False",
     "GCP_SERVERLESS": "False",
     "OFFLINE_MODE": "False",
     "LEGACY_ROUTES_ENABLED": "True",

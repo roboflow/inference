@@ -27,7 +27,7 @@ from roboflow_workflows.enterprise_blocks.sinks.kafka_common import (
     resolve_bootstrap_servers,
     wait_for_topic_metadata,
 )
-from roboflow_workflows.environment import GCP_SERVERLESS, LAMBDA
+from roboflow_workflows.environment import GCP_SERVERLESS
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -141,7 +141,7 @@ Self-hosted servers enable enterprise blocks with `LOAD_ENTERPRISE_BLOCKS=True`.
 # `get_actual_restrictions()`.
 #
 # `run()` short-circuits on the Roboflow hosted platform, so the condition names
-# the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
+# the RUNTIME and never reads this host's GCP_SERVERLESS flag.
 KAFKA_HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
     code="unavailable_on_hosted_platform",
     severity=Severity.HARD,
@@ -603,7 +603,7 @@ class KafkaProducerSinkBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._disable_sinks:
             return disabled_sink_response()
-        if GCP_SERVERLESS or LAMBDA:
+        if GCP_SERVERLESS:
             return _failure(
                 "Kafka Producer is not available on the Roboflow hosted platform."
             )

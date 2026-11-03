@@ -66,7 +66,6 @@ def build_client(monkeypatch, flag=True, model=None, registry=None, preload=True
     monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", flag)
     monkeypatch.setattr(http_api, "MAX_INFERENCE_MODELS_CACHE_SIZE_MB", 0)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(
         http_api,
         "InferenceInstrumentator",

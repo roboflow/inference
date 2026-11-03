@@ -13,7 +13,6 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
@@ -96,7 +95,7 @@ def test_create_empty_usage_dict(usage_collector_with_mocked_threads):
                     "category": "",
                     "resource_id": "",
                     "resource_details": "{}",
-                    "hosted": LAMBDA,
+                    "hosted": False,
                     "api_key_hash": "",
                     "is_gpu_available": False,
                     "api_key_hash": "",

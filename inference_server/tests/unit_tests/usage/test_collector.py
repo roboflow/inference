@@ -164,7 +164,6 @@ def test_package_versions_report_none_for_packages_that_are_not_installed(
 @pytest.mark.parametrize(
     "setting, value",
     [
-        ("LAMBDA", True),
         ("GCP_SERVERLESS", True),
         ("DEDICATED_DEPLOYMENT_ID", "deployment01"),
         ("ROBOFLOW_INTERNAL_SERVICE_SECRET", "internal-secret"),
@@ -1056,7 +1055,7 @@ def test_queue_is_redis_on_serverless_with_a_redis_host(monkeypatch):
 def test_queue_is_in_memory_when_redis_is_selected_but_not_installed(
     monkeypatch, caplog
 ):
-    monkeypatch.setattr(configuration, "LAMBDA", True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     monkeypatch.setattr(configuration, "REDIS_HOST", "redis.local")
     monkeypatch.setitem(sys.modules, "redis", None)
 
@@ -1069,9 +1068,8 @@ def test_queue_is_in_memory_when_redis_is_selected_but_not_installed(
     assert len(caplog.records) == 1
 
 
-@pytest.mark.parametrize("flag", ["LAMBDA", "GCP_SERVERLESS"])
-def test_queue_is_in_memory_on_serverless_without_a_redis_host(monkeypatch, flag):
-    monkeypatch.setattr(configuration, flag, True)
+def test_queue_is_in_memory_on_serverless_without_a_redis_host(monkeypatch):
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     monkeypatch.setattr(configuration, "TELEMETRY_USE_PERSISTENT_QUEUE", True)
     monkeypatch.setattr(configuration, "TELEMETRY_QUEUE_SIZE", 25)
 

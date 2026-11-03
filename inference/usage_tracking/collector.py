@@ -31,7 +31,6 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_ID,
     DEVICE_ID,
     GCP_SERVERLESS,
-    LAMBDA,
     OFFLINE_MODE,
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -148,11 +147,11 @@ class UsageCollector:
             sqlite_cache_enabled=False,
             api_plan_cache_ttl_seconds=self._settings.api_plan_cache_ttl_seconds,
         )
-        if (LAMBDA or GCP_SERVERLESS) and REDIS_HOST:
+        if GCP_SERVERLESS and REDIS_HOST:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif (LAMBDA or GCP_SERVERLESS) or not self._settings.use_persistent_queue:
+        elif GCP_SERVERLESS or not self._settings.use_persistent_queue:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
@@ -224,8 +223,7 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": bool(LAMBDA)
-            or bool(DEDICATED_DEPLOYMENT_ID)
+            "hosted": bool(DEDICATED_DEPLOYMENT_ID)
             or bool(GCP_SERVERLESS)
             or bool(ROBOFLOW_INTERNAL_SERVICE_SECRET),
             "api_key_hash": "",

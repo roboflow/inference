@@ -358,7 +358,7 @@ def test_manifest_restrictions_are_runtime_keyed() -> None:
 
 
 def test_manifest_declares_one_hard_restriction_for_hosted_serverless() -> None:
-    # run() refuses when GCP_SERVERLESS or LAMBDA is set; dedicated deployments are not
+    # run() refuses when GCP_SERVERLESS is set; dedicated deployments are not
     # refused, so they must not be listed
     hard = [
         r for r in BlockManifest.get_restrictions() if r.severity is v1.Severity.HARD
@@ -1425,10 +1425,9 @@ def test_numeric_strings_from_selectors_are_coerced(broker: FakeBroker) -> None:
     assert result["value"] == "B"
 
 
-@pytest.mark.parametrize("flag", ["GCP_SERVERLESS", "LAMBDA"])
-def test_hosted_platform_is_refused(broker: FakeBroker, flag: str) -> None:
+def test_hosted_platform_is_refused(broker: FakeBroker) -> None:
     broker.produce(TOPIC, "A")
-    with patch.object(v1, flag, True):
+    with patch.object(v1, "GCP_SERVERLESS", True):
         result = run(KafkaConsumerBlockV1())
 
     assert result["error_status"] is True

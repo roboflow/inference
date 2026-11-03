@@ -129,7 +129,6 @@ API_BASE_URL = _CONFIGURATION.platform.api_base_url
 OFFLINE_MODE = _CONFIGURATION.platform.offline_mode
 SECURE_GATEWAY = _CONFIGURATION.platform.secure_gateway
 GCP_SERVERLESS = _CONFIGURATION.platform.gcp_serverless
-LAMBDA = _CONFIGURATION.platform.lambda_runtime
 
 # --- fonts ---
 ALLOW_WORKFLOWS_FONTS_DOWNLOAD = _CONFIGURATION.fonts.allow_download

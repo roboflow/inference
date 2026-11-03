@@ -936,7 +936,6 @@ def _configuration_flags(env):
             "METRICS_INTERVAL",
             "METRICS_URL",
             "TAGS",
-            "LAMBDA",
             "GCP_SERVERLESS",
             "OFFLINE_MODE",
             "API_BASE_URL",
@@ -973,7 +972,7 @@ def _configuration_flags(env):
             "False 60 https://api.test/inference-stats [''] None",
         ),
         (
-            {"LAMBDA": "true", "ROBOFLOW_API_KEY": "", "API_KEY": ""},
+            {"GCP_SERVERLESS": "true", "ROBOFLOW_API_KEY": "", "API_KEY": ""},
             "False 60 https://api.roboflow.com/inference-stats [''] ''",
         ),
         (

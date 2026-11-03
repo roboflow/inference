@@ -117,7 +117,6 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
             offline_mode=env.OFFLINE_MODE,
             secure_gateway=env.SECURE_GATEWAY,
             gcp_serverless=env.GCP_SERVERLESS,
-            lambda_runtime=env.LAMBDA,
         ),
         fonts=FontsConfiguration(
             allow_download=env.ALLOW_WORKFLOWS_FONTS_DOWNLOAD,

@@ -174,7 +174,6 @@ def interface(monkeypatch):
         http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
     )
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
     model_manager = MagicMock()

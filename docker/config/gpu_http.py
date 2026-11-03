@@ -6,7 +6,6 @@ from inference.core.cache import cache
 from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
     ENABLE_STREAM_API,
-    LAMBDA,
     MAX_ACTIVE_MODELS,
     STREAM_API_PRELOADED_PROCESSES,
 )
@@ -15,10 +14,7 @@ from inference.core.interfaces.streams_configuration import (
     LEGACY_PIPELINE_HOST_DESCRIPTOR,
     server_streams_configuration,
 )
-from inference.core.managers.active_learning import (
-    ActiveLearningManager,
-    BackgroundTaskActiveLearningManager,
-)
+from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
@@ -40,14 +36,9 @@ if ENABLE_STREAM_API:
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 
 if ACTIVE_LEARNING_ENABLED:
-    if LAMBDA:
-        model_manager = ActiveLearningManager(
-            model_registry=model_registry, cache=cache
-        )
-    else:
-        model_manager = BackgroundTaskActiveLearningManager(
-            model_registry=model_registry, cache=cache
-        )
+    model_manager = BackgroundTaskActiveLearningManager(
+        model_registry=model_registry, cache=cache
+    )
 else:
     model_manager = ModelManager(model_registry=model_registry)
 

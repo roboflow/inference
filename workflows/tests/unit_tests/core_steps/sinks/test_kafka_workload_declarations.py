@@ -4,7 +4,7 @@ Both blocks carry a HARD "not available on the Roboflow hosted platform"
 restriction, the consumer keeps its connection and last record in the block
 instance, and the producer's delivery caveat depends on a manifest field that
 may hold a selector. The portable hook has to express all of that as conditions
-without reading this host's ``GCP_SERVERLESS`` / ``LAMBDA`` flags.
+without reading this host's ``GCP_SERVERLESS`` flag.
 
 The tests go through the real manifests and the real public introspection API.
 No broker is contacted and no block instance is built: one test arms spies on
@@ -58,7 +58,6 @@ PRODUCER_TYPE = "roboflow_enterprise/kafka_producer_sink@v1"
 HOSTED_RESTRICTION_CODE = "unavailable_on_hosted_platform"
 CONSUMER_STATE_RESTRICTION_CODE = "connection_and_state_rebuilt_per_request"
 FIRE_AND_FORGET_CODE = "fire_and_forget_hides_persistence_failures"
-HOSTED_PLATFORM_FLAGS = ("GCP_SERVERLESS", "LAMBDA")
 
 
 def _consumer() -> ConsumerManifest:
@@ -320,16 +319,13 @@ def test_producer_fire_and_forget_branches_through_the_public_api(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "gcp_serverless, lambda_runtime",
-    [(False, False), (True, False), (False, True), (True, True)],
-)
-def test_portable_declarations_ignore_this_host_hosted_platform_flags(
-    monkeypatch: pytest.MonkeyPatch, gcp_serverless: bool, lambda_runtime: bool
+@pytest.mark.parametrize("gcp_serverless", [False, True])
+def test_portable_declarations_ignore_this_host_hosted_platform_flag(
+    monkeypatch: pytest.MonkeyPatch, gcp_serverless: bool
 ) -> None:
-    """``run()`` branches on the flags; the declaration must not.
+    """``run()`` branches on the flag; the declaration must not.
 
-    The flags are patched as module CONSTANTS, which is what the blocks import
+    The flag is patched as a module CONSTANT, which is what the blocks import
     and what ``run()`` genuinely reads.
     """
     baseline = (
@@ -338,9 +334,7 @@ def test_portable_declarations_ignore_this_host_hosted_platform_flags(
         portable_restrictions(_producer(False)),
     )
     for module in (consumer_module, producer_module):
-        for flag, value in zip(HOSTED_PLATFORM_FLAGS, (gcp_serverless, lambda_runtime)):
-            assert hasattr(module, flag), flag
-            monkeypatch.setattr(module, flag, value)
+        monkeypatch.setattr(module, "GCP_SERVERLESS", gcp_serverless)
     assert (
         portable_restrictions(_consumer()),
         portable_restrictions(_producer(True)),

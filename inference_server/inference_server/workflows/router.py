@@ -90,11 +90,7 @@ async def _run_workflow(
     if workflow_request.workflow_id:
         REQUEST_WORKFLOW_ID.set(workflow_request.workflow_id)
     request.state.workflow_specification = specification
-    sink_background_tasks = (
-        None
-        if configuration.LAMBDA or configuration.GCP_SERVERLESS
-        else background_tasks
-    )
+    sink_background_tasks = None if configuration.GCP_SERVERLESS else background_tasks
     init_parameters = execution.build_init_parameters(
         provider=_models_provider(request, api_key),
         api_key=api_key,
