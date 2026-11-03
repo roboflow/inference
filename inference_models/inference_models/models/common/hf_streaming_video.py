@@ -31,6 +31,7 @@ import torch
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.errors import ModelRuntimeError
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 #: Key under which the HF ``inference_session`` lives inside the
 #: opaque ``state_dict`` callers pass back on subsequent frames.
@@ -95,11 +96,12 @@ class HFVideoModelBase:
         convention.
         """
         model_cls, processor_cls = cls._resolve_transformers_classes()
-        model = (
-            model_cls.from_pretrained(model_name_or_path, local_files_only=True)
-            .eval()
-            .to(device, dtype=dtype)
-        )
+        with torch_default_dtype_lock():
+            model = (
+                model_cls.from_pretrained(model_name_or_path, local_files_only=True)
+                .eval()
+                .to(device, dtype=dtype)
+            )
         processor = processor_cls.from_pretrained(
             model_name_or_path, local_files_only=True
         )
