@@ -16,6 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Databricks SQL Image Source block (`roboflow_core/databricks_sql_image_source@v1`): runs a SQL statement on a Databricks SQL warehouse and emits each returned row as a Workflow image (`images`), with `image_names` taken from an optional key column and the remaining columns as per-row `metadata`. The block has no image input, so it runs once per execution and its outputs are lists (output dimensionality offset 1) that feed batch-aware blocks such as Roboflow Dataset Upload. Credentials are `server_hostname`, `http_path` and a secret `access_token`; `max_rows` caps the fetch and `skip_undecodable` controls whether undecodable rows are skipped or fail the step.
+  - Adds the `databricks-sql-connector>=4.0.0,<5.0.0` dependency (imported lazily by the block).
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.
