@@ -112,7 +112,7 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
           make create_workflows_wheel create_streamvision_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Integration Tests of Workflows
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"

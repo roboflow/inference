@@ -132,8 +132,8 @@ Databricks host.
 ## Requirements
 
 * The `databricks-sql-connector` package must be installed next to the
-  Workflows runtime (`pip install "roboflow-workflows[databricks]"`); the
-  Roboflow inference server images ship it.
+  Workflows runtime (`pip install "roboflow-workflows[databricks]"`); every
+  Roboflow inference server image ships it.
 * The token needs `SELECT` on the queried table and `CAN USE` on the warehouse.
   Store it as a Workflow **input** or **secret** (`$inputs.databricks_token`),
   never inline in the Workflow definition.

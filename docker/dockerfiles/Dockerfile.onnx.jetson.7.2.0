@@ -429,7 +429,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     python .release/pypi/inference.sdk.setup.py bdist_wheel && \
     python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
     python -m pip install --break-system-packages --find-links dist/ \
-        dist/roboflow_workflows*.whl \
+        "$(ls dist/roboflow_workflows*.whl)[databricks]" \
         dist/streamvision*.whl \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
@@ -458,12 +458,15 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     torchvision_wheel="$1" && \
     printf 'torch @ file://%s\n' "${torch_wheel}" > /tmp/runtime-overrides.txt && \
     printf 'torchvision @ file://%s\n' "${torchvision_wheel}" >> /tmp/runtime-overrides.txt && \
+    # databricks-sql-connector mirrors roboflow-workflows[databricks] (workflows/pyproject.toml);
+    # the runtime resolves deps from the pinned requirements, not from the local wheel's extras.
     uv pip install --target /opt/python-runtime \
         --index-strategy unsafe-best-match \
         --find-links /opt/wheels \
         --override /tmp/runtime-overrides.txt \
         -r /build/reqs/_requirements.txt \
         -r /build/reqs/requirements.workflows.txt \
+        "databricks-sql-connector>=4.0.0,<5.0.0" \
         -r /build/reqs/requirements.streamvision.txt \
         -r /build/reqs/requirements.cli.txt \
         -r /build/reqs/requirements.http.txt \
