@@ -192,6 +192,7 @@ class ServerlessUsageCheckResponse:
     workspace_id: Optional[WorkspaceID] = None
     workspace_db_id: Optional[WorkspaceID] = None
     under_cap: Optional[bool] = None
+    has_credit_cap: Optional[bool] = None
     error: Optional[str] = None
 
 
@@ -481,11 +482,17 @@ async def get_serverless_usage_check_async(
                     raise WorkspaceLoadError(
                         "Unexpected serverless usage-check response received from Roboflow API."
                     )
+                has_credit_cap = response_payload.get("hasCreditCap")
+                if has_credit_cap is not None and not isinstance(has_credit_cap, bool):
+                    raise WorkspaceLoadError(
+                        "Unexpected serverless usage-check response received from Roboflow API."
+                    )
                 return ServerlessUsageCheckResponse(
                     status_code=200,
                     workspace_id=workspace_id,
                     workspace_db_id=workspace_db_id,
                     under_cap=True,
+                    has_credit_cap=has_credit_cap,
                 )
     except (aiohttp.ClientConnectionError, ConnectionError) as error:
         if RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API:
