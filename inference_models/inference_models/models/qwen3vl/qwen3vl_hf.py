@@ -24,6 +24,7 @@ from inference_models.models.common.roboflow.model_packages import (
     ResizeMode,
     parse_inference_config,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 
 def _get_qwen3vl_attn_implementation(device: torch.device) -> str:
@@ -89,14 +90,15 @@ class Qwen3VLHF:
         if os.path.exists(adapter_config_path):
             # Has adapter - load base model then apply LoRA
             base_model_path = os.path.join(model_name_or_path, "base")
-            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
-                base_model_path,
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            )
+            with torch_default_dtype_lock():
+                base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    base_model_path,
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
             # Apply LoRA, eval, convert to dtype
             model = (
                 PeftModel.from_pretrained(base_model, model_name_or_path)
@@ -106,14 +108,15 @@ class Qwen3VLHF:
             model = model.merge_and_unload()
         else:
             # No adapter - just load base model, eval, convert to dtype
-            base_model = Qwen3VLForConditionalGeneration.from_pretrained(
-                model_name_or_path,
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            )
+            with torch_default_dtype_lock():
+                base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    model_name_or_path,
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
             model = base_model.eval().to(dtype)
 
         # Load processor with chat_template if available
