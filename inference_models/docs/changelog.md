@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## `0.39.8`
+
 ### Fixed
 
 - Pre-processing casts integer images to `torch.float32` before dividing by
