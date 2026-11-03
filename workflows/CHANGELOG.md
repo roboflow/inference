@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- `roboflow_core/embedding_model@v1` can reach the hosted Serverless API in remote step execution: Inference servers now expose `POST /infer/embeddings` on GCP Serverless, and bill each embedded image as a `model` usage row. One request carries at most 8 images there (`SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE`). No block code changes; the block needs a server with this route.
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.

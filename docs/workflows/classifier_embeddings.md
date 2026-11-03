@@ -122,9 +122,13 @@ metadata across batches. Both SDK methods forward the four
 `disable_preproc_auto_orient` field. These overrides affect the embedding space;
 configure reference and query requests consistently.
 Remote Workflow execution requires a server exposing
-`/infer/embeddings`. Hosted routing and the workspace model-picker UI must ship
-support for this block alongside the server; this repository exposes the block
-schema and capability requirement but does not deploy those hosted services.
+`/infer/embeddings`, which self-hosted servers and the hosted Serverless API both
+do. The Serverless API bills every embedded image as a model call on the
+classifier that produced it, and answers HTTP 413 to a request carrying more than
+8 images (`SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE`). The SDK and this block
+send one image per request by default. The workspace model-picker UI must ship
+support for this block separately; this repository exposes the block schema and
+capability requirement but does not deploy that UI.
 Release the updated `inference-models` and `roboflow-workflows` packages together
 with the Inference server and SDK; older installed packages do not provide this
 capability and its tensor execution port.

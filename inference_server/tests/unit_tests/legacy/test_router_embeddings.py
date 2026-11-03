@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from tests.unit_tests.legacy.conftest import FakeGateway
+from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
 from tests.unit_tests.legacy.test_router_stub_models import fake_platform  # noqa: F401
 
 EMBEDDINGS_UNSUPPORTED = "Image embeddings require a ResNet, ViT or DINOv3 classifier."
@@ -101,6 +101,76 @@ def _space_id(model_id, info, overrides=NO_OVERRIDES):
     return hashlib.sha256(
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "hosted_flag, embeddings_registered",
+    [("GCP_SERVERLESS", True), ("LAMBDA", False)],
+)
+def test_hosted_servers_only_open_the_embedding_route_on_serverless(
+    monkeypatch, hosted_flag, embeddings_registered
+):
+    from fastapi import FastAPI
+
+    from inference_server.legacy.router import include_legacy_routers
+
+    monkeypatch.setattr(f"inference_server.configuration.{hosted_flag}", True)
+    app = FastAPI()
+
+    include_legacy_routers(app)
+
+    paths = route_paths(app)
+    assert ("/infer/embeddings" in paths) is embeddings_registered
+    assert "/infer/classification" not in paths
+
+
+def test_serverless_refuses_an_embedding_list_above_the_limit_without_loading(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr("inference_server.configuration.GCP_SERVERLESS", True)
+    monkeypatch.setattr(
+        "inference_server.configuration.SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE", 2
+    )
+    gw = FakeGateway()
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={"model_id": "ds/1", "api_key": "k", "image": [_image()] * 3},
+    )
+
+    assert r.status_code == 413
+    assert r.json() == {
+        "message": "The maximum number of images that can be embedded at once is 2"
+    }
+    assert gw.calls == []
+
+
+@pytest.mark.parametrize(
+    "gcp_serverless, image_count",
+    [(True, 2), (False, 3)],
+    ids=["at_the_limit", "above_the_limit_off_serverless"],
+)
+def test_embedding_list_is_embedded_within_the_limit_or_off_serverless(
+    legacy_client, fake_stat, monkeypatch, gcp_serverless, image_count
+):
+    fake_stat["ds/1"] = ("classification", "infer")
+    monkeypatch.setattr("inference_server.configuration.GCP_SERVERLESS", gcp_serverless)
+    monkeypatch.setattr(
+        "inference_server.configuration.SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE", 2
+    )
+    gw = _gateway(
+        "ds/1",
+        "feature_vector",
+        lambda image, params: _envelope("feature_vector", [1.0, 2.0]),
+    )
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={"model_id": "ds/1", "api_key": "k", "image": [_image()] * image_count},
+    )
+
+    assert r.status_code == 200, r.text
+    assert len(r.json()["embeddings"]) == image_count
 
 
 @pytest.mark.parametrize("query_auth", [False, True])
