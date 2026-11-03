@@ -1,5 +1,6 @@
 import os
 import re
+import secrets
 import subprocess
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
@@ -370,6 +371,7 @@ def start_inference_container(
     pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
     announce_bind_address(bind_address=bind_address, port=port)
+    announce_authentication(environment=environment)
     ports = {str(port): (bind_address, port)}
     if development:
         ports["9002"] = (bind_address, 9002)
@@ -437,10 +439,24 @@ def announce_bind_address(bind_address: str, port: int) -> None:
         return None
     print(
         f"WARNING: the inference server is being published on {bind_address}:{port}, so it will accept "
-        f"connections from other machines. The server requires no authentication by default and executes "
-        f"Workflows Custom Python blocks, which is remote code execution for anyone who can reach the port. "
-        f"Set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own auth in front of the server) and "
-        f"set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False unless you need it. See {SECURITY_DOCS_URL}"
+        f"connections from other machines. Keep REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT and "
+        f"ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS at their secure defaults unless the network is trusted. "
+        f"See {SECURITY_DOCS_URL}"
+    )
+
+
+def announce_authentication(environment: List[str]) -> None:
+    configured = {entry.split("=", 1)[0] for entry in environment}
+    if configured & {
+        "ROBOFLOW_API_KEY",
+        "API_KEY",
+        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+        "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT",
+    }:
+        return None
+    print(
+        "WARNING: no Roboflow API key given. The server accepts only API keys of its own workspace, "
+        "so it will reject every request. Pass --roboflow-api-key (or set ROBOFLOW_API_KEY)."
     )
 
 
@@ -469,6 +485,9 @@ def prepare_container_environment(
     if development:
         environment["ENABLE_BUILDER"] = "True"
         environment["NOTEBOOK_ENABLED"] = "True"
+        # One random token shared by every server worker; GET /notebook/start
+        # (which needs a workspace API key) returns the link with it.
+        environment.setdefault("NOTEBOOK_PASSWORD", secrets.token_urlsafe(24))
     return [f"{key}={value}" for key, value in environment.items()]
 
 

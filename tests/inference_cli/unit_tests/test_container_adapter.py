@@ -201,3 +201,46 @@ def test_start_inference_container_publishes_ports_on_requested_bind_address(
     # then
     _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
     assert kwargs["ports"] == {"9001": ("0.0.0.0", 9001)}
+
+
+def test_development_environment_uses_a_random_notebook_token() -> None:
+    def notebook_tokens():
+        environment = prepare_container_environment(
+            port=9001,
+            project="roboflow-platform",
+            metrics_enabled=False,
+            device_id=None,
+            num_workers=1,
+            api_key=None,
+            env_file_path=None,
+            development=True,
+        )
+        return [
+            entry.split("=", 1)[1]
+            for entry in environment
+            if entry.startswith("NOTEBOOK_PASSWORD=")
+        ]
+
+    first, second = notebook_tokens(), notebook_tokens()
+
+    assert len(first) == 1 and len(first[0]) >= 24
+    assert first != second
+    assert first[0] != "roboflow"
+
+
+@mock.patch.object(
+    container_adapter, "read_env_file", return_value={"NOTEBOOK_PASSWORD": "mine"}
+)
+def test_development_environment_keeps_notebook_token_from_env_file(_) -> None:
+    environment = prepare_container_environment(
+        port=9001,
+        project="roboflow-platform",
+        metrics_enabled=False,
+        device_id=None,
+        num_workers=1,
+        api_key=None,
+        env_file_path="some.env",
+        development=True,
+    )
+
+    assert "NOTEBOOK_PASSWORD=mine" in environment

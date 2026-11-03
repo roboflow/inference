@@ -197,6 +197,8 @@ def _build_dedicated_deployment_interface(
     dedicated_workspace_url="dedicated-workspace",
     workspace_lookup_side_effect=None,
     local_whitelist=None,
+    require_api_key=False,
+    server_api_key=None,
 ):
     """Build an HttpInterface with the workspace-allowlist middleware enabled.
 
@@ -222,6 +224,10 @@ def _build_dedicated_deployment_interface(
         "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
         list(local_whitelist) if local_whitelist is not None else None,
     )
+    monkeypatch.setattr(
+        http_api, "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", require_api_key
+    )
+    monkeypatch.setattr(http_api, "API_KEY", server_api_key)
     if workspace_lookup_side_effect is not None:
         workspace_lookup_mock = AsyncMock(side_effect=workspace_lookup_side_effect)
     else:
@@ -2467,3 +2473,151 @@ def test_instance_segmentation_routes_forward_mask_resolution_opt_in(
     assert request.allow_reduced_mask_resolution is (opt_in is True)
     assert request.mask_decode_mode == "tradeoff"
     assert request.tradeoff_factor == 0.25
+
+
+_WORKSPACE_OF_KEY = {
+    "server-key": "server-ws",
+    "teammate-key": "server-ws",
+    "outsider-key": "other-ws",
+}
+
+
+def _workspace_of_key(api_key):
+    if api_key not in _WORKSPACE_OF_KEY:
+        raise RoboflowAPINotAuthorizedError("unknown key")
+    return _WORKSPACE_OF_KEY[api_key]
+
+
+def test_required_api_key_accepts_keys_of_the_server_key_workspace(monkeypatch) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        for _ in range(2):
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                params={"api_key": "teammate-key"},
+                json=_make_inference_request(),
+            )
+            assert response.status_code == 200, response.text
+
+    looked_up = [
+        call.kwargs["api_key"] for call in workspace_lookup_mock.await_args_list
+    ]
+    assert sorted(looked_up) == ["server-key", "teammate-key"]
+
+
+@pytest.mark.parametrize("api_key", [None, "outsider-key", "unknown-key"])
+@pytest.mark.parametrize("method,path", _SECURED_GATE_TARGETS)
+def test_required_api_key_rejects_requests_without_a_key_of_the_server_workspace(
+    monkeypatch, method, path, api_key
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(client, method, path, api_key=api_key)
+
+    assert response.status_code == 401, f"{method} {path}: {response.status_code}"
+
+
+def test_required_api_key_prefers_whitelist_over_server_key_workspace(
+    monkeypatch,
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["other-ws"],
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        teammate = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="teammate-key"
+        )
+        outsider = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="outsider-key"
+        )
+
+    assert teammate.status_code == 401
+    assert outsider.status_code == 200
+
+
+def test_required_api_key_without_server_workspace_rejects_every_key(
+    monkeypatch,
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key=None,
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="teammate-key"
+        )
+
+    assert response.status_code == 401
+
+
+def test_required_api_key_checks_head_requests_and_skips_cors_preflight(
+    monkeypatch,
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        head = client.head("/device/stats")
+        preflight = client.options(
+            "/infer/object_detection",
+            headers={
+                "Origin": "https://app.roboflow.com",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+    assert head.status_code == 401
+    assert preflight.status_code == 200
+    workspace_lookup_mock.assert_not_awaited()
+
+
+def test_required_api_key_leaves_csrf_protected_builder_page_reachable(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "ENABLE_BUILDER", True)
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        page = client.get("/build")
+        api_without_csrf = client.get("/build/api")
+
+    assert page.status_code == 200
+    assert api_without_csrf.status_code == 403
+    workspace_lookup_mock.assert_not_awaited()

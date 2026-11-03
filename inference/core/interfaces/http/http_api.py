@@ -162,6 +162,7 @@ from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
+    API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
@@ -212,6 +213,7 @@ from inference.core.env import (
     PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PROFILE,
+    REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -462,6 +464,7 @@ if (
     and not (
         WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
         or DEDICATED_DEPLOYMENT_WORKSPACE_URL
+        or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT
     )
 ):
     # Logged rather than raised as a warning, because INFERENCE_WARNINGS_DISABLED must not
@@ -471,7 +474,7 @@ if (
         "blocks in its own process (ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True), so any client that can "
         "reach it can execute arbitrary code on this host. This is safe only while the server is reachable "
         "from trusted clients alone. Set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False if you do not need "
-        "custom Python, and set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own authentication "
+        "custom Python, and set REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=True (or put your own authentication "
         "in front of the server) if it is reachable from other machines. See "
         "https://docs.roboflow.com/deployment/self-hosted/inference-server/configuration/security"
     )
@@ -1300,7 +1303,33 @@ class HttpInterface(BaseInterface):
         if (
             DEDICATED_DEPLOYMENT_WORKSPACE_URL
             or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+            or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT
         ):
+            # Without a configured workspace, the server belongs to the workspace
+            # of its own ROBOFLOW_API_KEY, resolved on the first checked request.
+            server_workspaces = set(WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT or [])
+            if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                server_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+            if not server_workspaces and not API_KEY:
+                logger.error(
+                    "SECURITY: REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT is on, but the server has no "
+                    "workspace. Set ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT; "
+                    "until then every authenticated route answers 401."
+                )
+            # The local Workflow Builder protects its page and API with its own
+            # CSRF token. The dashboard page is a static file.
+            public_ui_paths = set()
+            if ENABLE_BUILDER:
+                public_ui_paths.add("/build")
+            if ENABLE_DASHBOARD:
+                public_ui_paths.update({"/dashboard.html", "/favicon.ico"})
+
+            async def allowed_workspaces() -> set:
+                if not server_workspaces and API_KEY:
+                    server_workspaces.add(
+                        await get_roboflow_workspace_async(api_key=API_KEY)
+                    )
+                return server_workspaces
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -1310,7 +1339,11 @@ class HttpInterface(BaseInterface):
                 # and slip an authenticated route into the allowlist.
                 scope_path = request.scope["path"]
                 skip_check = (
-                    request.method not in ["GET", "POST"]
+                    # Starlette answers HEAD with the GET handler, so only CORS
+                    # preflight requests skip the check.
+                    request.method == "OPTIONS"
+                    or scope_path in public_ui_paths
+                    or (ENABLE_BUILDER and scope_path.startswith("/build/"))
                     or scope_path
                     in [
                         "/",
@@ -1373,14 +1406,7 @@ class HttpInterface(BaseInterface):
                             workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
-                        allowed_workspaces = set()
-                        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
-                            allowed_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-                        if WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT:
-                            allowed_workspaces.update(
-                                WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
-                            )
-                        if workspace_id not in allowed_workspaces:
+                        if workspace_id not in await allowed_workspaces():
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = AuthorizationCacheEntry(
