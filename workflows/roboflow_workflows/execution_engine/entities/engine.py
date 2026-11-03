@@ -37,6 +37,18 @@ class BaseExecutionEngine(ABC):
     ) -> List[Dict[str, Any]]:
         pass
 
+    def prepare_close(self, deadline_seconds: Optional[float] = None) -> None:
+        """Let the workflow's blocks start finishing their work before ``close()``.
+
+        Hosts call it before shutting down their thread pools. Engines without
+        blocks that need it keep this default, which does nothing.
+
+        Args:
+            deadline_seconds: Seconds the host allows, from now, before
+                ``close()``; ``None`` when it sets no limit.
+        """
+        return None
+
     def close(self) -> None:
         """Release resources the workflow's blocks hold between runs.
 

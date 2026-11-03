@@ -1276,6 +1276,11 @@ DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
 
 ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))
 WORKFLOWS_PROFILER_BUFFER_SIZE = int(os.getenv("WORKFLOWS_PROFILER_BUFFER_SIZE", "64"))
+# Seconds a stopping InferencePipeline gives workflow blocks to finish (for example a
+# video clip recorder muxing pending clips) between `prepare_close()` and `close()`.
+WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS = float(
+    os.getenv("WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS", "30.0")
+)
 WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
     os.getenv("WORKFLOWS_DEFINITION_CACHE_EXPIRY", 15 * 60)
 )

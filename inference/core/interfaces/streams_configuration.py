@@ -61,6 +61,7 @@ def build_configuration_from_env() -> StreamsConfiguration:
         enable_tensor_data_representation=env.ENABLE_TENSOR_DATA_REPRESENTATION,
         enable_workflows_profiling=env.ENABLE_WORKFLOWS_PROFILING,
         workflows_profiler_buffer_size=env.WORKFLOWS_PROFILER_BUFFER_SIZE,
+        workflows_block_close_deadline_seconds=env.WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS,
         predictions_queue_size=env.PREDICTIONS_QUEUE_SIZE,
         predictions_queue_size_explicit=(
             "INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE" in os.environ
