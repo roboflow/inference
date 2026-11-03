@@ -61,6 +61,11 @@ COPY . .
 RUN make create_wheels
 RUN pip3 install --find-links dist/ dist/roboflow_workflows*.whl dist/streamvision*.whl dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools~=84.2.1"
 RUN pip3 install "inference-models[model-blob-cache]"
+# DO NOT MERGE: staging test build only. Replace the PyPI inference-models with
+# this branch's source so the bf16 default-dtype fix is in the image, and fail
+# the build if it is not.
+RUN pip3 install --no-cache-dir --no-deps --force-reinstall ./inference_models && \
+    grep -q "def torch_default_dtype_lock" "$(python3 -c "import importlib.util, os; print(os.path.dirname(importlib.util.find_spec('inference_models').origin))")/models/common/torch.py"
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
 

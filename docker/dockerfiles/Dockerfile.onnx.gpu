@@ -299,6 +299,12 @@ RUN /bin/make create_wheels_for_gpu_notebook && \
         dist/inference_sdk*.whl \
         "setuptools~=84.2.1"
 
+# DO NOT MERGE: staging test build only. Replace the PyPI inference-models
+# (pinned 0.39.7) with this branch's source so the bf16 default-dtype fix is in
+# the image, and fail the build if it is not.
+RUN python3 -m pip install --no-cache-dir --no-deps --force-reinstall ./inference_models && \
+    grep -q "def torch_default_dtype_lock" "$(python3 -c "import importlib.util, os; print(os.path.dirname(importlib.util.find_spec('inference_models').origin))")/models/common/torch.py"
+
 # Pillow-SIMD (x86-64 only), beside Pillow under /opt so the wheel stays the `PIL` package.
 ARG TARGETARCH
 RUN mkdir -p /opt/pillow_simd && if [ "${TARGETARCH}" = "amd64" ]; then \
