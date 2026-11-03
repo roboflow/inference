@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## `0.39.8`
+
+### Fixed
+
+- Pre-processing casts integer images to `torch.float32` before dividing by
+  `scaling_factor` in the stretch, center-crop and fit-longer-edge paths (numpy,
+  tensor and list inputs, and the letterbox batch). Integer division returned
+  `torch.get_default_dtype()`, so a process whose default dtype had been left at
+  `torch.bfloat16` sent bfloat16 inputs to ONNX models, which failed with
+  `ModelRuntimeError: model requires the input type to be torch.float32`.
+- RF-DETR pre-processing builds its numpy-path input tensor in `torch.float32`
+  instead of `TF.to_tensor`'s default dtype. With the default left at
+  `torch.bfloat16`, RF-DETR models were fed bfloat16-rounded inputs and returned
+  lower-precision predictions without raising an error.
+- Hugging Face model loads run inside a process-wide lock
+  (`torch_default_dtype_lock()` in `inference_models.models.common.torch`).
+  transformers' `from_pretrained` sets the process-global default dtype while it
+  builds a model and restores it afterwards. That is not thread-safe, and
+  overlapping loads (for example several bfloat16 VLMs loaded at once) could leave
+  the default stuck at `torch.bfloat16` for the rest of the process.
+- `AutoModel` loads check the default dtype after each model is built. If it is not
+  `torch.float32`, they log a warning naming the model and reset it.
+  `ModelManager` does not perform an additional reset after arbitrary model loads:
+  legacy Hugging Face loaders do not acquire the shared dtype lock, so another
+  model finishing could otherwise reset their temporary dtype mid-construction.
+  Legacy loader locking and recovery remain a follow-up.
+
 ## `0.39.7`
 
 ### Fixed
