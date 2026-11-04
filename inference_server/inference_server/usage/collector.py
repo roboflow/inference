@@ -355,6 +355,10 @@ class UsageCollector:
         if any(tag is not None for tag in source_tags):
             source_tags_hash = sha256_hash(json.dumps(source_tags), length=64)
             usage_key = f"{usage_key}:source_tags={source_tags_hash}"
+        billing_context = (resource_details or {}).get("billing_context")
+        if billing_context is not None:
+            billing_context_hash = sha256_hash(billing_context, length=64)
+            usage_key = f"{usage_key}:billing_context={billing_context_hash}"
         if stream_session_id:
             usage_key = f"{usage_key}:{stream_session_id}"
         return usage_key

@@ -43,7 +43,9 @@ def test_only_authenticated_context_can_select_batch_rate(configured_service_sec
     }
 
 
-@pytest.mark.parametrize("multiplier", [0, -1, 1.1, float("nan"), True, "0.1"])
+@pytest.mark.parametrize(
+    "multiplier", [0, -1, 1.1, float("nan"), float("inf"), 10**400, True, "0.1"]
+)
 def test_invalid_authenticated_rates_fail_before_execution(
     configured_service_secret, multiplier
 ):
@@ -89,6 +91,38 @@ def test_batch_and_regular_usage_never_merge(usage_collector_with_mocked_threads
     assert len(set(cache_keys)) == 3
     merged = zip_usage_payloads(payloads)
     assert sum(len(payload["key"]) for payload in merged) == 3
+
+
+def test_authenticated_context_is_recorded_on_request_and_model_rows(
+    usage_collector_with_mocked_threads, configured_service_secret
+):
+    collector = usage_collector_with_mocked_threads
+
+    @collector(category="model")
+    def model_call(api_key):
+        pass
+
+    @collector(category="request")
+    def handler(request, api_key, countinference=True, service_secret=None):
+        model_call(api_key=api_key)
+
+    handler(request=_request(), api_key="key", service_secret=configured_service_secret)
+    handler(request=_request(), api_key="key")
+
+    recorded = {
+        (row["category"], json.loads(row["resource_details"]).get("billing_context"))
+        for row in collector._usage["key"].values()
+    }
+    batch = json.dumps(
+        {"media": "image", "multiplier": 0.1, "version": "batch-v1"}, sort_keys=True
+    )
+    # The platform reads the rate from these rows; regular rows stay separate.
+    assert recorded == {
+        ("request", batch),
+        ("model", batch),
+        ("request", None),
+        ("model", None),
+    }
 
 
 def test_context_reaches_nested_usage_and_resets(

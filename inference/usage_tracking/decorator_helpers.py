@@ -1,5 +1,4 @@
 import json
-import math
 from contextvars import ContextVar, Token
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -829,6 +828,10 @@ def read_batch_billing_context(
 ) -> Optional[str]:
     """Read a batch rate authenticated by the internal service secret.
 
+    The context is read from the bound ``request`` query parameters, so only
+    handlers that bind ``request`` honour it, such as the legacy
+    ``/{dataset_id}/{version_id}`` model route the batch proxy calls.
+
     Args:
         func: Decorated request handler.
         args: Positional handler arguments.
@@ -836,6 +839,10 @@ def read_batch_billing_context(
 
     Returns:
         Canonical JSON context, or None for ordinary or unauthenticated calls.
+
+    Raises:
+        ValueError: The authenticated context is not a ``batch-v1`` context
+            with an image or video media and a multiplier in (0, 1].
     """
     if "countinference" not in get_signature(func).parameters:
         return None
@@ -857,7 +864,7 @@ def read_batch_billing_context(
             context.get("version") == "batch-v1"
             and context.get("media") in ("image", "video")
             and type(multiplier) in (int, float)
-            and math.isfinite(multiplier)
+            # Comparisons reject NaN and infinities without converting huge ints.
             and 0 < multiplier <= 1
         )
         if not valid:
