@@ -13,7 +13,8 @@ Before analyzing a run:
    capture range, record IDs, Git commit, and expected trace path.
 2. Confirm that `trace.nsys-rep` belongs to the same run directory.
 3. Run `nsys --version`. Use a version that can read the trace and supports the
-   `nvtx_pushpop_trace` and `nvtx_gpu_proj_trace` reports.
+   `nvtx_pushpop_trace`, `nvtx_gpu_proj_trace`, `cuda_gpu_kern_sum`, and
+   `cuda_gpu_trace` reports.
 4. Treat generated traces, SQLite exports, report CSV files, and analysis JSON
    as local artifacts under the ignored `inference_profiling/` directory.
 
@@ -35,6 +36,8 @@ The command creates these files:
 
 - `stats/nsys_nvtx_pushpop_trace.csv`
 - `stats/nsys_nvtx_gpu_proj_trace.csv`
+- `stats/nsys_cuda_gpu_kern_sum.csv`
+- `stats/nsys_cuda_gpu_trace.csv` (memory sizes exported in bytes)
 - `analysis.json`
 
 If the command fails, report the exact Nsight version and error. Check for a
@@ -55,11 +58,15 @@ Read `analysis.json` in this order:
 5. Use `iterations` to locate an unusually slow or incomplete pass.
 6. Use `host_ranges` for CPU-side orchestration and nested-range costs.
 7. Use `gpu_projected_ranges` for GPU work associated with each NVTX range.
+8. Use `capture_gpu_work` for capture-wide kernel execution totals and CUDA
+   copy bytes and durations by source/destination memory kind.
 
 Range names are scoped below the harness iteration. Treat
 `preprocessing.resize` and `postprocessing.resize` as separate operations.
 When GPU projections are unavailable, expect an empty
 `gpu_projected_ranges` list, `null` iteration GPU measurements, and a warning.
+For a CPU-only capture, `capture_gpu_work` has empty lists. Do not interpret a
+malformed report as zero GPU work; the analyzer rejects missing columns.
 
 All durations use nanoseconds and include the `_ns` suffix.
 
@@ -75,6 +82,11 @@ Interpret the fields as follows:
   operations launched from inside that NVTX range.
 - `iterations[].host` and `iterations[].gpu_projection` describe different
   clocks and must remain separate.
+- `capture_gpu_work.kernels` adds kernel execution durations over the entire
+  measured capture. It is not an elapsed interval or a stage-level measure;
+  concurrent launches can make the sum exceed a GPU-projected span.
+- `capture_gpu_work.memory_transfers` sums CUDA copies by memory-kind direction.
+  It excludes kernels and memory sets and has no NVTX-stage attribution.
 
 Do not:
 
@@ -93,10 +105,12 @@ When summarizing a run, include:
 - warmup, iteration count, record count, and synchronization policy
 - host-inclusive and GPU-projected iteration statistics with units
 - the ranges that account for the largest host and projected-GPU totals
+- the largest capture-wide kernels and transfer directions, when present,
+  without attributing them to a stage
 - warnings, missing data, first-iteration effects, or large variance
 - the exact `analysis.json` path
 
 Describe measurements before suggesting optimizations. If a range is slow only
 on the host, inspect preparation, Python orchestration, synchronization, or I/O.
-If projected GPU time is high, inspect its associated kernels in the Nsight UI
-or add a kernel-specific report in a separate analysis step.
+If projected GPU time is high, compare the capture-wide kernel list with the
+Nsight UI before attributing a kernel to a particular range.
