@@ -447,16 +447,37 @@ def announce_bind_address(bind_address: str, port: int) -> None:
 
 
 def announce_authentication(environment: List[str], bind_address: str) -> None:
+    # Mirrors inference/server_defaults.py: an empty value counts as unset, and
+    # the server requires keys unless REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT is
+    # false, OFFLINE_MODE is on or the deployment is dedicated.
+    env = dict(entry.split("=", 1) for entry in environment if "=" in entry)
+    require = env.get("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", "").strip().lower()
+    if (
+        require == "false"
+        or env.get("OFFLINE_MODE", "").strip().lower() == "true"
+        or env.get("DEDICATED_DEPLOYMENT_WORKSPACE_URL")
+    ):
+        return None
+    has_workspace = bool(
+        env.get("ROBOFLOW_API_KEY")
+        or env.get("API_KEY")
+        or any(
+            item.strip()
+            for item in env.get(
+                "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", ""
+            ).split(",")
+        )
+    )
     if bind_address in LOOPBACK_BIND_ADDRESSES:
         # Without a workspace, a loopback server serves local callers unchecked.
+        if has_workspace:
+            print(
+                "NOTE: a Roboflow API key is configured, so the server will require an API key from "
+                "that workspace on every request, including the Workflows builder and the dashboard. "
+                "To run without keys, unset ROBOFLOW_API_KEY (and remove it from --env-file)."
+            )
         return None
-    configured = {entry.split("=", 1)[0] for entry in environment}
-    if configured & {
-        "ROBOFLOW_API_KEY",
-        "API_KEY",
-        "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
-        "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT",
-    }:
+    if has_workspace:
         return None
     print(
         "WARNING: no Roboflow API key given. The server accepts only API keys of its own workspace, "
