@@ -25,6 +25,13 @@ HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-9001}"
 NUM_WORKERS="${NUM_WORKERS:-1}"
 
+# Each worker process would otherwise generate its own Jupyter token, and
+# /notebook/start could return a token that the running Jupyter rejects.
+if [ "$NUM_WORKERS" != "1" ] && [ -z "$NOTEBOOK_PASSWORD" ]; then
+    NOTEBOOK_PASSWORD="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+    export NOTEBOOK_PASSWORD
+fi
+
 is_truthy() {
     case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
         1|true|t|yes|y) return 0 ;;
