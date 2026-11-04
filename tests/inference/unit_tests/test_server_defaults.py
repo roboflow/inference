@@ -1,6 +1,8 @@
+import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +18,12 @@ HOST_ACCESS_SETTINGS = [
     "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES",
     "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE",
     "ALLOW_UNSAFE_GSTREAMER_PIPELINES",
+    "ALLOW_NUMPY_INPUT",
+    "ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES",
+    "ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES",
 ]
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _ALL_NAMES = [
     *SELF_HOSTED_SERVER_DEFAULTS,
@@ -58,6 +65,7 @@ def test_self_hosted_server_is_locked_down_by_default() -> None:
     assert os.environ["ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE"] == "False"
     assert os.environ["ALLOW_URL_TO_NON_GLOBAL_ADDRESSES"] == "False"
     assert os.environ["VALIDATE_IMAGE_URL_REDIRECTS"] == "True"
+    assert os.environ["ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES"] == "False"
 
 
 def test_explicit_environment_wins(monkeypatch) -> None:
@@ -160,6 +168,38 @@ def test_exposed_server_without_key_checks_refuses_host_access_settings(
 
 @pytest.mark.parametrize(
     "env",
+    [{"OFFLINE_MODE": "True"}, {"REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": "False"}],
+)
+def test_exposed_server_without_key_checks_warns(monkeypatch, capsys, env) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    apply_self_hosted_server_defaults()
+
+    stderr = capsys.readouterr().err
+    assert stderr.startswith("SECURITY:")
+    assert "anyone who can reach its port can use every route" in stderr
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"HOST": "127.0.0.1", "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": "False"},
+        {"ROBOFLOW_API_KEY": "some-key"},
+        {"OFFLINE_MODE": "True", "LAMBDA": "True"},
+    ],
+)
+def test_local_or_key_checked_server_does_not_warn(monkeypatch, capsys, env) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    apply_self_hosted_server_defaults()
+
+    assert "SECURITY:" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "env",
     [
         # Loopback: only local callers.
         {"HOST": "127.0.0.1", "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": "False"},
@@ -221,7 +261,10 @@ def test_defaults_reach_inference_core_env() -> None:
         " env.ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,"
         " env.ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,"
         " env.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,"
-        " env.VALIDATE_IMAGE_URL_REDIRECTS)\n"
+        " env.VALIDATE_IMAGE_URL_REDIRECTS,"
+        " env.ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES)\n"
+        "from roboflow_workflows.core_steps.sinks.webhook import v1\n"
+        "print(v1.ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES)\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -231,7 +274,7 @@ def test_defaults_reach_inference_core_env() -> None:
         env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
     )
 
-    assert result.stdout.split()[-7:] == [
+    assert result.stdout.split()[-9:] == [
         "True",
         "False",
         "False",
@@ -239,4 +282,93 @@ def test_defaults_reach_inference_core_env() -> None:
         "False",
         "False",
         "True",
+        "False",
+        # The webhook sink block reads it too.
+        "False",
     ]
+
+
+# Stops the import of inference.core.env and reports the environment it would
+# have read. Missing optional packages (celery) are stubbed; nothing past the
+# first inference.core.env import runs.
+_ENTRY_MODULE_SCRIPT = """
+import importlib
+import importlib.abc
+import importlib.util
+import json
+import os
+import runpy
+import sys
+from unittest.mock import MagicMock
+
+
+class EnvImported(BaseException):
+    pass
+
+
+class StopAtEnv(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path, target=None):
+        if name == "inference.core.env":
+            raise EnvImported(
+                os.environ.get("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS")
+            )
+        return None
+
+
+for optional in ("celery",):
+    if importlib.util.find_spec(optional) is None:
+        sys.modules[optional] = MagicMock()
+sys.meta_path.insert(0, StopAtEnv())
+kind, target = sys.argv[1], sys.argv[2]
+try:
+    if kind == "module":
+        importlib.import_module(target)
+    else:
+        runpy.run_path(target, run_name="entry_module_under_test")
+except EnvImported as stop:
+    result = {"env_imported": True, "value": stop.args[0]}
+else:
+    result = {
+        "env_imported": False,
+        "value": os.environ.get("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS"),
+    }
+print(json.dumps(result))
+"""
+
+
+@pytest.mark.parametrize(
+    "kind,target,imports_env",
+    [
+        ("path", "docker/config/cpu_http.py", True),
+        ("path", "docker/config/gpu_http.py", True),
+        ("path", "inference/enterprise/parallel/parallel_http_config.py", True),
+        # Started with `celery -A inference.enterprise.parallel.tasks`.
+        ("module", "inference.enterprise.parallel.tasks", True),
+        # Started with `python3 inference/enterprise/parallel/infer.py`.
+        ("path", "inference/enterprise/parallel/infer.py", True),
+        # These import the server only under __main__, after the module body.
+        ("path", "app_bundles/osx/run_inference.py", False),
+        ("path", "app_bundles/windows/run_inference.py", False),
+    ],
+)
+def test_entry_modules_apply_defaults_before_reading_inference_core_env(
+    tmp_path, kind, target, imports_env
+) -> None:
+    if kind == "path":
+        target = str(REPO_ROOT / target)
+    result = subprocess.run(
+        [sys.executable, "-c", _ENTRY_MODULE_SCRIPT, kind, target],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout.splitlines()[-1]) == {
+        "env_imported": imports_env,
+        "value": "False",
+    }

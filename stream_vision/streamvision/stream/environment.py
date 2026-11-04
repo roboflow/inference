@@ -54,6 +54,7 @@ STREAM_MANAGER_SOCKET_TIMEOUT = _CONFIGURATION.stream_manager_socket_timeout
 
 # --- request policy / WebRTC ---
 ALLOW_UNSAFE_GSTREAMER_PIPELINES = _CONFIGURATION.allow_unsafe_gstreamer_pipelines
+ALLOW_LOCAL_VIDEO_FILES = _CONFIGURATION.allow_local_video_files
 DEBUG_AIORTC_QUEUES = _CONFIGURATION.debug_aiortc_queues
 DEBUG_WEBRTC_PROCESSING_LATENCY = _CONFIGURATION.debug_webrtc_processing_latency
 OFFLINE_MODE = _CONFIGURATION.offline_mode

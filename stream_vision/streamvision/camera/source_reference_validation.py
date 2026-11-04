@@ -21,10 +21,17 @@ SUPPORTED_VIDEO_URL_SCHEMES = {
     "file",
     "csi",
 }
+# Local cameras stay allowed when local video files are not.
+LOCAL_CAMERA_DEVICE = re.compile(r"/dev/video\d+")
+LOCAL_FILES_DISABLED_MESSAGE = (
+    "Local video files are disabled on this server. Use a camera index, a "
+    "/dev/videoN camera or a stream URL, or let a trusted administrator set "
+    "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM=True."
+)
 
 
 def validate_video_references(
-    value: VideoReference, *, allow_unsafe: bool
+    value: VideoReference, *, allow_unsafe: bool, allow_local_files: bool = True
 ) -> VideoReference:
     if allow_unsafe:
         return value
@@ -46,6 +53,8 @@ def validate_video_references(
                 raise ValueError(
                     "Video references must use a supported, encoded video URL"
                 )
+            if parsed.scheme == "file" and not allow_local_files:
+                raise ValueError(LOCAL_FILES_DISABLED_MESSAGE)
             continue
         explicit_path = reference.startswith(("/", "./", "../", ".\\", "..\\")) or bool(
             re.match(r"^[A-Za-z]:[\\/]", reference)
@@ -59,4 +68,6 @@ def validate_video_references(
                 "GStreamer syntax are disabled. Trusted administrators may explicitly set "
                 "ALLOW_UNSAFE_GSTREAMER_PIPELINES=True."
             )
+        if not allow_local_files and not LOCAL_CAMERA_DEVICE.fullmatch(reference):
+            raise ValueError(LOCAL_FILES_DISABLED_MESSAGE)
     return value

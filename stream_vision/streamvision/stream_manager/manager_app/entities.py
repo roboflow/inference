@@ -9,6 +9,7 @@ from streamvision.camera.buffer_strategies import (
 from streamvision.camera.fourcc import FOURCC_PROPERTY, parse_fourcc
 from streamvision.camera.source_reference_validation import validate_video_references
 from streamvision.stream.environment import (
+    ALLOW_LOCAL_VIDEO_FILES,
     ALLOW_UNSAFE_GSTREAMER_PIPELINES,
     DEFAULT_BUFFER_SIZE,
     PREDICTIONS_QUEUE_SIZE,
@@ -61,7 +62,9 @@ class VideoConfiguration(BaseModel):
     @classmethod
     def validate_video_reference(cls, value):
         return validate_video_references(
-            value, allow_unsafe=ALLOW_UNSAFE_GSTREAMER_PIPELINES
+            value,
+            allow_unsafe=ALLOW_UNSAFE_GSTREAMER_PIPELINES,
+            allow_local_files=ALLOW_LOCAL_VIDEO_FILES,
         )
 
     max_fps: Optional[Union[float, int]] = None

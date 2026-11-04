@@ -25,6 +25,9 @@ import ipaddress
 import multiprocessing
 import os
 import signal
+import sys
+from pathlib import Path
+from typing import Optional
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values, load_dotenv
@@ -45,6 +48,8 @@ SELF_HOSTED_SERVER_DEFAULTS = {
     # directly or through a redirect.
     "ALLOW_URL_TO_NON_GLOBAL_ADDRESSES": "False",
     "VALIDATE_IMAGE_URL_REDIRECTS": "True",
+    # Webhook sinks may not reach loopback, link-local or private addresses.
+    "ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES": "False",
 }
 
 
@@ -56,6 +61,11 @@ HOST_ACCESS_SETTINGS = (
     "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES",
     "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE",
     "ALLOW_UNSAFE_GSTREAMER_PIPELINES",
+    # Unpickles request payloads.
+    "ALLOW_NUMPY_INPUT",
+    # Load model packages that may run code, or straight from local paths.
+    "ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES",
+    "ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES",
 )
 
 # Set by apply_self_hosted_server_defaults(): True when only this machine can
@@ -65,6 +75,8 @@ LOOPBACK_ONLY = False
 
 
 def _is_true(name: str) -> bool:
+    # inference.core.env accepts only "true" (any case) as true; stripping
+    # makes this check slightly looser, never stricter.
     return os.getenv(name, "").strip().lower() == "true"
 
 
@@ -72,7 +84,15 @@ def _has_list(name: str) -> bool:
     return any(item.strip() for item in os.getenv(name, "").split(","))
 
 
-def is_loopback_name(host) -> bool:
+def is_loopback_name(host: Optional[str]) -> bool:
+    """Tell whether a host name or address refers to this machine only.
+
+    Args:
+        host: Host name or IP address, optionally in brackets (IPv6).
+
+    Returns:
+        True for "localhost" and loopback addresses, False otherwise.
+    """
     if not host:
         return False
     host = host.strip().strip("[]").lower()
@@ -84,8 +104,15 @@ def is_loopback_name(host) -> bool:
         return False
 
 
-def url_hostname(value: str):
-    """Hostname of a URL or of a Host header value; None if it has none."""
+def url_hostname(value: str) -> Optional[str]:
+    """Extract the hostname of a URL or of a Host header value.
+
+    Args:
+        value: A URL, or a Host header value such as "example.com:9001".
+
+    Returns:
+        The lowercased hostname, or None if the value has none.
+    """
     try:
         return urlsplit(value if "//" in value else "//" + value).hostname
     except ValueError:
@@ -98,7 +125,7 @@ def _is_loopback_only() -> bool:
     # Launchers such as run_uvicorn.sh pick the bind address before Python reads
     # ./.env, but importing inference (inference_models) has already loaded
     # ./.env into the environment, so a value set there cannot be trusted.
-    from_dotenv = dotenv_values(os.path.join(os.getcwd(), ".env"))
+    from_dotenv = dotenv_values(Path.cwd() / ".env")
     if "HOST" in from_dotenv or "PUBLISHED_HOST" in from_dotenv:
         return False
     return is_loopback_name(
@@ -107,11 +134,24 @@ def _is_loopback_only() -> bool:
 
 
 def apply_self_hosted_server_defaults() -> None:
+    """Apply the self-hosted server defaults to the process environment.
+
+    Call it before anything imports `inference.core.env`. Explicit environment
+    variables and ./.env entries win over the defaults. Sets `LOOPBACK_ONLY`.
+
+    Returns:
+        None.
+
+    Raises:
+        SystemExit: The server takes connections from other machines without
+            workspace API key checks while a setting in `HOST_ACCESS_SETTINGS`
+            is on.
+    """
     global LOOPBACK_ONLY
     loopback_only = _is_loopback_only()
     # inference.core.env loads ./.env without overriding the environment. Load it
     # first so .env settings are checked here and win over these defaults.
-    load_dotenv(os.getcwd() + "/.env")
+    load_dotenv(Path.cwd() / ".env")
     if any(_is_true(name) for name in HOSTED_RUNTIME_ENV_NAMES) or os.getenv(
         "DEDICATED_DEPLOYMENT_WORKSPACE_URL"
     ):
@@ -152,3 +192,13 @@ def apply_self_hosted_server_defaults() -> None:
             "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT and keep "
             "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on."
         )
+    # The logger is not configured yet, so write straight to stderr.
+    print(
+        "SECURITY: the server takes connections from other machines without "
+        "workspace API key checks, so anyone who can reach its port can use "
+        "every route. Make it reachable from this machine only (publish the "
+        "port as -p 127.0.0.1:9001:9001 and set PUBLISHED_HOST=127.0.0.1), or "
+        "set ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT and "
+        "keep REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on.",
+        file=sys.stderr,
+    )

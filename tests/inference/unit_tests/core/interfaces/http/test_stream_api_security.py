@@ -182,6 +182,42 @@ def test_stream_requests_reject_raw_media_launch_syntax(monkeypatch, reference, 
 )
 def test_stream_requests_accept_supported_sources(monkeypatch, reference, schema):
     monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
+    monkeypatch.setattr(entities, "ALLOW_LOCAL_VIDEO_FILES", True)
+    assert make_video_request(schema, reference).video_reference == reference
+
+
+@pytest.mark.parametrize("schema", SCHEMAS)
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "./video.mp4",
+        "/etc/passwd",
+        "/dev/sda",
+        "/dev/video0/../../etc/passwd",
+        "C:\\videos\\video.mp4",
+        "file:///etc/passwd",
+        ["rtsp://camera/live", "/etc/passwd"],
+    ],
+)
+def test_stream_requests_reject_local_files_when_disabled(
+    monkeypatch, reference, schema
+):
+    monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
+    monkeypatch.setattr(entities, "ALLOW_LOCAL_VIDEO_FILES", False)
+    with pytest.raises(ValueError, match="Local video files are disabled"):
+        make_video_request(schema, reference)
+
+
+@pytest.mark.parametrize("schema", SCHEMAS)
+@pytest.mark.parametrize(
+    "reference",
+    [0, "/dev/video0", "csi://0", "rtsp://camera/live", ["https://host/v.mp4", 1]],
+)
+def test_stream_requests_accept_cameras_and_urls_when_local_files_are_disabled(
+    monkeypatch, reference, schema
+):
+    monkeypatch.setattr(entities, "ALLOW_UNSAFE_GSTREAMER_PIPELINES", False)
+    monkeypatch.setattr(entities, "ALLOW_LOCAL_VIDEO_FILES", False)
     assert make_video_request(schema, reference).video_reference == reference
 
 
