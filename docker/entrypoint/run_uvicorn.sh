@@ -27,7 +27,9 @@ NUM_WORKERS="${NUM_WORKERS:-1}"
 
 # Each worker process would otherwise generate its own Jupyter token, and
 # /notebook/start could return a token that the running Jupyter rejects.
-if [ "$NUM_WORKERS" != "1" ] && [ -z "$NOTEBOOK_PASSWORD" ]; then
+# A token set in ./.env, which the workers load, is left alone.
+if [ "$NUM_WORKERS" != "1" ] && [ -z "$NOTEBOOK_PASSWORD" ] &&
+    ! grep -qs '^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}NOTEBOOK_PASSWORD[[:space:]]*=' .env; then
     NOTEBOOK_PASSWORD="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
     export NOTEBOOK_PASSWORD
 fi
