@@ -12,6 +12,7 @@ from time import sleep
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from uuid import uuid4
 
+import aiohttp
 import asgi_correlation_id
 import requests
 import uvicorn
@@ -239,15 +240,17 @@ from inference.core.exceptions import (
     ContentTypeMissing,
     FeatureDeprecatedError,
     InputImageLoadError,
+    MalformedRoboflowAPIResponseError,
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelDeploymentNotSupportedError,
     RequestDataContradiction,
-    MalformedRoboflowAPIResponseError,
-    RoboflowAPIForbiddenError,
+    RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
     RoboflowAPIRequestError,
+    RoboflowAPITimeoutError,
+    RoboflowAPIUnsuccessfulRequestError,
     WebRTCConfigurationError,
     WorkspaceLoadError,
 )
@@ -449,6 +452,28 @@ AUTH_CACHE_TTL_SECONDS = 3600
 # How long an expired workspace grant keeps working while the Roboflow API
 # cannot be reached. Keys without a grant are refused until it can.
 AUTH_OUTAGE_GRACE_SECONDS = 24 * 3600
+
+
+def _is_roboflow_api_outage(error: Exception) -> bool:
+    """Tell an unreachable Roboflow API apart from one that refused the key."""
+    if isinstance(
+        error,
+        (
+            RoboflowAPIConnectionError,
+            RoboflowAPITimeoutError,
+            MalformedRoboflowAPIResponseError,
+            aiohttp.ClientError,
+        ),
+    ):
+        return True
+    status = getattr(error.__cause__, "status", None)
+    return (
+        isinstance(error, RoboflowAPIUnsuccessfulRequestError)
+        and isinstance(status, int)
+        and (status >= 500 or status == 429)
+    )
+
+
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
 # Probe/health endpoints whose access-log lines are demoted to DEBUG.
@@ -1476,6 +1501,7 @@ class HttpInterface(BaseInterface):
                                 api_key=api_key
                             )
                         if workspace_id not in await allowed_workspaces():
+                            cached_api_keys.pop(api_key, None)
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = AuthorizationCacheEntry(
@@ -1483,18 +1509,20 @@ class HttpInterface(BaseInterface):
                             workspace_id=workspace_id,
                         )
                     except (
-                        RoboflowAPINotAuthorizedError,
-                        RoboflowAPIForbiddenError,
-                        RoboflowAPINotNotFoundError,
-                        WorkspaceLoadError,
-                    ):
-                        return _unauthorized_response("Unauthorized api_key")
-                    except (
                         RoboflowAPIRequestError,
                         MalformedRoboflowAPIResponseError,
+                        WorkspaceLoadError,
+                        aiohttp.ClientError,
                     ) as error:
+                        if not _is_roboflow_api_outage(error):
+                            # A refused key (401, 402, 403, 404, 423, ...) must
+                            # not come back during a later outage.
+                            cached_api_keys.pop(api_key, None)
+                            return _unauthorized_response("Unauthorized api_key")
                         # Fail closed: only a key granted before the outage
-                        # keeps working, and only for a bounded time.
+                        # keeps working, and only for a bounded time. Read the
+                        # cache again: another request may have revoked it.
+                        cache_entry = cached_api_keys.get(api_key)
                         if (
                             cache_entry is None
                             or cache_entry.status_code != 200

@@ -1,6 +1,7 @@
 import time
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import numpy as np
 import pytest
 from pydantic import BaseModel
@@ -18,6 +19,8 @@ from inference.core.env import CORRELATION_ID_HEADER
 from inference.core.exceptions import (
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
+    RoboflowAPIUnsuccessfulRequestError,
+    RoboflowAPIUsagePausedError,
 )
 from inference.core.roboflow_api import ServerlessUsageCheckResponse
 from inference.core.utils.depth_encoding import decode_png_normalized_depth
@@ -2483,8 +2486,19 @@ _WORKSPACE_OF_KEY = {
     "server-key": "server-ws",
     "teammate-key": "server-ws",
     "other-teammate-key": "server-ws",
+    "revoked-teammate-key": "server-ws",
+    "paused-teammate-key": "server-ws",
     "outsider-key": "other-ws",
 }
+
+
+def _api_error(error_type, status):
+    # As raised by the Roboflow API wrappers, from the HTTP error.
+    error = error_type(f"status {status}")
+    error.__cause__ = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=status
+    )
+    return error
 
 
 def _workspace_of_key(api_key):
@@ -2588,10 +2602,17 @@ def test_required_api_key_survives_roboflow_api_outages_only_with_a_grant(
     monkeypatch,
 ) -> None:
     api_up = True
+    revoked, paused, failing = set(), set(), set()
 
     def lookup(api_key):
         if not api_up:
             raise RoboflowAPIConnectionError("down")
+        if api_key in revoked:
+            raise RoboflowAPINotAuthorizedError("revoked")
+        if api_key in paused:
+            raise _api_error(RoboflowAPIUsagePausedError, 423)
+        if api_key in failing:
+            raise _api_error(RoboflowAPIUnsuccessfulRequestError, 502)
         return _workspace_of_key(api_key)
 
     interface, _, _ = _build_dedicated_deployment_interface(
@@ -2613,10 +2634,30 @@ def test_required_api_key_survives_roboflow_api_outages_only_with_a_grant(
             ).status_code
 
         assert status("teammate-key") == 200  # grant cached while the API is up
+        assert status("revoked-teammate-key") == 200
         api_up = False
         clock.return_value = now + http_api.AUTH_CACHE_TTL_SECONDS + 1
         expired_grant = status("teammate-key")
         never_granted = status("other-teammate-key")
+        outage = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="other-teammate-key"
+        )
+        assert outage.headers["Retry-After"] == "30"
+        assert "Cannot reach the Roboflow API" in outage.json()["message"]
+        api_up = True
+        revoked.add("revoked-teammate-key")
+        assert status("revoked-teammate-key") == 401
+        api_up = False
+        revoked_grant = status("revoked-teammate-key")
+        # Usage paused (423) is a refusal, a 502 is an outage.
+        api_up = True
+        assert status("paused-teammate-key") == 200
+        paused.add("paused-teammate-key")
+        failing.update({"teammate-key", "other-teammate-key"})
+        clock.return_value += http_api.AUTH_CACHE_TTL_SECONDS + 1
+        assert status("paused-teammate-key") == 401
+        assert status("teammate-key") == 200  # granted earlier, API failing
+        assert status("other-teammate-key") == 503
         clock.return_value = (
             now
             + http_api.AUTH_CACHE_TTL_SECONDS
@@ -2625,7 +2666,30 @@ def test_required_api_key_survives_roboflow_api_outages_only_with_a_grant(
         )
         grace_over = status("teammate-key")
 
-    assert (expired_grant, never_granted, grace_over) == (200, 503, 503)
+    assert (expired_grant, never_granted, revoked_grant, grace_over) == (
+        200,
+        503,
+        503,
+        503,
+    )
+
+
+def test_required_api_key_skips_only_next_static_assets(monkeypatch) -> None:
+    # Other /_next/ paths reach the dynamic routes, such as the model routes.
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        dynamic = client.post("/_next/1", json=_make_inference_request())
+        asset = client.get("/_next/static/missing.js")
+
+    assert dynamic.status_code == 401
+    assert asset.status_code == 404
 
 
 def test_required_api_key_checks_head_requests_and_skips_cors_preflight(
