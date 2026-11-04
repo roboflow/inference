@@ -27,6 +27,11 @@ for contributor and maintainer responsibilities.
   - `case_descriptions` tells the model what a case means, and `context` sends values from earlier steps with each image as JSON, per image for batch-oriented values.
   - Like every flow control block it has no outputs; use the OpenAI Decisions block with Switch Case to keep the probabilities.
 
+### Fixed
+
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.
