@@ -442,7 +442,7 @@ async def test_client_unload_all_models_async_when_successful_response_expected(
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     with aioresponses() as m:
-        m.post(f"{api_url}/model/clear", payload={"models": []})
+        m.post(f"{api_url}/model/clear?api_key=my-api-key", payload={"models": []})
 
         # when
         result = await http_client.unload_all_models_async()
@@ -474,7 +474,7 @@ async def test_client_unload_all_models_async_when_error_occurs() -> None:
 
     with aioresponses() as m:
         m.post(
-            f"{api_url}/model/clear",
+            f"{api_url}/model/clear?api_key=my-api-key",
             payload={"message": "Internal error."},
             status=500,
         )
@@ -495,23 +495,6 @@ def test_client_unload_all_models_sends_key_in_query(requests_mock: Mocker) -> N
 
     # then
     assert requests_mock.last_request.qs == {"api_key": ["my-api-key"]}
-
-
-@pytest.mark.asyncio
-async def test_client_unload_all_models_async_sends_key_in_query() -> None:
-    # given
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    with aioresponses() as m:
-        m.post(f"{api_url}/model/clear?api_key=my-api-key", payload={"models": []})
-
-        # when
-        _ = await http_client.unload_all_models_async()
-
-        # then
-        assert [str(url) for _, url in m.requests] == [
-            f"{api_url}/model/clear?api_key=my-api-key"
-        ]
 
 
 def test_client_unload_methods_send_no_key_when_client_has_none(
