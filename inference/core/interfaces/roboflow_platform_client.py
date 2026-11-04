@@ -19,6 +19,28 @@ from inference.core.version import __version__
 from inference.core.workflows.errors import WorkflowDefinitionError
 from inference.core.workflows.prototypes.platform_client import HttpErrorHandlers
 
+API_PROXY_ENDPOINT_PREFIX = "apiproxy/"
+
+
+def billing_attribution_fields() -> Dict[str, str]:
+    """The workflow and device a proxied third-party call runs for.
+
+    The platform bills a proxy call to the key it was made with; when that key is
+    workspace-wide these ids let it bill the workflow's (or, on an edge device, the
+    device's) billing folder instead. The workflow id is the one the HTTP request
+    named, so a pipeline without one sends only the device id. A block's own
+    `workflow_id`/`device_id` payload keys win over these.
+    """
+    from inference.core.managers.model_load_collector import request_workflow_id
+
+    fields: Dict[str, str] = {}
+    workflow_id = request_workflow_id.get(None)
+    if workflow_id:
+        fields["workflow_id"] = workflow_id
+    if env.DEVICE_ID:
+        fields["device_id"] = env.DEVICE_ID
+    return fields
+
 
 class ServerRoboflowPlatformClient:
     def post(
@@ -29,6 +51,8 @@ class ServerRoboflowPlatformClient:
         params: Optional[List[Tuple[str, str]]] = None,
         http_errors_handlers: Optional[HttpErrorHandlers] = None,
     ) -> dict:
+        if endpoint.startswith(API_PROXY_ENDPOINT_PREFIX) and payload is not None:
+            payload = {**billing_attribution_fields(), **payload}
         return roboflow_api.post_to_roboflow_api(
             endpoint=endpoint,
             api_key=api_key,
