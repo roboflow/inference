@@ -192,7 +192,11 @@ def apply_self_hosted_server_defaults() -> None:
         # otherwise the workers would restart forever. gunicorn forks its
         # workers and halts when one exits with 3 (WORKER_BOOT_ERROR); uvicorn
         # (0.30+) spawns them and stops on SIGTERM.
-        if os.getenv("SERVER_SOFTWARE", "").startswith("gunicorn/"):
+        # A forked gunicorn worker has both; other children of gunicorn
+        # inherit only the environment.
+        if "gunicorn.arbiter" in sys.modules and os.getenv(
+            "SERVER_SOFTWARE", ""
+        ).startswith("gunicorn/"):
             print(message, file=sys.stderr, flush=True)
             os._exit(3)
         if multiprocessing.parent_process() is not None:
