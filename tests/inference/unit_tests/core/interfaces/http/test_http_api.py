@@ -2727,6 +2727,8 @@ def test_notebook_token_needs_key_checks_or_a_loopback_server(
         ({"origin": "https://app.example.com"}, True),  # named in ALLOW_ORIGINS
         ({"origin": "https://builder.example.com"}, True),  # BUILDER_ORIGIN
         ({"sec-fetch-site": "same-origin"}, True),
+        ({"host": "0.0.0.0:9001"}, True),  # the address uvicorn prints
+        ({"host": "host.docker.internal:9001"}, True),  # Docker Desktop
         ({"host": "rebound.example.com:9001"}, False),  # DNS rebinding
         ({"host": "localhost.:9001"}, False),
         ({"origin": "https://evil.example.com"}, False),
@@ -2737,6 +2739,8 @@ def test_notebook_token_needs_key_checks_or_a_loopback_server(
         # A tunnel or reverse proxy relays callers from other machines.
         ({"x-forwarded-for": "203.0.113.7"}, False),
         ({"forwarded": "for=203.0.113.7"}, False),
+        ({"x-real-ip": "203.0.113.7"}, False),
+        ({"via": "1.1 proxy"}, False),
     ],
 )
 def test_loopback_server_without_key_checks_only_serves_local_callers(

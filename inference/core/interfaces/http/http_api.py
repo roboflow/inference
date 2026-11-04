@@ -1328,7 +1328,17 @@ class HttpInterface(BaseInterface):
             trusted_origins = set(ALLOW_ORIGINS)
             if ENABLE_BUILDER:
                 trusted_origins.add(BUILDER_ORIGIN)
-            proxy_headers = ("forwarded", "x-forwarded-for", "x-forwarded-host")
+            proxy_headers = (
+                "forwarded",
+                "x-forwarded-for",
+                "x-forwarded-host",
+                "x-real-ip",
+                "via",
+            )
+            # Names a browser on this machine can use to reach the server:
+            # uvicorn prints 0.0.0.0, and Docker Desktop containers use
+            # host.docker.internal. Neither resolves to a remote site.
+            local_host_names = {"0.0.0.0", "host.docker.internal"}
 
             @app.middleware("http")
             async def refuse_requests_from_other_sites(request: Request, call_next):
@@ -1340,9 +1350,10 @@ class HttpInterface(BaseInterface):
                     other_site = origin not in trusted_origins and not (
                         is_loopback_name(url_hostname(origin))
                     )
+                host = url_hostname(headers.get("host", "")) or ""
                 if (
                     other_site
-                    or not is_loopback_name(url_hostname(headers.get("host", "")))
+                    or not (is_loopback_name(host) or host in local_host_names)
                     or any(name in headers for name in proxy_headers)
                 ):
                     return JSONResponse(
@@ -1350,7 +1361,8 @@ class HttpInterface(BaseInterface):
                         content={
                             "status": 403,
                             "message": "This server has no workspace API key checks, "
-                            "so it only serves requests from this machine.",
+                            "so it only serves requests from this machine "
+                            f"(Host {host or 'missing'!r}, Origin {origin!r}).",
                         },
                     )
                 return await call_next(request)
