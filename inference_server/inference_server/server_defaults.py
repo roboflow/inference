@@ -24,7 +24,9 @@ module that reads the environment at import time.
 """
 
 import ipaddress
+import multiprocessing
 import os
+import signal
 from typing import Optional
 from urllib.parse import urlsplit
 
@@ -148,6 +150,10 @@ def apply_server_defaults() -> None:
         return None
     enabled = [name for name in HOST_ACCESS_SETTINGS if _is_true(name)]
     if enabled:
+        # A uvicorn (0.30+) worker that exits is started again, so stop the
+        # supervisor too; otherwise the workers would restart forever.
+        if multiprocessing.parent_process() is not None:
+            os.kill(os.getppid(), signal.SIGTERM)
         raise SystemExit(
             f"Refusing to start: {', '.join(enabled)} is on, but the server takes "
             "connections from other machines without workspace API key checks, so "
