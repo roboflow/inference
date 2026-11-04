@@ -37,7 +37,9 @@ INFERENCE_TEST_DOCKER_ARGS ?=
 # Test servers listen on loopback only and serve without workspace API key
 # checks, so tests can use keys from several workspaces. The settings that the
 # self-hosted defaults turn off are turned back on for the workflow tests.
-INFERENCE_TEST_ENV = -e PUBLISHED_HOST=127.0.0.1 \
+# PUBLISHED_HOST is the host address of INFERENCE_TEST_BIND, so binding any
+# other address makes the server refuse to start with these settings.
+INFERENCE_TEST_ENV = -e PUBLISHED_HOST=$(word 1,$(subst :, ,$(INFERENCE_TEST_BIND))) \
 	-e ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True \
 	-e ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM=True \
 	-e ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES=True \
