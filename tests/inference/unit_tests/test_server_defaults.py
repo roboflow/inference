@@ -166,6 +166,40 @@ def test_exposed_server_without_key_checks_refuses_host_access_settings(
         apply_self_hosted_server_defaults()
 
 
+def test_refusing_uvicorn_worker_stops_its_supervisor(monkeypatch) -> None:
+    # uvicorn (0.30+) starts a spawned worker again when it exits.
+    monkeypatch.setenv("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", "False")
+    monkeypatch.setenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", "True")
+    monkeypatch.setattr(server_defaults.multiprocessing, "parent_process", object)
+    signals = []
+    monkeypatch.setattr(server_defaults.os, "kill", lambda *args: signals.append(args))
+
+    with pytest.raises(SystemExit, match="Refusing to start"):
+        apply_self_hosted_server_defaults()
+
+    assert signals == [(os.getppid(), server_defaults.signal.SIGTERM)]
+
+
+def test_refusing_gunicorn_worker_exits_with_the_boot_error_code(
+    monkeypatch, capsys
+) -> None:
+    # gunicorn forks its workers and halts only when one exits with code 3.
+    monkeypatch.setenv("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", "False")
+    monkeypatch.setenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", "True")
+    monkeypatch.setitem(sys.modules, "gunicorn", object())
+
+    def exit_now(code):
+        raise SystemExit(code)
+
+    monkeypatch.setattr(server_defaults.os, "_exit", exit_now)
+
+    with pytest.raises(SystemExit) as refusal:
+        apply_self_hosted_server_defaults()
+
+    assert refusal.value.code == 3
+    assert "Refusing to start" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     "env",
     [{"OFFLINE_MODE": "True"}, {"REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": "False"}],

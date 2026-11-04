@@ -178,11 +178,7 @@ def apply_self_hosted_server_defaults() -> None:
         return None
     enabled = [name for name in HOST_ACCESS_SETTINGS if _is_true(name)]
     if enabled:
-        # A uvicorn (0.30+) or gunicorn worker that exits is started again, so
-        # stop the supervisor too; otherwise the workers would restart forever.
-        if multiprocessing.parent_process() is not None:
-            os.kill(os.getppid(), signal.SIGTERM)
-        raise SystemExit(
+        message = (
             f"Refusing to start: {', '.join(enabled)} is on, but the server takes "
             "connections from other machines without workspace API key checks, so "
             "anyone who can reach it could use it. Either make it reachable from "
@@ -192,6 +188,16 @@ def apply_self_hosted_server_defaults() -> None:
             "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT and keep "
             "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on."
         )
+        # A worker that exits is started again, so stop the supervisor too;
+        # otherwise the workers would restart forever. gunicorn forks its
+        # workers and halts when one exits with 3 (WORKER_BOOT_ERROR); uvicorn
+        # (0.30+) spawns them and stops on SIGTERM.
+        if "gunicorn" in sys.modules:
+            print(message, file=sys.stderr, flush=True)
+            os._exit(3)
+        if multiprocessing.parent_process() is not None:
+            os.kill(os.getppid(), signal.SIGTERM)
+        raise SystemExit(message)
     # The logger is not configured yet, so write straight to stderr.
     print(
         "SECURITY: the server takes connections from other machines without "
