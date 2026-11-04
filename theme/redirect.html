@@ -4,7 +4,9 @@
     <meta charset="utf-8">
     <title>Redirecting...</title>
     <link rel="canonical" href="{{ page.meta.redirect_url|e }}">
+    {% if not page.meta.redirect_indexable %}
     <meta name="robots" content="noindex,follow">
+    {% endif %}
     <script>var anchor=window.location.hash.substr(1);location.href={{ page.meta.redirect_url|tojson }}+(anchor?"#"+anchor:"")</script>
     <meta http-equiv="refresh" content="0; url={{ page.meta.redirect_url|e }}">
 </head>

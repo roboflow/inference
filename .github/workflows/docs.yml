@@ -97,8 +97,18 @@ jobs:
           echo "Theme assets OK."
           echo "Checking redirect pages..."
           test -f site/404.html || { echo "ERROR: site/404.html missing!"; exit 1; }
+          python - <<'PY'
+          from html import unescape
+          from pathlib import Path
+
+          homepage = unescape(Path("site/index.html").read_text())
+          assert '<link rel="canonical" href="https://docs.roboflow.com/">' in homepage, "Homepage canonical URL is incorrect"
+          assert '<meta http-equiv="refresh" content="0; url=https://docs.roboflow.com/">' in homepage, "Homepage does not redirect"
+          assert 'noindex' not in homepage.lower(), "Homepage must remain indexable"
+          PY
           grep -q "docs.roboflow.com" site/install/index.html || { echo "ERROR: /install/ does not redirect!"; exit 1; }
           grep -q "docs.roboflow.com" site/workflows/about/index.html || { echo "ERROR: /workflows/about/ does not redirect!"; exit 1; }
+          grep -Fq '<meta name="robots" content="noindex,follow">' site/install/index.html || { echo "ERROR: per-page redirect indexing changed!"; exit 1; }
           echo "Redirects OK."
           echo "Checking for llms.txt..."
           test -f site/llms.txt || { echo "ERROR: site/llms.txt missing!"; exit 1; }
