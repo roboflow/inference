@@ -22,7 +22,9 @@ import time.
 """
 
 import ipaddress
+import multiprocessing
 import os
+import signal
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values, load_dotenv
@@ -136,6 +138,10 @@ def apply_self_hosted_server_defaults() -> None:
         return None
     enabled = [name for name in HOST_ACCESS_SETTINGS if _is_true(name)]
     if enabled:
+        # A uvicorn (0.30+) or gunicorn worker that exits is started again, so
+        # stop the supervisor too; otherwise the workers would restart forever.
+        if multiprocessing.parent_process() is not None:
+            os.kill(os.getppid(), signal.SIGTERM)
         raise SystemExit(
             f"Refusing to start: {', '.join(enabled)} is on, but the server takes "
             "connections from other machines without workspace API key checks, so "
