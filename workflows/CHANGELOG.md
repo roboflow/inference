@@ -24,6 +24,11 @@ for contributor and maintainer responsibilities.
   to run on the hosted platform when `GCP_SERVERLESS` is set. A host that constructs
   `PlatformConfiguration` with `lambda_runtime=` must drop the argument.
 
+### Fixed
+
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.
