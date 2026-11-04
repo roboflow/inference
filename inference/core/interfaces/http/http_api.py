@@ -34,6 +34,7 @@ from roboflow_workflows.execution_engine.introspection.workload_entities import 
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from inference import server_defaults
 from inference.core import logger
 from inference.core.constants import (
     MODEL_COLD_START_COUNT_HEADER,
@@ -403,6 +404,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
     register_debug_session,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.server_defaults import is_loopback_name, url_hostname
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
@@ -1305,6 +1307,48 @@ class HttpInterface(BaseInterface):
             or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
             or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT
         )
+        # Without workspace API key checks, a loopback server trusts every caller
+        # that reaches it, and web pages open in this machine's browser reach it
+        # too. Refuse a Host header that is not a loopback name (DNS rebinding),
+        # requests relayed by a proxy, and requests from other sites: an Origin
+        # that is not loopback, ALLOW_ORIGINS (where "*" counts for nothing) or
+        # the Workflow Builder, or no Origin on a cross-site request.
+        local_callers_only = (
+            not workspace_auth_enabled
+            and not (LAMBDA or GCP_SERVERLESS)
+            and server_defaults.LOOPBACK_ONLY
+        )
+        if local_callers_only:
+            trusted_origins = set(ALLOW_ORIGINS)
+            if ENABLE_BUILDER:
+                trusted_origins.add(BUILDER_ORIGIN)
+            proxy_headers = ("forwarded", "x-forwarded-for", "x-forwarded-host")
+
+            @app.middleware("http")
+            async def refuse_requests_from_other_sites(request: Request, call_next):
+                headers = request.headers
+                origin = headers.get("origin")
+                if origin is None:
+                    other_site = headers.get("sec-fetch-site") == "cross-site"
+                else:
+                    other_site = origin not in trusted_origins and not (
+                        is_loopback_name(url_hostname(origin))
+                    )
+                if (
+                    other_site
+                    or not is_loopback_name(url_hostname(headers.get("host", "")))
+                    or any(name in headers for name in proxy_headers)
+                ):
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "status": 403,
+                            "message": "This server has no workspace API key checks, "
+                            "so it only serves requests from this machine.",
+                        },
+                    )
+                return await call_next(request)
+
         if workspace_auth_enabled:
             # Without a configured workspace, the server belongs to the workspace
             # of its own ROBOFLOW_API_KEY, resolved on the first checked request.
@@ -4769,16 +4813,20 @@ class HttpInterface(BaseInterface):
                     NotebookStartResponse: The response containing the URL of the jupyter lab server.
                 """
                 logger.debug(f"Reached /notebook/start")
-                if NOTEBOOK_ENABLED and not workspace_auth_enabled:
+                if NOTEBOOK_ENABLED and not (
+                    workspace_auth_enabled or local_callers_only
+                ):
                     # Jupyter runs arbitrary code, so its token is only handed
-                    # to callers that passed the workspace API key check.
+                    # to callers that passed the workspace API key check, or
+                    # to local callers of a loopback server.
                     return JSONResponse(
                         status_code=403,
                         content={
                             "success": False,
                             "message": "The notebook needs workspace API key checks. "
                             "Set ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT "
-                            "and keep REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on (not OFFLINE_MODE).",
+                            "and keep REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on (not OFFLINE_MODE), "
+                            "or bind the server to 127.0.0.1.",
                         },
                     )
                 if NOTEBOOK_ENABLED:

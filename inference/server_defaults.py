@@ -13,13 +13,19 @@ variable always wins. Roboflow-hosted runtimes (serverless, Lambda and
 dedicated deployments) bring their own authorization policy and keep their
 current behavior.
 
+A server without workspace API key checks should only take connections from
+this machine. On any other address it refuses to start while a setting that
+lets requests run code on the host, or read its files or secrets, is on.
+
 This module must not import `inference.core`, which reads the environment at
 import time.
 """
 
+import ipaddress
 import os
+from urllib.parse import urlsplit
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 HOSTED_RUNTIME_ENV_NAMES = ("LAMBDA", "GCP_SERVERLESS")
 
@@ -40,11 +46,67 @@ SELF_HOSTED_SERVER_DEFAULTS = {
 }
 
 
+# Settings that let a request run code on the host or read its files or
+# secrets. Without workspace API key checks, only a loopback server may use them.
+HOST_ACCESS_SETTINGS = (
+    "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS",
+    "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM",
+    "ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES",
+    "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE",
+    "ALLOW_UNSAFE_GSTREAMER_PIPELINES",
+)
+
+# Set by apply_self_hosted_server_defaults(): True when only this machine can
+# connect to the server. The HTTP API serves callers without workspace API key
+# checks only then.
+LOOPBACK_ONLY = False
+
+
 def _is_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() == "true"
 
 
+def _has_list(name: str) -> bool:
+    return any(item.strip() for item in os.getenv(name, "").split(","))
+
+
+def is_loopback_name(host) -> bool:
+    if not host:
+        return False
+    host = host.strip().strip("[]").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def url_hostname(value: str):
+    """Hostname of a URL or of a Host header value; None if it has none."""
+    try:
+        return urlsplit(value if "//" in value else "//" + value).hostname
+    except ValueError:
+        return None
+
+
+def _is_loopback_only() -> bool:
+    # PUBLISHED_HOST is the host address that a container port is published on
+    # (`inference server start` sets it). Without it, HOST is the bind address.
+    # Launchers such as run_uvicorn.sh pick the bind address before Python reads
+    # ./.env, but importing inference (inference_models) has already loaded
+    # ./.env into the environment, so a value set there cannot be trusted.
+    from_dotenv = dotenv_values(os.path.join(os.getcwd(), ".env"))
+    if "HOST" in from_dotenv or "PUBLISHED_HOST" in from_dotenv:
+        return False
+    return is_loopback_name(
+        os.getenv("PUBLISHED_HOST") or os.getenv("HOST") or "0.0.0.0"
+    )
+
+
 def apply_self_hosted_server_defaults() -> None:
+    global LOOPBACK_ONLY
+    loopback_only = _is_loopback_only()
     # inference.core.env loads ./.env without overriding the environment. Load it
     # first so .env settings are checked here and win over these defaults.
     load_dotenv(os.getcwd() + "/.env")
@@ -52,8 +114,35 @@ def apply_self_hosted_server_defaults() -> None:
         "DEDICATED_DEPLOYMENT_WORKSPACE_URL"
     ):
         return None
+    LOOPBACK_ONLY = loopback_only
+    has_whitelist = _has_list("WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT")
+    has_workspace = bool(
+        os.getenv("ROBOFLOW_API_KEY") or os.getenv("API_KEY") or has_whitelist
+    )
     for name, value in SELF_HOSTED_SERVER_DEFAULTS.items():
-        if name == "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT" and _is_true("OFFLINE_MODE"):
+        if name == "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT" and (
             # API keys cannot be mapped to workspaces without API connectivity.
+            _is_true("OFFLINE_MODE")
+            # Nothing to check keys against; only local callers reach the server.
+            or (loopback_only and not has_workspace)
+        ):
             continue
         os.environ.setdefault(name, value)
+    if (
+        loopback_only
+        or _is_true("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT")
+        or has_whitelist
+    ):
+        return None
+    enabled = [name for name in HOST_ACCESS_SETTINGS if _is_true(name)]
+    if enabled:
+        raise SystemExit(
+            f"Refusing to start: {', '.join(enabled)} is on, but the server takes "
+            "connections from other machines without workspace API key checks, so "
+            "anyone who can reach it could use it. Either make it reachable from "
+            "this machine only (`inference server start` does so by default; with "
+            "docker run, publish the port as -p 127.0.0.1:9001:9001 and set "
+            "PUBLISHED_HOST=127.0.0.1), or set ROBOFLOW_API_KEY or "
+            "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT and keep "
+            "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on."
+        )

@@ -136,6 +136,8 @@ def test_start_inference_container_publishes_ports_on_loopback_by_default(
     # then
     _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
     assert kwargs["ports"] == {"9001": ("127.0.0.1", 9001), "9002": ("127.0.0.1", 9002)}
+    # The server decides from this whether it may run without API key checks.
+    assert "PUBLISHED_HOST=127.0.0.1" in kwargs["environment"]
 
 
 @mock.patch.object(container_adapter, "pull_image")
@@ -201,6 +203,7 @@ def test_start_inference_container_publishes_ports_on_requested_bind_address(
     # then
     _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
     assert kwargs["ports"] == {"9001": ("0.0.0.0", 9001)}
+    assert "PUBLISHED_HOST=0.0.0.0" in kwargs["environment"]
 
 
 def test_development_environment_uses_a_random_notebook_token() -> None:

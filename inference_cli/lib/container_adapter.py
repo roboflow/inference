@@ -367,11 +367,12 @@ def start_inference_container(
         api_key=api_key,
         env_file_path=env_file_path,
         development=development,
+        bind_address=bind_address,
     )
     pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
     announce_bind_address(bind_address=bind_address, port=port)
-    announce_authentication(environment=environment)
+    announce_authentication(environment=environment, bind_address=bind_address)
     ports = {str(port): (bind_address, port)}
     if development:
         ports["9002"] = (bind_address, 9002)
@@ -445,7 +446,10 @@ def announce_bind_address(bind_address: str, port: int) -> None:
     )
 
 
-def announce_authentication(environment: List[str]) -> None:
+def announce_authentication(environment: List[str], bind_address: str) -> None:
+    if bind_address in LOOPBACK_BIND_ADDRESSES:
+        # Without a workspace, a loopback server serves local callers unchecked.
+        return None
     configured = {entry.split("=", 1)[0] for entry in environment}
     if configured & {
         "ROBOFLOW_API_KEY",
@@ -469,11 +473,16 @@ def prepare_container_environment(
     api_key: Optional[str],
     env_file_path: Optional[str],
     development: bool = False,
+    bind_address: Optional[str] = None,
 ) -> List[str]:
     environment = {}
     if env_file_path is not None:
         environment = read_env_file(path=env_file_path)
     environment["HOST"] = "0.0.0.0"
+    if bind_address is not None:
+        # The server binds 0.0.0.0 inside the container; this is the host address
+        # it is reachable on, which decides whether it may run without key checks.
+        environment["PUBLISHED_HOST"] = bind_address
     environment["PORT"] = str(port)
     environment["PROJECT"] = project
     environment["METRICS_ENABLED"] = str(metrics_enabled)

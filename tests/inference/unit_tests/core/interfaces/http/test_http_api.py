@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from starlette.testclient import TestClient
 
 import inference.core.interfaces.http.http_api as http_api
+from inference import server_defaults
 from inference.core import roboflow_api
 from inference.core.constants import (
     PROCESSING_TIME_HEADER,
@@ -2631,13 +2632,16 @@ def test_required_api_key_covers_builder_page_and_api(monkeypatch) -> None:
     assert page_with_key.status_code != 401
 
 
-@pytest.mark.parametrize("require_api_key", [False, True])
-def test_notebook_token_is_only_handed_out_behind_workspace_key_checks(
-    monkeypatch, require_api_key
+@pytest.mark.parametrize(
+    "require_api_key,loopback_only,allowed",
+    [(True, False, True), (False, True, True), (False, False, False)],
+)
+def test_notebook_token_needs_key_checks_or_a_loopback_server(
+    monkeypatch, require_api_key, loopback_only, allowed
 ) -> None:
-    # OFFLINE_MODE turns the key requirement off; Jupyter must not start then.
-    import inference.core.interfaces.http.http_api as http_api
-
+    # OFFLINE_MODE turns the key requirement off; Jupyter must not start then
+    # unless only local callers reach the server.
+    monkeypatch.setattr(server_defaults, "LOOPBACK_ONLY", loopback_only)
     monkeypatch.setattr(http_api, "NOTEBOOK_ENABLED", True)
     start_notebook_mock = MagicMock()
     monkeypatch.setattr(http_api, "start_notebook", start_notebook_mock)
@@ -2649,16 +2653,74 @@ def test_notebook_token_is_only_handed_out_behind_workspace_key_checks(
         workspace_lookup_side_effect=_workspace_of_key,
     )
 
-    with TestClient(interface.app) as client:
+    with TestClient(interface.app, base_url="http://localhost:9001") as client:
         response = client.get(
             "/notebook/start",
             params={"browserless": "true", "api_key": "teammate-key"},
         )
 
-    if require_api_key:
+    if allowed:
         assert response.status_code == 200
         start_notebook_mock.assert_called_once()
     else:
         assert response.status_code == 403
         assert "token=" not in response.text
         start_notebook_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "headers,allowed",
+    [
+        ({}, True),
+        ({"host": "[::1]:9001"}, True),
+        ({"origin": "http://localhost:9001"}, True),
+        ({"origin": "http://127.0.0.1:3000"}, True),
+        ({"origin": "https://app.example.com"}, True),  # named in ALLOW_ORIGINS
+        ({"origin": "https://builder.example.com"}, True),  # BUILDER_ORIGIN
+        ({"sec-fetch-site": "same-origin"}, True),
+        ({"host": "rebound.example.com:9001"}, False),  # DNS rebinding
+        ({"host": "localhost.:9001"}, False),
+        ({"origin": "https://evil.example.com"}, False),
+        ({"origin": "http://localhost.evil.example.com"}, False),
+        ({"origin": "null"}, False),
+        # <img src=...> on another site sends no Origin.
+        ({"sec-fetch-site": "cross-site"}, False),
+        # A tunnel or reverse proxy relays callers from other machines.
+        ({"x-forwarded-for": "203.0.113.7"}, False),
+        ({"forwarded": "for=203.0.113.7"}, False),
+    ],
+)
+def test_loopback_server_without_key_checks_only_serves_local_callers(
+    monkeypatch, headers, allowed
+) -> None:
+    monkeypatch.setattr(server_defaults, "LOOPBACK_ONLY", True)
+    monkeypatch.setattr(http_api, "ALLOW_ORIGINS", ["*", "https://app.example.com"])
+    monkeypatch.setattr(http_api, "ENABLE_BUILDER", True)
+    monkeypatch.setattr(http_api, "BUILDER_ORIGIN", "https://builder.example.com")
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch, dedicated_workspace_url=None
+    )
+
+    with TestClient(interface.app, base_url="http://localhost:9001") as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            json=_make_inference_request(),
+            headers=headers,
+        )
+
+    assert response.status_code == (200 if allowed else 403), response.text
+
+
+def test_exposed_server_without_key_checks_accepts_any_host_name(monkeypatch) -> None:
+    # A LAN server is reached by its own name; the Host check is loopback-only.
+    monkeypatch.setattr(server_defaults, "LOOPBACK_ONLY", False)
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch, dedicated_workspace_url=None
+    )
+
+    with TestClient(interface.app, base_url="http://jetson.lan:9001") as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base", json=_make_inference_request()
+        )
+
+    assert response.status_code == 200, response.text
