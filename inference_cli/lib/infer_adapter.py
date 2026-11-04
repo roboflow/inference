@@ -92,8 +92,8 @@ def infer(
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
-    if input_reference.split(".")[-1] in VIDEO_EXTENSIONS:
-        infer_on_video(
+    if os.path.isdir(input_reference):
+        infer_on_directory(
             input_reference=input_reference,
             model_id=model_id,
             api_key=api_key,
@@ -105,8 +105,8 @@ def infer(
             model_configuration=model_configuration,
         )
         return None
-    if os.path.isdir(input_reference):
-        infer_on_directory(
+    if input_reference.split(".")[-1].lower() in VIDEO_EXTENSIONS:
+        infer_on_video(
             input_reference=input_reference,
             model_id=model_id,
             api_key=api_key,
