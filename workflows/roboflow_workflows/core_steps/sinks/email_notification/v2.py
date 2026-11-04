@@ -329,9 +329,9 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="Sender e-mail password be used when authenticating to SMTP server.",
-        private=True,
         examples=["$inputs.email_password"],
         json_schema_extra={
+            "private": True,
             "relevant_for": {
                 "email_provider": {"values": ["Custom SMTP"], "required": True},
             },

@@ -16,6 +16,24 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- **Credential properties are marked `private` in their manifests.** This covers
+  S3 sink `aws_access_key_id` and `aws_secret_access_key`, ONVIF `camera_password`,
+  the `password` of the MQTT writer (v1, v2), OPC writer, Microsoft SQL Server and
+  PostgreSQL sinks, Kafka producer `headers`, and Webhook `headers` and
+  `query_parameters`. Roboflow's workflow sharing strips private string values, so
+  shared runs stop using the owner's value for the string fields. `headers` and
+  `query_parameters` are objects, which that sharing code leaves alone for now.
+
+### Fixed
+
+- **`private` reaches the schema of Email v2, Twilio v1 and v2, and Qwen VLM v1 to
+  v4.** Email `sender_email_password`, Twilio `twilio_auth_token`, Twilio v2
+  `twilio_account_sid` and Qwen `api_key` declared `private=True` next to
+  `json_schema_extra`, which Pydantic ignores, so the flag never reached the
+  manifest. It now lives in `json_schema_extra`.
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.

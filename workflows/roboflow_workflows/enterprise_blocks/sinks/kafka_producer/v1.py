@@ -247,6 +247,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional string-to-string record headers, for example the source "
         "system or a schema version.",
         examples=[{"source": "inference", "schema": "v1"}, "$inputs.headers"],
+        json_schema_extra={"private": True},
     )
     fire_and_forget: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
         default=True,

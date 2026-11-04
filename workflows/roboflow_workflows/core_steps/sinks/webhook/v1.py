@@ -245,6 +245,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Request query parameters",
         default_factory=dict,
         examples=[{"api_key": "$inputs.api_key"}],
+        json_schema_extra={"private": True},
     )
     headers: Dict[
         str,
@@ -260,6 +261,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Request headers",
         default_factory=dict,
         examples=[{"api_key": "$inputs.api_key"}],
+        json_schema_extra={"private": True},
     )
     json_payload: Dict[
         str,

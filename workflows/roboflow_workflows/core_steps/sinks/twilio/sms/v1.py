@@ -135,10 +135,10 @@ class BlockManifest(WorkflowBlockManifest):
     twilio_auth_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
         title="Twilio Auth Token",
         description="Twilio Auth Token for authenticating with Twilio API. Found in the [Twilio Console](https://twilio.com/console) under Account Info (click 'show' to reveal). This field is marked as private for security. Recommended to provide via workflow inputs using SECRET_KIND selectors rather than storing in workflow definitions. Used together with twilio_account_sid to authenticate Twilio API requests for sending SMS messages.",
-        private=True,
         examples=["$inputs.twilio_auth_token"],
         json_schema_extra={
             "hide_description": True,
+            "private": True,
         },
     )
     sender_number: Union[str, Selector(kind=[STRING_KIND])] = Field(
