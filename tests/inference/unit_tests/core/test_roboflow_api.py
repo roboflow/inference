@@ -4771,8 +4771,11 @@ def test_get_workflow_specification_when_not_found_returned_and_ephemeral_cache_
 
 def test_get_workflow_specification_when_internal_error_returned_and_cache_disabled(
     requests_mock: Mocker,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     # given
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         status_code=500,
@@ -4793,8 +4796,11 @@ def test_get_workflow_specification_when_internal_error_returned_and_cache_disab
 
 def test_get_workflow_specification_when_internal_error_returned_and_ephemeral_cache_miss_detected(
     requests_mock: Mocker,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     # given
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         status_code=500,
@@ -5609,6 +5615,77 @@ def test_get_workflow_specification_raises_timeout_when_no_cache(
             workflow_id="timeout_no_cache_workflow",
             use_cache=False,
         )
+
+
+@pytest.mark.parametrize("status_code", [500, 502, 503, 504])
+@pytest.mark.parametrize("retried", [False, True])
+def test_workflow_file_cache_survives_server_errors(
+    monkeypatch, tmp_path, status_code, retried
+) -> None:
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(roboflow_api, "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", True)
+    response = requests.Response()
+    response.status_code = status_code
+    error = requests.exceptions.HTTPError(response=response)
+    if retried:
+        error = RetryRequestError(message="Retries exhausted", inner_error=error)
+    fetch = MagicMock(
+        side_effect=[
+            {"workflow": {"config": json.dumps({"specification": {"steps": []}})}},
+            error,
+        ]
+    )
+    monkeypatch.setattr(roboflow_api, "_get_from_url", fetch)
+    params = dict(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        workflow_version_id="pinned-version",
+        use_cache=False,
+    )
+    expected = get_workflow_specification(**params)
+
+    result = get_workflow_specification(**params)
+
+    assert result == expected
+    assert fetch.call_count == 2
+
+
+@pytest.mark.parametrize("status_code", [401, 403, 404, 429, 500, 503])
+@pytest.mark.parametrize("has_cache", [False, True])
+def test_workflow_server_error_fallback_preserves_other_failures(
+    monkeypatch, tmp_path, status_code, has_cache
+) -> None:
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(roboflow_api, "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", True)
+    params = dict(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        use_cache=False,
+    )
+    fetch = MagicMock(
+        return_value={"workflow": {"config": json.dumps({"specification": {}})}}
+    )
+    monkeypatch.setattr(roboflow_api, "_get_from_url", fetch)
+    if has_cache:
+        get_workflow_specification(**params)
+
+    response = requests.Response()
+    response.status_code = status_code
+    fetch.side_effect = requests.exceptions.HTTPError(response=response)
+    # A cached workflow must not bypass an authorization/resource error, and a
+    # missing cache must preserve a server error. Disabled file caching also
+    # preserves server errors even when an older cache entry exists.
+    if status_code >= 500 and has_cache:
+        monkeypatch.setattr(
+            roboflow_api, "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", False
+        )
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc_info:
+        get_workflow_specification(**params)
+
+    assert isinstance(exc_info.value.__cause__, requests.exceptions.HTTPError)
+    assert exc_info.value.__cause__.response.status_code == status_code
 
 
 @mock.patch.object(roboflow_api.requests, "get")

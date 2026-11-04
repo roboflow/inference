@@ -186,4 +186,5 @@ def take_static_crop(
         offset_x=x_min,
         offset_y=y_min,
         preserve_video_metadata=True,
+        video_crop_identifier=f"absolute_static_crop:{x_min},{y_min},{x_max},{y_max}",
     )

@@ -410,10 +410,17 @@ class WorkflowImageData:
         offset_x: int,
         offset_y: int,
         preserve_video_metadata: bool = False,
+        video_crop_identifier: Optional[str] = None,
     ) -> "WorkflowImageData":
         """
         Creates new instance of `WorkflowImageData` being a crop of original image,
         making adjustment to all metadata.
+
+        With `preserve_video_metadata`, the crop keeps the origin's video metadata and
+        appends `video_crop_identifier` (or `crop_identifier` when it is not given) to
+        `video_identifier`. Pass a `video_crop_identifier` that is the same on every
+        frame for crops of a fixed region, so blocks keeping per-video state see one
+        video instead of a new one per frame.
         """
         parent_metadata = ImageParentMetadata(
             parent_id=crop_identifier,
@@ -439,7 +446,8 @@ class WorkflowImageData:
         if preserve_video_metadata and origin_image_data._video_metadata is not None:
             video_metadata = copy(origin_image_data._video_metadata)
             video_metadata.video_identifier = (
-                f"{video_metadata.video_identifier} | crop: {crop_identifier}"
+                f"{video_metadata.video_identifier} | crop: "
+                f"{video_crop_identifier or crop_identifier}"
             )
         return WorkflowImageData(
             parent_metadata=parent_metadata,
@@ -457,6 +465,7 @@ class WorkflowImageData:
         offset_x: int,
         offset_y: int,
         preserve_video_metadata: bool = False,
+        video_crop_identifier: Optional[str] = None,
     ) -> "WorkflowImageData":
         """
         Tensor-native mirror of `create_crop`. Identical metadata math;
@@ -487,7 +496,8 @@ class WorkflowImageData:
         if preserve_video_metadata and origin_image_data._video_metadata is not None:
             video_metadata = copy(origin_image_data._video_metadata)
             video_metadata.video_identifier = (
-                f"{video_metadata.video_identifier} | crop: {crop_identifier}"
+                f"{video_metadata.video_identifier} | crop: "
+                f"{video_crop_identifier or crop_identifier}"
             )
         return WorkflowImageData(
             parent_metadata=parent_metadata,
