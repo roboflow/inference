@@ -24,6 +24,11 @@ for contributor and maintainer responsibilities.
   - Destination policy: only Databricks workspace hosts (`*.cloud.databricks.com`, `*.gcp.databricks.com`, `*.azuredatabricks.net`, whole-string validation) and SQL warehouse paths (cluster paths self-hosted only); the host must resolve to global addresses unless `ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES=true` on a self-hosted server. The connector's Thrift transport is pinned to the validated address (hostname kept for TLS verification and `Host`), redirects, proxies, HTTP and disabled verification are refused, cloud-fetch result links and the connector's telemetry / feature-flag / staging client are refused for the run.
   - Bounds, per block invocation and configurable: `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES` (1 GiB over encoded bytes, decoded pixels, names and metadata, reserved before decoding), `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` (32 MiB) and `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` (25 MP, read from the header; JPEG / PNG / WEBP only; decoded shape re-checked); metadata capped per value, nesting and row; the connector's inline result chunk bounded to 8 rows / twice the image byte limit with a server-side row limit. `timeout_seconds` is an overall deadline with a server-side `STATEMENT_TIMEOUT`, bounded retries and a watchdog that cancels the statement and closes the session; the step returns within a 35 s cleanup interval after the deadline.
 
+### Fixed
+
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+
 ### Execution engine
 
 - A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
