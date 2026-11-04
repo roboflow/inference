@@ -766,6 +766,26 @@ def collect_system_info() -> dict:
     return info
 
 
+def billing_attribution_fields() -> Dict[str, str]:
+    """The workflow and device a proxied third-party call runs for.
+
+    The platform bills a proxy call to the key it was made with; when that key is
+    workspace-wide these ids let it bill the workflow's (or, on an edge device, the
+    device's) billing folder instead. The workflow id is the one the HTTP request
+    named, so a pipeline without one sends only the device id. A block's own
+    `workflow_id`/`device_id` payload keys win over these.
+    """
+    from inference_server.middlewares.model_load import REQUEST_WORKFLOW_ID
+
+    fields: Dict[str, str] = {}
+    workflow_id = REQUEST_WORKFLOW_ID.get()
+    if workflow_id:
+        fields["workflow_id"] = workflow_id
+    if configuration.DEVICE_ID:
+        fields["device_id"] = configuration.DEVICE_ID
+    return fields
+
+
 class ServerRoboflowPlatformClient:
     @_records_api_call("_make_request")
     def post(
@@ -777,6 +797,8 @@ class ServerRoboflowPlatformClient:
         http_errors_handlers: Optional[HttpErrorHandlers] = None,
     ) -> dict:
         _refuse_when_offline(operation="make API requests")
+        if endpoint.startswith(_API_PROXY_ENDPOINT_PREFIXES) and payload is not None:
+            payload = {**billing_attribution_fields(), **payload}
         url_params: List[Tuple[str, str]] = []
         if api_key and api_key != "local":
             url_params.append(("api_key", api_key))
