@@ -104,7 +104,7 @@ def fake_databricks(rows: List[Dict[str, Any]]) -> Iterator[None]:
     with mock.patch.dict(
         sys.modules, {"databricks": databricks_module, "databricks.sql": sql_module}
     ), mock.patch(
-        "roboflow_workflows.core_steps.sinks.databricks.sql_image_source.v1"
+        "roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1"
         ".resolve_and_validate_ips",
         return_value=["52.1.2.3"],
     ):
