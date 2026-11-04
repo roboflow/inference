@@ -308,7 +308,7 @@ def process_mask_accurate(
     if len(masks.shape) == 2:
         masks = np.expand_dims(masks, axis=0)
     masks = masks.transpose((1, 2, 0))
-    masks = cv2.resize(masks, (shape[1], shape[0]), cv2.INTER_LINEAR)
+    masks = cv2.resize(masks, (shape[1], shape[0]), interpolation=cv2.INTER_LINEAR)
     if len(masks.shape) == 2:
         masks = np.expand_dims(masks, axis=2)
     masks = masks.transpose((2, 0, 1))
@@ -350,9 +350,9 @@ def process_mask_tradeoff(
     ih, iw = shape
     h = int(mh * (1 - tradeoff_factor) + ih * tradeoff_factor)
     w = int(mw * (1 - tradeoff_factor) + iw * tradeoff_factor)
-    size = (h, w)
+    size = (w, h)  # cv2.resize takes (width, height)
     if tradeoff_factor != 0:
-        masks = cv2.resize(masks, size, cv2.INTER_LINEAR)
+        masks = cv2.resize(masks, size, interpolation=cv2.INTER_LINEAR)
     if len(masks.shape) == 2:
         masks = np.expand_dims(masks, axis=2)
     masks = masks.transpose((2, 0, 1))
