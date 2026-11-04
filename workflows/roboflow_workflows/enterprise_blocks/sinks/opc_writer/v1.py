@@ -1035,6 +1035,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Optional password for authentication when connecting to the OPC UA server.",
         examples=["secret", "$inputs.opc_password"],
+        json_schema_extra={"private": True},
     )
     object_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="The name of the target object in the namespace to search for.",

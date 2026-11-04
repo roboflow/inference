@@ -265,9 +265,9 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         title="Twilio Account SID",
         description="Twilio Account SID from the Twilio Console.",
-        private=True,
         examples=["$inputs.twilio_account_sid"],
         json_schema_extra={
+            "private": True,
             "relevant_for": {
                 "sms_provider": {"values": ["Custom Twilio"], "required": True},
             },
@@ -280,10 +280,10 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         title="Twilio Auth Token",
         description="Twilio Auth Token from the Twilio Console.",
-        private=True,
         examples=["$inputs.twilio_auth_token"],
         json_schema_extra={
             "hide_description": True,
+            "private": True,
             "relevant_for": {
                 "sms_provider": {"values": ["Custom Twilio"], "required": True},
             },

@@ -196,6 +196,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="AWS access key ID for authentication. Required, and must be set together with `aws_secret_access_key`. Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
         examples=["$steps.secrets.aws_access_key_id"],
+        json_schema_extra={"private": True},
     )
     aws_secret_access_key: Optional[
         Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str]
@@ -203,6 +204,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="AWS secret access key for authentication. Required, and must be set together with `aws_access_key_id`. Recommended: connect this to an Environment Secrets Store block rather than hardcoding.",
         examples=["$steps.secrets.aws_secret_access_key"],
+        json_schema_extra={"private": True},
     )
     aws_region: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
