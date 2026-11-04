@@ -37,6 +37,33 @@ def test_read_env_file(text_file_path: str) -> None:
     }, "Decoded value must only contain lines with valid KEY=VALUE format"
 
 
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        (
+            "DB_URL=postgres://u:p@h/db?sslmode=require",
+            {"DB_URL": "postgres://u:p@h/db?sslmode=require"},
+        ),
+        ("TOKEN=YWJjZA==", {"TOKEN": "YWJjZA=="}),
+        ("KEY=", {"KEY": ""}),
+        ("NOT_A_PAIR", {}),
+    ],
+)
+def test_read_env_file_splits_on_first_equals_sign_only(
+    empty_directory: str, line: str, expected: dict
+) -> None:
+    # given
+    path = os.path.join(empty_directory, "server.env")
+    with open(path, "w") as f:
+        f.write(f"{line}\n")
+
+    # when
+    result = read_env_file(path=path)
+
+    # then
+    assert result == expected
+
+
 def test_dump_json(empty_directory: str) -> None:
     # given
     target_path = os.path.join(empty_directory, "some", "file.json")
