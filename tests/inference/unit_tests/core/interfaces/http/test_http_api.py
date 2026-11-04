@@ -15,7 +15,10 @@ from inference.core.constants import (
     WORKSPACE_ID_HEADER,
 )
 from inference.core.env import CORRELATION_ID_HEADER
-from inference.core.exceptions import RoboflowAPINotAuthorizedError
+from inference.core.exceptions import (
+    RoboflowAPIConnectionError,
+    RoboflowAPINotAuthorizedError,
+)
 from inference.core.roboflow_api import ServerlessUsageCheckResponse
 from inference.core.utils.depth_encoding import decode_png_normalized_depth
 
@@ -2576,7 +2579,53 @@ def test_required_api_key_without_server_workspace_rejects_every_key(
             client, "POST", "/infer/lmm/florence-2-base", api_key="teammate-key"
         )
 
+    # A valid key is refused too; the message must say why, not "bad key".
     assert response.status_code == 401
+    assert "ROBOFLOW_API_KEY" in response.json()["message"]
+
+
+def test_required_api_key_survives_roboflow_api_outages_only_with_a_grant(
+    monkeypatch,
+) -> None:
+    api_up = True
+
+    def lookup(api_key):
+        if not api_up:
+            raise RoboflowAPIConnectionError("down")
+        return _workspace_of_key(api_key)
+
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=lookup,
+    )
+    now = time.time()
+    clock = MagicMock(return_value=now)
+    monkeypatch.setattr(http_api.time, "time", clock)
+
+    with TestClient(interface.app) as client:
+
+        def status(api_key):
+            return _send_secured_request(
+                client, "POST", "/infer/lmm/florence-2-base", api_key=api_key
+            ).status_code
+
+        assert status("teammate-key") == 200  # grant cached while the API is up
+        api_up = False
+        clock.return_value = now + http_api.AUTH_CACHE_TTL_SECONDS + 1
+        expired_grant = status("teammate-key")
+        never_granted = status("other-teammate-key")
+        clock.return_value = (
+            now
+            + http_api.AUTH_CACHE_TTL_SECONDS
+            + http_api.AUTH_OUTAGE_GRACE_SECONDS
+            + 1
+        )
+        grace_over = status("teammate-key")
+
+    assert (expired_grant, never_granted, grace_over) == (200, 503, 503)
 
 
 def test_required_api_key_checks_head_requests_and_skips_cors_preflight(

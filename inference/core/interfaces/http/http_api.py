@@ -243,8 +243,11 @@ from inference.core.exceptions import (
     MissingServiceSecretError,
     ModelDeploymentNotSupportedError,
     RequestDataContradiction,
+    MalformedRoboflowAPIResponseError,
+    RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRequestError,
     WebRTCConfigurationError,
     WorkspaceLoadError,
 )
@@ -443,6 +446,9 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 
 AUTH_CACHE_TTL_SECONDS = 3600
+# How long an expired workspace grant keeps working while the Roboflow API
+# cannot be reached. Keys without a grant are refused until it can.
+AUTH_OUTAGE_GRACE_SECONDS = 24 * 3600
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
 # Probe/health endpoints whose access-log lines are demoted to DEBUG.
@@ -1355,11 +1361,18 @@ class HttpInterface(BaseInterface):
             server_workspaces = set(WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT or [])
             if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                 server_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-            if not server_workspaces and not API_KEY:
+            no_workspace_message = (
+                "This server has no workspace, so it accepts no API key. Start it "
+                "with ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT, "
+                "or make it reachable from this machine only (-p 127.0.0.1:9001:9001 "
+                "with PUBLISHED_HOST=127.0.0.1, as `inference server start` does)."
+            )
+            server_has_no_workspace = not server_workspaces and not API_KEY
+            if server_has_no_workspace:
                 logger.error(
-                    "SECURITY: REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT is on, but the server has no "
-                    "workspace. Set ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT; "
-                    "until then every authenticated route answers 401."
+                    "SECURITY: REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT is on. %s Until "
+                    "then every authenticated route answers 401.",
+                    no_workspace_message,
                 )
             # The dashboard page is a static file. The Workflow Builder is not
             # exempt: its page embeds the CSRF token that guards /build/api.
@@ -1399,7 +1412,7 @@ class HttpInterface(BaseInterface):
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
                     or scope_path.startswith("/static/")
-                    or scope_path.startswith("/_next/")
+                    or scope_path.startswith("/_next/static/")
                 )
                 if skip_check:
                     return await call_next(request)
@@ -1431,6 +1444,8 @@ class HttpInterface(BaseInterface):
                         pass
                 api_key = json_params.get("api_key", api_key)
 
+                if server_has_no_workspace:
+                    return _unauthorized_response(no_workspace_message)
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
@@ -1455,8 +1470,39 @@ class HttpInterface(BaseInterface):
                             expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
                             workspace_id=workspace_id,
                         )
-                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
+                    except (
+                        RoboflowAPINotAuthorizedError,
+                        RoboflowAPIForbiddenError,
+                        RoboflowAPINotNotFoundError,
+                        WorkspaceLoadError,
+                    ):
                         return _unauthorized_response("Unauthorized api_key")
+                    except (
+                        RoboflowAPIRequestError,
+                        MalformedRoboflowAPIResponseError,
+                    ) as error:
+                        # Fail closed: only a key granted before the outage
+                        # keeps working, and only for a bounded time.
+                        if (
+                            cache_entry is None
+                            or cache_entry.status_code != 200
+                            or cache_entry.expires_at + AUTH_OUTAGE_GRACE_SECONDS
+                            < time.time()
+                        ):
+                            logger.warning(
+                                "Cannot check an API key against the Roboflow API: %s",
+                                error,
+                            )
+                            return JSONResponse(
+                                status_code=503,
+                                headers={"Retry-After": "30"},
+                                content={
+                                    "status": 503,
+                                    "message": "Cannot reach the Roboflow API to "
+                                    "check the API key. Try again later.",
+                                },
+                            )
+                        workspace_id = cache_entry.workspace_id
 
                 response = (
                     await _call_next_with_assume_identity_authorised_workspace_db_id(
