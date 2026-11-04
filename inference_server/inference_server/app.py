@@ -16,6 +16,7 @@ import importlib.util
 import logging
 import multiprocessing
 import os
+import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -24,6 +25,11 @@ from typing import Any
 
 from inference_server.legacy_env import apply_legacy_env
 
+if __name__ == "__main__":
+    # `python -m inference_server.app` serves; importing this module does not.
+    from inference_server.server_defaults import apply_server_defaults
+
+    apply_server_defaults()
 apply_legacy_env()
 
 from inference_server.logging_config import (  # noqa: E402
@@ -35,11 +41,13 @@ configure_logging()
 
 import anyio.to_thread  # noqa: E402
 from fastapi import FastAPI, Response  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from inference_server import configuration as _cfg  # noqa: E402
 from inference_server import hf_preload  # noqa: E402
 from inference_server import pingback  # noqa: E402
+from inference_server import server_defaults  # noqa: E402
 from inference_server.auth import (  # noqa: E402
     close_session,
     extract_bearer,
@@ -278,9 +286,7 @@ async def _lifespan(app: FastAPI):
 
         if models_cfg.OFFLINE_MODE:
             from inference_model_manager import configuration as manager_cfg
-            from inference_model_manager.watchdogs import (
-                CudaMemoryReclamationWatchdog,
-            )
+            from inference_model_manager.watchdogs import CudaMemoryReclamationWatchdog
 
             if manager_cfg.ENABLE_CUDA_MEMORY_RECLAMATION_WATCHDOG:
                 cuda_daemon = CudaMemoryReclamationWatchdog(
@@ -399,11 +405,13 @@ def _ensure_offline_mode_is_supported() -> None:
     if _cfg.OFFLINE_MODE and (
         _cfg.DEDICATED_DEPLOYMENT_WORKSPACE_URL
         or _cfg.WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
+        or _cfg.REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT
     ):
         raise RuntimeError(
-            "OFFLINE_MODE is not supported together with dedicated or "
-            "workspace-whitelist authentication because API keys cannot be "
-            "mapped to workspaces without API connectivity."
+            "OFFLINE_MODE is not supported together with dedicated, "
+            "workspace-whitelist or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT "
+            "authentication because API keys cannot be mapped to workspaces "
+            "without API connectivity."
         )
 
 
@@ -539,6 +547,67 @@ class _AuthMiddleware:
         await self.app(scope, receive, send)
 
 
+_PROXY_HEADERS = (
+    b"forwarded",
+    b"x-forwarded-for",
+    b"x-forwarded-host",
+    b"x-real-ip",
+    b"via",
+)
+LOCAL_CALLERS_ONLY_MESSAGE = (
+    "This server has no workspace API key checks, "
+    "so it only serves requests from this machine."
+)
+
+
+class _LocalCallersOnlyMiddleware:
+    """Refuse requests that may not come from this machine (403).
+
+    Without workspace API key checks, a loopback server trusts every caller
+    that reaches it, and web pages open in this machine's browser reach it
+    too. Refuses a Host header that is not a loopback name (DNS rebinding),
+    requests relayed by a proxy, and requests from other sites: an Origin that
+    is not loopback, ``ALLOW_ORIGINS`` (where ``*`` counts for nothing) or the
+    Workflow Builder, or no Origin on a cross-site request.
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self.trusted_origins = set(_cfg.ALLOW_ORIGINS) - {"*"}
+        if _cfg.ENABLE_BUILDER:
+            self.trusted_origins.add(_cfg.BUILDER_ORIGIN)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {}
+        for name, value in scope.get("headers", []):
+            headers.setdefault(name.lower(), value.decode("latin-1"))
+        origin = headers.get(b"origin")
+        if origin is None:
+            other_site = headers.get(b"sec-fetch-site") == "cross-site"
+        else:
+            other_site = origin not in self.trusted_origins and not (
+                server_defaults.is_loopback_name(server_defaults.url_hostname(origin))
+            )
+        host = server_defaults.url_hostname(headers.get(b"host", ""))
+        if (
+            other_site
+            or not server_defaults.is_loopback_name(host)
+            or any(name in headers for name in _PROXY_HEADERS)
+        ):
+            response = JSONResponse(
+                status_code=403,
+                content={"status": 403, "message": LOCAL_CALLERS_ONLY_MESSAGE},
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
 def _metrics_model_id(registry_id: str) -> str:
     bridge = getattr(app.state, "legacy_bridge", None)
     route = bridge._routes.get(registry_id) if bridge is not None else None
@@ -598,13 +667,22 @@ if _cfg.GCP_SERVERLESS:
 
     app.add_middleware(ServerlessAuthMiddleware)
 
-if (
-    _cfg.DEDICATED_DEPLOYMENT_WORKSPACE_URL
-    or _cfg.WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
-):
-    from inference_server.hosted.dedicated_auth import DedicatedAuthMiddleware
+if server_defaults.workspace_auth_enabled():
+    from inference_server.hosted.dedicated_auth import (
+        DedicatedAuthMiddleware,
+        configured_workspaces,
+    )
 
+    if not configured_workspaces() and not _cfg.DEFAULT_API_KEY:
+        logger.error(
+            "SECURITY: REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT is on, but the server has "
+            "no workspace. Set ROBOFLOW_API_KEY or "
+            "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT; until then every "
+            "authenticated route answers 401."
+        )
     app.add_middleware(DedicatedAuthMiddleware)
+elif server_defaults.local_callers_only():
+    app.add_middleware(_LocalCallersOnlyMiddleware)
 
 app.add_middleware(ModelLoadHeadersMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
@@ -709,6 +787,10 @@ def main() -> None:
 
     port = int(os.environ.get(_cfg.PORT_ENV, str(_cfg.APP_PORT_DEFAULT)))
     workers = _cfg.NUM_WORKERS
+    if workers > 1 and not os.environ.get("NOTEBOOK_PASSWORD"):
+        # Each worker would otherwise generate its own Jupyter token, and
+        # /notebook/start could return one the running Jupyter rejects.
+        os.environ["NOTEBOOK_PASSWORD"] = secrets.token_urlsafe(32)
     uvicorn.run(
         "inference_server.app:app",
         host=_cfg.HOST,

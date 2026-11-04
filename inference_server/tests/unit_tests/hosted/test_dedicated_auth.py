@@ -19,7 +19,8 @@ def client():
     inner = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     @inner.api_route(
-        "/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
+        "/{full_path:path}",
+        methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     )
     async def _probe(request: Request):
         body = await request.body()
@@ -42,6 +43,13 @@ def workspace_lookup(monkeypatch):
 
     monkeypatch.setattr(dedicated_auth, "validate_api_key", _validate)
     return state
+
+
+@pytest.fixture(autouse=True)
+def no_server_workspace(monkeypatch):
+    monkeypatch.setattr(configuration, "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", False)
+    monkeypatch.setattr(configuration, "DEFAULT_API_KEY", None)
+    monkeypatch.setattr(dedicated_auth, "_server_workspace", None)
 
 
 @pytest.fixture
@@ -67,9 +75,13 @@ def allow_list(monkeypatch):
         ("GET", "/openapi.json", True),
         ("GET", "/static/app.js", True),
         ("GET", "/_next/static/chunk.js", True),
-        ("PUT", "/infer/object_detection", True),
+        # Only CORS preflight skips the check, whatever the route.
+        ("OPTIONS", "/infer/object_detection", True),
+        ("OPTIONS", "/v2/models", True),
+        ("PUT", "/infer/object_detection", False),
+        ("DELETE", "/model/clear", False),
         ("DELETE", "/v2/models", False),
-        ("PATCH", "/workflows/run", True),
+        ("PATCH", "/workflows/run", False),
         ("GET", "/model/registry", False),
         ("GET", "/workflows/blocks/describe", False),
         ("POST", "/workflows/definition/schema", False),
@@ -179,11 +191,102 @@ def test_only_whitelist_configured(client, workspace_lookup, monkeypatch):
     assert client.get("/infer/x?api_key=j").status_code == 401
 
 
-def test_backend_unavailable_propagates(client, workspace_lookup, allow_list):
+def test_head_request_is_checked(client, workspace_lookup, allow_list):
+    workspace_lookup.answers = {"k": (True, "ws-a"), "j": (True, "ws-other")}
+
+    assert client.head("/infer/x").status_code == 401
+    assert client.head("/infer/x?api_key=j").status_code == 401
+    assert workspace_lookup.calls == ["j"]
+
+
+def test_backend_unavailable_is_503_not_a_pass(client, workspace_lookup, allow_list):
     workspace_lookup.error = AuthBackendUnavailable("down")
 
-    with pytest.raises(AuthBackendUnavailable):
-        client.get("/infer/x?api_key=k")
+    response = client.get("/infer/x?api_key=k")
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "5"
+    assert "path" not in response.json()
+
+
+@pytest.fixture
+def server_key(monkeypatch):
+    monkeypatch.setattr(configuration, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(
+        configuration, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None
+    )
+    monkeypatch.setattr(configuration, "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", True)
+    monkeypatch.setattr(configuration, "DEFAULT_API_KEY", "server-key")
+
+
+def test_server_key_workspace_is_the_allow_list(client, workspace_lookup, server_key):
+    workspace_lookup.answers = {
+        "server-key": (True, "own"),
+        "k": (True, "own"),
+        "j": (True, "other"),
+    }
+
+    own = client.post("/workflows/run", json={"api_key": "k"})
+    other = client.post("/workflows/run", json={"api_key": "j"})
+    other_v2 = client.delete("/v2/models", headers={"Authorization": "Bearer j"})
+
+    assert own.status_code == 200
+    assert own.headers["X-Workspace-Id"] == "own"
+    assert other.status_code == 401
+    assert other.json() == UNAUTHORIZED
+    assert other_v2.status_code == 401
+    # Resolved once, then remembered.
+    assert workspace_lookup.calls.count("server-key") == 1
+    assert dedicated_auth._server_workspace == "own"
+
+
+def test_server_key_lookup_failure_is_retried(
+    client, workspace_lookup, server_key, monkeypatch
+):
+    async def _validate(api_key, *, through_secure_gateway):
+        workspace_lookup.calls.append(api_key)
+        if api_key == "server-key" and workspace_lookup.calls.count(api_key) == 1:
+            raise AuthBackendUnavailable("down")
+        return {"server-key": (True, "own"), "k": (True, "own")}[api_key]
+
+    monkeypatch.setattr(dedicated_auth, "validate_api_key", _validate)
+
+    first = client.get("/infer/x?api_key=k")
+    second = client.get("/infer/x?api_key=k")
+
+    assert first.status_code == 503
+    assert second.status_code == 200
+    assert workspace_lookup.calls == ["k", "server-key", "k", "server-key"]
+
+
+def test_rejected_server_key_is_401_with_its_own_message(
+    client, workspace_lookup, server_key
+):
+    workspace_lookup.answers = {"k": (True, "own")}
+
+    response = client.get("/infer/x?api_key=k")
+
+    assert response.status_code == 401
+    assert response.json()["message"] == dedicated_auth.SERVER_KEY_REJECTED_MESSAGE
+    assert dedicated_auth._server_workspace is None
+
+
+def test_no_workspace_configured_is_401_with_a_distinct_message(
+    client, workspace_lookup, server_key, monkeypatch
+):
+    monkeypatch.setattr(configuration, "DEFAULT_API_KEY", None)
+    workspace_lookup.answers = {"k": (True, "own")}
+
+    response = client.post("/infer/x", json={"api_key": "k"})
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "status": 401,
+        "message": dedicated_auth.NO_WORKSPACE_MESSAGE,
+    }
+    assert "ROBOFLOW_API_KEY" in dedicated_auth.NO_WORKSPACE_MESSAGE
+    assert workspace_lookup.calls == []
+    assert client.get("/healthz").status_code == 200
 
 
 @pytest.mark.parametrize(
