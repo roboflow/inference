@@ -186,7 +186,7 @@ def test_refusing_gunicorn_worker_exits_with_the_boot_error_code(
     # gunicorn forks its workers and halts only when one exits with code 3.
     monkeypatch.setenv("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", "False")
     monkeypatch.setenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", "True")
-    monkeypatch.setitem(sys.modules, "gunicorn", object())
+    monkeypatch.setenv("SERVER_SOFTWARE", "gunicorn/23.0.0")
 
     def exit_now(code):
         raise SystemExit(code)

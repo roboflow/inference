@@ -470,7 +470,7 @@ def _is_roboflow_api_outage(error: Exception) -> bool:
     return (
         isinstance(error, RoboflowAPIUnsuccessfulRequestError)
         and isinstance(status, int)
-        and (status >= 500 or status == 429)
+        and (status >= 500 or status in (408, 429))
     )
 
 
@@ -1360,10 +1360,9 @@ class HttpInterface(BaseInterface):
                 "x-real-ip",
                 "via",
             )
-            # Names a browser on this machine can use to reach the server:
-            # uvicorn prints 0.0.0.0, and Docker Desktop containers use
-            # host.docker.internal. Neither resolves to a remote site.
-            local_host_names = {"0.0.0.0", "host.docker.internal"}
+            # uvicorn prints http://0.0.0.0:<port>, which browsers on this
+            # machine also reach. It is an address, so DNS cannot rebind it.
+            local_host_names = {"0.0.0.0"}
 
             @app.middleware("http")
             async def refuse_requests_from_other_sites(request: Request, call_next):
@@ -1372,8 +1371,9 @@ class HttpInterface(BaseInterface):
                 if origin is None:
                     other_site = headers.get("sec-fetch-site") == "cross-site"
                 else:
+                    origin_host = url_hostname(origin)
                     other_site = origin not in trusted_origins and not (
-                        is_loopback_name(url_hostname(origin))
+                        is_loopback_name(origin_host) or origin_host in local_host_names
                     )
                 host = url_hostname(headers.get("host", "")) or ""
                 if (

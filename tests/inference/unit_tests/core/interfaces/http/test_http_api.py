@@ -2792,7 +2792,9 @@ def test_notebook_token_needs_key_checks_or_a_loopback_server(
         ({"origin": "https://builder.example.com"}, True),  # BUILDER_ORIGIN
         ({"sec-fetch-site": "same-origin"}, True),
         ({"host": "0.0.0.0:9001"}, True),  # the address uvicorn prints
-        ({"host": "host.docker.internal:9001"}, True),  # Docker Desktop
+        ({"origin": "http://0.0.0.0:9001"}, True),
+        # A DNS name, which a hostile network's DNS could rebind.
+        ({"host": "host.docker.internal:9001"}, False),
         ({"host": "rebound.example.com:9001"}, False),  # DNS rebinding
         ({"host": "localhost.:9001"}, False),
         ({"origin": "https://evil.example.com"}, False),

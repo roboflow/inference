@@ -558,10 +558,9 @@ LOCAL_CALLERS_ONLY_MESSAGE = (
     "This server has no workspace API key checks, "
     "so it only serves requests from this machine."
 )
-# Names a browser on this machine can use to reach the server: uvicorn prints
-# 0.0.0.0, and Docker Desktop containers use host.docker.internal. Neither
-# resolves to a remote site.
-_LOCAL_HOST_NAMES = {"0.0.0.0", "host.docker.internal"}
+# uvicorn prints http://0.0.0.0:<port>, which browsers on this machine also
+# reach. It is an address, so DNS cannot rebind it.
+_LOCAL_HOST_NAMES = {"0.0.0.0"}
 
 
 class _LocalCallersOnlyMiddleware:
@@ -593,8 +592,10 @@ class _LocalCallersOnlyMiddleware:
         if origin is None:
             other_site = headers.get(b"sec-fetch-site") == "cross-site"
         else:
+            origin_host = server_defaults.url_hostname(origin)
             other_site = origin not in self.trusted_origins and not (
-                server_defaults.is_loopback_name(server_defaults.url_hostname(origin))
+                server_defaults.is_loopback_name(origin_host)
+                or origin_host in _LOCAL_HOST_NAMES
             )
         host = server_defaults.url_hostname(headers.get(b"host", "")) or ""
         if (

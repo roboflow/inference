@@ -39,7 +39,7 @@ INFERENCE_TEST_DOCKER_ARGS ?=
 # self-hosted defaults turn off are turned back on for the workflow tests.
 # PUBLISHED_HOST is the host address of INFERENCE_TEST_BIND, so binding any
 # other address makes the server refuse to start with these settings.
-INFERENCE_TEST_ENV = -e PUBLISHED_HOST=$(word 1,$(subst :, ,$(INFERENCE_TEST_BIND))) \
+INFERENCE_TEST_ENV = -e PUBLISHED_HOST=$(shell echo '$(INFERENCE_TEST_BIND)' | sed -E 's/^(\[[^]]*\]|[^:]*):.*/\1/') \
 	-e ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True \
 	-e ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM=True \
 	-e ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES=True \
