@@ -375,3 +375,34 @@ def test_server_entry_refuses_to_start_exposed_with_host_access(
     assert "Refusing to start: ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS" in (
         result.stderr
     )
+
+
+def test_refusal_with_several_workers_stops_uvicorn(tmp_path) -> None:
+    # uvicorn starts a worker again when it exits; the refusing worker must
+    # stop the supervisor, or the server restarts workers forever.
+    env = {
+        **_clean_subprocess_env(),
+        "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": "False",
+        "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS": "True",
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "inference_server.entrypoints.cpu_http:app",
+            "--workers",
+            "2",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "0",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
+        timeout=120,
+    )
+
+    assert result.stderr.count("Refusing to start") <= 2, result.stderr

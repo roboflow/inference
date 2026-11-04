@@ -62,6 +62,7 @@ def build_streams_configuration() -> StreamsConfiguration:
         stream_manager_port=configuration.STREAM_MANAGER_PORT,
         stream_manager_socket_timeout=configuration.STREAM_MANAGER_SOCKET_TIMEOUT,
         allow_unsafe_gstreamer_pipelines=configuration.ALLOW_UNSAFE_GSTREAMER_PIPELINES,
+        allow_local_video_files=configuration.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM,
         debug_aiortc_queues=configuration.DEBUG_AIORTC_QUEUES,
         debug_webrtc_processing_latency=configuration.DEBUG_WEBRTC_PROCESSING_LATENCY,
         offline_mode=configuration.OFFLINE_MODE,

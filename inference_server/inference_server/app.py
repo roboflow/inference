@@ -558,6 +558,10 @@ LOCAL_CALLERS_ONLY_MESSAGE = (
     "This server has no workspace API key checks, "
     "so it only serves requests from this machine."
 )
+# Names a browser on this machine can use to reach the server: uvicorn prints
+# 0.0.0.0, and Docker Desktop containers use host.docker.internal. Neither
+# resolves to a remote site.
+_LOCAL_HOST_NAMES = {"0.0.0.0", "host.docker.internal"}
 
 
 class _LocalCallersOnlyMiddleware:
@@ -592,15 +596,19 @@ class _LocalCallersOnlyMiddleware:
             other_site = origin not in self.trusted_origins and not (
                 server_defaults.is_loopback_name(server_defaults.url_hostname(origin))
             )
-        host = server_defaults.url_hostname(headers.get(b"host", ""))
+        host = server_defaults.url_hostname(headers.get(b"host", "")) or ""
         if (
             other_site
-            or not server_defaults.is_loopback_name(host)
+            or not (server_defaults.is_loopback_name(host) or host in _LOCAL_HOST_NAMES)
             or any(name in headers for name in _PROXY_HEADERS)
         ):
             response = JSONResponse(
                 status_code=403,
-                content={"status": 403, "message": LOCAL_CALLERS_ONLY_MESSAGE},
+                content={
+                    "status": 403,
+                    "message": f"{LOCAL_CALLERS_ONLY_MESSAGE} Refused Host "
+                    f"{host or 'missing'!r}, Origin {origin!r}.",
+                },
             )
             await response(scope, receive, send)
             return
@@ -690,7 +698,23 @@ setup_telemetry(app)
 install_structured_access_log(app)
 
 
+def _mount_static(app: FastAPI, path: str, directory: str, name: str) -> None:
+    # Mounted even without the directory: these paths skip the workspace key
+    # check, so the catch-all model route must never serve them.
+    if os.path.isdir(directory):
+        app.mount(path, StaticFiles(directory=directory, html=True), name=name)
+    else:
+        app.mount(path, Response(status_code=404), name=name)
+
+
 def mount_landing_assets(app: FastAPI) -> bool:
+    _mount_static(app, "/static", os.path.join(_cfg.LANDING_DIR, "static"), "static")
+    _mount_static(
+        app,
+        "/_next/static",
+        os.path.join(_cfg.LANDING_DIR, "_next", "static"),
+        "_next_static",
+    )
     if not os.path.isdir(_cfg.LANDING_DIR):
         logger.warning(
             "Landing page directory %s not found; / is not served", _cfg.LANDING_DIR
@@ -703,20 +727,6 @@ def mount_landing_assets(app: FastAPI) -> bool:
         @app.head("/dashboard.html")
         async def _dashboard_guard() -> Response:
             return Response(status_code=404)
-
-    static_dir = os.path.join(_cfg.LANDING_DIR, "static")
-    if os.path.isdir(static_dir):
-        app.mount(
-            "/static", StaticFiles(directory=static_dir, html=True), name="static"
-        )
-
-    next_static_dir = os.path.join(_cfg.LANDING_DIR, "_next", "static")
-    if os.path.isdir(next_static_dir):
-        app.mount(
-            "/_next/static",
-            StaticFiles(directory=next_static_dir, html=True),
-            name="_next_static",
-        )
 
     return True
 

@@ -77,6 +77,8 @@ def _local_callers_client(monkeypatch, allow_origins=("*",), builder=False):
         ({"Host": "127.0.0.1:9001"}, True),
         ({"Host": "[::1]:9001"}, True),
         ({"Host": "localhost"}, True),
+        ({"Host": "0.0.0.0:9001"}, True),  # the address uvicorn prints
+        ({"Host": "host.docker.internal:9001"}, True),  # Docker Desktop
         # DNS rebinding: an attacker's name that resolves to 127.0.0.1.
         ({"Host": "rebind.evil.example:9001"}, False),
         ({"Host": "localhost.evil.example"}, False),
@@ -106,7 +108,7 @@ def test_local_callers_only_gate(monkeypatch, headers, allowed):
         assert response.status_code == 200, response.text
     else:
         assert response.status_code == 403
-        assert response.json()["message"] == app_mod.LOCAL_CALLERS_ONLY_MESSAGE
+        assert response.json()["message"].startswith(app_mod.LOCAL_CALLERS_ONLY_MESSAGE)
 
 
 def test_local_callers_only_gate_refuses_cross_site_preflight(monkeypatch):

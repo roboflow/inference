@@ -75,6 +75,9 @@ def allow_list(monkeypatch):
         ("GET", "/openapi.json", True),
         ("GET", "/static/app.js", True),
         ("GET", "/_next/static/chunk.js", True),
+        # The catch-all model route would serve these paths.
+        ("GET", "/_next/1", False),
+        ("POST", "/_next/1", False),
         # Only CORS preflight skips the check, whatever the route.
         ("OPTIONS", "/infer/object_detection", True),
         ("OPTIONS", "/v2/models", True),
@@ -356,7 +359,7 @@ def _mounted_v2_app():
     return app
 
 
-@pytest.mark.parametrize("root_path", ["/static", "/_next"])
+@pytest.mark.parametrize("root_path", ["/static", "/_next/static"])
 def test_mounted_v2_unload_all_checks_the_allow_list(
     workspace_lookup, allow_list, root_path
 ):
@@ -371,7 +374,7 @@ def test_mounted_v2_unload_all_checks_the_allow_list(
     assert workspace_lookup.calls == ["j"]
 
 
-@pytest.mark.parametrize("root_path", ["/static", "/_next"])
+@pytest.mark.parametrize("root_path", ["/static", "/_next/static"])
 def test_mounted_non_v2_methods_keep_the_static_exemption(
     workspace_lookup, allow_list, root_path
 ):
