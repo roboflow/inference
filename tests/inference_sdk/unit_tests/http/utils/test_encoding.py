@@ -1,6 +1,6 @@
 import base64
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -30,6 +30,24 @@ def test_numpy_array_to_base64_jpeg() -> None:
     # then
     assert image.shape == recovered_image.shape
     assert (image == recovered_image).all()
+
+
+@pytest.mark.parametrize("shape", [(16, 16), (16, 16, 3)])
+def test_numpy_array_to_base64_jpeg_scales_unsigned_16_bit_images(
+    shape: Tuple[int, ...],
+) -> None:
+    # given
+    image = np.full(shape, 40000, dtype=np.uint16)
+
+    # when
+    encoded_image = numpy_array_to_base64_jpeg(image=image)
+    bytes_array = np.frombuffer(base64.b64decode(encoded_image), dtype=np.uint8)
+    recovered_image = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+
+    # then
+    assert recovered_image.dtype == np.uint8
+    assert recovered_image.shape == shape
+    assert abs(int(recovered_image.mean()) - (40000 >> 8)) <= 2
 
 
 def test_pillow_image_to_base64_jpeg() -> None:
