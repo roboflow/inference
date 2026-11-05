@@ -1,7 +1,7 @@
 """RFDETR-specific preprocessing matching the training pipeline.
 
 numpy / PIL inputs:
-    [optional cv2 dataset-version resize] → PIL F.resize → F.to_tensor → F.normalize
+    [optional cv2 dataset-version resize] → PIL F.resize → to float32 / 255 → F.normalize
 
 The cv2 dataset-version resize runs first when `resize_mode != STRETCH_TO`
 and `dataset_version_resize_dimensions` is set; the PIL stretch then takes
@@ -264,9 +264,24 @@ def _pre_process_numpy(
     )
     if swap_channels:
         resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    tensor = TF.to_tensor(resized)
+    tensor = _uint8_image_to_float32_tensor(resized)
     tensor = _apply_normalization(tensor, network_input)
     return tensor, meta
+
+
+def _uint8_image_to_float32_tensor(image: np.ndarray) -> torch.Tensor:
+    """Same as `TF.to_tensor` on a uint8 HWC (or HW) array, but always float32.
+
+    `TF.to_tensor` converts uint8 to `torch.get_default_dtype()`, which is
+    process-global and can be changed by other threads (transformers sets it while
+    it builds a model), so the dtype is fixed here.
+    """
+    if image.ndim == 2:
+        image = image[:, :, None]
+    tensor = torch.from_numpy(np.ascontiguousarray(image)).permute(2, 0, 1)
+    tensor = tensor.contiguous().to(dtype=torch.float32).div(255)
+
+    return tensor
 
 
 def _needs_two_step_resize(network_input: NetworkInputDefinition) -> bool:
