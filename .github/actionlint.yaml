@@ -1,10 +1,10 @@
-# Depot and Jetson runners are organization-managed labels, not GitHub-hosted
+# Depot, ARC GPU and Jetson runners are organization-managed labels, not GitHub-hosted
 # runner labels. Allow them while retaining actionlint's runner validation for
 # every other label.
 self-hosted-runner:
   labels:
     - depot-ubuntu-*
-    - Roboflow-GPU-VM-Runner
+    - arc-gpu-runner-set
     - jetpack-*
     - jetson
 

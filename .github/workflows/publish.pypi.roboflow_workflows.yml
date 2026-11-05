@@ -24,15 +24,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       - name: 🐍 Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
       - name: 🛞 Build roboflow-workflows wheel
         run: make create_workflows_wheel
       - name: 📤 Upload built wheel as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: roboflow-workflows-wheel
           path: dist/roboflow_workflows-*.whl
@@ -41,7 +43,7 @@ jobs:
         # only when the operator explicitly opts in — default is build-only
         # so smoke-testing the packaging never accidentally re-tags PyPI.
         if: ${{ github.event_name == 'release' || github.event.inputs.publish == 'true' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: dist/
           skip-existing: true

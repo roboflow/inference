@@ -27,19 +27,21 @@ concurrency:
 jobs:
   build:
     if: ${{ !github.event.act }}
-    runs-on: Roboflow-GPU-VM-Runner
+    runs-on: arc-gpu-runner-set
 
     timeout-minutes: 60
 
     steps:
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: 🛎️ Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       - name: 📦 Cache Python packages
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
@@ -62,9 +64,19 @@ jobs:
       - name: 🧪 Regression Tests without Torch Preprocessing - Parallel GPU
         id: regression_tests_with_python_preprocessing
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          asl_instance_segmentation_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          asl_poly_instance_seg_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          bccd_favz3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          bccd_i4nym_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          cats_and_dogs_smnpl_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          coins_xaz9i_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          yolonas_test_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
         run: |
           source venv/bin/activate
-          IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
+          IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
       - name: 🚨 Show server logs on error
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' || failure() }}
         run: docker logs inference-test
@@ -79,9 +91,19 @@ jobs:
       - name: 🧪 Regression Tests with Torch Preprocessing - Parallel GPU
         id: regression_tests_without_python_preprocessing
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          asl_instance_segmentation_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          asl_poly_instance_seg_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          bccd_favz3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          bccd_i4nym_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          cats_and_dogs_smnpl_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          coins_xaz9i_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          yolonas_test_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
         run: |
           source venv/bin/activate
-          IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
+          IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
       - name: 🚨 Show server logs on error
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' || failure() }}
         run: docker logs inference-test

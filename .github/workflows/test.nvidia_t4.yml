@@ -114,7 +114,7 @@ jobs:
           && !github.event.act
           && (github.event_name != 'push' || inputs.private_image)
           && (!inputs.private_image || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
-    runs-on: Roboflow-GPU-VM-Runner
+    runs-on: arc-gpu-runner-set
     permissions:
       contents: read
       id-token: write
@@ -148,11 +148,11 @@ jobs:
         run: python3 .github/scripts/ci_image.py
       - name: Set up Depot CLI
         if: ${{ inputs.private_image }}
-        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: 🦾 Install dependencies
         run: |
           python3 -m venv .venv

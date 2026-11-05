@@ -18,19 +18,22 @@ jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on:
-      group: group8core
+      labels: depot-ubuntu-22.04-8
+      group: public-depot
     timeout-minutes: 35
 
     steps:
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: 🛎️ Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ${{ github.head_ref }}
+          persist-credentials: false
       - name: 🔨 Build Docker
         run: docker build -t inference-google-colab:cpu -f ./docker/dockerfiles/Dockerfile.google.colab.cpu .
       - name: 🧪 Run tests
-        run: docker run -e ROBOFLOW_API_KEY=${{ secrets.API_KEY }} inference-google-colab:cpu
+        env:
+          ROBOFLOW_API_KEY: ${{ secrets.API_KEY }}
+        run: docker run -e ROBOFLOW_API_KEY inference-google-colab:cpu

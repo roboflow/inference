@@ -12,6 +12,7 @@ jobs:
   check_if_branch_is_mergeable:
     name: Check if branch is mergeable
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
     steps:
