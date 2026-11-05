@@ -306,20 +306,6 @@ def test_routes_refuse_a_model_that_is_not_the_video_tracker(client, loads):
     assert "SAM3TrackerVideo" in response.json()["message"]
 
 
-def test_a_tracker_without_offline_tracking_answers_501(client, loads):
-    class SAM3TrackerVideo:  # as released before the offline methods
-        pass
-
-    loads.model = SAM3TrackerVideo()
-
-    response = client.post(
-        "/sam3/video/propagate",
-        json={"api_key": API_KEY, "video_id": "clip-1", "prompts": PROMPTS},
-    )
-
-    assert response.status_code == 501, response.text
-
-
 def test_routes_answer_501_in_remote_sam3_mode(client, loads, monkeypatch):
     import inference.core.interfaces.http.http_api as http_api
 

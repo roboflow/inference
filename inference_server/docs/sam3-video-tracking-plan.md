@@ -148,14 +148,15 @@ Verification:
 
 - **Question:** Memory per cached clip.
   - **Investigation:** a clip keeps its preprocessed frames and its encoder
-    output in CPU memory, and moves features to the GPU per use. From the
-    model's config that is about 59 MiB per encoded frame (three 256-channel
-    maps of 288², 144² and 72² in half precision, plus the frame). This is
-    computed, not measured. A 480-frame clip is about 28 GiB, so CPU memory,
-    not the GPU, limits how many clips a server keeps.
+    output in CPU memory, and moves features to the GPU per use. In bfloat16
+    that is about 6 MB of preprocessed pixels per frame, plus about 11 MB of
+    encoder output once the frame is encoded (the model reduces the channels
+    of the two high-resolution maps before they are kept). This is computed,
+    not measured. A 480-frame clip is about 8 GB when every frame is encoded,
+    so CPU memory, not the GPU, limits how many clips a server keeps.
   - **Recommendation:** size `SAM3_VIDEO_MAX_CACHED_CLIPS` and
-    `SAM3_VIDEO_MAX_FRAMES` to the machine's RAM (for example 2 clips of 480
-    frames on 128 GiB), and measure before raising either.
+    `SAM3_VIDEO_MAX_FRAMES` to the machine's RAM (the defaults, 4 clips of up
+    to 600 frames, allow about 40 GB), and measure before raising either.
   - **Input needed:** none, but it is open until measured.
 
 - **Question:** Clips shorter than two frames.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## `0.39.9`
+
 ### Added
 
 - `SAM3TrackerVideo` tracks whole clips offline: `embed_video` keeps a clip's

@@ -115,8 +115,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       # A pushed image also goes to Google Artifact Registry, as the
-      # docker.*.yml release workflows do, so internal clusters pull it
-      # from roboflow-artifacts.
+      # docker.*.yml release workflows do.
       - name: Authenticate gcloud
         if: inputs.push
         uses: google-github-actions/auth@v2
