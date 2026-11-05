@@ -17,6 +17,7 @@ from inference_models.configuration import (
     RUNNING_ON_JETSON,
 )
 from inference_models.entities import ColorFormat
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 TEXT_RECOGNITION_PROMPT = "Text Recognition:"
 FORMULA_RECOGNITION_PROMPT = "Formula Recognition:"
@@ -73,19 +74,20 @@ class GlmOcrHF:
         dtype = _resolve_default_dtype(device)
         attn_implementation = _get_glm_ocr_attn_implementation(device)
 
-        model = (
-            AutoModelForImageTextToText.from_pretrained(
-                model_name_or_path,
-                device_map=device,
-                torch_dtype=dtype,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
+        with torch_default_dtype_lock():
+            model = (
+                AutoModelForImageTextToText.from_pretrained(
+                    model_name_or_path,
+                    device_map=device,
+                    torch_dtype=dtype,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
+                .eval()
+                .to(dtype)
             )
-            .eval()
-            .to(dtype)
-        )
 
         processor = AutoProcessor.from_pretrained(
             model_name_or_path,
