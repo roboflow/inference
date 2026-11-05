@@ -133,11 +133,63 @@ def _is_loopback_only() -> bool:
     )
 
 
+def _feature_defaults_to_apply(loopback_only: bool, has_workspace: bool) -> dict:
+    """The feature defaults to set, dropping the key requirement where it cannot
+    or need not apply.
+
+    Args:
+        loopback_only: True when only this machine can reach the server.
+        has_workspace: True when the server has an API key or a whitelist, so it
+            has a workspace to check keys against.
+
+    Returns:
+        The subset of `SELF_HOSTED_SERVER_DEFAULTS` to pass to
+        `os.environ.setdefault`.
+    """
+    skip_key_requirement = (
+        # API keys cannot be mapped to workspaces without API connectivity.
+        _is_true("OFFLINE_MODE")
+        # Nothing to check keys against; only local callers reach the server.
+        or (loopback_only and not has_workspace)
+    )
+    return {
+        name: value
+        for name, value in SELF_HOSTED_SERVER_DEFAULTS.items()
+        if not (name == "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT" and skip_key_requirement)
+    }
+
+
+def _refuse_to_start(message: str) -> None:
+    """Stop this worker, and its supervisor, so the server never serves a request.
+
+    A worker that exits is started again, so stopping only the worker would
+    restart it forever. gunicorn forks its workers and halts when one exits with
+    3 (WORKER_BOOT_ERROR); uvicorn (0.30+) spawns them and stops on SIGTERM. A
+    forked gunicorn worker has `gunicorn.arbiter` imported and `SERVER_SOFTWARE`
+    set; other children of a gunicorn process inherit only the environment, so
+    their refusal stays an ordinary, catchable SystemExit.
+    """
+    if "gunicorn.arbiter" in sys.modules and os.getenv(
+        "SERVER_SOFTWARE", ""
+    ).startswith("gunicorn/"):
+        print(message, file=sys.stderr, flush=True)
+        os._exit(3)
+    if multiprocessing.parent_process() is not None:
+        os.kill(os.getppid(), signal.SIGTERM)
+    raise SystemExit(message)
+
+
 def apply_self_hosted_server_defaults() -> None:
-    """Apply the self-hosted server defaults to the process environment.
+    """Apply the self-hosted server defaults and enforce the startup access policy.
 
     Call it before anything imports `inference.core.env`. Explicit environment
     variables and ./.env entries win over the defaults. Sets `LOOPBACK_ONLY`.
+
+    The startup access policy is: a server that is reachable from other machines
+    and performs no workspace API key checks must not enable any feature in
+    `HOST_ACCESS_SETTINGS`, because anyone who can reach its port could then run
+    code on the host or read its files or secrets. Such a server is refused; one
+    with no host-access feature enabled is allowed but warned.
 
     Returns:
         None.
@@ -161,47 +213,27 @@ def apply_self_hosted_server_defaults() -> None:
     has_workspace = bool(
         os.getenv("ROBOFLOW_API_KEY") or os.getenv("API_KEY") or has_whitelist
     )
-    for name, value in SELF_HOSTED_SERVER_DEFAULTS.items():
-        if name == "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT" and (
-            # API keys cannot be mapped to workspaces without API connectivity.
-            _is_true("OFFLINE_MODE")
-            # Nothing to check keys against; only local callers reach the server.
-            or (loopback_only and not has_workspace)
-        ):
-            continue
+    for name, value in _feature_defaults_to_apply(loopback_only, has_workspace).items():
         os.environ.setdefault(name, value)
-    if (
-        loopback_only
-        or _is_true("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT")
-        or has_whitelist
-    ):
+
+    # Decide the access policy from the resulting environment.
+    workspace_auth_enabled = (
+        _is_true("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT") or has_whitelist
+    )
+    if loopback_only or workspace_auth_enabled:
         return None
-    enabled = [name for name in HOST_ACCESS_SETTINGS if _is_true(name)]
-    if enabled:
-        message = (
-            f"Refusing to start: {', '.join(enabled)} is on, but the server takes "
-            "connections from other machines without workspace API key checks, so "
-            "anyone who can reach it could use it. Either make it reachable from "
-            "this machine only (`inference server start` does so by default; with "
-            "docker run, publish the port as -p 127.0.0.1:9001:9001 and set "
-            "PUBLISHED_HOST=127.0.0.1), or set ROBOFLOW_API_KEY or "
+    enabled_host_access = [name for name in HOST_ACCESS_SETTINGS if _is_true(name)]
+    if enabled_host_access:
+        _refuse_to_start(
+            f"Refusing to start: {', '.join(enabled_host_access)} is on, but the "
+            "server takes connections from other machines without workspace API "
+            "key checks, so anyone who can reach it could use it. Either make it "
+            "reachable from this machine only (`inference server start` does so by "
+            "default; with docker run, publish the port as -p 127.0.0.1:9001:9001 "
+            "and set PUBLISHED_HOST=127.0.0.1), or set ROBOFLOW_API_KEY or "
             "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT and keep "
             "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on."
         )
-        # A worker that exits is started again, so stop the supervisor too;
-        # otherwise the workers would restart forever. gunicorn forks its
-        # workers and halts when one exits with 3 (WORKER_BOOT_ERROR); uvicorn
-        # (0.30+) spawns them and stops on SIGTERM.
-        # A forked gunicorn worker has both; other children of gunicorn
-        # inherit only the environment.
-        if "gunicorn.arbiter" in sys.modules and os.getenv(
-            "SERVER_SOFTWARE", ""
-        ).startswith("gunicorn/"):
-            print(message, file=sys.stderr, flush=True)
-            os._exit(3)
-        if multiprocessing.parent_process() is not None:
-            os.kill(os.getppid(), signal.SIGTERM)
-        raise SystemExit(message)
     # The logger is not configured yet, so write straight to stderr.
     print(
         "SECURITY: the server takes connections from other machines without "
