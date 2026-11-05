@@ -135,6 +135,22 @@ def test_describe_image_embeddings_reports_only_model_side_preprocessing():
     ]
 
 
+def test_describe_image_embeddings_prefers_the_model_embedding_preprocessing():
+    class PretrainedEmbeddings(FakeClassifier):
+        embedding_preprocessing = {"do_resize": True, "size": {"height": 224}}
+
+    model = PretrainedEmbeddings()
+    del model._inference_config
+
+    result = describe_image_embeddings(model, torch.zeros((1, 4)), {})
+
+    assert result["embedding_info"]["preprocessing"] == {
+        "do_resize": True,
+        "size": {"height": 224},
+    }
+    assert result["embedding_info"]["backend"] == "PretrainedEmbeddings"
+
+
 def test_wire_marshalling_turns_the_embedding_tensor_into_numpy():
     model = FakeClassifier()
     lazy_register(type(model))

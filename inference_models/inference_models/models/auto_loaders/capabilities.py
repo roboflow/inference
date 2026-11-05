@@ -9,6 +9,11 @@ SUPPORTED_IMAGE_EMBEDDING_BACKENDS = {
     "vit": {"onnx", "hugging-face"},
     "dinov3_probe": {"onnx", "torch"},
 }
+SUPPORTED_PRETRAINED_IMAGE_EMBEDDING_BACKENDS = {
+    "dinov2": {"onnx"},
+    "dinov3": {"onnx"},
+    "siglip2": {"onnx"},
+}
 
 
 def validate_capabilities(required_capabilities):
@@ -21,6 +26,10 @@ def supports_capabilities(architecture, task, backend, required_capabilities):
     validate_capabilities(required_capabilities)
     if IMAGE_EMBEDDINGS not in (required_capabilities or ()):
         return True
+    if task == "embedding":
+        return backend in SUPPORTED_PRETRAINED_IMAGE_EMBEDDING_BACKENDS.get(
+            architecture, set()
+        )
     return task in {"classification", "multi-label-classification"} and backend in (
         SUPPORTED_IMAGE_EMBEDDING_BACKENDS.get(architecture, set())
     )

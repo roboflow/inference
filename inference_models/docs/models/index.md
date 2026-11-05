@@ -76,6 +76,7 @@ The `inference-models` library supports a wide range of computer vision models a
 |-------|----------|---------|-------------------------------|---------------------|-----------------|
 | [CLIP](clip.md) | `torch`, `onnx` | MIT | N/A | ✅ | ❌ |
 | [Perception Encoder](perception-encoder.md) | `torch` | FAIR Noncommercial | ❌ | ✅ | ❌ |
+| [DINOv2, DINOv3, SigLIP2](pretrained-image-embeddings.md) | `onnx` | Apache 2.0, Meta DINO | N/A | ✅ | ❌ |
 
 ### Semantic Segmentation
 
