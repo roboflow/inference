@@ -1,5 +1,12 @@
 This model uses [SAM 3 (Segment Anything 3)](https://github.com/facebookresearch/sam3) from Meta.
 
+The experimental `trt_export` and `trt` modules export and run the native text-prompt path with TensorRT.
+They load the existing model package and support one image and one prompt at a time, with fixed 1008×1008 images and 32 token positions.
+The decoder retains native geometry processing, box format, and score calculations.
+This prototype does not change automatic backend selection or support interactive prompts and video tracking.
+The [internal experiment workspace](https://github.com/roboflow/sam3-trt) contains launch preparation and correctness comparisons.
+GPU export and accuracy results remain pending.
+
 # Instance Segmentation with Box Prompts
 
 ```python
