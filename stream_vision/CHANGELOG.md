@@ -9,6 +9,8 @@ This is the canonical changelog for the `streamvision` package.
 ### Changed
 
 - The Pillow requirement allows 13 (`pillow>=12.3.0,<14.0.0`).
+- The `workflows` extra requires `roboflow-workflows>=0.2.16rc1` instead of
+  `>=0.2.15`.
 
 ## `0.1.5`
 
