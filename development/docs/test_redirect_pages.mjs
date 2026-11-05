@@ -9,7 +9,7 @@ const installPage = readFileSync("site/install/index.html", "utf8");
 const destination = "https://docs.roboflow.com/deployment/self-hosted/self-hosted";
 
 function redirectFrom(html, suffix) {
-    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)];
     assert.equal(scripts.length, 1, "The standalone redirect has one inline script");
     const source = new URL(`https://inference.roboflow.com/${suffix}`);
     const location = { search: source.search, hash: source.hash, href: source.href };
@@ -63,4 +63,14 @@ test("per-page redirects retain their destination and existing query behavior", 
         "https://docs.roboflow.com/deployment/self-hosted/inference-server/install#docker",
     );
     assert.match(installPage, /<meta name="robots" content="noindex,follow">/);
+});
+
+test("script extraction accepts case-insensitive HTML tags", () => {
+    const uppercaseTags = homepage
+        .replaceAll("<script>", "<SCRIPT>")
+        .replaceAll("</script>", "</SCRIPT>");
+    assert.equal(
+        redirectFrom(uppercaseTags, "?utm_source=partner&utm_campaign=launch#install"),
+        `${destination}?utm_source=partner&utm_campaign=launch#install`,
+    );
 });
