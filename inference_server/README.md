@@ -224,6 +224,11 @@ point-prompted objects over a whole clip with the `sam3trackervideo` model
    with the status and body the call would have failed with. Use it behind a
    proxy that ends quiet responses, often after 60 to 100 s.
 
+The HTTP server of the `inference` package exposes the same four routes with
+the same contract, behind `SAM3_VIDEO_ENABLED=true` (off by default there). It
+loads the tracker once per worker process on the first call and keeps it, so
+it too needs one worker process (`NUM_WORKERS=1`) and sticky routing per clip.
+
 Clips come in and decode through the same video input as
 `/infer/action_recognition`: URL or base64, the same URL policy and
 `MAX_VIDEO_DOWNLOAD_SIZE_MB`, a header probe, then one sequential decode.

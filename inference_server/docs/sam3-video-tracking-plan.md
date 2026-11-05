@@ -86,6 +86,21 @@ Why this fits:
   the manager. The heartbeat keeps proxies that end quiet replies (often
   after 60 to 100 s) from cutting a long track.
 
+The same four routes, with the same request and response contract (paths,
+field names, status codes and NDJSON lines), also exist on the HTTP server of
+the `inference` package (`inference/core/interfaces/http/http_api.py`, with the
+handlers in `inference/core/interfaces/http/sam3_video.py`), because that is the
+server deployments run today, while `inference_server` is not yet deployed.
+There they are off unless `SAM3_VIDEO_ENABLED=true` (and
+`CORE_MODEL_SAM3_ENABLED`, on by default), since only a deployment with one
+worker process and sticky routing can serve them. That server loads the
+tracker with `inference_models.AutoModel.from_pretrained` once per worker
+process, on the first call, sharing the model manager's artifact cache like
+the `roboflow_core/sam3_video@v1` block, and keeps it for the life of the
+process. Clips come in through its own action recognition video input
+(`inference/core/utils/video_utils.py`), which has the same URL policy, size
+cap, probe and sequential decode.
+
 Effects on existing users: none. The routes are new, the existing SAM3 video
 block is untouched, and `SAM3TrackerVideo` only gains methods. The routes need
 `SAM3_EXEC_MODE=local`, and answer 501 otherwise.
@@ -99,6 +114,7 @@ Verification:
 
 - Unit tests:
   - `inference_server/tests/unit_tests/legacy/test_router_sam3_video.py`: the routes, the stream's per-object lines, a mid-stream error line, heartbeats and stopping on close.
+  - `tests/inference/unit_tests/core/interfaces/http/test_sam3_video_routes.py`: the same cases on the `inference` package's server, plus loading the tracker once, the access check and the route flag.
   - `inference_models/tests/unit_tests/models/test_sam3_tracker_video_offline.py`: the model methods and clip cache.
   - `inference_model_manager/tests/unit_tests/test_registry_defaults.py`.
 - End to end: an annotation client was run against these routes on a GPU
