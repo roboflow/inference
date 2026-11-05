@@ -11,7 +11,9 @@ on:
 
 jobs:
   build_osx:
-    runs-on: macos-14
+    runs-on:
+      labels: depot-macos-15
+      group: public-depot
     permissions:
       contents: write
     env:

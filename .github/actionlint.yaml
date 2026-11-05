@@ -3,6 +3,7 @@
 # every other label.
 self-hosted-runner:
   labels:
+    - depot-macos-*
     - depot-ubuntu-*
     - Roboflow-GPU-VM-Runner
     - jetpack-*
