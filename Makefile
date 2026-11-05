@@ -32,21 +32,33 @@ download_fonts:
 # CI may use a verified immutable image and an isolated container/host port.
 INFERENCE_TEST_IMAGE ?= roboflow/${INFERENCE_SERVER_REPO}:test
 INFERENCE_TEST_CONTAINER ?= inference-test
-INFERENCE_TEST_BIND ?= $(PORT):$(PORT)
+INFERENCE_TEST_BIND ?= 127.0.0.1:$(PORT):$(PORT)
 INFERENCE_TEST_DOCKER_ARGS ?=
+# Test servers listen on loopback only and serve without workspace API key
+# checks, so tests can use keys from several workspaces. The settings that the
+# self-hosted defaults turn off are turned back on for the workflow tests.
+# PUBLISHED_HOST is the host address of INFERENCE_TEST_BIND, so binding any
+# other address makes the server refuse to start with these settings.
+INFERENCE_TEST_ENV = -e PUBLISHED_HOST=$(shell echo '$(INFERENCE_TEST_BIND)' | sed -E 's/^(\[[^]]*\]|[^:]*):.*/\1/') \
+	-e ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True \
+	-e ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM=True \
+	-e ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES=True \
+	-e ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=True \
+	-e ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True \
+	-e VALIDATE_IMAGE_URL_REDIRECTS=False
 
 start_test_docker_cpu:
-	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
+	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 $(INFERENCE_TEST_ENV) --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
 
 start_test_docker_gpu:
-	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all $(INFERENCE_TEST_DOCKER_ARGS) --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
+	docker run -d --rm -p $(INFERENCE_TEST_BIND) -e USE_INFERENCE_MODELS=$(USE_INFERENCE_MODELS) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 $(INFERENCE_TEST_ENV) --gpus=all $(INFERENCE_TEST_DOCKER_ARGS) --name $(INFERENCE_TEST_CONTAINER) $(INFERENCE_TEST_IMAGE)
 
 start_test_docker_gpu_with_roboflow_staging:
-	docker run -d --rm -p $(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 --gpus=all -e PROJECT=roboflow-staging --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p 127.0.0.1:$(PORT):$(PORT) -e PORT=$(PORT) -e MAX_BATCH_SIZE=17 $(INFERENCE_TEST_ENV) --gpus=all -e PROJECT=roboflow-staging --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 
 start_test_docker_jetson:
-	docker run -d --rm -p $(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(or $(USE_INFERENCE_MODELS),True) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
+	docker run -d --rm -p 127.0.0.1:$(PORT):$(PORT) -e USE_INFERENCE_MODELS=$(or $(USE_INFERENCE_MODELS),True) -e PORT=$(PORT) -e MAX_ACTIVE_MODELS=1 -e MAX_BATCH_SIZE=17 $(INFERENCE_TEST_ENV) --runtime=nvidia --name inference-test roboflow/${INFERENCE_SERVER_REPO}:test
 
 stop_test_docker:
 	docker rm -f $(INFERENCE_TEST_CONTAINER)

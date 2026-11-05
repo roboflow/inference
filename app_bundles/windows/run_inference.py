@@ -122,6 +122,12 @@ os.environ.setdefault("ENABLE_WORKFLOWS_PROFILING", "False")
 os.environ.setdefault("ENABLE_PROMETHEUS", "True")
 os.environ.setdefault("ENABLE_BUILDER", "True")
 
+# Lock the server down unless the environment says otherwise: workspace API key
+# required, no custom Python, no host file or environment access from requests.
+from inference.server_defaults import apply_self_hosted_server_defaults
+
+apply_self_hosted_server_defaults()
+
 
 # # Force all foundational model imports
 # can uncomment this to to debug missing dependencies or hidden
@@ -220,12 +226,12 @@ if __name__ == "__main__":
             _remove_console_handlers(name)
         banner = (
             "\n\n\n\n\n\n\n\n\n"
-            "─────────────────────────────────────────────────────────── \n"
+            "----------------------------------------------------------- \n"
             "                                                           \n"
             "  Roboflow Inference is ready                              \n"
             f"  Dashboard: {url:<44} (since IPv6 is attempted first when making requests, please use this address instead of localhost)\n"
             "                                                           \n"
-            "───────────────────────────────────────────────────────────\n"
+            "-----------------------------------------------------------\n"
         )
         print(banner, flush=True)
         await serve_task

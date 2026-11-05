@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import os
 import threading
 import time
 from types import SimpleNamespace
@@ -279,3 +280,61 @@ def test_exited_process_allows_a_new_launch(jupyter):
     notebook.start_notebook()
 
     assert len(jupyter.popen_calls) == 2
+
+
+@pytest.mark.parametrize(
+    "host,overrides,allowed",
+    [
+        # Exposed without key checks: the token would reach anyone.
+        ("0.0.0.0", {}, False),
+        ("127.0.0.1", {"GCP_SERVERLESS": False, "LAMBDA": False}, True),
+        ("0.0.0.0", {"REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": True}, True),
+        ("0.0.0.0", {"WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT": ["ws"]}, True),
+        ("0.0.0.0", {"DEDICATED_DEPLOYMENT_WORKSPACE_URL": "ws"}, True),
+    ],
+)
+def test_notebook_token_needs_key_checks_or_local_callers(
+    ops_client, jupyter, monkeypatch, tmp_path, host, overrides, allowed
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOST", host)
+    monkeypatch.delenv("PUBLISHED_HOST", raising=False)
+    client = ops_client(
+        **{
+            "NOTEBOOK_ENABLED": True,
+            "NOTEBOOK_PASSWORD": "s3cret",
+            "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": False,
+            **overrides,
+        }
+    )
+
+    response = client.get("/notebook/start?browserless=true")
+
+    if allowed:
+        assert response.status_code == 200
+        assert "s3cret" in response.text
+    else:
+        assert response.status_code == 403
+        assert "s3cret" not in response.text
+        assert jupyter.popen_calls == []
+
+
+def test_main_shares_one_notebook_token_across_workers(monkeypatch):
+    import uvicorn
+
+    import inference_server.app as app_mod
+
+    seen = []
+    monkeypatch.setattr(app_mod._cfg, "NUM_WORKERS", 2)
+    # Empty counts as unset; setenv also restores the variable afterwards.
+    monkeypatch.setenv("NOTEBOOK_PASSWORD", "")
+    monkeypatch.setattr(
+        uvicorn, "run", lambda *a, **k: seen.append(os.environ["NOTEBOOK_PASSWORD"])
+    )
+
+    app_mod.main()
+    first = os.environ["NOTEBOOK_PASSWORD"]
+    app_mod.main()
+
+    assert len(first) >= 32
+    assert seen == [first, first]

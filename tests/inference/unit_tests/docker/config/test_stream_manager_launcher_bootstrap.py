@@ -69,15 +69,20 @@ def main():
     ):
         sys.modules[name] = _stub_module(name)
 
-    from inference.core.interfaces.streams_configuration import (
-        server_streams_configuration,
-    )
-
     namespace = runpy.run_path(os.environ["LAUNCHER_PATH"], run_name="launcher")
     process = namespace["stream_manager_process"]
     listening = _wait_until_listening(process, int(os.environ["STREAM_MANAGER_PORT"]))
     process.terminate()
     process.join(timeout=60)
+    # Import after the launcher has run. A launcher applies the self-hosted
+    # server defaults before anything reads inference.core.env, so the manager
+    # freezes its configuration from those defaults. Reading the configuration
+    # earlier would freeze env.py in this driver at the pre-default values and
+    # disagree with the configuration the spawned manager installs.
+    from inference.core.interfaces.streams_configuration import (
+        server_streams_configuration,
+    )
+
     result = {
         "driver_pid": os.getpid(),
         "manager_pid": process.pid,

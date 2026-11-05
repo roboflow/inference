@@ -36,12 +36,12 @@ def _instructions(dockerfile_name: str) -> list:
     return instructions
 
 
-def _is_apply_legacy_env_call(node: ast.stmt) -> bool:
+def _is_call(node: ast.stmt, name: str) -> bool:
     return (
         isinstance(node, ast.Expr)
         and isinstance(node.value, ast.Call)
         and isinstance(node.value.func, ast.Name)
-        and node.value.func.id == "apply_legacy_env"
+        and node.value.func.id == name
     )
 
 
@@ -55,13 +55,17 @@ def _imports_inference_server(node: ast.stmt) -> bool:
     return any(
         name == "inference_server" or name.startswith("inference_server.")
         for name in names
-        if name != "inference_server.legacy_env"
+        if name
+        not in ("inference_server.legacy_env", "inference_server.server_defaults")
     )
 
 
 @pytest.mark.parametrize("module_name", _ENTRY_MODULES)
-def test_entry_module_exposes_the_application(module_name):
+def test_entry_module_exposes_the_application(module_name, monkeypatch):
     import inference_server.app as app_mod
+
+    # Reloading applies the server defaults, which write os.environ.
+    monkeypatch.setattr(os, "environ", dict(os.environ))
 
     entry_module = importlib.import_module(
         f"inference_server.entrypoints.{module_name}"
@@ -72,16 +76,20 @@ def test_entry_module_exposes_the_application(module_name):
 
 
 @pytest.mark.parametrize("module_name", _ENTRY_MODULES)
-def test_entry_module_applies_legacy_env_before_other_imports(module_name):
+def test_entry_module_applies_server_defaults_then_legacy_env_before_other_imports(
+    module_name,
+):
     tree = ast.parse((_ENTRYPOINTS_ROOT / f"{module_name}.py").read_text())
 
-    applied = False
+    calls = []
     for node in tree.body:
-        if _is_apply_legacy_env_call(node):
-            applied = True
+        for name in ("apply_server_defaults", "apply_legacy_env"):
+            if _is_call(node, name):
+                calls.append(name)
         if _imports_inference_server(node):
-            assert applied, f"{module_name}: import before apply_legacy_env()"
-    assert applied, f"{module_name}: apply_legacy_env() never called"
+            assert len(calls) == 2, f"{module_name}: import before the env setup"
+    # Server defaults first, so they win over the permissive LEGACY_DEFAULTS.
+    assert calls == ["apply_server_defaults", "apply_legacy_env"], module_name
 
 
 def test_main_passes_configured_host_to_uvicorn(monkeypatch):

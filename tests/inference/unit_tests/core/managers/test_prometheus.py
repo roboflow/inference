@@ -2,8 +2,11 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import APIRouter, FastAPI
+from fastapi.testclient import TestClient
+from prometheus_client.core import REGISTRY
 
-from inference.core.managers.prometheus import CustomCollector
+from inference.core.managers.prometheus import CustomCollector, InferenceInstrumentator
 
 
 @pytest.fixture
@@ -561,3 +564,23 @@ class TestCollectYieldsStreamMetrics:
             if mf.name == "inference_pipeline_active_streams"
         )
         assert active.samples[0].value == 0
+
+
+def test_request_metrics_handle_routes_from_included_routers():
+    # The HTTP API serves the builder through include_router(); route-name
+    # lookups that predate FastAPI's lazy included routers failed every such
+    # request with a 500.
+    router = APIRouter()
+    router.add_api_route("/api", lambda: {"ok": True})
+    app = FastAPI()
+    app.include_router(router, prefix="/build")
+    instrumentator = InferenceInstrumentator(app, model_manager=None)
+    try:
+        with TestClient(app) as client:
+            response = client.get("/build/api")
+            metrics = client.get("/metrics").text
+    finally:
+        REGISTRY.unregister(instrumentator.collector)
+
+    assert response.status_code == 200
+    assert 'handler="/build/api"' in metrics

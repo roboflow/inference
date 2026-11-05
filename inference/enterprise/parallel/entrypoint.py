@@ -5,6 +5,7 @@ from inference.core.env import (
     CELERY_LOG_LEVEL,
     ENABLE_HTTPS,
     HOST,
+    NOTEBOOK_PASSWORD,
     NUM_CELERY_WORKERS,
     NUM_WORKERS,
     PORT,
@@ -34,6 +35,11 @@ def _gunicorn_ssl_flags() -> str:
     if SSL_CA_CERTS:
         flags += f" --ca-certs={shlex.quote(SSL_CA_CERTS)} --cert-reqs=2"
     return " " + flags
+
+
+# Each gunicorn worker would otherwise generate its own Jupyter token, and
+# /notebook/start could return a token that the running Jupyter rejects.
+os.environ["NOTEBOOK_PASSWORD"] = NOTEBOOK_PASSWORD
 
 
 os.system(

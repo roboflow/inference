@@ -1,8 +1,13 @@
 from unittest import mock
 from unittest.mock import MagicMock
 
+import pytest
+from typer.testing import CliRunner
+
+from inference_cli import server
 from inference_cli.lib import container_adapter
 from inference_cli.lib.container_adapter import (
+    announce_authentication,
     prepare_container_environment,
     start_inference_container,
 )
@@ -136,6 +141,8 @@ def test_start_inference_container_publishes_ports_on_loopback_by_default(
     # then
     _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
     assert kwargs["ports"] == {"9001": ("127.0.0.1", 9001), "9002": ("127.0.0.1", 9002)}
+    # The server decides from this whether it may run without API key checks.
+    assert "PUBLISHED_HOST=127.0.0.1" in kwargs["environment"]
 
 
 @mock.patch.object(container_adapter, "pull_image")
@@ -201,3 +208,140 @@ def test_start_inference_container_publishes_ports_on_requested_bind_address(
     # then
     _, kwargs = docker_mock.from_env.return_value.containers.run.call_args
     assert kwargs["ports"] == {"9001": ("0.0.0.0", 9001)}
+    assert "PUBLISHED_HOST=0.0.0.0" in kwargs["environment"]
+
+
+def test_development_environment_uses_a_random_notebook_token() -> None:
+    def notebook_tokens():
+        environment = prepare_container_environment(
+            port=9001,
+            project="roboflow-platform",
+            metrics_enabled=False,
+            device_id=None,
+            num_workers=1,
+            api_key=None,
+            env_file_path=None,
+            development=True,
+        )
+        return [
+            entry.split("=", 1)[1]
+            for entry in environment
+            if entry.startswith("NOTEBOOK_PASSWORD=")
+        ]
+
+    first, second = notebook_tokens(), notebook_tokens()
+
+    assert len(first) == 1 and len(first[0]) >= 24
+    assert first != second
+    assert first[0] != "roboflow"
+
+
+@mock.patch.object(
+    container_adapter, "read_env_file", return_value={"NOTEBOOK_PASSWORD": "mine"}
+)
+def test_development_environment_keeps_notebook_token_from_env_file(_) -> None:
+    environment = prepare_container_environment(
+        port=9001,
+        project="roboflow-platform",
+        metrics_enabled=False,
+        device_id=None,
+        num_workers=1,
+        api_key=None,
+        env_file_path="some.env",
+        development=True,
+    )
+
+    assert "NOTEBOOK_PASSWORD=mine" in environment
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        [],
+        ["ROBOFLOW_API_KEY="],
+        ["API_KEY=", "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT= , "],
+        ["REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=True"],
+        ["REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=true", "ROBOFLOW_API_KEY="],
+        ["OFFLINE_MODE=False", "DEDICATED_DEPLOYMENT_WORKSPACE_URL="],
+    ],
+)
+def test_announce_authentication_warns_when_exposed_server_has_no_workspace(
+    environment: list, capsys
+) -> None:
+    announce_authentication(environment=environment, bind_address="0.0.0.0")
+
+    assert "will reject every request" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        ["ROBOFLOW_API_KEY=key"],
+        ["API_KEY=key"],
+        ["WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT=a, b"],
+        # The server runs without key checks in these cases.
+        ["OFFLINE_MODE=True"],
+        ["OFFLINE_MODE=true"],
+        ["DEDICATED_DEPLOYMENT_WORKSPACE_URL=https://ws.example.com"],
+        ["REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=False"],
+    ],
+)
+def test_announce_authentication_is_silent_when_exposed_server_will_not_reject_everything(
+    environment: list, capsys
+) -> None:
+    announce_authentication(environment=environment, bind_address="0.0.0.0")
+
+    assert capsys.readouterr().out == ""
+
+
+def test_announce_authentication_tells_loopback_user_that_a_key_enables_key_checks(
+    capsys,
+) -> None:
+    announce_authentication(
+        environment=["ROBOFLOW_API_KEY=key"], bind_address="127.0.0.1"
+    )
+
+    output = capsys.readouterr().out
+    assert "will require an API key" in output
+    assert "builder" in output and "dashboard" in output
+    assert "unset ROBOFLOW_API_KEY" in output
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        [],
+        ["ROBOFLOW_API_KEY="],
+        ["ROBOFLOW_API_KEY=key", "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=false"],
+        ["ROBOFLOW_API_KEY=key", "OFFLINE_MODE=True"],
+    ],
+)
+def test_announce_authentication_is_silent_on_loopback_without_key_checks(
+    environment: list, capsys
+) -> None:
+    announce_authentication(environment=environment, bind_address="127.0.0.1")
+
+    assert capsys.readouterr().out == ""
+
+
+@mock.patch.object(container_adapter, "pull_image")
+@mock.patch.object(
+    container_adapter, "find_running_inference_containers", return_value=[]
+)
+@mock.patch.object(container_adapter, "docker")
+@mock.patch.object(server, "ensure_container_runtime_is_running")
+def test_exported_roboflow_api_key_is_announced_on_loopback_server_start(
+    _runtime_mock: MagicMock,
+    _docker_mock: MagicMock,
+    _find_containers_mock: MagicMock,
+    _pull_image_mock: MagicMock,
+) -> None:
+    # when
+    result = CliRunner().invoke(
+        server.server_app, ["start"], env={"ROBOFLOW_API_KEY": "exported-key"}
+    )
+
+    # then
+    assert result.exit_code == 0, result.output
+    assert "will require an API key" in result.output
+    assert "unset ROBOFLOW_API_KEY" in result.output

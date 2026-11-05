@@ -75,6 +75,9 @@ class StreamsConfiguration:
     stream_manager_socket_timeout: Optional[float] = None
     # request policy / WebRTC
     allow_unsafe_gstreamer_pipelines: bool = False
+    # Whether stream requests may read local video files. On by default like
+    # the library's ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM; servers turn it off.
+    allow_local_video_files: bool = True
     debug_aiortc_queues: bool = False
     debug_webrtc_processing_latency: bool = False
     offline_mode: bool = False

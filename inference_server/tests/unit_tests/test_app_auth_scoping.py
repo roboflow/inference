@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI, Response
 from fastapi.testclient import TestClient
 
@@ -53,3 +54,88 @@ def test_request_for_the_exact_root_path_is_the_mount_root():
     scope = {"type": "http", "path": "/v2/models", "root_path": "/v2/models"}
 
     assert app_mod._route_path(scope) == ""
+
+
+def _local_callers_client(monkeypatch, allow_origins=("*",), builder=False):
+    monkeypatch.setattr(app_mod._cfg, "ALLOW_ORIGINS", list(allow_origins))
+    monkeypatch.setattr(app_mod._cfg, "ENABLE_BUILDER", builder)
+    monkeypatch.setattr(app_mod._cfg, "BUILDER_ORIGIN", "https://app.roboflow.com")
+    inner = FastAPI()
+
+    @inner.api_route("/workflows/run", methods=["POST", "OPTIONS"])
+    async def _ok():
+        return Response(content=b"ok")
+
+    inner.add_middleware(app_mod._LocalCallersOnlyMiddleware)
+    return TestClient(inner, base_url="http://localhost:9001")
+
+
+@pytest.mark.parametrize(
+    "headers,allowed",
+    [
+        ({}, True),
+        ({"Host": "127.0.0.1:9001"}, True),
+        ({"Host": "[::1]:9001"}, True),
+        ({"Host": "localhost"}, True),
+        ({"Host": "0.0.0.0:9001"}, True),  # the address uvicorn prints
+        ({"Origin": "http://0.0.0.0:9001"}, True),
+        # A DNS name, which a hostile network's DNS could rebind.
+        ({"Host": "host.docker.internal:9001"}, False),
+        # DNS rebinding: an attacker's name that resolves to 127.0.0.1.
+        ({"Host": "rebind.evil.example:9001"}, False),
+        ({"Host": "localhost.evil.example"}, False),
+        ({"Host": "192.168.1.10:9001"}, False),
+        ({"Origin": "http://localhost:3000"}, True),
+        ({"Origin": "http://127.0.0.1:9001"}, True),
+        ({"Origin": "https://evil.example"}, False),
+        ({"Origin": "null"}, False),
+        ({"Origin": "https://app.roboflow.com"}, False),
+        ({"Sec-Fetch-Site": "cross-site"}, False),
+        ({"Sec-Fetch-Site": "same-origin"}, True),
+        ({"Sec-Fetch-Site": "none"}, True),
+        # A relaying proxy hides the real caller.
+        ({"Forwarded": "for=203.0.113.7"}, False),
+        ({"X-Forwarded-For": "203.0.113.7"}, False),
+        ({"X-Forwarded-Host": "evil.example"}, False),
+        ({"X-Real-IP": "203.0.113.7"}, False),
+        ({"Via": "1.1 proxy"}, False),
+    ],
+)
+def test_local_callers_only_gate(monkeypatch, headers, allowed):
+    client = _local_callers_client(monkeypatch)
+
+    response = client.post("/workflows/run", headers=headers)
+
+    if allowed:
+        assert response.status_code == 200, response.text
+    else:
+        assert response.status_code == 403
+        assert response.json()["message"].startswith(app_mod.LOCAL_CALLERS_ONLY_MESSAGE)
+
+
+def test_local_callers_only_gate_refuses_cross_site_preflight(monkeypatch):
+    client = _local_callers_client(monkeypatch)
+
+    response = client.options("/workflows/run", headers={"Origin": "https://x.example"})
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "allow_origins,builder,origin,allowed",
+    [
+        (("https://trusted.example",), False, "https://trusted.example", True),
+        (("https://trusted.example",), False, "https://other.example", False),
+        (("*",), False, "https://anything.example", False),
+        (("*",), True, "https://app.roboflow.com", True),
+        (("*",), False, "https://app.roboflow.com", False),
+    ],
+)
+def test_local_callers_only_gate_trusts_configured_origins(
+    monkeypatch, allow_origins, builder, origin, allowed
+):
+    client = _local_callers_client(monkeypatch, allow_origins, builder)
+
+    response = client.post("/workflows/run", headers={"Origin": origin})
+
+    assert (response.status_code == 200) is allowed

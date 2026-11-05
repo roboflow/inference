@@ -19,7 +19,7 @@ from inference_server.legacy.errors import PAYLOAD_TOO_LARGE_MESSAGE
 WORKSPACE_ID_HEADER = "X-Workspace-Id"
 UNAUTHORIZED_MESSAGE = "Unauthorized api_key"
 AUTHENTICATED_METHODS = ("GET", "POST")
-STATIC_PREFIXES = ("/static/", "/_next/")
+STATIC_PREFIXES = ("/static/", "/_next/static/")
 
 _WORKSPACE_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 

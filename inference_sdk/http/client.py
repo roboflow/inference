@@ -1153,6 +1153,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/model/remove",
             json={
                 "model_id": de_aliased_model_id,
+                **self.__legacy_api_key_if_present(),
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
         )
@@ -1174,6 +1175,7 @@ class InferenceHTTPClient:
                 f"{self.__api_url}/model/remove",
                 json={
                     "model_id": de_aliased_model_id,
+                    **self.__legacy_api_key_if_present(),
                 },
                 headers=self.__headers_with_auth(DEFAULT_HEADERS),
             ) as response:
@@ -1191,6 +1193,7 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         response = requests.post(
             f"{self.__api_url}/model/clear",
+            params=self.__legacy_api_key_if_present(),
             headers=self.__headers_with_auth(None),
         )
         response.raise_for_status()
@@ -1204,6 +1207,7 @@ class InferenceHTTPClient:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.__api_url}/model/clear",
+                params=self.__legacy_api_key_if_present(),
                 headers=self.__headers_with_auth(None),
             ) as response:
                 response.raise_for_status()
@@ -3462,6 +3466,14 @@ class InferenceHTTPClient:
         if self.__resolved_api_key_transport() is ApiKeyTransport.HEADER:
             return {}
         return {"api_key": self.__api_key}
+
+    def __legacy_api_key_if_present(self) -> dict:
+        # For endpoints that have no other body or query parameters, where a
+        # null `api_key` entry (or aiohttp's refusal of a None query value)
+        # would only add noise when the client holds no key.
+        if self.__api_key is None:
+            return {}
+        return self.__legacy_api_key_payload()
 
     def __initialise_payload(self) -> dict:
         payload = self.__inference_configuration.to_source_parameters()

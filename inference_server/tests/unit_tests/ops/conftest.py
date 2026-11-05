@@ -21,6 +21,11 @@ OPS_FLAGS = {
     "NOTEBOOK_PORT": 9002,
     "NOTEBOOK_PASSWORD": None,
     "ENABLE_IN_MEMORY_LOGS": False,
+    # A server with workspace API key checks, which may hand out the notebook
+    # token; tests of the notebook rule override it.
+    "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": True,
+    "DEDICATED_DEPLOYMENT_WORKSPACE_URL": None,
+    "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT": None,
 }
 
 

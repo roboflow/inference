@@ -16,6 +16,7 @@ dependencies = [
   "prometheus-client>=0.16.0",
   "prometheus-fastapi-instrumentator>=8.1.0,<9.0.0",
   "tldextract~=5.1.2",
+  "python-dotenv>=1.2.2,<2.0.0",
 ]
 
 [project.optional-dependencies]

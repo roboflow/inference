@@ -51,7 +51,7 @@ Build a development image and start the server from the repository root:
 ```bash
 docker build -t roboflow/roboflow-inference-server-cpu:dev \
     -f docker/dockerfiles/Dockerfile.onnx.cpu.dev .
-docker run -p 9001:9001 \
+docker run -p 127.0.0.1:9001:9001 -e PUBLISHED_HOST=127.0.0.1 \
     -v ./inference:/app/inference \
     roboflow/roboflow-inference-server-cpu:dev
 ```

@@ -119,7 +119,7 @@ repo_root$ docker build -t roboflow/roboflow-inference-server-gpu:dev -f docker/
 Running the container is possible using the following command:
 
 ```bash
-inference_repo$ docker run -p 9001:9001 \
+inference_repo$ docker run -p 127.0.0.1:9001:9001 -e PUBLISHED_HOST=127.0.0.1 \
    -v ./inference:/app/inference \
    roboflow/roboflow-inference-server-cpu:dev
 ```

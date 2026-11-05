@@ -645,6 +645,12 @@ WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT = (
         if entry.strip()
     ]
 )
+# Off for library use; the server entry points turn it on (server_defaults.py).
+# On, every route outside the skip list needs an API key of the server's own
+# workspace (ROBOFLOW_API_KEY) or of WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT.
+REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT = get_boolean_from_env(
+    "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", default=False
+)
 ROBOFLOW_SERVICE_SECRET = os.environ.get("ROBOFLOW_SERVICE_SECRET")
 TRANSIENT_ROBOFLOW_API_ERRORS = {
     int(entry) for entry in _env_list("TRANSIENT_ROBOFLOW_API_ERRORS")
