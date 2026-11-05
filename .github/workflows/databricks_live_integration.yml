@@ -10,6 +10,8 @@ name: Databricks SQL Image Source - live warehouse integration
 #   DATABRICKS_TOKEN        read-only identity the block runs with
 #   DATABRICKS_SETUP_TOKEN  identity allowed to (re)create the fixture table
 #   ROBOFLOW_API_KEY        only for the server target
+# Environment variable (configured on databricks-live, not supplied at dispatch):
+#   DATABRICKS_LIVE_BASE_URL  approved HTTPS inference server origin
 
 permissions:
   contents: read
@@ -19,14 +21,10 @@ on:
     inputs:
       target:
         type: choice
-        description: "Run the block in-process or through a server / producer URL"
+        description: "Run the block locally or through the approved inference server"
         options:
           - local
           - server
-      base_url:
-        type: string
-        description: "Server or async-serverless producer URL (server target only)"
-        default: ""
       cases:
         type: string
         description: "Comma-separated cases"
@@ -81,14 +79,18 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
           DATABRICKS_SETUP_TOKEN: ${{ secrets.DATABRICKS_SETUP_TOKEN }}
           ROBOFLOW_API_KEY: ${{ secrets.ROBOFLOW_API_KEY }}
+          DATABRICKS_LIVE_BASE_URL: ${{ vars.DATABRICKS_LIVE_BASE_URL }}
+          LIVE_TARGET: ${{ inputs.target }}
+          LIVE_CASES: ${{ inputs.cases }}
+          LIVE_SETUP: ${{ inputs.setup_fixtures }}
+          LIVE_EXPECTATION: ${{ inputs.expectation }}
         run: |
           cd workflows
-          ARGS="--target ${{ github.event.inputs.target }} --cases '${{ github.event.inputs.cases }}' --report ../databricks-live-report.json"
-          if [ -n "${{ github.event.inputs.base_url }}" ]; then ARGS="$ARGS --base-url '${{ github.event.inputs.base_url }}'"; fi
-          if [ "${{ github.event.inputs.setup_fixtures }}" = "true" ]; then ARGS="$ARGS --setup"; fi
-          if [ "${{ github.event.inputs.expectation }}" = "disabled" ]; then ARGS="$ARGS --expect-disabled"; fi
-          if [ "${{ github.event.inputs.expectation }}" = "budget-failure" ]; then ARGS="$ARGS --expect-budget-failure"; fi
-          eval python scripts/databricks_live_integration.py $ARGS
+          args=(--target "$LIVE_TARGET" --cases "$LIVE_CASES" --report ../databricks-live-report.json)
+          if [ "$LIVE_SETUP" = "true" ]; then args+=(--setup); fi
+          if [ "$LIVE_EXPECTATION" = "disabled" ]; then args+=(--expect-disabled); fi
+          if [ "$LIVE_EXPECTATION" = "budget-failure" ]; then args+=(--expect-budget-failure); fi
+          python scripts/databricks_live_integration.py "${args[@]}"
       - name: 📄 Upload report
         if: always()
         uses: actions/upload-artifact@v4

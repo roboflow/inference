@@ -20,7 +20,7 @@ def test_connector_version_is_within_the_declared_range() -> None:
     from packaging.version import Version
 
     version = Version(sql.__version__)
-    assert Version("4.0.0") <= version < Version("5.0.0"), sql.__version__
+    assert version == Version("4.8.0"), sql.__version__
 
 
 def test_connect_accepts_every_keyword_the_block_passes() -> None:

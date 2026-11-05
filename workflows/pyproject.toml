@@ -58,7 +58,7 @@ enterprise = [
   "fastapi>=0.134,<0.142",
 ]
 databricks = [
-  "databricks-sql-connector>=4.0.0,<5.0.0",
+  "databricks-sql-connector==4.8.0",
 ]
 test = [
   "pytest>=9.0.3,<10.0.0",
