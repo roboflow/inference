@@ -9,7 +9,6 @@ on:
     paths:
       - "docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "requirements/requirements.docs.txt"
       - ".github/workflows/docs.yml"
@@ -42,20 +41,6 @@ jobs:
         with:
           path: inference_repo
           fetch-depth: 0
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-
-      - name: Install Docs Theme
-        run: |
-          npm ci
-        working-directory: ./inference_repo/theme_build
-
-      - name: Build theme assets
-        run: npm run build
-        working-directory: ./inference_repo/theme_build
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -91,10 +76,6 @@ jobs:
 
       - name: Verify build output
         run: |
-          echo "Checking for theme assets in site/..."
-          test -f site/static/styles.css || { echo "ERROR: site/static/styles.css missing!"; exit 1; }
-          test -f site/static/dist/home.js || { echo "ERROR: site/static/dist/home.js missing!"; exit 1; }
-          echo "Theme assets OK."
           echo "Checking redirect pages..."
           test -f site/404.html || { echo "ERROR: site/404.html missing!"; exit 1; }
           python - <<'PY'
@@ -102,8 +83,8 @@ jobs:
           from pathlib import Path
 
           homepage = unescape(Path("site/index.html").read_text())
-          assert '<link rel="canonical" href="https://docs.roboflow.com/">' in homepage, "Homepage canonical URL is incorrect"
-          assert '<meta http-equiv="refresh" content="0; url=https://docs.roboflow.com/">' in homepage, "Homepage does not redirect"
+          assert '<link rel="canonical" href="https://docs.roboflow.com/deployment/self-hosted/self-hosted">' in homepage, "Homepage canonical URL is incorrect"
+          assert '<meta http-equiv="refresh" content="0; url=https://docs.roboflow.com/deployment/self-hosted/self-hosted">' in homepage, "Homepage does not redirect"
           assert 'noindex' not in homepage.lower(), "Homepage must remain indexable"
           PY
           grep -q "docs.roboflow.com" site/install/index.html || { echo "ERROR: /install/ does not redirect!"; exit 1; }
