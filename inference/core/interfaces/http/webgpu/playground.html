@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<title>On-device WebGPU · Roboflow Inference</title>
+<!--
+  On-device WebGPU playground (opt-in: ENABLE_WEBGPU_PLAYGROUND=True, served at /webgpu).
+
+  Everything on this page runs in the visitor's browser, on the visitor's GPU:
+    1. checks for WebGPU and reads the adapter (vendor, architecture, fp16 shader support, buffer limits);
+    2. measures the GPU with two compute shaders: a vec4 copy (memory bandwidth) and an FMA chain (fp32 throughput);
+    3. downloads a small instruction-tuned LLM once (WebLLM, MLC builds from Hugging Face) and keeps it in the
+       browser cache;
+    4. chats with it, streaming tokens, and reports the decode speed WebLLM measures on this GPU.
+  Prompts and outputs stay in the browser: the server only hands out this page. It is meant for phones and tablets
+  (Android Chrome, iOS / iPadOS Safari 26+), and works on desktop browsers with WebGPU too.
+
+  Third-party code: @mlc-ai/web-llm (Apache-2.0), pinned to 0.2.78, imported from jsDelivr only when the visitor loads a
+  model. Model weights come from the mlc-ai organisation on Hugging Face.
+-->
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --card: #141821; --line: #262c38; --ink: #eef0f4; --dim: #9aa3b2; --accent: #8b5cf6; --ok: #3ccf91; --warn: #f5a524; --bad: #f2555a; --r: 18px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 720px; margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom)); }
+  h1 { font-size: clamp(26px, 6vw, 36px); line-height: 1.1; margin: 8px 0 6px; letter-spacing: -.01em; }
+  .lede { color: var(--dim); margin: 0 0 18px; }
+  .eyebrow { font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin: 12px 0; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+  .n { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; font: 600 12px ui-monospace, Menlo, monospace; background: #222836; color: var(--dim); flex: none; }
+  .card.done .n { background: var(--ok); color: #05130c; }
+  .card.on .n { background: var(--accent); color: #fff; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .row:first-of-type { border-top: 0; }
+  .row b { font-variant-numeric: tabular-nums; text-align: right; }
+  .big { font: 600 30px/1.1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  .big small { font-size: 14px; color: var(--dim); font-weight: 500; margin-left: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: #10141b; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .stat span { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+  button { font: 600 16px system-ui, sans-serif; border-radius: 14px; border: 1px solid var(--line); background: #1c2230; color: var(--ink); padding: 14px 16px; min-height: 48px; }
+  button.p { background: var(--accent); border-color: var(--accent); color: #fff; width: 100%; }
+  button:disabled { opacity: .5; }
+  .models { display: grid; gap: 8px; margin: 10px 0; }
+  .model { position: relative; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: #10141b; cursor: pointer; }
+  .model input { position: absolute; opacity: 0; pointer-events: none; }
+  .model.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .model:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .model b { font-size: 15px; } .model small { color: var(--dim); font-size: 12px; grid-column: 1; }
+  .model em { font-style: normal; font-size: 13px; color: var(--ok); grid-row: 1 / span 2; grid-column: 2; text-align: right; font-variant-numeric: tabular-nums; }
+  .model em.warn { color: var(--warn); }
+  .bar { height: 6px; background: #222836; border-radius: 3px; overflow: hidden; margin: 10px 0 6px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .note { font-size: 13px; color: var(--dim); margin: 6px 0 0; }
+  .err { color: var(--bad); font-size: 14px; margin: 8px 0 0; }
+  .chat { display: grid; gap: 10px; max-height: 52vh; overflow-y: auto; padding: 4px 2px; -webkit-overflow-scrolling: touch; }
+  .msg { max-width: 88%; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
+  .msg.you { justify-self: end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.it { justify-self: start; background: #1c2230; border-bottom-left-radius: 4px; }
+  form.ask { display: flex; gap: 8px; margin-top: 12px; position: sticky; bottom: 0; background: var(--card); padding-top: 8px; }
+  form.ask input { flex: 1; min-width: 0; font: 16px system-ui, sans-serif; color: var(--ink); background: #10141b; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-height: 48px; }
+  form.ask input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .meta { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font: 12px ui-monospace, Menlo, monospace; color: var(--dim); margin-top: 10px; }
+  .meta button { padding: 6px 10px; min-height: 0; font-size: 12px; }
+  [hidden] { display: none !important; }
+  footer { color: var(--dim); font-size: 12px; margin-top: 18px; text-align: center; }
+  footer a { color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <span class="eyebrow">Roboflow Inference · On-device</span>
+  <h1>Run a model on this device.</h1>
+  <p class="lede">Measure this GPU, then chat with a small language model running entirely on it, in this tab. Prompts and answers stay on the device.</p>
+
+  <section class="card" id="s1"><h2><span class="n">1</span>WebGPU on this device</h2>
+    <div id="caps"><div class="row"><span>Checking…</span><b></b></div></div>
+    <p class="err" id="e1" hidden></p>
+  </section>
+
+  <section class="card" id="s2"><h2><span class="n">2</span>Measure the GPU</h2>
+    <div class="grid2">
+      <div class="stat"><span>Memory bandwidth</span><div class="big" id="bw">–<small>GB/s</small></div></div>
+      <div class="stat"><span>Compute (fp32)</span><div class="big" id="fl">–<small>TFLOP/s</small></div></div>
+    </div>
+    <p class="note">Two short compute shaders: a vec4 copy over a large buffer, and a chain of fused multiply-adds. Token generation is memory-bound, so bandwidth sets the pace.</p>
+    <button class="p" id="go" type="button" style="margin-top:12px" disabled>Measure</button>
+  </section>
+
+  <section class="card" id="s3"><h2><span class="n">3</span>Choose a model</h2>
+    <div class="models" id="models" role="radiogroup" aria-label="Model"></div>
+    <p class="note" id="est-note">Estimates appear after the measurement: bandwidth ÷ the weights read per token.</p>
+    <button class="p" id="load" type="button" style="margin-top:12px" disabled>Download and start</button>
+    <div id="prog" hidden><div class="bar"><i id="pbar"></i></div><p class="note" id="ptext">Starting…</p></div>
+    <p class="err" id="e3" hidden></p>
+  </section>
+
+  <section class="card" id="s4" hidden><h2><span class="n">4</span>Chat, on this GPU</h2>
+    <div class="chat" id="log" aria-live="polite"></div>
+    <form class="ask" id="ask"><input id="q" autocomplete="off" enterkeyhint="send" placeholder="Ask it anything" aria-label="Your message"><button class="p" type="submit" style="width:auto">Send</button></form>
+    <div class="meta"><span id="speed">–</span><span><button type="button" id="stop" hidden>Stop</button> <button type="button" id="reset">New chat</button></span></div>
+  </section>
+
+  <section class="card"><h2>Storage</h2>
+    <p class="note" style="margin-top:0">Downloaded models stay in this browser's cache, so the next start is quick. Clearing frees the space.</p>
+    <button type="button" id="clear" style="margin-top:10px">Clear downloaded models</button>
+    <p class="note" id="cleared" hidden>Cleared.</p>
+  </section>
+
+  <footer>Runs on <a href="https://github.com/mlc-ai/web-llm" rel="noopener">WebLLM</a> and WebGPU. The server only sends this page.</footer>
+</main>
+
+<script type="module">
+const WEBLLM = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.78/+esm';
+// Small instruction-tuned models from WebLLM's prebuilt list. `params` (billions) drives the speed estimate; `vram` is
+// WebLLM's own figure for each build in MB: the fp16 build first, the fp32 build for GPUs without shader-f16.
+const MODELS = [
+  { id: 'SmolLM2-360M-Instruct', name: 'SmolLM2 360M', note: 'smallest, quickest to download', params: 0.36, vram: [376, 580] },
+  { id: 'Qwen2.5-0.5B-Instruct', name: 'Qwen2.5 0.5B', note: 'best answers for its size', params: 0.49, vram: [945, 1060] },
+  { id: 'Llama-3.2-1B-Instruct', name: 'Llama 3.2 1B', note: 'largest; for newer phones', params: 1.24, vram: [879, 1129] },
+];
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
+let adapter = null, f16 = false, soft = false, bandwidth = 0, pick = 0, engine = null, busy = false;
+const history = [{ role: 'system', content: 'You are a small language model running entirely on the user\'s own device, inside their web browser, on its GPU. Answer briefly and plainly.' }];
+
+const step = (n, state) => { const s = $('s' + n); s.classList.toggle('on', state === 'on'); s.classList.toggle('done', state === 'done'); };
+const fail = (where, msg) => { $(where).textContent = msg; $(where).hidden = false; };
+const buildId = (m) => `${m.id}-${f16 ? 'q4f16_1' : 'q4f32_1'}-MLC`;
+const why = (e) => (e && e.message ? e.message : String(e));
+
+// 1. capabilities
+async function detect() {
+  step(1, 'on');
+  // browsers expose WebGPU to secure contexts only: HTTPS, or localhost
+  if (!window.isSecureContext) {
+    $('caps').innerHTML = '<div class="row"><span>WebGPU</span><b>needs HTTPS</b></div>';
+    return fail('e1', `Browsers expose WebGPU only over HTTPS (or on localhost). Open this page through HTTPS on the server, or a tunnel, instead of ${location.origin}.`);
+  }
+  if (!('gpu' in navigator)) {
+    $('caps').innerHTML = '<div class="row"><span>WebGPU</span><b>off</b></div>';
+    return fail('e1', 'WebGPU is switched off in this browser. Use Chrome on Android, or Safari on iOS / iPadOS 26 or later (on older versions: Settings › Apps › Safari › Advanced › Feature Flags › WebGPU).');
+  }
+  adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  if (!adapter) return fail('e1', 'The browser kept its GPU adapter from this page. It can happen in low-power mode or with a blocklisted driver.');
+  const info = adapter.info || {};
+  f16 = adapter.features.has('shader-f16');
+  // a software renderer (SwiftShader, lavapipe, WARP) runs the shaders on the CPU
+  soft = !!(info.isFallbackAdapter || adapter.isFallbackAdapter) ||
+         /swiftshader|llvmpipe|lavapipe|warp/i.test([info.vendor, info.architecture, info.device, info.description].join(' '));
+  const rows = [
+    ['GPU', ([info.vendor, info.architecture].filter(Boolean).join(' · ') || 'present') + (soft ? ' (software)' : '')],
+    ['Model builds', f16 ? 'fp16 (shader-f16)' : 'fp32 (no shader-f16)'],
+    ['Largest buffer', fmt(adapter.limits.maxBufferSize / 2 ** 20) + ' MB'],
+    ['Storage binding', fmt(adapter.limits.maxStorageBufferBindingSize / 2 ** 20) + ' MB'],
+  ];
+  $('caps').innerHTML = rows.map(([k, v]) => `<div class="row"><span>${k}</span><b>${v}</b></div>`).join('');
+  step(1, 'done');
+  $('go').disabled = false; $('load').disabled = false;
+  drawModels();
+}
+
+// time GPU work by wall clock around a submit; the queue drains before the clock stops
+async function timed(device, encode, reps) {
+  const run = () => { const e = device.createCommandEncoder(); for (let r = 0; r < reps; r++) encode(e); device.queue.submit([e.finish()]); return device.queue.onSubmittedWorkDone(); };
+  await run();                                   // warm-up: pipelines compiled, clocks up
+  const t0 = performance.now(); await run(); return (performance.now() - t0) / 1000;
+}
+
+// 2. measurement
+async function measure() {
+  $('go').disabled = true; $('go').textContent = 'Measuring…'; step(2, 'on');
+  try {
+    const device = await adapter.requestDevice();
+    // memory: a vec4 copy over a buffer sized to a phone's default limits (read + write counted)
+    const bytes = Math.min(64 << 20, device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize);
+    const n4 = Math.floor(bytes / 16);
+    const a = device.createBuffer({ size: n4 * 16, usage: GPUBufferUsage.STORAGE }), b = device.createBuffer({ size: n4 * 16, usage: GPUBufferUsage.STORAGE });
+    const copy = device.createComputePipeline({ layout: 'auto', compute: { entryPoint: 'main', module: device.createShaderModule({ code: `
+      @group(0) @binding(0) var<storage, read> src: array<vec4f>;
+      @group(0) @binding(1) var<storage, read_write> dst: array<vec4f>;
+      @compute @workgroup_size(256) fn main(@builtin(global_invocation_id) g: vec3u, @builtin(num_workgroups) w: vec3u) {
+        let i = g.x + g.y * w.x * 256u; if (i < arrayLength(&src)) { dst[i] = src[i]; } }` }) } });
+    const bg1 = device.createBindGroup({ layout: copy.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: a } }, { binding: 1, resource: { buffer: b } }] });
+    const groups = Math.ceil(n4 / 256), gx = Math.min(groups, device.limits.maxComputeWorkgroupsPerDimension), gy = Math.ceil(groups / gx);
+    const reps = 16;
+    const tm = await timed(device, (e) => { const p = e.beginComputePass(); p.setPipeline(copy); p.setBindGroup(0, bg1); p.dispatchWorkgroups(gx, gy); p.end(); }, reps);
+    bandwidth = (2 * n4 * 16 * reps) / tm / 1e9;
+    $('bw').innerHTML = `${fmt(bandwidth)}<small>GB/s</small>`;
+
+    // compute: each thread runs a long chain of fused multiply-adds
+    const iters = 1024, threads = 256 * 2048;
+    const out = device.createBuffer({ size: threads * 4, usage: GPUBufferUsage.STORAGE });
+    const fma = device.createComputePipeline({ layout: 'auto', compute: { entryPoint: 'main', module: device.createShaderModule({ code: `
+      @group(0) @binding(0) var<storage, read_write> o: array<f32>;
+      @compute @workgroup_size(256) fn main(@builtin(global_invocation_id) g: vec3u) {
+        var x = vec4f(f32(g.x) * 1e-7, 1.0, 0.5, 0.25); let m = vec4f(0.9999, 1.0001, 0.9998, 1.0002); let c = vec4f(1e-6);
+        for (var k = 0u; k < ${iters}u; k++) { x = fma(x, m, c); x = fma(x, m, c); x = fma(x, m, c); x = fma(x, m, c); }
+        o[g.x] = x.x + x.y + x.z + x.w; }` }) } });
+    const bg2 = device.createBindGroup({ layout: fma.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: out } }] });
+    const fr = 4;
+    const tc = await timed(device, (e) => { const p = e.beginComputePass(); p.setPipeline(fma); p.setBindGroup(0, bg2); p.dispatchWorkgroups(threads / 256); p.end(); }, fr);
+    const tflops = (threads * iters * 4 * 4 * 2 * fr) / tc / 1e12;   // threads × iters × 4 fma × 4 lanes × 2 flops × reps
+    $('fl').innerHTML = `${fmt(tflops, tflops < 10 ? 2 : 1)}<small>TFLOP/s</small>`;
+    device.destroy();
+    step(2, 'done');
+    $('go').textContent = 'Measure again';
+    drawModels();
+  } catch (e) {
+    $('go').textContent = 'Measure';
+    fail('e1', 'The measurement stopped: ' + why(e));
+  } finally { $('go').disabled = false; }
+}
+
+// 3. models: an estimate from bandwidth (4-bit weights ≈ 0.56 bytes a parameter with their scales; ~60 % of peak)
+function drawModels() {
+  $('models').innerHTML = MODELS.map((m, i) => {
+    const gb = m.params * 0.56, tps = bandwidth && !soft ? 0.6 * bandwidth / gb : 0, mb = m.vram[f16 ? 0 : 1];
+    const tight = adapter && mb * 2 ** 20 > adapter.limits.maxBufferSize * 4;
+    return `<label class="model${i === pick ? ' sel' : ''}"><input type="radio" name="m" value="${i}"${i === pick ? ' checked' : ''}>
+      <b>${m.name}</b><small>${m.note} · about ${fmt(mb)} MB of GPU memory</small>
+      <em class="${tight ? 'warn' : ''}">${tps ? `~${fmt(tps)} tok/s` : ''}${tight ? '<br>may be too big' : ''}</em></label>`;
+  }).join('');
+  if (soft) $('est-note').textContent = 'This is a software renderer: the CPU runs the shaders, so memory bandwidth does not set the pace and the page shows no estimate. The real speed shows after each answer.';
+  else if (bandwidth) $('est-note').textContent = `Estimated from ${fmt(bandwidth)} GB/s. The real speed shows after each answer.`;
+  $('models').querySelectorAll('input').forEach((r) => r.onchange = () => { pick = +r.value; drawModels(); });
+}
+
+// 4. load and chat
+async function load() {
+  if (busy) return;
+  busy = true; $('load').disabled = true; $('e3').hidden = true; $('prog').hidden = false; step(3, 'on');
+  try {
+    const webllm = await import(WEBLLM);
+    if (engine) { await engine.unload(); engine = null; }
+    engine = await webllm.CreateMLCEngine(buildId(MODELS[pick]), { initProgressCallback: (p) => {
+      $('pbar').style.width = Math.round((p.progress || 0) * 100) + '%';
+      $('ptext').textContent = p.text || 'Loading…';
+    } });
+    step(3, 'done'); $('prog').hidden = true; $('load').textContent = 'Switch model';
+    $('s4').hidden = false; step(4, 'on');
+    if (!$('log').children.length) say('it', `Hi. I am ${MODELS[pick].name}, running on this device's GPU right now, in this tab. Ask me something.`);
+    $('s4').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('q').focus();
+  } catch (e) {
+    $('prog').hidden = true;
+    fail('e3', 'The model stopped while starting on this GPU: ' + why(e) + ' A smaller model may fit.');
+  } finally { busy = false; $('load').disabled = false; }
+}
+function say(who, text) { const d = document.createElement('div'); d.className = 'msg ' + who; d.textContent = text; $('log').appendChild(d); $('log').scrollTop = 1e9; return d; }
+
+let stopped = false;
+async function ask(ev) {
+  ev.preventDefault();
+  const q = $('q').value.trim();
+  if (!q || !engine || busy) return;
+  $('q').value = ''; say('you', q); history.push({ role: 'user', content: q });
+  busy = true; stopped = false; $('stop').hidden = false;
+  const out = say('it', '…'); let text = '', rate = 0;
+  try {
+    // include_usage: the last chunk carries WebLLM's own decode speed for this answer.
+    const stream = await engine.chat.completions.create({ messages: history, stream: true, temperature: 0.7, max_tokens: 512,
+                                                          stream_options: { include_usage: true } });
+    for await (const ch of stream) {
+      if (stopped) break;
+      if (ch.usage?.extra?.decode_tokens_per_s) rate = ch.usage.extra.decode_tokens_per_s;
+      text += ch.choices[0]?.delta?.content || ''; out.textContent = text; $('log').scrollTop = 1e9;
+    }
+    history.push({ role: 'assistant', content: text });
+    if (!rate && engine.runtimeStatsText) {
+      const m = /decode:\s*([\d.]+)\s*tok\/s/i.exec(await engine.runtimeStatsText() || '');
+      if (m) rate = +m[1];
+    }
+    if (rate) $('speed').textContent = `${rate < 10 ? rate.toFixed(1) : Math.round(rate)} tok/s on this GPU`;
+  } catch (e) { out.textContent = 'It stopped: ' + why(e); history.pop(); }
+  busy = false; $('stop').hidden = true;
+}
+$('stop').onclick = () => { stopped = true; if (engine && engine.interruptGenerate) engine.interruptGenerate(); };
+$('reset').onclick = () => { history.splice(1); $('log').innerHTML = ''; say('it', 'New chat. Ask me something.'); };
+
+async function clearCache() {
+  try {
+    const webllm = await import(WEBLLM);
+    for (const m of MODELS) for (const q of ['q4f16_1', 'q4f32_1']) await webllm.deleteModelAllInfoInCache(`${m.id}-${q}-MLC`).catch(() => {});
+    $('cleared').textContent = 'Cleared.'; $('cleared').hidden = false;
+  } catch (e) { $('cleared').textContent = 'Clearing stopped: ' + why(e); $('cleared').hidden = false; }
+}
+
+$('go').onclick = measure; $('load').onclick = load; $('ask').onsubmit = ask; $('clear').onclick = clearCache;
+drawModels();
+detect().catch((e) => fail('e1', 'The WebGPU check stopped: ' + why(e)));
+</script>
+</body>
+</html>
