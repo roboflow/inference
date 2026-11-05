@@ -777,6 +777,11 @@ METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
 # URL for posting metrics to Roboflow API, default is "{API_BASE_URL}/inference-stats"
 METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 
+# API key sent with the metrics posted to METRICS_URL. Unlike ROBOFLOW_API_KEY it
+# is never used to serve requests, so setting it does not give keyless inference
+# requests a fallback credential. Falls back to ROBOFLOW_API_KEY when unset.
+METRICS_API_KEY = os.getenv("METRICS_API_KEY") or None
+
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 HF_HUB_CACHE = os.environ["HF_HUB_CACHE"]
