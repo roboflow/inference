@@ -8,9 +8,10 @@ connector's own transport: the Thrift HTTP client opens its ``urllib3`` pool on
 the validated IP address while keeping the original hostname for TLS SNI,
 certificate hostname verification and the HTTP ``Host`` header.
 
-The pin is carried in a ``ContextVar`` that the block sets around ``connect()``.
-Outside such a scope the subclass behaves exactly like the connector's class, so
-other users of the connector in the same process are unaffected.
+The dedicated worker installs these hooks before connecting. A transport captures
+its pin at construction and retains it across reconnects and cancellation threads.
+The worker refuses secondary HTTP paths for its entire lifetime. The parent
+process never installs these hooks.
 
 Transport inventory for ``databricks-sql-connector`` 4.x (verified against
 4.8.0, ``urllib3`` 2.x, ``thrift`` 0.2x):
@@ -26,9 +27,9 @@ Transport inventory for ``databricks-sql-connector`` 4.x (verified against
   (``/api/2.0/connector-service/feature-flags/...``), OAuth / token federation,
   CloudFetch result-link downloads and staging (volume ingestion) transfers.
   None of these is needed by the block (PAT auth, telemetry off, cloud fetch
-  off, no staging), so while a pin is active this client refuses every request.
-* ``databricks.sql.backend.sea`` - the REST (SEA) backend, only with
-  ``use_sea=True``; not used.
+  off, no staging), so the dedicated worker refuses every such request.
+* REST (SEA) and native kernel backends, including automatic kernel recovery,
+  are refused before session construction; neither uses the pinned Thrift pool.
 """
 
 import contextlib
@@ -55,10 +56,9 @@ _PINNED_DESTINATION: contextvars.ContextVar[Optional[PinnedDestination]] = (
 )
 _INSTALL_LOCK = threading.Lock()
 _INSTALLED = False
-# Pins are scoped to the calling context, but the connector hands work to its
-# own threads (CloudFetch downloads, feature-flag refresh, telemetry flush)
-# where a ContextVar is invisible. This process-wide count of active pins lets
-# the guards refuse those paths from any thread while a block run is active.
+_WORKER_ONLY = False
+# Diagnostic count for checking context cleanup. Network policy uses the
+# dedicated worker lifetime, so background threads cannot outlive protection.
 _ACTIVE_PINS = 0
 _ACTIVE_PINS_LOCK = threading.Lock()
 
@@ -100,11 +100,14 @@ def current_pin() -> Optional[PinnedDestination]:
     return _PINNED_DESTINATION.get()
 
 
-def install_pinned_transport() -> type:
+def install_pinned_transport(*, worker_only: bool = False) -> type:
     """Replace the connector's Thrift HTTP client with the pinning subclass.
 
-    Idempotent and process-wide. The subclass only changes behaviour while a
-    :func:`pinned_destination` scope is active in the calling context.
+    Idempotent and process-wide; production callers must use a dedicated worker.
+
+    Args:
+        worker_only: Permanently refuse secondary requests in this process, even
+            from background threads and after the construction context exits.
 
     Returns:
         The transport class the connector now instantiates.
@@ -112,8 +115,9 @@ def install_pinned_transport() -> type:
     Raises:
         RuntimeError: If ``databricks-sql-connector`` is not installed.
     """
-    global _INSTALLED
+    global _INSTALLED, _WORKER_ONLY
     with _INSTALL_LOCK:
+        _WORKER_ONLY = _WORKER_ONLY or worker_only
         try:
             # The connector's auth module references `thrift.transport` as an
             # attribute of the `thrift` package, which only exists once the
@@ -134,6 +138,7 @@ def install_pinned_transport() -> type:
 
         base = thrift_http_client.THttpClient
         if issubclass(base, _PinnedMixin):
+            _guard_non_thrift_backends()
             _guard_unified_http_client()
             _guard_result_link_downloads()
             _INSTALLED = True
@@ -145,10 +150,33 @@ def install_pinned_transport() -> type:
         PinnedTHttpClient.__name__ = base.__name__
         PinnedTHttpClient.__qualname__ = base.__qualname__
         thrift_http_client.THttpClient = PinnedTHttpClient
+        _guard_non_thrift_backends()
         _guard_unified_http_client()
         _guard_result_link_downloads()
         _INSTALLED = True
         return PinnedTHttpClient
+
+
+def _guard_non_thrift_backends() -> None:
+    # Connector 4.8 can automatically retry a rejected Thrift session using its
+    # native kernel transport. Reject that switch before any backend is created.
+    from databricks.sql.session import Session
+
+    if getattr(Session, "_roboflow_backend_guard", False):
+        return
+    original_init = Session.__init__
+
+    def init(self, *args, **kwargs):
+        if (_WORKER_ONLY or _PINNED_DESTINATION.get() is not None) and (
+            kwargs.get("use_kernel") or kwargs.get("use_sea")
+        ):
+            raise PinnedTransportError(
+                "the Databricks worker requires the Thrift backend"
+            )
+        original_init(self, *args, **kwargs)
+
+    Session.__init__ = init
+    Session._roboflow_backend_guard = True
 
 
 def _guard_unified_http_client() -> None:
@@ -164,9 +192,9 @@ def _guard_unified_http_client() -> None:
     original_request_context = client_class.request_context
 
     def request_context(self, method, url, headers=None, **kwargs):
-        if _PINNED_DESTINATION.get() is not None or pin_active_anywhere():
+        if _WORKER_ONLY or _PINNED_DESTINATION.get() is not None:
             raise PinnedTransportError(
-                f"request to {_redact_url(url)} refused: the Databricks block only "
+                "secondary request refused: the Databricks block only "
                 "speaks to the pinned warehouse over the Thrift transport"
             )
         return original_request_context(self, method, url, headers=headers, **kwargs)
@@ -191,7 +219,7 @@ def _guard_result_link_downloads() -> None:
         _roboflow_pinned_guard = True
 
         def __init__(self, *args, **kwargs):
-            if _PINNED_DESTINATION.get() is not None or pin_active_anywhere():
+            if _WORKER_ONLY or _PINNED_DESTINATION.get() is not None:
                 raise PinnedTransportError(
                     "the warehouse returned result links (cloud fetch) although "
                     "inline results were requested; downloading them is refused"
@@ -203,23 +231,24 @@ def _guard_result_link_downloads() -> None:
     connector_utils.ThriftCloudFetchQueue = PinnedThriftCloudFetchQueue
 
 
-def _redact_url(url: Any) -> str:
-    text = str(url)
-    return text.split("?", 1)[0][:200]
-
-
 class _PinnedMixin:
     """Behaviour mixed into the connector's ``THttpClient``.
 
-    ``open()`` is the single place the connector creates its connection pool;
-    every request, retry and same-host redirect goes through that pool, so
-    pinning it pins them all. A redirect to another host is refused by
-    ``urllib3`` (``assert_same_host``), and the block additionally sets the
-    connector's redirect budget to zero.
+    The pin belongs to this client, including when another thread reopens it.
+    Every request uses a pool which refuses all redirects independently of the
+    connector's retry policy.
     """
 
+    def __init__(self, *args, **kwargs):
+        self._roboflow_destination = _PINNED_DESTINATION.get()
+        if _WORKER_ONLY and self._roboflow_destination is None:
+            raise PinnedTransportError(
+                "worker transport requires a validated destination"
+            )
+        super().__init__(*args, **kwargs)
+
     def open(self):  # noqa: D102 - connector interface
-        pin = _PINNED_DESTINATION.get()
+        pin = self._roboflow_destination
         if pin is None:
             return super().open()  # type: ignore[misc]
         if self.scheme != "https":
@@ -250,7 +279,8 @@ class _PinnedMixin:
                 ssl_options, "tls_verify_hostname", True
             ):
                 raise PinnedTransportError(
-                    "pinned transport requires TLS certificate and hostname verification"
+                    "pinned transport requires TLS certificate "
+                    "and hostname verification"
                 )
             pool_kwargs.update(
                 {
@@ -260,14 +290,14 @@ class _PinnedMixin:
                     "key_password": ssl_options.tls_client_cert_key_password,
                 }
             )
-        pool = HTTPSConnectionPool(pin.ip_address, expected_port, **pool_kwargs)
+        pool = _PinnedHTTPSConnectionPool(pin.ip_address, expected_port, **pool_kwargs)
         self._set_pool(pool)
         return None
 
     def setCustomHeaders(
         self, headers: Dict[str, str]
     ):  # noqa: N802 - connector interface
-        pin = _PINNED_DESTINATION.get()
+        pin = self._roboflow_destination
         if pin is not None:
             headers = dict(headers)
             headers["Host"] = pin.hostname
@@ -283,3 +313,24 @@ class _PinnedMixin:
                 break
         attribute = f"_{base_name or 'THttpClient'}__pool"
         setattr(self, attribute, pool)
+
+
+class _PinnedHTTPSConnectionPool(HTTPSConnectionPool):
+    """Disable redirects at urllib3's request boundary, including relative URLs."""
+
+    def urlopen(self, method, url, *args, **kwargs):
+        # urllib3's reconnect path passes body, headers, retries and redirect
+        # positionally; avoid supplying redirect twice on that recursive call.
+        if len(args) >= 4:
+            args = (*args[:3], False, *args[4:])
+            kwargs.pop("redirect", None)
+        else:
+            kwargs["redirect"] = False
+        response = super().urlopen(method, url, *args, **kwargs)
+        if 300 <= response.status < 400:
+            # Do not drain an untrusted response body while rejecting a redirect.
+            response.close()
+            response.release_conn()
+            raise PinnedTransportError("warehouse redirects are refused")
+
+        return response

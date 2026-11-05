@@ -97,6 +97,10 @@ class FakeConnection:
 
 @contextmanager
 def fake_databricks(rows: List[Dict[str, Any]]) -> Iterator[None]:
+    from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1 import (
+        DatabricksSQLImageSourceBlockV1,
+    )
+
     sql_module = types.ModuleType("databricks.sql")
     sql_module.connect = lambda **kwargs: FakeConnection(rows)
     databricks_module = types.ModuleType("databricks")
@@ -114,6 +118,10 @@ def fake_databricks(rows: List[Dict[str, Any]]) -> Iterator[None]:
         "roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1"
         ".connector_available",
         return_value=True,
+    ), mock.patch.object(
+        DatabricksSQLImageSourceBlockV1,
+        "run",
+        DatabricksSQLImageSourceBlockV1._run_in_process,
     ):
         yield
 
