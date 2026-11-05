@@ -86,6 +86,15 @@ YOLO26_DEPTH_ALIASES = {
     "yolo26x-depth-768": "yolo26-pretrains/yolo26x-depth",
 }
 
+RFDETR_SEM_ALIASES = {
+    "rfdetr-sem-nano": "rfdetr-pretrains/rfdetr-sem-nano-ade20k",
+    "rfdetr-sem-small": "rfdetr-pretrains/rfdetr-sem-small-ade20k",
+    "rfdetr-sem-medium": "rfdetr-pretrains/rfdetr-sem-medium-ade20k",
+    "rfdetr-sem-large": "rfdetr-pretrains/rfdetr-sem-large-ade20k",
+    "rfdetr-sem-xlarge": "rfdetr-pretrains/rfdetr-sem-xlarge-ade20k",
+    "rfdetr-sem-2xlarge": "rfdetr-pretrains/rfdetr-sem-2xlarge-ade20k",
+}
+
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
     # "rfdetr-large": "coco/37", deprecated
@@ -184,6 +193,7 @@ REGISTERED_ALIASES = {
     **YOLO26_POSE_ALIASES,
     **YOLO26_SEM_ALIASES,
     **YOLO26_DEPTH_ALIASES,
+    **RFDETR_SEM_ALIASES,
 }
 
 OCR_ENDPOINTS = {
