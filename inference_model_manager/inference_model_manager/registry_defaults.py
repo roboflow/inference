@@ -1009,6 +1009,48 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "roboflow-sam3-segmentation-v1",
         ),
     ],
+    # --- SAM3 video tracker (offline, whole-clip) ---
+    "SAM3TrackerVideo": [
+        (
+            "embed_video",
+            "embed_video",
+            True,
+            {
+                "frames": {"type": "list", "required": True},
+                "video_id": {"type": "str", "required": True},
+                "encode_frames": {"type": "bool", "required": False, "default": False},
+            },
+            "validate_passthrough",
+            "serialize_passthrough",
+            "roboflow-sam3-video-embedding-v1",
+        ),
+        (
+            "segment_video_frame",
+            "segment_video_frame",
+            False,
+            {
+                "video_id": {"type": "str", "required": True},
+                "prompts": {"type": "list", "required": True},
+                "frame_idx": {"type": "int", "required": True},
+            },
+            "validate_passthrough",
+            "serialize_passthrough",
+            "roboflow-sam3-video-segmentation-v1",
+        ),
+        (
+            "propagate_video",
+            "propagate_video",
+            False,
+            {
+                "video_id": {"type": "str", "required": True},
+                "prompts": {"type": "list", "required": True},
+                "frame_indices": {"type": "list[int]", "required": False},
+            },
+            "validate_passthrough",
+            "serialize_passthrough",
+            "roboflow-sam3-video-propagation-v1",
+        ),
+    ],
     # --- Text-only OCR ---
     "TextOnlyOCRModel": [
         (
