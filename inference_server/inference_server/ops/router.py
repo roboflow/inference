@@ -41,7 +41,7 @@ secure_gateway_router = APIRouter(tags=["legacy"])
 
 def include_ops_routers(app: FastAPI) -> None:
     app.include_router(logs_router)
-    if configuration.LAMBDA or configuration.GCP_SERVERLESS:
+    if configuration.GCP_SERVERLESS:
         return
 
     app.include_router(local_router)

@@ -119,12 +119,10 @@ def test_pretrained_classifier_registry_auth_failure_is_preserved(monkeypatch):
     roboflow._check_if_api_key_has_access_to_model.cache_clear()
 
 
-@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_does_not_exist(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
-    is_lambda: bool,
 ) -> None:
     # given
     construct_model_type_cache_path_mock.return_value = os.path.join(
@@ -132,19 +130,16 @@ def test_get_model_metadata_from_cache_when_metadata_file_does_not_exist(
     )
 
     # when
-    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
-@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_is_not_json(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
-    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -153,19 +148,16 @@ def test_get_model_metadata_from_cache_when_metadata_file_is_not_json(
         f.write("FOR SURE NOT JSON :)")
 
     # when
-    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
-@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_is_empty(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
-    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -174,19 +166,16 @@ def test_get_model_metadata_from_cache_when_metadata_file_is_empty(
         f.write("")
 
     # when
-    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
-@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_is_invalid(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
-    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -195,19 +184,16 @@ def test_get_model_metadata_from_cache_when_metadata_is_invalid(
         f.write(json.dumps({"some": "key"}))
 
     # when
-    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result is None
 
 
-@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_is_valid(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
-    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
@@ -223,15 +209,14 @@ def test_get_model_metadata_from_cache_when_metadata_is_valid(
         )
 
     # when
-    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+    result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     # then
     assert result == ("object-detection", "yolov8n")
 
 
 def test_in_process_model_metadata_cache_is_scoped_by_api_key() -> None:
-    with mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+    with mock.patch.object(
         roboflow,
         "_get_model_metadata_from_cache",
         side_effect=[
@@ -256,7 +241,7 @@ def test_in_process_model_metadata_cache_is_scoped_by_api_key() -> None:
 
 
 def test_save_model_metadata_populates_credential_scoped_in_process_cache() -> None:
-    with mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
+    with mock.patch.object(
         roboflow, "_save_model_metadata_in_cache"
     ), mock.patch.object(
         roboflow,
@@ -330,25 +315,22 @@ def test_model_metadata_content_is_invalid_when_task_type_is_missing() -> None:
     assert result is True
 
 
-@pytest.mark.parametrize("is_lambda", [False, True])
 @mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_save_model_metadata_in_cache(
     construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
-    is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
     construct_model_type_cache_path_mock.return_value = metadata_path
 
     # when
-    with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        save_model_metadata_in_cache(
-            dataset_id="some",
-            version_id="1",
-            project_task_type="instance-segmentation",
-            model_type="yolov8l",
-        )
+    save_model_metadata_in_cache(
+        dataset_id="some",
+        version_id="1",
+        project_task_type="instance-segmentation",
+        model_type="yolov8l",
+    )
     with open(metadata_path) as f:
         result = json.load(f)
 
@@ -369,9 +351,7 @@ def test_save_and_load_model_metadata_in_cache_when_instant_model_slug_is_long(
     dataset_id = f"huizen/{long_model_slug}"
 
     # when
-    with mock.patch.object(
-        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True):
+    with mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", empty_local_dir):
         save_model_metadata_in_cache(
             dataset_id=dataset_id,
             version_id=None,
@@ -417,9 +397,7 @@ def test_save_model_metadata_refuses_to_claim_unowned_generated_v2_path(
     metadata_path.parent.mkdir(parents=True)
     metadata_path.write_text(json.dumps(metadata))
 
-    with mock.patch.object(
-        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True):
+    with mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", empty_local_dir):
         with pytest.raises(ModelArtefactError, match="Refusing to claim"):
             save_model_metadata_in_cache(
                 dataset_id=model_id,
@@ -443,9 +421,7 @@ def test_save_model_metadata_refuses_nonempty_generated_v2_path_without_owner(
     model_cache_dir.mkdir(parents=True)
     (model_cache_dir / "weights.bin").write_bytes(b"old raw model")
 
-    with mock.patch.object(
-        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True):
+    with mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", empty_local_dir):
         with pytest.raises(ModelArtefactError, match="non-empty generated"):
             save_model_metadata_in_cache(
                 dataset_id=model_id,
@@ -478,9 +454,7 @@ def test_save_model_metadata_updates_exactly_owned_generated_v2_path(
         )
     )
 
-    with mock.patch.object(
-        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True):
+    with mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", empty_local_dir):
         save_model_metadata_in_cache(
             dataset_id=model_id,
             version_id=None,
@@ -517,9 +491,7 @@ def test_model_metadata_cache_reads_owned_legacy_slug(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
 
     assert result == ("object-detection", "yolov8n")
@@ -551,9 +523,7 @@ def test_model_metadata_cache_reads_owned_legacy_raw_path(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
 
     assert result == ("object-detection", "yolov8n")
@@ -576,9 +546,7 @@ def test_model_metadata_cache_rejects_unowned_legacy_raw_path(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
 
     assert result is None
@@ -608,9 +576,7 @@ def test_model_metadata_cache_rejects_unowned_current_v2_slug(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(
             dataset_id=model_id,
             version_id=None,
@@ -642,9 +608,7 @@ def test_model_metadata_cache_does_not_confuse_old_raw_id_with_v2_slug(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         assert (
             get_model_metadata_from_cache(
                 dataset_id=victim_model_id,
@@ -675,9 +639,7 @@ def test_model_metadata_cache_rejects_unowned_legacy_slug(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(dataset_id=model_id, version_id=None)
 
     assert result is None
@@ -699,9 +661,7 @@ def test_model_metadata_cache_keeps_ownerless_safe_raw_path_compatible(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
         constructed_path = roboflow.construct_model_type_cache_path(
             dataset_id="some", version_id="1"
@@ -730,9 +690,7 @@ def test_model_metadata_cache_rejects_invalid_owner_on_safe_raw_path(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
 
     assert result is None
@@ -752,9 +710,7 @@ def test_save_model_metadata_refuses_invalid_owner_on_safe_raw_path(
     metadata_path.parent.mkdir(parents=True)
     metadata_path.write_text(json.dumps(existing_metadata))
 
-    with mock.patch.object(
-        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True):
+    with mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", empty_local_dir):
         with pytest.raises(ModelArtefactError, match="Refusing to claim raw"):
             save_model_metadata_in_cache(
                 dataset_id="some",
@@ -780,9 +736,7 @@ def test_save_model_metadata_upgrades_ownerless_safe_raw_path(
         )
     )
 
-    with mock.patch.object(
-        model_artifacts, "MODEL_CACHE_DIR", empty_local_dir
-    ), mock.patch.object(roboflow, "LAMBDA", True):
+    with mock.patch.object(model_artifacts, "MODEL_CACHE_DIR", empty_local_dir):
         save_model_metadata_in_cache(
             dataset_id="some",
             version_id="1",
@@ -806,9 +760,7 @@ def test_model_metadata_cache_rejects_ambiguous_id_before_memory_lookup() -> Non
 
 
 def test_model_metadata_cache_rejects_ambiguous_id_before_write_lock() -> None:
-    with mock.patch.object(roboflow, "LAMBDA", False), mock.patch.object(
-        roboflow.cache, "lock"
-    ) as lock_mock:
+    with mock.patch.object(roboflow.cache, "lock") as lock_mock:
         with pytest.raises(ValueError, match="unsafe or ambiguous path segment"):
             save_model_metadata_in_cache(
                 dataset_id="victim",
@@ -830,9 +782,7 @@ def test_model_metadata_cache_allows_mounted_symlink_cache_root(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", str(mounted_cache_root)
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         save_model_metadata_in_cache(
             dataset_id="some",
             version_id="1",
@@ -888,9 +838,7 @@ def test_model_metadata_cache_rejects_cross_model_directory_symlink(
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", str(cache_root)
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(
             dataset_id="requested",
             version_id="1",
@@ -923,9 +871,7 @@ def test_model_metadata_cache_rejects_final_symlink_and_preserves_outside_target
 
     with mock.patch.object(
         model_artifacts, "MODEL_CACHE_DIR", str(cache_root)
-    ), mock.patch.object(roboflow, "LAMBDA", True), mock.patch.object(
-        roboflow, "USE_INFERENCE_MODELS", False
-    ):
+    ), mock.patch.object(roboflow, "USE_INFERENCE_MODELS", False):
         result = get_model_metadata_from_cache(
             dataset_id="requested",
             version_id="1",

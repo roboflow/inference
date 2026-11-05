@@ -24,7 +24,6 @@ from roboflow_workflows.core_steps.sinks.noop import disabled_sink_response
 from roboflow_workflows.environment import (
     ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
     GCP_SERVERLESS,
-    LAMBDA,
     POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES,
     POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES,
 )
@@ -78,8 +77,7 @@ certificate to verify the server identity. A local non-TLS database requires
 explicit `sslmode=disable`.
 
 This sink is not available on the Roboflow hosted platform: when the runtime is
-hosted serverless (`GCP_SERVERLESS` or `LAMBDA`) every call fails without opening a
-connection.
+hosted serverless (`GCP_SERVERLESS`) every call fails without opening a connection.
 
 On self-hosted runtimes the operator may restrict which destinations the sink can
 reach. When the server sets `ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES=False`, a
@@ -167,7 +165,7 @@ converted to JSON.
 # `get_actual_restrictions()`.
 #
 # `run()` short-circuits on the Roboflow hosted platform, so the condition names
-# the RUNTIME and never reads this host's GCP_SERVERLESS / LAMBDA flags.
+# the RUNTIME and never reads this host's GCP_SERVERLESS flag.
 POSTGRESQL_HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
     code="unavailable_on_hosted_platform",
     severity=Severity.HARD,
@@ -390,7 +388,7 @@ class BlockManifest(WorkflowBlockManifest):
 
         The hosted-platform restriction applies to every ``fire_and_forget``
         value; its condition is the ``hosted_serverless`` runtime axis, never
-        this host's ``GCP_SERVERLESS`` / ``LAMBDA`` flags. The fire-and-forget
+        this host's ``GCP_SERVERLESS`` flag. The fire-and-forget
         caveat applies only when the run does not wait for the commit.
 
         Args:
@@ -478,7 +476,7 @@ class PostgreSQLSinkBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._disable_sinks:
             return disabled_sink_response()
-        if GCP_SERVERLESS or LAMBDA:
+        if GCP_SERVERLESS:
             # The sink is not available on the Roboflow hosted platform: it must
             # never open an outbound database connection from hosted workers.
             return failure(

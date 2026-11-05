@@ -70,7 +70,6 @@ def _build_interface(monkeypatch, **http_api_overrides):
         http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
     )
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
     for name, value in http_api_overrides.items():
@@ -1088,7 +1087,6 @@ def _serverless_assume_identity(monkeypatch, models_cache_auth_enabled: bool):
     )
     for name, value in {
         "GCP_SERVERLESS": True,
-        "LAMBDA": False,
         "OFFLINE_MODE": False,
         "DEDICATED_DEPLOYMENT_WORKSPACE_URL": None,
         "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT": None,

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from tests.unit_tests.legacy.conftest import route_paths
 
-HIDDEN_ON_ANY_HOSTED_FLAG = (
+HIDDEN_ON_GCP_SERVERLESS = (
     "/model/add",
     "/model/remove",
     "/model/clear",
@@ -20,12 +20,10 @@ HIDDEN_ON_ANY_HOSTED_FLAG = (
     "/device/stats",
     "/notebook/start",
 )
-HIDDEN_ON_LAMBDA_ONLY = (
+NEVER_HIDDEN = (
     "/model/registry",
     "/infer/lmm",
     "/infer/lmm/{model_id:path}",
-)
-NEVER_HIDDEN = (
     "/info",
     "/healthz",
     "/readiness",
@@ -71,25 +69,18 @@ def _openapi_path(path: str) -> str:
     return path.replace(":path}", "}")
 
 
-def _expected(path: str, lambda_flag: bool, gcp_flag: bool) -> bool:
-    if path in HIDDEN_ON_ANY_HOSTED_FLAG:
-        return not (lambda_flag or gcp_flag)
-    if path in HIDDEN_ON_LAMBDA_ONLY:
-        return not lambda_flag
+def _expected(path: str, gcp_flag: bool) -> bool:
+    if path in HIDDEN_ON_GCP_SERVERLESS:
+        return not gcp_flag
     return True
 
 
-@pytest.mark.parametrize(
-    "lambda_flag,gcp_flag",
-    [(False, False), (True, False), (False, True), (True, True)],
-)
-@pytest.mark.parametrize(
-    "path", HIDDEN_ON_ANY_HOSTED_FLAG + HIDDEN_ON_LAMBDA_ONLY + NEVER_HIDDEN
-)
-def test_hosted_route_matrix(reloaded_app, lambda_flag, gcp_flag, path):
-    module = reloaded_app(LAMBDA=lambda_flag, GCP_SERVERLESS=gcp_flag)
+@pytest.mark.parametrize("gcp_flag", [False, True])
+@pytest.mark.parametrize("path", HIDDEN_ON_GCP_SERVERLESS + NEVER_HIDDEN)
+def test_hosted_route_matrix(reloaded_app, gcp_flag, path):
+    module = reloaded_app(GCP_SERVERLESS=gcp_flag)
 
-    visible = _expected(path, lambda_flag, gcp_flag)
+    visible = _expected(path, gcp_flag)
     assert (path in route_paths(module.app)) is visible
     assert (_openapi_path(path) in _openapi_paths(module.app)) is visible
 
@@ -106,9 +97,7 @@ def test_default_configuration_has_no_hosted_middleware(reloaded_app):
         "PathAwareCORSMiddleware",
     ]
     assert names.index("BillingIntentMiddleware") == names.index("_AuthMiddleware") - 1
-    assert set(HIDDEN_ON_ANY_HOSTED_FLAG + HIDDEN_ON_LAMBDA_ONLY) <= route_paths(
-        module.app
-    )
+    assert set(HIDDEN_ON_GCP_SERVERLESS) <= route_paths(module.app)
 
 
 def test_serverless_middleware_is_outermost_under_gcp_serverless(reloaded_app):
@@ -143,14 +132,6 @@ def test_dedicated_wraps_serverless_when_both_configured(reloaded_app):
 
     names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
     assert names[2:4] == ["DedicatedAuthMiddleware", "ServerlessAuthMiddleware"]
-
-
-def test_lambda_alone_adds_no_middleware(reloaded_app):
-    module = reloaded_app(LAMBDA=True)
-
-    names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
-    assert "ServerlessAuthMiddleware" not in names
-    assert "DedicatedAuthMiddleware" not in names
 
 
 def test_serverless_auth_is_wired_end_to_end(reloaded_app, monkeypatch):

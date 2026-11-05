@@ -123,7 +123,6 @@ def workers(monkeypatch):
     FakeWorker.on_start = staticmethod(connected_with(True))
     monkeypatch.setattr(v1, "_SubscriptionWorker", FakeWorker)
     monkeypatch.setattr(v1, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(v1, "LAMBDA", False)
     yield FakeWorker.instances
 
 
@@ -858,11 +857,10 @@ class TestRun:
         assert set(result) == OUTPUT_KEYS
         assert workers == []
 
-    @pytest.mark.parametrize("flag", ["GCP_SERVERLESS", "LAMBDA"])
     def test_hosted_platform_rejected_without_connecting(
-        self, block, workers, monkeypatch, flag
+        self, block, workers, monkeypatch
     ):
-        monkeypatch.setattr(v1, flag, True)
+        monkeypatch.setattr(v1, "GCP_SERVERLESS", True)
 
         result = block.run(**run_kwargs())
 

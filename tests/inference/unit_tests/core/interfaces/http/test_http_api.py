@@ -77,7 +77,6 @@ def _build_serverless_interface(
     )
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "OFFLINE_MODE", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", True)
     usage_check_mock = AsyncMock(return_value=usage_check_result)
     monkeypatch.setattr(
@@ -116,7 +115,6 @@ def test_offline_interface_never_starts_cache_eviction_watchdog(
     monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
     monkeypatch.setattr(http_api, "MAX_INFERENCE_MODELS_CACHE_SIZE_MB", 1)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(
         http_api,
@@ -130,27 +128,21 @@ def test_offline_interface_never_starts_cache_eviction_watchdog(
     watchdog.assert_not_called()
 
 
-@pytest.mark.parametrize("serverless_flag", ["GCP_SERVERLESS", "LAMBDA"])
-def test_http_interface_rejects_offline_serverless_deployment(
-    monkeypatch,
-    serverless_flag,
-) -> None:
+def test_http_interface_rejects_offline_serverless_deployment(monkeypatch) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
-    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", True)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(
         http_api,
         "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
         None,
     )
-    monkeypatch.setattr(http_api, serverless_flag, True)
 
     with pytest.raises(
         RuntimeError,
-        match="OFFLINE_MODE is not supported together with LAMBDA / GCP_SERVERLESS",
+        match="OFFLINE_MODE is not supported together with GCP_SERVERLESS",
     ):
         http_api.HttpInterface(model_manager=MagicMock())
 
@@ -171,7 +163,6 @@ def test_http_interface_rejects_offline_workspace_authentication(
 
     monkeypatch.setattr(http_api, "OFFLINE_MODE", True)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(
         http_api,
         "DEDICATED_DEPLOYMENT_WORKSPACE_URL",
@@ -1899,7 +1890,6 @@ def _build_plain_interface(monkeypatch):
         AsyncMock(),
     )
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
     model_manager = MagicMock()
@@ -2249,7 +2239,6 @@ def _build_interface_for_secure_gateway_health(
     monkeypatch,
     *,
     endpoint_enabled: bool,
-    lambda_flag: bool = False,
     gcp_serverless: bool = False,
 ):
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -2259,7 +2248,6 @@ def _build_interface_for_secure_gateway_health(
         AsyncMock(),
     )
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", gcp_serverless)
-    monkeypatch.setattr(http_api, "LAMBDA", lambda_flag)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT", None)
     monkeypatch.setattr(
@@ -2295,16 +2283,11 @@ def test_secure_gateway_health_route_is_registered_when_opted_in(monkeypatch) ->
     assert SECURE_GATEWAY_HEALTH_PATH in _route_paths(interface)
 
 
-@pytest.mark.parametrize(
-    "serverless_flags", [{"lambda_flag": True}, {"gcp_serverless": True}]
-)
-def test_secure_gateway_health_route_is_absent_on_serverless(
-    monkeypatch, serverless_flags
-) -> None:
-    """Serverless has no SECURE_GATEWAY and the Lambda authorizer cannot carry
-    the route - it must not exist there even when the flag is on."""
+def test_secure_gateway_health_route_is_absent_on_serverless(monkeypatch) -> None:
+    """Serverless has no SECURE_GATEWAY - the route must not exist there even
+    when the flag is on."""
     interface = _build_interface_for_secure_gateway_health(
-        monkeypatch, endpoint_enabled=True, **serverless_flags
+        monkeypatch, endpoint_enabled=True, gcp_serverless=True
     )
 
     assert SECURE_GATEWAY_HEALTH_PATH not in _route_paths(interface)

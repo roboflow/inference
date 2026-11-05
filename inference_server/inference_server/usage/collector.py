@@ -90,7 +90,7 @@ def _select_queue(
     redis_client: Optional[Any],
     sqlite_db_file_path: Optional[Union[str, Path]],
 ) -> Tuple[Any, bool]:
-    serverless = configuration.LAMBDA or configuration.GCP_SERVERLESS
+    serverless = configuration.GCP_SERVERLESS
     if serverless and configuration.REDIS_HOST:
         try:
             redis_queue = RedisQueue(redis_client=redis_client)
@@ -244,8 +244,7 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": bool(configuration.LAMBDA)
-            or bool(configuration.DEDICATED_DEPLOYMENT_ID)
+            "hosted": bool(configuration.DEDICATED_DEPLOYMENT_ID)
             or bool(configuration.GCP_SERVERLESS)
             or bool(configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET),
             "api_key_hash": "",

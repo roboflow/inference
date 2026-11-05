@@ -37,7 +37,7 @@ from roboflow_workflows.enterprise_blocks.sinks.opc_writer.v1 import (
     SESSION_TIMEOUT_SECONDS,
     SHUTDOWN_CALL_TIMEOUT_SECONDS,
 )
-from roboflow_workflows.environment import GCP_SERVERLESS, LAMBDA
+from roboflow_workflows.environment import GCP_SERVERLESS
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -970,7 +970,7 @@ class BlockManifest(WorkflowBlockManifest):
             Complete discovery of the ``get_restrictions()`` entries. Both
             apply unconditionally: no manifest field switches either on, and
             the hosted-platform condition is the runtime axis, never this
-            host's ``GCP_SERVERLESS`` / ``LAMBDA`` flags.
+            host's ``GCP_SERVERLESS`` flag.
         """
         restrictions = actual_restrictions_of(
             declared=self.get_restrictions(),
@@ -1058,7 +1058,7 @@ class OPCReaderBlockV1(WorkflowBlock):
             `value`, `is_new`, `error_status` and `error_message`; failures are
             reported in the outputs rather than raised.
         """
-        if GCP_SERVERLESS or LAMBDA:
+        if GCP_SERVERLESS:
             # never open an outbound OPC UA connection from hosted workers
             return self._rejected_run(
                 "OPC UA Reader is not available on the Roboflow hosted platform"

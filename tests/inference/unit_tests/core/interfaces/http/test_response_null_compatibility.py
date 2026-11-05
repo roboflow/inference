@@ -27,7 +27,6 @@ def client_and_manager(monkeypatch):
         "DEPTH_ESTIMATION_ENABLED",
     ):
         monkeypatch.setattr(http_api, name, True)
-    monkeypatch.setattr(http_api, "LAMBDA", False)
     monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
     monkeypatch.setattr(http_api, "InferenceInstrumentator", MagicMock())

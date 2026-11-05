@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Breaking
+
+- Remove the `LAMBDA` runtime flag: `PlatformConfiguration.lambda_runtime` and
+  `roboflow_workflows.environment.LAMBDA` no longer exist. The PostgreSQL, Kafka
+  Producer, Kafka Consumer, MQTT Reader and OPC UA Reader enterprise blocks refuse
+  to run on the hosted platform when `GCP_SERVERLESS` is set. A host that constructs
+  `PlatformConfiguration` with `lambda_runtime=` must drop the argument.
+
 ### Fixed
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as

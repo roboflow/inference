@@ -28,7 +28,6 @@ from inference.core.entities.types import (
 from inference.core.env import (
     ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
     CACHE_METADATA_LOCK_TIMEOUT,
-    LAMBDA,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
     MODELS_CACHE_AUTH_CACHE_TTL,
     MODELS_CACHE_AUTH_ENABLED,
@@ -706,22 +705,15 @@ def _get_cached_model_metadata(
     cached = _in_process_metadata_cache.get(cache_key)
     if cached is not None:
         return _normalize_cached_model_metadata(cached)
-    if LAMBDA:
+    with cache.lock(
+        f"lock:metadata:{dataset_id}:{version_id}",
+        expire=CACHE_METADATA_LOCK_TIMEOUT,
+    ):
         result = _get_model_metadata_from_cache(
             dataset_id=dataset_id,
             version_id=version_id,
             api_key=api_key,
         )
-    else:
-        with cache.lock(
-            f"lock:metadata:{dataset_id}:{version_id}",
-            expire=CACHE_METADATA_LOCK_TIMEOUT,
-        ):
-            result = _get_model_metadata_from_cache(
-                dataset_id=dataset_id,
-                version_id=version_id,
-                api_key=api_key,
-            )
     normalized = _normalize_cached_model_metadata(result)
     if normalized is not None:
         _in_process_metadata_cache.set(cache_key, normalized)
@@ -978,7 +970,10 @@ def save_model_metadata_in_cache(
 ) -> None:
     model_id = _combine_model_id(dataset_id=dataset_id, version_id=version_id)
     validate_model_id_for_cache(model_id=model_id)
-    if LAMBDA:
+    with cache.lock(
+        f"lock:metadata:{dataset_id}:{version_id}",
+        expire=CACHE_METADATA_LOCK_TIMEOUT,
+    ):
         _save_model_metadata_in_cache(
             dataset_id=dataset_id,
             version_id=version_id,
@@ -987,19 +982,6 @@ def save_model_metadata_in_cache(
             model_variant=model_variant,
             model_latency_ms=model_latency_ms,
         )
-    else:
-        with cache.lock(
-            f"lock:metadata:{dataset_id}:{version_id}",
-            expire=CACHE_METADATA_LOCK_TIMEOUT,
-        ):
-            _save_model_metadata_in_cache(
-                dataset_id=dataset_id,
-                version_id=version_id,
-                project_task_type=project_task_type,
-                model_type=model_type,
-                model_variant=model_variant,
-                model_latency_ms=model_latency_ms,
-            )
     _in_process_metadata_cache.set(
         _get_in_process_metadata_cache_key(
             dataset_id=dataset_id,

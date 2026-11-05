@@ -14,67 +14,7 @@ from inference.core.models.roboflow import (
     color_mapping_available_in_environment,
     get_class_names_from_environment_file,
     get_color_mapping_from_environment,
-    is_model_artefacts_bucket_available,
 )
-
-
-@mock.patch.object(roboflow, "AWS_ACCESS_KEY_ID", None)
-def test_is_model_artefacts_bucket_available_when_access_key_not_set() -> None:
-    # when
-    result = is_model_artefacts_bucket_available()
-
-    # then
-    assert result is False
-
-
-@mock.patch.object(roboflow, "AWS_SECRET_ACCESS_KEY", None)
-def test_is_model_artefacts_bucket_available_when_secret_not_set() -> None:
-    # when
-    result = is_model_artefacts_bucket_available()
-
-    # then
-    assert result is False
-
-
-@mock.patch.object(roboflow, "LAMBDA", False)
-def test_is_model_artefacts_bucket_available_when_not_in_lambda_mode() -> None:
-    # when
-    result = is_model_artefacts_bucket_available()
-
-    # then
-    assert result is False
-
-
-@mock.patch.object(roboflow, "S3_CLIENT", None)
-def test_is_model_artefacts_bucket_available_when_s3_client_not_initialised() -> None:
-    # when
-    result = is_model_artefacts_bucket_available()
-
-    # then
-    assert result is False
-
-
-@mock.patch.object(roboflow, "AWS_ACCESS_KEY_ID", "some")
-@mock.patch.object(roboflow, "AWS_SECRET_ACCESS_KEY", "other")
-@mock.patch.object(roboflow, "LAMBDA", True)
-@mock.patch.object(roboflow, "S3_CLIENT", MagicMock())
-def test_is_model_artefacts_bucket_available_when_availability_check_should_pass() -> (
-    None
-):
-    # when
-    result = is_model_artefacts_bucket_available()
-
-    # then
-    assert result is True
-
-
-@mock.patch.object(roboflow, "OFFLINE_MODE", True)
-@mock.patch.object(roboflow, "AWS_ACCESS_KEY_ID", "some")
-@mock.patch.object(roboflow, "AWS_SECRET_ACCESS_KEY", "other")
-@mock.patch.object(roboflow, "LAMBDA", True)
-@mock.patch.object(roboflow, "S3_CLIENT", MagicMock())
-def test_model_artefacts_bucket_is_unavailable_in_offline_mode() -> None:
-    assert is_model_artefacts_bucket_available() is False
 
 
 def test_cached_model_load_skips_api_authorization_in_offline_mode() -> None:
@@ -103,7 +43,6 @@ def test_missing_model_artifacts_do_not_use_network_in_offline_mode() -> None:
     model = object.__new__(RoboflowInferenceModel)
     model.endpoint = "workspace/model/1"
     model.get_all_required_infer_bucket_file = MagicMock(return_value=["weights.onnx"])
-    model.download_model_artefacts_from_s3 = MagicMock()
     model.download_model_artifacts_from_roboflow_api = MagicMock()
 
     with mock.patch.object(roboflow, "OFFLINE_MODE", True), mock.patch.object(
@@ -114,7 +53,6 @@ def test_missing_model_artifacts_do_not_use_network_in_offline_mode() -> None:
         with pytest.raises(ModelArtefactError, match="OFFLINE_MODE"):
             model.cache_model_artefacts()
 
-    model.download_model_artefacts_from_s3.assert_not_called()
     model.download_model_artifacts_from_roboflow_api.assert_not_called()
 
 
@@ -122,7 +60,6 @@ def test_missing_core_model_weights_do_not_use_network_in_offline_mode() -> None
     model = object.__new__(RoboflowCoreModel)
     model.endpoint = "core-model"
     model.get_infer_bucket_file_list = MagicMock(return_value=["weights.pt"])
-    model.download_model_artefacts_from_s3 = MagicMock()
     model.download_model_from_roboflow_api = MagicMock()
 
     with mock.patch.object(roboflow, "OFFLINE_MODE", True), mock.patch.object(
@@ -141,7 +78,6 @@ def test_missing_core_model_weights_do_not_use_network_in_offline_mode() -> None
             model.download_weights()
 
     access_check_mock.assert_not_called()
-    model.download_model_artefacts_from_s3.assert_not_called()
     model.download_model_from_roboflow_api.assert_not_called()
 
 

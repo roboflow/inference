@@ -75,7 +75,6 @@ def test_sam3_settings_follow_legacy_for_every_mode_offline_combination(
 def test_hosted_flags_default_to_legacy_values():
     code = (
         "from inference_server import configuration as c; "
-        "assert c.LAMBDA is False; "
         "assert c.GCP_SERVERLESS is False; "
         "assert c.ENFORCE_CREDITS_VERIFICATION is False; "
         "assert c.DEDICATED_DEPLOYMENT_ID is None; "
@@ -94,7 +93,6 @@ def test_hosted_flags_default_to_legacy_values():
         for name, value in os.environ.items()
         if name
         not in {
-            "LAMBDA",
             "GCP_SERVERLESS",
             "ENFORCE_CREDITS_VERIFICATION",
             "DEDICATED_DEPLOYMENT_ID",
@@ -119,7 +117,6 @@ def test_hosted_flags_default_to_legacy_values():
 def test_hosted_flags_read_legacy_spellings():
     code = (
         "from inference_server import configuration as c; "
-        "assert c.LAMBDA is True; "
         "assert c.GCP_SERVERLESS is True; "
         "assert c.ENFORCE_CREDITS_VERIFICATION is True; "
         "assert c.DEDICATED_DEPLOYMENT_WORKSPACE_URL == 'ws-url'; "
@@ -134,7 +131,6 @@ def test_hosted_flags_read_legacy_spellings():
         [sys.executable, "-c", code],
         env={
             **os.environ,
-            "LAMBDA": "True",
             "GCP_SERVERLESS": "true",
             "ENFORCE_CREDITS_VERIFICATION": "1",
             "DEDICATED_DEPLOYMENT_WORKSPACE_URL": "ws-url",

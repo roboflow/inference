@@ -24,7 +24,7 @@ from roboflow_workflows.enterprise_blocks.sinks.mqtt_common import (
     normalise_client_id,
     resolve_broker_address,
 )
-from roboflow_workflows.environment import GCP_SERVERLESS, LAMBDA
+from roboflow_workflows.environment import GCP_SERVERLESS
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -111,9 +111,9 @@ credentials, timeout, topic, QoS, read mode, client id or the TLS settings betwe
 is rejected as a configuration error. While the broker is unreachable every run waits up to `timeout`
 for the background reconnect before reporting the failure.
 
-The block is not available on the Roboflow hosted platform (`GCP_SERVERLESS` or
-`LAMBDA`): every run fails there without opening a connection. It is intended for
-self-hosted inference servers and InferencePipelines that can reach the broker.
+The block is not available on the Roboflow hosted platform (`GCP_SERVERLESS`): every
+run fails there without opening a connection. It is intended for self-hosted inference
+servers and InferencePipelines that can reach the broker.
 
 The server operator may restrict which brokers the MQTT blocks connect to with
 `MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS` (an allowlist of `host[:port]` entries) and
@@ -508,7 +508,7 @@ class BlockManifest(WorkflowBlockManifest):
             Complete discovery of the ``get_restrictions()`` entries. Both
             apply unconditionally: no manifest field switches either on, and
             the hosted-platform condition is the runtime axis, never this
-            host's ``GCP_SERVERLESS`` / ``LAMBDA`` flags.
+            host's ``GCP_SERVERLESS`` flag.
         """
         restrictions = actual_restrictions_of(
             declared=self.get_restrictions(),
@@ -611,7 +611,7 @@ class MQTTReaderBlockV1(WorkflowBlock):
         ca_certificate_path: Optional[str] = None,
         client_id: Optional[str] = None,
     ) -> BlockResult:
-        if GCP_SERVERLESS or LAMBDA:
+        if GCP_SERVERLESS:
             # never open an outbound broker connection from hosted workers
             return self._handle_failure(
                 "MQTT Reader is not available on the Roboflow hosted platform"

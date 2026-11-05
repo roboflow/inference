@@ -826,19 +826,18 @@ def test_lmm_router_registers_with_lmm_flag_alone(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "core_models,lmm,moondream,lambda_,expected",
+    "core_models,lmm,moondream,expected",
     [
-        (True, True, False, False, True),
-        (True, False, True, False, True),
-        (False, True, False, False, True),
-        (False, False, True, False, True),
-        (True, False, False, False, False),
-        (False, False, False, False, False),
-        (False, True, True, True, False),
+        (True, True, False, True),
+        (True, False, True, True),
+        (False, True, False, True),
+        (False, False, True, True),
+        (True, False, False, False),
+        (False, False, False, False),
     ],
 )
 def test_lmm_router_is_independent_of_core_models_flag(
-    monkeypatch, core_models, lmm, moondream, lambda_, expected
+    monkeypatch, core_models, lmm, moondream, expected
 ):
     from fastapi import FastAPI
 
@@ -849,7 +848,6 @@ def test_lmm_router_is_independent_of_core_models_flag(
     )
     monkeypatch.setattr("inference_server.configuration.LMM_ENABLED", lmm)
     monkeypatch.setattr("inference_server.configuration.MOONDREAM2_ENABLED", moondream)
-    monkeypatch.setattr("inference_server.configuration.LAMBDA", lambda_)
     app = FastAPI()
     include_legacy_routers(app)
     assert ("/infer/lmm" in route_paths(app)) is expected

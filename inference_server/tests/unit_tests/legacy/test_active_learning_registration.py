@@ -136,7 +136,6 @@ def active_learning(monkeypatch):
         registration.ActiveLearningRegistrar, "submit", recording_submit
     )
     monkeypatch.setattr(configuration, "ACTIVE_LEARNING_ENABLED", True)
-    monkeypatch.setattr(configuration, "LAMBDA", False)
     monkeypatch.setattr(configuration, "GCP_SERVERLESS", False)
     return state
 
@@ -482,7 +481,7 @@ def test_response_body_is_the_same_with_and_without_active_learning(
     legacy_client, fake_stat, active_learning, monkeypatch
 ):
     _pin_response_fields(monkeypatch)
-    monkeypatch.setattr(configuration, "LAMBDA", True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     active_learning.mutate = True
     client = _detection_client(legacy_client, fake_stat)
 
@@ -750,11 +749,10 @@ def test_failing_registration_leaves_the_response_and_logs_the_class_name(
     assert SECRET not in caplog.text
 
 
-@pytest.mark.parametrize("setting", ["LAMBDA", "GCP_SERVERLESS"])
 def test_serverless_registration_finishes_before_the_response(
-    legacy_client, fake_stat, active_learning, monkeypatch, setting
+    legacy_client, fake_stat, active_learning, monkeypatch
 ):
-    monkeypatch.setattr(configuration, setting, True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     client = _detection_client(legacy_client, fake_stat)
 
     response = _post_catch_all(client)
@@ -767,7 +765,7 @@ def test_serverless_registration_finishes_before_the_response(
 def test_serverless_registration_does_not_block_the_event_loop(
     legacy_client, fake_stat, active_learning, monkeypatch
 ):
-    monkeypatch.setattr(configuration, "LAMBDA", True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     active_learning.hold = threading.Event()
     client = _detection_client(legacy_client, fake_stat)
     results = {}
@@ -803,7 +801,7 @@ def test_serverless_registration_does_not_block_the_event_loop(
 def test_serverless_job_over_the_pending_bound_is_skipped_and_counted(
     legacy_client, fake_stat, active_learning, monkeypatch
 ):
-    monkeypatch.setattr(configuration, "LAMBDA", True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     monkeypatch.setattr(registration, "MAX_PENDING_JOBS", 0)
     client = _detection_client(legacy_client, fake_stat)
 
@@ -960,7 +958,7 @@ def test_known_inactive_project_does_not_touch_a_full_pending_bound(
 def test_serverless_known_inactive_project_waits_for_nothing(
     legacy_client, fake_stat, active_learning, monkeypatch
 ):
-    monkeypatch.setattr(configuration, "LAMBDA", True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     client = _inactive_project_client(legacy_client, fake_stat, active_learning)
     _post_detection(client, api_key="off")
     monkeypatch.setattr(registration, "MAX_PENDING_JOBS", 0)
@@ -1026,11 +1024,10 @@ def _post_in_thread(client, results, name):
     return thread
 
 
-@pytest.mark.parametrize("setting", ["LAMBDA", "GCP_SERVERLESS"])
 def test_serverless_wait_is_released_at_the_deadline(
-    legacy_client, fake_stat, active_learning, monkeypatch, setting
+    legacy_client, fake_stat, active_learning, monkeypatch
 ):
-    monkeypatch.setattr(configuration, setting, True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     monkeypatch.setattr(registration, "SERVERLESS_WAIT_TIMEOUT_S", SERVERLESS_TIMEOUT_S)
     active_learning.hold = threading.Event()
     client = _detection_client(legacy_client, fake_stat)
@@ -1061,7 +1058,7 @@ def test_serverless_wait_default_deadline_is_thirty_seconds():
 def test_serverless_wait_covers_the_time_in_the_queue(
     legacy_client, fake_stat, active_learning, monkeypatch
 ):
-    monkeypatch.setattr(configuration, "LAMBDA", True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     monkeypatch.setattr(registration, "SERVERLESS_WAIT_TIMEOUT_S", SERVERLESS_TIMEOUT_S)
     monkeypatch.setattr(registration, "WORKERS", 1)
     active_learning.hold = threading.Event()
@@ -1090,7 +1087,7 @@ def test_serverless_wait_covers_the_time_in_the_queue(
 def test_shutdown_releases_a_request_waiting_in_the_queue(
     legacy_client, fake_stat, active_learning, monkeypatch
 ):
-    monkeypatch.setattr(configuration, "LAMBDA", True)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
     monkeypatch.setattr(registration, "WORKERS", 1)
     active_learning.hold = threading.Event()
     client = _detection_client(legacy_client, fake_stat)

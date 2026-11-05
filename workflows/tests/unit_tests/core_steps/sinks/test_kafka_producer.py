@@ -331,7 +331,7 @@ def test_manifest_outputs_compatibility_and_restrictions() -> None:
 
 
 def test_manifest_declares_one_hard_restriction_for_hosted_serverless() -> None:
-    # run() refuses when GCP_SERVERLESS or LAMBDA is set; dedicated deployments are not
+    # run() refuses when GCP_SERVERLESS is set; dedicated deployments are not
     # refused, so they must not be listed
     hard = [
         r for r in BlockManifest.get_restrictions() if r.severity is v1.Severity.HARD
@@ -912,9 +912,8 @@ def test_selector_resolved_values_are_coerced(broker: FakeBroker) -> None:
     assert broker.producers[0].flush_calls == [2.0]
 
 
-@pytest.mark.parametrize("flag", ["GCP_SERVERLESS", "LAMBDA"])
-def test_hosted_platform_is_refused(broker: FakeBroker, flag: str) -> None:
-    with patch.object(v1, flag, True):
+def test_hosted_platform_is_refused(broker: FakeBroker) -> None:
+    with patch.object(v1, "GCP_SERVERLESS", True):
         result = run(block())
 
     assert result["error_status"] is True

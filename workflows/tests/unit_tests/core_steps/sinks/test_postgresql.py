@@ -422,11 +422,8 @@ def test_denylist_active_even_when_non_global_allowed(connect, monkeypatch):
     connect.assert_not_called()
 
 
-@pytest.mark.parametrize("platform_flag", ["GCP_SERVERLESS", "LAMBDA"])
-def test_sink_always_fails_on_hosted_platform(platform_flag, connect, monkeypatch):
-    monkeypatch.setattr(v1, "GCP_SERVERLESS", False)
-    monkeypatch.setattr(v1, "LAMBDA", False)
-    monkeypatch.setattr(v1, platform_flag, True)
+def test_sink_always_fails_on_hosted_platform(connect, monkeypatch):
+    monkeypatch.setattr(v1, "GCP_SERVERLESS", True)
     tasks, pool = BackgroundTasks(), MagicMock()
     result = v1.PostgreSQLSinkBlockV1(tasks, pool).run(**arguments())
     assert result["error_status"] is True

@@ -3,6 +3,7 @@ import concurrent
 import logging
 import os
 import re
+import time
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -32,7 +33,6 @@ from roboflow_workflows.execution_engine.introspection.workload_entities import 
     WorkflowIntrospection,
 )
 from starlette.datastructures import UploadFile
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
 from inference.core.constants import (
@@ -197,7 +197,6 @@ from inference.core.env import (
     HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS,
     HTTP_API_THREADPOOL_WORKERS,
     INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES,
-    LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
     MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
@@ -322,6 +321,9 @@ from inference.core.interfaces.workflows_execution_observer import (
     UsageTrackingExecutionObserver,
 )
 from inference.core.interfaces.workflows_image_codec import bind_image_codec
+from inference.core.interfaces.workflows_models_provider import (
+    ModelManagerModelsProvider,
+)
 from inference.core.interfaces.workflows_step_error_handlers import (
     resolve_step_error_handler,
 )
@@ -342,6 +344,7 @@ from inference.core.managers.model_load_collector import (
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.models.embeddings import IMAGE_EMBEDDINGS, model_cache_key
 from inference.core.roboflow_api import (
+    ModelEndpointType,
     assume_identity_authorised_workspace_db_id,
     build_roboflow_api_headers,
     get_roboflow_workspace,
@@ -372,6 +375,7 @@ from inference.core.utils.requests import (
     deduct_api_key_from_string,
 )
 from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
+from inference.core.version import __version__
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
     WorkflowBlockError,
@@ -405,17 +409,6 @@ from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
 )
-
-if LAMBDA and not OFFLINE_MODE:
-    from inference.core.usage import trackUsage
-
-import time
-
-from inference.core.interfaces.workflows_models_provider import (
-    ModelManagerModelsProvider,
-)
-from inference.core.roboflow_api import ModelEndpointType
-from inference.core.version import __version__
 from inference_sdk.http.entities import Confidence
 
 try:
@@ -428,14 +421,6 @@ except ImportError:
 def get_content_type(request: Request) -> str:
     content_type = request.headers.get("content-type", "")
     return content_type.split(";")[0].strip()
-
-
-class LambdaMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        logger.info("Lambda is terminating, handle unsent usage payloads.")
-        await usage_collector.async_push_usage_payloads()
-        return response
 
 
 AUTH_CACHE_TTL_SECONDS = 3600
@@ -662,11 +647,11 @@ class HttpInterface(BaseInterface):
             Deploy Roboflow trained models to nearly any compute environment!
         """
 
-        if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
+        if OFFLINE_MODE and GCP_SERVERLESS:
             raise RuntimeError(
-                "OFFLINE_MODE is not supported together with LAMBDA / "
-                "GCP_SERVERLESS deployments because authentication and usage "
-                "accounting require API connectivity."
+                "OFFLINE_MODE is not supported together with GCP_SERVERLESS "
+                "deployments because authentication and usage accounting "
+                "require API connectivity."
             )
         if OFFLINE_MODE and (
             DEDICATED_DEPLOYMENT_WORKSPACE_URL
@@ -744,8 +729,6 @@ class HttpInterface(BaseInterface):
         self._instrumentator = InferenceInstrumentator(
             app, model_manager=model_manager, endpoint="/metrics"
         )
-        if LAMBDA:
-            app.add_middleware(LambdaMiddleware)
         if GCP_SERVERLESS:
             app.add_middleware(GCPServerlessMiddleware)
 
@@ -821,7 +804,7 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
-        if not (LAMBDA or GCP_SERVERLESS):
+        if not GCP_SERVERLESS:
 
             @app.get("/device/stats")
             def device_stats():
@@ -1948,7 +1931,7 @@ class HttpInterface(BaseInterface):
                     status_code=500, detail="Logging system not properly initialized"
                 )
 
-        if not LAMBDA and GET_MODEL_REGISTRY_ENABLED:
+        if GET_MODEL_REGISTRY_ENABLED:
 
             @app.get(
                 "/model/registry",
@@ -1968,8 +1951,8 @@ class HttpInterface(BaseInterface):
                     models_descriptions=models_descriptions
                 )
 
-        # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not (LAMBDA or GCP_SERVERLESS):
+        # Hosted serverless does not expose model management routes.
+        if not GCP_SERVERLESS:
 
             @app.post(
                 "/model/add",
@@ -2060,7 +2043,7 @@ class HttpInterface(BaseInterface):
                 )
 
         # these NEW endpoints need authentication protection
-        if not LAMBDA and not GCP_SERVERLESS:
+        if not GCP_SERVERLESS:
 
             @app.post(
                 "/infer/object_detection",
@@ -2255,7 +2238,7 @@ class HttpInterface(BaseInterface):
                     service_secret=service_secret,
                 )
 
-        if not LAMBDA and (LMM_ENABLED or MOONDREAM2_ENABLED):
+        if LMM_ENABLED or MOONDREAM2_ENABLED:
 
             @app.post(
                 "/infer/lmm",
@@ -2565,9 +2548,7 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
-                    background_tasks=(
-                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
-                    ),
+                    background_tasks=(background_tasks if not GCP_SERVERLESS else None),
                     profiler=profiler,
                 )
 
@@ -2634,9 +2615,7 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
-                    background_tasks=(
-                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
-                    ),
+                    background_tasks=(background_tasks if not GCP_SERVERLESS else None),
                     profiler=profiler,
                 )
 
@@ -3274,11 +3253,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         clip_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(clip_model_id, actor)
                     return response
 
                 @app.post(
@@ -3320,11 +3294,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         clip_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(clip_model_id, actor)
                     return response
 
                 @app.post(
@@ -3366,11 +3335,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         clip_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(clip_model_id, actor, n=2)
                     return response
 
             if CORE_MODEL_PE_ENABLED:
@@ -3414,11 +3378,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         pe_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(pe_model_id, actor)
                     return response
 
                 @app.post(
@@ -3460,11 +3419,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         pe_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(pe_model_id, actor)
                     return response
 
                 @app.post(
@@ -3506,11 +3460,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         pe_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(pe_model_id, actor, n=2)
                     return response
 
             if CORE_MODEL_GROUNDINGDINO_ENABLED:
@@ -3554,11 +3503,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         grounding_dino_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(grounding_dino_model_id, actor)
                     return response
 
             if CORE_MODEL_YOLO_WORLD_ENABLED:
@@ -3605,12 +3549,6 @@ class HttpInterface(BaseInterface):
                         yolo_world_model_id, inference_request
                     )
                     logger.debug("YOLOWorld prediction available.")
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(yolo_world_model_id, actor)
-                        logger.debug("Usage of YOLOWorld denoted.")
                     return response
 
             if CORE_MODEL_DOCTR_ENABLED:
@@ -3656,11 +3594,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         doctr_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(doctr_model_id, actor)
                     return orjson_response_keeping_parent_id(response)
 
             if CORE_MODEL_EASYOCR_ENABLED:
@@ -3706,11 +3639,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         easy_ocr_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(easy_ocr_model_id, actor)
                     return orjson_response_keeping_parent_id(response)
 
             if CORE_MODEL_SAM_ENABLED:
@@ -3754,11 +3682,6 @@ class HttpInterface(BaseInterface):
                     model_response = self.model_manager.infer_from_request_sync(
                         sam_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(sam_model_id, actor)
                     if inference_request.format == "binary":
                         return Response(
                             content=model_response.embeddings,
@@ -3805,11 +3728,6 @@ class HttpInterface(BaseInterface):
                     model_response = self.model_manager.infer_from_request_sync(
                         sam_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(sam_model_id, actor)
                     if inference_request.format == "binary":
                         return Response(
                             content=model_response,
@@ -4311,12 +4229,6 @@ class HttpInterface(BaseInterface):
                         model_id, inference_request
                     )
 
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(model_id, actor)
-
                     # Convert bytes to base64 for JSON serialization
                     def encode_bytes(data):
                         if data is None:
@@ -4410,7 +4322,6 @@ class HttpInterface(BaseInterface):
 
                 def _infer_depth_estimation(
                     inference_request: DepthEstimationRequest,
-                    request: Request,
                     api_key: Optional[str] = None,
                     countinference: Optional[bool] = None,
                     service_secret: Optional[str] = None,
@@ -4454,11 +4365,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         depth_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(depth_model_id, actor)
 
                     # Extract data from nested response structure
                     depth_data = response.response
@@ -4511,7 +4417,6 @@ class HttpInterface(BaseInterface):
                     logger.debug(f"Reached /infer/depth-estimation")
                     return _infer_depth_estimation(
                         inference_request=inference_request,
-                        request=request,
                         api_key=api_key,
                         countinference=countinference,
                         service_secret=service_secret,
@@ -4546,7 +4451,6 @@ class HttpInterface(BaseInterface):
                     logger.debug(f"Reached /infer/depth-estimation/{model_id}")
                     return _infer_depth_estimation(
                         inference_request=inference_request,
-                        request=request,
                         api_key=api_key,
                         countinference=countinference,
                         service_secret=service_secret,
@@ -4617,11 +4521,6 @@ class HttpInterface(BaseInterface):
                         inference_request=inference_request,
                         request=request,
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(model_id, actor)
                     return response
 
             if CORE_MODEL_TROCR_ENABLED:
@@ -4665,11 +4564,6 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         trocr_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(trocr_model_id, actor)
                     return orjson_response_keeping_parent_id(response)
 
             if CORE_MODEL_PPOCR_ENABLED:
@@ -4719,14 +4613,9 @@ class HttpInterface(BaseInterface):
                     response = self.model_manager.infer_from_request_sync(
                         pp_ocr_model_id, inference_request
                     )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(pp_ocr_model_id, actor)
                     return orjson_response_keeping_parent_id(response)
 
-        if not (LAMBDA or GCP_SERVERLESS):
+        if not GCP_SERVERLESS:
 
             @app.get(
                 "/notebook/start",
@@ -5024,34 +4913,11 @@ class HttpInterface(BaseInterface):
                     raise MissingServiceSecretError(
                         "Service secret is required to disable inference usage tracking"
                     )
-                if LAMBDA:
-                    logger.debug("request.scope: %s", request.scope)
-                    request_model_id = (
-                        request.scope["aws.event"]["requestContext"]["authorizer"][
-                            "lambda"
-                        ]["model"]["endpoint"]
-                        .replace("--", "/")
-                        .replace("rf-", "")
-                        .replace("nu-", "")
-                    )
-                    actor = request.scope["aws.event"]["requestContext"]["authorizer"][
-                        "lambda"
-                    ]["actor"]
-                    if countinference:
-                        trackUsage(request_model_id, actor)
-                    else:
-                        if not service_secret_is_valid(service_secret):
-                            raise MissingServiceSecretError(
-                                "Service secret is required to disable inference usage tracking"
-                            )
-                        logger.info("Not counting inference for usage")
-                else:
-                    request_model_id = model_id
                 logger.debug(
                     f"State of model registry: {self.model_manager.describe_models()}"
                 )
                 self.model_manager.add_model(
-                    request_model_id,
+                    model_id,
                     api_key,
                     model_id_alias=model_id,
                     countinference=countinference,
@@ -5067,10 +4933,6 @@ class HttpInterface(BaseInterface):
                     # in memory.
                     inference_response = infer_action_recognition_request(
                         self.model_manager,
-                        # add_model above registers under the alias, which is
-                        # model_id, so the lookup asks for that. Under Lambda
-                        # request_model_id is the authorizer's endpoint and
-                        # names nothing the manager holds.
                         model_id=model_id,
                         inference_request=ActionRecognitionInferenceRequest(
                             api_key=api_key,
@@ -5152,7 +5014,7 @@ class HttpInterface(BaseInterface):
                 else:
                     return orjson_response(inference_response)
 
-        if not (LAMBDA or GCP_SERVERLESS):
+        if not GCP_SERVERLESS:
             # Legacy clear cache endpoint for backwards compatibility
             @app.get("/clear_cache", response_model=str)
             def legacy_clear_cache():

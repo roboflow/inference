@@ -322,9 +322,7 @@ async def register_inference(
             return None
 
         future = registrar.submit(job)
-        if future is not None and (
-            configuration.LAMBDA or configuration.GCP_SERVERLESS
-        ):
+        if future is not None and configuration.GCP_SERVERLESS:
             if not await _completion_of(future, SERVERLESS_WAIT_TIMEOUT_S):
                 registrar.record_timeout()
     except Exception as error:

@@ -360,9 +360,6 @@ class TransformerModel(RoboflowInferenceModel):
     def weights_file(self) -> None:
         return None
 
-    def download_model_artefacts_from_s3(self) -> None:
-        raise NotImplementedError()
-
 
 class LoRATransformerModel(TransformerModel):
     load_base_from_roboflow = False

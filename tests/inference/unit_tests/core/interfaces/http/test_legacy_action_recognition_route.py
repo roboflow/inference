@@ -1,11 +1,8 @@
 """Regression test for the legacy ``POST /{dataset_id}/{version_id}`` route
 when the task is action recognition.
 
-Under Lambda the route reads ``request_model_id`` from the authorizer, and it
-differs from the ``model_id`` in the path. ``add_model`` registers the model
-under the alias, which is ``model_id``, so an inference call naming
-``request_model_id`` finds nothing. Off Lambda the two are equal by
-assignment, so only a Lambda-shaped request shows the difference.
+``add_model`` registers the model under the alias, which is ``model_id``, so the
+inference call has to name that same identifier.
 """
 
 from contextlib import nullcontext
@@ -17,8 +14,6 @@ import pytest
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
-AUTHORIZER_ENDPOINT = "rf-other-workspace--other-model"
-RESOLVED_REQUEST_MODEL_ID = "other-workspace/other-model"
 PATH_MODEL_ID = "dummy-dataset/1"
 
 
@@ -36,28 +31,7 @@ class _DummyResponse(BaseModel):
     visualization: Optional[bytes] = None
 
 
-class _LambdaScope:
-    """Puts the Lambda authorizer event on the ASGI scope, as API Gateway does."""
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            scope["aws.event"] = {
-                "requestContext": {
-                    "authorizer": {
-                        "lambda": {
-                            "model": {"endpoint": AUTHORIZER_ENDPOINT},
-                            "actor": "actor-id",
-                        }
-                    }
-                }
-            }
-        await self.app(scope, receive, send)
-
-
-def _build_interface(monkeypatch, lambda_mode: bool):
+def _build_interface(monkeypatch):
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -65,11 +39,6 @@ def _build_interface(monkeypatch, lambda_mode: bool):
         http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
     )
     monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
-    monkeypatch.setattr(http_api, "LAMBDA", lambda_mode)
-    if lambda_mode:
-        # trackUsage is imported at module scope only when LAMBDA is set, so
-        # patching LAMBDA after import leaves the name unbound.
-        monkeypatch.setattr(http_api, "trackUsage", MagicMock(), raising=False)
     model_manager = MagicMock()
     model_manager.pingback = None
     model_manager.num_errors = 0
@@ -79,14 +48,12 @@ def _build_interface(monkeypatch, lambda_mode: bool):
     return interface, model_manager
 
 
-@pytest.mark.parametrize("lambda_mode", [False, True])
 def test_legacy_action_recognition_infers_with_the_registered_identifier(
-    monkeypatch, lambda_mode: bool
+    monkeypatch,
 ) -> None:
-    interface, model_manager = _build_interface(monkeypatch, lambda_mode=lambda_mode)
-    app = _LambdaScope(interface.app) if lambda_mode else interface.app
+    interface, model_manager = _build_interface(monkeypatch)
 
-    with TestClient(app) as client:
+    with TestClient(interface.app) as client:
         response = client.post(
             f"/{PATH_MODEL_ID}",
             params={
@@ -105,23 +72,6 @@ def test_legacy_action_recognition_infers_with_the_registered_identifier(
     assert inferred_with == registered_under
 
 
-def test_lambda_request_model_id_really_does_differ(monkeypatch) -> None:
-    """Guards the premise: without a difference the test above proves nothing."""
-    interface, model_manager = _build_interface(monkeypatch, lambda_mode=True)
-
-    with TestClient(_LambdaScope(interface.app)) as client:
-        client.post(
-            f"/{PATH_MODEL_ID}",
-            params={
-                "api_key": "query-api-key",
-                "image": "https://example.com/clip.mp4",
-            },
-        )
-
-    assert model_manager.add_model.call_args.args[0] == RESOLVED_REQUEST_MODEL_ID
-    assert RESOLVED_REQUEST_MODEL_ID != PATH_MODEL_ID
-
-
 @pytest.mark.parametrize(
     "confidence, expected",
     [
@@ -138,7 +88,7 @@ def test_lambda_request_model_id_really_does_differ(monkeypatch) -> None:
 def test_legacy_action_recognition_normalizes_confidence(
     monkeypatch, confidence, expected, include_candidates: bool
 ) -> None:
-    interface, model_manager = _build_interface(monkeypatch, lambda_mode=False)
+    interface, model_manager = _build_interface(monkeypatch)
     params = {
         "api_key": "query-api-key",
         "image": "https://example.com/clip.mp4",
@@ -163,7 +113,7 @@ def test_legacy_cosmos_ignores_explicit_confidence(monkeypatch) -> None:
         VideoSampling,
     )
 
-    interface, manager = _build_interface(monkeypatch, lambda_mode=False)
+    interface, manager = _build_interface(monkeypatch)
     adapter = adapters.InferenceModelsActionRecognitionAdapter.__new__(
         adapters.InferenceModelsActionRecognitionAdapter
     )
@@ -202,7 +152,7 @@ def test_legacy_cosmos_ignores_explicit_confidence(monkeypatch) -> None:
 def test_action_recognition_input_error_returns_400(monkeypatch) -> None:
     from inference_models.errors import ModelInputError
 
-    interface, manager = _build_interface(monkeypatch, lambda_mode=False)
+    interface, manager = _build_interface(monkeypatch)
     manager.infer_from_request_sync.side_effect = ModelInputError(
         "Unknown V-JEPA class filter"
     )
@@ -228,7 +178,7 @@ def test_action_routes_propagate_request_control(
 ):
     from inference.core.interfaces.http import video_processing
 
-    interface, manager = _build_interface(monkeypatch, lambda_mode=False)
+    interface, manager = _build_interface(monkeypatch)
     monkeypatch.setattr(video_processing.from_thread, "run", lambda *args: disconnected)
 
     def expire(model_id, request, *, processing_control):

@@ -258,22 +258,19 @@ def get_bridge(request: Request) -> LegacyModelBridge:
 
 
 def include_legacy_routers(app: FastAPI) -> None:
-    hosted = configuration.LAMBDA or configuration.GCP_SERVERLESS
     app.include_router(router)
-    if not hosted:
+    if not configuration.GCP_SERVERLESS:
         app.include_router(infer_router)
-    if not configuration.LAMBDA and (
-        configuration.LMM_ENABLED or configuration.MOONDREAM2_ENABLED
-    ):
+    if configuration.LMM_ENABLED or configuration.MOONDREAM2_ENABLED:
         app.include_router(lmm_router)
     if configuration.CORE_MODELS_ENABLED:
         for flag_names, group_router in _CORE_MODEL_ROUTER_GROUPS:
             if any(getattr(configuration, name) for name in flag_names):
                 app.include_router(group_router)
     if configuration.LEGACY_CONTROL_PLANE_ROUTES_ENABLED:
-        if not hosted:
+        if not configuration.GCP_SERVERLESS:
             app.include_router(control_plane_router)
-        if not configuration.LAMBDA and configuration.GET_MODEL_REGISTRY_ENABLED:
+        if configuration.GET_MODEL_REGISTRY_ENABLED:
             app.include_router(registry_router)
 
 

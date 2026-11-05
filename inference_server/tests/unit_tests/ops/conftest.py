@@ -11,7 +11,6 @@ from inference_server.ops.router import include_ops_routers
 from tests.unit_tests.test_app_routes import reloaded_app  # noqa: F401
 
 OPS_FLAGS = {
-    "LAMBDA": False,
     "GCP_SERVERLESS": False,
     "DOCKER_SOCKET_PATH": None,
     "SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED": False,

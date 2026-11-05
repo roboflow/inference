@@ -129,9 +129,6 @@ class PlatformConfiguration:
     offline_mode: bool = False
     secure_gateway: Optional[str] = None
     gcp_serverless: bool = False
-    # LAMBDA runtime flag, mirrors inference.core.env.LAMBDA. Used by the
-    # PostgreSQL sink hosted-runtime gate together with gcp_serverless.
-    lambda_runtime: bool = False
 
 
 @dataclass(frozen=True)

@@ -390,11 +390,3 @@ def test_server_starts_and_lists_the_loader_first_when_the_flag_is_on():
     )
 
     assert result.returncode == 0, result.stderr
-
-
-def test_lambda_setting_reaches_the_platform_configuration(monkeypatch):
-    monkeypatch.setattr(configuration, "LAMBDA", True)
-    assert host.build_workflows_configuration().platform.lambda_runtime is True
-
-    monkeypatch.setattr(configuration, "LAMBDA", False)
-    assert host.build_workflows_configuration().platform.lambda_runtime is False

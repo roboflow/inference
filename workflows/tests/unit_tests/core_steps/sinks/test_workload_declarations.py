@@ -53,7 +53,6 @@ from tests.unit_tests.workload_declaration_helpers import (
 LOCAL_STORAGE_FLAG = "ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE"
 HOSTED_RESTRICTION_CODE = "unavailable_on_hosted_platform"
 FIRE_AND_FORGET_CODE = "fire_and_forget_hides_persistence_failures"
-HOSTED_PLATFORM_FLAGS = ("GCP_SERVERLESS", "LAMBDA")
 POSTGRESQL_FIRE_AND_FORGET_VALUES = [True, False, "$inputs.fire_and_forget"]
 
 
@@ -293,25 +292,20 @@ def test_postgresql_declares_the_hosted_gate_in_every_branch(
     assert hard[0] == restriction_metadata_of(POSTGRESQL_HOSTED_PLATFORM_RESTRICTION)
 
 
-@pytest.mark.parametrize(
-    "gcp_serverless, lambda_runtime",
-    [(False, False), (True, False), (False, True), (True, True)],
-)
-def test_postgresql_declaration_ignores_this_host_hosted_platform_flags(
-    monkeypatch: pytest.MonkeyPatch, gcp_serverless: bool, lambda_runtime: bool
+@pytest.mark.parametrize("gcp_serverless", [False, True])
+def test_postgresql_declaration_ignores_this_host_hosted_platform_flag(
+    monkeypatch: pytest.MonkeyPatch, gcp_serverless: bool
 ) -> None:
-    """`run()` branches on the flags; the declaration must not.
+    """`run()` branches on the flag; the declaration must not.
 
-    The flags are patched as module CONSTANTS, which is what the block imports
+    The flag is patched as a module CONSTANT, which is what the block imports
     and what `run()` genuinely reads.
     """
     baseline = [
         portable_restrictions_discovery(_postgresql(value))
         for value in POSTGRESQL_FIRE_AND_FORGET_VALUES
     ]
-    for flag, value in zip(HOSTED_PLATFORM_FLAGS, (gcp_serverless, lambda_runtime)):
-        assert hasattr(postgresql_module, flag), flag
-        monkeypatch.setattr(postgresql_module, flag, value)
+    monkeypatch.setattr(postgresql_module, "GCP_SERVERLESS", gcp_serverless)
     assert [
         portable_restrictions_discovery(_postgresql(value))
         for value in POSTGRESQL_FIRE_AND_FORGET_VALUES

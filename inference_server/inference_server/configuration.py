@@ -620,7 +620,6 @@ except importlib.metadata.PackageNotFoundError:
 SERVER_ID = uuid.uuid4().hex
 
 # ── Hosted deployments (hosted/, app.py, legacy/router.py) ────────────────
-LAMBDA = get_boolean_from_env("LAMBDA", default=False)
 GCP_SERVERLESS = get_boolean_from_env("GCP_SERVERLESS", default=False)
 WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING = get_boolean_from_env(
     "WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING", default=True
@@ -678,7 +677,7 @@ ENABLE_IN_MEMORY_LOGS = get_boolean_from_env("ENABLE_IN_MEMORY_LOGS", default=Fa
 
 # ── Pingback (pingback.py) ────────────────────────────────────────────────
 METRICS_ENABLED = get_boolean_from_env("METRICS_ENABLED", default=True)
-if LAMBDA or GCP_SERVERLESS or LEGACY_OFFLINE_MODE:
+if GCP_SERVERLESS or LEGACY_OFFLINE_MODE:
     METRICS_ENABLED = False
 METRICS_INTERVAL = get_integer_from_env("METRICS_INTERVAL", default=60)
 METRICS_URL = os.environ.get("METRICS_URL", f"{API_BASE_URL}/inference-stats")

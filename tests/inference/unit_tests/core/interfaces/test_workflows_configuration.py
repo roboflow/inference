@@ -163,7 +163,6 @@ FIELDS = [
     ("OFFLINE_MODE", lambda c: c.platform.offline_mode),
     ("SECURE_GATEWAY", lambda c: c.platform.secure_gateway),
     ("GCP_SERVERLESS", lambda c: c.platform.gcp_serverless),
-    ("LAMBDA", lambda c: c.platform.lambda_runtime),
     ("ALLOW_WORKFLOWS_FONTS_DOWNLOAD", lambda c: c.fonts.allow_download),
     ("MODEL_CACHE_DIR", lambda c: c.fonts.model_cache_dir),
     ("LMM_ENABLED", lambda c: c.models.lmm_enabled),
@@ -239,7 +238,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 81, len(tabled)
+    assert len(tabled) == 80, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
@@ -311,7 +310,6 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
         ("MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", []),
         # order preserved, not sorted
         ("MQTT_WORKFLOWS_BLOCKS_WHITELISTED_HOSTS", ["broker-2:1883", "broker-1"]),
-        ("LAMBDA", True),
         # every mode env.py accepts passes the standalone validation
         ("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "local"),
         ("WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"),

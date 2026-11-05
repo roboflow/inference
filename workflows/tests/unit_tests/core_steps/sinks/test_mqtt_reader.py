@@ -40,7 +40,6 @@ CLIENT_CLASS_PATH = (
 ENTERPRISE_PLUGIN = "roboflow_workflows.enterprise_blocks.loader"
 HOSTED_RESTRICTION_CODE = "unavailable_on_hosted_platform"
 PER_REQUEST_RESTRICTION_CODE = "connection_and_state_rebuilt_per_request"
-HOSTED_PLATFORM_FLAGS = ("GCP_SERVERLESS", "LAMBDA")
 
 
 def manifest_payload(**overrides) -> dict:
@@ -329,28 +328,20 @@ class TestWorkloadDeclarations:
             manifest.get_actual_restrictions(True)
 
     @pytest.mark.parametrize("ignore_environment_restrictions", [True, False])
-    @pytest.mark.parametrize(
-        "gcp_serverless, lambda_runtime",
-        [(False, False), (True, False), (False, True), (True, True)],
-    )
-    def test_actual_restrictions_ignore_this_host_hosted_platform_flags(
+    @pytest.mark.parametrize("gcp_serverless", [False, True])
+    def test_actual_restrictions_ignore_this_host_hosted_platform_flag(
         self,
         monkeypatch,
         gcp_serverless,
-        lambda_runtime,
         ignore_environment_restrictions,
     ):
-        # run() reads the flags its module imported; the declaration must not
+        # run() reads the flag its module imported; the declaration must not
         manifest = BlockManifest.model_validate(manifest_payload())
         baseline = manifest.get_actual_restrictions(
             ignore_environment_restrictions=ignore_environment_restrictions
         )
         for module in (v1, workflows_environment):
-            for flag, value in zip(
-                HOSTED_PLATFORM_FLAGS, (gcp_serverless, lambda_runtime)
-            ):
-                assert hasattr(module, flag), flag
-                monkeypatch.setattr(module, flag, value)
+            monkeypatch.setattr(module, "GCP_SERVERLESS", gcp_serverless)
 
         flipped = manifest.get_actual_restrictions(
             ignore_environment_restrictions=ignore_environment_restrictions
@@ -741,9 +732,8 @@ class TestInputValidation:
 
         assert clients[0].credentials == ("user", "secret")
 
-    @pytest.mark.parametrize("flag", ["GCP_SERVERLESS", "LAMBDA"])
-    def test_hosted_platform_rejected_without_client(self, clients, block, flag):
-        with patch.object(v1, flag, True):
+    def test_hosted_platform_rejected_without_client(self, clients, block):
+        with patch.object(v1, "GCP_SERVERLESS", True):
             result = block.run(**run_kwargs())
 
         assert result["error_status"] is True

@@ -390,11 +390,11 @@ async def _lifespan(app: FastAPI):
 
 
 def _ensure_offline_mode_is_supported() -> None:
-    if _cfg.OFFLINE_MODE and (_cfg.LAMBDA or _cfg.GCP_SERVERLESS):
+    if _cfg.OFFLINE_MODE and _cfg.GCP_SERVERLESS:
         raise RuntimeError(
-            "OFFLINE_MODE is not supported together with LAMBDA / "
-            "GCP_SERVERLESS deployments because authentication and usage "
-            "accounting require API connectivity."
+            "OFFLINE_MODE is not supported together with GCP_SERVERLESS "
+            "deployments because authentication and usage accounting "
+            "require API connectivity."
         )
     if _cfg.OFFLINE_MODE and (
         _cfg.DEDICATED_DEPLOYMENT_WORKSPACE_URL

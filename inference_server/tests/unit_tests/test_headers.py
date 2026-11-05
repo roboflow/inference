@@ -1271,18 +1271,11 @@ def test_cors_exposes_legacy_response_headers():
     "flag,value,message",
     [
         (
-            "LAMBDA",
-            True,
-            "OFFLINE_MODE is not supported together with LAMBDA / "
-            "GCP_SERVERLESS deployments because authentication and usage "
-            "accounting require API connectivity.",
-        ),
-        (
             "GCP_SERVERLESS",
             True,
-            "OFFLINE_MODE is not supported together with LAMBDA / "
-            "GCP_SERVERLESS deployments because authentication and usage "
-            "accounting require API connectivity.",
+            "OFFLINE_MODE is not supported together with GCP_SERVERLESS "
+            "deployments because authentication and usage accounting "
+            "require API connectivity.",
         ),
         (
             "DEDICATED_DEPLOYMENT_WORKSPACE_URL",

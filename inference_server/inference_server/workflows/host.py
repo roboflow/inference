@@ -292,7 +292,6 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
             offline_mode=offline_mode,
             secure_gateway=secure_gateway,
             gcp_serverless=configuration.GCP_SERVERLESS,
-            lambda_runtime=configuration.LAMBDA,
         ),
         fonts=FontsConfiguration(
             allow_download=configuration.ALLOW_WORKFLOWS_FONTS_DOWNLOAD,

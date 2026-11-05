@@ -256,7 +256,7 @@ def test_server_configuration_builder_includes_enterprise_policy() -> None:
         cfg.engine.allow_postgresql_sink_to_non_global_addresses
         is env.ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
     )
-    assert cfg.platform.lambda_runtime is env.LAMBDA
+    assert cfg.platform.gcp_serverless is env.GCP_SERVERLESS
     if env.POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES is None:
         assert cfg.engine.postgresql_sink_blacklisted_addresses is None
     else:
@@ -277,7 +277,7 @@ def test_environment_facade_exposes_enterprise_policy_types() -> None:
     assert isinstance(
         facade.ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES, bool
     )
-    assert isinstance(facade.LAMBDA, bool)
+    assert isinstance(facade.GCP_SERVERLESS, bool)
     for name in (
         "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES",
         "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES",
@@ -339,7 +339,7 @@ def test_subprocess_direct_legacy_enterprise_import_triggers_server_bootstrap(
         "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES": "False",
         "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES": "10.0.0.1,10.0.0.2",
         "POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES": "203.0.113.5",
-        "LAMBDA": "True",
+        "GCP_SERVERLESS": "True",
         "API_LOGGING_ENABLED": "False",
         "WORKFLOWS_COMPAT_TEST_MODULE": (
             "inference.enterprise.workflows.enterprise_blocks." + suffix
@@ -357,7 +357,7 @@ def test_subprocess_direct_legacy_enterprise_import_triggers_server_bootstrap(
         assert "inference.core" in sys.modules, "server bootstrap did not run"
         from roboflow_workflows import environment as facade
         assert facade.ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES is False
-        assert facade.LAMBDA is True
+        assert facade.GCP_SERVERLESS is True
         assert facade.POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES == {
             "10.0.0.1", "10.0.0.2",
         }

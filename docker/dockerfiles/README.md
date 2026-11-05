@@ -10,7 +10,6 @@ Dockerfile.onnx.gpu | [roboflow/roboflow-inference-server-gpu](https://hub.docke
 Dockerfile.onnx.jetson.4.5.0 **DEPRECATED** | [roboflow/roboflow-inference-server-jetson-4.5.0](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-4.5.0/general) | No |
 Dockerfile.onnx.jetson.4.6.1 | [roboflow/roboflow-inference-server-jetson-4.6.1](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-4.6.1/general) | No |
 Dockerfile.onnx.jetson.5.1.0 | [roboflow/roboflow-inference-server-jetson-5.1.0](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-5.1.0/general) | No |
-Dockerfile.onnx.lambda | Not Published | Yes |
 Dockerfile.onnx.trt | Deprecated | No |
 Dockerfile.onnx.trt.base | Deprecated | No |
 Dockerfile.onnx.udp.gpu | Deprecated | No |

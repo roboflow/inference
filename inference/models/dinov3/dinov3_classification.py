@@ -1,4 +1,3 @@
-from inference.core.env import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, LAMBDA
 from inference.core.models.classification_base import (
     ClassificationBaseOnnxRoboflowInferenceModel,
 )
@@ -31,15 +30,9 @@ class DinoV3Classification(ClassificationBaseOnnxRoboflowInferenceModel):
 
     @property
     def weights_file(self) -> str:
-        """Determines the weights file to be used based on the availability of AWS keys.
-
-        If AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set, it returns the path to 'weights.onnx'.
-        Otherwise, it returns the path to 'best.onnx'.
+        """Names the file holding the model weights.
 
         Returns:
             str: Path to the weights file.
         """
-        if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and LAMBDA:
-            return "weights.onnx"
-        else:
-            return "best.onnx"
+        return "best.onnx"

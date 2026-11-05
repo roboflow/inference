@@ -39,7 +39,7 @@ grep -oh '"[A-Z][A-Z_0-9]*"' \
   docker/config/cpu_http.py docker/config/gpu_http.py | sort -u
 ```
 
-382 literals. `inference/usage_tracking/config.py` declares its names through
+376 literals. `inference/usage_tracking/config.py` declares its names through
 pydantic-settings with `env_prefix="telemetry_"`, so its seven `TELEMETRY_*` names
 are added by hand (they are not string literals).
 
@@ -284,14 +284,14 @@ definition; the last column is the new reader.
 | `OTEL_METRIC_EXPORTER_ENDPOINT` | `env.py:778` | `configuration.py:244`; `telemetry.py` (falls back to `OTEL_EXPORTER_ENDPOINT`) | unset |
 | `OTEL_METRIC_EXPORT_INTERVAL_MS` | `env.py:779` | `configuration.py:245-247`; `telemetry.py` | `10000` |
 | `DOCKER_SOCKET_PATH` | `env.py:1289` | `configuration.py:433`; `ops/router.py`: `GET /device/stats` reads this container's statistics from the Docker socket at this path and answers the legacy 404 hint when it is unset | unset |
-| `SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED` | `env.py:693-695` | `configuration.py:434-436`; `ops/router.py`: registers `GET /secure-gateway/health` outside `LAMBDA` / `GCP_SERVERLESS` | `False` |
+| `SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED` | `env.py:693-695` | `configuration.py:434-436`; `ops/router.py`: registers `GET /secure-gateway/health` outside `GCP_SERVERLESS` | `False` |
 | `SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT` | `env.py:700-702` | `configuration.py:437-439`; `ops/secure_gateway.py`: timeout in seconds of the gateway probe | `5` |
 | `ROBOFLOW_API_VERIFY_SSL` | `env.py:1397` | `configuration.py:440`; `ops/secure_gateway.py`: `False` disables certificate verification for the secure gateway probe, `platform_http._platform_request` and the direct platform calls in `workflows/host.py`, and logs one warning at startup; the aiohttp workspace lookups of `auth.py`, as in legacy, and the platform calls made inside the model packages always verify | `True` |
 | `NOTEBOOK_ENABLED` | `env.py:829` | `configuration.py:441`; `ops/router.py`: `GET /notebook/start` starts JupyterLab; the server images do not include JupyterLab, so the route answers an error until it is installed in the environment | `False` |
 | `NOTEBOOK_PORT` | `env.py:835` | `configuration.py:442`; `ops/notebook.py` | `9002` |
 | `NOTEBOOK_PASSWORD` | `env.py:832` | `configuration.py:443`; `ops/notebook.py`: JupyterLab token and password, passed as single arguments | legacy `roboflow`; new: unset, and then a random token is generated once per process and returned by `GET /notebook/start` (redirect URL and `browserless` answer). Limitation: with `NUM_WORKERS` above 1 and no password set every worker process has its own token, so a worker that did not start JupyterLab reports a token JupyterLab does not accept; set `NOTEBOOK_PASSWORD` explicitly in that case |
 | `ENABLE_IN_MEMORY_LOGS` | `env.py:838` | `configuration.py:444`; `ops/memory_logs.py`: keeps the last 1000 log records for `GET /logs`, with the values of key-bearing parameters (`api_key`, `token`, `password`, ...) removed before a record is stored | `False` |
-| `METRICS_ENABLED` | `env.py:784-786` | `configuration.py`; `pingback.py`: `False` stops the periodic post to `METRICS_URL` and the recording of inferences for it; forced off under `LAMBDA`, `GCP_SERVERLESS` and offline mode | `True` |
+| `METRICS_ENABLED` | `env.py:784-786` | `configuration.py`; `pingback.py`: `False` stops the periodic post to `METRICS_URL` and the recording of inferences for it; forced off under `GCP_SERVERLESS` and offline mode | `True` |
 | `METRICS_INTERVAL` | `env.py:789` | `configuration.py`; `pingback.py`: seconds between posts, and the window of inferences each post carries; recorded inferences are kept for twice this long | `60` |
 | `METRICS_URL` | `env.py:792` | `configuration.py`; `pingback.py`: destination of the post, routed through `SECURE_GATEWAY` when set | `{API_BASE_URL}/inference-stats` |
 | `TINY_CACHE` | `env.py:289` | `configuration.py`; `pingback.py`: `True` records the condensed item (request fields `api_key`, `confidence`, `model_id`, `model_type`, `source`, `source_info`; per prediction `class` and `confidence`); `False` records the full request and response as JSON without their `image` fields (removed when recorded, not when the report is built), unless the item exceeds 8192 values, 128 Ki characters of strings or 256 KiB of JSON, or a response is not a response entity or holds a non-finite number, in which case the condensed item is recorded; strings of the full item are not truncated | `True` |
@@ -300,13 +300,13 @@ definition; the last column is the new reader.
 | `API_PROXY_BASE_URL` | `env.py:199` | `configuration.py:147`; `workflows/host.py`: base of the platform requests whose endpoint is under `apiproxy/` or `api-proxy/` | `API_BASE_URL` |
 | `TELEMETRY_API_USAGE_ENDPOINT_URL` | `usage_tracking/config.py:16` | `configuration.py`; `usage/collector.py`: destination of usage rows, routed through `SECURE_GATEWAY` when set; certificates are verified unless the requested host is `localhost` or `127.0.0.1`. `usage/request_hook.py` records one `request` row per request of the legacy model and workflow routes (`/infer/*`, the core model routes, `/{dataset_id}/{version_id}`, `/workflows/run` and `/{workspace_name}/workflows/{workflow_id}`); `usage/rows.py` records the legacy nested rows of the request: a `model` row per model call served by this server (route calls and local workflow steps, with the model-side duration and megapixel buckets), a `workflows` row per workflow run and a `workflow_block` row per custom Python block run, all inheriting the request's key, billing opt-out, source tags and execution session; remote workflow steps are recorded by the server that runs them, and an authenticated opt-out is forwarded to them. A stream pipeline records the same `workflows`, `model` and `workflow_block` rows per run. Nothing is recorded for `/v2/*`. Offline mode records as online (legacy recorded nothing). A request that raises or is not answered with HTTP 200 is logged at DEBUG level with the error class name or the status only, never above; the rows stay queued | `{METRICS_COLLECTOR_BASE_URL}/usage/inference` |
 | `TELEMETRY_FLUSH_INTERVAL` | `usage_tracking/config.py:20,26` | `configuration.py`; `usage/collector.py`: seconds between two moves of aggregated usage rows to the queue, and between two send attempts; after a send pass answered only with failures the next pass of the sender thread waits this interval doubled per consecutive such pass, up to 5 minutes, and an accepted request resets it (legacy retried every interval); legacy rejects a value outside 10..300, the new server clamps it into that range | `10` |
-| `TELEMETRY_USE_PERSISTENT_QUEUE` | `usage_tracking/config.py:21` | `configuration.py`; `usage/collector.py`: `True` queues usage rows in `{MODEL_CACHE_DIR}/usage.db` with API keys stored as hashes; a process takes from the file only the rows of the API keys it has served and leaves the others for a process that serves them (legacy posted them with the hash as the key); rows left in the file for 30 days are deleted, one warning line naming the count; `False`, `LAMBDA` or `GCP_SERVERLESS` queue them in memory | `True` |
+| `TELEMETRY_USE_PERSISTENT_QUEUE` | `usage_tracking/config.py:21` | `configuration.py`; `usage/collector.py`: `True` queues usage rows in `{MODEL_CACHE_DIR}/usage.db` with API keys stored as hashes; a process takes from the file only the rows of the API keys it has served and leaves the others for a process that serves them (legacy posted them with the hash as the key); rows left in the file for 30 days are deleted, one warning line naming the count; `False` or `GCP_SERVERLESS` queue them in memory | `True` |
 | `TELEMETRY_QUEUE_SIZE` | `usage_tracking/config.py:22,27` | `configuration.py`; `usage/collector.py`: slots of the in-memory usage queue; a full queue is merged into one slot, nothing is dropped; legacy rejects a value outside 10..10000, the new server clamps it into that range | `10` |
-| `REDIS_HOST` | `env.py:858` | `configuration.py`; `workflows/redis_cache.py`: when set, the Workflows cache handed to blocks and the active learning middleware is this Redis, with the legacy key, value and lock encoding; unreachable at startup or without the `redis` package, the in-memory cache is used after one error line. `usage/collector.py`: under `LAMBDA` or `GCP_SERVERLESS`, usage rows are written to this Redis for an external reader instead of being sent; needs the `redis` package, without it rows are queued in memory and sent by the server | unset |
+| `REDIS_HOST` | `env.py:858` | `configuration.py`; `workflows/redis_cache.py`: when set, the Workflows cache handed to blocks and the active learning middleware is this Redis, with the legacy key, value and lock encoding; unreachable at startup or without the `redis` package, the in-memory cache is used after one error line. `usage/collector.py`: under `GCP_SERVERLESS`, usage rows are written to this Redis for an external reader instead of being sent; needs the `redis` package, without it rows are queued in memory and sent by the server | unset |
 | `REDIS_PORT` | `env.py:861` | `configuration.py`; `usage/queues.py`, `workflows/redis_cache.py` | `6379` |
 | `REDIS_SSL` | `env.py:862` | `configuration.py`; `usage/queues.py`, `workflows/redis_cache.py` | `False` |
 | `REDIS_TIMEOUT` | `env.py:863` | `configuration.py`; `usage/queues.py`, `workflows/redis_cache.py`: socket and connect timeout in seconds | `2.0` |
-| `ACTIVE_LEARNING_ENABLED` | `env.py:946-948` | `configuration.py:263-265`; forced off in offline mode; `legacy/active_learning_registration.py` (`start`): when on and `roboflow-workflows` is installed, inferences on `/infer/object_detection`, `/infer/instance_segmentation`, `/infer/classification` and `/{dataset_id}/{version_id}` are registered on a bounded worker pool, in the background, or before the response when `LAMBDA` or `GCP_SERVERLESS` is set | `True` |
+| `ACTIVE_LEARNING_ENABLED` | `env.py:946-948` | `configuration.py:263-265`; forced off in offline mode; `legacy/active_learning_registration.py` (`start`): when on and `roboflow-workflows` is installed, inferences on `/infer/object_detection`, `/infer/instance_segmentation`, `/infer/classification` and `/{dataset_id}/{version_id}` are registered on a bounded worker pool, in the background, or before the response when `GCP_SERVERLESS` is set | `True` |
 | `ACTIVE_LEARNING_TAGS` | `env.py:949` | `configuration.py:266-269`; `active_learning/core.py` (`collect_tags`): comma-separated tags put on every registered image, split without trimming | unset |
 
 ### Read by `build_workflows_configuration` (`inference_server/workflows/host.py`)
@@ -542,11 +542,8 @@ No new package reads these. They never get an alias or a default row.
 | `API_DEBUG` | `env.py:219` | legacy debug flag with no consumer in the new stack |
 | `ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1335` | legacy assume-identity headers; unread (hosting summary) |
 | `ATOMIC_CACHE_WRITES_ENABLED` | `env.py:207` | legacy artifact cache internals; `inference_models` has its own cache settings |
-| `AWS_ACCESS_KEY_ID` | `env.py:232` | legacy AWS-era setting |
-| `AWS_SECRET_ACCESS_KEY` | `env.py:235` | legacy AWS-era setting |
 | `CACHE_METADATA_LOCK_TIMEOUT` | `env.py:1453` | legacy model cache lock; `inference_models` uses `INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT` with different semantics |
 | `CELERY_LOG_LEVEL` | `env.py:989` | legacy celery; none in the new stack |
-| `CORE_MODEL_BUCKET` | `env.py:927` | legacy AWS-era setting |
 | `DEDICATED_DEPLOYMENT_ID` | `env.py:1329` | legacy dedicated-deployment auth; the new `auth.py` validates keys against `API_BASE_URL` only; `configuration.py` reads it for the `hostname` and `dedicated_deployment_id` of usage rows |
 | `DEDICATED_DEPLOYMENT_WORKSPACE_URL` | `env.py:1225` | legacy dedicated-deployment auth |
 | `DEVICE` | `env.py:1223` | steers four legacy HF models only (`inference/models/qwen25vl`, `easy_ocr`, `doctr`, `sam3_3d`); `inference_models` `DEFAULT_DEVICE` (`configuration.py:43`) steers every model, so an alias would change models legacy never touched |
@@ -559,7 +556,6 @@ No new package reads these. They never get an alias or a default row.
 | `DISABLE_VERSION_CHECK` | `env.py:546` | legacy GitHub version check; none in the new stack |
 | `DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS` | `env.py:1037` | legacy `describe_workload` routes; not in the new server |
 | `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals; `False` also keeps weights on disk across `/model/clear` and hot-cache eviction |
-| `ELASTICACHE_ENDPOINT` | `env.py:551` | legacy AWS-era setting |
 | `ENABLE_BYTE_TRACK` | `env.py:561` | legacy stream-mode setting |
 | `ENABLE_HTTPS` | `env.py:587` | legacy uvicorn TLS; the new entrypoints (Task 5.7) own TLS |
 | `ENABLE_PROMETHEUS` | `env.py:563` | legacy metrics; unread (hosting summary) |
@@ -573,12 +569,10 @@ No new package reads these. They never get an alias or a default row.
 | `HUGGINGFACE_TOKEN` | `env.py:1222` | legacy HF token plumbing; no new package reads it |
 | `IGNORE_MODEL_DEPENDENCIES_WARNINGS` | `env.py:35` | legacy warning filter |
 | `INFERENCE_WARNINGS_DISABLED` | `env.py:27` | legacy warning filter |
-| `INFER_BUCKET` | `env.py:937` | legacy AWS-era setting |
 | `INTERNAL_WEIGHTS_URL_SUFFIX` | `env.py:203` | legacy weights-proxy suffix; unread (hosting summary) |
 | `IP_BROADCAST_ADDR` | `env.py:614` | legacy device-mode setting |
 | `IP_BROADCAST_PORT` | `env.py:617` | legacy device-mode setting |
 | `JSON_RESPONSE` | `env.py:620` | legacy device-mode setting |
-| `LAMBDA` | `env.py:623` | `host.py:284` hardcodes `False`; unread (hosting summary) |
 | `LEGACY_MMP_ADAPTER_BUNDLED_BACKEND` | removed | historical adapter transport switch; the adapter was removed |
 | `LEGACY_MMP_ADAPTER_ENABLED` | removed | historical adapter switch; the adapter was removed |
 | `LEGACY_MMP_ADAPTER_MODE` | removed | historical adapter transport switch; the adapter was removed |
