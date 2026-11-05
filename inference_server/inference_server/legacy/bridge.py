@@ -386,6 +386,7 @@ _TASK_TYPE_BY_MRO = {
     "YOLO26ForInstanceSegmentationTorchScript": "instance-segmentation",
     "YOLO26ForInstanceSegmentationTRT": "instance-segmentation",
     "SAM2ForStream": "instance-segmentation",
+    "SAM3TrackerVideo": "instance-segmentation",
     "KeyPointsDetectionModel": "keypoint-detection",
     "RFDetrForKeyPointsONNX": "keypoint-detection",
     "YOLO26ForKeyPointsDetectionOnnx": "keypoint-detection",

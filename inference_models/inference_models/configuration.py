@@ -135,6 +135,9 @@ VERBOSE_LOG_LEVEL = os.getenv("VERBOSE_LOG_LEVEL", "INFO")
 DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
     variable_name="DISABLE_VERBOSE_LOGGER", default=False
 )
+SAM3_VIDEO_MAX_CACHED_CLIPS = get_integer_from_env(
+    variable_name="SAM3_VIDEO_MAX_CACHED_CLIPS", default=4
+)
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )

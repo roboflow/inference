@@ -249,6 +249,34 @@ def test_sam2_stream_configs_match_signatures():
     assert cfgs["prompt"][5] == "serialize_passthrough"
 
 
+def test_sam3_tracker_video_configs_match_signatures():
+    import inspect
+
+    from inference_model_manager.registry_defaults import (
+        _ACTION_CONFIGS,
+        _unpack_config,
+    )
+    from inference_models.models.sam3_tracker_video.sam3_tracker_video_hf import (
+        SAM3TrackerVideo,
+    )
+
+    cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["SAM3TrackerVideo"]}
+
+    assert set(cfgs) == {"embed_video", "segment_video_frame", "propagate_video"}
+    assert [name for name, cfg in cfgs.items() if cfg[2]] == ["embed_video"]
+    for name, cfg in cfgs.items():
+        method = getattr(SAM3TrackerVideo, cfg[1])
+        parameters = inspect.signature(method).parameters
+        assert set(cfg[3]) == set(parameters) - {"self"}, name
+        required = {
+            p
+            for p, spec in parameters.items()
+            if p != "self" and spec.default is inspect.Parameter.empty
+        }
+        assert {p for p, spec in cfg[3].items() if spec["required"]} == required, name
+        assert cfg[5] == "serialize_passthrough"
+
+
 def test_owlv2_few_shot_action_config():
     from inference_model_manager.registry_defaults import (
         _ACTION_CONFIGS,
