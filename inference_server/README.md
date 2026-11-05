@@ -240,6 +240,17 @@ needs the calls of one clip routed to the same worker.
 | `SAM3_VIDEO_MAX_FRAMES` | `600` | Most frames `embed` decodes; a longer clip is refused with 413 |
 | `SAM3_VIDEO_MAX_CACHED_CLIPS` | `4` | Clips a worker keeps; the least recently used is evicted |
 
+Cached clips live in host memory, and the cache limits the number of clips,
+not their size. In bfloat16, each frame takes about 6 MB of preprocessed
+pixels, plus about 11 MB of encoder output once the frame is encoded
+(`encode_frames`, or once a call has run on it). A 600-frame clip is about
+3.7 GB, or about 10 GB when every frame is encoded, so the default limits
+allow about 40 GB. `embed` also decodes the clip at its native resolution
+before resizing (about 3.7 GB for 600 frames at 1080p) while the older clips
+are still cached. Size `SAM3_VIDEO_MAX_FRAMES × SAM3_VIDEO_MAX_CACHED_CLIPS`
+to the host's memory: a worker that runs out is killed with every model it
+serves.
+
 `propagate` answers once the whole clip is tracked, which for long clips or
 many objects takes longer than the default `INFERENCE_INFER_TIMEOUT_S` of 30 s;
 raise it on servers that serve these routes. The stream makes one model call per
