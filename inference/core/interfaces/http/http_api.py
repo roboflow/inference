@@ -1,8 +1,11 @@
 import base64
 import concurrent
+import hashlib
+import hmac
 import logging
 import os
 import re
+import secrets
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -452,6 +455,70 @@ AUTH_CACHE_TTL_SECONDS = 3600
 # How long an expired workspace grant keeps working while the Roboflow API
 # cannot be reached. Keys without a grant are refused until it can.
 AUTH_OUTAGE_GRACE_SECONDS = 24 * 3600
+
+# A browser session for the server's own pages. The Workflow Builder and the
+# dashboard are opened with an API key in the URL, but their embedded, prebuilt
+# frontends send their follow-up requests (/build/api, /logs, /model/registry)
+# with no key. Opening a page with a valid key sets this signed cookie, and the
+# browser then carries it on those same-origin requests so they authenticate.
+#
+# The secret is new each process, so the cookie cannot be forged and does not
+# survive a restart. The cookie is HttpOnly (JavaScript cannot read it) and
+# SameSite=Strict (a cross-site page, including one reaching the server through
+# DNS rebinding, cannot make the browser send it), so it grants only the
+# server's own pages the access the key already carries.
+SESSION_COOKIE_NAME = "roboflow_inference_session"
+SESSION_COOKIE_TTL_SECONDS = 8 * 3600
+_SESSION_COOKIE_SECRET = secrets.token_bytes(32)
+
+
+def issue_session_token(workspace_id: str, now: Optional[float] = None) -> str:
+    """Sign a session token granting `workspace_id` until the TTL elapses."""
+    expires_at = int(
+        (now if now is not None else time.time()) + SESSION_COOKIE_TTL_SECONDS
+    )
+    payload = f"{workspace_id}:{expires_at}".encode("utf-8")
+    signature = hmac.new(_SESSION_COOKIE_SECRET, payload, hashlib.sha256).digest()
+    return (
+        base64.urlsafe_b64encode(payload).decode("ascii")
+        + "."
+        + base64.urlsafe_b64encode(signature).decode("ascii")
+    )
+
+
+def read_session_token(
+    token: Optional[str], now: Optional[float] = None
+) -> Optional[str]:
+    """Return the workspace a valid, unexpired session token grants, else None."""
+    if not token or "." not in token:
+        return None
+    payload_part, _, signature_part = token.partition(".")
+    try:
+        payload = base64.urlsafe_b64decode(payload_part.encode("ascii"))
+        signature = base64.urlsafe_b64decode(signature_part.encode("ascii"))
+    except ValueError:
+        return None
+    expected = hmac.new(_SESSION_COOKIE_SECRET, payload, hashlib.sha256).digest()
+    if not hmac.compare_digest(signature, expected):
+        return None
+    workspace_id, _, expires_at = payload.decode("utf-8", "replace").rpartition(":")
+    if not workspace_id or not expires_at.isdigit():
+        return None
+    if int(expires_at) < (now if now is not None else time.time()):
+        return None
+    return workspace_id
+
+
+def set_session_cookie(response: Response, workspace_id: str) -> None:
+    """Start a browser session for the server's own pages on `response`."""
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        issue_session_token(workspace_id),
+        max_age=SESSION_COOKIE_TTL_SECONDS,
+        httponly=True,
+        samesite="strict",
+        path="/",
+    )
 
 
 def _is_roboflow_api_outage(error: Exception) -> bool:
@@ -1424,6 +1491,27 @@ class HttpInterface(BaseInterface):
                     )
                 return server_workspaces
 
+            async def resolve_authorized_workspace(api_key) -> Optional[str]:
+                # Best-effort check used only to decide whether to start a
+                # browser session, so it never raises and never returns 503: it
+                # reuses the auth cache and otherwise makes one Roboflow API call.
+                if not api_key:
+                    return None
+                entry = cached_api_keys.get(api_key)
+                if entry and entry.expires_at >= time.time():
+                    return entry.workspace_id if entry.status_code == 200 else None
+                try:
+                    workspace_id = await get_roboflow_workspace_async(api_key=api_key)
+                    if workspace_id in await allowed_workspaces():
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=workspace_id,
+                        )
+                        return workspace_id
+                except Exception:
+                    return None
+                return None
+
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
                 # exclusions
@@ -1431,10 +1519,18 @@ class HttpInterface(BaseInterface):
                 # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
                 # and slip an authenticated route into the allowlist.
                 scope_path = request.scope["path"]
-                skip_check = (
-                    # Only CORS preflight requests skip the check, whatever the
-                    # method of the route behind them.
+                # A browser sends a CORS preflight as OPTIONS carrying both of
+                # these headers and no credentials; it must pass without an API
+                # key so the actual, authenticated request can follow. An
+                # ordinary OPTIONS request is not exempt, so a future functional
+                # OPTIONS route cannot inherit unauthenticated access.
+                is_cors_preflight = (
                     request.method == "OPTIONS"
+                    and "origin" in request.headers
+                    and "access-control-request-method" in request.headers
+                )
+                skip_check = (
+                    is_cors_preflight
                     or scope_path in public_ui_paths
                     or scope_path
                     in [
@@ -1451,8 +1547,34 @@ class HttpInterface(BaseInterface):
                     or scope_path.startswith("/static/")
                     or scope_path.startswith("/_next/static/")
                 )
+                session_workspace = read_session_token(
+                    request.cookies.get(SESSION_COOKIE_NAME)
+                )
                 if skip_check:
-                    return await call_next(request)
+                    response = await call_next(request)
+                    # Opening a server page with a valid key in the URL (e.g.
+                    # /dashboard.html?api_key=...) starts a browser session, so
+                    # the page's own follow-up requests then authenticate.
+                    if session_workspace is None and scope_path in public_ui_paths:
+                        page_workspace = await resolve_authorized_workspace(
+                            request.query_params.get("api_key")
+                        )
+                        if page_workspace:
+                            set_session_cookie(response, page_workspace)
+                    return response
+
+                # A valid session cookie, set when a page was opened with a key,
+                # authenticates the page's same-origin follow-up requests
+                # (/build/api, /logs, /model/registry). The cookie is HttpOnly
+                # and SameSite=Strict, so a cross-site page cannot send or read it.
+                if session_workspace is not None:
+                    response = await _call_next_with_assume_identity_authorised_workspace_db_id(
+                        request=request,
+                        call_next=call_next,
+                        workspace_db_id=None,
+                    )
+                    response.headers[WORKSPACE_ID_HEADER] = session_workspace
+                    return response
 
                 def _unauthorized_response(msg):
                     return JSONResponse(
@@ -1553,6 +1675,14 @@ class HttpInterface(BaseInterface):
                 )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                    # Opening the Workflow Builder page with a key in the URL
+                    # starts a browser session, so the embedded builder's own
+                    # requests to /build/api, which carry no key, authenticate
+                    # through the cookie, and a reload that drops the query
+                    # string still works. Only the wrapper pages start a session;
+                    # ordinary API calls that pass a key do not.
+                    if scope_path == "/build" or scope_path.startswith("/build/edit"):
+                        set_session_cookie(response, workspace_id)
                 return response
 
         @app.middleware("http")

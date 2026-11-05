@@ -1,3 +1,4 @@
+import base64
 import time
 from unittest.mock import AsyncMock, MagicMock
 
@@ -2712,9 +2713,14 @@ def test_required_api_key_checks_head_requests_and_skips_cors_preflight(
                 "Access-Control-Request-Method": "POST",
             },
         )
+        # An OPTIONS request without the preflight headers is not a CORS
+        # preflight and must still authenticate, so a future functional OPTIONS
+        # route cannot inherit unauthenticated access.
+        plain_options = client.options("/infer/object_detection")
 
     assert head.status_code == 401
     assert preflight.status_code == 200
+    assert plain_options.status_code == 401
     workspace_lookup_mock.assert_not_awaited()
 
 
@@ -2743,6 +2749,110 @@ def test_required_api_key_covers_builder_page_and_api(monkeypatch) -> None:
 
     assert [response.status_code for response in responses] == [401] * 4
     assert page_with_key.status_code != 401
+
+
+def test_session_token_round_trip_and_rejections() -> None:
+    now = 1_000_000.0
+    token = http_api.issue_session_token("ws-1", now=now)
+    # A fresh token grants its workspace; an expired one does not.
+    assert http_api.read_session_token(token, now=now + 10) == "ws-1"
+    assert (
+        http_api.read_session_token(
+            token, now=now + http_api.SESSION_COOKIE_TTL_SECONDS + 1
+        )
+        is None
+    )
+    # A tampered payload or signature, or junk, is rejected (not forgeable).
+    payload_part, _, signature_part = token.partition(".")
+    forged_payload = (
+        base64.urlsafe_b64encode(b"ws-2:9999999999").decode("ascii")
+        + "."
+        + signature_part
+    )
+    assert http_api.read_session_token(forged_payload, now=now + 10) is None
+    assert (
+        http_api.read_session_token(
+            payload_part + "." + signature_part[:-3] + "AAA", now=now + 10
+        )
+        is None
+    )
+    assert http_api.read_session_token("not-a-token", now=now) is None
+    assert http_api.read_session_token(None) is None
+
+
+def test_builder_session_authenticates_follow_up_requests(monkeypatch) -> None:
+    # Opening the builder page with a valid key starts a browser session, so the
+    # embedded builder's own /build/api requests, which carry no key, then
+    # authenticate through the cookie; a cross-site page cannot send it.
+    monkeypatch.setattr(http_api, "ENABLE_BUILDER", True)
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        without_session = client.get("/build/api")
+        page = client.get("/build", params={"api_key": "teammate-key"})
+        with_session = client.get("/build/api")
+
+    assert without_session.status_code == 401
+    assert page.status_code != 401
+    set_cookie = page.headers["set-cookie"]
+    assert http_api.SESSION_COOKIE_NAME in set_cookie
+    assert "httponly" in set_cookie.lower()
+    assert "samesite=strict" in set_cookie.lower()
+    assert with_session.status_code != 401
+
+
+def test_dashboard_session_authenticates_data_requests(monkeypatch) -> None:
+    # The dashboard page is exempt so it loads without a key, but opening it with
+    # a valid key starts a browser session so its /model/registry and /logs
+    # requests, which carry no key, then authenticate.
+    monkeypatch.setattr(http_api, "ENABLE_DASHBOARD", True)
+    monkeypatch.setattr(http_api, "GET_MODEL_REGISTRY_ENABLED", True)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    interface, model_manager, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+    model_manager.describe_models.return_value = []
+
+    with TestClient(interface.app) as client:
+        without_session = client.get("/model/registry")
+        page = client.get("/dashboard.html", params={"api_key": "teammate-key"})
+        with_session = client.get("/model/registry")
+
+    assert without_session.status_code == 401
+    assert http_api.SESSION_COOKIE_NAME in page.headers.get("set-cookie", "")
+    assert with_session.status_code != 401
+
+
+def test_dashboard_without_a_key_grants_no_session(monkeypatch) -> None:
+    # Loading the exempt page without a key must not authorize data requests.
+    monkeypatch.setattr(http_api, "ENABLE_DASHBOARD", True)
+    monkeypatch.setattr(http_api, "GET_MODEL_REGISTRY_ENABLED", True)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    interface, model_manager, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+    model_manager.describe_models.return_value = []
+
+    with TestClient(interface.app) as client:
+        page = client.get("/dashboard.html")
+        data = client.get("/model/registry")
+
+    assert "set-cookie" not in page.headers
+    assert data.status_code == 401
 
 
 @pytest.mark.parametrize(
