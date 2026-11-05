@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `SAM3TrackerVideo` tracks whole clips offline: `embed_video` keeps a clip's
+  preprocessed frames under a caller id (and can encode every frame in the
+  background), `segment_video_frame` returns one frame's masks for click
+  previews, and `propagate_video` tracks every point-prompted object forward and
+  backward from its first prompted frame, one session per object. Clips are kept
+  in a per-model cache sized by `SAM3_VIDEO_MAX_CACHED_CLIPS` (default 4).
+
 ## `0.39.8`
 
 ### Fixed

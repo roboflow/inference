@@ -201,6 +201,51 @@ A few legacy behaviours are not (yet) available here:
   `METRICS_URL` is ported for inferences served through the legacy routes and
   Workflows steps; `METRICS_ENABLED=false` turns it off.
 
+## SAM3 video tracking routes
+
+`/sam3/video/embed`, `/sam3/video/segment`, `/sam3/video/propagate` and
+`/sam3/video/propagate/stream` track
+point-prompted objects over a whole clip with the `sam3trackervideo` model
+(`SAM3TrackerVideo`), offline rather than frame by frame:
+
+1. `embed` decodes a clip (every decoded frame is a frame, numbered from 0) and
+   keeps it in the worker under the caller's `video_id`, scoped to the API key.
+   `encode_frames` starts encoding every frame in the background.
+2. `segment` returns the masks on one frame of the objects clicked there, each
+   from all its clicks on the clip, without propagating; use it for click
+   previews.
+3. `propagate` tracks every clicked object over the clip: each object on its
+   own, forward from its first clicked frame and backward from there, so clicks
+   of different objects on the same frame never interfere. `frame_indices`
+   limits which frames come back.
+4. `propagate/stream` tracks the same way and answers as NDJSON: an `object`
+   line with each object's masks as soon as it is tracked, a `heartbeat` line
+   after every 15 s without another, and a last line that is `done`, or `error`
+   with the status and body the call would have failed with. Use it behind a
+   proxy that ends quiet responses, often after 60 to 100 s.
+
+Clips come in and decode through the same video input as
+`/infer/action_recognition`: URL or base64, the same URL policy and
+`MAX_VIDEO_DOWNLOAD_SIZE_MB`, a header probe, then one sequential decode.
+
+Every segment and propagate request carries all the clicks; the server keeps
+only the clip (preprocessed frames and per-frame encoder output). A call on a
+clip that was never embedded or was evicted answers 400 `No video embedded`.
+The clip lives in one worker's memory, so a deployment with several workers
+needs the calls of one clip routed to the same worker.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SAM3_VIDEO_MODEL_ID` | `sam3trackervideo` | Model the routes use when the request names none |
+| `SAM3_VIDEO_MAX_FRAMES` | `600` | Most frames `embed` decodes; a longer clip is refused with 413 |
+| `SAM3_VIDEO_MAX_CACHED_CLIPS` | `4` | Clips a worker keeps; the least recently used is evicted |
+
+`propagate` answers once the whole clip is tracked, which for long clips or
+many objects takes longer than the default `INFERENCE_INFER_TIMEOUT_S` of 30 s;
+raise it on servers that serve these routes. The stream makes one model call per
+object, so there the timeout bounds one object. The routes need
+`SAM3_EXEC_MODE=local`.
+
 ## Running the legacy integration suite against this image
 
 The black-box suite in `tests/inference/integration_tests/` reaches the server only through `BASE_URL` and `PORT`, so it runs unchanged against `inference_server`. In CI pick `server-image: new` when dispatching `INTEGRATION TESTS - Inference Server CPU x86` or `Code Quality & Regression Tests - NVIDIA T4`. Locally, from the repository root:

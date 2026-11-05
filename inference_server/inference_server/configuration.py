@@ -448,6 +448,9 @@ MAX_VIDEO_DURATION_SECONDS = get_float_from_env(
     "MAX_VIDEO_DURATION_SECONDS", default=600.0
 )
 SAM3_EXEC_MODE = os.environ.get("SAM3_EXEC_MODE", "local").lower()
+# SAM3 offline video tracking (/sam3/video/*).
+SAM3_VIDEO_MODEL_ID = os.environ.get("SAM3_VIDEO_MODEL_ID", "sam3trackervideo")
+SAM3_VIDEO_MAX_FRAMES = get_integer_from_env("SAM3_VIDEO_MAX_FRAMES", default=600)
 SAM3_FINE_TUNED_MODELS_ENABLED = get_boolean_from_env(
     "SAM3_FINE_TUNED_MODELS_ENABLED", default=SAM3_EXEC_MODE != "remote"
 )

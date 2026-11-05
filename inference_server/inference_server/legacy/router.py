@@ -15,7 +15,7 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
@@ -30,6 +30,7 @@ from inference_server import (
 )
 from inference_server.dependencies import get_model_manager
 from inference_server.hosted.common import service_secret_is_valid
+from inference_server.legacy import sam3_video
 from inference_server.legacy.action_recognition import (
     ACTION_RECOGNITION_TASK,
     classify_video,
@@ -102,6 +103,12 @@ from inference_server.legacy.entities import (
     Sam3EmbeddingResponse,
     Sam3SegmentationRequest,
     Sam3SegmentationResponse,
+    Sam3VideoEmbedRequest,
+    Sam3VideoEmbedResponse,
+    Sam3VideoPropagateRequest,
+    Sam3VideoPropagateResponse,
+    Sam3VideoSegmentRequest,
+    Sam3VideoSegmentResponse,
     SamEmbeddingRequest,
     SamEmbeddingResponse,
     SamSegmentationRequest,
@@ -2250,3 +2257,147 @@ async def sam3_visual_segment(
     return await _run_interactive_segmentation(
         request, inference_request, bridge, SAM3_INTERACTIVE_MODEL_ID
     )
+
+
+async def _sam3_video_route(
+    request: Request, inference_request: Any, bridge: LegacyModelBridge
+) -> Tuple[Route, Optional[str]]:
+    if configuration.SAM3_EXEC_MODE == "remote":
+        raise HTTPException(
+            status_code=501,
+            detail="SAM3 video tracking runs only with SAM3_EXEC_MODE=local.",
+        )
+    api_key = resolve_api_key(
+        request, request.query_params.get("api_key"), inference_request.api_key
+    )
+    inference_request.api_key = api_key
+    route = await bridge.resolve(
+        inference_request.model_id,
+        api_key,
+        row_key=inference_request.model_id,
+        path=request.scope["path"],
+    )
+    bridge.record_request(route, inference_request.model_id, request.scope["path"])
+    sam3_video.ensure_sam3_video_route(inference_request.model_id, route)
+
+    return route, api_key
+
+
+@sam3_router.post(
+    "/sam3/video/embed",
+    response_model=Sam3VideoEmbedResponse,
+    summary="SAM3 video tracking: embed a clip",
+    description=(
+        "Decode a clip and keep it with the SAM3 video tracker under the "
+        "caller's video_id, for /sam3/video/segment and /sam3/video/propagate. "
+        "Every decoded frame is a frame, numbered from 0. The clip stays in the "
+        "worker's memory until newer clips evict it "
+        "(SAM3_VIDEO_MAX_CACHED_CLIPS), so calls on one clip must reach the "
+        "same worker."
+    ),
+)
+@with_legacy_errors
+@report_request_usage
+async def sam3_video_embed(
+    request: Request,
+    inference_request: Sam3VideoEmbedRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    route, api_key = await _sam3_video_route(request, inference_request, bridge)
+    response = await sam3_video.embed_video(
+        route, api_key, bridge, inference_request=inference_request
+    )
+
+    return response
+
+
+@sam3_router.post(
+    "/sam3/video/segment",
+    response_model=Sam3VideoSegmentResponse,
+    summary="SAM3 video tracking: masks on one frame",
+    description=(
+        "Segment the objects clicked on one frame of an embedded clip, each "
+        "from all its clicks on the clip, without propagating. Use it to "
+        "preview a click."
+    ),
+)
+@with_legacy_errors
+@report_request_usage
+async def sam3_video_segment(
+    request: Request,
+    inference_request: Sam3VideoSegmentRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    route, api_key = await _sam3_video_route(request, inference_request, bridge)
+    response = await sam3_video.segment_video_frame(
+        route, api_key, bridge, inference_request=inference_request
+    )
+
+    return response
+
+
+@sam3_router.post(
+    "/sam3/video/propagate",
+    response_model=Sam3VideoPropagateResponse,
+    summary="SAM3 video tracking: track over the whole clip",
+    description=(
+        "Track every clicked object over an embedded clip. Each object is "
+        "tracked on its own, forward from its first clicked frame to the end "
+        "and backward from there to the start, so clicks of different objects "
+        "on the same frame never interfere."
+        " The response comes when the whole clip is tracked, which for long "
+        "clips or many objects takes longer than the default "
+        "INFERENCE_INFER_TIMEOUT_S of 30 s; raise it on servers that serve "
+        "this route. Behind a proxy that ends quiet responses, use "
+        "/sam3/video/propagate/stream."
+    ),
+)
+@with_legacy_errors
+@report_request_usage
+async def sam3_video_propagate(
+    request: Request,
+    inference_request: Sam3VideoPropagateRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    route, api_key = await _sam3_video_route(request, inference_request, bridge)
+    response = await sam3_video.propagate_video(
+        route, api_key, bridge, inference_request=inference_request
+    )
+
+    return response
+
+
+@sam3_router.post(
+    "/sam3/video/propagate/stream",
+    response_class=StreamingResponse,
+    summary="SAM3 video tracking: track over the whole clip, streamed",
+    description=(
+        "Track every clicked object over an embedded clip as /sam3/video/propagate "
+        "does, answered as NDJSON (application/x-ndjson): an `object` line with "
+        "each object's masks as soon as it is tracked, a `heartbeat` line after "
+        "every 15 s without another, and a last line that is `done`, or `error` "
+        "with the status and body the call would have failed with (400 `No "
+        "video embedded` for a clip the worker no longer has). Each object is "
+        "one model call, so INFERENCE_INFER_TIMEOUT_S bounds one object, not the "
+        "whole clip."
+    ),
+)
+@with_legacy_errors
+@report_request_usage
+async def sam3_video_propagate_stream(
+    request: Request,
+    inference_request: Sam3VideoPropagateRequest,
+    bridge: LegacyModelBridge = Depends(get_bridge),
+) -> Any:
+    route, api_key = await _sam3_video_route(request, inference_request, bridge)
+    body = sam3_video.stream_propagation(
+        route, api_key, bridge, inference_request=inference_request
+    )
+    response = StreamingResponse(
+        body,
+        media_type="application/x-ndjson",
+        # Proxies that buffer would hold the heartbeats back.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+    return response
