@@ -8,8 +8,9 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "development/docs/**"
+      - "tests/docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "requirements/requirements.docs.txt"
       - ".github/workflows/docs.yml"
@@ -44,19 +45,10 @@ jobs:
           path: inference_repo
           fetch-depth: 0
 
-      - name: Set up Node
+      - name: Set up Node for redirect regression tests
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "22"
-
-      - name: Install Docs Theme
-        run: |
-          npm ci
-        working-directory: ./inference_repo/theme_build
-
-      - name: Build theme assets
-        run: npm run build
-        working-directory: ./inference_repo/theme_build
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -69,8 +61,8 @@ jobs:
           # Upgrade pip and setuptools
           python -m pip install --upgrade pip setuptools
 
-          # The site is now a landing page plus redirects, so the build no
-          # longer imports the inference package.
+          # The site now consists of redirects, so the build does not import
+          # the inference package.
           pip install -r requirements/requirements.docs.txt
         working-directory: ./inference_repo
 
@@ -82,8 +74,16 @@ jobs:
         run: python -m development.docs.validate_docs_jinja2
         working-directory: ./inference_repo
 
+      - name: Test redirect destination collection (offline)
+        run: python -m unittest tests.docs.test_redirect_destinations
+        working-directory: ./inference_repo
+
       - name: Build docs
         run: zensical build --clean
+        working-directory: ./inference_repo
+
+      - name: Test built redirect JavaScript
+        run: node --test development/docs/test_redirect_pages.mjs
         working-directory: ./inference_repo
 
       - name: Generate llms.txt and markdown pages
@@ -92,14 +92,20 @@ jobs:
 
       - name: Verify build output
         run: |
-          echo "Checking for theme assets in site/..."
-          test -f site/static/styles.css || { echo "ERROR: site/static/styles.css missing!"; exit 1; }
-          test -f site/static/dist/home.js || { echo "ERROR: site/static/dist/home.js missing!"; exit 1; }
-          echo "Theme assets OK."
           echo "Checking redirect pages..."
           test -f site/404.html || { echo "ERROR: site/404.html missing!"; exit 1; }
+          python - <<'PY'
+          from html import unescape
+          from pathlib import Path
+
+          homepage = unescape(Path("site/index.html").read_text())
+          assert '<link rel="canonical" href="https://docs.roboflow.com/deployment/self-hosted/self-hosted">' in homepage, "Homepage canonical URL is incorrect"
+          assert '<meta http-equiv="refresh" content="0; url=https://docs.roboflow.com/deployment/self-hosted/self-hosted">' in homepage, "Homepage does not redirect"
+          assert 'noindex' not in homepage.lower(), "Homepage must remain indexable"
+          PY
           grep -q "docs.roboflow.com" site/install/index.html || { echo "ERROR: /install/ does not redirect!"; exit 1; }
           grep -q "docs.roboflow.com" site/workflows/about/index.html || { echo "ERROR: /workflows/about/ does not redirect!"; exit 1; }
+          grep -Fq '<meta name="robots" content="noindex,follow">' site/install/index.html || { echo "ERROR: per-page redirect indexing changed!"; exit 1; }
           echo "Redirects OK."
           echo "Checking for llms.txt..."
           test -f site/llms.txt || { echo "ERROR: site/llms.txt missing!"; exit 1; }
