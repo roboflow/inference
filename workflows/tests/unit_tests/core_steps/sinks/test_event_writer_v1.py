@@ -851,5 +851,5 @@ class TestEventWriterRun:
         payload = captured["payload"]
         assert payload["event_schema"] == "quality_check"
         assert payload["event_data"] == {"result": "pass", "externalId": "batch-001"}
-        assert payload["images"][0]["base64Image"] == "out64"
+        assert captured["prepared_images"] == [("base64Image", "shmImage", "out64")]
         assert "inference_timestamp" in payload
