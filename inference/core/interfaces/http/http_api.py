@@ -24,13 +24,19 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from pydantic import ValidationError
 from roboflow_workflows.execution_engine.introspection.workload_entities import (
     WorkflowIntrospection,
 )
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -89,6 +95,11 @@ from inference.core.entities.requests.sam2 import (
 )
 from inference.core.entities.requests.sam3 import Sam3SegmentationRequest
 from inference.core.entities.requests.sam3_3d import Sam3_3D_Objects_InferenceRequest
+from inference.core.entities.requests.sam3_video import (
+    Sam3VideoEmbedRequest,
+    Sam3VideoPropagateRequest,
+    Sam3VideoSegmentRequest,
+)
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
@@ -143,6 +154,11 @@ from inference.core.entities.responses.sam2 import (
 from inference.core.entities.responses.sam3 import (
     Sam3EmbeddingResponse,
     Sam3SegmentationResponse,
+)
+from inference.core.entities.responses.sam3_video import (
+    Sam3VideoEmbedResponse,
+    Sam3VideoPropagateResponse,
+    Sam3VideoSegmentResponse,
 )
 from inference.core.entities.responses.secure_gateway import SecureGatewayHealthResponse
 from inference.core.entities.responses.server_state import (
@@ -219,6 +235,7 @@ from inference.core.env import (
     SAM3_3D_OBJECTS_ENABLED,
     SAM3_EXEC_MODE,
     SAM3_FINE_TUNED_MODELS_ENABLED,
+    SAM3_VIDEO_ENABLED,
     SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT,
     SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED,
     STRUCTURED_API_LOGGING,
@@ -246,6 +263,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http import sam3_video
 from inference.core.interfaces.http.api_key_resolution import (
     api_key_fallback,
     api_key_override,
@@ -4261,6 +4279,188 @@ class HttpInterface(BaseInterface):
                         "sam3/sam3_interactive", inference_request
                     )
                     return model_response
+
+            if CORE_MODEL_SAM3_ENABLED and SAM3_VIDEO_ENABLED:
+                sam3_video_tracker = sam3_video.Sam3VideoTracker(
+                    model_manager=self.model_manager
+                )
+
+                def _sam3_video_model(
+                    inference_request: Any,
+                    api_key: Optional[str],
+                    countinference: Optional[bool],
+                    service_secret: Optional[str],
+                ) -> Any:
+                    if SAM3_EXEC_MODE == "remote":
+                        raise HTTPException(
+                            status_code=501,
+                            detail="SAM3 video tracking runs only with SAM3_EXEC_MODE=local.",
+                        )
+                    api_key = api_key_fallback(api_key)
+                    if api_key:
+                        inference_request.api_key = api_key
+                    model = sam3_video_tracker.get(
+                        inference_request.model_id,
+                        api_key=inference_request.api_key,
+                        countinference=countinference,
+                        service_secret=service_secret,
+                    )
+
+                    return model
+
+                @app.post(
+                    "/sam3/video/embed",
+                    response_model=Sam3VideoEmbedResponse,
+                    summary="SAM3 video tracking: embed a clip",
+                    description=(
+                        "Decode a clip and keep it with the SAM3 video tracker under "
+                        "the caller's video_id, for /sam3/video/segment and "
+                        "/sam3/video/propagate. Every decoded frame is a frame, "
+                        "numbered from 0. The clip stays in the worker's memory until "
+                        "newer clips evict it (SAM3_VIDEO_MAX_CACHED_CLIPS), so calls "
+                        "on one clip must reach the same worker."
+                    ),
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_video_embed(
+                    inference_request: Sam3VideoEmbedRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug("Reached /sam3/video/embed")
+                    model = _sam3_video_model(
+                        inference_request, api_key, countinference, service_secret
+                    )
+                    response = sam3_video.embed_video(
+                        model, inference_request=inference_request
+                    )
+
+                    return response
+
+                @app.post(
+                    "/sam3/video/segment",
+                    response_model=Sam3VideoSegmentResponse,
+                    summary="SAM3 video tracking: masks on one frame",
+                    description=(
+                        "Segment the objects clicked on one frame of an embedded "
+                        "clip, each from all its clicks on the clip, without "
+                        "propagating. Use it to preview a click."
+                    ),
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_video_segment(
+                    inference_request: Sam3VideoSegmentRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug("Reached /sam3/video/segment")
+                    model = _sam3_video_model(
+                        inference_request, api_key, countinference, service_secret
+                    )
+                    response = sam3_video.segment_video_frame(
+                        model, inference_request=inference_request
+                    )
+
+                    return response
+
+                @app.post(
+                    "/sam3/video/propagate",
+                    response_model=Sam3VideoPropagateResponse,
+                    summary="SAM3 video tracking: track over the whole clip",
+                    description=(
+                        "Track every clicked object over an embedded clip. Each "
+                        "object is tracked on its own, forward from its first "
+                        "clicked frame to the end and backward from there to the "
+                        "start, so clicks of different objects on the same frame "
+                        "never interfere. The response comes when the whole clip is "
+                        "tracked. Behind a proxy that ends quiet responses, use "
+                        "/sam3/video/propagate/stream."
+                    ),
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                def sam3_video_propagate(
+                    inference_request: Sam3VideoPropagateRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug("Reached /sam3/video/propagate")
+                    model = _sam3_video_model(
+                        inference_request, api_key, countinference, service_secret
+                    )
+                    response = sam3_video.propagate_video(
+                        model, inference_request=inference_request
+                    )
+
+                    return response
+
+                @app.post(
+                    "/sam3/video/propagate/stream",
+                    response_class=StreamingResponse,
+                    summary="SAM3 video tracking: track over the whole clip, streamed",
+                    description=(
+                        "Track every clicked object over an embedded clip as "
+                        "/sam3/video/propagate does, answered as NDJSON "
+                        "(application/x-ndjson): an `object` line with each object's "
+                        "masks as soon as it is tracked, a `heartbeat` line after "
+                        "every 15 s without another, and a last line that is `done`, "
+                        "or `error` with the status and body the call would have "
+                        "failed with (400 `No video embedded` for a clip the worker "
+                        "no longer has)."
+                    ),
+                )
+                @with_route_exceptions_async
+                @usage_collector("request")
+                async def sam3_video_propagate_stream(
+                    inference_request: Sam3VideoPropagateRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                    countinference: Optional[bool] = None,
+                    service_secret: Optional[str] = None,
+                ):
+                    logger.debug("Reached /sam3/video/propagate/stream")
+                    # Loading and the access check block, so they leave the loop.
+                    model = await run_in_threadpool(
+                        _sam3_video_model,
+                        inference_request,
+                        api_key,
+                        countinference,
+                        service_secret,
+                    )
+                    body = sam3_video.stream_propagation(
+                        model, inference_request=inference_request
+                    )
+                    response = StreamingResponse(
+                        body,
+                        media_type="application/x-ndjson",
+                        # Proxies that buffer would hold the heartbeats back.
+                        headers={
+                            "Cache-Control": "no-store",
+                            "X-Accel-Buffering": "no",
+                        },
+                    )
+
+                    return response
 
             if SAM3_3D_OBJECTS_ENABLED:
 
