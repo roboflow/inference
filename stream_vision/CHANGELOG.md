@@ -4,6 +4,12 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.6`
+
+### Changed
+
+- The Pillow requirement allows 13 (`pillow>=12.3.0,<14.0.0`).
+
 ## `0.1.5`
 
 ### Changed

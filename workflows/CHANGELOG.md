@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.16`
+
+Bundled execution engine: `1.17.1`.
+
+### Changed
+
+- The Pillow requirement allows 13 (`pillow>=12.3.0,<14.0.0`).
+
 ### Fixed
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
