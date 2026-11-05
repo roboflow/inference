@@ -31,6 +31,10 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.batching import create_batches
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.onnx import run_session_via_iobinding
+from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
@@ -91,6 +95,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             self._embedding_sessions[output_type] = (session, info)
             return session, info
 
+    @usage_collector("model")
     def infer_embeddings_from_request(self, request):
         """Generate bounded-batch embeddings and serialize the HTTP response.
 
@@ -104,6 +109,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             ModelDeploymentNotSupportedError: If the embedding boundary cannot
                 be recovered from the model's ONNX artifact.
         """
+        record_fixed_model_input_for_request(self, request)
         started = perf_counter()
         features, info = self._infer_embedding_arrays(request)
         response = ImageEmbeddingResponse(

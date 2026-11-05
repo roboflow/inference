@@ -102,6 +102,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.usage_tracking.collector import usage_collector
+from inference.usage_tracking.decorator_helpers import (
+    record_fixed_model_input_for_request,
+)
 from inference_models import (
     AutoModel,
     ClassificationModel,
@@ -1513,6 +1517,7 @@ class InferenceModelsClassificationAdapter(Model):
             self.img_size_h, self.img_size_w = fixed_input_hw
         self.class_names = list(self._model.class_names)
 
+    @usage_collector("model")
     def infer_embeddings_from_request(self, request):
         """Generate embeddings and serialize them at the HTTP response boundary.
 
@@ -1522,6 +1527,7 @@ class InferenceModelsClassificationAdapter(Model):
         Returns:
             ImageEmbeddingResponse: Ordered vectors and compatibility metadata.
         """
+        record_fixed_model_input_for_request(self, request)
         started = perf_counter()
         kwargs = request.model_dump()
         inputs, _ = self.preprocess(**kwargs)

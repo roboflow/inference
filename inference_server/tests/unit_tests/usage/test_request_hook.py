@@ -31,6 +31,7 @@ from inference_server.usage.collector import UsageCollector
 from inference_server.usage.request_hook import report_request_usage
 from inference_server.usage.rows import USAGE_SCOPE, execution_duration
 from tests.unit_tests.legacy.conftest import FakeGateway
+from tests.unit_tests.legacy.test_router_embeddings import _envelope, _gateway
 
 SECRET = "service-secret-1"
 OBJECT_DETECTION = ("object-detection", "infer", "yolov8", "yolov8-n")
@@ -120,6 +121,32 @@ def _assert_success_row(row, *, resource_id, api_key="k"):
     assert "error" not in details
     assert "dedicated_deployment_id" not in details
     assert "device_id" not in details
+
+
+def test_embedding_request_records_billable_model_frames_for_every_image(
+    usage_client, usage_collector, fake_stat
+):
+    fake_stat["ds/1"] = ("classification", "infer", "resnet", "resnet18")
+    gateway = _gateway(
+        "ds/1",
+        "feature_vector",
+        lambda image, params: _envelope("feature_vector", [1.0, 2.0]),
+    )
+    client = usage_client(gateway)
+
+    response = client.post(
+        "/infer/embeddings",
+        json={"model_id": "ds/1", "api_key": "k", "image": [_image(), _image()]},
+    )
+
+    assert response.status_code == 200, response.text
+    models = _rows_of(usage_collector, "model")
+    assert sum(row["frames"] for row in models) == 2
+    assert {row["resource_id"] for row in models} == {"ds/1"}
+    assert all(row["billable"] for row in models)
+    assert {row["resource_details"]["task_type"] for row in models} == {
+        "classification"
+    }
 
 
 def test_object_detection_request_records_one_billable_row(

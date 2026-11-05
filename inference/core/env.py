@@ -291,6 +291,12 @@ TINY_CACHE = str2bool(os.getenv("TINY_CACHE", True))
 # Maximum batch size for CLIP, default is 8
 CLIP_MAX_BATCH_SIZE = int(os.getenv("CLIP_MAX_BATCH_SIZE", 8))
 
+# Images one POST /infer/embeddings call may carry on GCP Serverless. GPU pods are
+# shared and a list runs as one forward pass, so it sets the call's memory peak.
+SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE = int(
+    os.getenv("SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE", 8)
+)
+
 # Class agnostic NMS flag, default is False
 CLASS_AGNOSTIC_NMS_ENV = "CLASS_AGNOSTIC_NMS"
 DEFAULT_CLASS_AGNOSTIC_NMS = False
