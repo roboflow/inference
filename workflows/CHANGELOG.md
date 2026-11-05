@@ -16,6 +16,17 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- OpenAI Decisions block (`roboflow_core/open_ai_decisions@v1`): asks OpenAI's Decisions API (`POST /v1/decisions`, GPT-6 Luna) typed questions about each image and returns probabilities instead of generated text.
+  - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
+  - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
+  - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
+- OpenAI Decisions Switch block (`roboflow_core/open_ai_decisions_switch@v1`): routes each image to a branch by asking OpenAI's Decisions API one `choice` question over `cases`.
+  - The model always has a "none of these" option. That answer, a probability below `min_confidence` (0.9 by default) or a refusal runs `default_next_steps`, or terminates the branch for that image when there are none.
+  - `case_descriptions` tells the model what a case means, and `context` sends values from earlier steps with each image as JSON, per image for batch-oriented values.
+  - Like every flow control block it has no outputs; use the OpenAI Decisions block with Switch Case to keep the probabilities.
+
 ### Fixed
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
