@@ -8,6 +8,8 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "development/docs/**"
+      - "tests/docs/**"
       - "theme/**"
       - "mkdocs.yml"
       - "requirements/requirements.docs.txt"
@@ -42,6 +44,11 @@ jobs:
           path: inference_repo
           fetch-depth: 0
 
+      - name: Set up Node for redirect regression tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -53,8 +60,8 @@ jobs:
           # Upgrade pip and setuptools
           python -m pip install --upgrade pip setuptools
 
-          # The site is now a landing page plus redirects, so the build no
-          # longer imports the inference package.
+          # The site now consists of redirects, so the build does not import
+          # the inference package.
           pip install -r requirements/requirements.docs.txt
         working-directory: ./inference_repo
 
@@ -66,8 +73,16 @@ jobs:
         run: python -m development.docs.validate_docs_jinja2
         working-directory: ./inference_repo
 
+      - name: Test redirect destination collection (offline)
+        run: python -m unittest tests.docs.test_redirect_destinations
+        working-directory: ./inference_repo
+
       - name: Build docs
         run: zensical build --clean
+        working-directory: ./inference_repo
+
+      - name: Test built redirect JavaScript
+        run: node --test development/docs/test_redirect_pages.mjs
         working-directory: ./inference_repo
 
       - name: Generate llms.txt and markdown pages
