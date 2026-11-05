@@ -16,10 +16,22 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Databricks SQL Image Source block (`roboflow_core/databricks_sql_image_source@v1`): runs a SQL statement on a Databricks SQL warehouse and emits each returned row as a Workflow image (`images`), with `image_names` taken from an optional key column and the remaining columns as per-row `metadata`. The block has no image input, so it runs once per execution and its outputs are lists (output dimensionality offset 1) that feed batch-aware blocks such as Roboflow Dataset Upload. Credentials are `server_hostname`, `http_path` and `access_token` (reference a Workflow input or secret); `max_rows`, `timeout_seconds` and `skip_undecodable` bound the run. Operator guide: `docs/workflows/databricks_sql_image_source.md`.
+  - Optional dependency: `roboflow-workflows[databricks]` (`databricks-sql-connector>=4.0.0,<5.0.0`). Every Roboflow inference server image (`docker/` and `inference_server/docker/`) installs the extra; the block is registered only when the connector imports.
+  - Rollout switch `DATABRICKS_SQL_IMAGE_SOURCE_ENABLED` (engine configuration `databricks_sql_image_source_enabled`): unset, the host resolves it to false on the hosted platform (`GCP_SERVERLESS` / `LAMBDA`) and true elsewhere; an explicit value wins. Disabled or connector missing: the block is not listed, a Workflow referencing it is rejected at compile time with the reason, and no connection is attempted. Read at startup (redeploy to change).
+  - Destination policy: only Databricks workspace hosts (`*.cloud.databricks.com`, `*.gcp.databricks.com`, `*.azuredatabricks.net`, whole-string validation) and SQL warehouse paths (cluster paths self-hosted only); the host must resolve to global addresses unless `ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES=true` on a self-hosted server. The connector's Thrift transport is pinned to the validated address (hostname kept for TLS verification and `Host`), redirects, proxies, HTTP and disabled verification are refused, cloud-fetch result links and the connector's telemetry / feature-flag / staging client are refused for the run.
+  - Bounds, per block invocation and configurable: `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES` (1 GiB over encoded bytes, decoded pixels, names and metadata, reserved before decoding), `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` (32 MiB) and `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` (25 MP, read from the header; JPEG / PNG / WEBP only; decoded shape re-checked); metadata capped per value, nesting and row; the connector's inline result chunk bounded to 8 rows / twice the image byte limit with a server-side row limit. `timeout_seconds` is an overall deadline with a server-side `STATEMENT_TIMEOUT`, bounded retries and a watchdog that cancels the statement and closes the session; the step returns within a 35 s cleanup interval after the deadline.
+
 ### Fixed
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+
+### Execution engine
+
+- A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
 
 ## `0.2.15`
 

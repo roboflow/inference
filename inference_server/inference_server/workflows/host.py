@@ -186,6 +186,25 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
             allow_postgresql_sink_to_non_global_addresses=get_boolean_from_env(
                 "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", default=True
             ),
+            # Rollout switch for the Databricks block: explicit value wins,
+            # otherwise off on the hosted platform and on elsewhere.
+            databricks_sql_image_source_enabled=get_boolean_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_ENABLED",
+                default=not (configuration.GCP_SERVERLESS or configuration.LAMBDA),
+            ),
+            allow_databricks_source_to_non_global_addresses=get_boolean_from_env(
+                "ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES",
+                default=False,
+            ),
+            databricks_sql_image_source_max_run_bytes=get_integer_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES", default=1024 * 1024 * 1024
+            ),
+            databricks_sql_image_source_max_image_bytes=get_integer_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES", default=32 * 1024 * 1024
+            ),
+            databricks_sql_image_source_max_image_pixels=get_integer_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS", default=25_000_000
+            ),
             postgresql_sink_blacklisted_addresses=_optional_address_set(
                 os.environ.get("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES")
             ),
@@ -480,6 +499,7 @@ from roboflow_workflows.utils.image_encoding import (  # noqa: E402
     convert_gray_image_to_bgr,
     decode_encoded_image_bytes,
 )
+
 from inference_model_manager.pipelines import InvalidPipelineIdError  # noqa: E402
 from inference_models.errors import (  # noqa: E402
     ModelNotFoundError,
