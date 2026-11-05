@@ -49,7 +49,6 @@ from inference.core.env import (
 )
 from inference.core.exceptions import (
     InputImageLoadError,
-    ModelDeploymentNotSupportedError,
     PayloadTooLargeError,
     RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
@@ -177,19 +176,12 @@ def ensure_sam3_video_model(model_id: str, model: Any) -> None:
 
     Raises:
         RequestDataContradiction: 400 naming the class the model loads as instead.
-        ModelDeploymentNotSupportedError: 501 when the installed
-            ``inference_models`` has a tracker without offline tracking.
     """
     class_names = [cls.__name__ for cls in type(model).__mro__]
     if SAM3_VIDEO_MODEL_CLASS not in class_names:
         raise RequestDataContradiction(
             f"Model {model_id!r} loads as {type(model).__name__}; the SAM3 video "
             f"routes need a {SAM3_VIDEO_MODEL_CLASS} model."
-        )
-    if not hasattr(model, "embed_video"):
-        raise ModelDeploymentNotSupportedError(
-            "The installed inference-models package has no offline SAM3 video "
-            f"tracking ({SAM3_VIDEO_MODEL_CLASS}.embed_video); install one that has it."
         )
 
 
