@@ -85,7 +85,7 @@ class FakeConnection:
     def __init__(self, rows: List[Dict[str, Any]]):
         self._rows = rows
 
-    def cursor(self) -> FakeCursor:
+    def cursor(self, **kwargs: Any) -> FakeCursor:
         return FakeCursor(self._rows)
 
     def __enter__(self) -> "FakeConnection":
@@ -107,6 +107,13 @@ def fake_databricks(rows: List[Dict[str, Any]]) -> Iterator[None]:
         "roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1"
         ".resolve_and_validate_ips",
         return_value=["52.1.2.3"],
+    ), mock.patch(
+        "roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1"
+        ".install_pinned_transport"
+    ), mock.patch(
+        "roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1"
+        ".connector_available",
+        return_value=True,
     ):
         yield
 
