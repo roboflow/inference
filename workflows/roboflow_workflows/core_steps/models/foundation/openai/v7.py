@@ -106,6 +106,12 @@ PLAIN_ABSOLUTE_STYLE = "plain-absolute"
 # GPT-5.6 Terra/Luna assumed to match Sol's `max` (docs describe the set family-wide).
 OPENAI_MODELS = [
     {
+        "id": "gpt-6.1-terra",
+        "name": "GPT-6.1 Terra",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
+    {
         "id": "gpt-6.1-sol",
         "name": "GPT-6.1 Sol",
         "reasoning_effort_values": ["low", "medium", "high", "xhigh", "max"],

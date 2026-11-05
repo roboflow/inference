@@ -298,3 +298,245 @@ def test_v4l2_decodebin_can_negotiate_raw_mjpeg_and_h264_sources() -> None:
         "nvv4l2decoder",
         "v4l2src",
     } <= elements
+
+
+@pytest.mark.parametrize("video", [0, "/dev/video0"])
+@pytest.mark.parametrize("fourcc", ["MJPG", "JPEG", 1196444237, "1196444237.0"])
+def test_v4l2_requested_mjpeg_uses_camera_caps_and_hardware_decode(video, fourcc):
+    pipeline = build_gstreamer_pipeline(
+        video,
+        output_tensor=True,
+        video_source_properties={
+            "fourcc": fourcc,
+            "frame_width": 1920,
+            "frame_height": 1080,
+            "fps": 30,
+        },
+    )
+
+    assert pipeline.startswith(
+        'v4l2src device="/dev/video0" ! '
+        "image/jpeg,width=1920,height=1080,framerate=30/1 ! "
+        "jpegparse ! nvv4l2decoder mjpeg=1 ! queue"
+    )
+    assert "decodebin" not in pipeline
+    assert "video/x-raw(memory:NVMM),format=RGBA ! appsink" in pipeline
+
+
+@pytest.mark.parametrize(
+    "fourcc,chain",
+    [
+        ("YUYV", "video/x-raw,format=YUY2"),
+        ("NV12", "video/x-raw,format=NV12"),
+        ("H264", "video/x-h264 ! h264parse ! nvv4l2decoder"),
+        ("HEVC", "video/x-h265 ! h265parse ! nvv4l2decoder"),
+    ],
+)
+def test_v4l2_explicit_formats_do_not_autoplug_a_different_decoder(fourcc, chain):
+    pipeline = build_gstreamer_pipeline(
+        "/dev/video1", video_source_properties={"fourcc": fourcc}
+    )
+
+    assert f'v4l2src device="/dev/video1" ! {chain} ! queue' in pipeline
+    assert "decodebin" not in pipeline
+
+
+def test_v4l2_unspecified_format_keeps_size_and_fractional_rate_on_each_media_type():
+    pipeline = build_gstreamer_pipeline(
+        2,
+        video_source_properties={"FRAME_WIDTH": "1280", "FPS": 30000 / 1001},
+    )
+
+    caps_filter = pipeline.split(" ! ")[1]
+    assert caps_filter.startswith('capsfilter caps="')
+    assert caps_filter.endswith('"')
+    caps = caps_filter.removeprefix('capsfilter caps="').removesuffix('"').split(";")
+    assert set(caps) == {
+        f"{media},width=1280,framerate=30000/1001"
+        for media in ("video/x-raw", "image/jpeg", "video/x-h264", "video/x-h265")
+    }
+    assert " ! decodebin ! queue" in pipeline
+    assert "height=" not in pipeline
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [{"fps": 30}, {"frame_width": 1280, "frame_height": 720}],
+)
+def test_v4l2_unspecified_format_builds_real_gstreamer_pipeline(properties):
+    gi = pytest.importorskip("gi", reason="GStreamer Python bindings unavailable")
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+
+    Gst.init(None)
+    if not all(Gst.ElementFactory.find(name) for name in ("v4l2src", "decodebin")):
+        pytest.skip("GStreamer camera/decode plugins unavailable")
+
+    pipeline = build_gstreamer_pipeline(0, video_source_properties=properties)
+    # Parse the real capture/decode chain without Jetson-only conversion elements.
+    capture = pipeline.split(" ! queue", 1)[0]
+    parsed = Gst.parse_launch(f"{capture} ! fakesink")
+    try:
+        filters = parsed.iterate_recurse()
+        camera_caps = None
+        while True:
+            status, element = filters.next()
+            if status != Gst.IteratorResult.OK:
+                break
+
+            if element.get_factory().get_name() == "capsfilter":
+                camera_caps = element.get_property("caps")
+                break
+
+        assert camera_caps is not None
+        assert camera_caps.get_size() == 4
+        assert {camera_caps.get_structure(i).get_name() for i in range(4)} == {
+            "video/x-raw",
+            "image/jpeg",
+            "video/x-h264",
+            "video/x-h265",
+        }
+        expected = Gst.Caps.from_string(
+            "video/x-raw,framerate=30/1"
+            if "fps" in properties
+            else "video/x-raw,width=1280,height=720"
+        )
+        assert camera_caps.get_structure(0).is_equal(expected.get_structure(0))
+    finally:
+        parsed.set_state(Gst.State.NULL)
+
+
+@pytest.mark.parametrize("fourcc", [None, "MJPG"])
+@pytest.mark.parametrize(
+    "fps,rate",
+    [
+        (23.976, "24000/1001"),
+        (29.97, "30000/1001"),
+        (59.94, "60000/1001"),
+        (30000 / 1001, "30000/1001"),
+        (30, "30/1"),
+        (29.5, "59/2"),
+    ],
+)
+def test_v4l2_requested_rate_matches_advertised_camera_fraction(fourcc, fps, rate):
+    properties = {"fps": fps}
+    if fourcc is not None:
+        properties["fourcc"] = fourcc
+
+    pipeline = build_gstreamer_pipeline(0, video_source_properties=properties)
+
+    assert f"framerate={rate}" in pipeline
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {"fourcc": "ZZZZ"},
+        {"fourcc": "mjpg"},
+        {"fourcc": "RGB3"},
+        {"fourcc": "BGR3"},
+        {"fourcc": "MJPG ! fakesink"},
+        {"fourcc": "MJ PG"},
+        {"fourcc": 'MJ"G'},
+        {"fourcc": "MJ'G"},
+        {"fourcc": "MJ!G"},
+        {"fourcc": "MJ G"},
+        {"frame_width": -1},
+        {"frame_height": 1080.5},
+        {"fps": float("nan")},
+        {"fps": 0},
+        {"frame_width": "1920 ! fakesink"},
+    ],
+)
+def test_v4l2_invalid_requests_fail_instead_of_silently_negotiating(properties):
+    with pytest.raises(ValueError):
+        build_gstreamer_pipeline(0, video_source_properties=properties)
+
+
+def _camera_producer_with_fake_bridge(monkeypatch):
+    import streamvision.camera.jetson_producer as module
+    import streamvision.camera.jetson_tensor_bridge as bridge
+
+    opened = []
+
+    class CameraPipeline(_NativePipeline):
+        def __init__(self, pipeline, **kwargs):
+            super().__init__(factories={"nvv4l2decoder"})
+            self.pipeline = pipeline
+            self.closed = False
+            opened.append(self)
+
+        def close(self):
+            self.closed = True
+
+        def stats(self):
+            if self.closed:
+                raise RuntimeError("Jetson tensor pipeline is closed")
+
+            return {"frames": self.grab_calls}
+
+    monkeypatch.setattr(
+        module, "probe_gstreamer_elements", lambda *a, **k: (True, "ok")
+    )
+    monkeypatch.setattr(bridge, "jetson_tensor_bridge_available", lambda: (True, "ok"))
+    monkeypatch.setattr(bridge, "NativeJetsonTensorPipeline", CameraPipeline)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+
+    return JetsonVideoFrameProducer(0, tensor_device="cuda:0"), opened
+
+
+def test_camera_is_opened_only_after_requested_properties_are_applied(monkeypatch):
+    producer, opened = _camera_producer_with_fake_bridge(monkeypatch)
+    assert not opened
+    properties = {"fourcc": "MJPG", "frame_width": 1920, "fps": 30}
+
+    producer.initialize_source_properties(properties)
+    producer.discover_source_properties()
+    assert producer.grab()
+    assert producer.retrieve()[0]
+    assert producer.grab()
+
+    assert len(opened) == 1
+    assert "image/jpeg,width=1920,framerate=30/1" in opened[0].pipeline
+    assert opened[0].grab_calls == 2
+    producer.release()
+    assert opened[0].closed
+
+
+@pytest.mark.parametrize("start_capture", [False, True])
+def test_camera_stats_are_safe_before_deferred_open_and_after_release(
+    monkeypatch, start_capture
+):
+    producer, opened = _camera_producer_with_fake_bridge(monkeypatch)
+
+    assert producer.tensor_bridge_stats == {}
+    assert not opened
+    if start_capture:
+        assert producer.grab()
+        assert producer.tensor_bridge_stats == {"frames": 1}
+
+    producer.release()
+    assert producer.tensor_bridge_stats == {}
+    assert all(pipeline.closed for pipeline in opened)
+
+
+def test_direct_camera_grab_without_properties_still_opens_default_pipeline(
+    monkeypatch,
+):
+    producer, opened = _camera_producer_with_fake_bridge(monkeypatch)
+
+    assert producer.grab()
+    assert producer.retrieve()[0]
+    assert len(opened) == 1
+    assert 'v4l2src device="/dev/video0" ! decodebin ! queue' in opened[0].pipeline
+    producer.release()
+
+
+def test_camera_can_be_released_before_deferred_open(monkeypatch):
+    producer, opened = _camera_producer_with_fake_bridge(monkeypatch)
+
+    producer.release()
+
+    assert not producer.isOpened()
+    assert not producer.grab()
+    assert not opened

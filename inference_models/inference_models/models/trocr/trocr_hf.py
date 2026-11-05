@@ -15,6 +15,7 @@ from transformers import (
 
 from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.models.base.documents_parsing import TextOnlyOCRModel
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 
 class TROcrHF(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
@@ -27,10 +28,11 @@ class TROcrHF(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
         local_files_only: bool = True,
         **kwargs,
     ) -> "TextOnlyOCRModel":
-        model = VisionEncoderDecoderModel.from_pretrained(
-            model_name_or_path,
-            local_files_only=local_files_only,
-        ).to(device)
+        with torch_default_dtype_lock():
+            model = VisionEncoderDecoderModel.from_pretrained(
+                model_name_or_path,
+                local_files_only=local_files_only,
+            ).to(device)
         processor = _load_processor(
             model_name_or_path=model_name_or_path, local_files_only=local_files_only
         )
