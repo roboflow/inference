@@ -34,6 +34,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input_to_image_list,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 DEFAULT_PROMPT = "Describe what's in this image."
 BASE_SYSTEM_PROMPT = (
@@ -135,11 +136,12 @@ def _load_base_model(model_name_or_path: str, *, device: torch.device, **kwargs)
     # transformers loads weights on a thread pool, and concurrent casts onto MPS
     # race in PyTorch's Metal kernel cache (hang or SIGSEGV), so stage on CPU.
     stage_on_cpu = device.type == "mps"
-    model = AutoModelForImageTextToText.from_pretrained(
-        model_name_or_path,
-        device_map="cpu" if stage_on_cpu else device,
-        **kwargs,
-    )
+    with torch_default_dtype_lock():
+        model = AutoModelForImageTextToText.from_pretrained(
+            model_name_or_path,
+            device_map="cpu" if stage_on_cpu else device,
+            **kwargs,
+        )
     if stage_on_cpu:
         model = model.to(device)
 
