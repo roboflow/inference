@@ -12,13 +12,15 @@ per request: an HTTP status to return instead of a Thrift reply, a redirect, a
 dropped connection, a hang, result links instead of inline rows, or holding
 the statement in the RUNNING state until it is cancelled.
 
-TLS uses the test-only CA in ``databricks_tls/`` (certificates for the test
-hostnames, 100-year validity, not usable for anything real).
+TLS uses a freshly generated, short-lived self-signed certificate in a private
+temporary directory. The harness certificate is trusted only by the test client.
 """
 
 import http.server
 import socketserver
 import ssl
+import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -30,8 +32,6 @@ from databricks.sql.thrift_api.TCLIService import TCLIService, ttypes
 from thrift.protocol import TBinaryProtocol
 from thrift.transport import TTransport
 
-TLS_DIR = Path(__file__).parent / "databricks_tls"
-CA_FILE = str(TLS_DIR / "ca.pem")
 HOST = "dbc-a1b2c3d4-e5f6.cloud.databricks.com"
 OTHER_HOST = "other.cloud.databricks.com"
 HTTP_PATH = "/sql/1.0/warehouses/abcdef1234567890"
@@ -284,6 +284,45 @@ class FakeWarehouse(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
     def __init__(self, behaviour: Behaviour, certificate_host: str = HOST):
+        self._tls_directory = tempfile.TemporaryDirectory(prefix="databricks-test-tls-")
+        tls_dir = Path(self._tls_directory.name)
+        configuration = tls_dir / "openssl.cnf"
+        configuration.write_text(
+            "[req]\nprompt=no\ndistinguished_name=subject\nx509_extensions=extensions\n"
+            f"[subject]\nCN={certificate_host}\n"
+            "[extensions]\nbasicConstraints=critical,CA:TRUE\n"
+            "keyUsage=digitalSignature,keyEncipherment,keyCertSign\n"
+            "extendedKeyUsage=serverAuth\n"
+            f"subjectAltName=DNS:{certificate_host}\n"
+        )
+        self.ca_file = str(tls_dir / "certificate.pem")
+        key_file = tls_dir / "key.pem"
+        try:
+            subprocess.run(
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-nodes",
+                    "-days",
+                    "2",
+                    "-config",
+                    str(configuration),
+                    "-keyout",
+                    str(key_file),
+                    "-out",
+                    self.ca_file,
+                ],
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+        except BaseException:
+            self._tls_directory.cleanup()
+            raise
+
         super().__init__(("127.0.0.1", 0), _RequestHandler)
         self.behaviour = behaviour
         self.observations = Observations()
@@ -291,10 +330,8 @@ class FakeWarehouse(socketserver.ThreadingMixIn, http.server.HTTPServer):
         self._script_lock = threading.Lock()
         self._script_index = 0
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(
-            certfile=str(TLS_DIR / f"{certificate_host}.pem"),
-            keyfile=str(TLS_DIR / f"{certificate_host}.key"),
-        )
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(certfile=self.ca_file, keyfile=str(key_file))
         observations = self.observations
 
         def sni_callback(sock, server_name, _context):
@@ -327,6 +364,7 @@ class FakeWarehouse(socketserver.ThreadingMixIn, http.server.HTTPServer):
         self.shutdown()
         self.server_close()
         self._thread.join(timeout=5)
+        self._tls_directory.cleanup()
 
     def handle_error(self, request, client_address) -> None:
         # TLS handshake failures (bad certificate tests) are expected noise.

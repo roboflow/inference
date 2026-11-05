@@ -19,7 +19,8 @@ its inputs and outputs.
 
 Installing the connector (`pip install "roboflow-workflows[databricks]"`,
 shipped in every Roboflow server image) and enabling the block are separate
-decisions. When the block is disabled, or the connector is missing:
+decisions. The transport supports connector **4.8.0**; the extra pins that version.
+When the block is disabled, or the connector is missing or unsupported:
 
 * `/workflows/blocks/describe` does not list it,
 * a Workflow that references it, saved or submitted inline, fails at compile
@@ -36,44 +37,51 @@ restart the container. During a rollback:
 * jobs already running on a worker that has not restarted finish or hit their
   own `timeout_seconds` deadline (at most 600 s) plus the cleanup interval
   below; a worker that is terminated mid-run cancels nothing on the warehouse,
-  the statement's server-side `STATEMENT_TIMEOUT` (equal to the deadline)
-  ends it,
+  rely on the warehouse statement timeout and verify its terminal state,
 * `WORKFLOW_DISABLED_BLOCK_PATTERNS=databricks` remains a valid additional
   safeguard on multi-tenant workers and is applied by the same mechanism.
 
 ## Memory and time bounds
 
-All budgets are **per block invocation**, not per process. Size them against
-the worker's memory and the number of Workflow requests one process serves at
-once:
+Each invocation runs DNS resolution, the SQL connector and image decoding in a
+fresh Python subprocess. The parent checks availability and `disable_sinks`
+before launch. Credentials and resolved configuration travel over a private
+pipe; connector patches never alter clients in the parent process. The serialized
+request (SQL, credentials and configuration together) is limited to 1 MiB.
 
-```
-per invocation ≈ MAX_RUN_BYTES                       retained rows
-               + 2 x MAX_IMAGE_BYTES                 connector inline chunk (+ lz4 copy)
-               + MAX_IMAGE_BYTES + 3 x MAX_IMAGE_PIXELS   decode temporaries of one image
-```
+All budgets are **per invocation**, and account for encoded image bytes, decoded
+pixels, names and metadata. They are application-data budgets, not hard process
+RSS limits. Connector buffers, Python imports, decode temporaries and filesystem
+cache require additional memory. Measure the candidate image at the intended
+concurrency before enabling hosted execution; do not infer a pod memory limit
+from `MAX_RUN_BYTES` alone.
 
-With the defaults that is about 1.2 GiB per invocation. For the hosted
-async-serverless workers the values files set 256 MiB / 16 MiB / 12 MP, about
-340 MiB per invocation, leaving headroom for models and concurrent requests
-within the per-process share of the pod's memory limit.
+The child writes decoded arrays and a bounded manifest into a private temporary
+directory. The parent loads them only after the child exits successfully, checks
+array headers and file sizes before allocation, and removes the directory on
+success or failure. Provision temporary storage for up to the invocation budget
+plus file/manifest overhead per concurrent invocation. Disk exhaustion fails the
+step; no partial output is returned.
 
-The connector's buffering is bounded explicitly: the cursor asks the warehouse
-for inline chunks of at most 8 rows and `2 x MAX_IMAGE_BYTES` bytes
-(`arraysize` / `buffer_size_bytes`), with a server-side `row_limit` of
-`max_rows`, cloud-fetch result links disabled and refused if a warehouse
-returns them anyway, and metadata capped per value (4096 characters), per
-nesting (4 levels, 256 items) and per row (64 KiB).
+The connector requests inline chunks of at most 8 rows and
+`2 x MAX_IMAGE_BYTES` bytes, with a server-side `row_limit` of `max_rows`.
+Metadata values are truncated to 4096 characters and capped at 4 nesting levels,
+256 items per collection and 64 KiB per row. JPEG, PNG and WebP are accepted;
+TIFF is rejected before pixel decoding. Total budget exhaustion fails the step,
+while ordinary row conversion failures follow `skip_undecodable`.
 
-`timeout_seconds` (5 to 600, default 120) is the overall deadline for
-connecting, executing and polling, fetching and decoding. The statement is
-submitted with `STATEMENT_TIMEOUT` equal to it, HTTP retries are limited to 3
-attempts with at most a 5 s delay inside the remaining time, and redirects are
-refused. When the deadline passes a watchdog cancels the statement
-(`CancelOperation`) and closes the session; the step's thread then fails
-within one socket timeout (30 s) plus one retry delay (5 s). That 35 s is the
-**cleanup interval**: after it the step has returned, its execution slot is
-free and no connector thread remains.
+`timeout_seconds` (5 to 600, default 120) begins before process launch and covers
+imports, DNS, connection, execution, fetching, decoding and parent output loading.
+The warehouse receives a statement timeout based on the remaining time. On
+expiry the parent terminates the child, giving cleanup a single 35-second
+allowance before forcing termination and reaping it. Connector cancellation and
+closing can block on the connector's request lock, so they are best effort;
+killing a client does not prove its warehouse query stopped. Verify warehouse
+terminal state in the deferred staging acceptance run.
+
+Parent output loading checks expiry between bounded operations and before
+returning success. Arbitrary OS/filesystem stalls are outside this wall-clock
+guarantee. A server restart is still required to change the rollout flag.
 
 ## Network policy
 
@@ -88,13 +96,15 @@ hostname for TLS SNI, certificate verification and the `Host` header, so a DNS
 change after validation cannot redirect the connection. Proxies, HTTP, disabled
 TLS verification and redirects are refused by the transport; the connector's
 second HTTP client (telemetry, feature flags, OAuth, cloud fetch, staging) is
-refused for the duration of the run from any thread.
+refused for the entire child-process lifetime, including its background threads.
+Unrelated clients in the parent process remain independent.
 
-Transport inventory for `databricks-sql-connector` 4.x (verified on 4.8.0 with
+Transport inventory for `databricks-sql-connector` 4.8.0 (verified with
 `urllib3` 2.8): one `urllib3` pool for every Thrift call (session, execute,
 polling, fetch, cancel, close, retries and reconnects) and one `PoolManager`
 for everything else. Both are covered as described above; the REST (SEA)
-backend is not used.
+and native kernel backends, including automatic fallback, are rejected before
+backend construction.
 
 ## Verification
 
@@ -121,10 +131,15 @@ Deterministic, in CI with the workflows unit tests:
 Credentialed, against a real warehouse: `workflows/scripts/databricks_live_integration.py`
 (see its docstring) runs import, bad image, oversized metadata, invalid
 credential, slow-query cancellation verified through the warehouse's query
-history, recovery and concurrent-job latency, in-process or through a server
-or async-serverless producer URL, plus `--expect-disabled` and
+history, recovery and concurrent-job latency, locally or through the synchronous server `/workflows/run` endpoint, plus `--expect-disabled` and
 `--expect-budget-failure` modes for deployments configured that way. The
 GitHub workflow `Databricks SQL Image Source - live warehouse integration`
-runs it on dispatch under the `databricks-live` environment. Record the image
+runs it on dispatch under the protected `databricks-live` environment. Configure
+its HTTPS server origin with the environment variable `DATABRICKS_LIVE_BASE_URL`
+(GitHub environment variable of the same name); callers cannot choose a URL in
+dispatch inputs. Requests refuse redirects. The synchronous runner does not
+validate the async-serverless producer/job API: that path requires a separate
+staging run after PR review. No credentialed staging test is part of local review.
+Record the image
 digest, connector version and report in the release notes of any hosted
 rollout.

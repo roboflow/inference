@@ -19,6 +19,7 @@ compile time with the reason, before any connection is attempted.
 
 import importlib.util
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from typing import Optional
 
 from roboflow_workflows.environment import (
@@ -28,6 +29,7 @@ from roboflow_workflows.environment import (
 )
 
 DATABRICKS_SQL_IMAGE_SOURCE_TYPE = "roboflow_core/databricks_sql_image_source@v1"
+SUPPORTED_CONNECTOR_VERSION = "4.8.0"
 CONNECTOR_INSTALL_HINT = (
     "install the `roboflow-workflows[databricks]` extra (pip install "
     '"roboflow-workflows[databricks]") or `databricks-sql-connector` next to the '
@@ -72,6 +74,19 @@ def databricks_unavailability_reason() -> Optional[str]:
     if not connector_available():
         return (
             "the `databricks-sql-connector` package is not installed; "
+            + CONNECTOR_INSTALL_HINT
+        )
+    try:
+        installed_version = version("databricks-sql-connector")
+    except PackageNotFoundError:
+        return (
+            "the Databricks connector distribution is missing; "
+            + CONNECTOR_INSTALL_HINT
+        )
+    if installed_version != SUPPORTED_CONNECTOR_VERSION:
+        return (
+            f"Databricks connector {installed_version} is unsupported; "
+            f"this transport requires {SUPPORTED_CONNECTOR_VERSION}. "
             + CONNECTOR_INSTALL_HINT
         )
     return None

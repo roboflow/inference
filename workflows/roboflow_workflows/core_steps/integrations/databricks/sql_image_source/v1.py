@@ -26,6 +26,7 @@ from roboflow_workflows.core_steps.integrations.databricks.availability import (
     DISABLED_HINT,
     block_enabled,
     connector_available,
+    databricks_unavailability_reason,
     running_on_hosted_platform,
 )
 from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.transport import (
@@ -392,7 +393,10 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
-        return [HOSTED_PLATFORM_RESTRICTION, VIDEO_PIPELINE_RESTRICTION]
+        restrictions = [VIDEO_PIPELINE_RESTRICTION]
+        if not block_enabled():
+            restrictions.insert(0, HOSTED_PLATFORM_RESTRICTION)
+        return restrictions
 
     def discover_work_operations(self) -> List[WorkOperation]:
         # One warehouse round-trip, then every row's bytes are decoded.
@@ -406,7 +410,7 @@ class BlockManifest(WorkflowBlockManifest):
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
         restrictions = actual_restrictions_of(
-            declared=[HOSTED_PLATFORM_RESTRICTION, VIDEO_PIPELINE_RESTRICTION],
+            declared=self.get_restrictions(),
             node_id=f"$steps.{getattr(self, 'name', '')}",
             ignore_environment_restrictions=ignore_environment_restrictions,
         )
@@ -450,8 +454,54 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
                 "server's execution policy (disable_sinks): the statement would run "
                 "with the token's rights, which the policy forbids."
             )
-        destination = validate_destination(server_hostname, http_path=http_path)
+        from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.isolation import (
+            run_isolated,
+        )
+
         deadline = time.monotonic() + float(timeout_seconds)
+        request = dict(
+            server_hostname=server_hostname,
+            http_path=http_path,
+            access_token=access_token,
+            sql_statement=sql_statement,
+            image_column=image_column,
+            image_name_column=image_name_column,
+            max_rows=max_rows,
+            timeout_seconds=timeout_seconds,
+            skip_undecodable=skip_undecodable,
+        )
+        limits = dict(
+            max_run_bytes=MAX_RUN_BYTES,
+            max_image_bytes=MAX_IMAGE_PAYLOAD_BYTES,
+            max_image_pixels=MAX_IMAGE_PIXELS,
+            allow_non_global=ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES,
+            hosted=running_on_hosted_platform(),
+        )
+        results = run_isolated(request, limits=limits, deadline=deadline)
+        return results
+
+    def _run_in_process(
+        self,
+        server_hostname: str,
+        http_path: str,
+        access_token: str,
+        sql_statement: str,
+        image_column: str,
+        image_name_column: Optional[str],
+        max_rows: int,
+        timeout_seconds: int,
+        skip_undecodable: bool,
+        *,
+        deadline: Optional[float] = None,
+    ) -> BlockResult:
+        # Internal worker entry point, also used by focused connector tests.
+        ensure_block_enabled()
+        if self._disable_sinks:
+            raise RuntimeError("Databricks execution is disabled by disable_sinks")
+        if deadline is None:
+            deadline = time.monotonic() + float(timeout_seconds)
+        destination = validate_destination(server_hostname, http_path=http_path)
+        _check_deadline(deadline)
 
         results: List[Dict[str, Any]] = []
         budget = RunBudget(limit=MAX_RUN_BYTES)
@@ -467,6 +517,7 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
         )
         with contextlib.closing(rows):
             for index, row in enumerate(rows):
+                _check_deadline(deadline)
                 fetched += 1
                 if image_column not in row:
                     raise ValueError(
@@ -503,6 +554,7 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
                     {"images": image, "image_names": name, "metadata": metadata}
                 )
 
+        _check_deadline(deadline)
         if fetched and not results:
             raise ValueError(
                 f"All {fetched} fetched rows were skipped; last reason: {skipped[-1]}"
@@ -513,6 +565,11 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
 # ---------------------------------------------------------------------------
 # Availability and destination
 # ---------------------------------------------------------------------------
+
+
+def _check_deadline(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise TimeoutError("Databricks query exceeded timeout_seconds")
 
 
 def ensure_block_enabled() -> None:
@@ -533,6 +590,10 @@ def ensure_block_enabled() -> None:
             "`roboflow_core/databricks_sql_image_source@v1` requires the "
             "`databricks-sql-connector` package: " + CONNECTOR_INSTALL_HINT
         )
+
+    reason = databricks_unavailability_reason()
+    if reason is not None:
+        raise RuntimeError("Databricks SQL Image Source cannot run here: " + reason)
 
 
 def normalise_hostname(server_hostname: Any) -> str:
@@ -810,6 +871,7 @@ def iter_rows(
                             yielded += 1
                 finally:
                     watchdog.cancel()
+                    watchdog.join(timeout=0.1)
 
 
 def _cancel_query(cursor: Any, connection: Any, expired: threading.Event) -> None:

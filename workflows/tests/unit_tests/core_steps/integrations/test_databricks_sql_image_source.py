@@ -129,6 +129,10 @@ def fake_databricks(
         v1, "install_pinned_transport"
     ) as install, mock.patch.object(
         v1, "connector_available", return_value=True
+    ), mock.patch.object(
+        DatabricksSQLImageSourceBlockV1,
+        "run",
+        DatabricksSQLImageSourceBlockV1._run_in_process,
     ):
         recorder["resolver"] = resolver
         recorder["install_pinned_transport"] = install
@@ -164,7 +168,7 @@ def run_block(**overrides: Any) -> list:
         "skip_undecodable": True,
     }
     parameters.update(overrides)
-    return DatabricksSQLImageSourceBlockV1().run(**parameters)
+    return DatabricksSQLImageSourceBlockV1()._run_in_process(**parameters)
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +256,12 @@ def test_manifest_declares_outputs_restrictions_and_nesting() -> None:
         "metadata",
     }
     codes = {r.code for r in BlockManifest.get_restrictions()}
-    assert codes == {"unavailable_on_hosted_platform", "queries_warehouse_on_every_run"}
+    assert codes == {"queries_warehouse_on_every_run"}
+    with mock.patch.object(v1, "block_enabled", return_value=False):
+        assert {r.code for r in BlockManifest.get_restrictions()} == {
+            "unavailable_on_hosted_platform",
+            "queries_warehouse_on_every_run",
+        }
     parsed = BlockManifest.model_validate(manifest())
     discovery = parsed.get_actual_restrictions(ignore_environment_restrictions=True)
     assert {r.code for r in discovery.items} == codes
@@ -615,7 +624,7 @@ def test_run_times_out_and_cancels_a_slow_query() -> None:
     ):
         started = time.monotonic()
         with pytest.raises(TimeoutError, match="timeout_seconds"):
-            DatabricksSQLImageSourceBlockV1().run(
+            DatabricksSQLImageSourceBlockV1()._run_in_process(
                 server_hostname=HOST,
                 http_path=HTTP_PATH,
                 access_token="t",
