@@ -7,9 +7,9 @@ Some dockerfiles include roboflow enterprise code and require a license. See [th
 Dockerfile.device_manager | [roboflow/roboflow-device-manager](https://hub.docker.com/repository/docker/roboflow/roboflow-device-manager/general) | Yes |
 Dockerfile.onnx.cpu | [roboflow/roboflow-inference-server-cpu](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-cpu/general) | No |
 Dockerfile.onnx.gpu | [roboflow/roboflow-inference-server-gpu](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-gpu/general) | No |
-Dockerfile.onnx.jetson.4.5.0 **DEPRECATED** | [roboflow/roboflow-inference-server-jetson-4.5.0](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-4.5.0/general) | No |
-Dockerfile.onnx.jetson.4.6.1 | [roboflow/roboflow-inference-server-jetson-4.6.1](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-4.6.1/general) | No |
-Dockerfile.onnx.jetson.5.1.0 | [roboflow/roboflow-inference-server-jetson-5.1.0](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-5.1.0/general) | No |
+Dockerfile.onnx.jetson.5.1.1 **DEPRECATED** (support removed in 2027) | [roboflow/roboflow-inference-server-jetson-5.1.1](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-5.1.1/general) | No |
+Dockerfile.onnx.jetson.6.2.0 (support ends 2027) | [roboflow/roboflow-inference-server-jetson-6.2.0](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-6.2.0/general) | No |
+Dockerfile.onnx.jetson.7.2.0 | [roboflow/roboflow-inference-server-jetson-7.2.0](https://hub.docker.com/repository/docker/roboflow/roboflow-inference-server-jetson-7.2.0/general) | No |
 Dockerfile.onnx.lambda | Not Published | Yes |
 Dockerfile.onnx.trt | Deprecated | No |
 Dockerfile.onnx.trt.base | Deprecated | No |
