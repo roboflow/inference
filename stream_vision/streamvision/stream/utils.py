@@ -29,6 +29,10 @@ from streamvision.stream.environment import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+VideoSourceOptions = Union[
+    Dict[str, object],
+    List[Optional[Dict[str, object]]],
+]
 
 
 def prepare_video_sources(
@@ -44,6 +48,7 @@ def prepare_video_sources(
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,
+    video_source_options: Optional[VideoSourceOptions] = None,
 ) -> List[VideoSource]:
     video_reference = wrap_in_list(element=video_reference)
     if len(video_reference) < 1:
@@ -57,9 +62,17 @@ def prepare_video_sources(
         error_description="Cannot apply `video_source_properties` to video sources due to missmatch in "
         "number of entries in properties configuration.",
     )
+    video_source_options = wrap_in_list(element=video_source_options)
+    video_source_options = broadcast_elements(
+        elements=video_source_options,
+        desired_length=len(video_reference),
+        error_description="Cannot apply `video_source_options` to video sources due to mismatch in "
+        "number of entries in options configuration.",
+    )
     return initialise_video_sources(
         video_reference=video_reference,
         video_source_properties=video_source_properties,
+        video_source_options=video_source_options,
         status_update_handlers=status_update_handlers,
         source_buffer_filling_strategy=source_buffer_filling_strategy,
         source_buffer_consumption_strategy=source_buffer_consumption_strategy,
@@ -96,6 +109,7 @@ def initialise_video_sources(
     desired_source_fps: Optional[Union[float, int]] = None,
     decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     allow_tensor_frames: bool = False,
+    video_source_options: Optional[List[Optional[Dict[str, object]]]] = None,
 ) -> List[VideoSource]:
     if isinstance(source_buffer_filling_strategy, str):
         source_buffer_filling_strategy = BufferFillingStrategy(
@@ -105,6 +119,8 @@ def initialise_video_sources(
         source_buffer_consumption_strategy = BufferConsumptionStrategy(
             source_buffer_consumption_strategy
         )
+    if video_source_options is None:
+        video_source_options = [None] * len(video_reference)
     return [
         VideoSource.init(
             video_reference=reference,
@@ -112,13 +128,14 @@ def initialise_video_sources(
             buffer_filling_strategy=source_buffer_filling_strategy,
             buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=source_properties,
+            video_source_options=source_options,
             source_id=i,
             desired_fps=desired_source_fps,
             buffer_size=decoding_buffer_size,
             allow_tensor_frames=allow_tensor_frames,
         )
-        for i, (reference, source_properties) in enumerate(
-            zip(video_reference, video_source_properties)
+        for i, (reference, source_properties, source_options) in enumerate(
+            zip(video_reference, video_source_properties, video_source_options)
         )
     ]
 
