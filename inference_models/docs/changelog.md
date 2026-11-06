@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## `0.39.9`
+
+### Changed
+
+- The Pillow requirement allows 13 (`pillow>=12.3.0,<14.0.0`). Pillow 13.0.0
+  carries security fixes and requires Python 3.11 or newer, so Python 3.10
+  installs stay on 12.3.
+
+### Fixed
+
+- RF-DETR pre-processing keeps Pillow's horizontal-first resize order. Pillow 13
+  runs the vertical pass first when height shrinks far more than width, which
+  changed 8-bit rounding and shifted predicted boxes.
+
 ## `0.39.8`
 
 ### Fixed
