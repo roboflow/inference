@@ -20,6 +20,10 @@ for contributor and maintainer responsibilities.
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/path_deviation_analytics` v1 and v2, and their tensor variants,
+  now convert `triggering_anchor` to `sv.Position`. Every workflow using the
+  block used to fail at runtime with `<anchor> is not supported.`, for example
+  `CENTER is not supported.` for the default anchor.
 
 ## `0.2.15`
 

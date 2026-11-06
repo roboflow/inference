@@ -6,6 +6,8 @@ import supervision as sv
 from roboflow_workflows.core_steps.analytics.path_deviation.v2 import (
     PathDeviationAnalyticsBlockV2,
 )
+from roboflow_workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
+from roboflow_workflows.execution_engine.core import ExecutionEngine
 from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
@@ -272,3 +274,120 @@ def test_path_deviation_invalid_reference_path():
             triggering_anchor=sv.Position.CENTER,
             reference_path=reference_path,
         )
+
+
+def _video_frame(frame_number: int = 0) -> WorkflowImageData:
+    return WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        video_metadata=VideoMetadata(
+            video_identifier="vid_1",
+            frame_number=frame_number,
+            fps=1,
+            frame_timestamp=datetime.datetime.fromtimestamp(
+                1726570875 + frame_number
+            ).astimezone(tz=datetime.timezone.utc),
+            comes_from_video_file=True,
+        ),
+    )
+
+
+# CENTER_OF_MASS is left out because it needs masks, which these detections lack.
+@pytest.mark.parametrize(
+    "anchor", [a for a in sv.Position.list() if a != "CENTER_OF_MASS"]
+)
+def test_path_deviation_accepts_every_anchor_the_manifest_allows(anchor):
+    # Given
+    def run(triggering_anchor):
+        return PathDeviationAnalyticsBlockV2().run(
+            detections=sv.Detections(
+                xyxy=np.array([[10.0, 20.0, 30.0, 60.0]]),
+                tracker_id=np.array([1]),
+            ),
+            image=_video_frame(),
+            triggering_anchor=triggering_anchor,
+            reference_path=[(0, 0), (100, 100)],
+        )["path_deviation_detections"]["path_deviation"][0]
+
+    # When / Then
+    assert run(anchor) == run(sv.Position(anchor))
+
+
+def test_path_deviation_accepts_string_anchor_on_empty_detections():
+    # When
+    result = PathDeviationAnalyticsBlockV2().run(
+        detections=sv.Detections(
+            xyxy=np.zeros((0, 4)),
+            tracker_id=np.array([], dtype=int),
+        ),
+        image=_video_frame(),
+        triggering_anchor="CENTER",
+        reference_path=[(0, 0), (100, 100)],
+    )
+
+    # Then
+    assert len(result["path_deviation_detections"]) == 0
+
+
+@pytest.mark.skipif(
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    reason="passes sv.Detections, which the tensor engine rejects; "
+    "test_path_deviation_tensor.py covers that path",
+)
+def test_path_deviation_runs_in_workflow_with_default_anchor():
+    # Given
+    workflow_definition = {
+        "version": "1.3.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {
+                "type": "WorkflowBatchInput",
+                "name": "predictions",
+                "kind": ["object_detection_prediction"],
+            },
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/path_deviation_analytics@v2",
+                "name": "path_deviation",
+                "image": "$inputs.image",
+                "detections": "$inputs.predictions",
+                "reference_path": [[0, 0], [100, 100]],
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "result",
+                "selector": "$steps.path_deviation.path_deviation_detections",
+            }
+        ],
+    }
+    engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters={},
+        max_concurrent_steps=1,
+        prevent_local_images_loading=True,
+    )
+    predictions = sv.Detections(
+        xyxy=np.array([[10.0, 20.0, 30.0, 60.0]]),
+        tracker_id=np.array([1]),
+        confidence=np.array([0.9]),
+        class_id=np.array([0]),
+        data={"class_name": np.array(["a"]), "detection_id": np.array(["x"])},
+    )
+
+    # When
+    result = engine.run(
+        runtime_parameters={"image": [_video_frame()], "predictions": [predictions]}
+    )
+
+    # Then
+    assert result[0]["result"]["path_deviation"][0] == pytest.approx(
+        PathDeviationAnalyticsBlockV2().run(
+            detections=predictions,
+            image=_video_frame(),
+            triggering_anchor=sv.Position.CENTER,
+            reference_path=[(0, 0), (100, 100)],
+        )["path_deviation_detections"]["path_deviation"][0]
+    )

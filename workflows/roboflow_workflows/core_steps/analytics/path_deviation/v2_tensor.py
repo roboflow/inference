@@ -238,7 +238,9 @@ class PathDeviationAnalyticsBlockV2(WorkflowBlock):
         sv_input = sv.Detections(
             xyxy=detections.xyxy.detach().to("cpu").numpy().astype(float),
         )
-        anchor_points = sv_input.get_anchors_coordinates(anchor=triggering_anchor)
+        anchor_points = sv_input.get_anchors_coordinates(
+            anchor=sv.Position(triggering_anchor)
+        )
         new_bboxes_metadata = []
         for i, tracker_id in enumerate(tracker_ids):
             box_metadata = dict(bboxes_metadata[i])

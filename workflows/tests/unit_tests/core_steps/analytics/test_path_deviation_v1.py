@@ -243,3 +243,62 @@ def test_path_deviation_invalid_reference_path():
             triggering_anchor=sv.Position.CENTER,
             reference_path=reference_path,
         )
+
+
+# CENTER_OF_MASS is left out because it needs masks, which these detections lack.
+@pytest.mark.parametrize(
+    "anchor", [a for a in sv.Position.list() if a != "CENTER_OF_MASS"]
+)
+def test_path_deviation_accepts_every_anchor_the_manifest_allows(anchor):
+    # Given
+    reference_path = [(0, 0), (100, 100)]
+    metadata = VideoMetadata(
+        video_identifier="vid_1",
+        frame_number=0,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+
+    def run(triggering_anchor):
+        return PathDeviationAnalyticsBlockV1().run(
+            detections=sv.Detections(
+                xyxy=np.array([[10.0, 20.0, 30.0, 60.0]]),
+                tracker_id=np.array([1]),
+            ),
+            metadata=metadata,
+            triggering_anchor=triggering_anchor,
+            reference_path=reference_path,
+        )["path_deviation_detections"]["path_deviation"][0]
+
+    # When / Then
+    assert run(anchor) == run(sv.Position(anchor))
+
+
+def test_path_deviation_accepts_string_anchor_on_empty_detections():
+    # Given
+    metadata = VideoMetadata(
+        video_identifier="vid_1",
+        frame_number=0,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+
+    # When
+    result = PathDeviationAnalyticsBlockV1().run(
+        detections=sv.Detections(
+            xyxy=np.zeros((0, 4)),
+            tracker_id=np.array([], dtype=int),
+        ),
+        metadata=metadata,
+        triggering_anchor="CENTER",
+        reference_path=[(0, 0), (100, 100)],
+    )
+
+    # Then
+    assert len(result["path_deviation_detections"]) == 0
