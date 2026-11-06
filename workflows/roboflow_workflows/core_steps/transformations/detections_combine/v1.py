@@ -21,6 +21,7 @@ from roboflow_workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from supervision.detection.utils.internal import merge_metadata
 
 LONG_DESCRIPTION = """
 Combine two sets of detection predictions into a single unified set of detections by merging both detection sets together, preserving all detections from both inputs for multi-source detection aggregation, combining results from multiple models, and consolidating detection sets from different processing stages into one workflow output.
@@ -139,4 +140,20 @@ class DetectionsCombineBlockV1(WorkflowBlock):
         prediction_one: sv.Detections,
         prediction_two: sv.Detections,
     ) -> BlockResult:
-        return {"predictions": sv.Detections.merge([prediction_one, prediction_two])}
+        merged = sv.Detections.merge([prediction_one, prediction_two])
+        if merged.is_empty():
+            # sv.Detections.merge filters out empty inputs before merging, so
+            # an all-empty combine discards the collection metadata producers
+            # attach to zero-row results (image dimensions, parent/root
+            # lineage). Re-applying supervision's own strict metadata merge to
+            # metadata-bearing inputs preserves agreeing values and raises
+            # supervision's ValueError on conflicts. A bare empty contributes
+            # no metadata to reconcile.
+            merged.metadata = merge_metadata(
+                [
+                    prediction.metadata
+                    for prediction in (prediction_one, prediction_two)
+                    if prediction.metadata
+                ]
+            )
+        return {"predictions": merged}
