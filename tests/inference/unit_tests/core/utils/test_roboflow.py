@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Tuple
 
 import pytest
 
@@ -13,7 +13,10 @@ def test_get_model_id_chunks_when_invalid_input_given(value: Any) -> None:
         _ = get_model_id_chunks(model_id=value)
 
 
-@pytest.mark.parametrize("value", ["some/other", "some-2/another-2"])
+@pytest.mark.parametrize(
+    "value",
+    ["some/other", "some-2/another-2", "dinov3/vits16", "siglip2/base-patch16-224"],
+)
 def test_get_model_id_chunks_when_instant_model_id_given(value: Any) -> None:
     # when
     result = get_model_id_chunks(model_id=value)
@@ -22,9 +25,14 @@ def test_get_model_id_chunks_when_instant_model_id_given(value: Any) -> None:
     assert result == (value, None)
 
 
-def test_get_model_id_chunks_when_valid_input_given() -> None:
+@pytest.mark.parametrize(
+    "value, expected", [("some/1", ("some", "1")), ("dinov3/12", ("dinov3", "12"))]
+)
+def test_get_model_id_chunks_when_valid_input_given(
+    value: str, expected: Tuple[str, str]
+) -> None:
     # when
-    result = get_model_id_chunks("some/1")
+    result = get_model_id_chunks(value)
 
     # then
-    assert result == ("some", "1")
+    assert result == expected

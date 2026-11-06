@@ -1153,6 +1153,9 @@ def test_get_model_type_when_fine_tuned_sam3_is_cached_but_disabled(
             "nvidia/cosmos-3-edge-action-recognition",
             ("action-recognition", "cosmos-3-edge"),
         ),
+        ("dinov2/small", ("embed", "dinov2")),
+        ("dinov3/vits16", ("embed", "dinov3")),
+        ("siglip2/base-patch16-224", ("embed", "siglip2")),
     ],
 )
 def test_get_model_type_when_generic_model_is_utilised(
@@ -1161,12 +1164,48 @@ def test_get_model_type_when_generic_model_is_utilised(
 ) -> None:
     # when
     try:
-        result = get_model_type(model_id=model_id, api_key="my_api_key")
+        with mock.patch.object(
+            roboflow, "get_model_metadata_from_inference_models_registry"
+        ) as registry_api_mock, mock.patch.object(
+            roboflow, "get_roboflow_model_data"
+        ) as model_api_mock:
+            result = get_model_type(model_id=model_id, api_key="my_api_key")
 
         # then
         assert result == expected_result
+        registry_api_mock.assert_not_called()
+        model_api_mock.assert_not_called()
     finally:
         clear_recorded_model_descriptors()
+
+
+@pytest.mark.parametrize("model_id", ["dinov2/3", "dinov3/12", "siglip2/1"])
+def test_get_model_type_keeps_user_projects_named_after_pretrained_families(
+    monkeypatch, model_id: str
+) -> None:
+    # given - a workspace project whose name is a pretrained embedding family
+    monkeypatch.setattr(roboflow, "USE_INFERENCE_MODELS", True)
+    monkeypatch.setattr(roboflow, "MODELS_CACHE_AUTH_ENABLED", False)
+    monkeypatch.setattr(
+        roboflow, "get_model_metadata_from_cache", MagicMock(return_value=None)
+    )
+    monkeypatch.setattr(roboflow, "save_model_metadata_in_cache", MagicMock())
+    registry_api = MagicMock(
+        return_value={"taskType": "classification", "modelType": "dinov3_probe"}
+    )
+    monkeypatch.setattr(
+        roboflow, "get_model_metadata_from_inference_models_registry", registry_api
+    )
+
+    # when
+    try:
+        result = get_model_type(model_id=model_id, api_key="my_api_key")
+    finally:
+        clear_recorded_model_descriptors()
+
+    # then
+    assert result == ("classification", "dinov3_probe")
+    assert registry_api.call_args.kwargs["model_id"] == model_id
 
 
 @pytest.mark.parametrize(

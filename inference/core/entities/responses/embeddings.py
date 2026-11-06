@@ -9,16 +9,20 @@ class EmbeddingInfo(BaseModel):
     """Describe the model and representation defining an embedding space."""
 
     model_id: str = Field(
-        description="Resolved classification model ID used to produce the vectors.",
-        examples=["my-classifier/1"],
+        description="Resolved model ID used to produce the vectors: a classifier version or a pretrained embedding model.",
+        examples=["my-classifier/1", "dinov3/vits16"],
     )
     feature_definition: str = Field(
         description="Versioned definition of the feature or logit extraction boundary.",
-        examples=["classifier-linear-input@v1", "classifier-linear-output@v1"],
+        examples=[
+            "classifier-linear-input@v1",
+            "classifier-linear-output@v1",
+            "dinov3-cls-token@v1",
+        ],
     )
     output_type: Literal["feature_vector", "logits"] = Field(
         default="feature_vector",
-        description="Whether vectors contain features before the final linear layer or logits before Softmax/Sigmoid.",
+        description="Whether vectors contain features (a classifier's input to its final linear layer, or a pretrained model's embedding) or a classifier's logits before Softmax/Sigmoid.",
         examples=["feature_vector", "logits"],
     )
     dimension: int = Field(
@@ -31,7 +35,7 @@ class EmbeddingInfo(BaseModel):
         examples=["none"],
     )
     preprocessing: Dict[str, Any] = Field(
-        description="Model preprocessing configuration and request overrides used for these vectors.",
+        description="Model preprocessing configuration, and request overrides for classifiers, used for these vectors.",
         examples=[{"overrides": {"disable_preproc_grayscale": False}}],
     )
     space_id: str = Field(
@@ -40,7 +44,7 @@ class EmbeddingInfo(BaseModel):
     )
     backend: str = Field(
         description="Model implementation or execution backend that produced the vectors.",
-        examples=["ResNetForClassificationOnnx"],
+        examples=["ResNetForClassificationOnnx", "PretrainedImageEmbeddingOnnx"],
     )
     precision: str = Field(
         description="Model output dtype before conversion to JSON floating-point values.",
