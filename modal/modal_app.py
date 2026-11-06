@@ -8,6 +8,7 @@ as a dependency for the main inference package.
 
 import asyncio
 import base64
+import functools
 import gzip
 import hashlib
 import inspect
@@ -19,7 +20,7 @@ import time
 import traceback
 from contextlib import contextmanager
 from io import StringIO
-from typing import Any, Dict, Generator, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 from starlette.requests import Request
 
@@ -98,6 +99,866 @@ def _safe_unpackb(raw: bytes) -> Any:
         max_array_len=1_000_000,
         max_map_len=1_000_000,
     )
+
+
+class BlockStateSerializationError(Exception):
+    """A value the block left on ``self`` cannot be sent back to the engine.
+
+    Raised per attribute by ``_check_block_state_value`` and caught by
+    ``_partition_block_state``, which leaves that attribute out of the echo
+    with a warning instead of failing the call: the block ran fine, and a
+    value that is not carried is simply rebuilt on the next call, as every
+    attribute was before state was carried at all.
+    """
+
+
+# Mirrors ``block_state.BLOCK_STATE_MAX_BYTES``: state rides every call in
+# both directions, so an attribute over this is left out rather than shipped.
+_BLOCK_STATE_MAX_BYTES = 1024 * 1024
+
+
+# Names the engine sets on a block instance; the engine refuses them (and any
+# name its block class defines) when applying the echo, this mirror leaves the
+# obvious ones out of the echo here, with a warning, so the author hears about
+# it without a round trip. Keep in sync with ``block_state.ENGINE_ATTRIBUTE_NAMES``.
+_ENGINE_ATTRIBUTE_NAMES = frozenset(
+    {
+        "_api_key",
+        "_workspace_resolver",
+        "_execution_observer",
+        "_manifest_description",
+        "_init_results",
+        "_workflow_step_name",
+        "_workflow_step_type",
+        "_workflow_step_selector",
+    }
+)
+
+
+# Mirrors of the ``block_state`` constants; keep in sync (the parity test in
+# test_block_state_round_trip.py compares both partitions value by value).
+_MIN_CARRIED_INT = -(2**63)
+_MAX_CARRIED_INT = 2**63 - 1
+_CARRIED_NDARRAY_KINDS = frozenset("biufU")
+_WIRE_TYPE_MARKER_KEY = "_type"
+_TUPLE_WIRE_TYPE = "tuple"
+_NUMPY_SCALAR_WIRE_TYPE = "numpy_scalar"
+_ZONED_DATETIME_WIRE_TYPE = "zoned_datetime"
+_NUMPY_SCALAR_WIRE_KINDS = frozenset("biufSU")
+# Mirrors ``block_state.BLOCK_STATE_MAX_ATTRIBUTES`` and the allocation bound
+# the engine applies to an echo.
+_BLOCK_STATE_MAX_ATTRIBUTES = 1024
+_MAX_ECHO_ALLOCATION_BYTES = 8 * 1024 * 1024
+_PLACEHOLDER_PARENT_IDS = frozenset({"input", "result"})
+# Mirrors ``block_state._MAX_ECHO_DEPTH`` and its wire levels.
+_MAX_ECHO_DEPTH = 64
+_IMAGE_WIRE_LEVELS = 3
+_VIDEO_METADATA_WIRE_LEVELS = 2
+_DETECTIONS_WIRE_LEVELS = 5
+
+
+@functools.lru_cache(maxsize=1)
+def _carried_numpy_scalar_types() -> frozenset:
+    """Mirror of ``block_state.CARRIED_NUMPY_SCALAR_TYPES``, computed once."""
+    import numpy as np
+
+    scalar_types = frozenset(
+        scalar_type
+        for scalar_type in set(np.sctypeDict.values())
+        if issubclass(
+            scalar_type, (np.bool_, np.integer, np.floating, np.str_, np.bytes_)
+        )
+        and not issubclass(scalar_type, (np.timedelta64, np.longdouble))
+    )
+    return scalar_types
+
+
+_CARRIED_DETECTIONS_DATA_KEYS = frozenset(
+    {
+        "class_name",
+        "detection_id",
+        "image_dimensions",
+        "parent_id",
+        "root_parent_id",
+        "parent_coordinates",
+        "parent_dimensions",
+        "root_parent_coordinates",
+        "root_parent_dimensions",
+        "path_deviation",
+        "time_in_zone",
+        "polygon",
+        "angle",
+        "rect",
+        "height",
+        "width",
+        "keypoints_class_id",
+        "keypoints_class_name",
+        "keypoints_confidence",
+        "keypoints_xy",
+        "data",
+        "velocity",
+        "speed",
+        "smoothed_velocity",
+        "smoothed_speed",
+        "area_px",
+        "area_converted",
+        "rle_mask",
+    }
+)
+
+
+# Mirrors ``block_state._PASSED_THROUGH_DETECTIONS_DATA_KEYS``.
+_PASSED_THROUGH_DETECTIONS_DATA_KEYS = frozenset(
+    {"path_deviation", "time_in_zone", "data", "angle", "rect", "height", "width"}
+)
+
+
+def _check_block_state_value(value: Any, path: str) -> None:
+    """Raise unless ``value`` can cross the boundary and come back as itself.
+
+    Mirrors ``roboflow_workflows.execution_engine.v1.dynamic_blocks.block_state``
+    message for message (a parity test compares both). Kept inline because the
+    sandbox image runs the released ``inference`` package, which may predate
+    that module. Accepted, as exact types (a subclass comes back as its base
+    type): None, bool/str/bytes, ints in the signed 64-bit range, floats,
+    datetime, numpy bool/int/float/str/bytes scalars, numpy arrays of
+    bool/int/float/str, sv.Detections with the fields the transport needs
+    and carried payloads that pass these same rules, WorkflowImageData,
+    VideoMetadata, and lists/tuples and string-keyed dicts of those (without
+    a ``_type`` key, and not shaped like a serialized image).
+    """
+    from datetime import datetime
+
+    import numpy as np
+    import supervision as sv
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        VideoMetadata,
+        WorkflowImageData,
+    )
+
+    numpy_scalar_types = _carried_numpy_scalar_types()
+
+    def _not_transportable(description: str, path: str) -> None:
+        raise BlockStateSerializationError(
+            f"Custom Python block state `self.{path}` holds a "
+            f"{description}, which cannot be carried across remote "
+            "execution. Only JSON-like values, numpy arrays of bool/int/float/"
+            "str or such scalars, datetimes, sv.Detections, images and video "
+            "metadata persist between calls; other objects are rebuilt on "
+            "every call."
+        )
+
+    def _describe_type(value_type: type) -> str:
+        numpy_bases = [
+            base for base in value_type.__mro__ if base in numpy_scalar_types
+        ]
+        builtin_bases = [
+            base
+            for base in (bool, int, float, str, bytes, dict, list, tuple, datetime)
+            if issubclass(value_type, base)
+        ]
+        base_names = [base.__name__ for base in numpy_bases + builtin_bases]
+        if base_names:
+            description = (
+                f"{value_type.__name__} (a {base_names[0]} subclass, which would "
+                f"come back as a plain {base_names[0]})"
+            )
+            return description
+        return value_type.__name__
+
+    def _check_int(value: int, path: str) -> None:
+        if not _MIN_CARRIED_INT <= value <= _MAX_CARRIED_INT:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` holds an integer "
+                "outside the signed 64-bit range, which cannot be carried "
+                "across remote execution; store it as a string."
+            )
+
+    def _check_ndarray(value: Any, path: str) -> None:
+        if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
+            _not_transportable(f"numpy array of dtype {value.dtype}", path)
+        if value.dtype.kind in "iu" and value.size:
+            _check_int(int(value.min()), path)
+            _check_int(int(value.max()), path)
+
+    def _rle_masks_carry_size(value: Any) -> bool:
+        rle_masks = value.data.get("rle_mask")
+        if rle_masks is None:
+            return False
+        carry_size = all(
+            isinstance(rle, dict)
+            and isinstance(rle.get("size"), (list, tuple, np.ndarray))
+            and len(rle["size"]) == 2
+            for rle in rle_masks
+        )
+        return carry_size
+
+    def _check_depth(depth: int, path: str) -> None:
+        if depth > _MAX_ECHO_DEPTH:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` is nested more than "
+                f"{_MAX_ECHO_DEPTH} levels deep on the wire, which cannot be "
+                "carried across remote execution; flatten it."
+            )
+
+    def _check_detections_field(value: Any, path: str, depth: int) -> None:
+        # The detections serializer passes payloads through as they are, so
+        # the state markers do not apply inside them.
+        if isinstance(value, np.ndarray):
+            if value.dtype.kind in "iu" and value.size:
+                _check_int(int(np.max(value)), path)
+                _check_int(int(np.min(value)), path)
+            elif value.dtype.kind == "O":
+                for item in value.ravel():
+                    _check_detections_field(item, path, depth + 1 + value.ndim)
+            _check_depth(depth + 1 + value.ndim, path)
+            return
+        if isinstance(value, tuple):
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` holds a tuple inside "
+                "sv.Detections data, which the transport carries as a list; "
+                "use a list there."
+            )
+        if isinstance(value, dict):
+            _check_dict_keys(value, path)
+            _check_depth(depth, path)
+            for key, item in value.items():
+                _check_detections_field(item, f"{path}[{key!r}]", depth + 1)
+            return
+        if isinstance(value, list):
+            _check_depth(depth, path)
+            for index, item in enumerate(value):
+                _check_detections_field(item, f"{path}[{index}]", depth + 1)
+            return
+        if isinstance(value, (int, np.integer)) and not isinstance(
+            value, (bool, np.bool_)
+        ):
+            _check_int(int(value), path)
+        _check_depth(depth + 1, path)
+
+    def _check_detections(value: Any, path: str, depth: int) -> None:
+        _check_depth(depth + _DETECTIONS_WIRE_LEVELS, path)
+        if len(value) == 0:
+            return
+        missing = []
+        if value.confidence is None:
+            missing.append("confidence")
+        if value.class_id is None:
+            missing.append("class_id")
+        for key in ("class_name", "detection_id"):
+            if key not in value.data:
+                missing.append(f"data[{key!r}]")
+        if "image_dimensions" not in value.data and not _rle_masks_carry_size(value):
+            missing.append("data['image_dimensions']")
+        if missing:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` is an sv.Detections "
+                f"without {', '.join(missing)}, which the transport needs to "
+                "carry it; detections from model blocks have them."
+            )
+        for field, array in (
+            ("class_id", value.class_id),
+            ("tracker_id", value.tracker_id),
+        ):
+            if array is not None:
+                _check_detections_field(array, f"{path}.{field}", depth + 2)
+        for key, item in value.data.items():
+            if key in _CARRIED_DETECTIONS_DATA_KEYS:
+                _check_detections_field(item, f"{path}.data[{key!r}]", depth + 2)
+            if key in _PASSED_THROUGH_DETECTIONS_DATA_KEYS and isinstance(
+                item, (np.ndarray, list)
+            ):
+                for row in item:
+                    _check_row_arrays(row, f"{path}.data[{key!r}]")
+
+    def _check_row_arrays(value: Any, path: str) -> None:
+        if isinstance(value, np.ndarray):
+            if value.dtype.kind not in _CARRIED_NDARRAY_KINDS:
+                raise BlockStateSerializationError(
+                    f"Custom Python block state `self.{path}` holds a numpy "
+                    f"array of dtype {value.dtype} per detection, which the "
+                    "transport cannot carry inside sv.Detections data; use "
+                    "bool/int/float/str arrays there."
+                )
+            return
+        if isinstance(value, dict):
+            for item in value.values():
+                _check_row_arrays(item, path)
+            return
+        if isinstance(value, list):
+            for item in value:
+                _check_row_arrays(item, path)
+
+    def _check_dict(value: Dict[Any, Any], path: str, depth: int) -> None:
+        _check_dict_keys(value, path)
+        for key, item in value.items():
+            _check(item, f"{path}[{key!r}]", depth + 1)
+
+    def _check_dict_keys(value: Dict[Any, Any], path: str) -> None:
+        for key in value:
+            if type(key) not in (str, np.str_):
+                raise BlockStateSerializationError(
+                    f"Custom Python block state `self.{path}` has a "
+                    f"non-string key of type {type(key).__name__}; only string "
+                    "keys can be "
+                    "carried across remote execution."
+                )
+            if key == _WIRE_TYPE_MARKER_KEY:
+                raise BlockStateSerializationError(
+                    f"Custom Python block state `self.{path}` has a "
+                    f"`{_WIRE_TYPE_MARKER_KEY}` key, which the transport "
+                    "reserves to mark typed values; rename the key."
+                )
+        if value.get("type") == "base64" and "value" in value:
+            raise BlockStateSerializationError(
+                f"Custom Python block state `self.{path}` is a dict shaped "
+                'like a serialized image (`type` "base64" with a `value`), '
+                "which the transport would decode as an image; rename the keys "
+                "or keep the image itself on `self`."
+            )
+
+    def _check_datetime(value: Any, path: str) -> None:
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
+
+        tzinfo = value.tzinfo
+        if tzinfo is None or type(tzinfo) is timezone:
+            return
+        if type(tzinfo) is ZoneInfo and tzinfo.key is not None:
+            return
+        description = (
+            "a ZoneInfo loaded from a file, without a key"
+            if type(tzinfo) is ZoneInfo
+            else f"a {type(tzinfo).__name__} time zone"
+        )
+        raise BlockStateSerializationError(
+            f"Custom Python block state `self.{path}` is a datetime with "
+            f"{description}, which cannot be carried across remote execution; "
+            "use `zoneinfo.ZoneInfo(key)` or `datetime.timezone`."
+        )
+
+    def _check(value: Any, path: str, depth: int) -> None:
+        value_type = type(value)
+        if value is None or value_type in (bool, float, str):
+            _check_depth(depth, path)
+            return
+        if value_type is bytes:
+            _check_depth(depth + 1, path)
+            return
+        if value_type is datetime:
+            _check_datetime(value, path)
+            _check_depth(depth + 1, path)
+            return
+        if value_type is int:
+            _check_int(value, path)
+            _check_depth(depth, path)
+            return
+        if value_type in numpy_scalar_types:
+            if isinstance(value, np.integer):
+                _check_int(int(value), path)
+            # numpy keeps the declared width but drops trailing NULs from the
+            # value, so a wider dtype means NULs that would not come back.
+            width = 4 if value.dtype.kind == "U" else 1
+            if (
+                value.dtype.kind in "SU"
+                and value.dtype.itemsize > len(value.item()) * width
+            ):
+                _not_transportable(
+                    f"numpy {value.dtype.name} with trailing NUL characters", path
+                )
+            # HTTP wraps a bytes scalar's value in a bytes marker.
+            scalar_levels = 2 if value.dtype.kind == "S" else 1
+            _check_depth(depth + scalar_levels, path)
+            return
+        if value_type is np.ndarray:
+            _check_ndarray(value, path)
+            _check_depth(depth + 1 + value.ndim, path)
+            return
+        if value_type is sv.Detections:
+            _check_detections(value, path, depth)
+            return
+        if value_type is WorkflowImageData:
+            _check_depth(depth + _IMAGE_WIRE_LEVELS, path)
+            return
+        if value_type is VideoMetadata:
+            _check_depth(depth + _VIDEO_METADATA_WIRE_LEVELS, path)
+            return
+        if value_type is dict:
+            _check_depth(depth, path)
+            _check_dict(value, path, depth)
+            return
+        if value_type in (list, tuple):
+            item_depth = depth + (2 if value_type is tuple else 1)
+            _check_depth(item_depth - 1, path)
+            for index, item in enumerate(value):
+                _check(item, f"{path}[{index}]", item_depth)
+            return
+        _not_transportable(_describe_type(value_type), path)
+
+    _check(value, path, 0)
+
+
+def _decoded_block_state_allocation(value: Any) -> int:
+    """Bytes the engine allocates for a checked value's arrays and scalars.
+
+    Mirrors ``block_state._decoded_allocation``: every array and numpy scalar
+    the normalizer passes through, and inside ``sv.Detections`` the
+    per-detection arrays the serializer leaves as arrays.
+    """
+    import numpy as np
+    import supervision as sv
+
+    def _payload(item: Any) -> int:
+        if isinstance(item, np.ndarray):
+            if item.dtype.kind == "O":
+                return sum(_payload(element) for element in item.ravel())
+            return item.dtype.itemsize * item.size
+        if isinstance(item, dict):
+            return sum(_payload(element) for element in item.values())
+        if isinstance(item, (list, tuple)):
+            return sum(_payload(element) for element in item)
+        return 0
+
+    def _field(field: Any) -> int:
+        # Rows of a one-dimensional field are scalars, never arrays, on the wire.
+        if isinstance(field, np.ndarray) and field.dtype.kind != "O" and field.ndim < 2:
+            return 0
+        return _payload(field)
+
+    value_type = type(value)
+    if value_type in _carried_numpy_scalar_types():
+        return value.dtype.itemsize
+    if value_type is np.ndarray:
+        return value.dtype.itemsize * value.size
+    if value_type is sv.Detections:
+        return sum(
+            _field(item)
+            for key, item in value.data.items()
+            if key in _CARRIED_DETECTIONS_DATA_KEYS
+        )
+    if value_type is dict:
+        return sum(_decoded_block_state_allocation(item) for item in value.values())
+    if value_type in (list, tuple):
+        return sum(_decoded_block_state_allocation(item) for item in value)
+    return 0
+
+
+def _partition_block_state(
+    state: Dict[str, Any], measure: Callable[[Dict[str, Any]], int]
+) -> Tuple[Dict[str, Any], List[Tuple[str, str]], List[str]]:
+    """Decide what of the echo is carried: (carried, dropped, notes).
+
+    Mirrors ``block_state.partition_block_state``. Dropped: names the engine
+    owns and dunders (the echo is written onto the engine-side instance),
+    values ``_check_block_state_value`` refuses, values the transport's
+    encoder refuses (``measure`` raising), attributes whose own serialized
+    size is over ``_BLOCK_STATE_MAX_BYTES``, and attributes whose arrays and
+    numpy scalars decode to more than ``_MAX_ECHO_ALLOCATION_BYTES``; if the
+    rest is still over either cap, the largest attributes go until it fits. When anything is
+    dropped nothing is carried, so a flag is never carried without the
+    helper it guards. Carried values are normalized and ready for the
+    transport's serializer; notes flag lossy images and detections.
+    """
+    if len(state) > _BLOCK_STATE_MAX_ATTRIBUTES:
+        reason = (
+            f"the block keeps {len(state)} attributes on `self`, more than the "
+            f"{_BLOCK_STATE_MAX_ATTRIBUTES} carried across remote execution"
+        )
+        first_dropped = [(str(next(iter(state))), reason)]
+        note = (
+            f"Custom Python block state withheld: `self.{first_dropped[0][0]}` "
+            "cannot be carried, so no state is returned to the engine and the "
+            "next call starts with an empty `self`, as it did before state was "
+            "carried"
+        )
+        return {}, first_dropped, [note]
+
+    carried: Dict[str, Any] = {}
+    raw_carried: Dict[str, Any] = {}
+    sizes: Dict[str, int] = {}
+    allocations: Dict[str, int] = {}
+    dropped: List[Tuple[str, str]] = []
+    for name, value in state.items():
+        is_dunder = (
+            isinstance(name, str) and name.startswith("__") and name.endswith("__")
+        )
+        if not isinstance(name, str) or is_dunder or name in _ENGINE_ATTRIBUTE_NAMES:
+            dropped.append(
+                (
+                    str(name),
+                    "the name collides with an attribute the engine owns; pick "
+                    "another name for state kept on `self`",
+                )
+            )
+            continue
+        try:
+            _check_block_state_value(value, name)
+            normalized_value = _normalize_block_state({name: value})[name]
+            size = measure({name: normalized_value})
+        except BlockStateSerializationError as error:
+            dropped.append((name, str(error)))
+            continue
+        except Exception as error:
+            dropped.append(
+                (
+                    name,
+                    "the transport cannot encode it "
+                    f"({type(error).__name__}: {error})",
+                )
+            )
+            continue
+        if size > _BLOCK_STATE_MAX_BYTES:
+            dropped.append(
+                (
+                    name,
+                    f"it serializes to {size} bytes, over the "
+                    f"{_BLOCK_STATE_MAX_BYTES} byte limit for remote execution; "
+                    "state is shipped to the sandbox and back on every call",
+                )
+            )
+            continue
+        allocation = _decoded_block_state_allocation(value)
+        if allocation > _MAX_ECHO_ALLOCATION_BYTES:
+            dropped.append(
+                (
+                    name,
+                    f"its numpy arrays and scalars take {allocation} bytes to "
+                    f"decode, over the {_MAX_ECHO_ALLOCATION_BYTES} byte limit "
+                    "for remote execution",
+                )
+            )
+            continue
+        carried[name] = normalized_value
+        raw_carried[name] = value
+        sizes[name] = size
+        allocations[name] = allocation
+    # The per-attribute sizes overcount the combined payload by one map
+    # header each, so the total cap is decided on the combined encoding.
+    total = sum(sizes.values())
+    if total > _BLOCK_STATE_MAX_BYTES:
+        total = measure(carried)
+    for name in sorted(sizes, key=sizes.get, reverse=True):
+        if total <= _BLOCK_STATE_MAX_BYTES:
+            break
+        del carried[name]
+        dropped.append(
+            (
+                name,
+                f"the state kept on `self` is {total} bytes in total, over the "
+                f"{_BLOCK_STATE_MAX_BYTES} byte limit for remote execution",
+            )
+        )
+        total = measure(carried) if carried else 0
+    total_allocation = sum(allocations[name] for name in carried)
+    for name in sorted(carried, key=allocations.get, reverse=True):
+        if total_allocation <= _MAX_ECHO_ALLOCATION_BYTES:
+            break
+        del carried[name]
+        dropped.append(
+            (
+                name,
+                f"the state kept on `self` takes {total_allocation} bytes to "
+                f"decode in total, over the {_MAX_ECHO_ALLOCATION_BYTES} byte "
+                "limit for remote execution",
+            )
+        )
+        total_allocation -= allocations[name]
+
+    if dropped:
+        dropped_names = ", ".join(f"`self.{name}`" for name, _ in dropped)
+        note = (
+            f"Custom Python block state withheld: {dropped_names} cannot be "
+            "carried, so no state is returned to the engine and the next call "
+            "starts with an empty `self`, as it did before state was carried"
+        )
+        if carried:
+            withheld_names = ", ".join(f"`self.{name}`" for name in carried)
+            note += f" (also not returned: {withheld_names})"
+        return {}, dropped, [note]
+
+    # Notes read the values as the block holds them, so paths name the
+    # block's own structure rather than the wire markers.
+    notes = _lossy_block_state_notes(raw_carried)
+
+    return carried, dropped, notes
+
+
+def _lossy_block_state_notes(state: Dict[str, Any]) -> List[str]:
+    """Notes for carried values the transport degrades (images, detections)."""
+    import numpy as np
+    import supervision as sv
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        WorkflowImageData,
+    )
+
+    notes: List[str] = []
+
+    def _collect(value: Any, path: str) -> None:
+        if isinstance(value, sv.Detections) and len(value) == 0:
+            if value.data or value.metadata:
+                notes.append(
+                    f"Custom Python block state `self.{path}` holds empty "
+                    "sv.Detections, which come back without their data and "
+                    "metadata"
+                )
+        elif isinstance(value, sv.Detections):
+            lost_keys = sorted(
+                set(value.data) - _CARRIED_DETECTIONS_DATA_KEYS, key=repr
+            )
+            if lost_keys:
+                notes.append(
+                    f"Custom Python block state `self.{path}` is carried "
+                    f"without its sv.Detections data keys {lost_keys}; only the "
+                    "keys the workflow serializers know survive a call"
+                )
+            if "parent_id" in value.data and "root_parent_id" in value.data:
+                pairs = zip(value.data["parent_id"], value.data["root_parent_id"])
+                if any(
+                    str(parent) == str(root)
+                    and str(parent) not in _PLACEHOLDER_PARENT_IDS
+                    for parent, root in pairs
+                ):
+                    notes.append(
+                        f"Custom Python block state `self.{path}` holds "
+                        "sv.Detections whose `root_parent_id` equals their "
+                        "`parent_id`; it comes back replaced by a placeholder "
+                        "(`input` or `result`), because the transport only "
+                        "carries a root parent that differs from the parent"
+                    )
+            if any(
+                isinstance(value.data.get(key), np.ndarray)
+                and value.data[key].dtype.kind in "iu"
+                for key in ("class_name", "detection_id")
+            ):
+                notes.append(
+                    f"Custom Python block state `self.{path}` holds "
+                    "sv.Detections with integer class names or detection ids, "
+                    "which come back as strings"
+                )
+            if value.mask is not None and "rle_mask" not in value.data:
+                notes.append(
+                    f"Custom Python block state `self.{path}` holds "
+                    "sv.Detections masks, which are carried as polygons: mask "
+                    "edges are approximated and a detection whose mask has no "
+                    "contour is lost"
+                )
+        elif isinstance(value, WorkflowImageData):
+            notes.append(
+                f"Custom Python block state `self.{path}` is an image, which "
+                "is re-encoded as JPEG on every call, so its pixels drift"
+            )
+            parent_id = value.parent_metadata.parent_id
+            root_parent_id = value.workflow_root_ancestor_metadata.parent_id
+            if parent_id == root_parent_id and parent_id not in _PLACEHOLDER_PARENT_IDS:
+                notes.append(
+                    f"Custom Python block state `self.{path}` is an image whose "
+                    "`parent_id` comes back replaced by a placeholder (`input` "
+                    "or `result`); the transport only carries the parentage of "
+                    "crops"
+                )
+            numpy_image = getattr(value, "_numpy_image", None)
+            if numpy_image is not None and numpy_image.ndim == 2:
+                notes.append(
+                    f"Custom Python block state `self.{path}` is a grayscale "
+                    "image, which comes back with three channels"
+                )
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                _collect(item, f"{path}[{key!r}]")
+        elif isinstance(value, (list, tuple)):
+            for index, item in enumerate(value):
+                _collect(item, f"{path}[{index}]")
+
+    for name, value in state.items():
+        _collect(value, name)
+
+    return notes
+
+
+# Bound on the per-container warn-once set (see ``_warn_dropped_block_state``).
+_MAX_BLOCK_STATE_WARNINGS = 4096
+
+
+def _warn_dropped_block_state(
+    executor: Any,
+    code_hash: str,
+    dropped: List[Tuple[str, str]],
+    notes: List[str],
+    stderr_buf: Any,
+) -> None:
+    """Tell the author once per container and code hash what is not carried.
+
+    Written to the captured stderr, which the engine relays to its own stderr
+    next to the block's prints. Once per (code hash, message shape) on this
+    container: the same block drops the same attribute on every call, and a
+    line per frame would bury the block's own output. Byte counts and
+    container keys are ignored in the key, so an oversized attribute whose
+    size changes every frame, or a dict keyed by something new every frame,
+    is reported once; attribute names are kept, so ``self.buf1`` and
+    ``self.buf2`` are reported apart. Bounded so a long-lived container cannot
+    grow the set forever.
+    """
+    import re
+
+    warned = executor.__dict__.setdefault("_block_state_drop_warnings", set())
+    messages = [
+        f"Custom Python block state `self.{name}` is not carried across "
+        f"remote execution and is rebuilt on every call: {reason}"
+        for name, reason in dropped
+    ]
+    messages.extend(notes)
+    for message in messages:
+        dedup_message = re.sub(
+            r"\[[^\]]*\]", "[...]", re.sub(r"\d+ bytes", "# bytes", message)
+        )
+        key = (code_hash, dedup_message)
+        if key in warned:
+            continue
+        if len(warned) >= _MAX_BLOCK_STATE_WARNINGS:
+            warned.clear()
+        warned.add(key)
+        stderr_buf.write(f"{message}\n")
+
+
+def _normalize_block_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Replace values the transports cannot carry as-is, mirroring the engine.
+
+    numpy bool/int/float/str/bytes scalars, tuples and ``ZoneInfo``
+    datetimes are wrapped in their wire markers (both transports would
+    otherwise bring them back as Python scalars, lists and fixed-offset
+    datetimes), and numpy string dict keys become ``str``. Run on values
+    ``_check_block_state_value`` accepted.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    import numpy as np
+
+    numpy_scalar_types = _carried_numpy_scalar_types()
+
+    def _normalize(value: Any) -> Any:
+        if type(value) in numpy_scalar_types:
+            marked = {
+                _WIRE_TYPE_MARKER_KEY: _NUMPY_SCALAR_WIRE_TYPE,
+                # Type code for numbers keeps aliases such as np.longlong;
+                # strings need the full dtype for their length.
+                "dtype": (
+                    value.dtype.str if value.dtype.kind in "SU" else value.dtype.char
+                ),
+                "value": value.item(),
+            }
+            return marked
+        if type(value) is datetime and type(value.tzinfo) is ZoneInfo:
+            # Wall time, fold and zone rebuild the value exactly, including
+            # DST gaps and folds and the min/max sentinels.
+            marked = {
+                _WIRE_TYPE_MARKER_KEY: _ZONED_DATETIME_WIRE_TYPE,
+                "value": value.replace(tzinfo=None).isoformat(),
+                "fold": value.fold,
+                "zone": value.tzinfo.key,
+            }
+            return marked
+        if isinstance(value, dict):
+            normalized = {
+                (key.item() if type(key) is np.str_ else key): _normalize(item)
+                for key, item in value.items()
+            }
+            return normalized
+        if isinstance(value, tuple):
+            marked = {
+                _WIRE_TYPE_MARKER_KEY: _TUPLE_WIRE_TYPE,
+                "value": [_normalize(item) for item in value],
+            }
+            return marked
+        if isinstance(value, list):
+            return [_normalize(item) for item in value]
+        return value
+
+    normalized_state = {name: _normalize(value) for name, value in state.items()}
+
+    return normalized_state
+
+
+def _decode_numpy_scalar(marked: Dict[str, Any], decode: Callable[[Any], Any]) -> Any:
+    """Rebuild a numpy scalar written by ``_normalize_block_state``."""
+    import numpy as np
+
+    # Mirrors ``block_state.decode_numpy_scalar``: checked before numpy
+    # allocates anything.
+    dtype_name = marked.get("dtype")
+    value = decode(marked.get("value"))
+    if not isinstance(dtype_name, str):
+        raise ValueError("numpy scalar dtype must be a string")
+    dtype = np.dtype(dtype_name)
+    if dtype.kind not in _NUMPY_SCALAR_WIRE_KINDS:
+        raise ValueError(f"numpy scalar of dtype {dtype} is not carried")
+    if dtype.itemsize > _MAX_ECHO_ALLOCATION_BYTES:
+        raise ValueError(f"numpy scalar of dtype {dtype} is too large")
+    expected_types = {
+        "b": (bool,),
+        "i": (int,),
+        "u": (int,),
+        "f": (float, int),
+        "U": (str,),
+        "S": (bytes,),
+    }[dtype.kind]
+    if type(value) not in expected_types:
+        raise ValueError(
+            f"numpy scalar of dtype {dtype} cannot hold a {type(value).__name__}"
+        )
+    if dtype.kind in "iu":
+        limits = np.iinfo(dtype)
+        if not limits.min <= value <= limits.max:
+            raise ValueError(f"{value} is out of range for {dtype}")
+    width = 4 if dtype.kind == "U" else 1
+    if dtype.kind in "SU" and len(value) * width > dtype.itemsize:
+        raise ValueError(f"value is longer than dtype {dtype}")
+    scalar = dtype.type(value)
+    return scalar
+
+
+def _decode_zoned_datetime(marked: Dict[str, Any]) -> Any:
+    """Rebuild a ``ZoneInfo`` datetime written by ``_normalize_block_state``."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    wall_time = datetime.fromisoformat(marked["value"])
+    zoned = wall_time.replace(tzinfo=ZoneInfo(marked["zone"]), fold=marked["fold"])
+    return zoned
+
+
+def _block_self_state(block_self: "_BlockSelf") -> Dict[str, Any]:
+    """The user attributes a ``_BlockSelf`` holds after the call.
+
+    A module function, not a method: user code owns every attribute name on
+    ``self``, so a method here would be shadowed by ``self.<name> = ...``.
+    """
+    state = {
+        name: value
+        for name, value in vars(block_self).items()
+        if name != "_BlockSelf__workflow_context"
+    }
+
+    return state
+
+
+class _BlockSelf:
+    """The ``self`` a remote ``run(self, ...)`` receives.
+
+    Seeded with the user attributes the engine-side instance carried into
+    this call; whatever the function leaves in ``__dict__`` is echoed back.
+    """
+
+    def __init__(self, workflow_context: Dict[str, Any], state: Optional[dict]):
+        self.__dict__.update(state or {})
+        # Lives in ``__dict__`` under its mangled name; ``_block_self_state``
+        # leaves it out of the echo by that name.
+        object.__setattr__(self, "_BlockSelf__workflow_context", workflow_context)
+
+    def get_workflow_context(self) -> Dict[str, Any]:
+        return dict(self.__workflow_context)
 
 
 class _InputsDecodeError(Exception):
@@ -686,6 +1547,9 @@ from datetime import datetime
         inputs_json = request.get("inputs_json", "{}")
         client_code_hash = request.get("code_hash")
         workflow_context = request.get("workflow_context") or {}
+        # Present (possibly as an empty map) only for clients that carry the
+        # block's ``self`` state; those expect it echoed back on success.
+        block_state_json = request.get("block_state_json")
 
         # Resolve the effective code hash. Two request modes are supported:
         #   1. Full code: ``code_str`` is present -> compute hash, compile if new.
@@ -833,7 +1697,9 @@ from datetime import datetime
                 # Convert to JSON string
                 return json.dumps(serialized_inputs, cls=InputJSONEncoder)
 
-            def deserialize_for_modal_remote_execution(json_str: str) -> BlockResult:
+            def deserialize_for_modal_remote_execution(
+                json_str: str, *, per_attribute: bool = False
+            ) -> BlockResult:
                 def decode_inputs(obj):
                     """Decode from modal remote execution."""
                     # datetime is already imported at the top level
@@ -845,6 +1711,13 @@ from datetime import datetime
                                 return datetime.fromisoformat(obj["value"])
                             elif obj["_type"] == "bytes":
                                 return base64.b64decode(obj["value"])
+                            elif obj["_type"] == "tuple":
+                                # Written by the ``self`` state normalizer.
+                                return tuple(decode_inputs(v) for v in obj["value"])
+                            elif obj["_type"] == "numpy_scalar":
+                                return _decode_numpy_scalar(obj, decode_inputs)
+                            elif obj["_type"] == "zoned_datetime":
+                                return _decode_zoned_datetime(obj)
                             elif obj["_type"] == "ndarray":
                                 arr = np.array(obj["value"], dtype=obj["dtype"])
                                 return arr.reshape(obj["shape"])
@@ -915,10 +1788,24 @@ from datetime import datetime
 
                 # Parse and decode inputs
                 parsed_inputs = json.loads(json_str)
+                if per_attribute:
+                    # The outer mapping is the attribute set: attributes named
+                    # ``_type``/``value`` must not read as a typed wire marker.
+                    return {
+                        name: decode_inputs(value)
+                        for name, value in parsed_inputs.items()
+                    }
                 inputs = decode_inputs(parsed_inputs)
                 return inputs
 
             inputs = deserialize_for_modal_remote_execution(inputs_json)
+            block_state = (
+                deserialize_for_modal_remote_execution(
+                    block_state_json, per_attribute=True
+                )
+                if block_state_json is not None
+                else None
+            )
 
             # Call the user function
             if run_function_name not in namespace:
@@ -939,16 +1826,13 @@ from datetime import datetime
             # and the network round trip.
             execution_time_seconds = None
             started_at = time.perf_counter()
+            block_self = None
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
-                    # If function expects 'self' as first param, create a simple object to pass
+                    # If function expects 'self' as first param, pass a
+                    # stand-in seeded with the engine-side instance's state.
                     if params and params[0] == "self":
-
-                        class BlockSelf:
-                            def get_workflow_context(self) -> Dict[str, Any]:
-                                return dict(workflow_context)
-
-                        block_self = BlockSelf()
+                        block_self = _BlockSelf(workflow_context, block_state)
                         result = user_function(block_self, **inputs)
                     else:
                         result = user_function(**inputs)
@@ -956,13 +1840,32 @@ from datetime import datetime
 
                 json_result = serialize_for_modal_remote_execution(result)
 
-                return {
+                response = {
                     "success": True,
                     "result": json_result,
                     "stdout": stdout_buf.getvalue() or None,
                     "stderr": stderr_buf.getvalue() or None,
                     "execution_time_seconds": execution_time_seconds,
                 }
+                if block_state is not None:
+                    echoed_state = (
+                        _block_self_state(block_self) if block_self else block_state
+                    )
+                    carried_state, dropped, notes = _partition_block_state(
+                        echoed_state,
+                        measure=lambda attribute: len(
+                            serialize_for_modal_remote_execution(attribute)
+                        ),
+                    )
+                    _warn_dropped_block_state(
+                        self, code_hash, dropped, notes, stderr_buf
+                    )
+                    response["stderr"] = stderr_buf.getvalue() or None
+                    response["block_state"] = serialize_for_modal_remote_execution(
+                        carried_state
+                    )
+
+                return response
             except Exception as e:
                 # Taken before anything else in this handler, and only when the
                 # user function did not already report: serializing its result
@@ -1020,12 +1923,17 @@ from datetime import datetime
         inputs: dict,
         client_code_hash: str = "",
         workflow_context: Optional[Dict[str, Any]] = None,
+        block_state: Optional[dict] = None,
     ) -> Dict[str, Any]:
         """Execute user code for the WebSocket transport.
 
         When ``code_str`` is empty but ``client_code_hash`` is provided, look up
         a previously cached namespace on this container. On cache miss we return
         ``UnknownCodeHash`` so the client resends the full code once.
+
+        ``block_state`` (possibly an empty dict) is present only for clients
+        that carry the block's ``self`` state; the response then echoes the
+        state the function left on ``self`` under ``block_state``.
         """
         if code_str:
             code_hash = executor._get_code_hash(code_str, imports)
@@ -1080,27 +1988,47 @@ from datetime import datetime
         # network round trip.
         execution_time_seconds = None
         started_at = time.perf_counter()
+        block_self = None
         try:
             with capture_output() as (stdout_buf, stderr_buf):
                 if params and params[0] == "self":
-
-                    class BlockSelf:
-                        def get_workflow_context(self) -> Dict[str, Any]:
-                            return dict(_workflow_context)
-
-                    block_self = BlockSelf()
+                    block_self = _BlockSelf(_workflow_context, block_state)
                     result = user_function(block_self, **inputs)
                 else:
                     result = user_function(**inputs)
                 execution_time_seconds = time.perf_counter() - started_at
 
-            return {
+            response = {
                 "success": True,
                 "result": result,
                 "stdout": stdout_buf.getvalue() or None,
                 "stderr": stderr_buf.getvalue() or None,
                 "execution_time_seconds": execution_time_seconds,
             }
+            if block_state is not None:
+                import msgpack
+
+                echoed_state = (
+                    _block_self_state(block_self) if block_self else block_state
+                )
+                carried_state, dropped, notes = _partition_block_state(
+                    echoed_state,
+                    measure=lambda attribute: len(
+                        msgpack.packb(
+                            Executor._serialize_msgpack_result(attribute),
+                            use_bin_type=True,
+                        )
+                    ),
+                )
+                _warn_dropped_block_state(
+                    executor, code_hash, dropped, notes, stderr_buf
+                )
+                response["stderr"] = stderr_buf.getvalue() or None
+                response["block_state"] = Executor._serialize_msgpack_result(
+                    carried_state
+                )
+
+            return response
         except Exception as e:
             # See the HTTP path: taken first, and only when the user function
             # did not already report, so both branches measure the same span.
@@ -1216,6 +2144,13 @@ from datetime import datetime
                             [tuple(i) for i in indices] if indices is not None else None
                         ),
                     )
+                if _type == "tuple":
+                    # Written by the ``self`` state normalizer.
+                    return tuple(_decode(v) for v in obj["value"])
+                if _type == "numpy_scalar":
+                    return _decode_numpy_scalar(obj, _decode)
+                if _type == "zoned_datetime":
+                    return _decode_zoned_datetime(obj)
                 if _type == "bytes":
                     return (
                         base64.b64decode(obj["value"])
@@ -1427,6 +2362,8 @@ from datetime import datetime
             inputs_raw = request.get("inputs", {})
             client_code_hash = request.get("code_hash", "")
             workflow_context = request.get("workflow_context") or {}
+            carries_block_state = "block_state" in request
+            block_state_raw = request.get("block_state") or {}
 
             # ``decode_failed`` is ONE of two positive proofs that the user's
             # code did not run (the other is ``never_ran``, set for control
@@ -1464,10 +2401,23 @@ from datetime import datetime
                 nonlocal started_running, decode_failed, never_ran
                 try:
                     inputs = Executor._deserialize_msgpack_inputs(inputs_raw)
+                    # Decodes attribute by attribute, never the outer map
+                    # as one value.
+                    block_state = (
+                        Executor._deserialize_msgpack_inputs(block_state_raw)
+                        if carries_block_state
+                        else None
+                    )
                 except Exception as error:
                     decode_failed = True
                     raise _InputsDecodeError(str(error)) from error
                 started_running = True
+                # Keyword, and only when carried: stubs of this hook in tests
+                # predate the parameter, and its absence is the signal that
+                # the client does not expect state back.
+                state_kwargs = (
+                    {"block_state": block_state} if carries_block_state else {}
+                )
                 resp = Executor._run_user_code_ws(
                     executor_self,
                     code_str,
@@ -1476,6 +2426,7 @@ from datetime import datetime
                     inputs,
                     client_code_hash,
                     workflow_context,
+                    **state_kwargs,
                 )
                 # Control responses returned BEFORE the user's function is
                 # looked up: the block provably did not run, so its executed

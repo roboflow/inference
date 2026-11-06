@@ -33,6 +33,19 @@ SKIP_REASON = "Modal credentials not present (MODAL_TOKEN_ID and MODAL_TOKEN_SEC
 
 
 # Simple addition block for basic testing
+FIRST_FRAME_BLOCK = """
+def run(self, value):
+    if not hasattr(self, "_ffc_calls"):
+        self._ffc_calls = 0
+    self._ffc_calls += 1
+    if hasattr(self, "has_first_frame"):
+        is_first = False
+    else:
+        self.has_first_frame = True
+        is_first = True
+    return {"is_first_frame": is_first, "calls": self._ffc_calls}
+"""
+
 SIMPLE_ADDITION_BLOCK = """
 def run(self, a: float, b: float) -> BlockResult:
     result = a + b
@@ -99,9 +112,14 @@ def run(self, value: float) -> BlockResult:
 
 
 def run_workflow_in_subprocess(
-    workflow: dict, runtime_params: dict, execution_mode: str
+    workflow: dict, runtime_params: dict, execution_mode: str, repeat: int = 1
 ) -> Any:
-    """Run a workflow in a subprocess with specific execution mode."""
+    """Run a workflow in a subprocess with specific execution mode.
+
+    With ``repeat`` above 1 the same engine runs the workflow that many times
+    and the list of per-run results is returned, which is how per-instance
+    block state (``self.x``) across frames is observed.
+    """
     import json
     import tempfile
 
@@ -142,22 +160,23 @@ engine = ExecutionEngine.init(
     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
 )
 
-result = engine.run(runtime_parameters=runtime_params)
+results = [engine.run(runtime_parameters=runtime_params) for _ in range({repeat})]
 
 # Convert any image results to base64 for serialization
-for i, res in enumerate(result):
-    for key, value in list(res.items()):
-        if hasattr(value, 'numpy_image'):
-            # Convert WorkflowImageData to base64 for serialization
-            np_img = value.numpy_image
-            _, buffer = cv2.imencode('.png', np_img)
-            img_base64 = base64.b64encode(buffer).decode('utf-8')
-            result[i][key] = {{'type': 'image', 'data': img_base64}}
+for result in results:
+    for i, res in enumerate(result):
+        for key, value in list(res.items()):
+            if hasattr(value, 'numpy_image'):
+                # Convert WorkflowImageData to base64 for serialization
+                np_img = value.numpy_image
+                _, buffer = cv2.imencode('.png', np_img)
+                img_base64 = base64.b64encode(buffer).decode('utf-8')
+                result[i][key] = {{'type': 'image', 'data': img_base64}}
 
 # Output as JSON for parsing
 import json
 print("RESULT_START")
-print(json.dumps(result))
+print(json.dumps(results if {repeat} > 1 else results[0]))
 print("RESULT_END")
 """
 
@@ -211,14 +230,17 @@ print("RESULT_END")
             json_str = output.split("RESULT_START")[1].split("RESULT_END")[0].strip()
             parsed_result = json.loads(json_str)
 
-            # Convert base64 images back to numpy arrays
-            for i, res in enumerate(parsed_result):
-                for key, value in list(res.items()):
-                    if isinstance(value, dict) and value.get("type") == "image":
-                        # Decode base64 back to numpy array
-                        img_bytes = base64.b64decode(value["data"])
-                        nparr = np.frombuffer(img_bytes, np.uint8)
-                        parsed_result[i][key] = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            # Convert base64 images back to numpy arrays; with ``repeat``
+            # above 1 the payload is one result list per run.
+            runs = parsed_result if repeat > 1 else [parsed_result]
+            for run_result in runs:
+                for i, res in enumerate(run_result):
+                    for key, value in list(res.items()):
+                        if isinstance(value, dict) and value.get("type") == "image":
+                            # Decode base64 back to numpy array
+                            img_bytes = base64.b64decode(value["data"])
+                            nparr = np.frombuffer(img_bytes, np.uint8)
+                            run_result[i][key] = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
             return parsed_result
         else:
@@ -311,6 +333,39 @@ class TestModalCustomPythonBlocks:
         # Compare results
         assert local_result[0]["sum"] == modal_result[0]["sum"]
         assert abs(local_result[0]["sum"] - 30.8) < 0.001
+
+    def test_self_state_persists_across_runs_local_vs_modal(self) -> None:
+        """``self.x`` set on one run is visible on the next, in Modal as locally."""
+        workflow = create_workflow_with_custom_block(
+            block_code=FIRST_FRAME_BLOCK,
+            block_type="FirstFrameCheck",
+            inputs={
+                "value": {
+                    "type": "DynamicInputDefinition",
+                    "selector_types": ["input_parameter"],
+                }
+            },
+            outputs={
+                "is_first_frame": {"type": "DynamicOutputDefinition", "kind": []},
+                "calls": {"type": "DynamicOutputDefinition", "kind": []},
+            },
+        )
+        runtime_params = {"value": 1}
+
+        local_results = run_workflow_in_subprocess(
+            workflow, runtime_params, "local", repeat=3
+        )
+        modal_results = run_workflow_in_subprocess(
+            workflow, runtime_params, "modal", repeat=3
+        )
+
+        expected = [
+            [{"is_first_frame": True, "calls": 1}],
+            [{"is_first_frame": False, "calls": 2}],
+            [{"is_first_frame": False, "calls": 3}],
+        ]
+        assert local_results == expected
+        assert modal_results == expected
 
     def test_image_invert_block_local_vs_modal(self) -> None:
         """Test that image inversion produces the same results locally and in Modal."""

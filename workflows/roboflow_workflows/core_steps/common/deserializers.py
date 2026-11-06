@@ -422,6 +422,14 @@ def _attach_optional_detection_element(
     result = []
     for detection in raw_detections:
         result.append(detection[raw_detection_key])
+    if parsed_detection_key == POLYGON_KEY_IN_SV_DETECTIONS and (
+        len({len(polygon) for polygon in result}) > 1
+    ):
+        polygons = np.empty(len(result), dtype=object)
+        for index, polygon in enumerate(result):
+            polygons[index] = np.array(polygon)
+        parsed_detections.data[parsed_detection_key] = polygons
+        return parsed_detections
     parsed_detections.data[parsed_detection_key] = np.array(result)
     return parsed_detections
 

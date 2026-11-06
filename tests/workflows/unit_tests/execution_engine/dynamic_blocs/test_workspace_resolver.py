@@ -229,6 +229,7 @@ def test_dynamic_block_compilation_and_execution_share_the_effective_resolver_an
     core, dynamic = StubResolver("core-ws"), StubResolver("dynamic-ws")
     executor = mock.MagicMock()
     executor.execute_remote.return_value = {"out": 1}
+    executor.execute_remote_with_state.return_value = ({"out": 1}, {})
     monkeypatch.setattr(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
     )
@@ -261,7 +262,10 @@ def test_dynamic_block_compilation_and_execution_share_the_effective_resolver_an
     # validation, then execution - the same resolver, the same key
     assert dynamic.calls == ["key-B", "key-B"]
     assert core.calls == []
-    assert executor.execute_remote.call_args.kwargs["workspace_id"] == "dynamic-ws"
+    assert (
+        executor.execute_remote_with_state.call_args.kwargs["workspace_id"]
+        == "dynamic-ws"
+    )
     with block_scaffolding._MODAL_EXECUTOR_CACHE_LOCK:
         block_scaffolding._MODAL_EXECUTOR_CACHE.clear()
 
