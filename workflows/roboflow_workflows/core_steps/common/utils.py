@@ -1,8 +1,10 @@
 import logging
 import math
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import datetime, timedelta
 from functools import wraps
 from typing import (
     Any,
@@ -838,3 +840,30 @@ def compute_anthropic_upload_dimensions(
         else:
             high = mid
     return (low, max(round(low / aspect_ratio), 1))
+
+
+_last_unique_timestamp: Optional[datetime] = None
+_last_unique_timestamp_lock = threading.Lock()
+
+
+def make_timestamp_unique(timestamp: datetime) -> datetime:
+    """Return a timestamp later than any previously returned one.
+
+    Sinks name output files after a microsecond timestamp. The system clock can
+    be much coarser than that (about 15.6 ms on Windows before Python 3.13), so
+    two writes in quick succession would otherwise get the same name and the
+    second one would overwrite the first.
+
+    Args:
+        timestamp: Current time, usually ``datetime.now()``.
+
+    Returns:
+        ``timestamp`` when it is later than the previous result, otherwise the
+        previous result plus one microsecond.
+    """
+    global _last_unique_timestamp
+    with _last_unique_timestamp_lock:
+        if _last_unique_timestamp is not None and timestamp <= _last_unique_timestamp:
+            timestamp = _last_unique_timestamp + timedelta(microseconds=1)
+        _last_unique_timestamp = timestamp
+        return timestamp

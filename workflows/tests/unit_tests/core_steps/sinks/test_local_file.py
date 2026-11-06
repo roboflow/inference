@@ -1,6 +1,8 @@
 import json
 import os.path
+from datetime import datetime
 from glob import glob
+from unittest import mock
 
 import pandas as pd
 import pytest
@@ -115,6 +117,39 @@ def test_saving_txt_into_separate_files(empty_directory: str) -> None:
     with open(saved_files[1]) as f:
         file_one_content = f.read()
         assert file_one_content == "content-2\n"
+
+
+@mock.patch("roboflow_workflows.core_steps.sinks.local_file.v1.datetime")
+def test_saving_txt_into_separate_files_when_clock_does_not_advance(
+    datetime_mock: mock.MagicMock,
+    empty_directory: str,
+) -> None:
+    # given
+    datetime_mock.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+    block = LocalFileSinkBlockV1(
+        allow_access_to_file_system=True, allowed_write_directory=None
+    )
+
+    # when
+    for content in ["content-1", "content-2"]:
+        result = block.run(
+            content=content,
+            file_type="txt",
+            output_mode="separate_files",
+            target_directory=empty_directory,
+            file_name_prefix="my_file",
+            max_entries_per_file=100,
+        )
+        assert result["error_status"] is False
+
+    # then
+    saved_files = sorted(glob(os.path.join(empty_directory, "my_file_*.txt")))
+    assert len(saved_files) == 2, "Second write must not overwrite the first file"
+    saved_contents = []
+    for saved_file in saved_files:
+        with open(saved_file) as f:
+            saved_contents.append(f.read())
+    assert saved_contents == ["content-1\n", "content-2\n"]
 
 
 def test_saving_txt_into_separate_files_when_allowed_directory_pointed(

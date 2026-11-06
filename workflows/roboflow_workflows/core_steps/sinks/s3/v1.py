@@ -8,6 +8,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.utils import make_timestamp_unique
 from roboflow_workflows.core_steps.common.workload_presets import (
     S3_APPEND_BUFFER_RESTRICTION,
 )
@@ -438,7 +439,7 @@ def create_s3_client(
 
 
 def generate_s3_key(s3_prefix: str, file_name_prefix: str, file_type: str) -> str:
-    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
+    timestamp = make_timestamp_unique(datetime.now()).strftime("%Y_%m_%d_%H_%M_%S_%f")
     file_name = f"{file_name_prefix.rstrip('/')}_{timestamp}.{file_type}"
     if s3_prefix:
         prefix = s3_prefix.rstrip("/")

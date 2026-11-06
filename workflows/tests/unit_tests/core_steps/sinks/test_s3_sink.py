@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -167,6 +168,19 @@ def test_generate_s3_key_produces_unique_keys() -> None:
 
     # Timestamps include microseconds so two sequential calls should differ
     assert key1 != key2
+
+
+@patch("roboflow_workflows.core_steps.sinks.s3.v1.datetime")
+def test_generate_s3_key_produces_unique_keys_when_clock_does_not_advance(
+    datetime_mock: MagicMock,
+) -> None:
+    datetime_mock.now.return_value = datetime(2026, 1, 1, 12, 0, 0)
+
+    key1 = generate_s3_key(s3_prefix="", file_name_prefix="run", file_type="csv")
+    key2 = generate_s3_key(s3_prefix="", file_name_prefix="run", file_type="csv")
+
+    assert key1 != key2
+    assert key1 < key2
 
 
 # ---------------------------------------------------------------------------

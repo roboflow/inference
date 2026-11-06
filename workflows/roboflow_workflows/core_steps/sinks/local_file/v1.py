@@ -6,6 +6,7 @@ from io import TextIOWrapper
 from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
+from roboflow_workflows.core_steps.common.utils import make_timestamp_unique
 from roboflow_workflows.core_steps.common.workload_presets import (
     LOCAL_FILE_SINK_RESTRICTIONS,
 )
@@ -413,7 +414,7 @@ class LocalFileSinkBlockV1(WorkflowBlock):
 def generate_new_file_path(
     target_directory: str, file_name_prefix: str, file_type: str
 ) -> str:
-    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
+    timestamp = make_timestamp_unique(datetime.now()).strftime("%Y_%m_%d_%H_%M_%S_%f")
     file_name = f"{file_name_prefix}_{timestamp}.{file_type}"
     return os.path.abspath(os.path.join(target_directory, file_name))
 

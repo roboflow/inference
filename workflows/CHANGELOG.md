@@ -20,6 +20,9 @@ for contributor and maintainer responsibilities.
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- The Local File Sink and S3 Sink no longer give two outputs the same file name
+  when they are written within one tick of a coarse system clock, so a second
+  write no longer overwrites the first.
 
 ## `0.2.15`
 
