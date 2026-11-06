@@ -13,6 +13,10 @@
   Embeddings are raw float32 `feature_vector`s; the `image_embeddings` capability
   accepts these packages. `inference_models/development/packaging/` holds the
   script that builds them from pinned Hugging Face revisions.
+- `ClipOnnx` and `ClipTorch` describe their image embeddings:
+  `get_embedding_info()` reports raw `clip-image-embeds@v1` feature vectors and
+  `embedding_preprocessing` the resize, center crop and normalization that
+  `embed_images` applies. Embedding outputs are unchanged.
 
 ## `0.39.8`
 

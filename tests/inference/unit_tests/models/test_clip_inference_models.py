@@ -9,21 +9,23 @@ from inference.core.entities.responses.embeddings import ImageEmbeddingResponse
 from inference.models.clip import clip_inference_models
 from inference.models.clip.clip_inference_models import InferenceModelsClipAdapter
 from inference_models.errors import ModelInputError
+from inference_models.models.clip.clip_onnx import ClipOnnx
 
 
-class FakeClipOnnx:
-    def __init__(self, image_size):
-        self._image_size = image_size
-        self.embed_images = MagicMock(side_effect=self._embed)
+def embed(images, input_color_format=None):
+    batch_size = len(images) if isinstance(images, list) else images.shape[0]
+    return torch.arange(batch_size * 4, dtype=torch.float32).reshape(batch_size, 4)
 
-    @staticmethod
-    def _embed(images, input_color_format=None):
-        batch_size = len(images) if isinstance(images, list) else images.shape[0]
-        return torch.arange(batch_size * 4, dtype=torch.float32).reshape(batch_size, 4)
+
+def weightless_clip_onnx(image_size):
+    model = ClipOnnx.__new__(ClipOnnx)
+    model._image_size = image_size
+    model.embed_images = MagicMock(side_effect=embed)
+    return model
 
 
 def load_adapter(monkeypatch, model_id="clip/ViT-B-32", image_size=224, **kwargs):
-    backend = FakeClipOnnx(image_size=image_size)
+    backend = weightless_clip_onnx(image_size=image_size)
     load_model = MagicMock(return_value=backend)
     monkeypatch.setattr(clip_inference_models.AutoModel, "from_pretrained", load_model)
     adapter = InferenceModelsClipAdapter(model_id=model_id, api_key="key", **kwargs)
@@ -60,7 +62,7 @@ def test_clip_serves_image_embeddings_without_negotiating_the_capability(
     assert "output_type" not in load_model.call_args.kwargs
     assert load_model.call_args.kwargs["countinference"] is False
     assert isinstance(response, ImageEmbeddingResponse)
-    assert response.embeddings == backend._embed(images).tolist()
+    assert response.embeddings == embed(images).tolist()
     assert response.inference_id == request.id
     info = response.embedding_info
     assert info.model_id == "clip/ViT-B-32"
@@ -68,9 +70,9 @@ def test_clip_serves_image_embeddings_without_negotiating_the_capability(
     assert info.output_type == "feature_vector"
     assert info.normalization == "none"
     assert info.dimension == 4
-    assert info.preprocessing["clip_version"] == "ViT-B-32"
+    assert info.preprocessing == backend.embedding_preprocessing
     assert info.preprocessing["image_size"] == 224
-    assert info.backend == "FakeClipOnnx"
+    assert info.backend == "ClipOnnx"
     passed_images = backend.embed_images.call_args.kwargs["images"]
     assert len(passed_images) == len(images)
     for actual, image in zip(passed_images, images):
@@ -97,7 +99,7 @@ def test_clip_space_id_changes_with_version_and_input_size(monkeypatch) -> None:
 def test_clip_tensor_native_embeddings_keep_model_tensors(monkeypatch) -> None:
     adapter, backend, _ = load_adapter(monkeypatch)
     images = [torch.zeros((3, 4, 4), dtype=torch.uint8)]
-    vectors = backend._embed(images)
+    vectors = embed(images)
     backend.embed_images.side_effect = None
     backend.embed_images.return_value = vectors
 

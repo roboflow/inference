@@ -47,9 +47,6 @@ from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.clip.clip_onnx import ClipOnnx
 from inference_models.models.clip.clip_pytorch import ClipTorch
-from inference_models.models.clip.preprocessing import MEAN, STD
-
-CLIP_IMAGE_FEATURE_DEFINITION = "clip-image-embeds@v1"
 
 
 class InferenceModelsClipAdapter(Model):
@@ -134,7 +131,9 @@ class InferenceModelsClipAdapter(Model):
         features = self._model.embed_images(images=images, input_color_format="bgr")
         response = ImageEmbeddingResponse(
             embeddings=features.detach().cpu().float().tolist(),
-            embedding_info=self._embedding_metadata(features),
+            embedding_info=self._embedding_metadata(
+                features=features, output_type=request.output_type
+            ),
             time=perf_counter() - started,
             inference_id=request.id,
         )
@@ -169,34 +168,20 @@ class InferenceModelsClipAdapter(Model):
         )
         result = {
             "embeddings": features.detach(),
-            "embedding_info": self._embedding_metadata(features).model_dump(
-                exclude_none=True
-            ),
+            "embedding_info": self._embedding_metadata(
+                features=features, output_type=output_type
+            ).model_dump(exclude_none=True),
         }
 
         return result
 
-    def _embedding_metadata(self, features: torch.Tensor) -> EmbeddingInfo:
-        # Both backends resize the shorter side and center crop to the visual
-        # tower's input size with bicubic interpolation, then normalize.
-        preprocessing = {
-            "clip_version": self._embedding_model_id.split("/")[-1],
-            "image_size": self.image_size,
-            "resize": "shortest_edge",
-            "resample": "bicubic",
-            "center_crop": True,
-            "rescale_factor": 1 / 255,
-            "image_mean": list(MEAN),
-            "image_std": list(STD),
-        }
+    def _embedding_metadata(
+        self, *, features: torch.Tensor, output_type: str
+    ) -> EmbeddingInfo:
         info = make_embedding_info(
             model_id=self._embedding_model_id,
-            feature_info={
-                "feature_definition": CLIP_IMAGE_FEATURE_DEFINITION,
-                "output_type": FEATURE_VECTOR_OUTPUT_TYPE,
-                "normalization": "none",
-            },
-            preprocessing=preprocessing,
+            feature_info=self._model.get_embedding_info(output_type),
+            preprocessing=self._model.embedding_preprocessing,
             backend=type(self._model).__name__,
             precision=str(features.dtype),
             dimension=features.shape[1],
