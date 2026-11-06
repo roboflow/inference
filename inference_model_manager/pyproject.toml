@@ -10,9 +10,11 @@ dependencies = [
   "imagecodecs",
   "filelock",
   "packaging",
+  "pydantic>=2,<3",
 ]
 
 [project.optional-dependencies]
+memory-profiles = ["google-cloud-firestore>=2.19,<3"]
 # Runtime extras — each pulls the matching inference-models variant
 torch-cpu = ["inference-models[torch-cpu]"]
 torch-cu118 = ["inference-models[torch-cu118]"]
