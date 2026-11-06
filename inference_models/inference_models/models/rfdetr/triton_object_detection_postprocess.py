@@ -3,7 +3,8 @@
 The implementation preserves RF-DETR's batched sigmoid and flat top-k
 selection, then fuses class filtering/remapping, thresholding, stable
 compaction, box conversion, metadata rescaling, and clipping into one Triton
-kernel. A single device-to-host count handoff is required because the public
+kernel. The reference sort is repeated after compaction to preserve tie order.
+A single device-to-host count handoff is required because the public
 ``Detections`` result contains variable-length tensors.
 
 The runtime exposes side-effect-free request and runtime compatibility checks so
@@ -127,10 +128,12 @@ if TRITON_AVAILABLE:
         original_width = tl.load(metadata_ptr + metadata_base + 8)
         original_height = tl.load(metadata_ptr + metadata_base + 9)
 
-        x1 = ((cx - 0.5 * width) * denorm_width - pad_left) / scale_width
-        y1 = ((cy - 0.5 * height) * denorm_height - pad_top) / scale_height
-        x2 = ((cx + 0.5 * width) * denorm_width - pad_left) / scale_width
-        y2 = ((cy + 0.5 * height) * denorm_height - pad_top) / scale_height
+        # Preserve the reference's float32 division before integer rounding.
+        # Approximate division can move half-pixel coordinates across a tie.
+        x1 = tl.div_rn((cx - 0.5 * width) * denorm_width - pad_left, scale_width)
+        y1 = tl.div_rn((cy - 0.5 * height) * denorm_height - pad_top, scale_height)
+        x2 = tl.div_rn((cx + 0.5 * width) * denorm_width - pad_left, scale_width)
+        y2 = tl.div_rn((cy + 0.5 * height) * denorm_height - pad_top, scale_height)
         x1 = tl.maximum(0.0, tl.minimum(x1 + crop_offset_x, original_width))
         y1 = tl.maximum(0.0, tl.minimum(y1 + crop_offset_y, original_height))
         x2 = tl.maximum(0.0, tl.minimum(x2 + crop_offset_x, original_width))
@@ -289,6 +292,8 @@ class FusedObjectDetectionPostprocessor:
                     BLOCK_QUERIES=triton.next_power_of_2(num_queries),
                     METADATA_STRIDE=self._METADATA_STRIDE,
                     num_warps=8,
+                    # Match the separate float32 operations in the reference.
+                    enable_fp_fusion=False,
                 )
             except Exception as error:
                 diagnostic = classify_triton_jit_failure(error)
@@ -312,14 +317,21 @@ class FusedObjectDetectionPostprocessor:
             # Variable-length Python results require one bounded count handoff.
             # This synchronizes the fused kernel once for the whole batch.
             counts = output_counts.cpu().tolist()
-            results = [
-                Detections(
-                    xyxy=output_boxes[index, :count].round().int(),
-                    confidence=output_scores[index, :count],
-                    class_id=output_classes[index, :count],
+            results = []
+            for index, count in enumerate(counts):
+                # The reference sorts again after filtering. Its default sort
+                # can reorder ties, so preserving top-k order alone is not
+                # sufficient for ordered detection parity.
+                confidence, sorted_indices = torch.sort(
+                    output_scores[index, :count], descending=True
                 )
-                for index, count in enumerate(counts)
-            ]
+                results.append(
+                    Detections(
+                        xyxy=output_boxes[index, :count][sorted_indices].round().int(),
+                        confidence=confidence,
+                        class_id=output_classes[index, :count][sorted_indices],
+                    )
+                )
             for tensor in (output_scores, output_classes, output_boxes):
                 tensor.record_stream(stream)
         return results
