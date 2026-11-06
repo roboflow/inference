@@ -39,7 +39,13 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+          # Pillow 13 requires Python >=3.11. Keep the supported 12.3 floor.
+          - {python-version: "3.10", pillow-version: "12.3.0"}
+          - {python-version: "3.11", pillow-version: "13.0.0"}
+          - {python-version: "3.12", pillow-version: "13.0.0"}
+          - {python-version: "3.13", pillow-version: "13.0.0"}
+          - {python-version: "3.12", pillow-version: "12.3.0"}
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -47,7 +53,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-unit-tests-inference-sdk-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          key: ${{ runner.os }}-pip-unit-tests-inference-sdk-${{ matrix.python-version }}-pillow-${{ matrix.pillow-version }}-${{ hashFiles('requirements/**') }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -57,7 +63,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
-          pip install -r requirements/requirements.sdk.http.txt -r requirements/requirements.sdk.webrtc.txt -r requirements/requirements.test.unit.txt
+          pip install -r requirements/requirements.sdk.http.txt -r requirements/requirements.sdk.webrtc.txt -r requirements/requirements.test.unit.txt "pillow==${{ matrix.pillow-version }}"
+          python -c "import PIL; print('Pillow version:', PIL.__version__)"
       - name: 🧪 Unit Tests of Inference SDK
         timeout-minutes: 30
         run: python -m pytest tests/inference_sdk/unit_tests
