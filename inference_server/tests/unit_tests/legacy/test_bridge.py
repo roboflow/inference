@@ -2700,6 +2700,128 @@ def test_task_type_from_mro_prefers_the_concrete_class():
 
 
 @pytest.mark.parametrize(
+    "module_name,class_name,task_type",
+    [
+        (
+            "pretrained_image_embeddings.pretrained_image_embeddings_onnx",
+            "PretrainedImageEmbeddingOnnx",
+            "embedding",
+        ),
+        ("clip.clip_onnx", "ClipOnnx", "embedding"),
+        (
+            "resnet.resnet_classification_onnx",
+            "ResNetForClassificationOnnx",
+            "classification",
+        ),
+        (
+            "resnet.resnet_classification_onnx",
+            "ResNetForMultiLabelClassificationOnnx",
+            "multi-label-classification",
+        ),
+        (
+            "resnet.resnet_classification_torch",
+            "ResNetForClassificationTorch",
+            "classification",
+        ),
+        ("vit.vit_classification_onnx", "VITForClassificationOnnx", "classification"),
+        (
+            "dinov3.dinov3_classification_onnx",
+            "DinoV3ForClassificationOnnx",
+            "classification",
+        ),
+        (
+            "dinov3.dinov3_classification_torch",
+            "DinoV3ForMultiLabelClassificationTorch",
+            "multi-label-classification",
+        ),
+    ],
+)
+def test_task_type_from_mro_types_embedding_models_without_retyping_classifiers(
+    module_name, class_name, task_type
+):
+    import importlib
+
+    module = importlib.import_module(f"inference_models.models.{module_name}")
+    mro_names = [cls.__name__ for cls in getattr(module, class_name).__mro__]
+
+    assert "ImageEmbeddingModel" in mro_names or class_name == "ClipOnnx"
+    assert bridge_mod._task_type_from_mro(mro_names) == task_type
+
+
+@pytest.mark.parametrize(
+    "model_id", ["dinov2/small", "dinov3/vits16", "siglip2/base-patch16-224"]
+)
+@pytest.mark.asyncio
+async def test_pretrained_embedding_ids_resolve_as_requested(fake_stat, model_id):
+    fake_stat[model_id] = ("embedding", "embed_images")
+    instance = "capabilities=image_embeddings"
+    gw = FakeGateway(
+        model_info={
+            f"{model_id}:{instance}": {
+                "actions": {"embed_images": {}},
+                "model_mro_names": [
+                    "PretrainedImageEmbeddingOnnx",
+                    "ImageEmbeddingModel",
+                    "object",
+                ],
+            }
+        }
+    )
+    bridge = LegacyModelBridge(gw)
+
+    task_type = await bridge.stat_task_type(model_id, "key", instance)
+    route = await bridge.resolve(model_id, "key", instance=instance)
+
+    assert bridge_mod.registry_id_for(model_id) == model_id
+    assert bridge_mod.request_alias_for(model_id) is None
+    assert task_type == "embedding"
+    assert route.registry_id == f"{model_id}:{instance}"
+    assert route.task_type == "embedding"
+    assert ("ensure_loaded", f"{model_id}:{instance}", "key") in gw.calls
+
+
+@pytest.mark.parametrize(
+    "model_id", ["dinov2/small", "dinov3/vits16", "siglip2/base-patch16-224"]
+)
+@pytest.mark.asyncio
+async def test_disabled_pretrained_embedding_ids_answer_as_unregistered_in_legacy(
+    fake_stat, monkeypatch, model_id
+):
+    monkeypatch.setattr(
+        bridge_mod, "CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED", False
+    )
+    fake_stat[model_id] = ("embedding", "embed_images")
+    gw = FakeGateway()
+    bridge = LegacyModelBridge(gw)
+
+    for call in (
+        bridge.stat_task_type(model_id, "key"),
+        bridge.resolve(model_id, "key"),
+        bridge.load(model_id, "key"),
+    ):
+        with pytest.raises(LegacyHTTPError) as error:
+            await call
+        assert error.value.status_code == 500
+        assert error.value.message == "Service misconfiguration."
+
+    assert gw.calls == []
+
+
+@pytest.mark.asyncio
+async def test_disabled_pretrained_embeddings_leave_other_models_alone(
+    fake_stat, monkeypatch
+):
+    monkeypatch.setattr(
+        bridge_mod, "CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED", False
+    )
+    fake_stat["dinov3/2"] = ("classification", "infer")
+
+    task_type = await LegacyModelBridge(FakeGateway()).stat_task_type("dinov3/2", "key")
+
+    assert task_type == "classification"
+
+
+@pytest.mark.parametrize(
     "mro_names",
     [
         ["Cosmos3EdgeActionRecognition", "ActionRecognitionModel", "ABC", "object"],

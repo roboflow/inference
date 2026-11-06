@@ -16,6 +16,7 @@ from inference_server import platform_http, telemetry
 from inference_server.configuration import (
     ALLOW_URL_INPUT,
     API_BASE_URL,
+    CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED,
     INFER_TIMEOUT_S,
     LEGACY_LOAD_POLL_INTERVAL_S,
     LEGACY_LOAD_TIMEOUT_S,
@@ -324,6 +325,13 @@ _CORE_MODEL_ARCHITECTURES = {
 
 _REGISTRY_ID_ALIASES = {"perception_encoder": "perception-encoder"}
 
+# Pretrained embedding models legacy registers only while
+# CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED is on. Full ids only, as in
+# legacy GENERIC_MODELS.
+_PRETRAINED_IMAGE_EMBEDDING_MODEL_IDS = frozenset(
+    ["dinov2/small", "dinov3/vits16", "siglip2/base-patch16-224"]
+)
+
 _LEGACY_CORE_MODEL_DESCRIPTORS: dict[str, tuple[str, str]] = {
     "clip": ("clip", "embedding"),
     "depth-anything-v2": ("depth-anything-v2", "depth-estimation"),
@@ -396,6 +404,7 @@ _TASK_TYPE_BY_MRO = {
     "SemanticSegmentationModel": "semantic-segmentation",
     "DepthEstimationModel": "depth-estimation",
     "TextImageEmbeddingModel": "embedding",
+    "PretrainedImageEmbeddingOnnx": "embedding",
     "StructuredOCRModel": "structured-ocr",
     "EasyOCRTorch": "structured-ocr",
     "PPOCRv6StructuredOCR": "structured-ocr",
@@ -442,7 +451,14 @@ def registry_id_for(model_id: str) -> str:
 def _plain_registry_id(model_id: str) -> str:
     if has_capability_marker(model_id):
         raise LegacyHTTPError(404, NOT_FOUND_MESSAGE)
-    return registry_id_for(model_id)
+    registry_id = registry_id_for(model_id)
+    if (
+        registry_id in _PRETRAINED_IMAGE_EMBEDDING_MODEL_IDS
+        and not CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED
+    ):
+        # Legacy has no model class for them then: ModelNotRecognisedError.
+        raise LegacyHTTPError(500, SERVICE_MISCONFIGURATION_MESSAGE)
+    return registry_id
 
 
 def request_alias_for(model_id: str) -> Optional[str]:

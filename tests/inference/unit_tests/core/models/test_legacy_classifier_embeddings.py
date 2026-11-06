@@ -8,7 +8,68 @@ import pytest
 from onnx import TensorProto, helper, numpy_helper
 
 from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
+from inference.core.models.embeddings import make_embedding_info
 from inference.models.resnet.resnet_classification import ResNetClassification
+
+FEATURE_VECTOR = {"output_type": "feature_vector", "normalization": "none"}
+# The same spaces, with the same golden ids, are asserted for the new server in
+# inference_server/tests/unit_tests/legacy/test_translation_embeddings.py.
+GOLDEN_EMBEDDING_SPACES = [
+    (
+        "dinov2/small",
+        "dinov2-cls-token@v1",
+        384,
+        {
+            "image_processor_type": "BitImageProcessor",
+            "do_convert_rgb": True,
+            "do_resize": True,
+            "size": {"shortest_edge": 256},
+            "resample": 3,
+            "do_center_crop": True,
+            "crop_size": {"height": 224, "width": 224},
+            "do_rescale": True,
+            "rescale_factor": 0.00392156862745098,
+            "do_normalize": True,
+            "image_mean": [0.485, 0.456, 0.406],
+            "image_std": [0.229, 0.224, 0.225],
+        },
+        "18f23774f892940283119ce8640ee99fc1f94060e190c3edad304690824dd7d5",
+    ),
+    (
+        "clip/ViT-B-16",
+        "clip-image-embeds@v1",
+        512,
+        {
+            "image_size": 224,
+            "resize": "shortest_edge",
+            "resample": "bicubic",
+            "center_crop": True,
+            "rescale_factor": 1 / 255,
+            "image_mean": [0.48145466, 0.4578275, 0.40821073],
+            "image_std": [0.26862954, 0.26130258, 0.27577711],
+        },
+        "1bc0eb86e1747bddf8f0b1c0b109365a8347a2b40bfbeaab302b122e7d726ac1",
+    ),
+    (
+        "my-classifier/1",
+        "classifier-linear-input@v1",
+        2048,
+        {
+            "image_pre_processing": {
+                "auto-orient": {"enabled": True},
+                "grayscale": {"enabled": True},
+            },
+            "network_input": {"training_input_size": {"width": 224, "height": 224}},
+            "overrides": {
+                "disable_preproc_auto_orient": False,
+                "disable_preproc_contrast": False,
+                "disable_preproc_grayscale": True,
+                "disable_preproc_static_crop": False,
+            },
+        },
+        "b4e7f1b4acc1340e8bca7fcb58a13b61f404df9da5c8f30ef11645d78b1c84d0",
+    ),
+]
 
 
 @pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
@@ -111,3 +172,23 @@ def test_legacy_embeddings_use_classifier_preprocessing_and_pad_static_batches(
         exclude_none=True
     )
     model.infer_embeddings_from_request.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "model_id,feature_definition,dimension,preprocessing,space_id",
+    GOLDEN_EMBEDDING_SPACES,
+)
+def test_embedding_space_ids_match_the_new_server(
+    model_id, feature_definition, dimension, preprocessing, space_id
+):
+    info = make_embedding_info(
+        model_id=model_id,
+        feature_info={"feature_definition": feature_definition, **FEATURE_VECTOR},
+        preprocessing=preprocessing,
+        backend="Backend",
+        precision="torch.float32",
+        dimension=dimension,
+    )
+
+    assert info.space_id == space_id
+    assert info.preprocessing == preprocessing

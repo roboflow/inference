@@ -1,17 +1,21 @@
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 import torch
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
+from inference_models.models.base.embeddings import TextImageEmbeddingModel
 from inference_models.models.base.image_embeddings import ImageEmbeddingModel
+from inference_models.models.clip.clip_onnx import ClipOnnx
 
-from inference_model_manager.dispatch import invoke_action, list_actions
+from inference_model_manager.dispatch import invoke_action, list_actions, resolve_action
 from inference_model_manager.image_embeddings import describe_image_embeddings
 from inference_model_manager.model_manager import ModelManager
 from inference_model_manager.registry_defaults import (
     IMAGE_EMBEDDINGS_ACTION,
     IMAGE_EMBEDDINGS_RESPONSE_TYPE,
+    IMAGE_EMBEDDINGS_WITH_INFO_ACTION,
     lazy_register,
 )
 from inference_model_manager.serializers_typed import serialize_image_embeddings
@@ -173,3 +177,85 @@ def test_serialize_image_embeddings_keeps_the_envelope():
     assert serialized["type"] == IMAGE_EMBEDDINGS_RESPONSE_TYPE
     assert serialized["embeddings"].tolist() == [[0.5, -1.5]]
     assert serialized["embedding_info"] is info
+
+
+def _weightless_clip(image_size=224):
+    model = ClipOnnx(
+        visual_onnx_session=MagicMock(),
+        textual_onnx_session=MagicMock(),
+        image_size=image_size,
+        visual_input_name="image",
+        textual_input_name="text",
+        device=torch.device("cpu"),
+        max_batch_size=8,
+    )
+    model.embed_images = MagicMock(
+        return_value=torch.tensor([[0.25, 0.5, 1.0]], dtype=torch.float32)
+    )
+    return model
+
+
+class FakeTextImageModel(TextImageEmbeddingModel):
+    @classmethod
+    def from_pretrained(cls, model_name_or_path, **kwargs):
+        return cls()
+
+    def embed_images(self, images, **kwargs):
+        return torch.zeros((1, 2))
+
+    def embed_text(self, texts, **kwargs):
+        return torch.zeros((1, 2))
+
+
+def test_clip_describes_its_image_embeddings_through_a_dedicated_action():
+    model = _weightless_clip()
+
+    result = invoke_action(
+        model,
+        action=IMAGE_EMBEDDINGS_WITH_INFO_ACTION,
+        images=["image"],
+        output_type="feature_vector",
+        input_color_format="bgr",
+        disable_preproc_grayscale=True,
+    )
+
+    assert torch.equal(result["embeddings"], torch.tensor([[0.25, 0.5, 1.0]]))
+    assert result["embedding_info"] == {
+        "feature_definition": "clip-image-embeds@v1",
+        "output_type": "feature_vector",
+        "normalization": "none",
+        "dimension": 3,
+        "preprocessing": model.embedding_preprocessing,
+        "backend": "ClipOnnx",
+        "precision": "torch.float32",
+    }
+    model.embed_images.assert_called_once_with(
+        images=["image"], output_type="feature_vector", input_color_format="bgr"
+    )
+
+
+def test_clip_keeps_its_compact_default_image_embeddings():
+    model = _weightless_clip()
+
+    default_action, _ = resolve_action(model)
+    _, entry = resolve_action(model, IMAGE_EMBEDDINGS_WITH_INFO_ACTION)
+    result = invoke_action(model, action="embed_images", images=["image"])
+
+    assert default_action == "embed_images"
+    assert list_actions(model)["embed_images"]["response_type"] == (
+        "roboflow-embeddings-compact-v1"
+    )
+    assert entry.method == "embed_images"
+    assert entry.default is False
+    assert entry.response_type == IMAGE_EMBEDDINGS_RESPONSE_TYPE
+    assert isinstance(result, torch.Tensor)
+
+
+def test_text_image_models_without_a_space_description_have_no_described_action():
+    model = FakeTextImageModel()
+    lazy_register(type(model))
+
+    actions = list_actions(model)
+
+    assert "embed_images" in actions
+    assert IMAGE_EMBEDDINGS_WITH_INFO_ACTION not in actions

@@ -678,15 +678,20 @@ class ClassificationInferenceRequest(CVInferenceRequest):
 
 
 class ImageEmbeddingRequest(CVInferenceRequest):
-    """Raw features or logits from an existing ResNet, ViT or DINOv3 classifier."""
+    """Raw features or logits from a ResNet, ViT or DINOv3 classifier, or raw
+    features from a pretrained embedding model."""
 
     model_id: str = Field(
-        min_length=1, description="Classification model ID or pretrained alias"
+        min_length=1,
+        description="Classification model ID, pretrained classifier alias, or "
+        "pretrained embedding model ID such as `dinov3/vits16`",
     )
     model_type: Literal["classification"] = "classification"
     output_type: Literal["feature_vector", "logits"] = Field(
         default="feature_vector",
-        description="Feature Vector: input to the final linear layer. Logits: its output before Softmax or Sigmoid.",
+        description="Feature Vector: input to a classifier's final linear layer, or the "
+        "image embedding of a pretrained embedding model. Logits: a classifier's final "
+        "layer output before Softmax or Sigmoid; pretrained embedding models have none.",
     )
 
     @field_validator("image")
@@ -1848,16 +1853,20 @@ class EmbeddingInfo(BaseModel):
     """Describe the model and representation defining an embedding space."""
 
     model_id: str = Field(
-        description="Resolved classification model ID used to produce the vectors.",
-        examples=["my-classifier/1"],
+        description="Resolved model ID used to produce the vectors: a classifier version or a pretrained embedding model.",
+        examples=["my-classifier/1", "dinov3/vits16"],
     )
     feature_definition: str = Field(
         description="Versioned definition of the feature or logit extraction boundary.",
-        examples=["classifier-linear-input@v1", "classifier-linear-output@v1"],
+        examples=[
+            "classifier-linear-input@v1",
+            "classifier-linear-output@v1",
+            "dinov3-cls-token@v1",
+        ],
     )
     output_type: Literal["feature_vector", "logits"] = Field(
         default="feature_vector",
-        description="Whether vectors contain features before the final linear layer or logits before Softmax/Sigmoid.",
+        description="Whether vectors contain features (a classifier's input to its final linear layer, or a pretrained model's embedding) or a classifier's logits before Softmax/Sigmoid.",
         examples=["feature_vector", "logits"],
     )
     dimension: int = Field(
@@ -1870,7 +1879,7 @@ class EmbeddingInfo(BaseModel):
         examples=["none"],
     )
     preprocessing: Dict[str, Any] = Field(
-        description="Model preprocessing configuration and request overrides used for these vectors.",
+        description="Model preprocessing configuration, and request overrides for classifiers, used for these vectors.",
         examples=[{"overrides": {"disable_preproc_grayscale": False}}],
     )
     space_id: str = Field(
@@ -1879,7 +1888,7 @@ class EmbeddingInfo(BaseModel):
     )
     backend: str = Field(
         description="Model implementation or execution backend that produced the vectors.",
-        examples=["ResNetForClassificationOnnx"],
+        examples=["ResNetForClassificationOnnx", "PretrainedImageEmbeddingOnnx"],
     )
     precision: str = Field(
         description="Model output dtype before conversion to JSON floating-point values.",

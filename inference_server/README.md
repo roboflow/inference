@@ -183,6 +183,14 @@ A few legacy behaviours are not (yet) available here:
   of the real behaviour: `/sam3_3d/infer`; `/sam3/embed_image` with
   `SAM3_EXEC_MODE=remote` (concept and visual segmentation are proxied to the
   Roboflow API); `format=binary` on the SAM/SAM2/SAM3 segmentation routes is not implemented (embedding routes still return binary).
+- `/infer/embeddings` serves CLIP from the registration the `/clip/*` routes
+  use, so `X-Model-Id` and the `/model/registry` row read `clip/<version>`;
+  legacy loads a separate `clip/<version>:capabilities=image_embeddings`
+  instance. The `roboflow_core/embedding_model@v1` Workflow block embeds
+  classifiers and the pretrained embedding models (DINOv2, DINOv3, SigLIP2), but
+  not CLIP. Pretrained embedding models sent to another inference route are
+  refused like any model of another task, not with legacy's 501 pointing to
+  `/infer/embeddings`.
 - Prediction visualization (`format=image`, `visualize_predictions`) uses the
   class colours the model manager reports, else the legacy default palette; the
   per-model colour mapping is not fetched from the Roboflow API.

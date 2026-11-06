@@ -6,7 +6,7 @@ import io
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -17,8 +17,10 @@ from inference_model_manager.hash_namespacing import (
     namespace_client_hash_id,
     strip_tenant_namespace,
 )
+from inference_model_manager.registry_defaults import IMAGE_EMBEDDINGS_WITH_INFO_ACTION
+from inference_models.errors import ModelInputError
 from inference_server import configuration
-from inference_server.legacy.bridge import Route
+from inference_server.legacy.bridge import Route, registry_id_for
 from inference_server.legacy.entities import (
     AnomalyDetectionResponse,
     ClassificationInferenceResponse,
@@ -76,11 +78,97 @@ _CONFIDENCE_ONLY_TASK_TYPES = frozenset(
         "semantic-segmentation",
     ]
 )
-IMAGE_EMBEDDING_TASK_TYPES = frozenset(["classification", "multi-label-classification"])
+PRETRAINED_IMAGE_EMBEDDING_TASK_TYPE = "embedding"
+IMAGE_EMBEDDING_TASK_TYPES = frozenset(
+    [
+        "classification",
+        "multi-label-classification",
+        PRETRAINED_IMAGE_EMBEDDING_TASK_TYPE,
+    ]
+)
 IMAGE_EMBEDDING_OVERRIDE_FIELDS = (
     "disable_preproc_auto_orient",
     *_DISABLE_PREPROC_FIELDS,
 )
+FEATURE_VECTOR_OUTPUT_TYPE = "feature_vector"
+_CLASSIFIER_PREPROCESSING_KEYS = ("image_pre_processing", "network_input")
+
+
+class TextImageEmbeddings(NamedTuple):
+    """How legacy serves ``/infer/embeddings`` for a text-image model.
+
+    ``flags`` are the configuration flags legacy registers the model under:
+    with any of them off, legacy has no class for the model. ``action`` is the
+    model manager action that returns the image embeddings with the
+    description of their space, or None when the model has none.
+    """
+
+    flags: Tuple[str, ...]
+    action: Optional[str]
+
+
+# Text-image models legacy hands to their own adapter on /infer/embeddings
+# (GENERIC_MODELS), keyed by the dataset part of the registry id. They load as
+# their plain registration: AutoModel grants the image-embeddings capability
+# only to classifiers and pretrained backbones. Perception Encoder has no
+# image-embeddings entry point, so legacy refuses it before loading.
+_TEXT_IMAGE_EMBEDDINGS = {
+    "clip": TextImageEmbeddings(
+        flags=("CORE_MODELS_ENABLED", "CORE_MODEL_CLIP_ENABLED"),
+        action=IMAGE_EMBEDDINGS_WITH_INFO_ACTION,
+    ),
+    "perception-encoder": TextImageEmbeddings(
+        flags=("CORE_MODEL_PE_ENABLED",), action=None
+    ),
+}
+
+
+def text_image_embeddings_for(model_id: str) -> Optional[TextImageEmbeddings]:
+    """Look up how legacy serves image embeddings of a text-image model.
+
+    Args:
+        model_id: Model id as requested, alias included.
+
+    Returns:
+        The flags and action of a CLIP or Perception Encoder model; None for
+        any other model, which embeds through the image-embeddings capability.
+    """
+    family = registry_id_for(model_id).partition("/")[0]
+    text_image = _TEXT_IMAGE_EMBEDDINGS.get(family)
+
+    return text_image
+
+
+def text_image_embeddings_enabled(text_image: TextImageEmbeddings) -> bool:
+    """Whether the server configuration registers a text-image model.
+
+    Args:
+        text_image: Entry returned by ``text_image_embeddings_for``.
+
+    Returns:
+        True when every flag legacy registers the model under is on.
+    """
+    enabled = all(getattr(configuration, flag) for flag in text_image.flags)
+
+    return enabled
+
+
+def require_feature_vector_output(output_type: str) -> None:
+    """Reject logits for a model without a classification head, as legacy does.
+
+    Args:
+        output_type: Requested image-embedding representation.
+
+    Raises:
+        ModelInputError: If the representation is not a feature vector.
+    """
+    if output_type != FEATURE_VECTOR_OUTPUT_TYPE:
+        raise ModelInputError(
+            message=f"Pretrained embedding models return only "
+            f"`{FEATURE_VECTOR_OUTPUT_TYPE}` embeddings, requested `{output_type}`. "
+            f"Logits are available for ResNet, ViT and DINOv3 classifiers.",
+            help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+        )
 
 
 def ensure_request_supported(model_id: str, request: Any, route: Route) -> None:
@@ -903,22 +991,32 @@ def build_image_embedding_params(request: Any) -> dict:
 def make_embedding_info(model_id: str, info: dict, overrides: dict) -> EmbeddingInfo:
     """Identify the embedding space described by a model's embedding envelope.
 
+    A classifier reports its ``image_pre_processing`` and ``network_input``
+    configuration, which the request overrides change, so the overrides join
+    its preprocessing. Pretrained embedding models and CLIP report their own
+    fixed preprocessing, which is used as is.
+
     Args:
-        model_id: Resolved classification model id that produced the vectors.
+        model_id: Resolved model id that produced the vectors.
         info: Feature definition, dimension, normalization, the model's
             preprocessing configuration, backend and precision as reported by
             the model manager.
-        overrides: Preprocessing steps the request disabled, as it stated them.
+        overrides: Preprocessing steps the request disabled, as it stated them;
+            only a classifier's space depends on them.
 
     Returns:
         The metadata with a space id hashed from the model id, feature
         definition, dimension, normalization and preprocessing.
     """
-    preprocessing = {
-        "image_pre_processing": info["preprocessing"]["image_pre_processing"],
-        "network_input": info["preprocessing"]["network_input"],
-        "overrides": overrides,
-    }
+    model_preprocessing = info["preprocessing"]
+    if all(key in model_preprocessing for key in _CLASSIFIER_PREPROCESSING_KEYS):
+        preprocessing = {
+            "image_pre_processing": model_preprocessing["image_pre_processing"],
+            "network_input": model_preprocessing["network_input"],
+            "overrides": overrides,
+        }
+    else:
+        preprocessing = model_preprocessing
     identity = {
         "model_id": model_id,
         "feature_definition": info["feature_definition"],
@@ -945,7 +1043,7 @@ def repack_image_embeddings(
 
     Args:
         results: One embedding envelope per image, in input order.
-        model_id: Resolved classification model id that produced the vectors.
+        model_id: Resolved model id that produced the vectors.
         request: The image-embedding request answered.
 
     Returns:
