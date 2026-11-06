@@ -6,6 +6,7 @@ import logging
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlencode
 
 import numpy as np
 import pytest
@@ -1951,3 +1952,65 @@ def test_undecodable_image_records_no_model_row_when_the_model_does_not_resolve(
 
     assert response.status_code == status_code
     assert _categories(usage_collector) == ["request"]
+
+
+BATCH_CONTEXT = json.dumps({"version": "batch-v1", "media": "image", "multiplier": 0.5})
+CANONICAL_BATCH_CONTEXT = json.dumps(
+    {"media": "image", "multiplier": 0.5, "version": "batch-v1"}, sort_keys=True
+)
+
+
+def _batch_query(context: str, secret: str) -> str:
+    return "&" + urlencode({"billing_context": context, "service_secret": secret})
+
+
+def test_authenticated_batch_context_is_carried_on_the_request_and_model_rows(
+    usage_client, usage_collector, detection_gateway, monkeypatch
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+
+    response = _catch_all(client, _batch_query(BATCH_CONTEXT, SECRET))
+
+    assert response.status_code == 200, response.text
+    for row in (_request_row(usage_collector), _model_row(usage_collector)):
+        assert row["billable"] is True
+        assert row["resource_details"]["billing_context"] == CANONICAL_BATCH_CONTEXT
+
+
+@pytest.mark.parametrize("secret", ["", "wrong-secret"])
+def test_batch_context_without_a_valid_secret_is_ignored(
+    usage_client, usage_collector, detection_gateway, monkeypatch, secret
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+
+    response = _catch_all(client, _batch_query(BATCH_CONTEXT, secret))
+
+    assert response.status_code == 200, response.text
+    for row in (_request_row(usage_collector), _model_row(usage_collector)):
+        assert "billing_context" not in row["resource_details"]
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        "not-json",
+        json.dumps({"version": "batch-v2", "media": "image", "multiplier": 0.5}),
+        json.dumps({"version": "batch-v1", "media": "audio", "multiplier": 0.5}),
+        json.dumps({"version": "batch-v1", "media": "image", "multiplier": 0}),
+        json.dumps({"version": "batch-v1", "media": "image", "multiplier": 10**400}),
+        json.dumps({"version": "batch-v1", "media": "image", "multiplier": True}),
+    ],
+)
+def test_invalid_authenticated_batch_context_is_never_served_unrecorded(
+    usage_client, usage_collector, detection_gateway, monkeypatch, context
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+
+    response = _catch_all(client, _batch_query(context, SECRET))
+
+    # Serving the call without its usage row would make it free.
+    assert response.status_code >= 400
+    assert _rows_of(usage_collector, "model") == []
