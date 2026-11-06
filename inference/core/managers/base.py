@@ -200,8 +200,8 @@ class ModelManager:
                     ):
                         raise ModelDeploymentNotSupportedError(
                             "Image embeddings require a ResNet, ViT or DINOv3 "
-                            "classifier, or a pretrained embedding model (DINOv2, "
-                            "DINOv3, SigLIP2)."
+                            "classifier, or a pretrained embedding model (CLIP, "
+                            "DINOv2, DINOv3, SigLIP2)."
                         )
 
                     extra_init_kwargs = {}

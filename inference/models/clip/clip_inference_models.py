@@ -12,10 +12,15 @@ from inference.core.entities.requests.clip import (
     ClipInferenceRequest,
     ClipTextEmbeddingRequest,
 )
+from inference.core.entities.requests.embeddings import ImageEmbeddingRequest
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
+)
+from inference.core.entities.responses.embeddings import (
+    EmbeddingInfo,
+    ImageEmbeddingResponse,
 )
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
@@ -28,6 +33,12 @@ from inference.core.env import (
     VALID_INFERENCE_MODELS_BACKENDS,
 )
 from inference.core.models.base import Model
+from inference.core.models.embeddings import (
+    FEATURE_VECTOR_OUTPUT_TYPE,
+    load_embedding_request_images,
+    make_embedding_info,
+    require_feature_vector_output,
+)
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.roboflow_api import get_extra_weights_provider_headers
 from inference.core.utils.image_utils import load_image_bgr
@@ -36,6 +47,9 @@ from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel
 from inference_models.models.clip.clip_onnx import ClipOnnx
 from inference_models.models.clip.clip_pytorch import ClipTorch
+from inference_models.models.clip.preprocessing import MEAN, STD
+
+CLIP_IMAGE_FEATURE_DEFINITION = "clip-image-embeds@v1"
 
 
 class InferenceModelsClipAdapter(Model):
@@ -58,11 +72,19 @@ class InferenceModelsClipAdapter(Model):
         **kwargs,
     ):
         super().__init__()
+        # /infer/embeddings asks for image embeddings, which every CLIP package
+        # provides. Package negotiation must not filter on that capability:
+        # it admits only classifier and pretrained-backbone embedding packages.
+        kwargs.pop("required_capabilities", None)
+        require_feature_vector_output(
+            kwargs.pop("output_type", FEATURE_VECTOR_OUTPUT_TYPE)
+        )
 
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
 
         self.api_key = api_key if api_key else API_KEY
         self.task_type = "embedding"
+        self._embedding_model_id = model_id
         weights_provider_extra_headers = get_extra_weights_provider_headers(
             countinference=kwargs.get("countinference"),
             service_secret=kwargs.get("service_secret"),
@@ -91,6 +113,95 @@ class InferenceModelsClipAdapter(Model):
             )
         else:
             self.image_size = getattr(self._model, "_image_size", None)
+
+    def infer_embeddings_from_request(
+        self, request: ImageEmbeddingRequest
+    ) -> ImageEmbeddingResponse:
+        """Embed the request images for `POST /infer/embeddings`.
+
+        Args:
+            request: One image or a list, and the requested output type.
+
+        Returns:
+            ImageEmbeddingResponse: Ordered raw image embeddings and metadata.
+
+        Raises:
+            ModelInputError: If the request asks for logits.
+        """
+        started = perf_counter()
+        require_feature_vector_output(request.output_type)
+        images = load_embedding_request_images(request)
+        features = self._model.embed_images(images=images, input_color_format="bgr")
+        response = ImageEmbeddingResponse(
+            embeddings=features.detach().cpu().float().tolist(),
+            embedding_info=self._embedding_metadata(features),
+            time=perf_counter() - started,
+            inference_id=request.id,
+        )
+
+        return response
+
+    def run_tensor_native_embeddings(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        *,
+        input_color_format: str = "bgr",
+        output_type: str = FEATURE_VECTOR_OUTPUT_TYPE,
+        **kwargs,
+    ) -> dict:
+        """Embed images while keeping tensor inputs and outputs on device.
+
+        Args:
+            images: Materialized tensor or NumPy images.
+            input_color_format: Color ordering of the supplied images.
+            output_type: Must be the feature vector.
+            **kwargs: Classifier preprocessing overrides, which CLIP ignores.
+
+        Returns:
+            Batched embedding tensor and compatibility metadata.
+
+        Raises:
+            ModelInputError: If logits are requested.
+        """
+        require_feature_vector_output(output_type)
+        features = self._model.embed_images(
+            images=images, input_color_format=input_color_format
+        )
+        result = {
+            "embeddings": features.detach(),
+            "embedding_info": self._embedding_metadata(features).model_dump(
+                exclude_none=True
+            ),
+        }
+
+        return result
+
+    def _embedding_metadata(self, features: torch.Tensor) -> EmbeddingInfo:
+        # Both backends resize the shorter side and center crop to the visual
+        # tower's input size with bicubic interpolation, then normalize.
+        preprocessing = {
+            "clip_version": self._embedding_model_id.split("/")[-1],
+            "image_size": self.image_size,
+            "resize": "shortest_edge",
+            "resample": "bicubic",
+            "center_crop": True,
+            "rescale_factor": 1 / 255,
+            "image_mean": list(MEAN),
+            "image_std": list(STD),
+        }
+        info = make_embedding_info(
+            model_id=self._embedding_model_id,
+            feature_info={
+                "feature_definition": CLIP_IMAGE_FEATURE_DEFINITION,
+                "output_type": FEATURE_VECTOR_OUTPUT_TYPE,
+                "normalization": "none",
+            },
+            preprocessing=preprocessing,
+            backend=type(self._model).__name__,
+            precision=str(features.dtype),
+            dimension=features.shape[1],
+        )
+        return info
 
     def run_tensor_native_inference(
         self, action: Literal["compare", "embed-image", "embed-text"], **kwargs
