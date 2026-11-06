@@ -93,7 +93,7 @@ The repository follows PEP 8 and uses Black (88 characters), isort and flake8.
 - Ensure all relevant tests pass before marking a pull request ready for review.
 - Keep commit messages concise and in the present tense, e.g. "Add model loader".
 - PR descriptions should explain what changed and why, list test commands run,
-  and follow the templates in `.github`.
+  and follow the [PR description rule](.cursor/rules/pr-description.mdc).
 - Update documentation when applicable.
 
 ### Internal contributions (Roboflow team only)
@@ -326,8 +326,9 @@ Also read the following rule when its condition applies:
 
 - `.cursor/rules/cli-options.mdc` for Python command-line interfaces.
 - `.cursor/rules/pydantic-field-descriptions.mdc` for Pydantic models.
-- `.cursor/rules/pr-description.mdc` when the user requests a Roboflow-format PR
-  body or explicitly names that rule.
+- `.cursor/rules/pr-description.mdc` whenever creating or updating a pull
+  request or drafting its description. This applies by default; an explicit rule
+  mention or request for Roboflow format is not required.
 - `.cursor/rules/execution-engine-version-changelog.mdc` for behavior changes
   under `workflows/roboflow_workflows/execution_engine/`; the subtree
   `AGENTS.md` repeats this routing requirement at the point of use.
