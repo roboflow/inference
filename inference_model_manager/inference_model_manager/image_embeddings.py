@@ -8,10 +8,11 @@ from typing import Any, Dict
 def describe_image_embeddings(
     model: Any, embeddings: Any, kwargs: Dict[str, Any]
 ) -> dict:
-    """Describe the space of embeddings a classifier has just produced.
+    """Describe the space of embeddings a model has just produced.
 
     Args:
-        model: Classifier that generated the embeddings.
+        model: Classifier or pretrained embedding model that generated the
+            embeddings.
         embeddings: Batched embedding tensor returned by the model.
         kwargs: Keyword arguments the model method was invoked with.
 
@@ -21,14 +22,18 @@ def describe_image_embeddings(
         model's preprocessing configuration, backend class name and output
         dtype.
     """
-    config = model._inference_config
+    if hasattr(model, "embedding_preprocessing"):
+        preprocessing = model.embedding_preprocessing
+    else:
+        config = model._inference_config
+        preprocessing = {
+            "image_pre_processing": config.image_pre_processing.model_dump(mode="json"),
+            "network_input": config.network_input.model_dump(mode="json"),
+        }
     info = dict(model.get_embedding_info(kwargs.get("output_type")))
     info.update(
         dimension=int(embeddings.shape[1]),
-        preprocessing={
-            "image_pre_processing": config.image_pre_processing.model_dump(mode="json"),
-            "network_input": config.network_input.model_dump(mode="json"),
-        },
+        preprocessing=preprocessing,
         backend=type(model).__name__,
         precision=str(embeddings.dtype),
     )

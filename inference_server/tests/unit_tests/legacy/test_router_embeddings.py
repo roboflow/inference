@@ -12,7 +12,20 @@ from PIL import Image
 from tests.unit_tests.legacy.conftest import FakeGateway
 from tests.unit_tests.legacy.test_router_stub_models import fake_platform  # noqa: F401
 
-EMBEDDINGS_UNSUPPORTED = "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+EMBEDDINGS_UNSUPPORTED = (
+    "Image embeddings require a ResNet, ViT or DINOv3 classifier, or a pretrained "
+    "embedding model (CLIP, DINOv2, DINOv3, SigLIP2)."
+)
+FEATURE_VECTOR_ONLY = (
+    "Error with model input. Cause: Pretrained embedding models return only "
+    "`feature_vector` embeddings, requested `logits`. Logits are available for "
+    "ResNet, ViT and DINOv3 classifiers. - VISIT "
+    "https://inference-models.roboflow.com/errors/input-validation/#modelinputerror "
+    "FOR FURTHER SUPPORT"
+)
+INPUT_VALIDATION_HELP_URL = (
+    "https://inference-models.roboflow.com/errors/input-validation/#modelinputerror"
+)
 NOT_FOUND = (
     "Requested Roboflow resource not found. Make sure that workspace, project or "
     "model you referred in request exists."
@@ -681,3 +694,320 @@ def test_model_add_reports_the_canonical_model_id(legacy_client, fake_stat):
 
     assert r.status_code == 200, r.text
     assert r.headers["X-Model-Id"] == "coco/3"
+
+
+PRETRAINED_PREPROCESSING = {
+    "image_processor_type": "BitImageProcessor",
+    "do_convert_rgb": True,
+    "do_resize": True,
+    "size": {"shortest_edge": 256},
+    "resample": 3,
+    "do_center_crop": True,
+    "crop_size": {"height": 224, "width": 224},
+    "do_rescale": True,
+    "rescale_factor": 0.00392156862745098,
+    "do_normalize": True,
+    "image_mean": [0.485, 0.456, 0.406],
+    "image_std": [0.229, 0.224, 0.225],
+}
+CLIP_PREPROCESSING = {
+    "image_size": 224,
+    "resize": "shortest_edge",
+    "resample": "bicubic",
+    "center_crop": True,
+    "rescale_factor": 1 / 255,
+    "image_mean": [0.48145466, 0.4578275, 0.40821073],
+    "image_std": [0.26862954, 0.26130258, 0.27577711],
+}
+# Golden ids of test_translation_embeddings.py, equal to the legacy server's.
+DINOV2_SPACE_ID = "0c4799d83f742c0b146fbe29339b580b66f6de89650a64d23dab5fb4285a9bc6"
+CLIP_SPACE_ID = "f4213d41cf55d8dac7421664a9a8155446a15feb5c32fc09656e299e714adf0a"
+AUTO_ORIENT_KEPT = {"overrides": {"disable_preproc_auto_orient": False}}
+PRETRAINED_INSTANCE = "capabilities=image_embeddings"
+PE_MODEL_ID = "perception_encoder/PE-Core-L14-336"
+
+
+def _described_envelope(feature_definition, dimension, preprocessing, backend):
+    return {
+        "embeddings": np.array([[0.5] * dimension], dtype=np.float32),
+        "embedding_info": {
+            "feature_definition": feature_definition,
+            "output_type": "feature_vector",
+            "normalization": "none",
+            "dimension": dimension,
+            "preprocessing": preprocessing,
+            "backend": backend,
+            "precision": "torch.float32",
+        },
+    }
+
+
+def _pretrained_gateway(model_id="dinov2/small"):
+    key = f"{model_id}:{PRETRAINED_INSTANCE}"
+    envelope = _described_envelope(
+        "dinov2-cls-token@v1",
+        384,
+        PRETRAINED_PREPROCESSING,
+        "PretrainedImageEmbeddingOnnx",
+    )
+    return FakeGateway(
+        predictions={(key, "embed_images"): envelope},
+        model_info={
+            key: {
+                "actions": {"embed_images": {}},
+                "model_class_name": "PretrainedImageEmbeddingOnnx",
+                "model_mro_names": [
+                    "PretrainedImageEmbeddingOnnx",
+                    "ImageEmbeddingModel",
+                    "object",
+                ],
+            }
+        },
+    )
+
+
+def _clip_gateway(actions=("embed_images", "embed_text", "embed_images_with_info")):
+    envelope = _described_envelope(
+        "clip-image-embeds@v1", 512, CLIP_PREPROCESSING, "ClipOnnx"
+    )
+    return FakeGateway(
+        predictions={
+            ("clip/ViT-B-16", "embed_images_with_info"): envelope,
+            ("clip/ViT-B-16", "embed_images"): np.array([[0.5, 0.5]]),
+        },
+        model_info={
+            "clip/ViT-B-16": {
+                "actions": {action: {} for action in actions},
+                "model_class_name": "ClipOnnx",
+                "model_mro_names": ["ClipOnnx", "TextImageEmbeddingModel", "object"],
+            }
+        },
+    )
+
+
+def test_pretrained_embedding_model_returns_vectors_and_its_space(
+    legacy_client, fake_stat
+):
+    fake_stat["dinov2/small"] = ("embedding", "embed_images")
+    gw = _pretrained_gateway()
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={
+            "model_id": "dinov2/small",
+            "api_key": "k",
+            "image": [_image(), _image()],
+            "disable_preproc_grayscale": True,
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["embeddings"] == [[0.5] * 384, [0.5] * 384]
+    assert body["embedding_info"] == {
+        "model_id": "dinov2/small",
+        "feature_definition": "dinov2-cls-token@v1",
+        "output_type": "feature_vector",
+        "normalization": "none",
+        "dimension": 384,
+        "preprocessing": {**PRETRAINED_PREPROCESSING, **AUTO_ORIENT_KEPT},
+        "space_id": DINOV2_SPACE_ID,
+        "backend": "PretrainedImageEmbeddingOnnx",
+        "precision": "torch.float32",
+    }
+    assert r.headers["X-Model-Id"] == "dinov2/small:capabilities=image_embeddings"
+    key = f"dinov2/small:{PRETRAINED_INSTANCE}"
+    infer_calls = [c for c in gw.calls if c[0] == "infer"]
+    assert [c[1:3] for c in infer_calls] == [(key, "embed_images")] * 2
+    assert infer_calls[0][3] == {
+        "output_type": "feature_vector",
+        "disable_preproc_grayscale": True,
+    }
+
+
+@pytest.mark.parametrize("model_id", ["dinov2/small", "clip/ViT-B-16"])
+def test_pretrained_embedding_models_have_no_logits(legacy_client, fake_stat, model_id):
+    fake_stat["dinov2/small"] = ("embedding", "embed_images")
+    gw = _pretrained_gateway() if model_id == "dinov2/small" else _clip_gateway()
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={
+            "model_id": model_id,
+            "api_key": "k",
+            "image": _image(),
+            "output_type": "logits",
+        },
+    )
+
+    assert r.status_code == 400, r.text
+    assert r.json() == {
+        "message": FEATURE_VECTOR_ONLY,
+        "help_url": INPUT_VALIDATION_HELP_URL,
+    }
+    assert gw.calls == []
+
+
+def test_classifier_space_keeps_the_request_overrides(legacy_client, fake_stat):
+    fake_stat["my-classifier/1"] = ("classification", "infer")
+    preprocessing = {
+        "image_pre_processing": {
+            "auto-orient": {"enabled": True},
+            "grayscale": {"enabled": True},
+        },
+        "network_input": {"training_input_size": {"width": 224, "height": 224}},
+    }
+    envelope = _described_envelope(
+        "classifier-linear-input@v1",
+        2048,
+        preprocessing,
+        "ResNetForClassificationOnnx",
+    )
+    gw = _gateway("my-classifier/1", "feature_vector", envelope)
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={
+            "model_id": "my-classifier/1",
+            "api_key": "k",
+            "image": _image(),
+            "disable_preproc_grayscale": True,
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    info = r.json()["embedding_info"]
+    assert info["preprocessing"] == {
+        **preprocessing,
+        "overrides": {**NO_OVERRIDES, "disable_preproc_grayscale": True},
+    }
+    # Golden id of test_translation_embeddings.py, equal to the legacy server's.
+    assert info["space_id"] == (
+        "b4e7f1b4acc1340e8bca7fcb58a13b61f404df9da5c8f30ef11645d78b1c84d0"
+    )
+
+
+def test_clip_returns_described_image_embeddings_from_its_plain_registration(
+    legacy_client, fake_stat
+):
+    gw = _clip_gateway()
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={"model_id": "clip/ViT-B-16", "api_key": "k", "image": _image()},
+    )
+
+    assert r.status_code == 200, r.text
+    info = r.json()["embedding_info"]
+    assert info["feature_definition"] == "clip-image-embeds@v1"
+    assert info["model_id"] == "clip/ViT-B-16"
+    assert info["preprocessing"] == {**CLIP_PREPROCESSING, **AUTO_ORIENT_KEPT}
+    assert info["space_id"] == CLIP_SPACE_ID
+    assert info["backend"] == "ClipOnnx"
+    assert ("ensure_loaded", "clip/ViT-B-16", "k") in gw.calls
+    infer_call = next(c for c in gw.calls if c[0] == "infer")
+    assert infer_call[1:4] == (
+        "clip/ViT-B-16",
+        "embed_images_with_info",
+        {"output_type": "feature_vector"},
+    )
+
+
+def test_clip_embed_image_keeps_its_compact_embeddings(legacy_client, fake_stat):
+    gw = _clip_gateway()
+
+    r = legacy_client(gw).post(
+        "/clip/embed_image", json={"image": _image(), "api_key": "k"}
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["embeddings"] == [[0.5, 0.5]]
+    assert "embedding_info" not in r.json()
+    infer_call = next(c for c in gw.calls if c[0] == "infer")
+    assert infer_call[1:3] == ("clip/ViT-B-16", "embed_images")
+
+
+def test_clip_without_described_embeddings_is_refused(legacy_client, fake_stat):
+    gw = _clip_gateway(actions=("embed_images", "embed_text"))
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={"model_id": "clip/ViT-B-16", "api_key": "k", "image": _image()},
+    )
+
+    assert r.status_code == 501
+    assert r.json() == {"message": EMBEDDINGS_UNSUPPORTED}
+    assert [c for c in gw.calls if c[0] == "infer"] == []
+
+
+@pytest.mark.parametrize("output_type", ["feature_vector", "logits"])
+def test_perception_encoder_is_refused_before_loading(
+    legacy_client, fake_stat, output_type
+):
+    gw = FakeGateway()
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={
+            "model_id": PE_MODEL_ID,
+            "api_key": "k",
+            "image": _image(),
+            "output_type": output_type,
+        },
+    )
+
+    assert r.status_code == 501
+    assert r.json() == {"message": EMBEDDINGS_UNSUPPORTED}
+    assert r.headers["X-Model-Id"] == f"{PE_MODEL_ID}:{_registration(output_type)}"
+    assert gw.calls == []
+
+
+def _registration(output_type):
+    return _instance(output_type).replace(";", ":")
+
+
+@pytest.mark.parametrize(
+    "model_id,flag",
+    [
+        ("clip/ViT-B-16", "CORE_MODELS_ENABLED"),
+        ("clip/ViT-B-16", "CORE_MODEL_CLIP_ENABLED"),
+        (PE_MODEL_ID, "CORE_MODEL_PE_ENABLED"),
+    ],
+)
+def test_disabled_text_image_models_answer_as_unregistered_in_legacy(
+    legacy_client, fake_stat, monkeypatch, model_id, flag
+):
+    from inference_server import configuration
+
+    gw = _clip_gateway()
+    client = legacy_client(gw)
+    monkeypatch.setattr(configuration, flag, False)
+
+    r = client.post(
+        "/infer/embeddings",
+        json={"model_id": model_id, "api_key": "k", "image": _image()},
+    )
+
+    assert r.status_code == 500
+    assert r.json() == {"message": "Service misconfiguration."}
+    assert gw.calls == []
+
+
+def test_disabled_pretrained_embedding_models_answer_as_unregistered_in_legacy(
+    legacy_client, fake_stat, monkeypatch
+):
+    monkeypatch.setattr(
+        "inference_server.legacy.bridge.CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED",
+        False,
+    )
+    fake_stat["dinov2/small"] = ("embedding", "embed_images")
+    gw = _pretrained_gateway()
+
+    r = legacy_client(gw).post(
+        "/infer/embeddings",
+        json={"model_id": "dinov2/small", "api_key": "k", "image": _image()},
+    )
+
+    assert r.status_code == 500
+    assert r.json() == {"message": "Service misconfiguration."}
+    assert gw.calls == []

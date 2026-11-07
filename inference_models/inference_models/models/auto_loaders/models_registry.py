@@ -383,6 +383,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.perception_encoder.perception_encoder_pytorch",
         class_name="PerceptionEncoderTorch",
     ),
+    ("dinov2", EMBEDDING_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.pretrained_image_embeddings.pretrained_image_embeddings_onnx",
+        class_name="PretrainedImageEmbeddingOnnx",
+    ),
+    ("dinov3", EMBEDDING_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.pretrained_image_embeddings.pretrained_image_embeddings_onnx",
+        class_name="PretrainedImageEmbeddingOnnx",
+    ),
+    ("siglip2", EMBEDDING_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.pretrained_image_embeddings.pretrained_image_embeddings_onnx",
+        class_name="PretrainedImageEmbeddingOnnx",
+    ),
     ("rfdetr", OBJECT_DETECTION_TASK, BackendType.TRT): RegistryEntry(
         model_class=LazyClass(
             module_name="inference_models.models.rfdetr.rfdetr_object_detection_trt",

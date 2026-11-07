@@ -35,6 +35,17 @@ def test_supported_classifier_capabilities(architecture, backend, task):
     assert not supports_capabilities(architecture, task, "trt", ["image_embeddings"])
 
 
+@pytest.mark.parametrize("architecture", ["dinov2", "dinov3", "siglip2"])
+def test_supported_pretrained_embedding_capabilities(architecture):
+    assert supports_capabilities(
+        architecture, "embedding", "onnx", ["image_embeddings"]
+    )
+    assert not supports_capabilities(
+        architecture, "embedding", "trt", ["image_embeddings"]
+    )
+    assert not supports_capabilities("clip", "embedding", "onnx", ["image_embeddings"])
+
+
 @pytest.mark.parametrize("backend", [BackendType.ONNX, BackendType.TORCH])
 @pytest.mark.parametrize("task", ["classification", "multi-label-classification"])
 def test_dinov3_package_registry_and_embedding_capability_agree(backend, task):
