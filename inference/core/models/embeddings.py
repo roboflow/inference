@@ -76,6 +76,33 @@ def load_embedding_request_images(request) -> List[np.ndarray]:
     return decoded
 
 
+def pretrained_embedding_preprocessing(model_preprocessing, kwargs):
+    """Combine a pretrained or CLIP model's preprocessing with the request override.
+
+    These models decode the image with or without EXIF auto-orientation, so
+    that override changes their vectors; the classifier-only overrides do not
+    apply to them.
+
+    Args:
+        model_preprocessing: The model's own fixed preprocessing configuration.
+        kwargs: Request fields or tensor-native keyword arguments.
+
+    Returns:
+        The model preprocessing with the auto-orient override under
+        ``overrides``.
+    """
+    preprocessing = {
+        **model_preprocessing,
+        "overrides": {
+            "disable_preproc_auto_orient": kwargs.get(
+                "disable_preproc_auto_orient", False
+            )
+        },
+    }
+
+    return preprocessing
+
+
 def make_embedding_info(
     model_id, feature_info, preprocessing, backend, precision, dimension
 ):

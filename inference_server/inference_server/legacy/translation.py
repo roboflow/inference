@@ -988,21 +988,47 @@ def build_image_embedding_params(request: Any) -> dict:
     return params
 
 
+def pretrained_embedding_preprocessing(
+    model_preprocessing: dict, overrides: dict
+) -> dict:
+    """Combine a pretrained or CLIP model's preprocessing with the request override.
+
+    These models decode the image with or without EXIF auto-orientation, so
+    that override changes their vectors; the classifier-only overrides do not
+    apply to them.
+
+    Args:
+        model_preprocessing: The model's own fixed preprocessing configuration.
+        overrides: Preprocessing steps the request disabled, as it stated them.
+
+    Returns:
+        The model preprocessing with the auto-orient override under
+        ``overrides``.
+    """
+    preprocessing = {
+        **model_preprocessing,
+        "overrides": {
+            "disable_preproc_auto_orient": overrides["disable_preproc_auto_orient"]
+        },
+    }
+
+    return preprocessing
+
+
 def make_embedding_info(model_id: str, info: dict, overrides: dict) -> EmbeddingInfo:
     """Identify the embedding space described by a model's embedding envelope.
 
     A classifier reports its ``image_pre_processing`` and ``network_input``
     configuration, which the request overrides change, so the overrides join
     its preprocessing. Pretrained embedding models and CLIP report their own
-    fixed preprocessing, which is used as is.
+    fixed preprocessing, which only the auto-orient override joins.
 
     Args:
         model_id: Resolved model id that produced the vectors.
         info: Feature definition, dimension, normalization, the model's
             preprocessing configuration, backend and precision as reported by
             the model manager.
-        overrides: Preprocessing steps the request disabled, as it stated them;
-            only a classifier's space depends on them.
+        overrides: Preprocessing steps the request disabled, as it stated them.
 
     Returns:
         The metadata with a space id hashed from the model id, feature
@@ -1016,7 +1042,9 @@ def make_embedding_info(model_id: str, info: dict, overrides: dict) -> Embedding
             "overrides": overrides,
         }
     else:
-        preprocessing = model_preprocessing
+        preprocessing = pretrained_embedding_preprocessing(
+            model_preprocessing, overrides
+        )
     identity = {
         "model_id": model_id,
         "feature_definition": info["feature_definition"],

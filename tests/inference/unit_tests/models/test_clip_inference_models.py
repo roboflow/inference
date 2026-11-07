@@ -70,7 +70,10 @@ def test_clip_serves_image_embeddings_without_negotiating_the_capability(
     assert info.output_type == "feature_vector"
     assert info.normalization == "none"
     assert info.dimension == 4
-    assert info.preprocessing == backend.embedding_preprocessing
+    assert info.preprocessing == {
+        **backend.embedding_preprocessing,
+        "overrides": {"disable_preproc_auto_orient": False},
+    }
     assert info.preprocessing["image_size"] == 224
     assert info.backend == "ClipOnnx"
     passed_images = backend.embed_images.call_args.kwargs["images"]

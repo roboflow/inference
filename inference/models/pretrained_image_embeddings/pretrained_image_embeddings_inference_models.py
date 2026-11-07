@@ -23,6 +23,7 @@ from inference.core.models.embeddings import (
     FEATURE_VECTOR_OUTPUT_TYPE,
     load_embedding_request_images,
     make_embedding_info,
+    pretrained_embedding_preprocessing,
     require_feature_vector_output,
 )
 from inference.core.roboflow_api import get_extra_weights_provider_headers
@@ -90,7 +91,9 @@ class InferenceModelsPretrainedImageEmbeddingAdapter(Model):
             images, output_type=request.output_type, input_color_format="bgr"
         )
         info = self._embedding_metadata(
-            features=features, output_type=request.output_type
+            features=features,
+            output_type=request.output_type,
+            kwargs=request.model_dump(),
         )
         response = ImageEmbeddingResponse(
             embeddings=features.detach().cpu().float().tolist(),
@@ -115,8 +118,8 @@ class InferenceModelsPretrainedImageEmbeddingAdapter(Model):
             images: Materialized tensor or NumPy images.
             input_color_format: Color ordering of the supplied images.
             output_type: Must be the feature vector.
-            **kwargs: Classifier preprocessing overrides; these models have no
-                such steps, so they are ignored.
+            **kwargs: Preprocessing overrides; only the auto-orient one joins
+                the space identity, the classifier-only steps are ignored.
 
         Returns:
             Batched embedding tensor and compatibility metadata.
@@ -128,7 +131,9 @@ class InferenceModelsPretrainedImageEmbeddingAdapter(Model):
         features = self._model.embed_images(
             images, output_type=output_type, input_color_format=input_color_format
         )
-        info = self._embedding_metadata(features=features, output_type=output_type)
+        info = self._embedding_metadata(
+            features=features, output_type=output_type, kwargs=kwargs
+        )
         result = {
             "embeddings": features.detach(),
             "embedding_info": info.model_dump(exclude_none=True),
@@ -143,12 +148,14 @@ class InferenceModelsPretrainedImageEmbeddingAdapter(Model):
         )
 
     def _embedding_metadata(
-        self, *, features: torch.Tensor, output_type: str
+        self, *, features: torch.Tensor, output_type: str, kwargs: dict
     ) -> EmbeddingInfo:
         info = make_embedding_info(
             model_id=self._embedding_model_id,
             feature_info=self._model.get_embedding_info(output_type),
-            preprocessing=self._model.embedding_preprocessing,
+            preprocessing=pretrained_embedding_preprocessing(
+                self._model.embedding_preprocessing, kwargs
+            ),
             backend=type(self._model).__name__,
             precision=str(features.dtype),
             dimension=features.shape[1],

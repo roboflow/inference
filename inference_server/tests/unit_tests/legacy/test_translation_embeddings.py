@@ -67,7 +67,9 @@ CLASSIFIER_PREPROCESSING = {
     },
     "network_input": {"training_input_size": {"width": 224, "height": 224}},
 }
-# Computed once with legacy inference.core.models.embeddings.make_embedding_info;
+AUTO_ORIENT_KEPT = {"overrides": {"disable_preproc_auto_orient": False}}
+# Computed once with legacy inference.core.models.embeddings.make_embedding_info
+# and pretrained_embedding_preprocessing;
 # tests/inference/unit_tests/core/models/test_legacy_classifier_embeddings.py
 # asserts the same ids for the legacy server.
 GOLDEN_EMBEDDING_SPACES = [
@@ -76,14 +78,14 @@ GOLDEN_EMBEDDING_SPACES = [
         "dinov2-cls-token@v1",
         384,
         PRETRAINED_PREPROCESSING,
-        "18f23774f892940283119ce8640ee99fc1f94060e190c3edad304690824dd7d5",
+        "0c4799d83f742c0b146fbe29339b580b66f6de89650a64d23dab5fb4285a9bc6",
     ),
     (
         "clip/ViT-B-16",
         "clip-image-embeds@v1",
         512,
         CLIP_PREPROCESSING,
-        "1bc0eb86e1747bddf8f0b1c0b109365a8347a2b40bfbeaab302b122e7d726ac1",
+        "f4213d41cf55d8dac7421664a9a8155446a15feb5c32fc09656e299e714adf0a",
     ),
     (
         "my-classifier/1",
@@ -93,6 +95,10 @@ GOLDEN_EMBEDDING_SPACES = [
         "b4e7f1b4acc1340e8bca7fcb58a13b61f404df9da5c8f30ef11645d78b1c84d0",
     ),
 ]
+AUTO_ORIENT_OFF_SPACE_IDS = {
+    "dinov2/small": "a43faa8b92375189311fb63f6046fa3aec65a770fba2ec863aca922582d277e9",
+    "clip/ViT-B-16": "9ae6997fca7373231e560995c3728d273d8d635ce19743af1155d86ebc9a355d",
+}
 
 
 def _space_id(model_id, overrides):
@@ -242,16 +248,56 @@ def test_embedding_space_ids_match_the_legacy_server(
 @pytest.mark.parametrize(
     "preprocessing", [PRETRAINED_PREPROCESSING, CLIP_PREPROCESSING]
 )
-def test_make_embedding_info_keeps_fixed_model_preprocessing_as_is(preprocessing):
+def test_make_embedding_info_adds_only_auto_orient_to_fixed_model_preprocessing(
+    preprocessing,
+):
     info = {**INFO, "preprocessing": preprocessing}
 
     embedding_info = make_embedding_info("dinov2/small", info, GRAYSCALE_OFF)
 
-    assert embedding_info.preprocessing == preprocessing
+    assert embedding_info.preprocessing == {**preprocessing, **AUTO_ORIENT_KEPT}
     assert (
         embedding_info.space_id
         == make_embedding_info("dinov2/small", info, NO_OVERRIDES).space_id
     )
+
+
+@pytest.mark.parametrize(
+    "model_id,feature_definition,dimension,preprocessing,space_id",
+    GOLDEN_EMBEDDING_SPACES[:2],
+)
+def test_auto_orient_override_changes_pretrained_and_clip_space_ids(
+    model_id, feature_definition, dimension, preprocessing, space_id
+):
+    info = {
+        "feature_definition": feature_definition,
+        "output_type": "feature_vector",
+        "normalization": "none",
+        "dimension": dimension,
+        "preprocessing": preprocessing,
+        "backend": "Backend",
+        "precision": "torch.float32",
+    }
+    results = [
+        {
+            "embeddings": np.zeros((1, dimension), dtype=np.float32),
+            "embedding_info": info,
+        }
+    ]
+
+    def embedding_info(**overrides):
+        request = ImageEmbeddingRequest(
+            model_id=model_id, image=IMG, disable_preproc_grayscale=True, **overrides
+        )
+        return repack_image_embeddings(results, model_id, request).embedding_info
+
+    assert embedding_info().space_id == space_id
+    flipped = embedding_info(disable_preproc_auto_orient=True)
+    assert flipped.space_id == AUTO_ORIENT_OFF_SPACE_IDS[model_id]
+    assert flipped.preprocessing == {
+        **preprocessing,
+        "overrides": {"disable_preproc_auto_orient": True},
+    }
 
 
 def test_make_embedding_info_still_adds_overrides_to_classifier_preprocessing():

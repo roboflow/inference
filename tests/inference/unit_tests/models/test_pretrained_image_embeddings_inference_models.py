@@ -91,7 +91,10 @@ def test_pretrained_embeddings_return_raw_vectors_with_model_preprocessing(
     assert info.output_type == "feature_vector"
     assert info.normalization == "none"
     assert info.dimension == 3
-    assert info.preprocessing == DINOV3_PREPROCESSING
+    assert info.preprocessing == {
+        **DINOV3_PREPROCESSING,
+        "overrides": {"disable_preproc_auto_orient": False},
+    }
     assert info.backend == "FakePretrainedEmbeddingModel"
     assert info.precision == "torch.float32"
     passed_images = backend.embed_images.call_args.args[0]

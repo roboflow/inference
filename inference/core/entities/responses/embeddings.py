@@ -35,7 +35,7 @@ class EmbeddingInfo(BaseModel):
         examples=["none"],
     )
     preprocessing: Dict[str, Any] = Field(
-        description="Model preprocessing configuration, and request overrides for classifiers, used for these vectors.",
+        description="Model preprocessing configuration and the request overrides that change these vectors: all of them for classifiers, auto-orient only for pretrained models and CLIP.",
         examples=[{"overrides": {"disable_preproc_grayscale": False}}],
     )
     space_id: str = Field(

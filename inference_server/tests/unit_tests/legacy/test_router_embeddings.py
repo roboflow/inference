@@ -720,8 +720,9 @@ CLIP_PREPROCESSING = {
     "image_std": [0.26862954, 0.26130258, 0.27577711],
 }
 # Golden ids of test_translation_embeddings.py, equal to the legacy server's.
-DINOV2_SPACE_ID = "18f23774f892940283119ce8640ee99fc1f94060e190c3edad304690824dd7d5"
-CLIP_SPACE_ID = "1bc0eb86e1747bddf8f0b1c0b109365a8347a2b40bfbeaab302b122e7d726ac1"
+DINOV2_SPACE_ID = "0c4799d83f742c0b146fbe29339b580b66f6de89650a64d23dab5fb4285a9bc6"
+CLIP_SPACE_ID = "f4213d41cf55d8dac7421664a9a8155446a15feb5c32fc09656e299e714adf0a"
+AUTO_ORIENT_KEPT = {"overrides": {"disable_preproc_auto_orient": False}}
 PRETRAINED_INSTANCE = "capabilities=image_embeddings"
 PE_MODEL_ID = "perception_encoder/PE-Core-L14-336"
 
@@ -809,7 +810,7 @@ def test_pretrained_embedding_model_returns_vectors_and_its_space(
         "output_type": "feature_vector",
         "normalization": "none",
         "dimension": 384,
-        "preprocessing": PRETRAINED_PREPROCESSING,
+        "preprocessing": {**PRETRAINED_PREPROCESSING, **AUTO_ORIENT_KEPT},
         "space_id": DINOV2_SPACE_ID,
         "backend": "PretrainedImageEmbeddingOnnx",
         "precision": "torch.float32",
@@ -900,7 +901,7 @@ def test_clip_returns_described_image_embeddings_from_its_plain_registration(
     info = r.json()["embedding_info"]
     assert info["feature_definition"] == "clip-image-embeds@v1"
     assert info["model_id"] == "clip/ViT-B-16"
-    assert info["preprocessing"] == CLIP_PREPROCESSING
+    assert info["preprocessing"] == {**CLIP_PREPROCESSING, **AUTO_ORIENT_KEPT}
     assert info["space_id"] == CLIP_SPACE_ID
     assert info["backend"] == "ClipOnnx"
     assert ("ensure_loaded", "clip/ViT-B-16", "k") in gw.calls

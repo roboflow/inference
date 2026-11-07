@@ -37,6 +37,7 @@ from inference.core.models.embeddings import (
     FEATURE_VECTOR_OUTPUT_TYPE,
     load_embedding_request_images,
     make_embedding_info,
+    pretrained_embedding_preprocessing,
     require_feature_vector_output,
 )
 from inference.core.models.types import PreprocessReturnMetadata
@@ -132,7 +133,9 @@ class InferenceModelsClipAdapter(Model):
         response = ImageEmbeddingResponse(
             embeddings=features.detach().cpu().float().tolist(),
             embedding_info=self._embedding_metadata(
-                features=features, output_type=request.output_type
+                features=features,
+                output_type=request.output_type,
+                kwargs=request.model_dump(),
             ),
             time=perf_counter() - started,
             inference_id=request.id,
@@ -154,7 +157,8 @@ class InferenceModelsClipAdapter(Model):
             images: Materialized tensor or NumPy images.
             input_color_format: Color ordering of the supplied images.
             output_type: Must be the feature vector.
-            **kwargs: Classifier preprocessing overrides, which CLIP ignores.
+            **kwargs: Preprocessing overrides; only the auto-orient one joins
+                the space identity, the classifier-only steps are ignored.
 
         Returns:
             Batched embedding tensor and compatibility metadata.
@@ -169,19 +173,21 @@ class InferenceModelsClipAdapter(Model):
         result = {
             "embeddings": features.detach(),
             "embedding_info": self._embedding_metadata(
-                features=features, output_type=output_type
+                features=features, output_type=output_type, kwargs=kwargs
             ).model_dump(exclude_none=True),
         }
 
         return result
 
     def _embedding_metadata(
-        self, *, features: torch.Tensor, output_type: str
+        self, *, features: torch.Tensor, output_type: str, kwargs: dict
     ) -> EmbeddingInfo:
         info = make_embedding_info(
             model_id=self._embedding_model_id,
             feature_info=self._model.get_embedding_info(output_type),
-            preprocessing=self._model.embedding_preprocessing,
+            preprocessing=pretrained_embedding_preprocessing(
+                self._model.embedding_preprocessing, kwargs
+            ),
             backend=type(self._model).__name__,
             precision=str(features.dtype),
             dimension=features.shape[1],
