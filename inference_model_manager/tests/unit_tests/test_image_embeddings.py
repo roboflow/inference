@@ -7,7 +7,10 @@ import torch
 from inference_models.models.auto_loaders.entities import PreProcessingOverrides
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
 from inference_models.models.base.image_embeddings import ImageEmbeddingModel
-from inference_models.models.clip.clip_onnx import ClipOnnx
+from inference_models.models.clip.image_embeddings import (
+    describe_clip_image_embeddings,
+    describe_clip_preprocessing,
+)
 
 from inference_model_manager.dispatch import invoke_action, list_actions, resolve_action
 from inference_model_manager.image_embeddings import describe_image_embeddings
@@ -179,16 +182,34 @@ def test_serialize_image_embeddings_keeps_the_envelope():
     assert serialized["embedding_info"] is info
 
 
+class ClipOnnx(TextImageEmbeddingModel):
+    """Stand-in named like the real class, whose actions are registered by class
+    name; the real one needs onnxruntime. It describes its space through the
+    same helpers."""
+
+    def __init__(self, image_size):
+        self._image_size = image_size
+
+    @classmethod
+    def from_pretrained(cls, model_name_or_path, **kwargs):
+        return cls(image_size=224)
+
+    def embed_images(self, images, **kwargs):
+        return torch.zeros((1, 2))
+
+    def embed_text(self, texts, **kwargs):
+        return torch.zeros((1, 2))
+
+    def get_embedding_info(self, output_type=None):
+        return describe_clip_image_embeddings(output_type=output_type)
+
+    @property
+    def embedding_preprocessing(self):
+        return describe_clip_preprocessing(image_size=self._image_size)
+
+
 def _weightless_clip(image_size=224):
-    model = ClipOnnx(
-        visual_onnx_session=MagicMock(),
-        textual_onnx_session=MagicMock(),
-        image_size=image_size,
-        visual_input_name="image",
-        textual_input_name="text",
-        device=torch.device("cpu"),
-        max_batch_size=8,
-    )
+    model = ClipOnnx(image_size=image_size)
     model.embed_images = MagicMock(
         return_value=torch.tensor([[0.25, 0.5, 1.0]], dtype=torch.float32)
     )

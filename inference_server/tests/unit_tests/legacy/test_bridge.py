@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
+from inference_models import ClassificationModel, MultiLabelClassificationModel
 from inference_models.errors import (
     ForbiddenModelAccessError,
     ModelInputError,
@@ -16,6 +17,12 @@ from inference_models.errors import (
     PaymentRequiredModelAccessError,
     UnauthorizedModelAccessError,
     UsagePausedModelAccessError,
+)
+from inference_models.models.base.embeddings import TextImageEmbeddingModel
+from inference_models.models.base.image_embeddings import (
+    ImageEmbeddingModel,
+    OnnxClassifierEmbeddings,
+    TorchClassifierEmbeddings,
 )
 
 from inference_server.framework.model_stat import ModelStat
@@ -2699,53 +2706,84 @@ def test_task_type_from_mro_prefers_the_concrete_class():
     assert bridge_mod._task_type_from_mro(["L2CSNetOnnx", "object"]) == "gaze-detection"
 
 
+# Stand-ins named like the real model classes, with the same bases in the same
+# order: _TASK_TYPE_BY_MRO matches class names, and the real ONNX classes need
+# onnxruntime, which this test environment does not install.
+_EMBEDDING_MODEL_MROS = [
+    (
+        "pretrained_image_embeddings.pretrained_image_embeddings_onnx",
+        "PretrainedImageEmbeddingOnnx",
+        (ImageEmbeddingModel,),
+        "embedding",
+    ),
+    ("clip.clip_onnx", "ClipOnnx", (TextImageEmbeddingModel,), "embedding"),
+    (
+        "resnet.resnet_classification_onnx",
+        "ResNetForClassificationOnnx",
+        (OnnxClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "resnet.resnet_classification_onnx",
+        "ResNetForMultiLabelClassificationOnnx",
+        (OnnxClassifierEmbeddings, MultiLabelClassificationModel),
+        "multi-label-classification",
+    ),
+    (
+        "resnet.resnet_classification_torch",
+        "ResNetForClassificationTorch",
+        (TorchClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "vit.vit_classification_onnx",
+        "VITForClassificationOnnx",
+        (OnnxClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "dinov3.dinov3_classification_onnx",
+        "DinoV3ForClassificationOnnx",
+        (OnnxClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "dinov3.dinov3_classification_torch",
+        "DinoV3ForMultiLabelClassificationTorch",
+        (TorchClassifierEmbeddings, MultiLabelClassificationModel),
+        "multi-label-classification",
+    ),
+]
+
+
+def _stand_in_mro_names(class_name, bases):
+    return [cls.__name__ for cls in type(class_name, bases, {}).__mro__]
+
+
 @pytest.mark.parametrize(
-    "module_name,class_name,task_type",
-    [
-        (
-            "pretrained_image_embeddings.pretrained_image_embeddings_onnx",
-            "PretrainedImageEmbeddingOnnx",
-            "embedding",
-        ),
-        ("clip.clip_onnx", "ClipOnnx", "embedding"),
-        (
-            "resnet.resnet_classification_onnx",
-            "ResNetForClassificationOnnx",
-            "classification",
-        ),
-        (
-            "resnet.resnet_classification_onnx",
-            "ResNetForMultiLabelClassificationOnnx",
-            "multi-label-classification",
-        ),
-        (
-            "resnet.resnet_classification_torch",
-            "ResNetForClassificationTorch",
-            "classification",
-        ),
-        ("vit.vit_classification_onnx", "VITForClassificationOnnx", "classification"),
-        (
-            "dinov3.dinov3_classification_onnx",
-            "DinoV3ForClassificationOnnx",
-            "classification",
-        ),
-        (
-            "dinov3.dinov3_classification_torch",
-            "DinoV3ForMultiLabelClassificationTorch",
-            "multi-label-classification",
-        ),
-    ],
+    "module_name,class_name,bases,task_type", _EMBEDDING_MODEL_MROS
 )
 def test_task_type_from_mro_types_embedding_models_without_retyping_classifiers(
-    module_name, class_name, task_type
+    module_name, class_name, bases, task_type
 ):
+    mro_names = _stand_in_mro_names(class_name, bases)
+
+    assert bridge_mod._task_type_from_mro(mro_names) == task_type
+
+
+@pytest.mark.parametrize(
+    "module_name,class_name,bases,task_type", _EMBEDDING_MODEL_MROS
+)
+def test_embedding_model_stand_ins_match_the_real_class_mros(
+    module_name, class_name, bases, task_type
+):
+    pytest.importorskip("onnxruntime")
     import importlib
 
     module = importlib.import_module(f"inference_models.models.{module_name}")
-    mro_names = [cls.__name__ for cls in getattr(module, class_name).__mro__]
+    real_mro_names = [cls.__name__ for cls in getattr(module, class_name).__mro__]
 
-    assert "ImageEmbeddingModel" in mro_names or class_name == "ClipOnnx"
-    assert bridge_mod._task_type_from_mro(mro_names) == task_type
+    assert real_mro_names == _stand_in_mro_names(class_name, bases)
 
 
 @pytest.mark.parametrize(
