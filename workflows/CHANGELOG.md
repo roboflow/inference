@@ -18,9 +18,10 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
-- Dynamic Crop clips NumPy crop regions to image bounds before slicing pixels
-  and masks or translating coordinates. Negative coordinates no longer wrap to
-  the opposite edge, and fully off-image regions keep aligned empty outputs.
+- Dynamic Crop and Relative Static Crop clip crop regions to image bounds before
+  slicing pixels or recording origin metadata. Negative coordinates no longer
+  wrap to the opposite edge; Dynamic Crop masks use the same clipped region,
+  and Relative Static Crop video identities describe the visible region.
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
