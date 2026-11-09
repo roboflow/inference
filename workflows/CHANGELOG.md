@@ -92,6 +92,10 @@ for contributor and maintainer responsibilities.
   `WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS` (scaled from 4 Mbit/s at 1080p30).
   Invalid values fall back to the default with a warning. `docs/workflows/video_clips.md`
   describes the clip contract, host support and the measured performance envelope.
+- OpenAI Decisions block (`roboflow_core/open_ai_decisions@v1`): asks OpenAI's Decisions API (`POST /v1/decisions`, GPT-6 Luna) typed questions about each image and returns probabilities instead of generated text.
+  - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
+  - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
+  - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
 
 ### Fixed
 
@@ -103,6 +107,7 @@ for contributor and maintainer responsibilities.
 - The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 
 ## `0.2.15`
 
