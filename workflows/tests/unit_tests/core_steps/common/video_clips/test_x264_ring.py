@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common.video_clips import artifact as artifact_module
+from roboflow_workflows.core_steps.common.video_clips import ring as ring_module
 from roboflow_workflows.core_steps.common.video_clips.admission import Budget
 from roboflow_workflows.core_steps.common.video_clips.artifact import ClipArtifact
 from roboflow_workflows.core_steps.common.video_clips.capture import (
@@ -192,6 +193,95 @@ def test_future_resolves_on_the_ring_thread_and_packets_are_released_once_muxed(
     assert all(artifact.read_bytes() for artifact in artifacts)
     for artifact in artifacts:
         artifact.release()
+
+
+def test_clips_finishing_together_are_muxed_one_at_a_time_in_chunks(
+    ring, monkeypatch
+) -> None:
+    # given: two recorders whose captures complete on the same frame
+    real_mux = ring_module.mux_h264_packets
+    lock = threading.Lock()
+    calls: List[dict] = []
+    state = {"active": 0, "peak": 0}
+
+    def tracking_mux(packets, **kwargs):
+        with lock:
+            state["active"] += 1
+            state["peak"] = max(state["peak"], state["active"])
+            calls.append(kwargs)
+        try:
+            time.sleep(0.05)  # widen the window in which two muxes could overlap
+            real_mux(packets, **kwargs)
+        finally:
+            with lock:
+                state["active"] -= 1
+
+    monkeypatch.setattr(ring_module, "mux_h264_packets", tracking_mux)
+    rings = [ring(), ring()]
+    for recorder in rings:
+        _feed(recorder, range(60))
+    handles = [recorder.capture(_ts(30), _ts(60)) for recorder in rings]
+
+    # when
+    for recorder in rings:
+        _feed(recorder, range(60, 70))
+    artifacts = [handle.future.result(timeout=10) for handle in handles]
+
+    # then
+    assert len(calls) == 2
+    assert state["peak"] == 1
+    assert all(
+        call["pause_every"] == ring_module.MUX_CHUNK_PACKETS
+        and call["pause_seconds"] == ring_module.MUX_PAUSE_SECONDS
+        for call in calls
+    )
+    assert all(_decode(artifact)[0] for artifact in artifacts)
+    for artifact in artifacts:
+        artifact.release()
+
+
+def test_mux_pauses_after_every_chunk_of_packets(ring, monkeypatch) -> None:
+    # given
+    recorder = ring()
+    _feed(recorder, range(60))
+    pauses: List[float] = []
+    real_sleep = time.sleep
+    monkeypatch.setattr(
+        ring_module.time,
+        "sleep",
+        lambda seconds: pauses.append(seconds) or real_sleep(0),
+    )
+    packets = recorder._store.snapshot(
+        ring_module.to_seconds(_ts(0)),
+        ring_module.to_seconds(_ts(59)),
+        max_lead_seconds=1.0,
+    )
+    plan = ring_module.plan_timeline(
+        [packet.t for packet in packets],
+        playback_speed=1.0,
+        clip_fps=None,
+        declared_fps=None,
+    )
+
+    # when
+    path = ring_module.allocate_clip_path()
+    try:
+        ring_module.mux_h264_packets(
+            packets,
+            pts=plan.pts,
+            final_duration_ticks=plan.final_duration_ticks,
+            width=packets[0].width,
+            height=packets[0].height,
+            path=path,
+            pause_every=16,
+            pause_seconds=0.001,
+        )
+    finally:
+        path.unlink(missing_ok=True)
+
+    # then
+    assert len(packets) >= 32
+    assert pauses == [0.001] * (len(packets) // 16)
 
 
 def test_byte_cap_eviction_marks_capture_ring_evicted(ring) -> None:

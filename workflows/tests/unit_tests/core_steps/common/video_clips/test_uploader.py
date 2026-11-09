@@ -45,6 +45,17 @@ class _Response:
         self.text = text
 
 
+def _read_all(stream) -> bytes:
+    # How http.client sends a file body: read(blocksize) until empty.
+    chunks = []
+    while True:
+        chunk = stream.read(8192)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 class _FakePut:
     def __init__(self, outcomes: List[object], delay: float = 0.0):
         self.outcomes = list(outcomes)
@@ -58,7 +69,10 @@ class _FakePut:
         with self._lock:
             self.active += 1
             self.peak = max(self.peak, self.active)
-            self.calls.append({"url": url, "body": data.read(), "headers": headers})
+            body = data if isinstance(data, (bytes, bytearray)) else _read_all(data)
+            self.calls.append(
+                {"url": url, "body": body, "headers": headers, "data": data}
+            )
             outcome = (
                 self.outcomes.pop(0) if len(self.outcomes) > 1 else self.outcomes[0]
             )
@@ -359,7 +373,8 @@ class _BlockingPut:
     def __call__(self, url, *, data, headers, timeout):
         self.started.set()
         self.proceed.wait(timeout=10)
-        data.read()
+        if not isinstance(data, (bytes, bytearray)):
+            _read_all(data)
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
@@ -502,3 +517,56 @@ def test_redaction_hides_the_signature_of_a_gateway_wrapped_url() -> None:
     # then
     assert redact_url(wrapped) == "https://gateway.example/proxy?REDACTED"
     assert "deadbeefsecret" not in redact_text(f"PUT {wrapped} failed")
+
+
+def test_in_memory_clip_is_sent_as_one_buffer() -> None:
+    # given
+    put = _FakePut([_Response(200)])
+    uploader = _uploader(put, _FakeClock())
+
+    # when
+    completion = _submit(uploader, _capture(_artifact())).result(timeout=5)
+
+    # then
+    assert completion.terminal_status == STATUS_PUT_ACCEPTED
+    assert isinstance(put.calls[0]["data"], bytes)
+    assert put.calls[0]["body"] == CLIP_BYTES
+
+
+def test_file_backed_clip_streams_in_large_chunks_with_its_length(tmp_path) -> None:
+    # given
+    payload = bytes(range(256)) * 12_000  # 3 MB: several 1 MiB reads
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(payload)
+    artifact = ClipArtifact(
+        path, size_bytes=len(payload), duration_seconds=5.0, report=_report()
+    )
+    reads: List[int] = []
+
+    class _Recorder:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __call__(self, url, *, data, headers, timeout):
+            assert len(data) == len(payload)  # Content-Length for requests
+            chunks = []
+            while True:
+                chunk = data.read(8192)
+                if not chunk:
+                    break
+                reads.append(len(chunk))
+                chunks.append(chunk)
+            self.stream.append(b"".join(chunks))
+            return _Response(200)
+
+    sent: List[bytes] = []
+    uploader = _uploader(_Recorder(sent), _FakeClock())
+
+    # when
+    completion = _submit(uploader, _capture(artifact)).result(timeout=5)
+
+    # then
+    assert completion.terminal_status == STATUS_PUT_ACCEPTED
+    assert sent == [payload]
+    assert reads[0] == 1024 * 1024
+    assert len(reads) == 3

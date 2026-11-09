@@ -12,6 +12,11 @@ Threads (all owned by the ring, never a shared executor):
 * the encoder thread runs the backend's `_encode_frame`, appends packets,
   extends and completes captures and expires stalled ones;
 * the finalizer thread remuxes completed captures and resolves their futures.
+  Finalizations are serialised process-wide (one clip muxed at a time) and the
+  remux pauses briefly every ``MUX_CHUNK_PACKETS`` packets, so the burst of work
+  at a capture's completion never competes with the host's pipeline for long:
+  on a 2-CPU gVisor sandbox two clips finishing together delayed the host's
+  preview by up to half a second.
 
 Captures share packets by reference count; the store evicts whole GOPs by age
 (pre-roll + one output second + margin) and by the byte cap
@@ -116,6 +121,10 @@ TIME_EPSILON = 1e-6
 LOGGED_ERRORS_BEFORE_THROTTLE = 5
 LOG_EVERY_NTH_ERROR = 100
 UNAVAILABLE_CLOSING = "unavailable:closing"
+MUX_CHUNK_PACKETS = 32
+MUX_PAUSE_SECONDS = 0.004
+# One remux at a time per process (all rings, all recorders).
+_FINALIZE_LOCK = threading.Lock()
 
 
 class EncoderStartingError(RuntimeError):
@@ -552,6 +561,8 @@ def mux_h264_packets(
     height: int,
     path: Path,
     frame_rate: Optional[float] = None,
+    pause_every: Optional[int] = None,
+    pause_seconds: float = 0.0,
 ) -> None:
     """Write H.264 Annex B packets to an MP4 file without re-encoding.
 
@@ -563,6 +574,9 @@ def mux_h264_packets(
         height: Frame height.
         path: Output file (written with ``movflags=+faststart``).
         frame_rate: Nominal frame rate stored as stream metadata.
+        pause_every: Sleep ``pause_seconds`` after every this many packets, so
+            a long remux yields the GIL and the CPU in bounded chunks.
+        pause_seconds: Length of each pause.
 
     Raises:
         VideoExtraMissingError: If PyAV is not installed.
@@ -596,6 +610,8 @@ def mux_h264_packets(
             packet.is_keyframe = item.is_keyframe
             packet.stream = stream
             container.mux(packet)
+            if pause_every and (index + 1) % pause_every == 0:
+                time.sleep(pause_seconds)
 
 
 class _CaptureState:
@@ -1324,29 +1340,32 @@ class BaseEncodedRing(abc.ABC):
             clip_fps=self.clip_fps,
             declared_fps=self.declared_fps,
         )
-        path = allocate_clip_path()
-        try:
-            mux_h264_packets(
-                packets,
-                pts=plan.pts,
-                final_duration_ticks=plan.final_duration_ticks,
-                width=packets[0].width,
-                height=packets[0].height,
-                path=path,
-                frame_rate=self._nominal_output_fps(),
+        with _FINALIZE_LOCK:
+            path = allocate_clip_path()
+            try:
+                mux_h264_packets(
+                    packets,
+                    pts=plan.pts,
+                    final_duration_ticks=plan.final_duration_ticks,
+                    width=packets[0].width,
+                    height=packets[0].height,
+                    path=path,
+                    frame_rate=self._nominal_output_fps(),
+                    pause_every=MUX_CHUNK_PACKETS,
+                    pause_seconds=MUX_PAUSE_SECONDS,
+                )
+            except Exception:
+                path.unlink(missing_ok=True)
+                raise
+            finalize_ms = (time.perf_counter() - started) * 1000
+            report = self._build_report(
+                state, packets=packets, plan=plan, finalize_ms=finalize_ms
             )
-        except Exception:
-            path.unlink(missing_ok=True)
-            raise
-        finalize_ms = (time.perf_counter() - started) * 1000
-        report = self._build_report(
-            state, packets=packets, plan=plan, finalize_ms=finalize_ms
-        )
-        artifact = ClipArtifact.from_muxed_file(
-            path,
-            duration_seconds=plan.duration_ticks / PTS_CLOCK_RATE,
-            report=report,
-        )
+            artifact = ClipArtifact.from_muxed_file(
+                path,
+                duration_seconds=plan.duration_ticks / PTS_CLOCK_RATE,
+                report=report,
+            )
         # The MP4 holds its own copy of the clip, so the ring's packets are
         # released now rather than when the upload finishes.
         self._release_packets(packets)
