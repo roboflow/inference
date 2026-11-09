@@ -370,6 +370,9 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
+# max_new_tokens for TransformerModel.predict when the request sets none
+LMM_DEFAULT_MAX_NEW_TOKENS = int(os.getenv("LMM_DEFAULT_MAX_NEW_TOKENS", 256))
+
 COSMOS3_ENABLED = str2bool(os.getenv("COSMOS3_ENABLED", True))
 
 VJEPA2_1_ENABLED = str2bool(os.getenv("VJEPA2_1_ENABLED", True))
