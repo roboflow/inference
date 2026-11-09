@@ -56,7 +56,7 @@ class YOLOWorld(RoboflowCoreModel):
 
         self.model = YOLO(self.cache_file("yolo-world.pt"))
         logger.debug("Loading CLIP ViT-B/32")
-        clip_model = Clip(model_id="clip/ViT-B-32")
+        clip_model = Clip(model_id="clip/ViT-B-32", api_key=self.api_key)
         logger.debug("CLIP loaded")
         self.clip_model = clip_model
         self.class_names = None
