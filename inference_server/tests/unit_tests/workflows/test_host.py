@@ -625,6 +625,7 @@ def test_step_error_handler_maps_feature_deprecated():
 
 
 def test_workflows_platform_bindings_expose_the_module_singletons():
+    """Verify workflow bindings reuse the host-owned admission controller and clients."""
     import inference_server.workflows.host as host
 
     bindings = host.workflows_platform_bindings()

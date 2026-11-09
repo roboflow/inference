@@ -448,6 +448,12 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
+        """List the host parameters used to construct this block.
+
+        Returns:
+            List[str]: Execution policy, authenticated API key, platform client and
+                Databricks admission controller parameter names.
+        """
         return ["disable_sinks", "api_key", "platform_client", "databricks_admission"]
 
     @classmethod
@@ -492,6 +498,7 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
         Raises:
             ValueError: Input validation, decoding or an allocation budget fails.
             RuntimeError: Execution is unavailable, forbidden, or the worker fails.
+            AdmissionRejected: Hosted identity, shared backend or quota checks fail.
             TimeoutError: The invocation exceeds its deadline.
         """
         ensure_block_enabled()
@@ -549,12 +556,14 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
         path_kind = classify_http_path(http_path)
         if hosted and path_kind != "warehouse":
             raise ValueError("Hosted Databricks execution requires a SQL warehouse")
+
         tenant = "self-hosted"
         if hosted:
             if not self._api_key:
                 raise AdmissionRejected(
                     "Hosted Databricks execution requires an authenticated workspace"
                 )
+
             try:
                 tenant = self._platform_client.get_roboflow_workspace(self._api_key)
             except Exception:

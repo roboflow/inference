@@ -1402,13 +1402,21 @@ def bind_image_codec(init_parameters: Dict[str, Any]) -> None:
 
 
 def workflows_platform_bindings() -> Dict[str, Any]:
-    return {
+    """Collect the host-owned dependencies injected into workflow block constructors.
+
+    Returns:
+        Dict[str, Any]: Namespaced cache, platform, workspace, nested-workflow and
+            Databricks admission dependencies shared by this server process.
+    """
+    bindings = {
         "workflows_core.cache": WORKFLOWS_CACHE,
         "workflows_core.databricks_admission": DATABRICKS_ADMISSION,
         "workflows_core.platform_client": PLATFORM_CLIENT,
         "workflows_core.workspace_resolver": WORKSPACE_RESOLVER,
         "workflows_core.inner_workflow_spec_resolver": inner_workflow_spec_resolver,
     }
+
+    return bindings
 
 
 def _local_workflow_response(workflow_id: str) -> dict:

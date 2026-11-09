@@ -18,19 +18,47 @@ PATH = "/sql/1.0/warehouses/abc"
 
 
 def controller(**limits):
-    return admission.DatabricksAdmission(
+    """Build a process-local admission controller with selected quota overrides.
+
+    Args:
+        **limits (int): Operator limits replacing AdmissionLimits defaults.
+
+    Returns:
+        DatabricksAdmission: Isolated controller for this test.
+    """
+    control = admission.DatabricksAdmission(
         admission.LocalAdmissionBackend(), limits=admission.AdmissionLimits(**limits)
     )
 
+    return control
+
 
 def enter(control, *, tenant="tenant", hostname=HOST, path=PATH):
-    return control.admit(
+    """Prepare an admission context using the fixture tenant and destination.
+
+    Args:
+        control (DatabricksAdmission): Controller whose quotas are under test.
+        tenant (str): Trusted tenant identity for the simulated invocation.
+        hostname (str): Validated destination hostname.
+        path (str): SQL warehouse endpoint path.
+
+    Returns:
+        AbstractContextManager: Admission context with a ten-second execution deadline.
+    """
+    context = control.admit(
         tenant=tenant, hostname=hostname, http_path=path, deadline=time.monotonic() + 10
     )
+
+    return context
 
 
 @pytest.mark.parametrize("scope", ["tenant", "workspace", "warehouse", "fleet"])
 def test_each_concurrency_limit_and_release(scope):
+    """Verify each concurrency limit and release.
+
+    Args:
+        scope (str): Tenant, workspace, warehouse or fleet quota selected by the case.
+    """
     control = controller(**{scope + "_concurrency": 1})
     with enter(control):
         with pytest.raises(admission.AdmissionRejected):
@@ -41,6 +69,7 @@ def test_each_concurrency_limit_and_release(scope):
 
 
 def test_destination_limits_cross_tenants_and_endpoint_aliases():
+    """Verify destination limits cross tenants and endpoint aliases."""
     control = controller(warehouse_concurrency=1)
     with enter(control, tenant="alice"):
         with pytest.raises(admission.AdmissionRejected):
@@ -57,6 +86,11 @@ def test_destination_limits_cross_tenants_and_endpoint_aliases():
 
 @pytest.mark.parametrize("scope", ["tenant", "workspace", "warehouse", "fleet"])
 def test_rates_are_not_refunded_after_success_or_failure(scope):
+    """Verify rates are not refunded after success or failure.
+
+    Args:
+        scope (str): Tenant, workspace, warehouse or fleet quota selected by the case.
+    """
     control = controller(**{scope + "_rate": 1})
     with pytest.raises(ValueError):
         with enter(control):
@@ -67,6 +101,11 @@ def test_rates_are_not_refunded_after_success_or_failure(scope):
 
 
 def test_local_lease_and_rate_expiration(monkeypatch):
+    """Verify local lease and rate expiration.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after the test.
+    """
     control = controller(tenant_concurrency=1, tenant_rate=1)
     clock = Mock(return_value=100.0)
     monkeypatch.setattr(admission.time, "monotonic", clock)
@@ -80,6 +119,7 @@ def test_local_lease_and_rate_expiration(monkeypatch):
 
 
 def test_backend_errors_fail_closed_without_revealing_details():
+    """Verify backend errors fail closed without revealing details."""
     backend = Mock(distributed=True)
     backend.acquire.side_effect = RuntimeError("redis://private-credential@host")
     control = admission.DatabricksAdmission(backend, limits=admission.AdmissionLimits())
@@ -96,23 +136,23 @@ def _compete(controls):
     lock = threading.Lock()
     results = []
 
-    def record(value):
+    def _record(value):
         with lock:
             results.append(value)
             if len(results) == 10:
                 attempted.set()
 
-    def run(index):
+    def _run(index):
         start.wait(timeout=5)
         try:
             with enter(controls[index % len(controls)]):
-                record(True)
+                _record(True)
                 assert release.wait(timeout=5)
         except admission.AdmissionRejected:
-            record(False)
+            _record(False)
 
     with ThreadPoolExecutor(10) as pool:
-        futures = [pool.submit(run, index) for index in range(10)]
+        futures = [pool.submit(_run, index) for index in range(10)]
         start.wait(timeout=5)
         try:
             assert attempted.wait(timeout=5)
@@ -124,10 +164,12 @@ def _compete(controls):
 
 
 def test_local_admission_is_atomic_across_threads():
+    """Verify local admission is atomic across threads."""
     _compete([controller()])
 
 
 def test_redis_lua_is_atomic_across_independent_clients_and_releases_only_active_leases():
+    """Verify redis lua is atomic across independent clients and releases only active leases."""
     fakeredis = pytest.importorskip(
         "fakeredis", reason="install fakeredis[lua] for offline Lua integration tests"
     )
@@ -156,7 +198,12 @@ def test_redis_lua_is_atomic_across_independent_clients_and_releases_only_active
 
 @pytest.fixture
 def request_inputs():
-    return dict(
+    """Supply valid image-reader inputs for host-boundary tests.
+
+    Returns:
+        dict: Block inputs containing a synthetic warehouse token.
+    """
+    inputs = dict(
         server_hostname=HOST,
         http_path=PATH,
         access_token="databricks-token",
@@ -171,6 +218,8 @@ def request_inputs():
         skip_undecodable=True,
     )
 
+    return inputs
+
 
 @pytest.mark.parametrize(
     "failure", ["local_backend", "missing_key", "unknown_workspace", "quota"]
@@ -178,6 +227,13 @@ def request_inputs():
 def test_hosted_rejection_precedes_dns_and_process_launch(
     monkeypatch, request_inputs, failure
 ):
+    """Verify hosted rejection precedes dns and process launch.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after the test.
+        request_inputs (dict): Valid image-reader inputs without caller-controlled tenant identity.
+        failure (str): Missing identity, backend or capacity condition to exercise.
+    """
     monkeypatch.setattr(v1, "ensure_block_enabled", lambda: None)
     monkeypatch.setattr(v1, "running_on_hosted_platform", lambda: True)
     lookup = Mock(side_effect=AssertionError("destination DNS"))
@@ -206,6 +262,12 @@ def test_hosted_rejection_precedes_dns_and_process_launch(
 def test_trusted_workspace_and_normalized_destination_are_used_and_lease_covers_worker(
     monkeypatch, request_inputs
 ):
+    """Verify trusted workspace and normalized destination are used and lease covers worker.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after the test.
+        request_inputs (dict): Valid image-reader inputs without caller-controlled tenant identity.
+    """
     monkeypatch.setattr(v1, "ensure_block_enabled", lambda: None)
     monkeypatch.setattr(v1, "running_on_hosted_platform", lambda: True)
     backend = Mock(distributed=True)
@@ -213,11 +275,12 @@ def test_trusted_workspace_and_normalized_destination_are_used_and_lease_covers_
     platform = Mock()
     platform.get_roboflow_workspace.return_value = "authenticated-tenant"
 
-    def run(*args, **kwargs):
+    def _run(*args, **kwargs):
         backend.release.assert_not_called()
+
         return []
 
-    monkeypatch.setattr(isolation, "run_isolated", run)
+    monkeypatch.setattr(isolation, "run_isolated", _run)
     block = v1.DatabricksSQLImageSourceBlockV1(
         api_key="trusted-host-key",
         platform_client=platform,
@@ -234,6 +297,7 @@ def test_trusted_workspace_and_normalized_destination_are_used_and_lease_covers_
 
 
 def test_host_cache_binding_reuses_redis_and_local_fallback_cannot_enable_hosted():
+    """Verify host cache binding reuses redis and local fallback cannot enable hosted."""
     client = Mock()
     shared = admission.admission_from_cache(SimpleNamespace(client=client))
     assert shared.backend._client is client
@@ -242,7 +306,8 @@ def test_host_cache_binding_reuses_redis_and_local_fallback_cannot_enable_hosted
         local.require_shared_backend(hosted=True)
 
 
-def test_real_redis_ceiling_across_processes(tmp_path):
+def test_real_redis_ceiling_across_processes():
+    """Verify real redis ceiling across processes."""
     import json
     import os
     import subprocess
@@ -289,6 +354,7 @@ def test_real_redis_ceiling_across_processes(tmp_path):
                 except redis.ConnectionError:
                     if time.monotonic() >= until:
                         raise
+
                     time.sleep(0.01)
             keys = admission._keys(tenant="tenant", hostname=HOST, http_path=PATH)
             script = """

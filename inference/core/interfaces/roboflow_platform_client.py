@@ -370,14 +370,21 @@ SERVER_DATABRICKS_ADMISSION = admission_from_cache(server_cache)
 
 
 def workflows_platform_bindings() -> Dict[str, Any]:
-    """The `workflows_core.*` init parameters every composition root installs."""
-    return {
+    """Collect the host-owned dependencies injected into workflow block constructors.
+
+    Returns:
+        Dict[str, Any]: Namespaced cache, platform, workspace, nested-workflow and
+            Databricks admission dependencies shared by this server process.
+    """
+    bindings = {
         "workflows_core.cache": server_cache,
         "workflows_core.databricks_admission": SERVER_DATABRICKS_ADMISSION,
         "workflows_core.platform_client": SERVER_PLATFORM_CLIENT,
         "workflows_core.workspace_resolver": SERVER_WORKSPACE_RESOLVER,
         "workflows_core.inner_workflow_spec_resolver": default_inner_workflow_spec_resolver,
     }
+
+    return bindings
 
 
 def install_workflows_platform_bindings(

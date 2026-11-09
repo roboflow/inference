@@ -28,7 +28,21 @@ class AdmissionRejected(RuntimeError):
 
 @dataclass(frozen=True)
 class AdmissionLimits:
-    """Operator limits; rates count admitted invocations in a rolling minute."""
+    """Set operator quotas for active invocations and rolling-minute admissions.
+
+    Args:
+        tenant_concurrency (int): Maximum active invocations per Roboflow workspace.
+        workspace_concurrency (int): Maximum active invocations per Databricks hostname.
+        warehouse_concurrency (int): Maximum active invocations per warehouse endpoint.
+        fleet_concurrency (int): Maximum active invocations across the shared backend.
+        tenant_rate (int): Admissions per minute for one Roboflow workspace.
+        workspace_rate (int): Admissions per minute for one Databricks hostname.
+        warehouse_rate (int): Admissions per minute for one warehouse endpoint.
+        fleet_rate (int): Admissions per minute across the shared backend.
+
+    Raises:
+        ValueError: A quota is not an integer in the supported range.
+    """
 
     tenant_concurrency: int = 2
     workspace_concurrency: int = 8
@@ -48,16 +62,30 @@ class AdmissionLimits:
 
     @classmethod
     def from_environment(cls) -> "AdmissionLimits":
-        """Read the DATABRICKS_ADMISSION_<FIELD> operator settings at startup."""
+        """Read DATABRICKS_ADMISSION_<FIELD> operator settings at startup.
+
+        Returns:
+            AdmissionLimits: Validated quotas with defaults for omitted environment settings.
+
+        Raises:
+            ValueError: An environment setting is not an integer in the supported range.
+        """
         defaults = cls()
         values = {
             field: int(os.environ.get(f"DATABRICKS_ADMISSION_{field.upper()}", value))
             for field, value in vars(defaults).items()
         }
-        return cls(**values)
+        limits = cls(**values)
+
+        return limits
 
     def ordered(self) -> Tuple[int, ...]:
-        """Return concurrency then rate limits in the admission key order."""
+        """Return concurrency and rate quotas in the admission-key order.
+
+        Returns:
+            Tuple[int, ...]: Fleet, tenant, workspace and warehouse quotas, first for
+                concurrency and then for rolling-minute admissions.
+        """
         return (
             self.fleet_concurrency,
             self.tenant_concurrency,
@@ -81,14 +109,18 @@ def _keys(*, tenant: str, hostname: str, http_path: str) -> Tuple[str, ...]:
     )
     hashes = [hashlib.sha256(value.encode()).hexdigest() for value in values]
     # One hash slot also supports Redis Cluster's atomic multi-key scripts.
-    return tuple(
+    keys = tuple(
         f"{{databricks-admission-v1}}:{kind}:{value}"
         for kind in ("active", "rate")
         for value in hashes
     )
 
+    return keys
+
 
 class AdmissionBackend(Protocol):
+    """Define atomic lease acquisition and release for all admission scopes."""
+
     distributed: bool
 
     def acquire(
@@ -98,9 +130,34 @@ class AdmissionBackend(Protocol):
         token: str,
         lease_seconds: int,
         limits: Tuple[int, ...],
-    ) -> bool: ...
+    ) -> bool:
+        """Atomically admit all scopes or leave their admission counts unchanged.
 
-    def release(self, *, keys: Tuple[str, ...], token: str) -> None: ...
+        Args:
+            keys (Tuple[str, ...]): Four concurrency keys followed by four rate keys.
+            token (str): Unique invocation ID stored in every admitted quota scope.
+            lease_seconds (int): Concurrency lease lifetime, including worker cleanup.
+            limits (Tuple[int, ...]): Positive quotas in the same order as keys.
+
+        Returns:
+            bool: True only when all eight quotas admit the invocation.
+
+        Raises:
+            Exception: The backend cannot establish a reliable admission decision.
+        """
+        ...
+
+    def release(self, *, keys: Tuple[str, ...], token: str) -> None:
+        """Release active leases without refunding rolling-minute admissions.
+
+        Args:
+            keys (Tuple[str, ...]): Admission keys; only the first four active-lease keys are released.
+            token (str): Invocation ID whose active leases should be removed.
+
+        Raises:
+            Exception: The backend cannot remove the invocation's active leases.
+        """
+        ...
 
 
 class LocalAdmissionBackend:
@@ -120,6 +177,17 @@ class LocalAdmissionBackend:
         lease_seconds: int,
         limits: Tuple[int, ...],
     ) -> bool:
+        """Check and reserve every quota under one process-local lock.
+
+        Args:
+            keys (Tuple[str, ...]): Four concurrency keys followed by four rate keys.
+            token (str): Unique invocation ID stored in every admitted quota scope.
+            lease_seconds (int): Concurrency lease lifetime, including worker cleanup.
+            limits (Tuple[int, ...]): Positive quotas in the same order as keys.
+
+        Returns:
+            bool: True only when all eight quotas admit the invocation.
+        """
         with self._lock:
             now = time.monotonic()
             self._entries = {
@@ -138,12 +206,20 @@ class LocalAdmissionBackend:
                 for key, limit in zip(keys, limits)
             ):
                 return False
+
             for index, key in enumerate(keys):
                 duration = lease_seconds if index < 4 else _WINDOW_SECONDS
                 self._entries.setdefault(key, {})[token] = now + duration
+
             return True
 
     def release(self, *, keys: Tuple[str, ...], token: str) -> None:
+        """Remove this invocation from active process-local quotas.
+
+        Args:
+            keys (Tuple[str, ...]): Admission keys; only the first four active-lease keys are released.
+            token (str): Invocation ID whose active leases should be removed.
+        """
         with self._lock:
             for key in keys[:4]:
                 self._entries.get(key, {}).pop(token, None)
@@ -189,24 +265,61 @@ class RedisAdmissionBackend:
         lease_seconds: int,
         limits: Tuple[int, ...],
     ) -> bool:
+        """Atomically check and reserve quotas using Redis server time.
+
+        Args:
+            keys (Tuple[str, ...]): Four concurrency keys followed by four rate keys.
+            token (str): Unique invocation ID stored in every admitted quota scope.
+            lease_seconds (int): Concurrency lease lifetime, including worker cleanup.
+            limits (Tuple[int, ...]): Positive quotas in the same order as keys.
+
+        Returns:
+            bool: True only when all eight quotas admit the invocation.
+
+        Raises:
+            redis.exceptions.RedisError: The shared backend or Lua operation fails.
+        """
         result = self._client.eval(
             _ACQUIRE_SCRIPT, len(keys), *keys, token, lease_seconds, *limits
         )
-        return result == 1
+        accepted = result == 1
+
+        return accepted
 
     def release(self, *, keys: Tuple[str, ...], token: str) -> None:
+        """Remove active Redis leases while retaining admission-rate history.
+
+        Args:
+            keys (Tuple[str, ...]): Admission keys; only the first four active-lease keys are released.
+            token (str): Invocation ID whose active leases should be removed.
+
+        Raises:
+            redis.exceptions.RedisError: The shared backend or Lua operation fails.
+        """
         self._client.eval(_RELEASE_SCRIPT, 4, *keys[:4], token)
 
 
 class DatabricksAdmission:
-    """Obtain one lease covering launch, execution, result loading and cleanup."""
+    """Obtain one lease covering launch, execution, result loading and cleanup.
+
+    Args:
+        backend (AdmissionBackend): Host-selected shared or process-local quota backend.
+        limits (AdmissionLimits): Operator-defined concurrency and rate quotas.
+    """
 
     def __init__(self, backend: AdmissionBackend, *, limits: AdmissionLimits) -> None:
         self.backend = backend
         self.limits = limits
 
     def require_shared_backend(self, *, hosted: bool) -> None:
-        """Fail closed on hosted workers without a shared admission backend."""
+        """Refuse hosted execution without a distributed admission backend.
+
+        Args:
+            hosted (bool): Whether the trusted host is running on the multi-tenant platform.
+
+        Raises:
+            AdmissionRejected: Hosted execution was configured with a process-local backend.
+        """
         if hosted and not self.backend.distributed:
             raise AdmissionRejected(
                 "Hosted Databricks execution requires shared Redis admission control"
@@ -219,10 +332,10 @@ class DatabricksAdmission:
         """Acquire all quotas atomically, without waiting or starting a worker.
 
         Args:
-            tenant: Authenticated workspace ID supplied by the trusted host.
-            hostname: Syntax-validated, normalized Databricks workspace hostname.
-            http_path: Syntax-validated SQL endpoint path.
-            deadline: Absolute monotonic invocation deadline.
+            tenant (str): Authenticated workspace ID supplied by the trusted host.
+            hostname (str): Syntax-validated, normalized Databricks workspace hostname.
+            http_path (str): Syntax-validated SQL endpoint path.
+            deadline (float): Absolute monotonic invocation deadline.
 
         Yields:
             Nothing; the caller may run one worker while the lease is held.
@@ -234,6 +347,7 @@ class DatabricksAdmission:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("Databricks deadline expired before admission")
+
         keys = _keys(tenant=tenant, hostname=hostname, http_path=http_path)
         token = uuid4().hex
         try:
@@ -247,11 +361,14 @@ class DatabricksAdmission:
             raise AdmissionRejected(
                 "Databricks admission backend is unavailable"
             ) from None
+
         if not accepted:
             raise AdmissionRejected("Databricks execution limit reached; retry later")
+
         try:
             if time.monotonic() >= deadline:
                 raise TimeoutError("Databricks deadline expired during admission")
+
             yield
         finally:
             try:
@@ -273,7 +390,7 @@ def admission_from_cache(cache: Any) -> DatabricksAdmission:
     """Reuse the host Redis client; a local cache never claims distributed quotas.
 
     Args:
-        cache: Host-selected Workflows cache, optionally exposing a Redis client.
+        cache (Any): Host-selected Workflows cache, optionally exposing a Redis client.
 
     Returns:
         A shared controller when Redis is available, otherwise the local singleton.
@@ -281,7 +398,9 @@ def admission_from_cache(cache: Any) -> DatabricksAdmission:
     client: Optional[Any] = getattr(cache, "client", None)
     if client is None:
         return DEFAULT_ADMISSION
+
     controller = DatabricksAdmission(
         RedisAdmissionBackend(client), limits=DEFAULT_ADMISSION.limits
     )
+
     return controller
