@@ -50,6 +50,7 @@ def build_sam3_engines(
     max_aux_streams: Optional[int] = None,
     io_dtypes: Optional[Dict[str, Dict[str, str]]] = None,
     enable_fp8: bool = False,
+    enable_int8: bool = False,
 ) -> Dict:
     """Build static TensorRT engines with detailed inspection metadata.
 
@@ -66,6 +67,7 @@ def build_sam3_engines(
         max_aux_streams (Optional[int]): Maximum auxiliary streams, or the TRT default.
         io_dtypes (Optional[Dict[str, Dict[str, str]]]): Per-component FP16/FP32 bindings.
         enable_fp8 (bool): Enable FP8 kernels for an explicitly quantized ONNX graph.
+        enable_int8 (bool): Enable INT8 kernels for an explicitly quantized ONNX graph.
 
     Returns:
         Dict: Engine provenance, checksums, and per-engine build durations.
@@ -147,6 +149,8 @@ def build_sam3_engines(
             configuration.max_aux_streams = max_aux_streams
         if enable_fp8:
             configuration.set_flag(trt.BuilderFlag.FP8)
+        if enable_int8:
+            configuration.set_flag(trt.BuilderFlag.INT8)
         configuration.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
         configuration.set_memory_pool_limit(
             trt.MemoryPoolType.WORKSPACE, workspace_gib << 30
@@ -197,6 +201,7 @@ def build_sam3_engines(
         max_aux_streams=max_aux_streams,
         io_dtypes=io_dtypes or {},
         enable_fp8=enable_fp8,
+        enable_int8=enable_int8,
     )
     (engine_dir / "engines.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
