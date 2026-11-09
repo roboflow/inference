@@ -4,8 +4,27 @@
     <meta charset="utf-8">
     <title>Redirecting...</title>
     <link rel="canonical" href="{{ page.meta.redirect_url|e }}">
+    {% if not page.meta.redirect_indexable %}
     <meta name="robots" content="noindex,follow">
+    {% endif %}
+    {% if page.meta.redirect_preserve_campaign %}
+    <script>
+        var destination = new URL({{ page.meta.redirect_url|tojson }});
+        var campaign = new URLSearchParams(window.location.search);
+        // Forward only campaign keys consumed by app.roboflow.com/scripts/utm.js.
+        ["utm_source", "utm_medium", "utm_campaign", "ref", "fbclid"].forEach(function (key) {
+            if (campaign.has(key) && !destination.searchParams.has(key)) {
+                destination.searchParams.set(key, campaign.get(key));
+            }
+        });
+        if (window.location.hash) {
+            destination.hash = window.location.hash;
+        }
+        location.href = destination.href;
+    </script>
+    {% else %}
     <script>var anchor=window.location.hash.substr(1);location.href={{ page.meta.redirect_url|tojson }}+(anchor?"#"+anchor:"")</script>
+    {% endif %}
     <meta http-equiv="refresh" content="0; url={{ page.meta.redirect_url|e }}">
 </head>
 <body>
