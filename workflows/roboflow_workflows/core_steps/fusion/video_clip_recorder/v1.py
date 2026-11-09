@@ -135,8 +135,8 @@ Clips are approximate evidence with reported bounds:
 - Each clip's outcome is logged as a `vision_event_clip_completed` record whose
   report gives the actual start and end, the frame count and density, the backend,
   why a clip is partial, and the frames missing from the window by cause
-  (`decimated`, `ring_drops`, `queue_drops`, `stale_dropped`, `inference_gaps`,
-  `pts_clamped`).
+  (`decimated`, `ring_drops`, `queue_drops`, `startup_dropped`, `stale_dropped`,
+  `inference_gaps`, `pts_clamped`).
 
 ## Common Use Cases
 
@@ -163,6 +163,9 @@ Clips are approximate evidence with reported bounds:
   may raise the caps up to 300 s with `WORKFLOWS_VIDEO_CLIP_MAX_PRE_ROLL_SECONDS` and
   `WORKFLOWS_VIDEO_CLIP_MAX_POST_ROLL_SECONDS`). At 1080p the ring holds about 0.9 MB
   per second of window per stream; annotated content takes about twice that.
+- With NVENC (GPU frames), the encoder warms up in the background when the
+  workflow is compiled; frames that arrive before it is ready, or while the
+  stream's encoder session opens, are reported as `startup_dropped`.
 - Recording cost grows with processed fps and resolution. On constrained devices set
   `max_width` or lower the model fps before adding streams.
 - Keep `fire_and_forget` enabled on the Vision Events sink: otherwise the upload slot
@@ -495,6 +498,9 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         self._retired_rings: List[Any] = []
         self._closing = False
         self._closed = False
+        # GPU hosts: warm NVENC up now (on a background thread, once per process)
+        # so the first frame never pays for it on the pipeline thread.
+        _start_nvenc_warm_up()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -814,6 +820,16 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         image: WorkflowImageData,
         settings: _RecorderSettings,
     ) -> Any:
+        if state.ring is not None and getattr(state.ring, "startup_failed", False):
+            # The NVENC warm-up finished unavailable after this ring was made:
+            # NVENC will not come, so record with x264 from now on.
+            logger.warning(
+                f"Video Clip Recorder `{self._step_name()}` switches stream "
+                f"`{video_identifier}` to x264: NVENC is unavailable"
+            )
+            self._retire_ring(state=state, reason=PARTIAL_SHUTDOWN)
+            state.backend = None
+
         if state.ring is not None or state.encoder_unavailable:
             return state.ring
 
@@ -892,21 +908,44 @@ def _select_backend(image: WorkflowImageData) -> Tuple[str, Type]:
 
 
 def _available_nvenc_ring_class() -> Optional[Type]:
+    # Never blocks: reads (and if needed starts) the process warm-up. While it is
+    # pending the NVENC ring is still chosen (it counts the first frames as
+    # `startup_dropped`), because falling back to x264 would download every CUDA
+    # frame to the CPU for the rest of the stream.
     try:
         from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
     except ImportError:
         return None
 
     try:
-        is_available = nvenc_ring.available()
+        status = nvenc_ring.process_warm_up().status()
     except Exception as error:
         logger.debug(f"NVENC ring availability check failed: {error}")
         return None
 
-    if not is_available:
+    if status not in (nvenc_ring.WARM_UP_READY, nvenc_ring.WARM_UP_PENDING):
         return None
 
     return nvenc_ring.NvencRing
+
+
+def _start_nvenc_warm_up() -> None:
+    # Cheap and import-free on CPU hosts: only starts when the host already
+    # imported torch with CUDA image tensors (or an initialised CUDA context) and
+    # PyNvVideoCodec is installed.
+    try:
+        from roboflow_workflows import environment
+        from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+
+        configured_device = (
+            environment.WORKFLOWS_IMAGE_TENSOR_DEVICE
+            if environment.ENABLE_TENSOR_DATA_REPRESENTATION
+            else None
+        )
+        if nvenc_ring.should_warm_up(configured_device):
+            nvenc_ring.start_warm_up()
+    except Exception as error:
+        logger.debug(f"NVENC warm-up could not start: {error}")
 
 
 def _carries_video_metadata(image: WorkflowImageData) -> bool:

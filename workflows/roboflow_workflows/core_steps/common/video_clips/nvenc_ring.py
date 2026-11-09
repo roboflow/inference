@@ -1,8 +1,8 @@
 """NVENC encoder ring fed straight from CUDA tensors (PyNvVideoCodec).
 
 ``NvencRing`` is the ``Ring`` backend the Video Clip Recorder selects when the
-workflow image is a CUDA tensor and :func:`available` is true (Serverless Streaming
-GPU runners, where every frame is a CHW RGB uint8 CUDA tensor and a numpy download
+workflow image is a CUDA tensor and NVENC can be used (Serverless Streaming GPU
+runners, where every frame is a CHW RGB uint8 CUDA tensor and a numpy download
 costs 17-18 ms per 1080p frame on the pipeline thread). No frame is copied to the
 CPU; only the encoded access units are.
 
@@ -10,20 +10,42 @@ The shared ``ring.BaseEncodedRing`` owns the ingest queue, the encoder thread, g
 decimation, PTS, the IDR cadence (one per output second), the packet store with
 GOP-aligned captures, lifecycle and the MP4 remux. This module adds the encoder:
 
-* Caller thread (``_prepare_frame``): take a free slot of the GPU pool
-  (``WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES``, default 8) or report the pool full
-  (the base counts ``queue_drops``); convert the tensor to NV12 into the slot on
-  the ring's own CUDA stream, ordered after the producer and before any later
-  in-place drawing on the caller's stream. No synchronize, no encode, no host copy.
+* Process warm-up (``ProcessWarmUp``, once per process, on its own daemon thread):
+  the availability probe, the PyNvVideoCodec import, torch's CUDA context, the
+  conversion kernels on a private stream and a throwaway NVENC session that loads
+  the encoder driver. The recorder starts it from its ``__init__`` on CUDA hosts,
+  so it normally finishes during the host's model load. ``run()`` never waits for
+  it: frames that arrive earlier are counted as ``startup_dropped``. If the warm-up
+  finds no usable NVENC (or exceeds ``WARM_UP_TIMEOUT_SECONDS``) the recorder uses
+  x264 instead.
+* Caller thread (``_prepare_frame``): take a free slot of the GPU staging pool or
+  report the pool full, then enqueue ONE device-to-device copy of the RGB frame
+  into the slot on the producer's (caller's) current stream and record the slot's
+  event there: two CUDA API calls per frame. Later in-place drawing on the image
+  is ordered after the copy by the stream itself, so no reference to the frame
+  survives the call. Every other CUDA call (stream waits, resize, NV12 conversion,
+  encode, synchronize) runs on the encoder thread, which matters under gVisor
+  where each driver call is an ioctl through the sentry.
 * Encoder thread (``_encode_frame`` / ``_flush_encoder`` / ``_close_encoder``): one
-  NVENC session per ring, opened lazily at the first frame with the Serverless
-  Streaming runtime's settings (rf-video-processor ``nvenc_encoders.NvEncoder``):
-  P3, ultra-low-latency tuning, CBR with a 250 ms VBV, ``bf=0``, no lookahead,
-  SPS/PPS repeated on every IDR, torch's primary CUDA context and a private CUDA
-  stream. IDRs are forced when the base asks; keyframe flags are read back from
-  the access units (IDR NAL). The session is destroyed on the encoder thread before
-  it exits; a session still alive at interpreter exit segfaults, so an ``atexit``
-  hook also closes any ring left open.
+  NVENC session per ring, opened at the first frame with the Serverless Streaming
+  runtime's settings (rf-video-processor ``nvenc_encoders.NvEncoder``): P3,
+  ultra-low-latency tuning, CBR with a 250 ms VBV, ``bf=0``, no lookahead, SPS/PPS
+  repeated on every IDR, torch's primary CUDA context and a private CUDA stream.
+  Per frame it waits on the slot's event, resizes (``max_width``), converts RGB to
+  BT.709 NV12 into the session's buffer, encodes and synchronizes. IDRs are forced
+  when the base asks; keyframe flags are read back from the access units (IDR
+  NAL). The session is destroyed on the encoder thread before it exits; a session
+  still alive at interpreter exit segfaults, so an ``atexit`` hook also closes any
+  ring left open.
+
+Pool: ``WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES`` (default 8) slots in steady state; a
+full pool counts ``queue_drops``. Until the ring's session is open the pool may grow
+to a start-up headroom of ``STARTUP_POOL_MAX_FRAMES`` (32) slots, capped at
+``STARTUP_POOL_MAX_BYTES`` (192 MiB) of device memory, so the frames that arrive
+while NVENC opens the session (0.35-0.8 s measured) are queued instead of dropped;
+the extra slots are freed once the backlog drains. Frames refused in that window
+count as ``startup_dropped``. Device memory is not host memory, so the host byte
+budget does not count the pool; ``vram_bytes_estimate`` in the ring's stats does.
 
 Bitrate: ``WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS`` when set, else the runtime's
 scaled default, 4 Mbit/s at 1080p30 scaled by pixel rate (about 0.064 bit per pixel)
@@ -39,17 +61,22 @@ real one) by a CUDA-gated test.
 import atexit
 import ctypes
 import functools
+import importlib.util
 import logging
+import sys
 import threading
+import time
 import weakref
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Protocol, Tuple
 
 from roboflow_workflows.core_steps.common.video_clips import read_env
 from roboflow_workflows.core_steps.common.video_clips.ring import (
+    DEFAULT_QUEUE_DEPTH,
     BaseEncodedRing,
     EncodedOutput,
+    EncoderStartingError,
     PreparedFrame,
 )
 
@@ -70,6 +97,23 @@ MAX_BITRATE_KBPS = 200_000
 VBV_SECONDS = 0.25
 IDR_OUTPUT_SECONDS = 1.0
 ATEXIT_CLOSE_DEADLINE_SECONDS = 2.0
+# Start-up headroom: until a ring's session is open (0.35-0.4 s for one session on
+# an L4, about 0.8 s for two opening at once), its pool may grow to this many
+# slots, capped by device bytes (32 slots of 1080p RGB = 190 MiB).
+STARTUP_POOL_MAX_FRAMES = 32
+STARTUP_POOL_MAX_BYTES = 192 * 1024 * 1024
+# The process warm-up: status values and the bound after which a warm-up that has
+# not finished counts as unavailable (the recorder then records with x264).
+WARM_UP_NOT_STARTED = "not_started"
+WARM_UP_PENDING = "pending"
+WARM_UP_READY = "ready"
+WARM_UP_UNAVAILABLE = "unavailable"
+WARM_UP_TIMEOUT_SECONDS = 60.0
+# Probe frame for the warm-up: small, but encodable by every NVENC generation.
+WARM_UP_PROBE_WIDTH = 256
+WARM_UP_PROBE_HEIGHT = 144
+WARM_UP_PROBE_FRAMES = 2
+WARM_UP_PROBE_BITRATE = 300_000
 # NVENC's own GOP is only a backstop: the base ring forces an IDR every output
 # second, so the encoder's periodic IDR is set to ten output seconds.
 BACKSTOP_GOP_OUTPUT_SECONDS = 10.0
@@ -106,6 +150,289 @@ def available() -> bool:
         return False
 
     return True
+
+
+def nvenc_installed() -> bool:
+    """Tell whether ``PyNvVideoCodec`` can be imported, without importing it.
+
+    Returns:
+        True when an import spec for ``PyNvVideoCodec`` exists.
+    """
+    try:
+        spec = importlib.util.find_spec("PyNvVideoCodec")
+    except (ImportError, ValueError):
+        return False
+
+    return spec is not None
+
+
+def should_warm_up(configured_device: Any = None) -> bool:
+    """Decide cheaply whether this process is a CUDA host worth warming up.
+
+    Never imports torch: true only when the host already imported it, either
+    configured CUDA image tensors or already initialised CUDA, and
+    ``PyNvVideoCodec`` is installed. No CUDA driver call is made.
+
+    Args:
+        configured_device: The host's image tensor device (``torch.device``,
+            string or None), e.g. ``WORKFLOWS_IMAGE_TENSOR_DEVICE``.
+
+    Returns:
+        True when the NVENC warm-up should start now.
+    """
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return False
+
+    device_type = getattr(configured_device, "type", None)
+    if device_type is None and configured_device is not None:
+        device_type = str(configured_device).split(":")[0]
+    if device_type != "cuda":
+        try:
+            cuda_initialised = bool(torch.cuda.is_initialized())
+        except Exception:
+            return False
+        if not cuda_initialised:
+            return False
+
+    installed = nvenc_installed()
+
+    return installed
+
+
+class ProcessWarmUp:
+    """One-shot, process-wide NVENC warm-up on a background daemon thread.
+
+    Does the work the first ``NvencRing.submit()`` used to do on the pipeline
+    thread (1.4 s on a warm L4 process, 4.2 s cold): the availability probe, the
+    PyNvVideoCodec import, torch's CUDA context, the conversion kernels and a
+    throwaway NVENC session that loads the encoder driver. ``status()`` never
+    blocks; a warm-up that has not finished ``timeout_seconds`` after it started
+    counts as unavailable from then on.
+
+    Args:
+        steps: The warm-up work; receives a dict to record step timings (ms) in
+            and raises when NVENC cannot be used. Defaults to the real warm-up.
+        precheck: Cheap synchronous check run by ``start()``; when false, the
+            status becomes unavailable without starting a thread. Defaults to
+            :func:`nvenc_installed`.
+        timeout_seconds: Bound on the pending state.
+        clock: Monotonic clock (tests).
+    """
+
+    def __init__(
+        self,
+        steps: Optional[Callable[[Dict[str, float]], None]] = None,
+        *,
+        precheck: Optional[Callable[[], bool]] = None,
+        timeout_seconds: float = WARM_UP_TIMEOUT_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self._steps = steps or _warm_up_process
+        self._precheck = precheck or nvenc_installed
+        self._timeout_seconds = timeout_seconds
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._done = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._status = WARM_UP_NOT_STARTED
+        self._started_at: Optional[float] = None
+        self._elapsed_ms: Optional[float] = None
+        self._timings: Dict[str, float] = {}
+        self._error: Optional[str] = None
+
+    def start(self) -> None:
+        """Start the warm-up thread once; later calls return immediately."""
+        with self._lock:
+            if self._status != WARM_UP_NOT_STARTED:
+                return None
+            self._started_at = self._clock()
+            try:
+                installed = bool(self._precheck())
+            except Exception as error:
+                installed = False
+                self._error = repr(error)
+            if not installed:
+                self._status = WARM_UP_UNAVAILABLE
+                self._error = self._error or "PyNvVideoCodec is not installed"
+                self._elapsed_ms = 0.0
+                self._done.set()
+                return None
+            self._status = WARM_UP_PENDING
+            self._thread = threading.Thread(
+                target=self._run, name="video-clip-nvenc-warm-up", daemon=True
+            )
+            self._thread.start()
+
+    def status(self, *, start: bool = True) -> str:
+        """Return the warm-up status without blocking.
+
+        Args:
+            start: Start the warm-up when it has not started yet.
+
+        Returns:
+            One of ``not_started``, ``pending``, ``ready`` or ``unavailable``.
+        """
+        if start:
+            self.start()
+        with self._lock:
+            if (
+                self._status == WARM_UP_PENDING
+                and self._clock() - self._started_at > self._timeout_seconds
+            ):
+                self._status = WARM_UP_UNAVAILABLE
+                self._error = (
+                    f"the NVENC warm-up did not finish in {self._timeout_seconds} s"
+                )
+            status = self._status
+
+        return status
+
+    def wait(self, timeout: Optional[float] = None) -> str:
+        """Start the warm-up and wait for it to finish (tests and benchmarks).
+
+        Args:
+            timeout: Seconds to wait; None waits until it finishes.
+
+        Returns:
+            The status after waiting.
+        """
+        self.start()
+        self._done.wait(timeout)
+        status = self.status(start=False)
+
+        return status
+
+    def wait_if_running(self, timeout: float) -> None:
+        """Wait up to ``timeout`` seconds for a warm-up thread that is running.
+
+        Args:
+            timeout: Seconds to wait; returns at once when no thread is running.
+        """
+        thread = self._thread
+        if thread is None or not thread.is_alive():
+            return None
+
+        thread.join(timeout)
+
+    @property
+    def error(self) -> Optional[str]:
+        """Why the warm-up is unavailable, if it is."""
+        with self._lock:
+            return self._error
+
+    def report(self) -> Dict[str, Any]:
+        """Return the warm-up outcome and its step timings.
+
+        Returns:
+            ``status``, ``warm_up_ms`` (None while pending), ``steps_ms`` and
+            ``error``.
+        """
+        status = self.status(start=False)
+        with self._lock:
+            report = {
+                "status": status,
+                "warm_up_ms": self._elapsed_ms,
+                "steps_ms": dict(self._timings),
+                "error": self._error,
+            }
+
+        return report
+
+    def _run(self) -> None:
+        started = time.perf_counter()
+        timings: Dict[str, float] = {}
+        try:
+            self._steps(timings)
+        except Exception as error:
+            outcome, failure = WARM_UP_UNAVAILABLE, repr(error)
+        else:
+            outcome, failure = WARM_UP_READY, None
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        with self._lock:
+            self._timings = dict(timings)
+            self._elapsed_ms = elapsed_ms
+            if self._status == WARM_UP_PENDING:
+                self._status = outcome
+                self._error = failure
+            final_status = self._status
+        self._done.set()
+        LOGGER.info(
+            "NVENC warm-up finished in %.0f ms: %s %s (steps: %s)",
+            elapsed_ms,
+            final_status,
+            failure or "",
+            {name: round(value, 1) for name, value in timings.items()},
+        )
+
+
+def _warm_up_process(timings: Dict[str, float]) -> None:
+    # The real warm-up: everything process-wide the first frame used to pay for,
+    # run through the same adapter code paths a ring uses.
+    started = time.perf_counter()
+    if not available():
+        raise RuntimeError("NVENC needs torch CUDA and PyNvVideoCodec")
+    timings["probe_ms"] = (time.perf_counter() - started) * 1000
+
+    import torch
+
+    step = time.perf_counter()
+    device = torch.device("cuda", torch.cuda.current_device())
+    torch.cuda.set_device(device)
+    stream = torch.cuda.Stream(device=device)
+    with torch.cuda.stream(stream):
+        torch.zeros(1, device=device).add_(1)
+    stream.synchronize()
+    _cuda_driver()
+    timings["cuda_init_ms"] = (time.perf_counter() - step) * 1000
+
+    step = time.perf_counter()
+    adapter = PyNvVideoCodecAdapter()
+    width, height = WARM_UP_PROBE_WIDTH, WARM_UP_PROBE_HEIGHT
+    with torch.cuda.stream(stream):
+        frame = torch.randint(0, 256, (3, height, width), dtype=torch.uint8)
+        frame = frame.to(device)
+        # The resize path (``max_width``) and a strided (cropped) copy.
+        adapter._fit(frame, width=width // 2, height=height // 2)
+        gray = frame[:1].expand(3, -1, -1)
+    stream.synchronize()
+    timings["kernels_ms"] = (time.perf_counter() - step) * 1000
+
+    step = time.perf_counter()
+    session = adapter.open_session(
+        width, height, 30.0, 30, WARM_UP_PROBE_BITRATE, device
+    )
+    timings["nvenc_open_ms"] = (time.perf_counter() - step) * 1000
+    step = time.perf_counter()
+    try:
+        (slot,) = adapter.allocate_slots(1, width, height, device)
+        with torch.cuda.stream(stream):
+            for ordinal in range(WARM_UP_PROBE_FRAMES):
+                source = frame if ordinal % 2 == 0 else gray
+                ready = adapter.stage(source, slot, width, height)
+                adapter.encode(session, slot, ready, ordinal, ordinal == 0)
+        adapter.flush(session)
+    finally:
+        adapter.destroy(session)
+    stream.synchronize()
+    timings["nvenc_encode_ms"] = (time.perf_counter() - step) * 1000
+
+
+_PROCESS_WARM_UP = ProcessWarmUp()
+
+
+def process_warm_up() -> ProcessWarmUp:
+    """Return the process-wide warm-up (not started until someone asks).
+
+    Returns:
+        The singleton ``ProcessWarmUp``.
+    """
+    return _PROCESS_WARM_UP
+
+
+def start_warm_up() -> None:
+    """Start the process-wide NVENC warm-up in the background (idempotent)."""
+    process_warm_up().start()
 
 
 def default_bitrate(width: int, height: int, fps: float) -> int:
@@ -174,6 +501,23 @@ def resolve_pool_frames() -> int:
     return frames
 
 
+def startup_pool_frames(pool_frames: int, slot_bytes: int) -> int:
+    """Size the start-up pool for one ring.
+
+    Args:
+        pool_frames: The steady-state pool size.
+        slot_bytes: Device bytes of one staging slot.
+
+    Returns:
+        ``STARTUP_POOL_MAX_FRAMES`` capped at ``STARTUP_POOL_MAX_BYTES`` of slots,
+        never below ``pool_frames``.
+    """
+    by_bytes = STARTUP_POOL_MAX_BYTES // max(1, slot_bytes)
+    frames = max(pool_frames, min(STARTUP_POOL_MAX_FRAMES, by_bytes))
+
+    return frames
+
+
 def encoded_size(
     width: int, height: int, *, max_width: Optional[int] = None
 ) -> Tuple[int, int]:
@@ -220,15 +564,20 @@ def is_idr_access_unit(data: bytes) -> bool:
 class NvencAdapter(Protocol):
     """Every torch / PyNvVideoCodec call the ring makes (the testability seam).
 
-    ``frame_size``, ``allocate_slot`` and ``stage`` run on the pipeline thread;
-    ``open_session``, ``encode``, ``flush`` and ``destroy`` run on the ring thread
-    only. ``encode``/``flush`` return ``(input_ordinal, access_unit)`` pairs in
-    output order; the ring maps ordinals back to frames.
+    ``frame_size``, ``staging_size``, ``allocate_slots`` and ``stage`` run on the
+    pipeline thread; ``stage`` must enqueue at most one copy and one event on the
+    caller's stream. ``open_session``, ``encode``, ``flush`` and ``destroy`` run on
+    the ring thread only. ``encode``/``flush`` return ``(input_ordinal,
+    access_unit)`` pairs in output order; the ring maps ordinals back to frames.
     """
 
     def frame_size(self, tensor: Any) -> Tuple[int, int]: ...
 
-    def allocate_slot(self, width: int, height: int, device: Any) -> Any: ...
+    def staging_size(self, tensor: Any) -> Tuple[int, int]: ...
+
+    def allocate_slots(
+        self, count: int, width: int, height: int, device: Any
+    ) -> List[Any]: ...
 
     def stage(self, tensor: Any, slot: Any, width: int, height: int) -> Any: ...
 
@@ -247,6 +596,8 @@ class NvencAdapter(Protocol):
     def tensor_device(self, tensor: Any) -> Any: ...
 
     def slot_bytes(self, width: int, height: int) -> int: ...
+
+    def scratch_bytes(self, width: int, height: int) -> int: ...
 
     def session_vram_bytes(self, session: Any) -> int: ...
 
@@ -356,6 +707,19 @@ class _CudaDriver:
             raise RuntimeError("could not make the encoder CUDA context current")
 
 
+@functools.lru_cache(maxsize=1)
+def _cuda_driver() -> _CudaDriver:
+    return _CudaDriver()
+
+
+@dataclass
+class _StagingSlot:
+    """One pool slot: a CHW RGB uint8 frame copy and the event that marks it."""
+
+    rgb: Any
+    event: Any
+
+
 @dataclass
 class _Session:
     encoder: Any
@@ -365,10 +729,17 @@ class _Session:
     width: int
     height: int
     vram_bytes: int
+    nv12: Any = None
+    work: Any = None
 
 
 class PyNvVideoCodecAdapter:
-    """Real ``NvencAdapter``: torch on a private CUDA stream + PyNvVideoCodec NVENC.
+    """Real ``NvencAdapter``: torch CUDA streams + PyNvVideoCodec NVENC.
+
+    The caller thread only copies the frame into a pooled RGB slot on its own
+    stream and records the slot's event. The encoder thread waits on that event
+    on the session's private stream, scales (``max_width``), converts to NV12 and
+    encodes.
 
     Args:
         max_width: Optional output width cap; frames wider than this are scaled
@@ -382,9 +753,6 @@ class PyNvVideoCodecAdapter:
         self._torch = torch
         self._nvc = PyNvVideoCodec
         self._max_width = max_width
-        self._driver: Optional[_CudaDriver] = None
-        self._conversion_streams: dict = {}
-        self._work: Optional[Tuple[tuple, Any]] = None
 
     def tensor_device(self, tensor: Any) -> Any:
         """Return the CUDA device for ``tensor`` (the current one for host tensors)."""
@@ -402,47 +770,68 @@ class PyNvVideoCodecAdapter:
 
         return size
 
+    def staging_size(self, tensor: Any) -> Tuple[int, int]:
+        """Return the ``(width, height)`` of the slot ``tensor`` is copied into."""
+        size = (int(tensor.shape[-1]), int(tensor.shape[-2]))
+
+        return size
+
     def slot_bytes(self, width: int, height: int) -> int:
-        """Return the device bytes of one NV12 slot."""
-        return width * height * 3 // 2
+        """Return the device bytes of one RGB staging slot."""
+        return 3 * width * height
 
-    def allocate_slot(self, width: int, height: int, device: Any) -> Any:
-        """Allocate one NV12 slot on ``device``."""
-        slot = self._torch.empty(
-            (height * 3 // 2, width), dtype=self._torch.uint8, device=device
-        )
+    def scratch_bytes(self, width: int, height: int) -> int:
+        """Return the device bytes a session's NV12 and float buffers take."""
+        return width * height * 3 // 2 + width * height * 4
 
-        return slot
+    def allocate_slots(
+        self, count: int, width: int, height: int, device: Any
+    ) -> List[_StagingSlot]:
+        """Allocate ``count`` RGB staging slots on ``device`` in one block.
 
-    def stage(self, tensor: Any, slot: Any, width: int, height: int) -> Any:
-        """Convert ``tensor`` into ``slot`` on the ring's CUDA stream (no host sync).
-
-        The conversion stream waits for the caller's current stream (the producer),
-        and the caller's stream then waits for the conversion, so later in-place
-        drawing on the image cannot race the read. ``record_stream`` keeps the
-        caching allocator from recycling the image while the conversion reads it.
+        One allocation (one ``cudaMalloc`` at most) instead of one per slot, and
+        each slot's event is created now: the pool is filled at a stream's first
+        frame, often while another stream's encoder session is opening, and
+        per-slot allocations then stalled the pipeline thread for up to 20 ms.
 
         Returns:
-            A CUDA event recorded after the conversion; the encoder waits on it.
+            The slots; they share the block, which is freed with the last one.
+        """
+        if count <= 0:
+            return []
+
+        torch = self._torch
+        block = torch.empty((count, 3, height, width), dtype=torch.uint8, device=device)
+        stream = torch.cuda.current_stream(device)
+        slots = []
+        for index in range(count):
+            event = torch.cuda.Event()
+            event.record(stream)
+            slots.append(_StagingSlot(rgb=block[index], event=event))
+
+        return slots
+
+    def stage(self, tensor: Any, slot: _StagingSlot, width: int, height: int) -> Any:
+        """Copy ``tensor`` into ``slot`` on the caller's current stream.
+
+        Two CUDA API calls: the device-to-device copy and the event record, both
+        on the producer's stream. The copy runs before any later work the
+        producer enqueues (in-place drawing, or the allocator reusing the frame's
+        memory), so no reference to ``tensor`` is kept and no stream waits are
+        needed on this thread.
+
+        Returns:
+            The slot's event; the encoder thread waits on it.
         """
         torch = self._torch
         if not tensor.is_cuda:
             # Not the expected input (the recorder picks NVENC for CUDA tensors);
             # upload rather than fail.
-            tensor = tensor.to(self.tensor_device(tensor))
-        device = tensor.device
-        producer = torch.cuda.current_stream(device)
-        stream = self._conversion_stream(device)
-        stream.wait_stream(producer)
-        with torch.cuda.stream(stream):
-            rgb = self._fit(_rgb_chw(tensor), width=width, height=height)
-            rgb_to_nv12(rgb, slot, self._work_buffer(width, height, device))
-        tensor.record_stream(stream)
-        ready = torch.cuda.Event()
-        ready.record(stream)
-        producer.wait_event(ready)
+            tensor = tensor.to(slot.rgb.device)
+        slot.rgb.copy_(_rgb_chw(tensor))
+        slot.event.record(torch.cuda.current_stream(slot.rgb.device))
 
-        return ready
+        return slot.event
 
     def open_session(
         self, width: int, height: int, fps: float, gop: int, bitrate: int, device: Any
@@ -453,9 +842,8 @@ class PyNvVideoCodecAdapter:
         stream = torch.cuda.Stream(device=device)
         # Bind torch's primary context to this thread; never create a foreign one.
         torch.zeros(1, device=device)
-        if self._driver is None:
-            self._driver = _CudaDriver()
-        context = self._driver.current_context()
+        driver = _cuda_driver()
+        context = driver.current_context()
         free_before = torch.cuda.mem_get_info(device)[0]
         encoder = self._nvc.CreateEncoder(
             width,
@@ -483,6 +871,11 @@ class PyNvVideoCodecAdapter:
             raise RuntimeError("NVENC reports B-frames; refusing a reordered stream")
 
         vram_bytes = max(0, free_before - torch.cuda.mem_get_info(device)[0])
+        with torch.cuda.stream(stream):
+            nv12 = torch.empty(
+                (height * 3 // 2, width), dtype=torch.uint8, device=device
+            )
+            work = torch.empty((height, width), dtype=torch.float32, device=device)
         session = _Session(
             encoder=encoder,
             device=device,
@@ -491,21 +884,30 @@ class PyNvVideoCodecAdapter:
             width=width,
             height=height,
             vram_bytes=vram_bytes,
+            nv12=nv12,
+            work=work,
         )
 
         return session
 
     def encode(
-        self, session: _Session, slot: Any, ready: Any, ordinal: int, force_idr: bool
+        self,
+        session: _Session,
+        slot: _StagingSlot,
+        ready: Any,
+        ordinal: int,
+        force_idr: bool,
     ) -> List[Tuple[int, bytes]]:
-        """Encode one slot; returns the access units NVENC released."""
+        """Convert and encode one slot; returns the access units NVENC released."""
         torch = self._torch
-        self._driver.set_current(session.context)
+        _cuda_driver().set_current(session.context)
         with torch.cuda.device(session.device), torch.cuda.stream(session.stream):
             if ready is not None:
                 session.stream.wait_event(ready)
+            rgb = self._fit(slot.rgb, width=session.width, height=session.height)
+            rgb_to_nv12(rgb, session.nv12, session.work)
             surface = _NV12Surface(
-                slot, session.width, session.height, session.stream.cuda_stream
+                session.nv12, session.width, session.height, session.stream.cuda_stream
             )
             params = self._nvc.NV_ENC_PIC_PARAMS()
             # NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS
@@ -515,7 +917,7 @@ class PyNvVideoCodecAdapter:
             params.inputTimeStamp = ordinal
             packets = session.encoder.Encode(surface, params)
             # The binding copies CUDA-array input into its own registered buffers;
-            # after this the slot can be reused.
+            # once the stream is idle the slot and the NV12 buffer can be reused.
             session.stream.synchronize()
         access_units = _packets_to_bytes(packets)
 
@@ -523,7 +925,7 @@ class PyNvVideoCodecAdapter:
 
     def flush(self, session: _Session) -> List[Tuple[int, bytes]]:
         """Drain the frames NVENC still holds (``EndEncode``)."""
-        self._driver.set_current(session.context)
+        _cuda_driver().set_current(session.context)
         tail = session.encoder.EndEncode()
         session.stream.synchronize()
         access_units = _packets_to_bytes(tail)
@@ -532,31 +934,16 @@ class PyNvVideoCodecAdapter:
 
     def destroy(self, session: _Session) -> None:
         """Release the NVENC session on the calling (ring) thread."""
-        if self._driver is not None:
-            self._driver.set_current(session.context)
+        _cuda_driver().set_current(session.context)
         session.stream.synchronize()
         session.encoder = None
+        session.nv12 = None
+        session.work = None
         session.stream = None
 
     def session_vram_bytes(self, session: _Session) -> int:
         """Return the VRAM the session took when it opened (free-memory delta)."""
         return session.vram_bytes
-
-    def _conversion_stream(self, device: Any) -> Any:
-        stream = self._conversion_streams.get(device)
-        if stream is None:
-            stream = self._torch.cuda.Stream(device=device)
-            self._conversion_streams[device] = stream
-        return stream
-
-    def _work_buffer(self, width: int, height: int, device: Any) -> Any:
-        key = (height, width, str(device))
-        if self._work is None or self._work[0] != key:
-            buffer = self._torch.empty(
-                (height, width), dtype=self._torch.float32, device=device
-            )
-            self._work = (key, buffer)
-        return self._work[1]
 
     def _fit(self, rgb: Any, *, width: int, height: int) -> Any:
         source_height, source_width = int(rgb.shape[1]), int(rgb.shape[2])
@@ -579,11 +966,12 @@ def _packets_to_bytes(packets: Any) -> List[Tuple[int, bytes]]:
 
 @dataclass
 class _StagedFrame:
-    """A pool slot holding one converted NV12 frame (the ``PreparedFrame.payload``)."""
+    """A pool slot holding one copied frame (the ``PreparedFrame.payload``)."""
 
     slot: Any
     ready: Any
     size: Tuple[int, int]
+    staging: Tuple[int, int]
     device: Any
     released: bool = False
 
@@ -596,9 +984,17 @@ class NvencRing(BaseEncodedRing):
 
     The base ring owns the ingest queue, the encoder thread, grid decimation, PTS,
     the IDR cadence (one per output second), the packet store, captures, lifecycle
-    and the MP4 remux. This class supplies the encoder: a GPU pool of NV12 slots
-    filled on the caller's thread and one NVENC session per ring, opened lazily on
-    the encoder thread and destroyed there by ``_close_encoder``.
+    and the MP4 remux. This class supplies the encoder: a GPU pool of RGB staging
+    slots filled on the caller's thread with one copy each, and one NVENC session
+    per ring, opened on the encoder thread at the first frame and destroyed there
+    by ``_close_encoder``.
+
+    Start-up: until the process warm-up (:class:`ProcessWarmUp`) is ready, frames
+    are counted as ``startup_dropped`` and never block the caller; if the warm-up
+    turns out unavailable, ``startup_failed`` becomes true and the owner should
+    switch to another backend. Until the session is open the pool may grow to
+    :func:`startup_pool_frames` slots; a frame refused in that window is also
+    ``startup_dropped``. Afterwards a full pool counts ``queue_drops``.
 
     Args:
         video_identifier: The stream this ring records.
@@ -608,19 +1004,24 @@ class NvencRing(BaseEncodedRing):
         max_width: Optional output width cap; applied on the GPU.
         declared_fps: Declared source frame rate (rate-control hint).
         budget: Shared ``admission.Budget``.
-        queue_depth: Ingest queue depth override.
+        queue_depth: Ingest queue depth override; defaults to at least the
+            start-up pool size (queued NVENC frames hold no host memory).
         byte_cap_bytes: Ring byte cap override.
         stall_grace_seconds: Seconds past the post-roll before a capture stalls.
-        pool_frames: GPU pool size; defaults to
-            ``WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES`` (8). A full pool counts
-            ``queue_drops``.
+        pool_frames: Steady-state GPU pool size; defaults to
+            ``WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES`` (8).
+        startup_pool_frames: Start-up pool size override; ``0`` disables the
+            start-up headroom. Defaults to :func:`startup_pool_frames`.
         bitrate: CBR bits per second; defaults to :func:`resolve_bitrate` at the
             encoded size and rate-control fps.
         adapter: The torch / PyNvVideoCodec seam; defaults to
-            :class:`PyNvVideoCodecAdapter`.
+            :class:`PyNvVideoCodecAdapter`, built once the warm-up is ready.
+        warm_up: The warm-up gating the first frames; defaults to the process
+            warm-up when no ``adapter`` is given, else no gating.
 
     Raises:
-        RuntimeError: If no adapter is given and :func:`available` is false.
+        RuntimeError: If no adapter is given and the warm-up already reports
+            NVENC unavailable.
     """
 
     backend = BACKEND_NAME
@@ -639,23 +1040,47 @@ class NvencRing(BaseEncodedRing):
         byte_cap_bytes: Optional[int] = None,
         stall_grace_seconds: float = 10.0,
         pool_frames: Optional[int] = None,
+        startup_pool_frames: Optional[int] = None,
         bitrate: Optional[int] = None,
         adapter: Optional[NvencAdapter] = None,
+        warm_up: Optional[ProcessWarmUp] = None,
     ):
+        adapter_factory: Optional[Callable[[], NvencAdapter]] = None
         if adapter is None:
-            if not available():
-                raise RuntimeError("NVENC needs torch CUDA and PyNvVideoCodec")
-            adapter = PyNvVideoCodecAdapter(max_width=max_width)
+            warm_up = warm_up or process_warm_up()
+            if warm_up.status() == WARM_UP_UNAVAILABLE:
+                raise RuntimeError(
+                    "NVENC needs torch CUDA and PyNvVideoCodec: "
+                    f"{warm_up.error or 'unavailable'}"
+                )
+            adapter_factory = functools.partial(
+                PyNvVideoCodecAdapter, max_width=max_width
+            )
 
         self._adapter = adapter
+        self._adapter_factory = adapter_factory
+        self._warm_up = warm_up
+        self._warmed = warm_up is None
+        self._startup_failed = False
         self._pool_frames = pool_frames or resolve_pool_frames()
+        self._startup_pool_override = startup_pool_frames
         self._bitrate_override = bitrate
         self._pool_lock = threading.Lock()
         self._pool_size: Optional[Tuple[int, int]] = None
+        self._pool_limit_startup = self._pool_frames
         self._free_slots: List[Any] = []
+        self._extension_slots: set = set()
         self._allocated_slots = 0
+        self._peak_in_use = 0
         self._pool_drops = 0
         self._stage_errors = 0
+        # Pool-lock state shared with the encoder thread: is a session open, and
+        # is the start-up headroom still in force (until the backlog drains).
+        self._encoder_open = False
+        self._startup_headroom = True
+        self._scratch_size: Optional[Tuple[int, int]] = None
+        self._first_session_open_ms: Optional[float] = None
+        self._last_session_open_ms: Optional[float] = None
 
         # Encoder-thread state.
         self._session: Any = None
@@ -671,6 +1096,13 @@ class NvencRing(BaseEncodedRing):
         self._forced_idrs = 0
         self._keyframes = 0
 
+        if queue_depth is None:
+            queue_depth = max(
+                DEFAULT_QUEUE_DEPTH,
+                self._pool_frames,
+                STARTUP_POOL_MAX_FRAMES,
+                startup_pool_frames or 0,
+            )
         super().__init__(
             video_identifier,
             pre_roll_seconds=pre_roll_seconds,
@@ -685,6 +1117,11 @@ class NvencRing(BaseEncodedRing):
         )
         _LIVE_RINGS.add(self)
 
+    @property
+    def startup_failed(self) -> bool:
+        """True once the warm-up reported NVENC unavailable for this ring."""
+        return self._startup_failed
+
     def close(self) -> None:
         """Close the ring (see ``BaseEncodedRing.close``) and drop the exit hook."""
         super().close()
@@ -697,22 +1134,32 @@ class NvencRing(BaseEncodedRing):
 
     # ---- caller thread ---------------------------------------------------------
     def _prepare_frame(self, image: Any) -> Optional[PreparedFrame]:
-        # Pool slot (or None = full, the base counts queue_drops), then an async
-        # RGB->NV12 conversion on the ring's CUDA stream. No reference to the
-        # image survives this call (the allocator holds the memory via
-        # record_stream until the conversion ran).
+        # Pool slot, then ONE copy + ONE event record on the caller's stream.
+        # Refusals while the encoder is still starting raise EncoderStartingError
+        # (counted as startup_dropped); a full pool afterwards returns None
+        # (queue_drops). No reference to the image survives this call.
+        adapter = self._ready_adapter()
         tensor = getattr(image, "tensor_image", image)
-        width, height = self._adapter.frame_size(tensor)
-        device = self._adapter.tensor_device(tensor)
-        slot = self._acquire_slot(width=width, height=height, device=device)
+        width, height = adapter.frame_size(tensor)
+        staging = adapter.staging_size(tensor)
+        device = adapter.tensor_device(tensor)
+        slot = self._acquire_slot(staging, device=device)
         if slot is None:
+            with self._pool_lock:
+                encoder_open = self._encoder_open
+            if not encoder_open:
+                raise EncoderStartingError("the NVENC session is still opening")
             return None
 
         staged = _StagedFrame(
-            slot=slot, ready=None, size=(width, height), device=device
+            slot=slot,
+            ready=None,
+            size=(width, height),
+            staging=staging,
+            device=device,
         )
         try:
-            staged.ready = self._adapter.stage(tensor, slot, width, height)
+            staged.ready = adapter.stage(tensor, slot, width, height)
         except Exception:
             self._release_slot(staged)
             with self._pool_lock:
@@ -723,6 +1170,21 @@ class NvencRing(BaseEncodedRing):
         prepared = PreparedFrame(payload=staged, width=width, height=height, nbytes=0)
 
         return prepared
+
+    def _ready_adapter(self) -> NvencAdapter:
+        if self._warmed:
+            return self._adapter
+
+        status = self._warm_up.status()
+        if status == WARM_UP_READY:
+            if self._adapter is None:
+                self._adapter = self._adapter_factory()
+            self._warmed = True
+            return self._adapter
+
+        if status == WARM_UP_UNAVAILABLE:
+            self._startup_failed = True
+        raise EncoderStartingError(f"the NVENC warm-up is {status}")
 
     def _discard_frame(self, frame: PreparedFrame) -> None:
         self._release_slot(frame.payload)
@@ -750,7 +1212,7 @@ class NvencRing(BaseEncodedRing):
             self._forced.pop()
             raise
 
-        # The encoder copied the slot into its own input buffer: reuse it now.
+        # The encoder is done with the slot (stream synchronised): reuse it now.
         self._release_slot(staged)
         if force_keyframe:
             self._forced_idrs += 1
@@ -782,6 +1244,8 @@ class NvencRing(BaseEncodedRing):
             with self._pool_lock:
                 self._sessions_destroyed += 1
                 self._session_vram_bytes = 0
+                self._scratch_size = None
+                self._encoder_open = False
 
     def _backend_stats(self) -> Dict[str, Any]:
         with self._pool_lock:
@@ -789,60 +1253,134 @@ class NvencRing(BaseEncodedRing):
             allocated = self._allocated_slots
             details = {
                 "pool_frames": self._pool_frames,
+                "startup_pool_frames": self._pool_limit_startup,
                 "pool_allocated_frames": allocated,
+                "pool_peak_frames": self._peak_in_use,
                 "pool_free_frames": len(self._free_slots),
                 "pool_drops": self._pool_drops,
                 "stage_errors": self._stage_errors,
                 "sessions_open": self._sessions_opened - self._sessions_destroyed,
                 "sessions_opened": self._sessions_opened,
                 "sessions_destroyed": self._sessions_destroyed,
+                "session_open_ms_first": self._first_session_open_ms,
+                "session_open_ms_last": self._last_session_open_ms,
                 "bitrate": self._bitrate,
                 "gop": self._gop,
                 "forced_idrs": self._forced_idrs,
                 "keyframes": self._keyframes,
+                "startup_failed": self._startup_failed,
             }
             vram_bytes = self._session_vram_bytes
-        if size is not None:
-            vram_bytes += allocated * self._adapter.slot_bytes(size[0], size[1])
-            vram_bytes += size[0] * size[1] * 4
+            scratch_size = self._scratch_size
+        adapter = self._adapter
+        if adapter is not None and size is not None:
+            vram_bytes += allocated * adapter.slot_bytes(size[0], size[1])
+        if adapter is not None and scratch_size is not None:
+            vram_bytes += adapter.scratch_bytes(scratch_size[0], scratch_size[1])
         details["vram_bytes_estimate"] = vram_bytes
+        if self._warm_up is not None:
+            details["warm_up"] = self._warm_up.report()
 
         return details
 
     # ---- helpers ---------------------------------------------------------------
-    def _acquire_slot(self, *, width: int, height: int, device: Any) -> Optional[Any]:
+    def _acquire_slot(self, staging: Tuple[int, int], *, device: Any) -> Optional[Any]:
+        width, height = staging
         with self._pool_lock:
-            if self._pool_size != (width, height):
-                # New size: forget idle slots; outstanding ones are dropped on return.
-                self._pool_size = (width, height)
-                self._free_slots = []
-                self._allocated_slots = 0
-            if self._free_slots:
-                return self._free_slots.pop()
-            if self._allocated_slots >= self._pool_frames:
-                self._pool_drops += 1
-                return None
-            self._allocated_slots += 1
+            if self._pool_size == staging:
+                return self._take_free_slot_locked()
+            # First frame at this size: forget idle slots (outstanding ones are
+            # dropped on return) and fill the whole pool below, outside the lock.
+            self._pool_size = staging
+            self._free_slots = []
+            self._extension_slots = set()
+            self._allocated_slots = 0
+            self._peak_in_use = 0
+            limit = self._startup_limit(width, height)
+            self._pool_limit_startup = limit
+            extension = limit - self._pool_frames if self._startup_headroom else 0
 
         try:
-            slot = self._adapter.allocate_slot(width, height, device)
+            steady = self._adapter.allocate_slots(
+                self._pool_frames, width, height, device
+            )
+            extra = self._adapter.allocate_slots(extension, width, height, device)
         except Exception:
             with self._pool_lock:
-                if self._pool_size == (width, height):
-                    self._allocated_slots -= 1
+                if self._pool_size == staging:
+                    self._pool_size = None
             raise
 
+        with self._pool_lock:
+            if self._pool_size != staging:
+                return None
+            self._free_slots = list(reversed(steady)) + list(reversed(extra))
+            self._extension_slots = {id(slot) for slot in extra}
+            self._allocated_slots = len(steady) + len(extra)
+            slot = self._take_free_slot_locked()
+
         return slot
+
+    def _take_free_slot_locked(self) -> Optional[Any]:
+        if not self._free_slots:
+            self._pool_drops += 1
+            return None
+
+        slot = self._free_slots.pop()
+        in_use = self._allocated_slots - len(self._free_slots)
+        self._peak_in_use = max(self._peak_in_use, in_use)
+
+        return slot
+
+    def _startup_limit(self, width: int, height: int) -> int:
+        # Pool lock held.
+        if self._startup_pool_override is not None:
+            return max(self._pool_frames, self._startup_pool_override)
+
+        limit = startup_pool_frames(
+            self._pool_frames, self._adapter.slot_bytes(width, height)
+        )
+
+        return limit
 
     def _release_slot(self, staged: _StagedFrame) -> None:
         with self._pool_lock:
             if staged.released:
                 return None
             staged.released = True
-            if staged.size == self._pool_size:
-                self._free_slots.append(staged.slot)
-            staged.slot = None
-            staged.ready = None
+            slot, staged.slot, staged.ready = staged.slot, None, None
+            if staged.staging != self._pool_size:
+                return None
+            if not self._startup_headroom and id(slot) in self._extension_slots:
+                # Start-up is over: let the extension block go.
+                self._extension_slots.discard(id(slot))
+                self._allocated_slots -= 1
+                return None
+            self._free_slots.append(slot)
+            self._end_startup_headroom_locked()
+
+    def _end_startup_headroom_locked(self) -> None:
+        # The headroom lasts until the session is open and the start-up backlog
+        # has drained to the steady-state pool; then the extension slots are
+        # dropped (in-use ones when they come back) and their block is freed.
+        if not self._startup_headroom or not self._encoder_open:
+            return None
+
+        in_use = self._allocated_slots - len(self._free_slots)
+        if in_use > self._pool_frames:
+            return None
+
+        self._startup_headroom = False
+        kept = [
+            slot for slot in self._free_slots if id(slot) not in self._extension_slots
+        ]
+        dropped = [
+            slot for slot in self._free_slots if id(slot) in self._extension_slots
+        ]
+        for slot in dropped:
+            self._extension_slots.discard(id(slot))
+        self._free_slots = kept
+        self._allocated_slots -= len(dropped)
 
     def _open_session(self, *, size: Tuple[int, int], device: Any) -> None:
         width, height = size
@@ -850,7 +1388,9 @@ class NvencRing(BaseEncodedRing):
         bitrate = self._bitrate_override or resolve_bitrate(width, height, fps)
         speed = self.playback_speed if self.playback_speed > 0 else 1.0
         gop = max(1, int(round(fps * speed * BACKSTOP_GOP_OUTPUT_SECONDS)))
+        started = time.perf_counter()
         session = self._adapter.open_session(width, height, fps, gop, bitrate, device)
+        open_ms = (time.perf_counter() - started) * 1000
         vram_bytes = self._adapter.session_vram_bytes(session)
         self._session = session
         self._session_flushed = False
@@ -863,8 +1403,14 @@ class NvencRing(BaseEncodedRing):
             self._gop = gop
             self._session_vram_bytes = vram_bytes
             self._sessions_opened += 1
+            self._scratch_size = size
+            self._encoder_open = True
+            if self._first_session_open_ms is None:
+                self._first_session_open_ms = open_ms
+            self._last_session_open_ms = open_ms
         LOGGER.info(
-            "NVENC ring %s opened %dx%d at %d bit/s, %.0f fps, gop %d, ~%d bytes VRAM",
+            "NVENC ring %s opened %dx%d at %d bit/s, %.0f fps, gop %d, ~%d bytes "
+            "VRAM in %.0f ms",
             self.video_identifier,
             width,
             height,
@@ -872,6 +1418,7 @@ class NvencRing(BaseEncodedRing):
             fps,
             gop,
             vram_bytes,
+            open_ms,
         )
 
     def _rate_control_fps(self) -> float:
@@ -911,7 +1458,9 @@ class NvencRing(BaseEncodedRing):
 
 def _close_live_rings() -> None:
     # A live NVENC session at interpreter exit segfaults (G1.2, G1.8b): close
-    # every ring that is still open, with a short deadline.
+    # every ring that is still open, with a short deadline. A warm-up still
+    # running holds a probe session of its own: give it the same deadline.
+    _PROCESS_WARM_UP.wait_if_running(ATEXIT_CLOSE_DEADLINE_SECONDS)
     for ring in list(_LIVE_RINGS):
         try:
             ring.prepare_close(ATEXIT_CLOSE_DEADLINE_SECONDS)

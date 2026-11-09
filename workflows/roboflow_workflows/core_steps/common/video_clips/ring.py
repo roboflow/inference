@@ -92,6 +92,7 @@ __all__ = [
     "CaptureHandle",
     "EncodedOutput",
     "EncodedPacket",
+    "EncoderStartingError",
     "PacketStore",
     "PreparedFrame",
     "Ring",
@@ -115,6 +116,14 @@ TIME_EPSILON = 1e-6
 LOGGED_ERRORS_BEFORE_THROTTLE = 5
 LOG_EVERY_NTH_ERROR = 100
 UNAVAILABLE_CLOSING = "unavailable:closing"
+
+
+class EncoderStartingError(RuntimeError):
+    """Raised by a backend's `_prepare_frame` while its encoder is still starting.
+
+    The base ring counts the frame as ``startup_dropped`` (not ``queue_drops``),
+    so a clip's report tells start-up loss apart from steady-state overload.
+    """
 
 
 class VideoExtraMissingError(RuntimeError):
@@ -446,6 +455,8 @@ class RingStats:
         decimated: Frames dropped by the output grid.
         queue_drops: Frames dropped because the queue was full or dropped at
             shutdown.
+        startup_dropped: Frames dropped because the encoder was still starting
+            (process warm-up or encoder session not open yet).
         ring_drops: Packets evicted by the byte cap.
         stale_dropped: Frames the recorder reported as stale.
         encode_errors: Frames the encoder failed on.
@@ -477,6 +488,7 @@ class RingStats:
     encode_ms_p50: Optional[float]
     encode_ms_p95: Optional[float]
     extra: Dict[str, Any] = field(default_factory=dict)
+    startup_dropped: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         """Return the statistics as a plain dictionary.
@@ -496,6 +508,7 @@ class RingStats:
             "frames_encoded": self.frames_encoded,
             "decimated": self.decimated,
             "queue_drops": self.queue_drops,
+            "startup_dropped": self.startup_dropped,
             "ring_drops": self.ring_drops,
             "stale_dropped": self.stale_dropped,
             "encode_errors": self.encode_errors,
@@ -725,12 +738,14 @@ class BaseEncodedRing(abc.ABC):
         self._frames_encoded = 0
         self._decimated = 0
         self._queue_drops = 0
+        self._startup_dropped = 0
         self._ring_drops = 0
         self._stale_dropped = 0
         self._encode_errors = 0
         self._error_counts: Dict[str, int] = {}
         self._decimated_times: Deque[float] = deque(maxlen=LOSS_EVENT_HISTORY)
         self._queue_drop_times: Deque[float] = deque(maxlen=LOSS_EVENT_HISTORY)
+        self._startup_drop_times: Deque[float] = deque(maxlen=LOSS_EVENT_HISTORY)
         self._ring_drop_times: Deque[float] = deque(maxlen=LOSS_EVENT_HISTORY)
         self._stale_times: Deque[float] = deque(maxlen=LOSS_EVENT_HISTORY)
         self._ring_cost_ms: Deque[float] = deque(maxlen=COST_SAMPLES)
@@ -755,7 +770,9 @@ class BaseEncodedRing(abc.ABC):
         """Convert or copy a frame on the caller's thread.
 
         Returns ``None`` when the frame cannot be queued (counted as a queue
-        drop). Must not keep a reference to the caller's image.
+        drop) and raises `EncoderStartingError` when the encoder is still
+        starting (counted as a startup drop). Must not keep a reference to the
+        caller's image.
         """
 
     @abc.abstractmethod
@@ -995,6 +1012,7 @@ class BaseEncodedRing(abc.ABC):
                 frames_encoded=self._frames_encoded,
                 decimated=self._decimated,
                 queue_drops=self._queue_drops,
+                startup_dropped=self._startup_dropped,
                 ring_drops=self._ring_drops,
                 stale_dropped=self._stale_dropped,
                 encode_errors=self._encode_errors,
@@ -1043,6 +1061,11 @@ class BaseEncodedRing(abc.ABC):
 
         try:
             frame = self._prepare_frame(image)
+        except EncoderStartingError:
+            with self._lock:
+                self._queue_items -= 1
+                self._record_startup_drop(t)
+            return None
         except Exception:
             with self._lock:
                 self._queue_items -= 1
@@ -1350,6 +1373,9 @@ class BaseEncodedRing(abc.ABC):
                 queue_drops=_count_between(
                     self._queue_drop_times, state.start_t, state.end_t
                 ),
+                startup_dropped=_count_between(
+                    self._startup_drop_times, state.start_t, state.end_t
+                ),
                 stale_dropped=_count_between(
                     self._stale_times, state.start_t, state.end_t
                 ),
@@ -1429,6 +1455,11 @@ class BaseEncodedRing(abc.ABC):
         # Ring lock held.
         self._queue_drops += 1
         self._queue_drop_times.append(t)
+
+    def _record_startup_drop(self, t: float) -> None:
+        # Ring lock held.
+        self._startup_dropped += 1
+        self._startup_drop_times.append(t)
 
     def _drain_queue_locked(self) -> List[PreparedFrame]:
         dropped: List[PreparedFrame] = []

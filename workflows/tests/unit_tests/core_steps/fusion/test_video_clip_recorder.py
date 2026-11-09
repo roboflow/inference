@@ -685,6 +685,119 @@ def test_nvenc_import_failure_is_guarded(monkeypatch) -> None:
     assert v1._available_nvenc_ring_class() is None
 
 
+class _WarmUpStub:
+    def __init__(self, status: str):
+        self.state = status
+        self.started = 0
+
+    def status(self, *, start: bool = True) -> str:
+        return self.state
+
+    def start(self) -> None:
+        self.started += 1
+
+
+@pytest.mark.parametrize(
+    "status, expect_nvenc",
+    [("pending", True), ("ready", True), ("unavailable", False)],
+)
+def test_nvenc_class_follows_the_warm_up_without_blocking(
+    monkeypatch, status, expect_nvenc
+) -> None:
+    # given
+    from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+
+    monkeypatch.setattr(nvenc_ring, "_PROCESS_WARM_UP", _WarmUpStub(status))
+
+    # when
+    started = time.perf_counter()
+    ring_class = v1._available_nvenc_ring_class()
+    elapsed = time.perf_counter() - started
+
+    # then
+    assert (ring_class is nvenc_ring.NvencRing) is expect_nvenc
+    assert elapsed < 0.05
+
+
+@pytest.mark.parametrize("hint", [True, False])
+def test_block_init_starts_the_warm_up_only_on_cuda_hosts(monkeypatch, hint) -> None:
+    # given
+    from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+
+    stub = _WarmUpStub("not_started")
+    seen_devices = []
+
+    def should_warm_up(configured_device) -> bool:
+        seen_devices.append(configured_device)
+        return hint
+
+    monkeypatch.setattr(nvenc_ring, "_PROCESS_WARM_UP", stub)
+    monkeypatch.setattr(nvenc_ring, "should_warm_up", should_warm_up)
+
+    # when
+    VideoClipRecorderBlockV1()
+
+    # then
+    assert stub.started == (1 if hint else 0)
+    assert len(seen_devices) == 1
+
+
+def test_block_init_survives_a_broken_warm_up_hint(monkeypatch) -> None:
+    # given
+    from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+
+    def broken(configured_device) -> bool:
+        raise RuntimeError("driver exploded")
+
+    monkeypatch.setattr(nvenc_ring, "should_warm_up", broken)
+
+    # then
+    VideoClipRecorderBlockV1()
+
+
+def test_cpu_host_never_imports_torch_for_the_warm_up(monkeypatch) -> None:
+    # given
+    from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+
+    stub = _WarmUpStub("not_started")
+    monkeypatch.setattr(nvenc_ring, "_PROCESS_WARM_UP", stub)
+    monkeypatch.setitem(__import__("sys").modules, "torch", None)
+
+    # when
+    VideoClipRecorderBlockV1()
+
+    # then
+    assert stub.started == 0
+
+
+def test_stream_switches_to_x264_when_the_nvenc_warm_up_fails(monkeypatch) -> None:
+    # given
+    nvenc_rings = RingFactory()
+    x264_rings = RingFactory()
+    nvenc_allowed = [True]
+
+    def select_backend(image):
+        if nvenc_allowed[0]:
+            return BACKEND_NVENC, nvenc_rings
+        return BACKEND_X264, x264_rings
+
+    monkeypatch.setattr(v1, "_select_backend", select_backend)
+    block = VideoClipRecorderBlockV1()
+
+    # when
+    _run(block, _image(1))
+    nvenc_rings.rings[0].startup_failed = True
+    nvenc_allowed[0] = False
+    anchors = _run(block, _image(2), _image(3))
+
+    # then
+    assert nvenc_rings.rings[0].retired_with == PARTIAL_SHUTDOWN
+    assert len(x264_rings.rings) == 1
+    assert [number for _, number, _ in x264_rings.rings[0].submitted] == [2, 3]
+    assert block.telemetry()["camera-1"]["backend"] == BACKEND_X264
+    assert all(anchor.availability == AVAILABILITY_OK for anchor in anchors)
+
+
 # ---- lifecycle -----------------------------------------------------------------------
 
 

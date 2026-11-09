@@ -59,6 +59,12 @@ are left out. Guidelines:
 * Keep recorders on the unconditional path and gate the sink instead. A recorder
   under flow control only records the frames on which its branch runs, so clips lose
   their pre-roll; the compiler warns about it.
+* On Serverless Streaming (and any host with CUDA tensor frames), keep
+  `copy_image: true` (the default) on a visualization that feeds a recorder. An
+  in-place tensor visualization hands the recorder a host image, which forces the
+  x264 path for that recorder: in the acceptance run on an L4 the job dropped from
+  30 to 28.3 fps with 15 ms encodes per frame. With `copy_image: true` both
+  recorders stay on NVENC.
 * Keep `fire_and_forget` enabled on the sink (the default). With
   `fire_and_forget: false` the upload slot requests and the event POST run on the
   pipeline thread: in the Serverless Streaming validation each `prepare-upload` took
@@ -93,6 +99,9 @@ A clip is approximate evidence with reported bounds.
 * **Copies.** The recorder converts or copies the frame inside its step. A
   visualization that later draws in place (`copy_image: false`) on the same image
   never reaches a raw clip.
+* **Encoder start-up (NVENC).** See [Encoder start-up](#encoder-start-up): frames
+  that arrive before the GPU encoder is ready are not recorded and are counted as
+  `startup_dropped`.
 * **Stale frames.** Frames processed more than `max_processing_lag_seconds` (default
   5) after their capture timestamp are not recorded, for example the first frames
   after a slow model load. Frames read from video files are exempt.
@@ -189,17 +198,26 @@ keep arriving), `reset` (the source restarted: its frame number went backwards),
 
 `loss` counts the frames missing from the window by cause: `decimated` (`clip_fps`
 grid), `ring_drops` (buffer byte cap), `queue_drops` (encoder queue full, or dropped
-at shutdown), `stale_dropped` (processing lag), `inference_gaps` (intervals more than
-twice the nominal frame interval) and `pts_clamped` (repaired timestamps).
+at shutdown), `startup_dropped` (the NVENC encoder was still starting, see [Encoder
+start-up](#encoder-start-up)), `stale_dropped` (processing lag), `inference_gaps`
+(intervals more than twice the nominal frame interval) and `pts_clamped` (repaired
+timestamps).
 
 ## Encoder backends
 
 The recorder picks a backend per stream at its first frame:
 
 * **NVENC**, when the frame is a CUDA tensor and PyNvVideoCodec imports (Serverless
-  Streaming GPU runners). The frame is converted to NV12 on the GPU and encoded by
-  NVENC without a copy to the CPU. Only encoded packets reach host memory. Bitrate:
-  4 Mbit/s at 1080p30 by default, scaled by pixel rate.
+  Streaming GPU runners). Inside the step the recorder makes one GPU-to-GPU copy of
+  the frame into a pooled buffer on the pipeline's own CUDA stream and records one
+  event: two CUDA calls per frame. The wait, the `max_width` resize, the NV12
+  conversion and the encode run on the recorder's own thread and CUDA stream, so no
+  frame is copied to the CPU and only encoded packets reach host memory. Keeping
+  the pipeline thread to two CUDA calls matters under gVisor, where every CUDA
+  driver call goes through the sandbox. On an RTX 4080 at 1080p the step costs
+  0.09-0.14 ms per frame (p50; p95 at most 0.32 ms), down from 0.45-0.76 ms (p95 up
+  to 1.2 ms) when the conversion ran in the step. Bitrate: 4 Mbit/s at 1080p30 by
+  default, scaled by pixel rate.
 * **x264**, otherwise. The frame is converted to I420 with OpenCV inside the step
   (about 1.2-1.5 ms at 1080p) and encoded with libx264 (`ultrafast`, `zerolatency`,
   one thread) on the recorder's own thread.
@@ -207,6 +225,48 @@ The recorder picks a backend per stream at its first frame:
 Both write an IDR frame every output second and mux clips to MP4 with
 `+faststart`. Encoding, muxing and uploading never use the Workflow's shared thread
 pools.
+
+### Encoder start-up
+
+NVENC needs process-wide preparation once (the PyNvVideoCodec import, the CUDA
+context, the conversion kernels and the encoder driver) and then an encoder session
+per stream. Neither runs on the pipeline thread:
+
+* **Process warm-up.** A recorder constructed on a CUDA host (torch already imported
+  with CUDA image tensors, or a CUDA context already initialised, and PyNvVideoCodec
+  installed) starts the warm-up on a background thread when the Workflow is
+  compiled. It takes 0.7-0.8 s on an RTX 4080, so it normally finishes during the
+  host's model load, before the first frame. CPU hosts and hosts without
+  PyNvVideoCodec skip it and never import torch for it. Frames that arrive before it
+  finishes are not recorded and are counted as `startup_dropped`; the stream does
+  not fall back to x264 while NVENC is starting. If the warm-up finds NVENC
+  unavailable, or has not finished after 60 s, the stream records with x264 from
+  then on.
+* **Session open.** Each stream's first frame opens its encoder session on the
+  recorder's thread. One session takes 0.43-0.55 s on an RTX 4080 (0.35-0.4 s on an
+  L4); when two streams start together, the second session is ready 0.6-1.0 s after
+  the first frame. Until its session is open, a stream's GPU frame pool may grow
+  from 8 to 32 frames (190 MiB at 1080p, never more than 192 MiB), so those frames
+  are kept; the extra frames are released once the backlog is encoded. Frames
+  refused in that window are also counted as `startup_dropped`.
+
+Measured on an RTX 4080 with 1080p CUDA frames, 300 frames per run, three runs per
+row, the warm-up started 3 s before the first frame (a stand-in for the model load)
+unless noted:
+
+| Streams and rate | Start-up loss per stream | Frames lost after start-up |
+| --- | --- | --- |
+| 1 at 30 fps or 60 fps | 0 | 0 |
+| 2 at 30 fps | 0 | 0 |
+| 2 at 60 fps | 5-19 (the second session opens 0.6-1.0 s after the first frame) | 0-1 |
+| 2 at 30 fps, frames from the moment the Workflow is compiled | 16-19 (the warm-up, about 0.6 s) | 0 |
+
+Before this start-up handling the same runs lost 8-46 frames per stream in the first
+second (8-21 at 30 fps), and on an L4 the first frame held the pipeline thread for
+1.4 s (4.2 s in a cold process). A host that runs two 60 fps streams per process and
+needs their first second can raise `WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES`, which
+also raises the start-up pool (48 frames is about 300 MB of GPU memory per stream at
+1080p, held all the time).
 
 ## Memory
 
@@ -218,7 +278,8 @@ Measured in validation with the x264 backend at 1080p (CRF 23):
 * Peaks per stream: 10 MB at 5 s + 5 s, 32 MB at 30 s + 5 s, 198 MB at 120 s + 120 s.
 * Annotated clips are about 1.9 times the bytes of raw clips.
 * Each x264 encoder adds about 60 MB of process memory.
-* Each NVENC session used 64-142 MB of VRAM.
+* Each NVENC session used 64-142 MB of VRAM, plus its frame pool: 8 RGB frames (50 MB
+  at 1080p) in steady state and up to 190 MiB at 1080p, capped at 192 MiB while the session opens.
 
 Process-wide caps bound the total: `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` covers buffered
 packets, encoder queues, finished clips and in-flight uploads (not the NVENC GPU
@@ -237,6 +298,14 @@ the event is still sent.
 | HTTP `/workflows/run`, Serverless Image API | Event without video (`unavailable:unsupported_host`) |
 | Anchor bound into a remote step or a workflow output | Compile-time error |
 | Older Inference or `roboflow-workflows` | The Workflow does not compile |
+
+Hosts that build an `InferencePipeline` themselves and do not pass their
+environment through to `roboflow-workflows` (for example a runner that sets
+`WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS` but never installs it in the Workflows
+configuration) set the block close deadline on the pipeline before `join()`:
+`pipeline.set_block_close_deadline(seconds)`, for example the shutdown grace minus
+the time the host needs after the pipeline ends. `None` restores the environment
+default. It applies to pipelines built by `init_with_workflow`.
 
 When a pipeline stops, the recorder stops taking frames, drops frames not yet
 encoded (counted as `queue_drops`), finishes pending clips as `partial: shutdown`
@@ -283,7 +352,7 @@ warning.
 | `WORKFLOWS_VIDEO_CLIP_MAX_CLIP_BYTES` | 512 MiB | Largest clip, estimated at capture and checked again after muxing |
 | `WORKFLOWS_VIDEO_CLIP_INMEMORY_MAX_BYTES` | 64 MiB | Clips up to this size are held in memory; larger clips stay on disk until uploaded |
 | `WORKFLOWS_VIDEO_CLIP_TEMP_DIR` | system temp directory | Directory clips are muxed into; each clip file is created readable by its owner only (mode `0600`) |
-| `WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES` | `8` | GPU frames queued per NVENC stream (1 to 256); a full pool counts `queue_drops` |
+| `WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES` | `8` | GPU frames queued per NVENC stream (1 to 256) once its encoder session is open; a full pool counts `queue_drops`. While the session opens the pool may grow to 32 frames (see [Encoder start-up](#encoder-start-up)) |
 | `WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS` | scaled (4000 at 1080p30) | NVENC bitrate in kbit/s (100 to 200000) |
 | `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS` | `30` | Seconds a stopping InferencePipeline gives Workflow blocks to finish, for example to upload pending clips |
 
