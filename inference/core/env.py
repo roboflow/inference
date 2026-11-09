@@ -341,7 +341,15 @@ SAM3_FINE_TUNED_MODELS_ENABLED = str2bool(
 # request of a clip to the same replica.
 SAM3_VIDEO_ENABLED = str2bool(os.getenv("SAM3_VIDEO_ENABLED", False))
 SAM3_VIDEO_MODEL_ID = os.getenv("SAM3_VIDEO_MODEL_ID", "sam3trackervideo")
-SAM3_VIDEO_MAX_FRAMES = int(os.getenv("SAM3_VIDEO_MAX_FRAMES", "600"))
+# Host RAM, in GB, the tracker's cache of embedded clips may hold. The tracker
+# (inference_models) reads the same variable and turns it into a number of
+# frames, which is also the longest clip the routes accept.
+SAM3_VIDEO_CACHE_MAX_GB = float(os.getenv("SAM3_VIDEO_CACHE_MAX_GB", "16"))
+if not 0 < SAM3_VIDEO_CACHE_MAX_GB < float("inf"):
+    raise ValueError(
+        "SAM3_VIDEO_CACHE_MAX_GB must be a positive number of GB, got "
+        f"{SAM3_VIDEO_CACHE_MAX_GB}"
+    )
 
 # DEPRECATED: Gaze detection has been removed along with the MediaPipe
 # dependency. When True (default), the legacy POST /gaze/gaze_detection

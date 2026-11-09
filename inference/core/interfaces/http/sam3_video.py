@@ -47,7 +47,6 @@ from inference.core.env import (
     ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     MODELS_CACHE_AUTH_ENABLED,
     OFFLINE_MODE,
-    SAM3_VIDEO_MAX_FRAMES,
 )
 from inference.core.exceptions import (
     InputImageLoadError,
@@ -212,7 +211,8 @@ def read_clip_frames(path: str, *, max_frames: int) -> List[np.ndarray]:
 
     Args:
         path: File holding the clip.
-        max_frames: Most frames a clip may have.
+        max_frames: Most frames a clip may have: the frames the tracker's
+            clip cache holds.
 
     Returns:
         The RGB ``HWC`` ``uint8`` frames.
@@ -220,11 +220,16 @@ def read_clip_frames(path: str, *, max_frames: int) -> List[np.ndarray]:
     Raises:
         InputImageLoadError: 400 when the clip does not decode or has fewer
             than two frames.
-        PayloadTooLargeError: 413 when it has more than ``max_frames``.
+        PayloadTooLargeError: 413 when it has more than ``max_frames``, from
+            the header's frame count before anything is decoded.
     """
-    too_many = f"The video has more than {max_frames} frames, the most allowed."
+    limit = (
+        f"the most a clip may have is {max_frames}, which is what "
+        "SAM3_VIDEO_CACHE_MAX_GB holds."
+    )
     frame_count = probe_video(path)[1]
     if frame_count > max_frames:
+        too_many = f"The video has {frame_count} frames; {limit}"
         raise PayloadTooLargeError(message=too_many, public_message=too_many)
 
     # The header's count is unverified: decode one window one frame longer
@@ -234,6 +239,7 @@ def read_clip_frames(path: str, *, max_frames: int) -> List[np.ndarray]:
         message = "The video has no frames."
         raise InputImageLoadError(message=message, public_message=message)
     if len(frames) > max_frames:
+        too_many = f"The video has more than {max_frames} frames; {limit}"
         raise PayloadTooLargeError(message=too_many, public_message=too_many)
 
     return frames
@@ -254,7 +260,9 @@ def embed_video(
     started = time.perf_counter()
     video = inference_request.video
     with video_source_path(video.type, video.value) as path:
-        frames = read_clip_frames(path, max_frames=SAM3_VIDEO_MAX_FRAMES)
+        frames = read_clip_frames(
+            path, max_frames=model.video_cache_limits()["max_frames"]
+        )
 
     described = model.embed_video(
         frames,

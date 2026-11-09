@@ -9,7 +9,9 @@ point of the frame that produced them, so a test can tell which points a mask
 came from.
 """
 
+import gc
 import time
+import weakref
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,13 +19,32 @@ import pytest
 import torch
 from pycocotools import mask as mask_utils
 
-from inference_models.errors import ModelInputError
-from inference_models.models.sam3_tracker_video.clip_cache import VideoClipCache
+from inference_models.errors import (
+    EnvironmentConfigurationError,
+    ModelInputError,
+    ModelRuntimeError,
+)
+from inference_models.models.sam3_tracker_video import sam3_tracker_video_hf
+from inference_models.models.sam3_tracker_video.clip_cache import (
+    VideoClipCache,
+    cache_frame_limit,
+    cached_frame_bytes,
+)
 from inference_models.models.sam3_tracker_video.sam3_tracker_video_hf import (
+    EMBED_CHUNK_FRAMES,
     SAM3TrackerVideo,
 )
 
 W, H, N_FRAMES = 64, 48, 12
+
+# Shapes of a small model: 56 px input, feature maps of 16, 8 and 4 px.
+_CONFIG = SimpleNamespace(
+    image_size=56,
+    vision_config=SimpleNamespace(
+        backbone_feature_sizes=[[16, 16], [8, 8], [4, 4]], fpn_hidden_size=256
+    ),
+    mask_decoder_config=SimpleNamespace(hidden_size=256),
+)
 
 
 def _box(x: float, y: float) -> torch.Tensor:
@@ -78,6 +99,8 @@ class _FakeProcessor:
 
 
 class _FakeModel:
+    config = _CONFIG
+
     def __init__(self):
         self.encoded = []
 
@@ -220,13 +243,301 @@ def test_unknown_or_evicted_clips_are_refused(tracker):
         tracker.propagate_video("other", prompts=[_prompt(0, 1, 10, 10)])
 
 
-def test_clip_cache_evicts_the_least_recently_used():
-    cache = VideoClipCache(size_limit=2)
-    cache.put("a", "clip-a")
-    cache.put("b", "clip-b")
-    cache.get("a")
-    cache.put("c", "clip-c")
+def _clip_of(n_frames):
+    return SimpleNamespace(n_frames=n_frames)
 
-    assert cache.get("a") == "clip-a"
+
+def _held(cache, *video_ids):
+    held = []
+    for video_id in video_ids:
+        try:
+            cache.get(video_id)
+        except ModelInputError:
+            continue
+        held.append(video_id)
+    return held
+
+
+def test_clip_cache_evicts_the_least_recently_used():
+    cache = VideoClipCache(max_frames=20)
+    clip_a = _clip_of(10)
+    cache.put("a", clip_a)
+    cache.put("b", _clip_of(10))
+    cache.get("a")
+    cache.put("c", _clip_of(10))
+
+    assert cache.get("a") is clip_a
     with pytest.raises(ModelInputError):
         cache.get("b")
+
+
+def test_clip_cache_keeps_short_clips_until_their_frames_exceed_the_limit():
+    cache = VideoClipCache(max_frames=100)
+    for name in "abcde":
+        cache.put(name, _clip_of(20))
+
+    assert _held(cache, *"abcde") == list("abcde")
+
+    cache.put("f", _clip_of(20))
+
+    assert _held(cache, *"abcdef") == list("bcdef")
+
+
+def test_a_long_clip_evicts_as_many_old_clips_as_it_needs_oldest_first():
+    cache = VideoClipCache(max_frames=100)
+    for name in "abcd":
+        cache.put(name, _clip_of(20))
+
+    cache.put("long", _clip_of(55))
+
+    assert _held(cache, "a", "b", "c", "d", "long") == ["c", "d", "long"]
+
+
+def test_re_embedding_an_id_does_not_count_its_frames_twice():
+    cache = VideoClipCache(max_frames=100)
+    cache.put("a", _clip_of(40))
+    cache.put("b", _clip_of(40))
+    replacement = _clip_of(60)
+
+    cache.put("b", replacement)
+
+    assert cache.get("a").n_frames == 40
+    assert cache.get("b") is replacement
+
+
+def test_make_room_forgets_the_replaced_and_evicted_clips_before_the_put():
+    cache = VideoClipCache(max_frames=100)
+    cache.put("a", _clip_of(40))
+    cache.put("b", _clip_of(40))
+    cache.put("c", _clip_of(20))
+
+    cache.make_room("c", n_frames=50)
+
+    assert _held(cache, "a", "b", "c") == ["b"]
+
+
+def test_a_clip_longer_than_the_cache_is_refused_and_evicts_nothing():
+    cache = VideoClipCache(max_frames=100)
+    cache.put("a", _clip_of(40))
+
+    with pytest.raises(
+        ModelInputError, match="101 frames.*100.*SAM3_VIDEO_CACHE_MAX_GB"
+    ):
+        cache.make_room("b", n_frames=101)
+    with pytest.raises(ModelInputError, match="SAM3_VIDEO_CACHE_MAX_GB"):
+        cache.put("b", _clip_of(101))
+
+    assert _held(cache, "a") == ["a"]
+
+
+def test_the_cache_limit_in_gb_becomes_a_number_of_frames():
+    assert cache_frame_limit(16.0, frame_bytes=10_616_832) == 1507
+    assert cache_frame_limit(0.0107, frame_bytes=10_616_832) == 1
+    with pytest.raises(EnvironmentConfigurationError, match="at least 0.0106"):
+        cache_frame_limit(0.0106, frame_bytes=10_616_832)
+    with pytest.raises(EnvironmentConfigurationError):
+        VideoClipCache(max_frames=0)
+
+
+def test_a_cache_limit_that_holds_no_frame_fails_the_model_load(monkeypatch):
+    monkeypatch.setattr(sam3_tracker_video_hf, "SAM3_VIDEO_CACHE_MAX_GB", 1e-9)
+
+    with pytest.raises(EnvironmentConfigurationError, match="SAM3_VIDEO_CACHE_MAX_GB"):
+        SAM3TrackerVideo(
+            model=_FakeModel(), processor=_FakeProcessor(), device=torch.device("cpu")
+        )
+
+
+def test_the_model_reports_its_cache_limits(monkeypatch):
+    monkeypatch.setattr(sam3_tracker_video_hf, "SAM3_VIDEO_CACHE_MAX_GB", 0.001)
+    tracker = SAM3TrackerVideo(
+        model=_FakeModel(),
+        processor=_FakeProcessor(),
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+    # 16*16*32 + 8*8*64 + 4*4*256 feature values against 3*56*56 pixel values.
+    frame_bytes = max(8192 + 4096 + 4096, 3 * 56 * 56) * 4
+
+    assert tracker.video_cache_limits() == {
+        "max_gb": 0.001,
+        "bytes_per_frame": frame_bytes,
+        "max_frames": 1_000_000 // frame_bytes,
+    }
+
+
+def test_embed_refuses_a_clip_longer_than_the_cache_and_keeps_the_others(monkeypatch):
+    frame_bytes = cached_frame_bytes(_CONFIG, torch.float32)
+    monkeypatch.setattr(
+        sam3_tracker_video_hf, "SAM3_VIDEO_CACHE_MAX_GB", 10 * frame_bytes / 1e9
+    )
+    tracker = SAM3TrackerVideo(
+        model=_FakeModel(),
+        processor=_FakeProcessor(),
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+    monkeypatch.setattr(tracker, "_clip_session", lambda clip: _FakeSession(clip))
+    frame = np.zeros((H, W, 3), dtype=np.uint8)
+    tracker.embed_video([frame] * 6, video_id="a")
+
+    with pytest.raises(ModelInputError, match="11 frames.*10.*SAM3_VIDEO_CACHE_MAX_GB"):
+        tracker.embed_video([frame] * 11, video_id="b")
+
+    tracker.embed_video([frame] * 4, video_id="c")
+    assert tracker.propagate_video("a", prompts=[_prompt(0, 1, 10, 10)])
+
+    # "a" was used last, so the next clip evicts "c".
+    tracker.embed_video([frame] * 4, video_id="d")
+    with pytest.raises(ModelInputError, match="No video embedded"):
+        tracker.propagate_video("c", prompts=[_prompt(0, 1, 10, 10)])
+    assert tracker.propagate_video("a", prompts=[_prompt(0, 1, 10, 10)])
+
+
+def test_a_call_running_on_a_clip_finishes_after_the_clip_is_evicted(tracker):
+    clip = tracker._video_clip_cache.get("v")
+    frames = [np.zeros((H, W, 3), dtype=np.uint8)] * 2
+    evicted_during_the_call = []
+
+    def _propagate(inference_session, start_frame_idx, reverse):
+        if not evicted_during_the_call:
+            tracker._video_clip_cache.make_room(
+                "other", n_frames=tracker._video_clip_cache.max_frames
+            )
+            evicted_during_the_call.append(
+                not tracker._video_clip_cache.holds("v", clip)
+            )
+        yield from _FakeModel.propagate_in_video_iterator(
+            tracker._model, inference_session, start_frame_idx, reverse
+        )
+
+    tracker._model.propagate_in_video_iterator = _propagate
+
+    results = tracker.propagate_video("v", prompts=[_prompt(0, 1, 10, 10)])
+
+    assert evicted_during_the_call == [True]
+    assert len(results) == N_FRAMES
+    tracker.embed_video(frames, video_id="other")
+
+
+class _CountingProcessor(_FakeProcessor):
+    """Counts the full-precision frames alive each time a chunk is asked for."""
+
+    def __init__(self):
+        self.alive = 0
+        self.alive_at_each_call = []
+        self.chunk_sizes = []
+
+    def _freed(self, n_frames):
+        self.alive -= n_frames
+
+    def video_processor(self, videos, device, return_tensors):
+        gc.collect()
+        self.alive_at_each_call.append(self.alive)
+        self.chunk_sizes.append(len(videos))
+        processed = super().video_processor(videos, device, return_tensors)
+        pixel_values = processed.pixel_values_videos[0]
+        # The storage dies with the last tensor or view on it.
+        self.alive += len(videos)
+        weakref.finalize(pixel_values.untyped_storage(), self._freed, len(videos))
+        return processed
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+def test_embed_keeps_at_most_one_chunk_of_full_precision_frames_alive(dtype):
+    processor = _CountingProcessor()
+    tracker = SAM3TrackerVideo(
+        model=_FakeModel(), processor=processor, device=torch.device("cpu"), dtype=dtype
+    )
+    n_frames = 3 * EMBED_CHUNK_FRAMES + 1
+    frames = [np.full((H, W, 3), i, dtype=np.uint8) for i in range(n_frames)]
+
+    tracker.embed_video(frames, video_id="v")
+    gc.collect()
+
+    assert processor.chunk_sizes == [EMBED_CHUNK_FRAMES] * 3 + [1]
+    assert processor.alive_at_each_call == [0, 0, 0, 0]
+    assert processor.alive == 0
+    clip = tracker._video_clip_cache.get("v")
+    assert clip.n_frames == n_frames
+    for i in (0, EMBED_CHUNK_FRAMES, n_frames - 1):
+        assert clip.frames[i].dtype == dtype
+        assert torch.equal(clip.frames[i], torch.full((3, H, W), float(i), dtype=dtype))
+
+
+def test_each_frame_of_a_clip_is_its_own_allocation(tracker):
+    clip = tracker._video_clip_cache.get("v")
+
+    pointers = {clip.frames[i].untyped_storage().data_ptr() for i in range(N_FRAMES)}
+
+    assert len(pointers) == N_FRAMES
+    assert all(
+        clip.frames[i].untyped_storage().nbytes() == clip.frames[i].nbytes
+        for i in range(N_FRAMES)
+    )
+
+
+def _features():
+    return {
+        "vision_feats": [torch.zeros(4, 1, 2)],
+        "vision_pos_embeds": [torch.ones(4, 1, 2)],
+    }
+
+
+def test_a_frames_pixels_are_released_when_its_features_are_cached(tracker):
+    clip = tracker._video_clip_cache.get("v")
+    pixels = weakref.ref(clip.frames[3])
+    assert clip.frames.holds(3) and not clip.has_features(3)
+
+    clip.cache_vision_features(3, _features())
+
+    assert clip.has_features(3) and not clip.frames.holds(3)
+    assert pixels() is None
+    assert clip.frames.holds(2) and clip.frames.holds(4)
+    assert clip.n_frames == N_FRAMES
+    assert torch.equal(
+        clip.get_vision_features(3)["vision_feats"][0], torch.zeros(4, 1, 2)
+    )
+    with pytest.raises(ModelRuntimeError, match="frame 3 were released"):
+        clip.frames[3]
+
+
+def test_cached_features_cannot_be_cleared(tracker):
+    clip = tracker._video_clip_cache.get("v")
+    clip.clear_all()  # nothing cached yet: nothing to refuse
+
+    clip.cache_vision_features(0, _features())
+
+    with pytest.raises(ModelRuntimeError, match="cannot be cleared"):
+        clip.clear_all()
+    assert clip.has_features(0)
+
+
+def test_position_embeddings_are_shared_by_the_clips_of_a_model(tracker):
+    frames = [np.zeros((H, W, 3), dtype=np.uint8)] * 2
+    tracker.embed_video(frames, video_id="w")
+    clip_v = tracker._video_clip_cache.get("v")
+    clip_w = tracker._video_clip_cache.get("w")
+    clip_v.cache_vision_features(0, _features())
+    clip_w.cache_vision_features(0, _features())
+
+    assert (
+        clip_v.get_vision_features(0)["vision_pos_embeds"][0].data_ptr()
+        == clip_w.get_vision_features(0)["vision_pos_embeds"][0].data_ptr()
+    )
+    different = dict(_features(), vision_pos_embeds=[torch.zeros(4, 1, 2)])
+    with pytest.raises(ModelInputError, match="Position embeddings differ"):
+        clip_w.cache_vision_features(1, different)
+
+
+def test_re_embedding_an_id_replaces_the_clip_and_stops_its_encoding(tracker):
+    old = tracker._video_clip_cache.get("v")
+    frames = [np.zeros((H, W, 3), dtype=np.uint8)] * 3
+
+    described = tracker.embed_video(frames, video_id="v")
+
+    assert described["n_frames"] == 3
+    assert tracker._video_clip_cache.get("v") is not old
+    assert not tracker._video_clip_cache.holds("v", old)
+    tracker._encode_clip_frames("v", old)
+    assert tracker._model.encoded == []

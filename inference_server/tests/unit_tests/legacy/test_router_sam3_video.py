@@ -7,7 +7,6 @@ import pytest
 
 from inference_model_manager.hash_namespacing import namespace_client_hash_id
 from inference_models.errors import ModelInputError
-from inference_server import configuration
 from inference_server.legacy import sam3_video
 from inference_server.legacy.entities import Sam3VideoPropagateRequest
 from tests.unit_tests.legacy.conftest import FakeGateway
@@ -37,8 +36,15 @@ def clip(tmp_path) -> Path:
     return write_clip(tmp_path / "clip.mp4")
 
 
-def _gateway(fake_stat, model_class_name="SAM3TrackerVideo"):
+def _gateway(fake_stat, model_class_name="SAM3TrackerVideo", max_frames=1507):
     fake_stat[MODEL_ID] = ("instance-segmentation", "embed_video")
+
+    def _limits(image, params):
+        return {
+            "max_gb": 16.0,
+            "bytes_per_frame": 10_616_832,
+            "max_frames": max_frames,
+        }
 
     def _embed(image, params):
         frame = params["frames"][0]
@@ -60,6 +66,7 @@ def _gateway(fake_stat, model_class_name="SAM3TrackerVideo"):
 
     gateway = FakeGateway(
         predictions={
+            (MODEL_ID, "video_cache_limits"): _limits,
             (MODEL_ID, "embed_video"): _embed,
             (MODEL_ID, "segment_video_frame"): _segment,
             (MODEL_ID, "propagate_video"): _propagate,
@@ -68,6 +75,7 @@ def _gateway(fake_stat, model_class_name="SAM3TrackerVideo"):
             MODEL_ID: {
                 "model_class_name": model_class_name,
                 "actions": {
+                    "video_cache_limits": {},
                     "embed_video": {},
                     "segment_video_frame": {},
                     "propagate_video": {},
@@ -80,7 +88,12 @@ def _gateway(fake_stat, model_class_name="SAM3TrackerVideo"):
 
 
 def _infer_calls(gateway):
-    return [call for call in gateway.calls if call[0] == "infer"]
+    """Model calls other than the embed route's question for the cache limits."""
+    return [
+        call
+        for call in gateway.calls
+        if call[0] == "infer" and call[2] != "video_cache_limits"
+    ]
 
 
 def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(
@@ -112,11 +125,10 @@ def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(
     assert params["frames"][0].shape == (48, 64, 3)
 
 
-def test_embed_refuses_a_clip_over_the_frame_cap(
-    legacy_client, fake_stat, clip, monkeypatch
+def test_embed_refuses_a_clip_longer_than_the_cache_holds(
+    legacy_client, fake_stat, clip
 ):
-    monkeypatch.setattr(configuration, "SAM3_VIDEO_MAX_FRAMES", 10)
-    gateway = _gateway(fake_stat)
+    gateway = _gateway(fake_stat, max_frames=10)
 
     response = legacy_client(gateway).post(
         "/sam3/video/embed",
@@ -128,6 +140,8 @@ def test_embed_refuses_a_clip_over_the_frame_cap(
     )
 
     assert response.status_code == 413, response.text
+    assert "The video has 25 frames; the most a clip may have is 10" in response.text
+    assert "SAM3_VIDEO_CACHE_MAX_GB" in response.text
     assert _infer_calls(gateway) == []
 
 
