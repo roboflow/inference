@@ -49,6 +49,7 @@ This block counts how many pixels in an image match a specific target color with
    - Defines a 3D color cube in BGR space where matching pixels must fall
 4. Creates a binary mask using OpenCV's inRange function:
    - Compares each pixel's BGR values against the lower and upper bounds
+   - For grayscale, compares the pixel intensity against all three channel ranges
    - Sets mask pixel to 255 (white) if pixel color falls within the tolerance range
    - Sets mask pixel to 0 (black) if pixel color falls outside the tolerance range
    - Uses vectorized operations for efficient pixel-level comparison across the entire image
@@ -100,7 +101,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
     )
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
-        description="Input image to analyze for pixel color counting. The block counts pixels in this image that match the target_color within the specified tolerance. All pixels in the image are analyzed. The image is processed in BGR format (OpenCV standard), and color matching is performed on each pixel's BGR values. Processing time depends on image size.",
+        description="Input image to analyze for pixel color counting. The block counts pixels in this image that match the target_color within the specified tolerance. Color images are compared channel by channel in BGR format. A grayscale pixel matches when its intensity is within the tolerance for all three target color channels. Processing time depends on image size.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
@@ -169,13 +170,13 @@ def count_specific_color_pixels(
     target_color: Union[str, Tuple[int, int, int]],
     tolerance: int,
 ) -> int:
-    """
-    Counts the number of pixels that match the target color within the given tolerance.
+    """Count pixels that match the target color within the given tolerance.
 
     Args:
-        image: Input image.
-        target_color (Union[str, tuple]): Target color in hex format (e.g., '#431112') or BGR tuple (e.g., (18, 17, 67)).
-        tolerance (int, optional): Tolerance for color matching. Defaults to 10.
+        image (np.ndarray): BGR or single-channel image.
+        target_color (Union[str, Tuple[int, int, int]]): Hex color, RGB tuple
+            string, or RGB tuple.
+        tolerance (int): Allowed difference in each color channel.
 
     Returns:
         int: Number of pixels that match the target color.
@@ -184,10 +185,18 @@ def count_specific_color_pixels(
     lower_bound = np.array(target_color_bgr) - tolerance
     upper_bound = np.array(target_color_bgr) + tolerance
 
+    if lower_bound.size == 3 and (
+        image.ndim == 2 or (image.ndim == 3 and image.shape[2] == 1)
+    ):
+        # A gray intensity must lie within all three ranges.
+        lower_bound = lower_bound.max().item()
+        upper_bound = upper_bound.min().item()
+
     # Use vectorized comparison to directly create a mask and count non-zero elements
     mask = cv2.inRange(image, lower_bound, upper_bound)
+    count = int(cv2.countNonZero(mask))
 
-    return int(cv2.countNonZero(mask))
+    return count
 
 
 def convert_color_to_bgr_tuple(

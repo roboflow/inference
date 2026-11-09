@@ -1,10 +1,16 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
 )
@@ -97,3 +103,55 @@ def test_workflow_with_color_of_pixels_counting(
     assert (
         result[1]["matching_pixels_count"] == 190 * 180
     ), "Expected 190*180 green pixels in second image, as that is how image was prepared"
+
+
+def test_workflow_counts_white_pixels_after_thresholding_grayscale() -> None:
+    """Count white pixels in a single-channel mask from upstream blocks."""
+    workflow = {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "steps": [
+            {
+                "type": "roboflow_core/convert_grayscale@v1",
+                "name": "grayscale",
+                "image": "$inputs.image",
+            },
+            {
+                "type": "roboflow_core/threshold@v1",
+                "name": "threshold",
+                "image": "$steps.grayscale.image",
+                "threshold_type": "binary",
+                "thresh_value": 127,
+                "max_value": 255,
+            },
+            {
+                "type": "roboflow_core/pixel_color_count@v1",
+                "name": "count",
+                "image": "$steps.threshold.image",
+                "target_color": "#fff",
+                "tolerance": 0,
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "matching_pixels_count",
+                "selector": "$steps.count.matching_pixels_count",
+            }
+        ],
+    }
+    levels = np.array([[0, 64, 127, 128], [255, 12, 130, 255]], dtype=np.uint8)
+    bgr = np.repeat(levels[:, :, None], 3, axis=2)
+    image = numpy_image_as_tensor(bgr) if ENABLE_TENSOR_DATA_REPRESENTATION else bgr
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow,
+        init_parameters={},
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    try:
+        result = execution_engine.run(runtime_parameters={"image": image})
+    finally:
+        execution_engine.close()
+
+    assert result == [{"matching_pixels_count": 4}]

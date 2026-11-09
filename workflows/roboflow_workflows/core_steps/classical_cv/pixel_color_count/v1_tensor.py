@@ -1,6 +1,6 @@
 """Tensor-native sibling of ``pixel_color_count/v1``.
 
-On a tensor-materialised ``(3, H, W)`` image the count is one broadcasted
+On a tensor-materialised color or uint8 grayscale image the count is one broadcasted
 ``(px >= lower) & (px <= upper)`` on the device; only the final count crosses
 device->host.
 
@@ -20,10 +20,10 @@ Parity with v1, which feeds ``cv2.inRange`` unclipped int64
   colours raise the identical ``ValueError`` before any image work. The
   per-channel AND is layout-independent, so the BGR bounds tuple is reversed
   to pair with the CHW RGB channel axis.
-* Single-channel ``(1, H, W)`` tensors delegate: v1 raises ``cv2.error`` for
-  3-element bounds against a 1-channel image, and delegation fails
-  identically.
-* Numpy/base64-born images delegate to v1's ``count_specific_color_pixels``
+* Single-channel ``(1, H, W)`` uint8 tensors with an RGB target use the
+  intersection of the three channel ranges. Other grayscale dtypes and
+  non-triplet target strings keep the OpenCV path.
+* NumPy/base64-born images delegate to v1's ``count_specific_color_pixels``
   (no materialised tensor).
 """
 
@@ -51,28 +51,42 @@ class PixelationCountBlockV1(WorkflowBlock):
         target_color: Union[str, tuple],
         tolerance: int,
     ) -> BlockResult:
-        if image.is_tensor_materialised() and image.tensor_image.shape[0] == 3:
-            color_pixel_count = _count_specific_color_pixels_tensor(
-                image.tensor_image, target_color, tolerance
-            )
-        else:
-            color_pixel_count = count_specific_color_pixels(
-                image.numpy_image, target_color, tolerance
-            )
+        """Count matching pixels in a color or grayscale image.
+
+        Args:
+            image (WorkflowImageData): Image to analyze.
+            target_color (Union[str, tuple]): Target RGB color.
+            tolerance (int): Allowed difference in each color channel.
+
+        Returns:
+            BlockResult: The number of matching pixels.
+        """
+        tensor = image.tensor_image if image.is_tensor_materialised() else None
+        if tensor is not None and (
+            tensor.shape[0] == 3
+            or (tensor.shape[0] == 1 and tensor.dtype == torch.uint8)
+        ):
+            target_color_bgr = convert_color_to_bgr_tuple(color=target_color)
+            if tensor.shape[0] == 3 or len(target_color_bgr) == 3:
+                color_pixel_count = _count_specific_color_pixels_tensor(
+                    tensor, target_color_bgr, tolerance
+                )
+                return {"matching_pixels_count": color_pixel_count}
+
+        color_pixel_count = count_specific_color_pixels(
+            image.numpy_image, target_color, tolerance
+        )
         return {"matching_pixels_count": color_pixel_count}
 
 
 def _count_specific_color_pixels_tensor(
     image: torch.Tensor,
-    target_color: Union[str, Tuple[int, int, int]],
+    target_color_bgr: Tuple[int, int, int],
     tolerance: int,
 ) -> int:
-    """Counts pixels of a CHW RGB uint8 tensor that match the target colour
+    """Counts pixels of a CHW RGB or grayscale uint8 tensor that match the target colour
     within tolerance, replicating ``cv2.inRange`` + ``cv2.countNonZero``
     exactly; only the final count leaves the device."""
-    # Colour conversion first, before any image work - mirrors v1's error
-    # ordering.
-    target_color_bgr = convert_color_to_bgr_tuple(color=target_color)
     target_color_rgb = target_color_bgr[::-1]
     lower_bound = [
         _mirror_cv2_scalar_bound(channel - tolerance) for channel in target_color_rgb
@@ -80,12 +94,23 @@ def _count_specific_color_pixels_tensor(
     upper_bound = [
         _mirror_cv2_scalar_bound(channel + tolerance) for channel in target_color_rgb
     ]
-    device = image.device
-    lower = torch.tensor(lower_bound, dtype=torch.int16, device=device).view(3, 1, 1)
-    upper = torch.tensor(upper_bound, dtype=torch.int16, device=device).view(3, 1, 1)
+
+    if image.shape[0] == 1:
+        lower, upper = max(lower_bound), min(upper_bound)
+    else:
+        device = image.device
+        lower = torch.tensor(lower_bound, dtype=torch.int16, device=device).view(
+            3, 1, 1
+        )
+        upper = torch.tensor(upper_bound, dtype=torch.int16, device=device).view(
+            3, 1, 1
+        )
+
     pixels = image.detach().to(torch.int16)
     matching = ((pixels >= lower) & (pixels <= upper)).all(dim=0)
-    return int(matching.sum().item())
+    count = int(matching.sum().item())
+
+    return count
 
 
 def _mirror_cv2_scalar_bound(value: Union[int, float]) -> int:

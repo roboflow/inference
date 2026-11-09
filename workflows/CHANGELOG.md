@@ -18,6 +18,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Pixel Color Count v1 accepts single-channel images, including threshold masks.
+
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 
