@@ -22,7 +22,9 @@ Bundled execution engine: `1.17.1`.
 
 ### Changed
 
-- The Pillow requirement allows 13 (`pillow>=12.3.0,<14.0.0`).
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
 - Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
   releases that allow Pillow 13.
 

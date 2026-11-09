@@ -8,7 +8,9 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Changed
 
-- The Pillow requirement allows 13 (`pillow>=12.3.0,<14.0.0`).
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
 - The `workflows` extra requires `roboflow-workflows>=0.2.16rc1` instead of
   `>=0.2.15`.
 
