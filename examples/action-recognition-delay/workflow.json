@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "model_id"}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_action_recognition_model@v1",
+      "name": "actions",
+      "images": "$inputs.image",
+      "model_id": "$inputs.model_id",
+      "stride_seconds": 5
+    },
+    {
+      "type": "roboflow_core/action_recognition_visualization@v1",
+      "name": "display",
+      "image": "$inputs.image",
+      "timeline": "$steps.actions.timeline",
+      "delay_seconds": 10,
+      "max_frame_side": 640,
+      "max_buffer_mb": 256
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "image", "selector": "$steps.display.image"},
+    {"type": "JsonField", "name": "actions", "selector": "$steps.display.actions"},
+    {"type": "JsonField", "name": "displayed_frame_number", "selector": "$steps.display.displayed_frame_number"},
+    {"type": "JsonField", "name": "status", "selector": "$steps.display.status"},
+    {"type": "JsonField", "name": "model_error", "selector": "$steps.actions.error_status"}
+  ]
+}
