@@ -18,6 +18,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Size Measurement v1 accepts fractional coordinates in reference polygons.
+
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 
