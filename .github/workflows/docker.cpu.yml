@@ -217,36 +217,50 @@ jobs:
           done
 
   # Tells streaming-video-inference-services (video preview worker) that a
-  # release is out, so its inference pin gets a bump PR within minutes.
+  # GitHub release is out, so its inference pin gets a bump PR within minutes.
+  #
+  # Release events only. Manually dispatched builds (custom tags such as
+  # post1, or a VERSION tag from an arbitrary ref) are not announced, since
+  # their SHA may never reach main; SVIS's own 15-minute check of Docker Hub
+  # still picks those up if they are meant to ship.
+  #
   # Fire-and-forget: runs only after the images are published, cannot fail
-  # this workflow (continue-on-error), and nothing flows back from SVIS.
-  # Skipped silently until the SVIS_DISPATCH_APP_* app credentials exist.
+  # this workflow (continue-on-error), holds no permissions of its own, and
+  # nothing flows back from SVIS. SVIS ignores versions not newer than its
+  # pin, so a backport release (e.g. 1.7.5 after 1.8.4) opens nothing.
+  #
+  # The App key lives in the svis-dispatch environment, restricted to v* tag
+  # refs, so it cannot be used from a branch with an edited workflow. The
+  # job is a no-op until the App client id and key exist.
   notify-svis:
     needs: docker
-    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.force_push == true)) }}
+    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'release' }}
     runs-on: ubuntu-latest
+    environment: svis-dispatch
     timeout-minutes: 5
     continue-on-error: true
     permissions: {}
     env:
-      IMAGE_TAG: ${{ needs.docker.outputs.image_tag }}
-      HAS_APP: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY != '' }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      HAS_APP: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY != '' && vars.SVIS_DISPATCH_APP_CLIENT_ID != '' }}
     steps:
-      - name: Only announce release tags
+      - name: Only announce X.Y.Z and X.Y.Z-postN releases
         id: filter
-        # 1.8.4 and 1.8.4-post1 are releases; rc, test and custom tags are not.
+        # Release tags are v-prefixed (v1.8.4); rc and other pre-release
+        # tags are skipped.
         run: |
-          if [[ "$IMAGE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-post[0-9]+)?$ ]]; then
-            echo "announce=true" >> "$GITHUB_OUTPUT"
+          version="${RELEASE_TAG#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-post[0-9]+)?$ ]]; then
+            echo "version=$version" >> "$GITHUB_OUTPUT"
           else
-            echo "Not a release tag ($IMAGE_TAG); nothing to announce."
+            echo "Not a release version ($RELEASE_TAG); nothing to announce."
           fi
       - name: Mint a token scoped to the SVIS repository
         id: app-token
-        if: ${{ steps.filter.outputs.announce == 'true' && env.HAS_APP == 'true' }}
+        if: ${{ steps.filter.outputs.version != '' && env.HAS_APP == 'true' }}
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ vars.SVIS_DISPATCH_APP_ID }}
+          client-id: ${{ vars.SVIS_DISPATCH_APP_CLIENT_ID }}
           private-key: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY }}
           owner: roboflow
           repositories: streaming-video-inference-services
@@ -255,9 +269,10 @@ jobs:
         if: ${{ steps.app-token.outputs.token != '' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.filter.outputs.version }}
         run: |
           gh api repos/roboflow/streaming-video-inference-services/dispatches \
             -f event_type=inference-release \
-            -f "client_payload[version]=$IMAGE_TAG" \
+            -f "client_payload[version]=$VERSION" \
             -f "client_payload[sha]=$GITHUB_SHA"
-          echo "Announced $IMAGE_TAG ($GITHUB_SHA) to streaming-video-inference-services"
+          echo "Announced $VERSION ($GITHUB_SHA) to streaming-video-inference-services"
