@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an optional `reference_examples` input for `object-detection`: up to 10 labeled example images, each `{"image": ..., "annotations": [{"class", "x", "y", "width", "height"}]}` in pixels of that image, the Roboflow prediction format. The examples go before the image to label in every request, so the model sees what each class looks like and how tightly it is boxed. Gemini gets the example images with their boxes and labels drawn on them. Pillow's default font only draws ASCII, so when a label is outside printable ASCII the boxes show numbers and the request text maps them to the labels. OpenAI gets up to 3 crops per label, grouped by label (the output labels, so `output_classes` when set). Example images load one at a time, like a workflow image input with `prevent_local_images_loading` on, whatever the engine sets: the host's URL policy applies and local file paths are refused. Each image is released once rendered, so only the boxed images or crops stay in memory. Each block instance keeps the parts of its last examples, so a job or a request fetches them once. The manifest schema describes the examples and their limit. A selector can provide the whole list, but selectors inside an example are refused. Other tasks reject the input. Without it the requests are unchanged.
+- OpenAI Decisions block (`roboflow_core/open_ai_decisions@v1`): asks OpenAI's Decisions API (`POST /v1/decisions`, GPT-6 Luna) typed questions about each image and returns probabilities instead of generated text.
+  - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
+  - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
+  - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
+
 ### Fixed
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
