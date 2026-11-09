@@ -52,7 +52,8 @@ jobs:
           docker run --rm --gpus all -e PARALLEL_IMAGE_TEST=true -e PARALLEL_TEST_DEVICE=cuda \
             --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
             inference-parallel-tests:local -p no:cacheprovider \
-            tests/inference/unit_tests/enterprise/parallel tests/docker/test_parallel_worker_startup.py
+            tests/inference/unit_tests/enterprise/parallel tests/docker/test_parallel_worker_startup.py \
+            tests/inference/unit_tests/core/utils/test_onnx_iobinding.py
       
       - name: 🔋 Start Test Docker without Torch Preprocessing - Parallel GPU
         id: start_without_torch
