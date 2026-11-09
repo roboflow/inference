@@ -32,7 +32,10 @@ DATABRICKS_TO_ROBOFLOW_WORKFLOW = {
             "server_hostname": "dbc-a1b2c3d4-e5f6.cloud.databricks.com",
             "http_path": "/sql/1.0/warehouses/abcdef1234567890",
             "access_token": "$inputs.databricks_token",
-            "sql_statement": "SELECT id, bytes, raccoon_name FROM c.s.images",
+            "catalog": "main",
+            "schema_name": "vision",
+            "table": "images",
+            "metadata_columns": ["id"],
             "image_name_column": "id",
         },
         {
@@ -66,7 +69,7 @@ class FakeCursor:
         self._rows = rows
         self._position = 0
 
-    def execute(self, statement: str) -> None:
+    def execute(self, statement: str, parameters=None) -> None:
         pass
 
     def fetchmany(self, size: int) -> List[FakeRow]:

@@ -136,7 +136,10 @@ def run_block(
         "server_hostname": HOST,
         "http_path": HTTP_PATH,
         "access_token": "dapi-test-token",
-        "sql_statement": "SELECT id, bytes FROM catalog.schema.images",
+        "catalog": "main",
+        "schema_name": "vision",
+        "table": "images",
+        "metadata_columns": ["id"],
         "image_column": "bytes",
         "image_name_column": "id",
         "max_rows": 100,
@@ -197,7 +200,10 @@ def test_runs_through_the_execution_engine_with_the_real_connector() -> None:
                 "server_hostname": HOST,
                 "http_path": HTTP_PATH,
                 "access_token": "$inputs.token",
-                "sql_statement": "SELECT id, bytes FROM t",
+                "catalog": "main",
+                "schema_name": "vision",
+                "table": "images",
+                "metadata_columns": ["id"],
                 "image_name_column": "id",
                 "max_rows": 3,
             }
@@ -442,3 +448,42 @@ def test_production_subprocess_cancels_a_slow_real_query(tmp_path, monkeypatch) 
         assert {r["path"] for r in server.observations.requests} == {HTTP_PATH}
         behaviour.hold_running = False
         assert len(run_block(isolated=True)) == 1
+
+
+def test_native_parameters_cross_the_connector_boundary_without_interpolation():
+    attack = "images`; DROP TABLE other; --"
+    with warehouse(harness.Behaviour(rows=image_rows(1))) as server:
+        run_block(table=attack, max_rows=1)
+    request = server.observations.statements[0]
+    assert attack not in request.statement
+    assert "FROM IDENTIFIER(:source) LIMIT :row_limit" in request.statement
+    parameters = {
+        parameter.name: parameter.value.stringValue for parameter in request.parameters
+    }
+    assert parameters["source"] == "`main`.`vision`.`images``; DROP TABLE other; --`"
+    assert parameters["row_limit"] == "1"
+    assert request.canDecompressLZ4Result is False
+
+
+@pytest.mark.parametrize("chunked", [False, True])
+def test_response_budget_rejects_oversized_metadata_before_row_conversion(chunked):
+    rows = [dict(image_rows(1)[0], note="x" * (2 * 1024 * 1024))]
+    behaviour = harness.Behaviour(
+        rows=rows,
+        columns=(("id", "bigint"), ("bytes", "binary"), ("note", "string")),
+        chunked=chunked,
+    )
+    with warehouse(behaviour), mock.patch.object(
+        v1, "MAX_IMAGE_PAYLOAD_BYTES", 1024
+    ), mock.patch.object(
+        v1, "build_metadata", side_effect=AssertionError("materialized")
+    ) as converted:
+        with pytest.raises(RuntimeError, match="(byte limit|Length exceeded)"):
+            run_block(metadata_columns=["note"])
+    converted.assert_not_called()
+
+
+def test_http_compression_is_rejected_before_thrift_parsing():
+    with warehouse(harness.Behaviour(response_encoding="gzip")):
+        with pytest.raises(RuntimeError, match="compressed warehouse"):
+            run_block()

@@ -3,40 +3,23 @@
 import json
 import os
 import stat
-import subprocess
-import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
+from roboflow_workflows.utils.subprocess_supervisor import run_in_subprocess
 
 _WORKER_MODULE = (
     "roboflow_workflows.core_steps.integrations.databricks.sql_image_source.worker"
 )
 _MAX_REQUEST_BYTES = 1024 * 1024
 _CLEANUP_SECONDS = 35.0
-_MAX_ERROR_BYTES = 2048
 
 
 def _check_deadline(deadline: float) -> None:
     if time.monotonic() >= deadline:
         raise TimeoutError("Databricks query exceeded timeout_seconds")
-
-
-def _stop_worker(process: subprocess.Popen, *, cleanup_deadline: float) -> None:
-    if process.poll() is not None:
-        return
-
-    # SIGTERM asks the worker to unwind and close its SQL session. Closing can
-    # block on the connector lock, so reserve time for kill and reap as well.
-    process.terminate()
-    try:
-        process.wait(timeout=max(0.0, cleanup_deadline - time.monotonic() - 2.0))
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=max(0.1, cleanup_deadline - time.monotonic()))
 
 
 def run_isolated(
@@ -62,83 +45,41 @@ def run_isolated(
         WorkflowImageData,
     )
 
-    _check_deadline(deadline)
-    with tempfile.TemporaryDirectory(prefix="databricks-") as temporary:
-        directory = Path(temporary)
-        payload = json.dumps(
-            dict(version=1, request=request, limits=limits, deadline=deadline),
-            allow_nan=False,
-        ).encode("utf-8")
-        if len(payload) > _MAX_REQUEST_BYTES:
-            raise ValueError("Databricks inputs exceed the 1 MiB worker request limit")
-
-        process = subprocess.Popen(
-            [sys.executable, "-m", _WORKER_MODULE, str(directory)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            # Separate interpreter: never fork the server's GPU/thread state.
-            close_fds=True,
+    def read_result(directory: Path) -> List[Dict[str, Any]]:
+        rows = _read_outputs(
+            directory, max_rows=request["max_rows"], limits=limits, deadline=deadline
         )
-        try:
-            try:
-                process.communicate(
-                    input=payload, timeout=max(0.0, deadline - time.monotonic())
-                )
-            except subprocess.TimeoutExpired:
-                raise TimeoutError(
-                    "Databricks query exceeded timeout_seconds"
-                ) from None
+        results = []
+        for row in rows:
             _check_deadline(deadline)
-            if process.returncode != 0:
-                error_path = directory / "error.json"
-                error = (
-                    _read_json(error_path, max_bytes=_MAX_ERROR_BYTES)
-                    if error_path.is_file()
-                    else {}
-                )
-                if not isinstance(error, dict):
-                    raise RuntimeError("Invalid Databricks worker error")
-                kind = error.get("kind")
-                message = str(error.get("message", "Databricks worker failed"))
-                # Redact once more at the parent boundary, even for child errors.
-                token = request.get("access_token")
-                if token:
-                    message = message.replace(token, "***")
-                if kind == "TimeoutError":
-                    raise TimeoutError(message)
-                if kind == "ValueError":
-                    raise ValueError(message)
-                raise RuntimeError(message)
-
-            rows = _read_outputs(
-                directory,
-                max_rows=request["max_rows"],
-                limits=limits,
-                deadline=deadline,
+            image = WorkflowImageData(
+                parent_metadata=ImageParentMetadata(
+                    parent_id=f"databricks.{row['image_names']}"
+                ),
+                numpy_image=row["images"],
             )
-            results = []
-            for row in rows:
-                _check_deadline(deadline)
-                image = WorkflowImageData(
-                    parent_metadata=ImageParentMetadata(
-                        parent_id=f"databricks.{row['image_names']}"
-                    ),
-                    numpy_image=row["images"],
+            results.append(
+                dict(
+                    images=image,
+                    image_names=row["image_names"],
+                    metadata=row["metadata"],
                 )
-                results.append(
-                    dict(
-                        images=image,
-                        image_names=row["image_names"],
-                        metadata=row["metadata"],
-                    )
-                )
-            _check_deadline(deadline)
-            return results
-        finally:
-            _stop_worker(process, cleanup_deadline=time.monotonic() + _CLEANUP_SECONDS)
-            if process.stdin is not None:
-                process.stdin.close()
+            )
+        return results
+
+    try:
+        results = run_in_subprocess(
+            dict(version=1, request=request, limits=limits, deadline=deadline),
+            worker_module=_WORKER_MODULE,
+            deadline=deadline,
+            read_result=read_result,
+            secrets=(request.get("access_token", ""),),
+            max_request_bytes=_MAX_REQUEST_BYTES,
+            cleanup_seconds=_CLEANUP_SECONDS,
+        )
+    except TimeoutError:
+        raise TimeoutError("Databricks query exceeded timeout_seconds") from None
+    return results
 
 
 def _read_json(path: Path, *, max_bytes: int) -> Any:

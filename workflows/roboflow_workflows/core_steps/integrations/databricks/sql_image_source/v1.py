@@ -29,6 +29,10 @@ from roboflow_workflows.core_steps.integrations.databricks.availability import (
     databricks_unavailability_reason,
     running_on_hosted_platform,
 )
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.query import (
+    build_image_query,
+    quote_identifier,
+)
 from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.transport import (
     PinnedDestination,
     install_pinned_transport,
@@ -106,14 +110,14 @@ SOCKET_TIMEOUT_SECONDS = 30
 RETRY_ATTEMPTS = 3
 RETRY_DELAY_MAX_SECONDS = 5
 CLEANUP_GRACE_SECONDS = SOCKET_TIMEOUT_SECONDS + RETRY_DELAY_MAX_SECONDS
-# Connector buffering. `arraysize` rows / `buffer_size_bytes` bytes bound the
+# Connector buffering. `arraysize` rows / `buffer_size_bytes` bytes request the
 # inline result chunk the warehouse returns per fetch, so the connector holds at
-# most one chunk (plus its lz4-decompressed copy) ahead of the row loop.
+# most one chunk ahead of the row loop. Transport byte caps enforce the bound.
 FETCH_BATCH_SIZE = 8
 MIN_RESULT_BUFFER_BYTES = 1024 * 1024
 MAX_ROWS = 1_000
 MAX_TIMEOUT_SECONDS = 600
-ALLOWED_IMAGE_FORMATS = ("JPEG", "PNG", "WEBP")
+ALLOWED_IMAGE_FORMATS = ("JPEG", "PNG")
 # Budgets apply per block invocation (not per process): the operator sets them
 # against worker memory and concurrency, see the block documentation.
 MAX_IMAGE_PAYLOAD_BYTES = DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES
@@ -158,121 +162,56 @@ SHORT_DESCRIPTION = (
 )
 
 LONG_DESCRIPTION = """
-Run a SQL statement against a Databricks SQL warehouse and emit every returned row
-as a Workflow image, so that images living in a Delta table can flow into any
-downstream block (models, filters, the **Roboflow Dataset Upload** sink, ...).
+Read JPEG or PNG images from a Databricks table or view into a Workflow, for
+labeling, pre-labeling or import through Roboflow Dataset Upload.
 
-## How This Block Works
+Set `catalog`, `schema_name`, `table`, `image_column`, and optionally
+`image_name_column` and `metadata_columns`. Supply each name without SQL quoting;
+a dot inside a name belongs to that one identifier. Complex filters, joins and
+selection logic belong in a view managed in Databricks. Arbitrary SQL and SQL
+expressions are not accepted.
 
-1. Validates the destination: `server_hostname` must be a Databricks workspace
-   host (`*.cloud.databricks.com`, `*.gcp.databricks.com`,
-   `*.azuredatabricks.net`) and `http_path` a SQL warehouse path (cluster paths
-   are accepted on self-hosted servers only). The host is resolved and every
-   address must be public unless the operator allows private destinations.
-2. Connects to the validated address (the hostname is kept for TLS and the
-   `Host` header, so a later DNS change cannot redirect the connection), with
-   cloud-fetch result links, telemetry and HTTP redirects disabled.
-3. Executes `sql_statement` with a statement timeout and fetches at most
-   `max_rows` rows in small batches, under an overall deadline
-   (`timeout_seconds`) that cancels the query when it expires.
-4. Reads the image payload from `image_column` (a `BINARY` column, or a base64
-   string): JPEG, PNG or WEBP only, checked from the header before decoding.
-5. Emits one element per row:
-    * `images` - the decoded image,
-    * `image_names` - value of `image_name_column` (or a generated UUID),
-    * `metadata` - the remaining non-binary columns of the row as a
-      JSON-friendly dictionary.
+The block owns a fixed SELECT with native IDENTIFIER parameters for the source
+and columns and a bound LIMIT. `max_rows` is 1-1000 (default 100). It limits rows
+returned, not warehouse scan cost or view computation. Use a dedicated identity
+with SELECT on the intended tables/views and CAN USE on the warehouse. The block
+does not verify read-only grants or tenant ownership of the workspace.
 
-Rows whose image cannot be decoded, or that exceed the per-image limits below,
-are skipped when `skip_undecodable` is `True` (default) and raise an error
-otherwise. If every fetched row is skipped the step fails rather than returning
-an empty result.
+Outputs are `images`, `image_names` (the configured column or a UUID), and
+`metadata` (explicitly selected non-binary metadata columns). Connect them to
+batch-aware downstream blocks. The block runs on every invocation, so gate it
+in a video pipeline to avoid one warehouse query per frame.
 
-Each invocation of the step runs the statement once; with a batch-valued
-`sql_statement` it runs once per element.
+Only Databricks workspace hosts and SQL endpoint paths are accepted. DNS answers
+are validated, and TLS connects to the pinned address with hostname verification.
+Private destinations require a self-hosted operator opt-in and are always refused
+on hosted workers. Redirects, proxies, secondary connector HTTP clients, CloudFetch,
+Arrow/LZ4 and compressed HTTP responses are refused.
 
-## Limits
+A disposable subprocess runs the connector and image decoder. The request is
+limited to 1 MiB before serialization. HTTP responses are byte capped and Thrift
+structure sizes bounded before materialization. JPEG/PNG headers are checked
+before pixel decoding (defaults: 32 MiB encoded, 25 MP); WebP and TIFF are refused.
+Encoded images, pixels, names and metadata count toward a 1 GiB invocation budget.
+Metadata strings are truncated to 4096 characters, nesting to 4 levels and 256
+items, and each row to 64 KiB. `skip_undecodable` skips invalid image rows; all
+rows skipped or total budget exhaustion fails the block.
 
-Budgets are per block invocation; the operator sizes them against worker memory
-and concurrency (defaults in brackets, environment variables in the
-Availability section):
+`timeout_seconds` (5-600, default 120) covers worker startup through result loading.
+Cancellation is best effort; terminating the child does not prove the remote query
+stopped. Cleanup allows up to 35 additional seconds. These are application-data
+bounds, not hard process RSS limits. Operator controls and validation instructions:
+`docs/workflows/databricks_sql_image_source.md`.
 
-* at most 1000 rows per run (`max_rows`), fetched in batches of 8 with the
-  connector's inline result chunk bounded to the same rows and to twice the
-  per-image byte limit, so the connector never buffers more than one chunk ahead,
-* JPEG, PNG or WEBP only; the format and the dimensions are read from the header
-  before any pixel is decoded [32 MiB encoded, 25 megapixels per image], and the
-  decoded array is checked again,
-* one byte budget per run covering encoded bytes, decoded pixels, names and
-  metadata, reserved before each image is decoded [1 GiB]; the step fails (never
-  skips) when it is exhausted,
-* metadata strings are truncated to 4096 characters, nested values to 4 levels
-  and 256 items, one row's metadata to 64 KiB, names to 255 characters,
-* the whole run is bounded by `timeout_seconds` (default 120 s, at most 600 s):
-  connection, execution and polling, fetching and decoding. The statement also
-  carries a server-side `STATEMENT_TIMEOUT`, HTTP retries are bounded (3
-  attempts, 5 s maximum delay, within the remaining time) and redirects are
-  refused. On expiry the statement is cancelled and the connection closed; the
-  step returns within one socket timeout (30 s) plus one retry delay after the
-  deadline, which is when its execution slot is released.
-
-## Availability and security
-
-* `DATABRICKS_SQL_IMAGE_SOURCE_ENABLED` is the rollout switch. Unset, it is
-  `true` on self-hosted servers and `false` on the Roboflow hosted platform
-  (`GCP_SERVERLESS` / `LAMBDA`); hosted workers set it explicitly. When it is
-  `false` the block is not listed by `/workflows/blocks/describe`, a Workflow
-  that references it (saved or submitted directly) is rejected at compile time
-  with this reason, and no Databricks connection is attempted. The value is
-  read at process start: changing it is a redeployment or restart, not a live
-  kill switch. After a rollout, queued jobs that reference the block fail at
-  compile time; jobs already running finish or hit their `timeout_seconds`
-  deadline (at most 600 s plus the cleanup interval above).
-* The connector is an optional extra, installed separately from the switch:
-  `pip install "roboflow-workflows[databricks]"`. The Roboflow server images
-  built from `docker/` and `inference_server/docker/` ship it. Without it the
-  block is likewise unlisted and rejected with an install hint.
-* Budgets: `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES`,
-  `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` and
-  `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` override the defaults above.
-  Size the run budget so that concurrent invocations times (run budget + 2 x
-  image bytes of connector buffer + one image's decode temporaries) fit in the
-  worker's free memory.
-* `WORKFLOW_DISABLED_BLOCK_PATTERNS=databricks` remains a valid operational
-  safeguard on multi-tenant workers; the explicit switch is the documented
-  rollout control.
-* Only Databricks workspace hosts are accepted and the connection is pinned to
-  the address validated before connecting (hostname kept for TLS verification
-  and the `Host` header), with cloud-fetch result links, telemetry, feature-flag
-  lookups and proxies disabled for the duration of the run. Hosts that resolve
-  to private or link-local addresses are refused unless
-  `ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES=true` (for example
-  Private Link on a self-hosted server; never on the hosted platform).
-* The SQL statement runs with whatever rights the token has. Use a token with
-  `SELECT` on the table and `CAN USE` on the warehouse only, and store it as a
-  Workflow **input** or **secret** (`$inputs.databricks_token`) rather than a
-  literal in a shared Workflow definition.
-
-## Typical use
-
-**Databricks SQL Image Source -> Roboflow Dataset Upload** (with the upload
-block's `image_name` wired to `$steps.<this step>.image_names`) replicates
-https://blog.roboflow.com/upload-images-from-databricks-to-roboflow inside a
-Workflow. Put a model block in between to pre-label the images.
-
-Example query for a table with an `id` key, a `bytes` image column and two
-metadata columns:
-
-```
-SELECT id, bytes, raccoon_name, weight
-FROM catalog.schema.images
-LIMIT 100
-```
+The `databricks` extra and `DATABRICKS_SQL_IMAGE_SOURCE_ENABLED` are both required.
+The switch defaults off on hosted workers and on for self-hosted deployments.
+Use a Workflow input or secret for the token, never a literal in a shared workflow.
 """
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
+        extra="forbid",
         json_schema_extra={
             "name": "Databricks SQL Image Source",
             "version": "v1",
@@ -285,7 +224,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "icon": "fal fa-database",
                 "blockPriority": 5,
             },
-        }
+        },
     )
     type: Literal["roboflow_core/databricks_sql_image_source@v1"]
     server_hostname: Union[Selector(kind=[STRING_KIND]), str] = Field(
@@ -312,21 +251,43 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.databricks_token"],
         json_schema_extra={"private": True},
     )
-    sql_statement: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="SELECT statement returning the image column plus any metadata "
-        "columns. The statement is executed as given, with the token's rights.",
-        examples=[
-            "SELECT id, bytes, raccoon_name, weight FROM catalog.schema.images LIMIT 50",
-            "$inputs.sql",
-        ],
+    catalog: str = Field(
+        description="Databricks catalog name, as one unquoted identifier.",
+        examples=["main"],
+        min_length=1,
+        max_length=255,
+    )
+    schema_name: str = Field(
+        description="Schema name, as one unquoted identifier.",
+        examples=["vision"],
+        min_length=1,
+        max_length=255,
+    )
+    table: str = Field(
+        description="Table or view name, as one unquoted identifier. Define complex "
+        "selection logic in a Databricks view; this block executes a fixed SELECT.",
+        examples=["images_to_label"],
+        min_length=1,
+        max_length=255,
+    )
+    metadata_columns: List[str] = Field(
+        default_factory=list,
+        max_length=32,
+        description="Up to 32 additional columns to return as metadata. Names are "
+        "unquoted identifiers, never SQL expressions.",
+        examples=[["raccoon_name", "weight"]],
     )
     image_column: str = Field(
         default="bytes",
+        min_length=1,
+        max_length=255,
         description="Name of the column holding the encoded image (BINARY, or a base64 string).",
         examples=["bytes", "content"],
     )
     image_name_column: Optional[str] = Field(
         default=None,
+        min_length=1,
+        max_length=255,
         description="Optional column whose value becomes the image name (e.g. a primary key); "
         "it must exist in the result. A UUID is generated when unset or NULL.",
         examples=["id", "path"],
@@ -335,8 +296,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=100,
         ge=1,
         le=MAX_ROWS,
-        description="Cap on rows fetched per run (at most 1000), applied on top of any "
-        "LIMIT in the SQL. The 1 GiB per-run budget is the practical bound for large "
+        description="Cap on rows selected and fetched per run (at most 1000). The 1 GiB per-run budget is the practical bound for large "
         "images.",
         examples=[100, 500],
     )
@@ -356,6 +316,22 @@ class BlockManifest(WorkflowBlockManifest):
         "skipped.",
         examples=[True, False],
     )
+
+    @field_validator(
+        "catalog", "schema_name", "table", "image_column", "image_name_column"
+    )
+    @classmethod
+    def _identifier_is_bounded(cls, value: Any) -> Any:
+        if value is not None:
+            quote_identifier(value)
+        return value
+
+    @field_validator("metadata_columns")
+    @classmethod
+    def _metadata_identifiers_are_bounded(cls, value: List[str]) -> List[str]:
+        for column in value:
+            quote_identifier(column)
+        return value
 
     @field_validator("server_hostname")
     @classmethod
@@ -440,7 +416,10 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
         server_hostname: str,
         http_path: str,
         access_token: str,
-        sql_statement: str,
+        catalog: str,
+        schema_name: str,
+        table: str,
+        metadata_columns: List[str],
         image_column: str,
         image_name_column: Optional[str],
         max_rows: int,
@@ -458,12 +437,29 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
             run_isolated,
         )
 
+        build_image_query(
+            catalog=catalog,
+            schema=schema_name,
+            table=table,
+            image_column=image_column,
+            image_name_column=image_name_column,
+            metadata_columns=metadata_columns,
+            max_rows=max_rows,
+        )
+        if (
+            type(timeout_seconds) is not int
+            or not 5 <= timeout_seconds <= MAX_TIMEOUT_SECONDS
+        ):
+            raise ValueError("timeout_seconds must be an integer between 5 and 600")
         deadline = time.monotonic() + float(timeout_seconds)
         request = dict(
             server_hostname=server_hostname,
             http_path=http_path,
             access_token=access_token,
-            sql_statement=sql_statement,
+            catalog=catalog,
+            schema_name=schema_name,
+            table=table,
+            metadata_columns=metadata_columns,
             image_column=image_column,
             image_name_column=image_name_column,
             max_rows=max_rows,
@@ -485,7 +481,10 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
         server_hostname: str,
         http_path: str,
         access_token: str,
-        sql_statement: str,
+        catalog: str,
+        schema_name: str,
+        table: str,
+        metadata_columns: List[str],
         image_column: str,
         image_name_column: Optional[str],
         max_rows: int,
@@ -500,6 +499,15 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
             raise RuntimeError("Databricks execution is disabled by disable_sinks")
         if deadline is None:
             deadline = time.monotonic() + float(timeout_seconds)
+        sql_statement, parameters = build_image_query(
+            catalog=catalog,
+            schema=schema_name,
+            table=table,
+            image_column=image_column,
+            image_name_column=image_name_column,
+            metadata_columns=metadata_columns,
+            max_rows=max_rows,
+        )
         destination = validate_destination(server_hostname, http_path=http_path)
         _check_deadline(deadline)
 
@@ -509,6 +517,7 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
         skipped: List[str] = []
         rows = iter_rows(
             sql_statement,
+            parameters=parameters,
             destination=destination,
             http_path=http_path,
             access_token=access_token,
@@ -531,7 +540,13 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
                     )
                 try:
                     name = resolve_image_name(row, image_name_column=image_name_column)
-                    metadata = build_metadata(row, image_column=image_column)
+                    missing = set(metadata_columns) - row.keys()
+                    if missing:
+                        raise ValueError("Missing metadata columns in query result")
+                    metadata = build_metadata(
+                        {column: row[column] for column in metadata_columns},
+                        image_column=image_column,
+                    )
                     budget.reserve(len(name) + metadata_size(metadata))
                     numpy_image = decode_image(row[image_column], budget=budget)
                 except Exception as error:
@@ -703,7 +718,10 @@ def validate_destination(server_hostname: Any, *, http_path: Any) -> PinnedDesti
 
     pinned_ip = _pick_address(resolved_ips, allow_non_global=allow_non_global)
     destination = PinnedDestination(
-        hostname=host, ip_address=pinned_ip, port=DATABRICKS_HTTPS_PORT
+        hostname=host,
+        ip_address=pinned_ip,
+        port=DATABRICKS_HTTPS_PORT,
+        max_response_bytes=result_buffer_bytes() + 65536,
     )
     return destination
 
@@ -741,6 +759,8 @@ def connection_kwargs(
         "http_path": http_path,
         "_port": destination.port,
         "use_cloud_fetch": False,
+        "use_inline_params": False,
+        "enable_query_result_lz4_compression": False,
         "enable_telemetry": False,
         "session_configuration": {"STATEMENT_TIMEOUT": str(statement_timeout)},
         "_socket_timeout": min(SOCKET_TIMEOUT_SECONDS, statement_timeout),
@@ -767,6 +787,7 @@ def iter_rows(
     sql_statement: str,
     *,
     destination: PinnedDestination,
+    parameters: Dict[str, Union[str, int]],
     http_path: str,
     access_token: str,
     max_rows: int,
@@ -784,6 +805,7 @@ def iter_rows(
 
     Args:
         sql_statement: SQL statement to execute.
+        parameters: Native parameter values for the fixed SELECT.
         destination: Validated hostname and pinned address.
         http_path: SQL warehouse or cluster HTTP path.
         access_token: Databricks personal access token.
@@ -840,7 +862,7 @@ def iter_rows(
                 watchdog.start()
                 try:
                     try:
-                        cursor.execute(sql_statement)
+                        cursor.execute(sql_statement, parameters=parameters)
                     except Exception as error:
                         if expired.is_set():
                             raise TimeoutError(
@@ -913,7 +935,7 @@ class RunBudget:
             raise RunBudgetExceeded(
                 f"run would exceed the {self.limit} byte budget "
                 f"({self.used} used, {nbytes} more requested); lower `max_rows` or "
-                "add a LIMIT to the query"
+                "reduce image sizes"
             )
         self.used += nbytes
 
@@ -942,6 +964,13 @@ def decode_image(payload: Any, *, budget: Optional[RunBudget] = None) -> np.ndar
     if payload is None:
         raise ValueError("image payload is NULL")
 
+    payload_size = (
+        payload.nbytes
+        if isinstance(payload, memoryview)
+        else (len(payload) if isinstance(payload, (bytes, bytearray)) else 0)
+    )
+    if payload_size > MAX_IMAGE_PAYLOAD_BYTES:
+        raise ValueError(f"image payload exceeds {MAX_IMAGE_PAYLOAD_BYTES} bytes")
     if isinstance(payload, memoryview):
         payload = payload.tobytes()
     elif isinstance(payload, bytearray):
@@ -949,7 +978,7 @@ def decode_image(payload: Any, *, budget: Optional[RunBudget] = None) -> np.ndar
     elif isinstance(payload, str):
         if len(payload) > MAX_IMAGE_PAYLOAD_BYTES * 4 // 3 + 4:
             raise ValueError(f"image payload exceeds {MAX_IMAGE_PAYLOAD_BYTES} bytes")
-        payload = base64.b64decode(payload)
+        payload = base64.b64decode(payload, validate=True)
     if not isinstance(payload, bytes):
         raise ValueError(f"unsupported image payload type: {type(payload).__name__}")
     if len(payload) > MAX_IMAGE_PAYLOAD_BYTES:
@@ -996,8 +1025,12 @@ def read_image_header(payload: bytes) -> Tuple[str, int, int]:
     Raises:
         ValueError: If the bytes are not a recognised image.
     """
+    if not (
+        payload.startswith(b"\xff\xd8\xff") or payload.startswith(b"\x89PNG\r\n\x1a\n")
+    ):
+        raise ValueError("image format is not allowed; use JPEG or PNG")
     try:
-        with Image.open(io.BytesIO(payload)) as image:
+        with Image.open(io.BytesIO(payload), formats=["JPEG", "PNG"]) as image:
             image_format = str(image.format or "")
             width, height = image.size
     except Exception as error:

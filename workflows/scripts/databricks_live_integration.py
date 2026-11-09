@@ -11,7 +11,7 @@ suite: it needs a warehouse and credentials, supplied through the environment
     DATABRICKS_SERVER_HOSTNAME   workspace host (e.g. dbc-xxxx.cloud.databricks.com)
     DATABRICKS_HTTP_PATH         /sql/1.0/warehouses/<id>
     DATABRICKS_TOKEN             read-only identity used by the block under test
-    DATABRICKS_SETUP_TOKEN       separate identity allowed to create the fixture table
+    DATABRICKS_SETUP_TOKEN       separate identity allowed to create fixture tables/views (required for every run)
     DATABRICKS_TABLE             catalog.schema.table for the fixtures
     ROBOFLOW_API_KEY             only for --target server
     DATABRICKS_LIVE_BASE_URL      approved HTTPS server origin (server target)
@@ -47,6 +47,7 @@ submit or poll async-serverless jobs; that deployment needs separate validation.
 """
 
 import argparse
+import atexit
 import base64
 import io
 import json
@@ -67,6 +68,7 @@ BLOCK_TYPE = "roboflow_core/databricks_sql_image_source@v1"
 FIXTURE_ROWS = 20
 CLEANUP_GRACE_SECONDS = 35  # SOCKET_TIMEOUT_SECONDS + RETRY_DELAY_MAX_SECONDS
 RUN_ID = uuid.uuid4().hex[:12]
+_CREATED_VIEWS: List[str] = []
 CASE_NAMES = (
     "import",
     "bad-image",
@@ -130,8 +132,8 @@ def _selected_cases(value: str) -> List[str]:
 
 
 def _fixture_table(value: str) -> str:
-    # Identifiers cannot be bound as SQL parameters. Keep this setup-only input
-    # to a fully qualified ordinary identifier before interpolating it in SQL.
+    # Setup-only fixture DDL uses a restricted ordinary identifier. The block
+    # itself uses native IDENTIFIER parameters for all names.
     if not re.fullmatch(
         r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*", value
     ):
@@ -243,9 +245,60 @@ def wait_for_history(
 # ------------------------------------------------------------------ targets
 
 
+def create_fixture_view(statement: str) -> Tuple[str, List[str]]:
+    """Create a test-only view with the setup credential, separate from block SQL.
+
+    Args:
+        statement: Runner-owned SELECT defining the fixture selection.
+
+    Returns:
+        Qualified view name and its non-image metadata column names.
+    """
+    table = _fixture_table(env("DATABRICKS_TABLE"))
+    marker = re.search(r"/\* (rf_live_slow_[a-z0-9_]+) \*/", statement)
+    name = marker.group(1) if marker else f"rf_live_{RUN_ID}_{uuid.uuid4().hex[:6]}"
+    view = ".".join(table.split(".")[:2] + [name])
+    with sql_connect(env("DATABRICKS_SETUP_TOKEN")) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "CREATE VIEW IDENTIFIER(:view) AS " + statement,
+                parameters={"view": view},
+            )
+            _CREATED_VIEWS.append(view)
+            cursor.execute(
+                "DESCRIBE TABLE IDENTIFIER(:view)", parameters={"view": view}
+            )
+            columns = [
+                row[0]
+                for row in cursor.fetchall()
+                if row[0] and not row[0].startswith("#")
+            ]
+    return view, [column for column in columns if column != "bytes"]
+
+
+def cleanup_fixture_views() -> None:
+    """Drop only the temporary views created by this test process."""
+    if not _CREATED_VIEWS:
+        return
+    try:
+        with sql_connect(env("DATABRICKS_SETUP_TOKEN")) as connection:
+            with connection.cursor() as cursor:
+                for view in _CREATED_VIEWS:
+                    cursor.execute(
+                        "DROP VIEW IF EXISTS IDENTIFIER(:view)",
+                        parameters={"view": view},
+                    )
+        _CREATED_VIEWS.clear()
+    except Exception as error:
+        print("fixture view cleanup failed: " + _safe_error(error), file=sys.stderr)
+        raise
+
+
 def workflow_specification(
     sql_statement: str, *, max_rows: int, timeout_seconds: int, skip: bool = True
 ) -> Dict[str, Any]:
+    view, metadata_columns = create_fixture_view(sql_statement)
+    catalog, schema_name, table = view.split(".")
     return {
         "version": "1.0",
         "inputs": [{"type": "WorkflowParameter", "name": "token"}],
@@ -256,7 +309,10 @@ def workflow_specification(
                 "server_hostname": env("DATABRICKS_SERVER_HOSTNAME"),
                 "http_path": env("DATABRICKS_HTTP_PATH"),
                 "access_token": "$inputs.token",
-                "sql_statement": sql_statement,
+                "catalog": catalog,
+                "schema_name": schema_name,
+                "table": table,
+                "metadata_columns": metadata_columns,
                 "image_column": "bytes",
                 "image_name_column": "id",
                 "max_rows": max_rows,
@@ -382,10 +438,15 @@ def case_import(target, table: str, token: str) -> None:
         workflow_specification(sql, max_rows=FIXTURE_ROWS, timeout_seconds=120),
         {"token": token},
     )
-    assert result["names"] == [str(i) for i in range(FIXTURE_ROWS)], result["names"]
+    assert sorted(result["names"], key=int) == [
+        str(i) for i in range(FIXTURE_ROWS)
+    ], result["names"]
     assert len(result["shapes"]) == FIXTURE_ROWS
     assert all(shape == (32, 48, 3) for shape in result["shapes"]), result["shapes"]
-    assert [m["note"] for m in result["metadata"]][:2] == ["note-0", "note-1"]
+    assert {
+        name: metadata["note"]
+        for name, metadata in zip(result["names"], result["metadata"])
+    } == {str(i): f"note-{i}" for i in range(FIXTURE_ROWS)}
     assert FIXTURE_ROWS > 8, "fixture must span more than one fetch batch of 8"
     print(f"  import: {len(result['names'])} rows in {result['elapsed']:.1f}s")
 
@@ -515,7 +576,7 @@ def case_slow(
     Raises:
         AssertionError: If execution, active observation or cancellation fails.
     """
-    marker = f"rf-live-slow {RUN_ID}-{uuid.uuid4().hex[:6]}"
+    marker = f"rf_live_slow_{RUN_ID}_{uuid.uuid4().hex[:6]}"
     since_ms = int(time.time() * 1000) - 60_000
     started = time.monotonic()
     finished = threading.Event()
@@ -760,6 +821,11 @@ def main() -> int:
     if leftovers:
         failures += 1
         print(f"CLEANUP: {len(leftovers)} test statements still running")
+    try:
+        cleanup_fixture_views()
+    except Exception:
+        failures += 1
+        report["fixture_cleanup"] = "FAILED"
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
     print("result:", "PASS" if failures == 0 else f"FAIL ({failures})")
@@ -773,6 +839,7 @@ def _installed(name: str) -> bool:
 
 
 if __name__ == "__main__":
+    atexit.register(cleanup_fixture_views)
     try:
         exit_code = main()
     except Exception as error:
