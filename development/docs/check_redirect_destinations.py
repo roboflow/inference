@@ -1,11 +1,11 @@
 """Check that every redirect destination on inference.roboflow.com is reachable.
 
-The documentation moved to docs.roboflow.com. This site is now a landing page
-plus redirects, with destination URLs declared in three places:
+The documentation moved to docs.roboflow.com. This site now redirects to the new docs,
+with destination URLs declared in three places:
 
 * ``redirect_url`` front matter on the Markdown pages under ``docs/``
 * the exact-match and prefix tables in the 404 router, ``theme/404.html``
-* the landing page links in ``theme/home.html`` and the nav in ``mkdocs.yml``
+* the navigation links in ``mkdocs.yml``
 
 This script collects every destination from those sources, requests each one,
 and exits non-zero if any of them does not return 200. It also reports
@@ -74,9 +74,13 @@ def collect_router_destinations() -> dict[str, str]:
 
 
 def collect_landing_page_destinations() -> dict[str, str]:
-    """Map each landing page and nav link to the URL it points at."""
+    """Map each retained navigation link to the URL it points at.
+
+    Returns:
+        Navigation source locations mapped to their documentation destinations.
+    """
     destinations = {}
-    for relative in ("theme/home.html", "mkdocs.yml"):
+    for relative in ("mkdocs.yml",):
         path = os.path.join(REPO_ROOT, relative)
         with open(path, encoding="utf-8") as handle:
             source = handle.read()
