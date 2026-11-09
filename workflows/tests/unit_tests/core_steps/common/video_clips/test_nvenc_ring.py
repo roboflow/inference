@@ -1244,14 +1244,19 @@ def test_real_adapter_keeps_the_colours_of_the_rgb_frame(max_width, tmp_path) ->
     path = tmp_path / "colours.mp4"
     _mux_annex_b([data for _, data in units], path, fps=30)
     with av.open(str(path)) as container:
-        decoded = [f.to_ndarray(format="rgb24") for f in container.decode(video=0)]
+        # The stream carries no colour description (as with the NV12 input it
+        # replaced): decode it as BT.709, the matrix both conversions use.
+        decoded = [
+            f.reformat(format="rgb24", src_colorspace="ITU709").to_ndarray()
+            for f in container.decode(video=0)
+        ]
     expected = adapter._fit(frame, width=width, height=height)
     expected = expected.clamp(0, 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()
     error = np.abs(decoded[15].astype(int) - expected.astype(int))
 
     assert len(decoded) == 30
     assert decoded[15].shape == (height, width, 3)
-    # same fidelity as the BT.709 NV12 conversion it replaced (mean 1.0, p99 3)
+    # same fidelity as the BT.709 NV12 conversion it replaced (L4: mean 1.0, p99 3)
     assert error.mean() < 2.0, error.mean()
     assert np.percentile(error, 99) <= 8
 
