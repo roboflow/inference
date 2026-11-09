@@ -7,6 +7,27 @@ from inference_model_manager.backends.decode import make_decoder
 from inference_model_manager.backends.direct import DirectBackend
 
 
+@pytest.mark.parametrize(
+    "model, expected",
+    [
+        (SimpleNamespace(saved_class_names=["a", "b"]), ["a", "b"]),
+        (SimpleNamespace(class_names=None, saved_class_names=["a"]), ["a"]),
+        (SimpleNamespace(class_names=["fixed"], saved_class_names=["a"]), ["fixed"]),
+        (SimpleNamespace(class_names=[], saved_class_names=["a"]), []),
+        (SimpleNamespace(saved_class_names=[]), []),
+        (SimpleNamespace(), None),
+        (None, None),
+    ],
+)
+def test_class_names_preserve_fixed_labels_and_fall_back_to_saved_labels(
+    model, expected
+):
+    backend = DirectBackend.__new__(DirectBackend)
+    backend._model = model
+
+    assert backend.class_names == expected
+
+
 def test_encoded_rgb_is_converted_to_bgr_without_changing_raw_numpy():
     imagecodecs = pytest.importorskip("imagecodecs")
     rgb = np.array([[[255, 1, 7], [3, 5, 251]]], dtype=np.uint8)
