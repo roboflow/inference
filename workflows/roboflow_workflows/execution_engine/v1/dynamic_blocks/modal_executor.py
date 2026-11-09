@@ -55,6 +55,7 @@ from roboflow_workflows.environment import (
 )
 from roboflow_workflows.errors import DynamicBlockCodeError, DynamicBlockError
 from roboflow_workflows.execution_engine.entities.base import ParentOrigin
+from roboflow_workflows.execution_engine.v1.compiler.cache import BasicWorkflowsCache
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import (
     BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
     record_block_duration,
@@ -280,6 +281,14 @@ def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
     """
     content = (code_str or "") + "\n" + "\n".join(imports or [])
     return hashlib.md5(content.encode("utf-8")).hexdigest()
+
+
+def _is_anonymous_modal_workspace(workspace: Optional[str]) -> bool:
+    return not workspace or workspace in (
+        "anonymous",
+        "unauthorized",
+        MODAL_ANONYMOUS_WORKSPACE_NAME,
+    )
 
 
 def _serialise_image_for_webexec(image: Any) -> dict:
@@ -600,12 +609,7 @@ class ModalExecutor:
                 python_code.imports,
             )
 
-            if (
-                not workspace
-                or workspace == "anonymous"
-                or workspace == "unauthorized"
-                or workspace == MODAL_ANONYMOUS_WORKSPACE_NAME
-            ):
+            if _is_anonymous_modal_workspace(workspace):
                 from roboflow_workflows.environment import (
                     MODAL_ALLOW_ANONYMOUS_EXECUTION,
                 )
@@ -756,6 +760,26 @@ class ModalExecutor:
         return response.json()
 
 
+class _CodeValidationOutcome(NamedTuple):
+    # None when the code compiles, otherwise the public error message.
+    error_message: Optional[str]
+
+
+CODE_VALIDATION_CACHE = BasicWorkflowsCache[_CodeValidationOutcome](
+    cache_size=1024,
+    hash_functions=[("code", lambda code: code)],
+)
+
+
+def _code_validation_result(outcome: _CodeValidationOutcome) -> bool:
+    if outcome.error_message is not None:
+        raise DynamicBlockError(
+            public_message=outcome.error_message,
+            context="modal_executor | code_validation",
+        )
+    return True
+
+
 def validate_code_in_modal(
     python_code: PythonCode, workspace_id: Optional[str] = None
 ) -> bool:
@@ -765,6 +789,11 @@ def validate_code_in_modal(
     ``WEBEXEC_TRANSPORT=websocket`` for execution. Deployments that use
     websocket execution must keep both Modal methods deployed: ``execute-block``
     for validation and ``wsapp`` for execution.
+
+    The verdict (valid, or invalid with its error) is cached per process by the
+    validated source text, since compiling the same text always gives the same
+    result. The workspace is not part of the key: it only picks which Modal app
+    runs the check. Failures to get a verdict from Modal are never cached.
 
     Args:
         python_code: The Python code to validate
@@ -789,6 +818,13 @@ def validate_code_in_modal(
     full_code = python_code.run_function_code
     if python_code.init_function_code:
         full_code += "\n\n" + python_code.init_function_code
+
+    # The anonymous-execution gate lives in execute_remote, so a hit must not skip it.
+    use_cache = not _is_anonymous_modal_workspace(workspace)
+    cache_key = CODE_VALIDATION_CACHE.get_hash_key(code=full_code)
+    cached_outcome = CODE_VALIDATION_CACHE.get(key=cache_key) if use_cache else None
+    if cached_outcome is not None:
+        return _code_validation_result(cached_outcome)
 
     # Escape the code for safe embedding in the validation function
     # Use repr() to properly escape quotes and special characters
@@ -832,17 +868,21 @@ def validate_syntax():
             workspace_id=workspace,
         )
 
-        if result.get("valid") is False:
+        verdict = result.get("valid")
+        if verdict is False:
             error_msg = result.get("error", "Unknown syntax error")
             line_no = result.get("line", None)
             if line_no:
                 error_msg = f"Line {line_no}: {error_msg}"
-            raise DynamicBlockError(
-                public_message=f"Code validation failed: {error_msg}",
-                context="modal_executor | code_validation",
+            outcome = _CodeValidationOutcome(
+                error_message=f"Code validation failed: {error_msg}"
             )
-
-        return True
+        else:
+            outcome = _CodeValidationOutcome(error_message=None)
+        # A reply with no verdict still passes, as before, but is not reused.
+        if use_cache and isinstance(verdict, bool):
+            CODE_VALIDATION_CACHE.cache(key=cache_key, value=outcome)
+        return _code_validation_result(outcome)
 
     except Exception as e:
         if isinstance(e, DynamicBlockError):
@@ -1619,11 +1659,7 @@ class WebSocketModalExecutor:
             )
 
         workspace = workspace_id or self.workspace_id
-        if not workspace or workspace in (
-            "anonymous",
-            "unauthorized",
-            MODAL_ANONYMOUS_WORKSPACE_NAME,
-        ):
+        if _is_anonymous_modal_workspace(workspace):
             from roboflow_workflows.environment import MODAL_ALLOW_ANONYMOUS_EXECUTION
 
             if not MODAL_ALLOW_ANONYMOUS_EXECUTION:
