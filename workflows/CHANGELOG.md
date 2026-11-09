@@ -18,6 +18,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Image Stack v1 retains the newest frames when its stack size decreases.
+
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 
