@@ -11,6 +11,11 @@ from inference.core.env import DEVICE, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
+# DEVICE is unset unless the env sets it. Fall back to the GPU, as the sibling
+# modules (transformers, smolvlm, trocr) do, instead of loading on the CPU.
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 def _repeated_bos_ban(model: Any, processor: Any) -> Optional[List[List[int]]]:
     """bad_words_ids banning the <s><s> bigram, or None when the ban cannot apply.

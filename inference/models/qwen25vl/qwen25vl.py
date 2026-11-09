@@ -35,6 +35,12 @@ bnb_config = BitsAndBytesConfig(
 )
 
 
+# DEVICE is unset unless the env sets it. Fall back to the GPU, as the sibling
+# modules (transformers, smolvlm, trocr) do, instead of loading on the CPU.
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
 def _patch_preprocessor_config(cache_dir: str):
     """
     Checks and patches the preprocessor_config.json in the given cache directory

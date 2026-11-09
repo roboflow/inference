@@ -30,6 +30,12 @@ bnb_config = BitsAndBytesConfig(
 )
 
 
+# DEVICE is unset unless the env sets it. Fall back to the GPU, as the sibling
+# modules (transformers, smolvlm, trocr) do, instead of loading on the CPU.
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
 class Qwen3VL(TransformerModel):
     generation_includes_input = True
     transformers_class = Qwen3VLForConditionalGeneration
