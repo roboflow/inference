@@ -25,6 +25,7 @@ from roboflow_workflows.core_steps.common.video_clips.capture import (
 )
 from roboflow_workflows.core_steps.common.video_clips.ring import (
     EncodedOutput,
+    EncoderStartingError,
     PreparedFrame,
 )
 
@@ -75,7 +76,9 @@ class FakeAdapter:
         gate: Optional[threading.Event] = None,
         fail_encodes: int = 0,
         raw_payloads: bool = False,
+        open_gate: Optional[threading.Event] = None,
     ):
+        self.open_gate = open_gate
         self.delay_frames = delay_frames
         self.encode_sleep = encode_sleep
         self.gate = gate
@@ -101,8 +104,14 @@ class FakeAdapter:
     def frame_size(self, tensor):
         return nvenc_ring.encoded_size(tensor.width, tensor.height)
 
+    def staging_size(self, tensor):
+        return tensor.width, tensor.height
+
     def slot_bytes(self, width, height):
         return width * height * 3 // 2
+
+    def scratch_bytes(self, width, height):
+        return width * height * 4
 
     def allocate_slot(self, width, height, device):
         with self.lock:
@@ -117,6 +126,8 @@ class FakeAdapter:
 
     def open_session(self, width, height, fps, gop, bitrate, device):
         self.threads["open"].add(threading.get_ident())
+        if self.open_gate is not None:
+            self.open_gate.wait(timeout=10)
         session = FakeSession(index=len(self.sessions), width=width, height=height)
         session.settings = {"fps": fps, "gop": gop, "bitrate": bitrate}
         self.sessions.append(session)
@@ -160,6 +171,25 @@ class FakeAdapter:
         if self.raw_payloads:
             return ordinal, b"\xff\xfe" + bytes([ordinal % 256])
         return ordinal, IDR_ACCESS_UNIT if force_idr else P_ACCESS_UNIT
+
+
+class FakeWarmUp:
+    """A ``ProcessWarmUp`` stand-in whose status the test sets."""
+
+    def __init__(self, status: str = nvenc_ring.WARM_UP_PENDING):
+        self.state = status
+        self.calls = 0
+
+    def status(self, *, start: bool = True) -> str:
+        self.calls += 1
+        return self.state
+
+    @property
+    def error(self):
+        return None if self.state != nvenc_ring.WARM_UP_UNAVAILABLE else "no NVENC"
+
+    def report(self):
+        return {"status": self.state}
 
 
 def make_ring(adapter: FakeAdapter, **kwargs: Any):
@@ -241,11 +271,11 @@ def test_available_never_raises_and_is_cached(monkeypatch) -> None:
         nvenc_ring.available.cache_clear()
 
 
-def test_ring_refuses_construction_without_nvenc(monkeypatch) -> None:
-    monkeypatch.setattr(nvenc_ring, "available", lambda: False)
+def test_ring_refuses_construction_without_nvenc() -> None:
+    warm_up = FakeWarmUp(nvenc_ring.WARM_UP_UNAVAILABLE)
 
     with pytest.raises(RuntimeError):
-        nvenc_ring.NvencRing("0", pre_roll_seconds=5.0)
+        nvenc_ring.NvencRing("0", pre_roll_seconds=5.0, warm_up=warm_up)
 
 
 def test_default_bitrate_scales_with_pixel_rate_and_clamps() -> None:
@@ -302,9 +332,15 @@ def test_is_idr_access_unit() -> None:
 
 
 # ---- pool ---------------------------------------------------------------------------
+def _open_session(ring) -> None:
+    # Open the ring's session on this thread (as the encoder thread would).
+    ring._open_session(size=(1920, 1080), device="cuda:0")
+
+
 def test_pool_fills_then_reports_full_and_recycles_discarded_slots() -> None:
     adapter = FakeAdapter()
-    ring = make_ring(adapter, pool_frames=8)
+    ring = make_ring(adapter, pool_frames=8, startup_pool_frames=0)
+    _open_session(ring)
 
     prepared = [ring._prepare_frame(FakeImage()) for _ in range(8)]
     overflow = ring._prepare_frame(FakeImage())
@@ -325,6 +361,20 @@ def test_pool_fills_then_reports_full_and_recycles_discarded_slots() -> None:
     assert again.payload.slot == ("slot", 1, 1920, 1080)
     assert adapter.slots_allocated == 8
     assert ring._prepare_frame(FakeImage()) is None
+    ring._close_encoder()
+    ring.close()
+
+
+def test_full_pool_before_the_session_opens_is_a_startup_refusal() -> None:
+    adapter = FakeAdapter()
+    ring = make_ring(adapter, pool_frames=2, startup_pool_frames=0)
+
+    ring._prepare_frame(FakeImage())
+    ring._prepare_frame(FakeImage())
+
+    with pytest.raises(EncoderStartingError):
+        ring._prepare_frame(FakeImage())
+    assert ring._backend_stats()["pool_drops"] == 1
     ring.close()
 
 
@@ -374,16 +424,20 @@ def test_resolution_change_resets_the_pool_and_drops_old_slots() -> None:
 def test_full_pool_drops_frames_while_encoder_is_blocked() -> None:
     gate = threading.Event()
     adapter = FakeAdapter(gate=gate)
-    ring = make_ring(adapter, pool_frames=8, queue_depth=64)
+    ring = make_ring(adapter, pool_frames=8, startup_pool_frames=0, queue_depth=64)
 
-    for index in range(20):
+    ring.submit(timestamp(0), 0, FakeImage())
+    assert wait_for(lambda: ring._backend_stats()["sessions_opened"] == 1)
+    for index in range(1, 20):
         ring.submit(timestamp(index), index, FakeImage())
     stats = ring._backend_stats()
 
+    # the session is open, so the steady-state pool (8) applies, not the start-up one
     assert adapter.slots_allocated == 8
     assert len(adapter.staged) == 8
     assert stats["pool_drops"] == 12
-    assert queue_drops(ring) >= 12
+    assert queue_drops(ring) == 12
+    assert ring.stats().startup_dropped == 0
     gate.set()
     ring.close()
 
@@ -546,11 +600,14 @@ def test_backend_stats_report_vram_estimate() -> None:
     stats = ring._backend_stats()
 
     assert held is not None
-    expected = 64 * 1024 * 1024 + 2 * 1920 * 1080 * 3 // 2 + 1920 * 1080 * 4
-    assert stats["vram_bytes_estimate"] == expected
+    slots = 2 * 1920 * 1080 * 3 // 2
+    scratch = 1920 * 1080 * 4
+    assert stats["vram_bytes_estimate"] == 64 * 1024 * 1024 + slots + scratch
     assert stats["sessions_open"] == 1
+    assert stats["session_open_ms_first"] is not None
     ring._close_encoder()
-    assert ring._backend_stats()["vram_bytes_estimate"] == expected - 64 * 1024 * 1024
+    # the session's VRAM and its conversion buffers go with it
+    assert ring._backend_stats()["vram_bytes_estimate"] == slots
     ring.close()
 
 
@@ -709,6 +766,270 @@ def test_atexit_hook_closes_rings_left_open() -> None:
     assert ring not in set(nvenc_ring._LIVE_RINGS)
 
 
+# ---- process warm-up -----------------------------------------------------------------
+class FakeClock:
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_warm_up_runs_once_in_the_background_and_reports_steps() -> None:
+    gate = threading.Event()
+    calls = []
+
+    def steps(timings) -> None:
+        calls.append(threading.get_ident())
+        gate.wait(timeout=10)
+        timings["probe_ms"] = 1.5
+
+    warm_up = nvenc_ring.ProcessWarmUp(steps, precheck=lambda: True)
+
+    assert warm_up.status(start=False) == nvenc_ring.WARM_UP_NOT_STARTED
+    started = time.perf_counter()
+    assert warm_up.status() == nvenc_ring.WARM_UP_PENDING
+    warm_up.start()
+    assert time.perf_counter() - started < 0.05  # never waits for the steps
+    gate.set()
+    assert warm_up.wait(5) == nvenc_ring.WARM_UP_READY
+    report = warm_up.report()
+
+    assert calls and calls[0] != threading.get_ident()
+    assert len(calls) == 1
+    assert report["status"] == nvenc_ring.WARM_UP_READY
+    assert report["steps_ms"] == {"probe_ms": 1.5}
+    assert report["warm_up_ms"] is not None
+    assert report["error"] is None
+
+
+def test_warm_up_without_pynvvideocodec_never_starts_a_thread() -> None:
+    calls = []
+    warm_up = nvenc_ring.ProcessWarmUp(calls.append, precheck=lambda: False)
+
+    assert warm_up.status() == nvenc_ring.WARM_UP_UNAVAILABLE
+    assert warm_up._thread is None
+    assert calls == []
+    assert "PyNvVideoCodec" in warm_up.error
+
+
+def test_warm_up_failure_is_unavailable_with_the_error() -> None:
+    def steps(timings) -> None:
+        raise RuntimeError("no CUDA device")
+
+    warm_up = nvenc_ring.ProcessWarmUp(steps, precheck=lambda: True)
+
+    assert warm_up.wait(5) == nvenc_ring.WARM_UP_UNAVAILABLE
+    assert "no CUDA device" in warm_up.error
+
+
+def test_warm_up_that_overruns_its_bound_becomes_unavailable_for_good() -> None:
+    gate = threading.Event()
+    clock = FakeClock()
+    warm_up = nvenc_ring.ProcessWarmUp(
+        lambda timings: gate.wait(timeout=10),
+        precheck=lambda: True,
+        timeout_seconds=5.0,
+        clock=clock,
+    )
+
+    assert warm_up.status() == nvenc_ring.WARM_UP_PENDING
+    clock.now += 5.5
+    assert warm_up.status() == nvenc_ring.WARM_UP_UNAVAILABLE
+    gate.set()
+    warm_up.wait(5)
+
+    # a late success never flips a decision the recorder already made
+    assert warm_up.status() == nvenc_ring.WARM_UP_UNAVAILABLE
+    assert "did not finish" in warm_up.error
+
+
+class _FakeCuda:
+    def __init__(self, initialised: bool):
+        self.initialised = initialised
+
+    def is_initialized(self) -> bool:
+        return self.initialised
+
+    def is_available(self) -> bool:  # pragma: no cover - must never be called
+        raise AssertionError("should_warm_up must not touch the CUDA driver")
+
+
+class _FakeTorch:
+    def __init__(self, initialised: bool = False):
+        self.cuda = _FakeCuda(initialised)
+
+
+@dataclass
+class _Device:
+    type: str
+
+
+@pytest.mark.parametrize(
+    "torch_module, device, installed, expected",
+    [
+        (None, _Device("cuda"), True, False),  # host never imported torch
+        (_FakeTorch(), _Device("cuda"), True, True),
+        (_FakeTorch(), "cuda:0", True, True),
+        (_FakeTorch(), _Device("cpu"), True, False),
+        (_FakeTorch(), None, True, False),
+        (_FakeTorch(initialised=True), None, True, True),
+        (_FakeTorch(), _Device("cuda"), False, False),
+    ],
+)
+def test_should_warm_up_is_cheap_and_import_free(
+    monkeypatch, torch_module, device, installed, expected
+) -> None:
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    monkeypatch.setattr(nvenc_ring, "nvenc_installed", lambda: installed)
+
+    assert nvenc_ring.should_warm_up(device) is expected
+
+
+@pytest.mark.parametrize(
+    "width, height, expected",
+    [(1920, 1080, 32), (1280, 720, 32), (3840, 2160, 8), (640, 360, 32)],
+)
+def test_startup_pool_is_bounded_by_frames_and_device_bytes(
+    width, height, expected
+) -> None:
+    rgb_slot_bytes = 3 * width * height
+
+    assert nvenc_ring.startup_pool_frames(8, rgb_slot_bytes) == expected
+    assert nvenc_ring.startup_pool_frames(40, rgb_slot_bytes) == 40
+
+
+# ---- start-up accounting ---------------------------------------------------------------
+def test_frames_before_the_warm_up_are_startup_dropped_without_blocking() -> None:
+    adapter = FakeAdapter()
+    warm_up = FakeWarmUp()
+    ring = make_ring(adapter, warm_up=warm_up, pool_frames=8, queue_depth=64)
+    try:
+        durations = []
+        for index in range(10):
+            started = time.perf_counter()
+            ring.submit(timestamp(index), index, FakeImage())
+            durations.append(time.perf_counter() - started)
+        warm_up.state = nvenc_ring.WARM_UP_READY
+        for index in range(10, 40):
+            assert wait_for_slot(ring)
+            ring.submit(timestamp(index), index, FakeImage())
+        assert wait_for(lambda: len(adapter.encoded) == 30)
+        handle = ring.capture(timestamp(0), timestamp(39))
+        ring.prepare_close(5.0)
+        artifact = handle.future.result(timeout=10)
+        stats = ring.stats()
+    finally:
+        ring.close()
+
+    assert max(durations) < 0.01
+    assert len(adapter.staged) == 30  # nothing was staged while pending
+    assert stats.startup_dropped == 10
+    assert stats.queue_drops == 0
+    assert stats.to_dict()["startup_dropped"] == 10
+    assert artifact.report.loss.startup_dropped == 10
+    assert artifact.report.loss.queue_drops == 0
+    assert artifact.report.frames == 30
+    assert artifact.report.to_dict()["loss"]["startup_dropped"] == 10
+    artifact.release()
+
+
+def test_unavailable_warm_up_marks_the_ring_failed() -> None:
+    warm_up = FakeWarmUp()
+    ring = make_ring(FakeAdapter(), warm_up=warm_up)
+
+    ring.submit(timestamp(0), 0, FakeImage())
+    assert not ring.startup_failed
+    warm_up.state = nvenc_ring.WARM_UP_UNAVAILABLE
+    ring.submit(timestamp(1), 1, FakeImage())
+    stats = ring.stats()
+    ring.close()
+
+    assert ring.startup_failed
+    assert stats.startup_dropped == 2
+    assert stats.extra["startup_failed"] is True
+
+
+def test_real_adapter_is_built_only_once_the_warm_up_is_ready(monkeypatch) -> None:
+    built = []
+
+    def factory(*, max_width=None):
+        built.append(max_width)
+        return FakeAdapter()
+
+    monkeypatch.setattr(nvenc_ring, "PyNvVideoCodecAdapter", factory)
+    warm_up = FakeWarmUp()
+    ring = nvenc_ring.NvencRing(
+        "0", pre_roll_seconds=5.0, max_width=1280, warm_up=warm_up
+    )
+    ring.submit(timestamp(0), 0, FakeImage())
+    built_while_pending = list(built)
+    warm_up.state = nvenc_ring.WARM_UP_READY
+    ring.submit(timestamp(1), 1, FakeImage())
+    ring.submit(timestamp(2), 2, FakeImage())
+    ring.close()
+
+    assert built_while_pending == []
+    assert built == [1280]
+
+
+def test_session_open_window_uses_the_startup_pool_then_shrinks() -> None:
+    open_gate = threading.Event()
+    adapter = FakeAdapter(open_gate=open_gate)
+    ring = make_ring(adapter, pool_frames=4, startup_pool_frames=10, queue_depth=64)
+    try:
+        for index in range(14):
+            ring.submit(timestamp(index), index, FakeImage())
+        opening = ring._backend_stats()
+        startup_dropped = ring.stats().startup_dropped
+        open_gate.set()
+        assert wait_for(lambda: len(adapter.encoded) == 10)
+        assert wait_for(lambda: ring._backend_stats()["pool_allocated_frames"] <= 4)
+        drained = ring._backend_stats()
+        stats = ring.stats()
+    finally:
+        ring.close()
+
+    # 10 slots while the session opens; the 4 frames beyond are start-up loss
+    assert opening["pool_allocated_frames"] == 10
+    assert opening["startup_pool_frames"] == 10
+    assert startup_dropped == 4
+    assert stats.queue_drops == 0
+    assert drained["pool_peak_frames"] == 10
+    assert drained["pool_allocated_frames"] <= 4
+    assert drained["session_open_ms_first"] >= 0
+
+
+def test_steady_state_pool_applies_after_the_startup_backlog_drains() -> None:
+    gate = threading.Event()
+    gate.set()
+    adapter = FakeAdapter(gate=gate)
+    ring = make_ring(adapter, pool_frames=4, startup_pool_frames=10, queue_depth=64)
+    try:
+        ring.submit(timestamp(0), 0, FakeImage())
+        assert wait_for(lambda: len(adapter.encoded) == 1)
+        gate.clear()  # block the encoder: the pool now fills at its steady size
+        for index in range(1, 12):
+            ring.submit(timestamp(index), index, FakeImage())
+        stats = ring.stats()
+        backend = ring._backend_stats()
+        gate.set()
+    finally:
+        ring.close()
+
+    assert backend["pool_allocated_frames"] == 4
+    assert stats.startup_dropped == 0
+    assert stats.queue_drops == 7  # 4 slots taken, 7 refused
+
+
+def test_nvenc_queue_depth_covers_the_startup_pool() -> None:
+    ring = make_ring(FakeAdapter(), pool_frames=8)
+    try:
+        assert ring._queue_depth >= nvenc_ring.STARTUP_POOL_MAX_FRAMES
+    finally:
+        ring.close()
+
+
 # ---- real encoder (CUDA + PyNvVideoCodec) -------------------------------------------
 def _synthetic_frames(count: int, width: int = 1920, height: int = 1080):
     import torch
@@ -842,30 +1163,62 @@ def _artifact_path(artifact, tmp_path, name: str):
     return payload
 
 
+def _warm_process() -> None:
+    # What the recorder block starts in its __init__; on a real host the model
+    # load hides it before the first frame.
+    status = nvenc_ring.process_warm_up().wait(120)
+    assert status == nvenc_ring.WARM_UP_READY, nvenc_ring.process_warm_up().report()
+
+
+@requires_nvenc
+def test_warm_up_readies_the_process_and_records_its_steps() -> None:
+    _warm_process()
+    report = nvenc_ring.process_warm_up().report()
+
+    assert set(report["steps_ms"]) >= {"probe_ms", "cuda_init_ms", "nvenc_open_ms"}
+    assert report["error"] is None
+
+
 @requires_nvenc
 def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
+    _warm_process()
     ring = nvenc_ring.NvencRing("0", pre_roll_seconds=20.0, declared_fps=30.0)
+    startup_drop_indices = []
+    submit_ms = []
     try:
         for index, frame in enumerate(_synthetic_frames(300)):
+            before = ring.stats().startup_dropped
+            started = time.perf_counter()
             ring.submit(timestamp(index), index, _cuda_image(frame))
-            time.sleep(1 / 120)  # keep the 8-slot pool from filling
+            submit_ms.append((time.perf_counter() - started) * 1000)
+            if ring.stats().startup_dropped > before:
+                startup_drop_indices.append(index)
+            time.sleep(1 / 120)  # 4x real time: stresses the session-open window
         handle = ring.capture(timestamp(0), timestamp(299))
         ring.prepare_close(30.0)
         artifact = handle.future.result(timeout=60)
     finally:
         ring.close()
     count, pts, size = _decode(_artifact_path(artifact, tmp_path, "ring.mp4"))
-    extra = ring.stats().extra
+    stats = ring.stats()
 
-    assert count + extra["pool_drops"] == 300
-    assert count >= 290
+    # every frame is either in the clip or reported as start-up loss
+    assert count + stats.startup_dropped == 300
+    assert artifact.report.loss.startup_dropped == stats.startup_dropped
+    # steady state: the pool never fills
+    assert stats.queue_drops == 0
+    # start-up loss, if any, is confined to the session-open window (< 1 s)
+    assert max(startup_drop_indices, default=-1) < 120
+    # the warmed process never stalls the caller (it used to take 1.4-4.2 s)
+    assert max(submit_ms) < 100
     assert size == (1920, 1080)
     assert pts[0] == 0 and pts == sorted(pts) and len(set(pts)) == count
-    assert extra["sessions_open"] == 0
+    assert stats.extra["sessions_open"] == 0
 
 
 @requires_nvenc
-def test_two_rings_record_simultaneously(tmp_path) -> None:
+def test_two_rings_record_simultaneously_at_30_fps_without_loss(tmp_path) -> None:
+    _warm_process()
     rings = [
         nvenc_ring.NvencRing(name, pre_roll_seconds=10.0, declared_fps=30.0)
         for name in ("raw", "annotated")
@@ -874,7 +1227,7 @@ def test_two_rings_record_simultaneously(tmp_path) -> None:
         for index, frame in enumerate(_synthetic_frames(150)):
             for ring in rings:
                 ring.submit(timestamp(index), index, _cuda_image(frame))
-            time.sleep(1 / 60)
+            time.sleep(1 / 30)
         handles = [ring.capture(timestamp(0), timestamp(149)) for ring in rings]
         for ring in rings:
             ring.prepare_close(30.0)
@@ -885,6 +1238,10 @@ def test_two_rings_record_simultaneously(tmp_path) -> None:
 
     for index, artifact in enumerate(artifacts):
         count, pts, _ = _decode(_artifact_path(artifact, tmp_path, f"ring{index}.mp4"))
-        assert count >= 140
+        stats = rings[index].stats()
+        # the start-up pool covers both sessions opening at once
+        assert count == 150, stats.to_dict()
+        assert stats.startup_dropped == 0
+        assert stats.queue_drops == 0
         assert pts[0] == 0
     assert all(ring.stats().extra["sessions_open"] == 0 for ring in rings)
