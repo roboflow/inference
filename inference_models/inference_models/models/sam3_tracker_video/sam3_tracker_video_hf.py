@@ -64,6 +64,7 @@ from inference_models.models.sam3_tracker_video.clip_cache import (
     VideoClipCache,
     cache_frame_limit,
     cached_frame_bytes,
+    host_tensor,
 )
 
 #: One object's point prompts: frame index -> ((x, y, label), ...) in click order.
@@ -231,10 +232,12 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
                 device="cpu",
                 return_tensors="pt",
             ).pixel_values_videos[0]
-            # A copy per frame, so that each frame is its own allocation and
-            # none of them keeps the full-precision chunk alive.
-            preprocessed += [f.to(dtype=self._dtype, copy=True) for f in chunk]
-            del chunk
+            # A copy per frame on memory of its own, so that a frame can be
+            # released alone and none keeps the full-precision chunk alive.
+            for frame in chunk:
+                preprocessed.append(host_tensor(tuple(frame.shape), self._dtype))
+                preprocessed[-1].copy_(frame)
+            del chunk, frame
 
         return preprocessed
 

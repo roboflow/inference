@@ -9,8 +9,13 @@ A frame is held either as its preprocessed pixels or, once encoded, as its
 encoder output: the pixels are released the moment the output is cached, and
 the output is then kept for as long as the clip is. The cache is sized in
 frames, from a limit in GB of host RAM and the bytes one frame can hold.
+
+Both are kept in memory mapped per frame (``host_tensor``) rather than taken
+from the process allocator, so that what a frame holds goes back to the
+operating system the moment the frame is released or its clip evicted.
 """
 
+import mmap
 import threading
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
@@ -56,6 +61,31 @@ def cached_frame_bytes(model_config: Any, dtype: torch.dtype) -> int:
     frame_bytes = max(pixel_values, feature_values) * item_bytes
 
     return frame_bytes
+
+
+def host_tensor(shape: Tuple[int, ...], dtype: torch.dtype) -> torch.Tensor:
+    """A zeroed CPU tensor on an anonymous memory mapping of its own.
+
+    The mapping is returned to the operating system when the last tensor on
+    it is freed. Memory freed to the process allocator instead tends to stay
+    resident: frames are allocated and freed one by one from several threads,
+    and the allocator keeps what each thread freed for that thread. Measured
+    with allocator-backed frames, two cached 480-frame clips grew from 17.7 GB
+    to 24.2 GB of resident memory once a third clip had replaced the first.
+
+    Args:
+        shape: Shape of the tensor; no dimension may be 0.
+        dtype: Dtype of the tensor.
+
+    Returns:
+        The tensor.
+    """
+    n_bytes = torch.empty((), dtype=dtype).element_size()
+    for dimension in shape:
+        n_bytes *= dimension
+    tensor = torch.frombuffer(mmap.mmap(-1, n_bytes), dtype=dtype).view(shape)
+
+    return tensor
 
 
 def cache_frame_limit(max_gb: float, *, frame_bytes: int) -> int:
@@ -133,8 +163,8 @@ class ClipFrames:
     index, of which the model uses ``len()`` and ``[frame_idx]``).
 
     Args:
-        frames: Preprocessed frames ``(3, H, W)``, one tensor (and one
-            allocation) per frame.
+        frames: Preprocessed frames ``(3, H, W)``, one tensor per frame, each
+            on memory of its own (``host_tensor``).
     """
 
     def __init__(self, frames: List[torch.Tensor]):
@@ -237,7 +267,7 @@ class VideoClip:
                 model's, which would make sharing them wrong.
         """
         self._position_embeddings.keep(frame_idx, features["vision_pos_embeds"])
-        self._feats[frame_idx] = [f.to("cpu") for f in features["vision_feats"]]
+        self._feats[frame_idx] = _on_one_mapping(features["vision_feats"])
         self.frames.release(frame_idx)
 
     def get_vision_features(self, frame_idx: int) -> Optional[dict]:
@@ -279,6 +309,25 @@ class VideoClip:
                 "shared by every session on the clip and the pixels of encoded "
                 "frames were released. Embed the clip again instead."
             )
+
+
+def _on_one_mapping(tensors: List[torch.Tensor]) -> List[torch.Tensor]:
+    """Copies of ``tensors`` on the CPU, side by side on one memory mapping."""
+    dtypes = {tensor.dtype for tensor in tensors}
+    if len(dtypes) != 1:
+        raise ModelRuntimeError(
+            message=f"Encoder output maps of one frame differ in dtype: {dtypes}."
+        )
+
+    block = host_tensor((sum(t.numel() for t in tensors),), dtypes.pop())
+    copies, start = [], 0
+    for tensor in tensors:
+        copy = block[start : start + tensor.numel()].view(tensor.shape)
+        copy.copy_(tensor)
+        copies.append(copy)
+        start += tensor.numel()
+
+    return copies
 
 
 class VideoClipCache:
