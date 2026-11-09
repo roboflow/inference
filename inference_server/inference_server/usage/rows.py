@@ -73,6 +73,9 @@ class UsageScope:
             recorded from a thread that does not carry it.
         stream_session_id: Session of the pipeline the rows belong to, bound
             when a row is recorded from a thread that does not carry it.
+        billing_context: Canonical batch billing context the request
+            presented with a valid service secret; every row of the request
+            carries it, so the platform applies the batch rate.
     """
 
     collector: Any
@@ -83,6 +86,7 @@ class UsageScope:
     service_secret: Optional[str] = None
     exec_session_id: Optional[str] = None
     stream_session_id: Optional[str] = None
+    billing_context: Optional[str] = None
 
 
 USAGE_SCOPE: contextvars.ContextVar[Optional[UsageScope]] = contextvars.ContextVar(
@@ -513,6 +517,8 @@ def _record(
 ) -> None:
     if scope.source_info is not None:
         details["source_info"] = scope.source_info
+    if scope.billing_context is not None:
+        details["billing_context"] = scope.billing_context
     error_details: Dict[str, Any] = {}
     if error is not None:
         error_details = exception_error_details(
