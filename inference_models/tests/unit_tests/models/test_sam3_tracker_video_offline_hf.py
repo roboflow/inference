@@ -96,6 +96,7 @@ def test_cached_frame_bytes_are_the_bytes_an_encoded_frame_holds(tracker):
     tracker._encode_clip_frames("v", clip)
 
     feature_bytes = sum(f.nbytes for f in clip._feats[0])
+    assert clip._feats[0][0].untyped_storage().nbytes() == feature_bytes
     computed = cached_frame_bytes(tracker._model.config, torch.float32)
     assert feature_bytes == computed == tracker.video_cache_limits()["bytes_per_frame"]
     assert pixel_bytes <= computed
