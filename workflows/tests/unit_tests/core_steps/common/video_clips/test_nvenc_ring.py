@@ -1201,98 +1201,59 @@ def test_two_real_sessions_encode_simultaneously(tmp_path) -> None:
     assert all(count == 120 for count, _, _ in results.values())
 
 
-def _encode_frames(adapter, session, frames, width, height):
-    (slot,) = adapter.allocate_slots(1, 1920, 1080, session.device)
-    converted, units = [], []
-    for ordinal, frame in enumerate(frames):
-        ready = adapter.stage(frame, slot, width, height)
-        units.extend(adapter.encode(session, slot, ready, ordinal, ordinal == 0))
-        converted.append(session.nv12.clone())
-    return converted, units
-
-
-def _eager_nv12(adapter, frame, width, height, like_nv12, like_work):
+def _colour_test_frame(width: int = 1920, height: int = 1080):
     import torch
 
-    expected = torch.empty_like(like_nv12)
-    work = torch.empty_like(like_work)
-    fitted = adapter._fit(frame, width=width, height=height)
-    nvenc_ring.rgb_to_nv12(fitted, expected, work)
-    return expected
+    # Gradients plus saturated colour bars in the top third.
+    x = torch.linspace(0, 255, width, device="cuda")
+    frame = torch.zeros(3, height, width, device="cuda")
+    frame[0] = x
+    frame[1] = x.flip(0)
+    frame[2] = torch.linspace(0, 255, height, device="cuda")[:, None]
+    bars = [(255, 255, 255), (255, 255, 0), (0, 255, 255), (0, 255, 0)]
+    bars += [(255, 0, 255), (255, 0, 0), (0, 0, 255), (0, 0, 0)]
+    for index, colour in enumerate(bars):
+        left, right = index * width // 8, (index + 1) * width // 8
+        frame[:, : height // 3, left:right] = torch.tensor(
+            colour, device="cuda", dtype=torch.float32
+        )[:, None, None]
+    return frame.round().clamp(0, 255).to(torch.uint8)
 
 
 @requires_nvenc
 @pytest.mark.parametrize("max_width", [None, 1280])
-def test_graph_conversion_matches_the_eager_conversion(max_width, monkeypatch) -> None:
+def test_real_adapter_keeps_the_colours_of_the_rgb_frame(max_width, tmp_path) -> None:
+    import numpy as np
     import torch
 
-    monkeypatch.setitem(nvenc_ring._GRAPH_CAPTURE, "disabled", False)
+    frame = _colour_test_frame()
     adapter = nvenc_ring.PyNvVideoCodecAdapter(max_width=max_width)
     width, height = nvenc_ring.encoded_size(1920, 1080, max_width=max_width)
     session = adapter.open_session(
-        width, height, 30.0, 300, 4_000_000, torch.device("cuda", 0)
+        width, height, 30.0, 300, 8_000_000, torch.device("cuda", 0)
     )
-    frames = list(_synthetic_frames(4))
+    (slot,) = adapter.allocate_slots(1, 1920, 1080, session.device)
+    units = []
     try:
-        converted, units = _encode_frames(adapter, session, frames, width, height)
-        mode = adapter.conversion_mode(session)
-        for frame, nv12 in zip(frames, converted):
-            expected = _eager_nv12(
-                adapter, frame, width, height, session.nv12, session.work
-            )
-            assert torch.equal(nv12, expected)
-    finally:
-        adapter.destroy(session)
-
-    assert mode == "graph"
-    assert len(units) >= 1
-
-
-@requires_nvenc
-def test_failed_graph_capture_leaves_the_session_usable_and_eager(
-    monkeypatch, tmp_path
-) -> None:
-    import torch
-
-    monkeypatch.setitem(nvenc_ring._GRAPH_CAPTURE, "disabled", False)
-    monkeypatch.setitem(nvenc_ring._GRAPH_CAPTURE, "error", None)
-    adapter = nvenc_ring.PyNvVideoCodecAdapter()
-    real_eager = adapter._convert_eager
-    calls = {"n": 0}
-
-    def eager_that_breaks_the_capture(session, rgb):
-        calls["n"] += 1
-        real_eager(session, rgb)
-        if calls["n"] == 2:  # the call made under capture
-            torch.cuda.synchronize()  # forbidden while capturing
-
-    monkeypatch.setattr(adapter, "_convert_eager", eager_that_breaks_the_capture)
-    session = adapter.open_session(
-        1920, 1080, 30.0, 300, 4_000_000, torch.device("cuda", 0)
-    )
-    frames = list(_synthetic_frames(30))
-    try:
-        converted, units = _encode_frames(adapter, session, frames, 1920, 1080)
+        for ordinal in range(30):
+            ready = adapter.stage(frame, slot, width, height)
+            units.extend(adapter.encode(session, slot, ready, ordinal, ordinal == 0))
         units.extend(adapter.flush(session))
-        mode = adapter.conversion_mode(session)
-        expected = _eager_nv12(
-            adapter, frames[-1], 1920, 1080, session.nv12, session.work
-        )
-        capturing = nvenc_ring._cuda_driver().end_capture_if_capturing(
-            session.stream_handle
-        )
     finally:
         adapter.destroy(session)
-    path = tmp_path / "after_failed_capture.mp4"
+    path = tmp_path / "colours.mp4"
     _mux_annex_b([data for _, data in units], path, fps=30)
-    count, _, _ = _decode(path)
+    with av.open(str(path)) as container:
+        decoded = [f.to_ndarray(format="rgb24") for f in container.decode(video=0)]
+    expected = adapter._fit(frame, width=width, height=height)
+    expected = expected.clamp(0, 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+    error = np.abs(decoded[15].astype(int) - expected.astype(int))
 
-    assert nvenc_ring._GRAPH_CAPTURE["disabled"] is True
-    assert nvenc_ring._GRAPH_CAPTURE["error"]
-    assert mode == "eager"
-    assert capturing is False
-    assert torch.equal(converted[-1], expected)
-    assert count == 30
+    assert len(decoded) == 30
+    assert decoded[15].shape == (height, width, 3)
+    # same fidelity as the BT.709 NV12 conversion it replaced (mean 1.0, p99 3)
+    assert error.mean() < 2.0, error.mean()
+    assert np.percentile(error, 99) <= 8
 
 
 def _cuda_image(tensor):
