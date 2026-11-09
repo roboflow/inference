@@ -913,11 +913,13 @@ def test_frames_before_the_warm_up_are_startup_dropped_without_blocking() -> Non
     warm_up = FakeWarmUp()
     ring = make_ring(adapter, warm_up=warm_up, pool_frames=8, queue_depth=64)
     try:
-        durations = []
         for index in range(10):
-            started = time.perf_counter()
             ring.submit(timestamp(index), index, FakeImage())
-            durations.append(time.perf_counter() - started)
+        # While the warm-up is pending a submit only reads its status: it never
+        # waits on it and never touches the adapter (no slot, no staging).
+        pending_status_calls = warm_up.calls
+        pending_staged = len(adapter.staged)
+        pending_allocated = adapter.slots_allocated
         warm_up.state = nvenc_ring.WARM_UP_READY
         for index in range(10, 40):
             assert wait_for_slot(ring)
@@ -930,7 +932,9 @@ def test_frames_before_the_warm_up_are_startup_dropped_without_blocking() -> Non
     finally:
         ring.close()
 
-    assert max(durations) < 0.01
+    assert pending_status_calls == 10
+    assert pending_staged == 0
+    assert pending_allocated == 0
     assert len(adapter.staged) == 30  # nothing was staged while pending
     assert stats.startup_dropped == 10
     assert stats.queue_drops == 0
