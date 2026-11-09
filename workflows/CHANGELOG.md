@@ -27,6 +27,9 @@ Bundled execution engine: `1.17.1`.
   because Pillow 13 does not support it.
 - Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
   releases that allow Pillow 13.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
 
 ### Fixed
 

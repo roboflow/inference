@@ -15,6 +15,20 @@ Dockerfile.onnx.trt | Deprecated | No |
 Dockerfile.onnx.trt.base | Deprecated | No |
 Dockerfile.onnx.udp.gpu | Deprecated | No |
 
+## Python 3.10 images (deprecated)
+
+The four images below run Python 3.10 and stay on Pillow 12.3 without the Pillow 13 security fixes; they are deprecated since 1.8.5 and planned for removal in 1.10.0.
+
+| Deprecated image | Replacement |
+|---|---|
+| `roboflow/roboflow-inference-server-gpu-slim` | `roboflow/roboflow-inference-server-gpu` |
+| `roboflow/roboflow-inference-server-gpu-parallel` | `roboflow/roboflow-inference-server-gpu` |
+| `roboflow/roboflow-inference-server-trt` | `roboflow/roboflow-inference-server-gpu` |
+| `roboflow/roboflow-inference-server-udp-gpu` | `roboflow/roboflow-inference-server-gpu` |
+
+## GPU host driver
+
+`roboflow/roboflow-inference-server-gpu` is built on CUDA 12.6.3 and needs NVIDIA driver 560.35.05 or newer.
 
 ## Base image
 
