@@ -16,6 +16,7 @@ operating system the moment the frame is released or its clip evicted.
 """
 
 import mmap
+import sys
 import threading
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
@@ -83,7 +84,13 @@ def host_tensor(shape: Tuple[int, ...], dtype: torch.dtype) -> torch.Tensor:
     n_bytes = torch.empty((), dtype=dtype).element_size()
     for dimension in shape:
         n_bytes *= dimension
-    tensor = torch.frombuffer(mmap.mmap(-1, n_bytes), dtype=dtype).view(shape)
+    if sys.platform == "win32":
+        mapping = mmap.mmap(-1, n_bytes)
+    else:
+        # Private, so that it is ordinary anonymous memory of the process
+        # rather than shared memory.
+        mapping = mmap.mmap(-1, n_bytes, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS)
+    tensor = torch.frombuffer(mapping, dtype=dtype).view(shape)
 
     return tensor
 
