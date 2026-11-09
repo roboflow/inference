@@ -1201,6 +1201,100 @@ def test_two_real_sessions_encode_simultaneously(tmp_path) -> None:
     assert all(count == 120 for count, _, _ in results.values())
 
 
+def _encode_frames(adapter, session, frames, width, height):
+    (slot,) = adapter.allocate_slots(1, 1920, 1080, session.device)
+    converted, units = [], []
+    for ordinal, frame in enumerate(frames):
+        ready = adapter.stage(frame, slot, width, height)
+        units.extend(adapter.encode(session, slot, ready, ordinal, ordinal == 0))
+        converted.append(session.nv12.clone())
+    return converted, units
+
+
+def _eager_nv12(adapter, frame, width, height, like_nv12, like_work):
+    import torch
+
+    expected = torch.empty_like(like_nv12)
+    work = torch.empty_like(like_work)
+    fitted = adapter._fit(frame, width=width, height=height)
+    nvenc_ring.rgb_to_nv12(fitted, expected, work)
+    return expected
+
+
+@requires_nvenc
+@pytest.mark.parametrize("max_width", [None, 1280])
+def test_graph_conversion_matches_the_eager_conversion(max_width, monkeypatch) -> None:
+    import torch
+
+    monkeypatch.setitem(nvenc_ring._GRAPH_CAPTURE, "disabled", False)
+    adapter = nvenc_ring.PyNvVideoCodecAdapter(max_width=max_width)
+    width, height = nvenc_ring.encoded_size(1920, 1080, max_width=max_width)
+    session = adapter.open_session(
+        width, height, 30.0, 300, 4_000_000, torch.device("cuda", 0)
+    )
+    frames = list(_synthetic_frames(4))
+    try:
+        converted, units = _encode_frames(adapter, session, frames, width, height)
+        mode = adapter.conversion_mode(session)
+        for frame, nv12 in zip(frames, converted):
+            expected = _eager_nv12(
+                adapter, frame, width, height, session.nv12, session.work
+            )
+            assert torch.equal(nv12, expected)
+    finally:
+        adapter.destroy(session)
+
+    assert mode == "graph"
+    assert len(units) >= 1
+
+
+@requires_nvenc
+def test_failed_graph_capture_leaves_the_session_usable_and_eager(
+    monkeypatch, tmp_path
+) -> None:
+    import torch
+
+    monkeypatch.setitem(nvenc_ring._GRAPH_CAPTURE, "disabled", False)
+    monkeypatch.setitem(nvenc_ring._GRAPH_CAPTURE, "error", None)
+    adapter = nvenc_ring.PyNvVideoCodecAdapter()
+    real_eager = adapter._convert_eager
+    calls = {"n": 0}
+
+    def eager_that_breaks_the_capture(session, rgb):
+        calls["n"] += 1
+        real_eager(session, rgb)
+        if calls["n"] == 2:  # the call made under capture
+            torch.cuda.synchronize()  # forbidden while capturing
+
+    monkeypatch.setattr(adapter, "_convert_eager", eager_that_breaks_the_capture)
+    session = adapter.open_session(
+        1920, 1080, 30.0, 300, 4_000_000, torch.device("cuda", 0)
+    )
+    frames = list(_synthetic_frames(30))
+    try:
+        converted, units = _encode_frames(adapter, session, frames, 1920, 1080)
+        units.extend(adapter.flush(session))
+        mode = adapter.conversion_mode(session)
+        expected = _eager_nv12(
+            adapter, frames[-1], 1920, 1080, session.nv12, session.work
+        )
+        capturing = nvenc_ring._cuda_driver().end_capture_if_capturing(
+            session.stream_handle
+        )
+    finally:
+        adapter.destroy(session)
+    path = tmp_path / "after_failed_capture.mp4"
+    _mux_annex_b([data for _, data in units], path, fps=30)
+    count, _, _ = _decode(path)
+
+    assert nvenc_ring._GRAPH_CAPTURE["disabled"] is True
+    assert nvenc_ring._GRAPH_CAPTURE["error"]
+    assert mode == "eager"
+    assert capturing is False
+    assert torch.equal(converted[-1], expected)
+    assert count == 30
+
+
 def _cuda_image(tensor):
     from roboflow_workflows.execution_engine.entities.base import (
         ImageParentMetadata,
