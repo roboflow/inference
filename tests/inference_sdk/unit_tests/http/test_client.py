@@ -5817,3 +5817,82 @@ async def test_infer_async_refuses_a_video_model_and_names_the_async_clip_door()
         ModelTaskTypeNotSupportedError, match=r"infer_on_video_async\(\)"
     ):
         await api_client.infer_async("https://example.com/frame.jpg", model_id="some/1")
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_v1_sends_the_prompt_only_when_given(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description = _video_model()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+    api_client.infer_on_video(
+        "https://example.com/clip.mp4", model_id="some/1", prompt="List the lifts."
+    )
+
+    without_prompt, with_prompt = requests_mock.post.call_args_list
+    assert "prompt" not in without_prompt.kwargs["json"]
+    assert with_prompt.kwargs["json"]["prompt"] == "List the lifts."
+
+
+@mock.patch.object(client, "requests")
+def test_infer_on_video_v0_sends_the_prompt_only_when_given(requests_mock) -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    requests_mock.post.return_value = MagicMock(
+        status_code=200, json=lambda: {"timeline": []}
+    )
+
+    api_client.infer_on_video("https://example.com/clip.mp4", model_id="some/1")
+    api_client.infer_on_video(
+        "https://example.com/clip.mp4", model_id="some/1", prompt="List the lifts."
+    )
+
+    without_prompt, with_prompt = requests_mock.post.call_args_list
+    assert "prompt" not in without_prompt.kwargs["params"]
+    assert with_prompt.kwargs["params"]["prompt"] == "List the lifts."
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_v1_sends_the_prompt() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v1()
+    api_client.get_model_description_async = AsyncMock(
+        return_value=ModelDescription(model_id="some/1", task_type="action-recognition")
+    )
+    with aioresponses() as mock:
+        mock.post(
+            "http://some.com/infer/action_recognition",
+            payload={"timeline": []},
+        )
+
+        await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1", prompt="List the lifts."
+        )
+
+        request = list(mock.requests.values())[0][0]
+        assert request.kwargs["json"]["prompt"] == "List the lifts."
+
+
+@pytest.mark.asyncio
+async def test_infer_on_video_async_v0_sends_the_prompt() -> None:
+    api_client = InferenceHTTPClient(
+        api_url="http://some.com", api_key="my-api-key"
+    ).select_api_v0()
+    with aioresponses() as mock:
+        mock.post(
+            "http://some.com/some/1?api_key=my-api-key&image=https%3A%2F%2Fexample.com%2Fclip.mp4&prompt=List+the+lifts.",
+            payload={"timeline": []},
+        )
+
+        result = await api_client.infer_on_video_async(
+            "https://example.com/clip.mp4", model_id="some/1", prompt="List the lifts."
+        )
+
+        assert result == {"timeline": []}

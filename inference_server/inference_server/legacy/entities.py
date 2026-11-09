@@ -409,6 +409,9 @@ class ActionRecognitionInferenceRequest(BaseRequest):
         class_filter (Optional[List[str]]): The subset of a fine-tuned
             model's classes to report. A zero-shot model answers in its own
             words and ignores this.
+        prompt (Optional[str]): Zero-shot Cosmos 3 only. Replaces the
+            instruction the model is asked with. The answer format is always
+            appended. Any other model rejects it.
     """
 
     model_id: str = Field(
@@ -424,6 +427,24 @@ class ActionRecognitionInferenceRequest(BaseRequest):
             "zero-shot model answers in its own words and ignores this."
         ),
     )
+    prompt: Optional[str] = Field(
+        None,
+        examples=["List every time a person picks up a box."],
+        description=(
+            "Zero-shot Cosmos 3 only. Replaces the instruction the model is "
+            'asked with ("List all action segments in the video."). The '
+            "answer format is always appended, so the response keeps its "
+            "shape. A fine-tuned Cosmos 3 model and any other action "
+            "recognition model reject it."
+        ),
+    )
+
+    @field_validator("prompt")
+    @classmethod
+    def _reject_blank_prompt(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and not value.strip():
+            raise ValueError("prompt must not be blank")
+        return value
 
 
 class DepthEstimationRequest(InferenceRequest):

@@ -124,6 +124,7 @@ from inference_models.configuration import (
     get_rfdetr_pipeline_depth,
 )
 from inference_models.entities import ImageDimensions
+from inference_models.errors import ModelInputError
 from inference_models.models.base.action_recognition import (
     ActionRecognitionModel,
     effective_max_frame_side,
@@ -2296,6 +2297,13 @@ class InferenceModelsActionRecognitionAdapter(Model):
             timeout_seconds=ACTION_RECOGNITION_PROCESSING_TIMEOUT_SECONDS
         )
         control.check()
+        if request.prompt is not None and not self._model.supports_prompt:
+            raise ModelInputError(
+                message=(
+                    f"Model {request.model_id!r} does not take a prompt; only "
+                    f"zero-shot Cosmos 3 action recognition does."
+                ),
+            )
         sampling = self._model.video_sampling
         default_confidence = getattr(self._model, "confidence_threshold", None)
         class_filter = request.class_filter or None
@@ -2395,6 +2403,8 @@ class InferenceModelsActionRecognitionAdapter(Model):
                 # A window's segments index its own frames; the timeline
                 # counts the clip's.
                 infer_kwargs = {}
+                if request.prompt is not None:
+                    infer_kwargs["prompt"] = request.prompt
                 window_frame_limit = min(
                     planned_limit,
                     (

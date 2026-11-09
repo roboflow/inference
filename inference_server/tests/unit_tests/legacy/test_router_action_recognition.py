@@ -368,3 +368,113 @@ def test_catch_all_action_recognition_skips_detection_parameter_handling(
     assert response.status_code == 200, response.text
     assert response.json()["timeline"] == EXPECTED_TIMELINE
     assert _RecordingBound.comparisons == 0
+
+
+def test_route_sends_a_prompt_to_zero_shot_cosmos(legacy_client, fake_stat, clip):
+    gateway = _gateway(fake_stat, class_names=None)
+
+    response = legacy_client(gateway).post(
+        "/infer/action_recognition",
+        json=_request(clip, prompt="List every time a box is lifted."),
+    )
+
+    assert response.status_code == 200, response.text
+    calls = _infer_calls(gateway)
+    assert len(calls) == len(PLANNED_WINDOWS)
+    assert all(
+        set(call[3]) == {"frames", "class_names", "fps", "prompt"} for call in calls
+    )
+    assert {call[3]["prompt"] for call in calls} == {"List every time a box is lifted."}
+
+
+def test_route_refuses_a_prompt_for_a_fine_tuned_cosmos(legacy_client, fake_stat, clip):
+    gateway = _gateway(fake_stat)
+
+    response = legacy_client(gateway).post(
+        "/infer/action_recognition", json=_request(clip, prompt="List the waves.")
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": (
+            f"Model {MODEL_ID!r} is a fine-tuned Cosmos 3 model, which answers "
+            "as trained only under its training prompt and does not take one."
+        )
+    }
+    assert _infer_calls(gateway) == []
+
+
+def test_route_refuses_a_prompt_for_another_architecture(
+    legacy_client, fake_stat, clip
+):
+    gateway = _gateway(fake_stat, model_class_name="VJEPA21ActionRecognition")
+
+    response = legacy_client(gateway).post(
+        "/infer/action_recognition", json=_request(clip, prompt="List the waves.")
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "message": (
+            f"Model {MODEL_ID!r} does not take a prompt; only zero-shot "
+            "Cosmos 3 action recognition does."
+        )
+    }
+    assert _infer_calls(gateway) == []
+
+
+@pytest.mark.parametrize("prompt", ["", "  \n"])
+def test_route_with_a_blank_prompt_is_422(legacy_client, fake_stat, clip, prompt):
+    gateway = _gateway(fake_stat, class_names=None)
+
+    response = legacy_client(gateway).post(
+        "/infer/action_recognition", json=_request(clip, prompt=prompt)
+    )
+
+    assert response.status_code == 422
+    assert _infer_calls(gateway) == []
+
+
+def test_catch_all_sends_a_prompt_to_zero_shot_cosmos(legacy_client, fake_stat, clip):
+    gateway = _gateway(fake_stat, class_names=None)
+
+    response = legacy_client(gateway).post(
+        f"/{MODEL_ID}",
+        params={"api_key": "k", "prompt": "List every time a box is lifted."},
+        content=clip_base64(clip).encode("ascii"),
+        headers=FORM_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 200, response.text
+    assert {call[3]["prompt"] for call in _infer_calls(gateway)} == {
+        "List every time a box is lifted."
+    }
+
+
+@pytest.mark.parametrize(
+    "prompt, model_info, message",
+    [
+        ("  ", {"class_names": None}, "prompt must not be blank."),
+        (
+            "List the waves.",
+            {},
+            f"Model {MODEL_ID!r} is a fine-tuned Cosmos 3 model, which answers "
+            "as trained only under its training prompt and does not take one.",
+        ),
+    ],
+)
+def test_catch_all_refuses_a_prompt_the_model_cannot_take(
+    legacy_client, fake_stat, clip, prompt, model_info, message
+):
+    gateway = _gateway(fake_stat, **model_info)
+
+    response = legacy_client(gateway).post(
+        f"/{MODEL_ID}",
+        params={"api_key": "k", "prompt": prompt},
+        content=clip_base64(clip).encode("ascii"),
+        headers=FORM_CONTENT_TYPE,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"message": message}
+    assert _infer_calls(gateway) == []

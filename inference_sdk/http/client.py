@@ -2740,12 +2740,15 @@ class InferenceHTTPClient:
         self,
         video_reference: VideoReference,
         model_id: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> dict:
         """Run a video model over one clip, sent whole.
 
         Args:
             video_reference (VideoReference): URL or local path of the clip.
             model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+            prompt (Optional[str], optional): Instruction replacing the one zero-shot Cosmos 3 is asked with.
+                Any other model rejects it. Defaults to None.
 
         Returns:
             dict: `timeline` over the clip, with `source_fps`, `frame_count` and `windows_classified`.
@@ -2760,10 +2763,12 @@ class InferenceHTTPClient:
             return self.infer_on_video_from_api_v0(
                 video_reference=video_reference,
                 model_id=model_id,
+                prompt=prompt,
             )
         return self.infer_on_video_from_api_v1(
             video_reference=video_reference,
             model_id=model_id,
+            prompt=prompt,
         )
 
     @wrap_errors_async
@@ -2771,12 +2776,15 @@ class InferenceHTTPClient:
         self,
         video_reference: VideoReference,
         model_id: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> dict:
         """Run a video model over one clip asynchronously. See ``infer_on_video``.
 
         Args:
             video_reference (VideoReference): URL or local path of the clip.
             model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+            prompt (Optional[str], optional): Instruction replacing the one zero-shot Cosmos 3 is asked with.
+                Any other model rejects it. Defaults to None.
 
         Returns:
             dict: `timeline` over the clip, with `source_fps`, `frame_count` and `windows_classified`.
@@ -2791,20 +2799,24 @@ class InferenceHTTPClient:
             return await self.infer_on_video_from_api_v0_async(
                 video_reference=video_reference,
                 model_id=model_id,
+                prompt=prompt,
             )
         return await self.infer_on_video_from_api_v1_async(
             video_reference=video_reference,
             model_id=model_id,
+            prompt=prompt,
         )
 
     def infer_on_video_from_api_v0(
         self,
         video_reference: VideoReference,
         model_id: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> dict:
         url, params, data, headers = self.__build_v0_video_request(
             video_reference=video_reference,
             model_id=model_id,
+            prompt=prompt,
         )
         response = requests.post(url, params=params, data=data, headers=headers)
         api_key_safe_raise_for_status(response=response)
@@ -2814,10 +2826,12 @@ class InferenceHTTPClient:
         self,
         video_reference: VideoReference,
         model_id: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> dict:
         url, params, data, headers = self.__build_v0_video_request(
             video_reference=video_reference,
             model_id=model_id,
+            prompt=prompt,
         )
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -2830,12 +2844,14 @@ class InferenceHTTPClient:
         self,
         video_reference: VideoReference,
         model_id: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> dict:
         model_id = self.__resolve_video_model_id(model_id=model_id)
         task_type = self.get_model_description(model_id=model_id).task_type
         url, payload = self.__build_v1_video_request(
             video_reference=video_reference,
             model_id=model_id,
+            prompt=prompt,
             task_type=task_type,
         )
         response = requests.post(
@@ -2848,12 +2864,14 @@ class InferenceHTTPClient:
         self,
         video_reference: VideoReference,
         model_id: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> dict:
         model_id = self.__resolve_video_model_id(model_id=model_id)
         description = await self.get_model_description_async(model_id=model_id)
         url, payload = self.__build_v1_video_request(
             video_reference=video_reference,
             model_id=model_id,
+            prompt=prompt,
             task_type=description.task_type,
             asynchronous=True,
         )
@@ -2873,6 +2891,7 @@ class InferenceHTTPClient:
         self,
         video_reference: VideoReference,
         model_id: Optional[str],
+        prompt: Optional[str] = None,
     ) -> Tuple[str, dict, Optional[str], dict]:
         video_type, video = _resolve_video_payload(video_reference=video_reference)
         model_id = self.__resolve_video_model_id(model_id=model_id)
@@ -2885,6 +2904,8 @@ class InferenceHTTPClient:
         class_filter = self.__inference_configuration.class_filter
         if class_filter:
             params["class_filter"] = ",".join(class_filter)
+        if prompt is not None:
+            params["prompt"] = prompt
         url = f"{self.__api_url}/{model_id_chunks[0]}/{model_id_chunks[1]}"
         headers = dict(self.__headers_with_auth(DEFAULT_HEADERS) or {})
         if video_type == "url":
@@ -2899,6 +2920,7 @@ class InferenceHTTPClient:
         model_id: str,
         task_type: str,
         asynchronous: bool = False,
+        prompt: Optional[str] = None,
     ) -> Tuple[str, dict]:
         if task_type not in VIDEO_INFERENCE_ENDPOINTS:
             image_door = "infer_async()" if asynchronous else "infer()"
@@ -2913,6 +2935,8 @@ class InferenceHTTPClient:
         class_filter = self.__inference_configuration.class_filter
         if class_filter is not None:
             payload["class_filter"] = class_filter
+        if prompt is not None:
+            payload["prompt"] = prompt
         url = self.__wrap_url_with_api_key(
             f"{self.__api_url}{VIDEO_INFERENCE_ENDPOINTS[task_type]}"
         )

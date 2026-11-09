@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from inference_models.entities import ResolvedModelMetadata
-from inference_models.errors import CorruptedModelPackageError
+from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.base.action_recognition import (
     SLIDING_WINDOW_MODE,
     WHOLE_VIDEO_MODE,
@@ -18,6 +18,7 @@ from inference_models.models.cosmos3.cosmos3_action_recognition import (
     FINE_TUNE_MAX_NEW_TOKENS,
     FINE_TUNE_SYSTEM_PROMPT,
     ZERO_SHOT_MAX_NEW_TOKENS,
+    ZERO_SHOT_TEMPORAL_LOCALIZATION_FORMAT,
     ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT,
     Cosmos3EdgeActionRecognition,
     _normalize_frames,
@@ -723,3 +724,96 @@ def test_zero_shot_leaves_a_1080p_frame_alone() -> None:
     wrapper.infer(frames=frames, fps=4.0)
 
     assert all(f.shape == (1080, 1920, 3) for f in reasoner.calls[0]["frames"])
+
+
+# The prompt as it was before a caller could override the instruction, kept
+# as a literal so a change to how the constant is assembled cannot pass.
+_TRAINED_ZERO_SHOT_PROMPT = """List all action segments in the video.
+
+Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
+
+```json
+[
+{
+  "start": t_start,
+  "end": t_end,
+  "caption": EVENT1
+},
+{
+  "start": t_start,
+  "end": t_end,
+  "caption": EVENT2
+},
+...
+]
+```"""
+
+
+def test_zero_shot_without_a_prompt_sends_the_trained_prompt_unchanged() -> None:
+    reasoner = _FakeReasoner(response=_cookbook_response())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    wrapper.infer(frames=_frames(8), fps=4.0)
+
+    assert ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT == _TRAINED_ZERO_SHOT_PROMPT
+    assert reasoner.calls[0]["prompt"] == _TRAINED_ZERO_SHOT_PROMPT
+
+
+def test_zero_shot_prompt_replaces_the_instruction_and_keeps_the_format() -> None:
+    reasoner = _FakeReasoner(response=_cookbook_response())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    result = wrapper.infer(
+        frames=_frames(40), fps=4.0, prompt="  List every time a box is lifted.\n"
+    )
+
+    call = reasoner.calls[0]
+    assert call["prompt"] == (
+        "List every time a box is lifted.\n\n"
+        f"{ZERO_SHOT_TEMPORAL_LOCALIZATION_FORMAT}"
+    )
+    assert "List all action segments in the video." not in call["prompt"]
+    assert call["enable_thinking"] is True
+    # The format block is what keeps the answer parseable.
+    assert result == [_prediction(0, 8, "a person walks")]
+
+
+def test_only_the_zero_shot_model_supports_a_prompt() -> None:
+    zero_shot = Cosmos3EdgeActionRecognition(reasoner=_FakeReasoner())
+    fine_tune = Cosmos3EdgeActionRecognition(
+        reasoner=_FakeReasoner(tokenizer=_FakeTokenizer(class_names=["walking"])),
+        class_names=["walking"],
+    )
+
+    assert zero_shot.supports_prompt is True
+    assert fine_tune.supports_prompt is False
+
+
+def test_fine_tune_refuses_a_prompt_without_generating() -> None:
+    reasoner = _FakeReasoner(
+        response="none", tokenizer=_FakeTokenizer(class_names=["walking"])
+    )
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner, class_names=["walking"])
+
+    with pytest.raises(ModelInputError, match="does not take a prompt"):
+        wrapper.infer(frames=_frames(8), fps=2.0, prompt="List the walking.")
+
+    assert reasoner.calls == []
+
+
+@pytest.mark.parametrize(
+    "prompt, message",
+    [
+        ("", "must not be blank"),
+        (" \n\t", "must not be blank"),
+        (f"Describe.{SYSTEM_PROMPT_SENTINEL}Be terse.", "must not contain"),
+    ],
+)
+def test_zero_shot_refuses_a_prompt_it_cannot_send(prompt, message) -> None:
+    reasoner = _FakeReasoner(response=_cookbook_response())
+    wrapper = Cosmos3EdgeActionRecognition(reasoner=reasoner)
+
+    with pytest.raises(ModelInputError, match=message):
+        wrapper.infer(frames=_frames(8), fps=4.0, prompt=prompt)
+
+    assert reasoner.calls == []

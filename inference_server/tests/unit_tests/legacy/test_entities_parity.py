@@ -140,10 +140,12 @@ def test_action_recognition_request_carries_legacy_fields():
         "model_id",
         "video",
         "class_filter",
+        "prompt",
     }
     assert request_fields["model_id"].is_required()
     assert request_fields["video"].is_required()
     assert request_fields["class_filter"].default is None
+    assert request_fields["prompt"].default is None
     assert set(entities.InferenceRequestVideo.model_fields) == {"type", "value"}
     assert entities.InferenceRequestVideo.model_fields["type"].is_required()
     assert entities.InferenceRequestVideo.model_fields["value"].default is None

@@ -252,3 +252,72 @@ def test_action_routes_propagate_request_control(
 
     assert response.status_code == (499 if disconnected else 504)
     assert manager.infer_from_request_sync.call_count == (0 if disconnected else 1)
+
+
+def test_legacy_action_recognition_carries_the_prompt(monkeypatch) -> None:
+    interface, model_manager = _build_interface(monkeypatch, lambda_mode=False)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            f"/{PATH_MODEL_ID}",
+            params={
+                "api_key": "query-api-key",
+                "image": "https://example.com/clip.mp4",
+                "prompt": "List every time a box is lifted.",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    action_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert action_request.prompt == "List every time a box is lifted."
+
+
+def test_legacy_action_recognition_without_a_prompt_carries_none(monkeypatch) -> None:
+    interface, model_manager = _build_interface(monkeypatch, lambda_mode=False)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            f"/{PATH_MODEL_ID}",
+            params={
+                "api_key": "query-api-key",
+                "image": "https://example.com/clip.mp4",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    action_request = model_manager.infer_from_request_sync.call_args.args[1]
+    assert action_request.prompt is None
+
+
+def test_legacy_action_recognition_refuses_a_blank_prompt(monkeypatch) -> None:
+    interface, model_manager = _build_interface(monkeypatch, lambda_mode=False)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            f"/{PATH_MODEL_ID}",
+            params={
+                "api_key": "query-api-key",
+                "image": "https://example.com/clip.mp4",
+                "prompt": "  ",
+            },
+        )
+
+    assert response.status_code == 400, response.text
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
+def test_action_recognition_route_with_a_blank_prompt_is_422(monkeypatch) -> None:
+    interface, model_manager = _build_interface(monkeypatch, lambda_mode=False)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/action_recognition",
+            json={
+                "model_id": PATH_MODEL_ID,
+                "video": {"type": "url", "value": "https://example.com/clip.mp4"},
+                "prompt": " ",
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    model_manager.infer_from_request_sync.assert_not_called()

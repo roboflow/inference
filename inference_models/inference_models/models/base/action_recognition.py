@@ -104,6 +104,7 @@ class ActionRecognitionModel(ABC):
     confidence_threshold = None
     supports_confidence: bool = False
     supports_observed_duration: bool = False
+    supports_prompt: bool = False
 
     def estimate_candidate_count(
         self, sampled_frames: int, *, class_names: Optional[List[str]] = None

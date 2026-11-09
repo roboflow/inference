@@ -4872,6 +4872,14 @@ class HttpInterface(BaseInterface):
                         "zero-shot model answers in its own words and ignores it."
                     ),
                 ),
+                prompt: Optional[str] = Query(
+                    None,
+                    description=(
+                        "Action recognition only: replaces the instruction "
+                        "zero-shot Cosmos 3 is asked with. Any other model "
+                        "rejects it."
+                    ),
+                ),
                 include_candidates: bool = Query(
                     False,
                     description="Action recognition: return raw scored candidates",
@@ -5060,6 +5068,10 @@ class HttpInterface(BaseInterface):
 
                 task_type = self.model_manager.get_task_type(model_id, api_key=api_key)
                 if task_type == "action-recognition":
+                    if prompt is not None and not prompt.strip():
+                        raise HTTPException(
+                            status_code=400, detail="prompt must not be blank."
+                        )
                     # The payload is a clip, so none of the image-shaped
                     # arguments below apply to it. The `image` query parameter
                     # carries a URL here, which is the transport to prefer: a
@@ -5083,6 +5095,7 @@ class HttpInterface(BaseInterface):
                             ),
                             confidence=action_confidence,
                             include_candidates=include_candidates,
+                            prompt=prompt,
                         ),
                         request=request,
                     )
