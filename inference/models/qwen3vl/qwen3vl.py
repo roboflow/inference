@@ -67,6 +67,11 @@ class Qwen3VL(TransformerModel):
 
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
+        if not os.path.exists(config_file) and os.path.exists(
+            os.path.join(self.cache_dir, "config.json")
+        ):
+            self._initialize_full_model()
+            return
 
         config = load_compatible_adapter_config(
             config_file=config_file,
@@ -129,6 +134,30 @@ class Qwen3VL(TransformerModel):
             min_pixels=256 * 28 * 28,
             max_pixels=1280 * 28 * 28,
             local_files_only=OFFLINE_MODE,
+        )
+
+    def _initialize_full_model(self):
+        # A full fine-tune package carries config.json and the weights, and no
+        # adapter_config.json. Load it from the package directory with the same
+        # dtype, attention and pixel bounds as the adapter path.
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
+            else "eager"
+        )
+        self.base_model = self.transformers_class.from_pretrained(
+            self.cache_dir,
+            device_map=DEVICE,
+            torch_dtype=self.dtype,
+            attn_implementation=attn_implementation,
+            local_files_only=True,
+        )
+        self.model = self.base_model.eval().to(self.dtype)
+        self.processor = self.processor_class.from_pretrained(
+            self.cache_dir,
+            min_pixels=256 * 28 * 28,
+            max_pixels=1280 * 28 * 28,
+            local_files_only=True,
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
