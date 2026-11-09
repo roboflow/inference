@@ -1,6 +1,7 @@
 import json
 import os
 import tarfile
+from typing import Optional
 
 import torch
 from peft import LoraConfig, PeftModel
@@ -72,9 +73,27 @@ def _patch_preprocessor_config(cache_dir: str):
         raise ValueError(f"'{target_key}' not found in {config_path}")
 
 
+def _read_chat_template(*directories: str) -> Optional[str]:
+    """The chat template from the first directory that has one, or None.
+
+    Packages saved with transformers 4.x carry chat_template.json. The
+    transformers 5.x trainer saves chat_template.jinja instead.
+    """
+    for directory in directories:
+        json_path = os.path.join(directory, "chat_template.json")
+        if os.path.isfile(json_path):
+            with open(json_path, "r") as f:
+                return json.load(f)["chat_template"]
+        jinja_path = os.path.join(directory, "chat_template.jinja")
+        if os.path.isfile(jinja_path):
+            with open(jinja_path, "r") as f:
+                return f.read()
+    return None
+
+
 class Qwen25VL(TransformerModel):
     generation_includes_input = True
-    transformers_class = AutoModelForCausalLM
+    transformers_class = Qwen2_5_VLForConditionalGeneration
     default_dtype = torch.bfloat16
     skip_special_tokens = True
 
@@ -128,8 +147,12 @@ class Qwen25VL(TransformerModel):
             revision = None
             token = None
 
-        files_folder = os.path.join(
-            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/"
+        # get_lora_base_from_roboflow extracts the base under a resolved cache
+        # directory, not under MODEL_CACHE_DIR/lora-bases.
+        files_folder = (
+            model_load_id
+            if os.path.isdir(model_load_id)
+            else os.path.join(MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/")
         )
         _patch_preprocessor_config(files_folder)
 
@@ -165,9 +188,11 @@ class Qwen25VL(TransformerModel):
         else:
             self.model = self.base_model.eval().to(self.dtype)
 
-        preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
-        with open(preprocessor_config_path, "r") as f:
-            chat_template = json.load(f)["chat_template"]
+        chat_template = _read_chat_template(self.cache_dir, model_load_id)
+        if chat_template is None:
+            raise FileNotFoundError(
+                f"chat_template.json/.jinja not found in {self.cache_dir} or {model_load_id}"
+            )
 
         self.processor = self.processor_class.from_pretrained(
             model_load_id,
@@ -275,7 +300,7 @@ class LoRAQwen25VL(LoRATransformerModel):
     load_base_from_roboflow = True
     generation_includes_input = True
     skip_special_tokens = True
-    transformers_class = AutoModelForCausalLM
+    transformers_class = Qwen2_5_VLForConditionalGeneration
     default_dtype = torch.bfloat16
     use_quantization = True
 
@@ -325,8 +350,12 @@ class LoRAQwen25VL(LoRATransformerModel):
         )
         remove_extracted_archive_if_online(rm_weights)
 
-        files_folder = os.path.join(
-            MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/"
+        # get_lora_base_from_roboflow extracts the base under a resolved cache
+        # directory, not under MODEL_CACHE_DIR/lora-bases.
+        files_folder = (
+            model_load_id
+            if os.path.isdir(model_load_id)
+            else os.path.join(MODEL_CACHE_DIR, "lora-bases/qwen/qwen25vl-7b/main/")
         )
         _patch_preprocessor_config(files_folder)
 
@@ -382,9 +411,11 @@ class LoRAQwen25VL(LoRATransformerModel):
                 self.model = self.base_model.eval().to(self.dtype)
 
         self.model.merge_and_unload()
-        preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
-        with open(preprocessor_config_path, "r") as f:
-            chat_template = json.load(f)["chat_template"]
+        chat_template = _read_chat_template(self.cache_dir, model_load_id)
+        if chat_template is None:
+            raise FileNotFoundError(
+                f"chat_template.json/.jinja not found in {self.cache_dir} or {model_load_id}"
+            )
 
         self.processor = self.processor_class.from_pretrained(
             model_load_id,
