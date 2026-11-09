@@ -406,6 +406,30 @@ def test_propagate_stream_refuses_an_object_without_an_include_point(client, loa
     assert loads.model.calls == []
 
 
+def test_the_tracker_loads_only_with_the_servers_local_package_policy(monkeypatch):
+    import inference_models
+
+    loaded = []
+
+    def _from_pretrained(**kwargs):
+        loaded.append(kwargs)
+        return SAM3TrackerVideo()
+
+    monkeypatch.setattr(inference_models.AutoModel, "from_pretrained", _from_pretrained)
+    tracker = sam3_video.Sam3VideoTracker(
+        MagicMock(content_addressed_artifact_cache=None)
+    )
+
+    tracker._load(
+        "/models/elsewhere", api_key=API_KEY, countinference=None, service_secret=None
+    )
+
+    [kwargs] = loaded
+    assert kwargs["model_id_or_path"] == "/models/elsewhere"
+    assert kwargs["allow_direct_local_storage_loading"] is False
+    assert kwargs["allow_untrusted_packages"] is False
+
+
 class _BlockingModel:
     """Tracks an object only once ``release`` is set."""
 

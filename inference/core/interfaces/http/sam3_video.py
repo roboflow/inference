@@ -43,6 +43,8 @@ from inference.core.entities.responses.sam3_video import (
     Sam3VideoSegmentResponse,
 )
 from inference.core.env import (
+    ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
+    ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
     MODELS_CACHE_AUTH_ENABLED,
     OFFLINE_MODE,
     SAM3_VIDEO_MAX_FRAMES,
@@ -156,6 +158,8 @@ class Sam3VideoTracker:
         model = AutoModel.from_pretrained(
             model_id_or_path=model_id,
             api_key=api_key,
+            allow_untrusted_packages=ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES,
+            allow_direct_local_storage_loading=ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES,
             weights_provider_extra_headers=get_extra_weights_provider_headers(
                 countinference=countinference, service_secret=service_secret
             ),
