@@ -18,6 +18,9 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Time in Zone v1–v3 preserve the original entry time when reset is disabled,
+  regardless of whether detections outside the zone are kept in the output.
+
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 
