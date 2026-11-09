@@ -56,12 +56,20 @@ class FakeRow:
 
 
 class FakeCursor:
+    """Record connector calls and expose deterministic fixture rows."""
+
     def __init__(self, rows: List[Dict[str, Any]], recorder: Dict[str, Any]):
         self._rows = rows
         self._recorder = recorder
         self._position = 0
 
     def execute(self, statement: str, parameters=None) -> None:
+        """Record a query and its separate bound parameters.
+
+        Args:
+            statement (str): SQL template submitted by the block.
+            parameters (Optional[dict]): Native bound parameters supplied to the connector.
+        """
         self._recorder["statement"] = statement
         self._recorder["parameters"] = parameters
         delay = self._recorder.get("execute_delay")
@@ -109,9 +117,20 @@ class FakeConnection:
 @contextmanager
 def fake_databricks(
     rows: List[Dict[str, Any]],
+    *,
     resolved_ips: List[str] = (PUBLIC_IP,),
     recorder: Dict[str, Any] = None,
 ) -> Iterator[Dict[str, Any]]:
+    """Install a fake connector and resolver while recording block side effects.
+
+    Args:
+        rows (List[Dict[str, Any]]): Warehouse rows exposed by the fake cursor.
+        resolved_ips (List[str]): IP addresses returned by the resolver fixture.
+        recorder (Optional[Dict[str, Any]]): Existing recorder to populate, or None.
+
+    Yields:
+        Dict[str, Any]: Captured connection, query, fetch and cleanup calls.
+    """
     recorder = recorder if recorder is not None else {}
 
     def connect(**kwargs: Any) -> FakeConnection:
@@ -157,6 +176,14 @@ def pil_bytes(image_format: str, size=(48, 32)) -> bytes:
 
 
 def run_block(**overrides: Any) -> list:
+    """Run the image block with fixture defaults and explicit input overrides.
+
+    Args:
+        **overrides (Any): Block inputs replacing the fixture defaults.
+
+    Returns:
+        list: Image, name and metadata rows emitted by the block.
+    """
     parameters = {
         "server_hostname": HOST,
         "http_path": HTTP_PATH,
@@ -172,7 +199,9 @@ def run_block(**overrides: Any) -> list:
         "skip_undecodable": True,
     }
     parameters.update(overrides)
-    return DatabricksSQLImageSourceBlockV1()._run_in_process(**parameters)
+    rows = DatabricksSQLImageSourceBlockV1()._run_in_process(**parameters)
+
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +210,14 @@ def run_block(**overrides: Any) -> list:
 
 
 def manifest(**overrides: Any) -> dict:
+    """Build a workflow manifest using fixture defaults.
+
+    Args:
+        **overrides (Any): Manifest fields replacing the fixture defaults.
+
+    Returns:
+        dict: The raw manifest to submit to schema validation.
+    """
     raw = {
         "type": "roboflow_core/databricks_sql_image_source@v1",
         "name": "db",
@@ -193,6 +230,7 @@ def manifest(**overrides: Any) -> dict:
         "metadata_columns": ["id"],
     }
     raw.update(overrides)
+
     return raw
 
 
@@ -256,6 +294,7 @@ def test_manifest_rejects_literal_bad_path_at_compile_time(path: str) -> None:
 
 
 def test_manifest_declares_outputs_restrictions_and_nesting() -> None:
+    """Verify manifest declares outputs restrictions and nesting."""
     assert BlockManifest.get_output_dimensionality_offset() == 1
     assert {o.name for o in BlockManifest.describe_outputs()} == {
         "images",
@@ -503,6 +542,7 @@ def test_run_refuses_when_connector_missing() -> None:
 
 
 def test_run_honours_disable_sinks_execution_policy() -> None:
+    """Verify run honours disable sinks execution policy."""
     with fake_databricks([{"id": 1, "bytes": jpeg_bytes()}]) as recorder:
         block = DatabricksSQLImageSourceBlockV1(disable_sinks=True)
         with pytest.raises(RuntimeError, match="disable_sinks"):
@@ -530,6 +570,7 @@ def test_run_honours_disable_sinks_execution_policy() -> None:
 
 
 def test_connection_kwargs_close_every_unpinned_request_path() -> None:
+    """Verify connection kwargs close every unpinned request path."""
     destination = v1.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     kwargs = connection_kwargs(destination, http_path=HTTP_PATH, timeout_seconds=90.6)
     assert kwargs == {
@@ -629,6 +670,7 @@ def test_repeated_failures_leave_no_threads_timers_or_open_connections() -> None
 
 
 def test_run_times_out_and_cancels_a_slow_query() -> None:
+    """Verify run times out and cancels a slow query."""
     rows = [{"id": 1, "bytes": jpeg_bytes()}]
     recorder = {"execute_delay": 1.5}
     with fake_databricks(rows, recorder=recorder), mock.patch.object(
@@ -719,6 +761,7 @@ def test_decode_image_rejects_other_formats_without_decoding(image_format: str) 
 def test_decode_image_rejects_tiff_with_lying_header_before_allocating() -> None:
     # A TIFF whose header dimensions disagree with the pixel data was the known
     # bypass of a header-only cap; the format allowlist refuses it outright.
+    """Verify decode image rejects tiff with lying header before allocating."""
     buffer = io.BytesIO()
     Image.new("RGB", (60, 60)).save(buffer, format="TIFF")
     with mock.patch.object(v1.cv2, "imdecode") as imdecode:
@@ -783,6 +826,7 @@ def test_decode_image_reserves_encoded_and_decoded_bytes_from_the_budget() -> No
 
 
 def test_run_budget_covers_metadata_and_names() -> None:
+    """Verify run budget covers metadata and names."""
     rows = [{"id": "x" * 200, "bytes": jpeg_bytes(), "note": "y" * 3000}]
     with fake_databricks(rows), mock.patch.object(v1, "MAX_RUN_BYTES", 3_000):
         with pytest.raises(ValueError, match="byte budget"):
@@ -808,6 +852,7 @@ def test_metadata_strings_are_truncated_and_rows_capped() -> None:
 
 
 def test_nested_metadata_is_capped_in_depth_and_size() -> None:
+    """Verify nested metadata is capped in depth and size."""
     deep = {"a": {"b": {"c": {"d": {"e": {"f": 1}}}}}}
     converted = to_json_safe(deep)
     assert converted["a"]["b"]["c"]["d"] == "{'e': {'f': 1}}"
@@ -847,6 +892,7 @@ def test_to_json_safe_keeps_decimal_exact_and_stringifies_unknown_types() -> Non
 
 
 def test_run_emits_one_element_per_row_and_strips_binary_columns() -> None:
+    """Verify run emits one element per row and strips binary columns."""
     rows = [
         {
             "id": 1,
@@ -956,6 +1002,7 @@ SOURCE_WORKFLOW = {
 
 
 def test_engine_runs_block_as_input_free_step_producing_a_batch() -> None:
+    """Verify engine runs block as input free step producing a batch."""
     rows = [
         {"id": i, "bytes": jpeg_bytes(), "raccoon_name": n}
         for i, n in zip((7, 8, 9), ("rocky", "bandit", "meeko"))

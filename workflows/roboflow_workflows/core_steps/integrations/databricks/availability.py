@@ -71,24 +71,33 @@ def databricks_unavailability_reason() -> Optional[str]:
     """
     if not block_enabled():
         return DISABLED_HINT
+
     if not connector_available():
-        return (
+        result = (
             "the `databricks-sql-connector` package is not installed; "
             + CONNECTOR_INSTALL_HINT
         )
+
+        return result
+
     try:
         installed_version = version("databricks-sql-connector")
     except PackageNotFoundError:
-        return (
+        result = (
             "the Databricks connector distribution is missing; "
             + CONNECTOR_INSTALL_HINT
         )
+
+        return result
     if installed_version != SUPPORTED_CONNECTOR_VERSION:
-        return (
+        result = (
             f"Databricks connector {installed_version} is unsupported; "
             f"this transport requires {SUPPORTED_CONNECTOR_VERSION}. "
             + CONNECTOR_INSTALL_HINT
         )
+
+        return result
+
     return None
 
 

@@ -18,8 +18,12 @@ spec.loader.exec_module(runner)
 
 
 class LiveRunnerTest(unittest.TestCase):
+    """Exercise live-runner validation and reporting without warehouse credentials."""
+
     def setUp(self):
-        def fixture(statement):
+        """Load a fresh runner module and replace fixture-view creation for each test."""
+
+        def _fixture(statement):
             marker = runner.re.search(r"/\* (rf_live_slow_[a-z0-9_]+) \*/", statement)
             name = marker.group(1) if marker else "fixture_view"
             columns = (
@@ -27,13 +31,16 @@ class LiveRunnerTest(unittest.TestCase):
                 if "AS note_" in statement
                 else ["id", "note"]
             )
-            return "catalog.schema." + name, columns
+            result = "catalog.schema." + name, columns
 
-        patcher = patch.object(runner, "create_fixture_view", side_effect=fixture)
+            return result
+
+        patcher = patch.object(runner, "create_fixture_view", side_effect=_fixture)
         self.create_view = patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_dispatch_values_are_passed_literally_without_shell_execution(self):
+        """Verify dispatch values are passed literally without shell execution."""
         workflow = (
             SCRIPT.parents[2] / ".github/workflows/databricks_live_integration.yml"
         )
@@ -77,6 +84,7 @@ class LiveRunnerTest(unittest.TestCase):
             self.assertFalse((directory / "workflows/should-not-exist").exists())
 
     def test_report_redacts_credentials_before_truncating(self):
+        """Verify report redacts credentials before truncating."""
         with patch.dict(runner.os.environ, {"DATABRICKS_TOKEN": "private-token"}):
             self.assertEqual(
                 runner._safe_error(RuntimeError("private-token failed")),
@@ -84,6 +92,7 @@ class LiveRunnerTest(unittest.TestCase):
             )
 
     def test_server_destination_accepts_only_https_origin(self):
+        """Verify server destination accepts only https origin."""
         self.assertEqual(
             runner._server_origin("https://staging.example.com/"),
             "https://staging.example.com",
@@ -103,6 +112,7 @@ class LiveRunnerTest(unittest.TestCase):
                 runner._server_origin(value)
 
     def test_server_uses_operator_destination_and_refuses_redirects(self):
+        """Verify server uses operator destination and refuses redirects."""
         response = Mock(status_code=307, text="redirect")
         with patch.dict(
             runner.os.environ,
@@ -113,7 +123,7 @@ class LiveRunnerTest(unittest.TestCase):
         ), patch.object(runner.requests, "post", return_value=response) as post:
             target = runner.ServerTarget()
             with self.assertRaises(runner.RunError):
-                target.run({}, {"token": "private-token"})
+                target.run({}, inputs={"token": "private-token"})
         self.assertEqual(
             post.call_args.args[0], "https://staging.example.com/workflows/run"
         )
@@ -121,6 +131,7 @@ class LiveRunnerTest(unittest.TestCase):
         self.assertEqual(post.call_count, 1)
 
     def test_server_error_does_not_truncate_credential_before_report_redaction(self):
+        """Verify server error does not truncate credential before report redaction."""
         token = "private-databricks-token-1234567890"
         response = Mock(status_code=400, text="x" * 480 + token)
         with patch.dict(
@@ -133,12 +144,13 @@ class LiveRunnerTest(unittest.TestCase):
         ), patch.object(runner.requests, "post", return_value=response):
             target = runner.ServerTarget()
             with self.assertRaises(runner.RunError) as error:
-                target.run({}, {"token": token})
+                target.run({}, inputs={"token": token})
             self.assertIn(token, str(error.exception))
             detail = runner._safe_error(error.exception)
         self.assertNotIn("private-databricks", detail)
 
     def test_budget_error_redacts_credential_before_report_truncation(self):
+        """Verify budget error redacts credential before report truncation."""
         token = "private-databricks-token-1234567890"
         target = Mock()
         target.run.side_effect = runner.RunError("x" * 270 + token, 0.1)
@@ -146,22 +158,24 @@ class LiveRunnerTest(unittest.TestCase):
             runner.os.environ, {"DATABRICKS_TOKEN": token}
         ):
             with self.assertRaises(AssertionError) as error:
-                runner.case_budget(target, "catalog.schema.images", token)
+                runner.case_budget(target, table="catalog.schema.images", token=token)
             detail = runner._safe_error(error.exception)
         self.assertNotIn("private-databricks", detail)
         self.assertIn("***", detail)
 
     def test_history_refuses_redirects(self):
+        """Verify history refuses redirects."""
         with patch.dict(
             runner.os.environ, {"DATABRICKS_SERVER_HOSTNAME": "warehouse.example.com"}
         ), patch.object(
             runner.requests, "get", return_value=Mock(status_code=307)
         ) as get:
             with self.assertRaises(RuntimeError):
-                runner.query_history(["RUNNING"], 0, "token")
+                runner.query_history(["RUNNING"], since_ms=0, token="token")
         self.assertIs(get.call_args.kwargs["allow_redirects"], False)
 
     def test_unknown_or_empty_cases_fail_before_credentials_or_setup(self):
+        """Verify unknown or empty cases fail before credentials or setup."""
         for cases in ("", "unknown", "import,unknown", "import,", "import;echo secret"):
             with self.subTest(cases=cases), patch.object(
                 runner.sys, "argv", ["runner", "--cases", cases, "--setup"]
@@ -175,6 +189,7 @@ class LiveRunnerTest(unittest.TestCase):
                 setup.assert_not_called()
 
     def test_fixture_table_rejects_sql_fragments(self):
+        """Verify fixture table rejects sql fragments."""
         self.assertEqual(
             runner._fixture_table("catalog.schema.images"), "catalog.schema.images"
         )
@@ -183,13 +198,16 @@ class LiveRunnerTest(unittest.TestCase):
                 runner._fixture_table(table)
 
     def test_metadata_checks_truncation_and_aggregate_overflow_separately(self):
+        """Verify metadata checks truncation and aggregate overflow separately."""
         target = Mock()
         target.run.side_effect = [
             {"names": ["901"], "metadata": [{"note": "m" * 4096}]},
             {"names": [str(i) for i in range(runner.FIXTURE_ROWS)]},
         ]
         with patch.object(runner, "env", return_value="configured"):
-            runner.case_big_metadata(target, "catalog.schema.images", "token")
+            runner.case_big_metadata(
+                target, table="catalog.schema.images", token="token"
+            )
         self.assertEqual(target.run.call_count, 2)
         query = self.create_view.call_args_list[1].args[0]
         self.assertNotIn(
@@ -202,51 +220,78 @@ class LiveRunnerTest(unittest.TestCase):
         observed = threading.Event()
         state = {}
 
-        class Target:
-            def run(self, specification, inputs):
+        class _Target:
+            def run(self, specification, *, inputs):
+                """Simulate a slow workflow failure with an elapsed-time record.
+
+                Args:
+                    specification (dict): Fixture workflow definition accepted by the target interface.
+                    inputs (dict): Runtime inputs accepted by the target interface.
+
+                Raises:
+                    RunError: The simulated slow invocation always reaches its deadline.
+                """
                 state["query"] = specification["steps"][0]["table"]
                 queried.set()
                 if not observed.wait(timeout=3):
                     raise AssertionError("test observer did not run")
+
                 raise runner.RunError("query timeout", 0.01)
 
-        def history(statuses, since_ms, token):
+        def _history(statuses, since_ms, token):
             self.assertTrue(queried.wait(timeout=3))
             if statuses == ["RUNNING"]:
                 # Return RUNNING while the target is still executing. The
                 # mocked Event.wait below releases the query after observation.
-                return (
+                result = (
                     [{"query_text": state["query"], "status": "RUNNING"}]
                     if observe
                     else []
                 )
-            return []
+
+                return result
+
+            result = []
+
+            return result
 
         original_wait = threading.Event.wait
 
-        def wait(event, timeout=None):
+        def _wait(event, timeout=None):
             if timeout == 0.5:
                 observed.set()
-            return original_wait(event, timeout)
+            result = original_wait(event, timeout)
+
+            return result
 
         with patch.object(runner, "env", return_value="configured"), patch.object(
-            runner, "query_history", side_effect=history
+            runner, "query_history", side_effect=_history
         ), patch.object(
             runner, "wait_for_history", return_value={"status": status}
         ), patch.object(
-            threading.Event, "wait", wait
+            threading.Event, "wait", _wait
         ):
-            result = runner.case_slow(Target(), "catalog.schema.images", "token", 5, "")
+            result = runner.case_slow(
+                _Target(),
+                table="catalog.schema.images",
+                token="token",
+                deadline=5,
+                extra_sql="",
+            )
+
         return result
 
     def test_slow_case_observes_active_query_and_accepts_canceled(self):
+        """Verify slow case observes active query and accepts canceled."""
         self.assertEqual(self._slow_case()["status"], "CANCELED")
 
     def test_slow_case_rejects_unrelated_failed_state(self):
+        """Verify slow case rejects unrelated failed state."""
         with self.assertRaisesRegex(AssertionError, "did not confirm cancellation"):
             self._slow_case(status="FAILED")
 
     def test_slow_case_requires_active_observation(self):
+        """Verify slow case requires active observation."""
         with self.assertRaisesRegex(AssertionError, "not observed RUNNING"):
             self._slow_case(observe=False)
 

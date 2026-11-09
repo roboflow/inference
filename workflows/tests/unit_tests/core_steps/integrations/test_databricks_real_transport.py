@@ -110,9 +110,17 @@ def network_guard(allowed_port: int) -> Iterator[Dict[str, List[Any]]]:
 
 @contextmanager
 def warehouse(
-    behaviour: harness.Behaviour, certificate_host: str = HOST
+    behaviour: harness.Behaviour, *, certificate_host: str = HOST
 ) -> Iterator[harness.FakeWarehouse]:
-    """Serve ``behaviour`` and point the block's validated destination at it."""
+    """Serve a temporary TLS warehouse and redirect block DNS to its address.
+
+    Args:
+        behaviour (harness.Behaviour): Scripted rows, HTTP responses and operation states.
+        certificate_host (str): Hostname placed in the fixture certificate.
+
+    Yields:
+        harness.FakeWarehouse: Running localhost server with captured observations.
+    """
     with harness.FakeWarehouse(
         behaviour, certificate_host=certificate_host
     ) as server, mock.patch.object(
@@ -132,6 +140,16 @@ def warehouse(
 def run_block(
     timeout_seconds: int = 30, *, isolated: bool = False, **overrides: Any
 ) -> list:
+    """Execute the block through the real connector with fixture input overrides.
+
+    Args:
+        timeout_seconds (int): Invocation deadline in seconds.
+        isolated (bool): Use the production subprocess rather than the in-process helper.
+        **overrides (Any): Block inputs replacing the fixture defaults.
+
+    Returns:
+        list: Image, name and metadata rows emitted by the block.
+    """
     parameters = {
         "server_hostname": HOST,
         "http_path": HTTP_PATH,
@@ -149,7 +167,9 @@ def run_block(
     parameters.update(overrides)
     block = v1.DatabricksSQLImageSourceBlockV1()
     run = block.run if isolated else block._run_in_process
-    return run(**parameters)
+    rows = run(**parameters)
+
+    return rows
 
 
 def assert_only_the_pinned_warehouse_was_contacted(
@@ -188,6 +208,7 @@ def test_imports_rows_across_fetch_chunks_over_the_pinned_tls_connection() -> No
 
 
 def test_runs_through_the_execution_engine_with_the_real_connector() -> None:
+    """Verify runs through the execution engine with the real connector."""
     from roboflow_workflows.execution_engine.core import ExecutionEngine
 
     workflow = {
@@ -271,6 +292,11 @@ def test_retryable_error_and_forced_reconnect_stay_on_the_pinned_address() -> No
     ],
 )
 def test_redirects_are_not_followed_to_any_destination(location: str) -> None:
+    """Verify redirects are not followed to any destination.
+
+    Args:
+        location (str): Untrusted redirect target returned by the fixture warehouse.
+    """
     behaviour = harness.Behaviour(
         rows=image_rows(1),
         http_script=[harness.HttpAction(status=302, headers={"Location": location})],
@@ -365,7 +391,7 @@ def test_repeated_failures_do_not_accumulate_queries_sessions_or_threads() -> No
     assert block_threads() == threads_before
 
 
-def _configure_child_fixture(server, tmp_path, monkeypatch):
+def _configure_child_fixture(server, *, tmp_path, monkeypatch):
     attempts = tmp_path / "child-connections.jsonl"
     # The fixture is installed only in the fresh test interpreter. Production
     # has no test override for destination validation, ports or CA bundles.
@@ -401,12 +427,19 @@ socket.socket.connect = connect
     monkeypatch.setenv(
         "PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ".")
     )
+
     return attempts
 
 
 def test_production_subprocess_uses_real_connector_without_parent_hooks(
     tmp_path, monkeypatch
 ) -> None:
+    """Verify production subprocess uses real connector without parent hooks.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     import json
 
     import thrift.transport.THttpClient  # noqa: F401 - connector import prerequisite
@@ -417,7 +450,9 @@ def test_production_subprocess_uses_real_connector_without_parent_hooks(
     parent_transport = thrift_http_client.THttpClient
     parent_secondary = UnifiedHttpClient.request_context
     with warehouse(behaviour) as server:
-        attempts = _configure_child_fixture(server, tmp_path, monkeypatch)
+        attempts = _configure_child_fixture(
+            server, tmp_path=tmp_path, monkeypatch=monkeypatch
+        )
         result = run_block(isolated=True)
         connections = [json.loads(line) for line in attempts.read_text().splitlines()]
         assert connections
@@ -434,9 +469,15 @@ def test_production_subprocess_uses_real_connector_without_parent_hooks(
 
 
 def test_production_subprocess_cancels_a_slow_real_query(tmp_path, monkeypatch) -> None:
+    """Verify production subprocess cancels a slow real query.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     behaviour = harness.Behaviour(rows=image_rows(1), hold_running=True)
     with warehouse(behaviour) as server:
-        _configure_child_fixture(server, tmp_path, monkeypatch)
+        _configure_child_fixture(server, tmp_path=tmp_path, monkeypatch=monkeypatch)
         started = time.monotonic()
         with pytest.raises(TimeoutError, match="timeout_seconds"):
             run_block(timeout_seconds=5, isolated=True)
@@ -451,6 +492,7 @@ def test_production_subprocess_cancels_a_slow_real_query(tmp_path, monkeypatch) 
 
 
 def test_native_parameters_cross_the_connector_boundary_without_interpolation():
+    """Verify native parameters cross the connector boundary without interpolation."""
     attack = "images`; DROP TABLE other; --"
     with warehouse(harness.Behaviour(rows=image_rows(1))) as server:
         run_block(table=attack, max_rows=1)
@@ -467,6 +509,11 @@ def test_native_parameters_cross_the_connector_boundary_without_interpolation():
 
 @pytest.mark.parametrize("chunked", [False, True])
 def test_response_budget_rejects_oversized_metadata_before_row_conversion(chunked):
+    """Verify response budget rejects oversized metadata before row conversion.
+
+    Args:
+        chunked (bool): Whether the oversized response uses chunked HTTP framing.
+    """
     rows = [dict(image_rows(1)[0], note="x" * (2 * 1024 * 1024))]
     behaviour = harness.Behaviour(
         rows=rows,
@@ -484,6 +531,7 @@ def test_response_budget_rejects_oversized_metadata_before_row_conversion(chunke
 
 
 def test_http_compression_is_rejected_before_thrift_parsing():
+    """Verify http compression is rejected before thrift parsing."""
     with warehouse(harness.Behaviour(response_encoding="gzip")):
         with pytest.raises(RuntimeError, match="compressed warehouse"):
             run_block()
@@ -492,18 +540,25 @@ def test_http_compression_is_rejected_before_thrift_parsing():
 def test_retryable_error_body_is_discarded_without_reading_or_decompression(
     monkeypatch,
 ):
+    """Verify retryable error body is discarded without reading or decompression.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     from urllib3.response import HTTPResponse
 
     original = HTTPResponse.read
     rejected_body_reads = []
 
-    def guarded_read(self, *args, **kwargs):
+    def _guarded_read(self, *args, **kwargs):
         if self.status == 503:
             rejected_body_reads.append(self.status)
             pytest.fail("urllib3 drained an untrusted retry body before the byte check")
-        return original(self, *args, **kwargs)
+        result = original(self, *args, **kwargs)
 
-    monkeypatch.setattr(HTTPResponse, "read", guarded_read)
+        return result
+
+    monkeypatch.setattr(HTTPResponse, "read", _guarded_read)
     behaviour = harness.Behaviour(
         rows=image_rows(1),
         http_script=[

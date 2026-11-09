@@ -15,6 +15,14 @@ from roboflow_workflows.utils import subprocess_supervisor as supervisor
 
 
 def query(**overrides):
+    """Build the fixed image SELECT using fixture defaults.
+
+    Args:
+        **overrides (Any): Query inputs replacing the fixture defaults.
+
+    Returns:
+        tuple: SQL template and separate native parameters.
+    """
     values = dict(
         catalog="main",
         schema="vision",
@@ -25,13 +33,20 @@ def query(**overrides):
         max_rows=100,
     )
     values.update(overrides)
-    return build_image_query(**values)
+    query_and_parameters = build_image_query(**values)
+
+    return query_and_parameters
 
 
 @pytest.mark.parametrize(
     "field", ["catalog", "schema", "table", "image_column", "image_name_column"]
 )
 def test_sql_fragments_remain_one_quoted_identifier_parameter(field):
+    """Verify sql fragments remain one quoted identifier parameter.
+
+    Args:
+        field (str): Identifier input receiving a SQL-fragment test value.
+    """
     attack = "a`; DROP TABLE main.vision.images; --"
     baseline, _ = query()
     statement, parameters = query(**{field: attack})
@@ -45,17 +60,24 @@ def test_sql_fragments_remain_one_quoted_identifier_parameter(field):
 
 @pytest.mark.parametrize("value", [0, 1001, True, "100", "1; DROP TABLE t"])
 def test_limit_rejects_values_before_query_execution(value):
+    """Verify limit rejects values before query execution.
+
+    Args:
+        value (Any): Parameterized input at the validation or serialization boundary.
+    """
     with pytest.raises(ValueError):
         query(max_rows=value)
 
 
 def test_names_are_components_not_qualified_expressions():
+    """Verify names are components not qualified expressions."""
     _, parameters = query(table="other.schema.table", image_column="*")
     assert parameters["source"] == "`main`.`vision`.`other.schema.table`"
     assert parameters["column_0"] == "`*`"
 
 
 def test_removed_sql_input_is_rejected_by_manifest():
+    """Verify removed sql input is rejected by manifest."""
     with pytest.raises(ValueError, match="sql_statement"):
         v1.BlockManifest.model_validate(
             dict(
@@ -73,6 +95,11 @@ def test_removed_sql_input_is_rejected_by_manifest():
 
 
 def test_webp_rejected_before_constructing_native_decoder(monkeypatch):
+    """Verify webp rejected before constructing native decoder.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     stream = io.BytesIO()
     Image.new("RGB", (2048, 2048)).save(stream, format="WEBP", lossless=True)
     from PIL import _webp
@@ -85,6 +112,11 @@ def test_webp_rejected_before_constructing_native_decoder(monkeypatch):
 
 
 def test_oversized_request_rejected_before_json_serialization_or_process(monkeypatch):
+    """Verify oversized request rejected before json serialization or process.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     monkeypatch.setattr(
         supervisor.json, "dumps", Mock(side_effect=AssertionError("serialized"))
     )
@@ -109,6 +141,11 @@ def test_oversized_request_rejected_before_json_serialization_or_process(monkeyp
     ],
 )
 def test_bounded_json_counts_escaped_utf8_bytes(value):
+    """Verify bounded json counts escaped utf8 bytes.
+
+    Args:
+        value (Any): Parameterized input at the validation or serialization boundary.
+    """
     expected = json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")
@@ -118,6 +155,7 @@ def test_bounded_json_counts_escaped_utf8_bytes(value):
 
 
 def test_thrift_declared_lengths_fail_before_reading_payload():
+    """Verify thrift declared lengths fail before reading payload."""
     import struct
 
     from roboflow_workflows.core_steps.integrations.databricks.sql_image_source import (
@@ -143,6 +181,7 @@ def test_thrift_declared_lengths_fail_before_reading_payload():
 
 
 def test_arrow_schema_is_refused_before_native_parsing():
+    """Verify arrow schema is refused before native parsing."""
     from databricks.sql.thrift_api.TCLIService import ttypes
     from roboflow_workflows.core_steps.integrations.databricks.sql_image_source import (
         transport,

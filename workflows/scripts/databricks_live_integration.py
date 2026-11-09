@@ -96,7 +96,9 @@ def _safe_error(error: Exception) -> str:
         if secret:
             text = text.replace(secret, "***")
 
-    return text[:300]
+    result = text[:300]
+
+    return result
 
 
 def _server_origin(value: str) -> str:
@@ -116,11 +118,14 @@ def _server_origin(value: str) -> str:
         raise ValueError(
             "DATABRICKS_LIVE_BASE_URL must be an HTTPS origin without credentials, path, query or fragment"
         )
+
     # Accessing port also rejects nonnumeric or out-of-range values.
     if parsed.port not in (None, 443):
         raise ValueError("DATABRICKS_LIVE_BASE_URL must use HTTPS port 443")
 
-    return value.rstrip("/")
+    origin = value.rstrip("/")
+
+    return origin
 
 
 def _selected_cases(value: str) -> List[str]:
@@ -128,7 +133,9 @@ def _selected_cases(value: str) -> List[str]:
     if not names or any(name not in CASE_NAMES for name in names):
         raise ValueError("--cases must contain only: " + DEFAULT_CASES)
 
-    return list(dict.fromkeys(names))
+    selected_cases = list(dict.fromkeys(names))
+
+    return selected_cases
 
 
 def _fixture_table(value: str) -> str:
@@ -195,14 +202,14 @@ def setup_fixtures(table: str) -> None:
 
 
 def query_history(
-    statuses: List[str], since_ms: int, token: str
+    statuses: List[str], *, since_ms: int, token: str
 ) -> List[Dict[str, Any]]:
     """Read warehouse query history without following credentialed redirects.
 
     Args:
-        statuses: Warehouse states to include.
-        since_ms: Earliest start time in Unix milliseconds.
-        token: Identity allowed to read the test queries.
+        statuses (List[str]): Warehouse states to include.
+        since_ms (int): Earliest start time in Unix milliseconds.
+        token (str): Identity allowed to read the test queries.
 
     Returns:
         Query-history entries returned by the warehouse.
@@ -227,18 +234,34 @@ def query_history(
     )
     if response.status_code != 200:
         raise RuntimeError(f"Query history returned HTTP {response.status_code}")
-    return response.json().get("res", [])
+
+    entries = response.json().get("res", [])
+
+    return entries
 
 
 def wait_for_history(
-    marker: str, statuses: List[str], since_ms: int, token: str, timeout: float
+    marker: str, *, statuses: List[str], since_ms: int, token: str, timeout: float
 ) -> Optional[Dict[str, Any]]:
+    """Wait for a marked query to appear in one of the requested states.
+
+    Args:
+        marker (str): Unique substring identifying this test query.
+        statuses (List[str]): Warehouse states accepted by the caller.
+        since_ms (int): Earliest query start time in Unix milliseconds.
+        token (str): Credential with query-history access.
+        timeout (float): Maximum polling duration in seconds.
+
+    Returns:
+        Optional[Dict[str, Any]]: First matching entry, or None when polling expires.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        for entry in query_history(statuses, since_ms, token):
+        for entry in query_history(statuses, since_ms=since_ms, token=token):
             if marker in entry.get("query_text", ""):
                 return entry
         time.sleep(3)
+
     return None
 
 
@@ -249,7 +272,7 @@ def create_fixture_view(statement: str) -> Tuple[str, List[str]]:
     """Create a test-only view with the setup credential, separate from block SQL.
 
     Args:
-        statement: Runner-owned SELECT defining the fixture selection.
+        statement (str): Runner-owned SELECT defining the fixture selection.
 
     Returns:
         Qualified view name and its non-image metadata column names.
@@ -273,13 +296,16 @@ def create_fixture_view(statement: str) -> Tuple[str, List[str]]:
                 for row in cursor.fetchall()
                 if row[0] and not row[0].startswith("#")
             ]
-    return view, [column for column in columns if column != "bytes"]
+    fixture = view, [column for column in columns if column != "bytes"]
+
+    return fixture
 
 
 def cleanup_fixture_views() -> None:
     """Drop only the temporary views created by this test process."""
     if not _CREATED_VIEWS:
         return
+
     try:
         with sql_connect(env("DATABRICKS_SETUP_TOKEN")) as connection:
             with connection.cursor() as cursor:
@@ -297,9 +323,20 @@ def cleanup_fixture_views() -> None:
 def workflow_specification(
     sql_statement: str, *, max_rows: int, timeout_seconds: int, skip: bool = True
 ) -> Dict[str, Any]:
+    """Create a fixture view and a workflow that reads it through the fixed template.
+
+    Args:
+        sql_statement (str): Runner-owned SELECT used only to create the fixture view.
+        max_rows (int): Maximum rows the block should fetch from the view.
+        timeout_seconds (int): Deadline passed to the block under test.
+        skip (bool): Whether the block should skip undecodable rows.
+
+    Returns:
+        Dict[str, Any]: Workflow definition using a runtime token input.
+    """
     view, metadata_columns = create_fixture_view(sql_statement)
     catalog, schema_name, table = view.split(".")
-    return {
+    specification = {
         "version": "1.0",
         "inputs": [{"type": "WorkflowParameter", "name": "token"}],
         "steps": [
@@ -327,6 +364,8 @@ def workflow_specification(
         ],
     }
 
+    return specification
+
 
 TRIVIAL_WORKFLOW = {
     "version": "1.0",
@@ -343,9 +382,23 @@ class RunError(Exception):
 
 
 class LocalTarget:
+    """Execute live cases in the local Workflows engine."""
+
     def run(
-        self, specification: Dict[str, Any], inputs: Dict[str, Any]
+        self, specification: Dict[str, Any], *, inputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """Run a workflow locally and normalize its image outputs.
+
+        Args:
+            specification (Dict[str, Any]): Inline workflow definition to execute.
+            inputs (Dict[str, Any]): Runtime inputs, including the warehouse credential.
+
+        Returns:
+            Dict[str, Any]: Names, metadata, image shapes and elapsed seconds.
+
+        Raises:
+            RunError: Local workflow compilation or execution fails.
+        """
         from roboflow_workflows.core_steps.common.entities import StepExecutionMode
         from roboflow_workflows.execution_engine.core import ExecutionEngine
 
@@ -365,12 +418,14 @@ class LocalTarget:
             )
         images = result.get("images") or []
         shapes = [tuple(image.numpy_image.shape) for image in images]
-        return {
+        outputs = {
             "names": result.get("names", []),
             "metadata": result.get("metadata", []),
             "shapes": shapes,
             "elapsed": time.monotonic() - started,
         }
+
+        return outputs
 
 
 class ServerTarget:
@@ -382,13 +437,13 @@ class ServerTarget:
         self.api_key = env("ROBOFLOW_API_KEY")
 
     def run(
-        self, specification: Dict[str, Any], inputs: Dict[str, Any]
+        self, specification: Dict[str, Any], *, inputs: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Run a workflow on the approved server and normalize image outputs.
 
         Args:
-            specification: Inline workflow definition.
-            inputs: Runtime inputs, including the warehouse credential.
+            specification (Dict[str, Any]): Inline workflow definition.
+            inputs (Dict[str, Any]): Runtime inputs, including the warehouse credential.
 
         Returns:
             Names, metadata, image shapes and elapsed seconds.
@@ -411,6 +466,7 @@ class ServerTarget:
         elapsed = time.monotonic() - started
         if response.status_code != 200:
             raise RunError(f"HTTP {response.status_code}: {response.text}", elapsed)
+
         output = response.json()["outputs"][0]
         images = output.get("images") or []
         shapes = []
@@ -421,22 +477,34 @@ class ServerTarget:
 
                 with Image.open(io.BytesIO(base64.b64decode(value))) as decoded:
                     shapes.append((decoded.height, decoded.width, 3))
-        return {
+        result = {
             "names": output.get("names", []),
             "metadata": output.get("metadata", []),
             "shapes": shapes,
             "elapsed": elapsed,
         }
 
+        return result
+
 
 # -------------------------------------------------------------------- cases
 
 
-def case_import(target, table: str, token: str) -> None:
+def case_import(target, *, table: str, token: str) -> None:
+    """Verify a multi-batch image import and its associated names and metadata.
+
+    Args:
+        target (LocalTarget | ServerTarget): Runner used to execute the fixture workflow.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential.
+
+    Raises:
+        AssertionError: The returned images, names or metadata differ from the fixture.
+    """
     sql = f"SELECT id, bytes, note FROM {table} WHERE kind = 'ok' ORDER BY id /* rf-live {RUN_ID} */"
     result = target.run(
         workflow_specification(sql, max_rows=FIXTURE_ROWS, timeout_seconds=120),
-        {"token": token},
+        inputs={"token": token},
     )
     assert sorted(result["names"], key=int) == [
         str(i) for i in range(FIXTURE_ROWS)
@@ -451,29 +519,41 @@ def case_import(target, table: str, token: str) -> None:
     print(f"  import: {len(result['names'])} rows in {result['elapsed']:.1f}s")
 
 
-def case_bad_image(target, table: str, token: str) -> None:
+def case_bad_image(target, *, table: str, token: str) -> None:
+    """Verify that a malformed image is skipped while valid fixture rows survive.
+
+    Args:
+        target (LocalTarget | ServerTarget): Runner used to execute the fixture workflow.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential.
+
+    Raises:
+        AssertionError: The malformed row is emitted or valid rows are lost.
+    """
     sql = f"SELECT id, bytes FROM {table} WHERE kind IN ('ok', 'bad') ORDER BY id /* rf-live {RUN_ID} */"
     result = target.run(
-        workflow_specification(sql, max_rows=100, timeout_seconds=120), {"token": token}
+        workflow_specification(sql, max_rows=100, timeout_seconds=120),
+        inputs={"token": token},
     )
     assert "900" not in result["names"] and len(result["names"]) == FIXTURE_ROWS
     print("  bad-image: malformed row skipped, run succeeded")
 
 
-def case_big_metadata(target, table: str, token: str) -> None:
+def case_big_metadata(target, *, table: str, token: str) -> None:
     """Verify value truncation separately from aggregate metadata rejection.
 
     Args:
-        target: Local or server workflow runner.
-        table: Fully qualified fixture table.
-        token: Read-only warehouse credential.
+        target (LocalTarget | ServerTarget): Local or server workflow runner.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential.
 
     Raises:
         AssertionError: If truncation or row rejection differs from the contract.
     """
     sql = f"SELECT id, bytes, note FROM {table} WHERE kind IN ('ok', 'bigmeta') ORDER BY id /* rf-live {RUN_ID} */"
     result = target.run(
-        workflow_specification(sql, max_rows=100, timeout_seconds=120), {"token": token}
+        workflow_specification(sql, max_rows=100, timeout_seconds=120),
+        inputs={"token": token},
     )
     assert "901" in result["names"], "single oversized value should be truncated"
     index = result["names"].index("901")
@@ -489,50 +569,84 @@ def case_big_metadata(target, table: str, token: str) -> None:
         f"WHERE kind IN ('ok', 'bigmeta') ORDER BY id /* rf-live {RUN_ID} */"
     )
     result = target.run(
-        workflow_specification(sql, max_rows=100, timeout_seconds=120), {"token": token}
+        workflow_specification(sql, max_rows=100, timeout_seconds=120),
+        inputs={"token": token},
     )
     assert "901" not in result["names"], "metadata totaling over 64 KiB must be skipped"
     assert len(result["names"]) == FIXTURE_ROWS
     print("  big-metadata: value truncated; oversized total metadata row skipped")
 
 
-def case_bad_token(target, table: str, token: str) -> None:
+def case_bad_token(target, *, table: str, token: str) -> None:
+    """Verify invalid credentials fail without appearing in the error report.
+
+    Args:
+        target (LocalTarget | ServerTarget): Runner used to execute the fixture workflow.
+        table (str): Fully qualified fixture table.
+        token (str): Unused valid credential retained for the common case interface.
+
+    Raises:
+        AssertionError: Invalid credentials are accepted or exposed in an error.
+    """
     sql = f"SELECT id, bytes FROM {table} WHERE kind = 'ok' LIMIT 1 /* rf-live {RUN_ID} */"
     bogus = "dapi" + uuid.uuid4().hex
     try:
         target.run(
             workflow_specification(sql, max_rows=1, timeout_seconds=60),
-            {"token": bogus},
+            inputs={"token": bogus},
         )
     except RunError as error:
         assert bogus not in str(error), "credential leaked into the error"
         print(
             f"  bad-token: controlled failure in {error.elapsed:.1f}s, token not exposed"
         )
+
         return
     raise AssertionError("invalid credential was accepted")
 
 
-def case_budget(target, table: str, token: str) -> None:
+def case_budget(target, *, table: str, token: str) -> None:
+    """Verify that an undersized invocation budget fails the entire import.
+
+    Args:
+        target (LocalTarget | ServerTarget): Runner configured with a reduced run budget.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential.
+
+    Raises:
+        AssertionError: The workflow succeeds or fails for an unrelated reason.
+    """
     sql = f"SELECT id, bytes FROM {table} WHERE kind = 'ok' ORDER BY id /* rf-live {RUN_ID} */"
     try:
         target.run(
             workflow_specification(sql, max_rows=100, timeout_seconds=120),
-            {"token": token},
+            inputs={"token": token},
         )
     except RunError as error:
         assert "budget" in str(error), str(error)
         print("  budget: reduced run budget failed the run as documented")
+
         return
     raise AssertionError("expected the reduced budget to fail the run")
 
 
-def case_disabled(target, table: str, token: str, since_ms: int) -> None:
+def case_disabled(target, *, table: str, token: str, since_ms: int) -> None:
+    """Verify that a disabled block never reaches the warehouse.
+
+    Args:
+        target (LocalTarget | ServerTarget): Runner configured with the block disabled.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential with query-history access.
+        since_ms (int): Earliest query-history timestamp to inspect, in Unix milliseconds.
+
+    Raises:
+        AssertionError: Execution succeeds, fails unexpectedly, or appears in history.
+    """
     sql = f"SELECT id, bytes FROM {table} WHERE kind = 'ok' LIMIT 1 /* rf-live-disabled {RUN_ID} */"
     try:
         target.run(
             workflow_specification(sql, max_rows=1, timeout_seconds=60),
-            {"token": token},
+            inputs={"token": token},
         )
     except RunError as error:
         assert "DATABRICKS_SQL_IMAGE_SOURCE_ENABLED" in str(error), str(error)
@@ -542,7 +656,9 @@ def case_disabled(target, table: str, token: str, since_ms: int) -> None:
     seen = [
         e
         for e in query_history(
-            ["QUEUED", "RUNNING", "FINISHED", "FAILED", "CANCELED"], since_ms, token
+            ["QUEUED", "RUNNING", "FINISHED", "FAILED", "CANCELED"],
+            since_ms=since_ms,
+            token=token,
         )
         if f"rf-live-disabled {RUN_ID}" in e.get("query_text", "")
     ]
@@ -550,25 +666,37 @@ def case_disabled(target, table: str, token: str, since_ms: int) -> None:
     print("  disabled: rejected at compile time, no warehouse query")
 
 
-def slow_statement(table: str, marker: str, extra: str) -> str:
+def slow_statement(table: str, *, marker: str, extra: str) -> str:
+    """Build a setup-only fixture SELECT with an expensive predicate.
+
+    Args:
+        table (str): Fully qualified fixture table validated by the runner.
+        marker (str): Unique query-history marker for this invocation.
+        extra (str): Operator-provided expensive predicate, or empty for the default.
+
+    Returns:
+        str: SELECT used to define a temporary view, never passed as block input.
+    """
     busy = (
         extra
         or "(SELECT count(*) FROM range(2000000000) a CROSS JOIN range(2000000000) b) > 0"
     )
-    return f"SELECT id, bytes FROM {table} WHERE kind = 'ok' AND {busy} LIMIT 1 /* {marker} */"
+    result = f"SELECT id, bytes FROM {table} WHERE kind = 'ok' AND {busy} LIMIT 1 /* {marker} */"
+
+    return result
 
 
 def case_slow(
-    target, table: str, token: str, deadline: int, extra_sql: str
+    target, *, table: str, token: str, deadline: int, extra_sql: str
 ) -> Dict[str, Any]:
     """Observe an active query and verify its cancellation after a timeout.
 
     Args:
-        target: Local or server workflow runner.
-        table: Fully qualified fixture table.
-        token: Read-only warehouse credential with query-history access.
-        deadline: Invocation timeout in seconds.
-        extra_sql: Optional expensive SQL predicate for the fixture query.
+        target (LocalTarget | ServerTarget): Local or server workflow runner.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential with query-history access.
+        deadline (int): Invocation timeout in seconds.
+        extra_sql (str): Optional expensive SQL predicate for the fixture query.
 
     Returns:
         The terminal query-history entry confirming cancellation.
@@ -582,15 +710,15 @@ def case_slow(
     finished = threading.Event()
     outcome: Dict[str, Any] = {}
 
-    def run_query() -> None:
+    def _run_query() -> None:
         try:
             target.run(
                 workflow_specification(
-                    slow_statement(table, marker, extra_sql),
+                    slow_statement(table, marker=marker, extra=extra_sql),
                     max_rows=1,
                     timeout_seconds=deadline,
                 ),
-                {"token": token},
+                inputs={"token": token},
             )
         except Exception as error:
             outcome["error"] = error
@@ -598,12 +726,12 @@ def case_slow(
             outcome["elapsed"] = time.monotonic() - started
             finished.set()
 
-    thread = threading.Thread(target=run_query, daemon=True)
+    thread = threading.Thread(target=_run_query, daemon=True)
     thread.start()
     observed_active = False
     try:
         while not finished.is_set() and time.monotonic() < started + deadline:
-            entries = query_history(["RUNNING"], since_ms, token)
+            entries = query_history(["RUNNING"], since_ms=since_ms, token=token)
             # A historical RUNNING row received after completion is not evidence
             # that we observed the query while this invocation was active.
             if not finished.is_set() and time.monotonic() < started + deadline:
@@ -634,9 +762,9 @@ def case_slow(
 
     terminal = wait_for_history(
         marker,
-        ["CANCELED", "FAILED", "FINISHED"],
-        since_ms,
-        token,
+        statuses=["CANCELED", "FAILED", "FINISHED"],
+        since_ms=since_ms,
+        token=token,
         timeout=CLEANUP_GRACE_SECONDS,
     )
     assert terminal is not None, "warehouse never reported a terminal statement state"
@@ -647,7 +775,7 @@ def case_slow(
     ), "warehouse did not confirm cancellation"
     still_running = [
         e
-        for e in query_history(["RUNNING", "QUEUED"], since_ms, token)
+        for e in query_history(["RUNNING", "QUEUED"], since_ms=since_ms, token=token)
         if marker in e.get("query_text", "")
     ]
     assert not still_running, "the statement is still running after cancellation"
@@ -655,19 +783,34 @@ def case_slow(
         f"  slow: observed RUNNING before deadline; returned in {elapsed:.1f}s; "
         "warehouse confirmed CANCELED"
     )
+
     return terminal
 
 
 def case_recovery(
-    target, table: str, token: str, deadline: int, extra_sql: str
+    target, *, table: str, token: str, deadline: int, extra_sql: str
 ) -> None:
+    """Verify repeated timeouts leave the runner able to import images.
+
+    Args:
+        target (LocalTarget | ServerTarget): Runner used for timeout and recovery cases.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential with query-history access.
+        deadline (int): Timeout in seconds for each slow invocation.
+        extra_sql (str): Optional expensive predicate in the setup-only fixture query.
+
+    Raises:
+        AssertionError: A timeout, recovery import or outstanding-query check fails.
+    """
     since_ms = int(time.time() * 1000) - 60_000
     for _ in range(3):
-        case_slow(target, table, token, deadline, extra_sql)
-    case_import(target, table, token)
+        case_slow(
+            target, table=table, token=token, deadline=deadline, extra_sql=extra_sql
+        )
+    case_import(target, table=table, token=token)
     running = [
         e
-        for e in query_history(["RUNNING", "QUEUED"], since_ms, token)
+        for e in query_history(["RUNNING", "QUEUED"], since_ms=since_ms, token=token)
         if RUN_ID in e.get("query_text", "")
     ]
     assert not running, f"{len(running)} test queries still running after recovery"
@@ -675,29 +818,46 @@ def case_recovery(
 
 
 def case_concurrent(
-    target, table: str, token: str, deadline: int, extra_sql: str, bound: float
+    target, *, table: str, token: str, deadline: int, extra_sql: str, bound: float
 ) -> None:
+    """Measure unrelated request latency while a server invocation times out.
+
+    Args:
+        target (LocalTarget | ServerTarget): Server runner; local targets skip this case.
+        table (str): Fully qualified fixture table.
+        token (str): Read-only warehouse credential with query-history access.
+        deadline (int): Timeout in seconds for the slow invocation.
+        extra_sql (str): Optional expensive predicate in the fixture query.
+        bound (float): Maximum acceptable p95 latency in seconds for unrelated requests.
+
+    Raises:
+        AssertionError: No probe completes, the latency bound is exceeded, or cancellation fails.
+    """
     if not isinstance(target, ServerTarget):
         print("  concurrent: skipped (server target only)")
+
         return
+
     latencies: List[float] = []
     stop = threading.Event()
 
-    def probe() -> None:
+    def _probe() -> None:
         while not stop.is_set():
             started = time.monotonic()
             try:
-                target.run(TRIVIAL_WORKFLOW, {"value": "ping"})
+                target.run(TRIVIAL_WORKFLOW, inputs={"value": "ping"})
             except RunError:
                 latencies.append(float("inf"))
             else:
                 latencies.append(time.monotonic() - started)
             time.sleep(1)
 
-    thread = threading.Thread(target=probe, daemon=True)
+    thread = threading.Thread(target=_probe, daemon=True)
     thread.start()
     try:
-        case_slow(target, table, token, deadline, extra_sql)
+        case_slow(
+            target, table=table, token=token, deadline=deadline, extra_sql=extra_sql
+        )
     finally:
         stop.set()
         thread.join(timeout=30)
@@ -752,8 +912,10 @@ def main() -> int:
         selected = _selected_cases(args.cases)
         if not 5 <= args.slow_deadline <= 600:
             raise ValueError("--slow-deadline must be between 5 and 600 seconds")
+
         if args.expect_budget_failure and args.expect_disabled:
             raise ValueError("select only one special expectation")
+
         table = _fixture_table(env("DATABRICKS_TABLE"))
         target: Any = ServerTarget() if args.target == "server" else LocalTarget()
     except ValueError as error:
@@ -772,29 +934,41 @@ def main() -> int:
 
     since_ms = int(time.time() * 1000) - 60_000
     cases: Dict[str, Callable[[], Any]] = {
-        "import": lambda: case_import(target, table, token),
-        "bad-image": lambda: case_bad_image(target, table, token),
-        "big-metadata": lambda: case_big_metadata(target, table, token),
-        "bad-token": lambda: case_bad_token(target, table, token),
+        "import": lambda: case_import(target, table=table, token=token),
+        "bad-image": lambda: case_bad_image(target, table=table, token=token),
+        "big-metadata": lambda: case_big_metadata(target, table=table, token=token),
+        "bad-token": lambda: case_bad_token(target, table=table, token=token),
         "slow": lambda: case_slow(
-            target, table, token, args.slow_deadline, args.slow_sql
+            target,
+            table=table,
+            token=token,
+            deadline=args.slow_deadline,
+            extra_sql=args.slow_sql,
         ),
         "recovery": lambda: case_recovery(
-            target, table, token, args.slow_deadline, args.slow_sql
+            target,
+            table=table,
+            token=token,
+            deadline=args.slow_deadline,
+            extra_sql=args.slow_sql,
         ),
         "concurrent": lambda: case_concurrent(
             target,
-            table,
-            token,
-            args.slow_deadline,
-            args.slow_sql,
-            args.latency_bound_seconds,
+            table=table,
+            token=token,
+            deadline=args.slow_deadline,
+            extra_sql=args.slow_sql,
+            bound=args.latency_bound_seconds,
         ),
     }
     if args.expect_budget_failure:
-        cases = {"budget": lambda: case_budget(target, table, token)}
+        cases = {"budget": lambda: case_budget(target, table=table, token=token)}
     if args.expect_disabled:
-        cases = {"disabled": lambda: case_disabled(target, table, token, since_ms)}
+        cases = {
+            "disabled": lambda: case_disabled(
+                target, table=table, token=token, since_ms=since_ms
+            )
+        }
 
     if args.expect_budget_failure or args.expect_disabled:
         selected = list(cases)
@@ -814,7 +988,7 @@ def main() -> int:
     # each one server-side; report any that is still visible as RUNNING.
     leftovers = [
         e
-        for e in query_history(["RUNNING", "QUEUED"], since_ms, token)
+        for e in query_history(["RUNNING", "QUEUED"], since_ms=since_ms, token=token)
         if RUN_ID in e.get("query_text", "")
     ]
     report["running_after_suite"] = len(leftovers)
@@ -829,7 +1003,9 @@ def main() -> int:
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
     print("result:", "PASS" if failures == 0 else f"FAIL ({failures})")
-    return 0 if failures == 0 else 1
+    result = 0 if failures == 0 else 1
+
+    return result
 
 
 def _installed(name: str) -> bool:
