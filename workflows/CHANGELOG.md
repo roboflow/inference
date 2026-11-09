@@ -20,6 +20,18 @@ for contributor and maintainer responsibilities.
 
 - Add native `oriented_object_detection_prediction` with original-image float geometry and frozen class heading semantics. Native model, visualization, row filters, combination, crop offsets and serialization retain ordered fronts in NumPy and tensor carriers. Projective transforms retain ordered quadrilaterals instead of silently fitting new rectangle annotations.
 
+### Fixed
+
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
+
+## `0.2.15`
+
+Bundled execution engine: `1.17.1`.
+
+### Execution engine
+
 - **Inner Workflow literal bindings keep their type.** A literal bound in an
   Inner Workflow step's `parameter_bindings` (for example `0.3`, `true`, a list
   or an object) now reaches the child workflow's steps with that type when the

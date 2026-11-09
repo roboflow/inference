@@ -55,6 +55,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input_to_image_list,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 
 class PaliGemmaHF:
@@ -100,14 +101,15 @@ class PaliGemmaHF:
         adapter_config_path = os.path.join(model_name_or_path, "adapter_config.json")
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
-            model = PaliGemmaForConditionalGeneration.from_pretrained(
-                base_model_path,
-                dtype=torch_dtype,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            )
+            with torch_default_dtype_lock():
+                model = PaliGemmaForConditionalGeneration.from_pretrained(
+                    base_model_path,
+                    dtype=torch_dtype,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
                 model.merge_and_unload()
@@ -120,15 +122,16 @@ class PaliGemmaHF:
                 use_fast=True,
             )
         else:
-            model = PaliGemmaForConditionalGeneration.from_pretrained(
-                model_name_or_path,
-                dtype=torch_dtype,
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            ).eval()
+            with torch_default_dtype_lock():
+                model = PaliGemmaForConditionalGeneration.from_pretrained(
+                    model_name_or_path,
+                    dtype=torch_dtype,
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                ).eval()
             processor = AutoProcessor.from_pretrained(
                 model_name_or_path,
                 trust_remote_code=trust_remote_code,

@@ -4,6 +4,13 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.5`
+
+### Changed
+
+- The `workflows` extra requires `roboflow-workflows>=0.2.15` instead of
+  `>=0.2.13`.
+
 ### Fixed
 
 - Jetson USB camera capture honors requested format, dimensions and frame rate before startup, including automatic format selection and rounded NTSC rates. Bridge diagnostics are safe before deferred capture starts and after release.

@@ -117,14 +117,16 @@ of the platform's default-off gate for new OBB authoring/jobs.
 ## Package and worker release gate
 
 This feature is pending release. The registry versions below are forward
-requirements, not evidence of a published or deployed native provider:
+requirements, not evidence of a published or deployed native provider. These
+candidate IDs were vacant when checked and are not reserved; recheck registry
+metadata and wheel contents before separately approving a normal release:
 
 | Distribution | Required version | Consumer |
 | --- | --- | --- |
-| `inference-sdk` | `1.8.4` | Remote native task dispatch in Workflows and model evaluation |
-| `inference-models` | `0.39.8` | Native RF-DETR ONNX registry/runtime |
+| `inference-sdk` | `1.8.5` | Remote native task dispatch in Workflows and model evaluation |
+| `inference-models` | `0.39.9` | Native RF-DETR ONNX registry/runtime |
 | `roboflow-workflows` | `0.2.16` | Canonical native response entities, blocks and consensus v2 |
-| `inference`, `inference-cpu`, `inference-gpu`, `inference-core` | `1.8.4` | HTTP server and model adapters |
+| `inference`, `inference-cpu`, `inference-gpu`, `inference-core` | `1.8.5` | HTTP server and model adapters |
 
 ### Build validation before release
 
@@ -153,7 +155,7 @@ cannot satisfy that order by publishing from an unmerged branch. This dependency
 order is required for release; no package publication or deployment is established
 by the local build checks above.
 
-1. Merge the SDK and Models changes, then release SDK `1.8.4` and Models `0.39.8`
+1. Merge the SDK and Models changes, then release SDK `1.8.5` and Models `0.39.9`
    through their existing release workflows after separate release approval.
    Verify the registry wheels' metadata and contents against the merged source.
 2. Once those registry releases are verified, update the consumer pins and run
@@ -171,7 +173,7 @@ by the local build checks above.
    `core_steps/common/oriented_entities.py`, and verify clean ordinary server
    imports with the released dependency set. Workflows must be available before
    root distributions requiring its exact version become consumable.
-4. Release the root `1.8.4` packages after their consumer changes merge and build
+4. Release the root `1.8.5` packages after their consumer changes merge and build
    server images. `make create_wheels` builds the root release set, including the
    SDK; the root workflow handles the SDK upload separately. Full CPU/GPU builds
    explicitly install their checkout Models wheel; slim builds resolve the new

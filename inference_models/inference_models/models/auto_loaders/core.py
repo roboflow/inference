@@ -117,6 +117,7 @@ from inference_models.models.base.image_embeddings import ImageEmbeddingModel
 from inference_models.models.common.roboflow.oriented_box_metadata import (
     OrientedBoxMetadata,
 )
+from inference_models.models.common.torch import reset_leaked_torch_default_dtype
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
 from inference_models.utils.content_addressed_artifact_cache import (
     ContentAddressedArtifactCache,
@@ -4388,6 +4389,8 @@ def load_model_with_capabilities(model_class, model_path, **kwargs):
             "PyTorch or Hugging Face classifier package for the same model version."
         )
     model = model_class.from_pretrained(model_path, **kwargs)
+    reset_leaked_torch_default_dtype(model_name_or_path=model_path)
+
     return prepare_required_capabilities(
         model,
         kwargs.get("required_capabilities"),
