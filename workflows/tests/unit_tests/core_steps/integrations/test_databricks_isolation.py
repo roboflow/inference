@@ -13,6 +13,7 @@ from roboflow_workflows.core_steps.integrations.databricks.sql_image_source impo
     isolation,
     v1,
 )
+from roboflow_workflows.utils import subprocess_supervisor as supervisor
 
 LIMITS = dict(
     max_run_bytes=100000,
@@ -25,7 +26,10 @@ REQUEST = dict(
     server_hostname="dbc-test.cloud.databricks.com",
     http_path="/sql/1.0/warehouses/abc",
     access_token="private-test-token",
-    sql_statement="select bytes",
+    catalog="main",
+    schema_name="vision",
+    table="images",
+    metadata_columns=["name"],
     image_column="bytes",
     image_name_column=None,
     max_rows=10,
@@ -85,7 +89,7 @@ def test_worker_launch_failure_cleans_directory(monkeypatch):
         assert REQUEST["access_token"] not in str(args)
         raise OSError("launch failed")
 
-    monkeypatch.setattr(isolation.subprocess, "Popen", fail)
+    monkeypatch.setattr(supervisor.subprocess, "Popen", fail)
     with pytest.raises(OSError, match="launch failed"):
         isolation.run_isolated(REQUEST, limits=LIMITS, deadline=time.monotonic() + 20)
     assert seen and not seen[0].exists()
@@ -106,7 +110,7 @@ def test_hung_child_is_killed_reaped_and_artifacts_removed(tmp_path, monkeypatch
         launched.append(process)
         return process
 
-    monkeypatch.setattr(isolation.subprocess, "Popen", record)
+    monkeypatch.setattr(supervisor.subprocess, "Popen", record)
     started = time.monotonic()
     with pytest.raises(TimeoutError):
         isolation.run_isolated(REQUEST, limits=LIMITS, deadline=started + 0.3)
@@ -127,7 +131,7 @@ def test_production_worker_rejects_host_without_exposing_token():
 
 def test_expired_run_never_launches(monkeypatch):
     monkeypatch.setattr(
-        isolation.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched")
+        supervisor.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched")
     )
     with pytest.raises(TimeoutError):
         isolation.run_isolated(REQUEST, limits=LIMITS, deadline=time.monotonic() - 1)
@@ -136,7 +140,7 @@ def test_expired_run_never_launches(monkeypatch):
 @pytest.mark.parametrize("policy", ["disabled", "sinks", "missing"])
 def test_production_guards_refuse_before_launch(monkeypatch, policy):
     monkeypatch.setattr(
-        isolation.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched")
+        supervisor.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched")
     )
     monkeypatch.setattr(v1, "block_enabled", lambda: policy != "disabled")
     monkeypatch.setattr(v1, "connector_available", lambda: policy != "missing")
@@ -265,7 +269,8 @@ def test_deadline_checked_after_last_row(monkeypatch):
     monkeypatch.setattr(v1, "decode_image", delayed)
     with pytest.raises(TimeoutError):
         v1.DatabricksSQLImageSourceBlockV1()._run_in_process(
-            **dict(REQUEST, max_rows=1), deadline=time.monotonic() + 0.02
+            **dict(REQUEST, max_rows=1, metadata_columns=[]),
+            deadline=time.monotonic() + 0.02
         )
 
 
@@ -287,7 +292,9 @@ sys.exit(worker._main())
 """,
     )
     rows = isolation.run_isolated(
-        dict(REQUEST, max_rows=1), limits=LIMITS, deadline=time.monotonic() + 20
+        dict(REQUEST, metadata_columns=[str(i) for i in range(5)], max_rows=1),
+        limits=LIMITS,
+        deadline=time.monotonic() + 20,
     )
     assert rows[0]["metadata"] == {str(i): chr(233) * 4096 for i in range(5)}
 

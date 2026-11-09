@@ -1,11 +1,39 @@
 # Databricks SQL Image Source
 
-`roboflow_core/databricks_sql_image_source@v1` runs a SQL statement on a
+`roboflow_core/databricks_sql_image_source@v1` reads selected columns from a table or view on a
 Databricks SQL warehouse and emits every returned row as a Workflow image, with
-an optional key column as the image name and the remaining columns as metadata.
+an optional key column as the image name and explicitly selected columns as metadata.
 This page is the operator guide: how the block is enabled, bounded and
 verified. The block's own description (shown in the Workflow builder) covers
 its inputs and outputs.
+
+## Query contract
+
+Configure `catalog`, `schema_name`, `table`, `image_column` (default `bytes`),
+optional `image_name_column`, `metadata_columns` (default empty, at most 32) and
+`max_rows` (1-1000). Each name is a single unquoted identifier, bounded to 255
+characters. Embedded backticks are escaped within each component; dots are literal
+parts of a component. The block executes only this template, extending the
+projection with additional bound identifiers for the name and metadata columns:
+
+```sql
+SELECT IDENTIFIER(:column_0)
+FROM IDENTIFIER(:source)
+LIMIT :row_limit
+```
+
+Native parameters contain the quoted names and integer limit. SQL fragments,
+expressions and `sql_statement` are not accepted; old workflow definitions must
+migrate to these inputs. For example, use `catalog=main`, `schema_name=vision`,
+`table=images_to_label`, `image_column=image_bytes`, `max_rows=100`.
+Define filters and joins in a customer-managed Databricks view. A view preserves
+selection flexibility; the fixed query and native parameter binding prevent input
+from changing SQL structure. Requires SQL warehouse support for IDENTIFIER.
+
+This does not prove authorization or tenant ownership, enforce read-only grants,
+or bound view computation. Provision a dedicated identity with SELECT on the
+intended sources and CAN USE on the warehouse. SQL LIMIT bounds returned rows,
+not warehouse cost. Aggregate admission controls are a separate stacked change.
 
 ## Enabling and disabling
 
@@ -47,7 +75,8 @@ Each invocation runs DNS resolution, the SQL connector and image decoding in a
 fresh Python subprocess. The parent checks availability and `disable_sinks`
 before launch. Credentials and resolved configuration travel over a private
 pipe; connector patches never alter clients in the parent process. The serialized
-request (SQL, credentials and configuration together) is limited to 1 MiB.
+request (credentials and configuration together) is measured before serialization
+and limited to 1 MiB.
 
 All budgets are **per invocation**, and account for encoded image bytes, decoded
 pixels, names and metadata. They are application-data budgets, not hard process
@@ -65,9 +94,18 @@ step; no partial output is returned.
 
 The connector requests inline chunks of at most 8 rows and
 `2 x MAX_IMAGE_BYTES` bytes, with a server-side `row_limit` of `max_rows`.
+The transport enforces an HTTP body cap of
+`max(1 MiB, 2 x MAX_IMAGE_BYTES) + 64 KiB` on every response, including chunked
+responses. Oversized Content-Length is rejected before reading; no rejected body
+is drained. HTTP compression is refused. Thrift strings are limited to this byte
+cap, containers to 65,536 entries, total structural items to 131,072 and nesting
+to 64 levels. The worker requests column-based results and rejects Arrow schemas,
+Arrow/LZ4 batches and result links before their native decoders run. This remains
+an application bound with Python object overhead, not an RSS guarantee.
+
 Metadata values are truncated to 4096 characters and capped at 4 nesting levels,
-256 items per collection and 64 KiB per row. JPEG, PNG and WebP are accepted;
-TIFF is rejected before pixel decoding. Total budget exhaustion fails the step,
+256 items per collection and 64 KiB per row. JPEG and PNG are accepted;
+WebP and TIFF are rejected before constructing their decoders. Total budget exhaustion fails the step,
 while ordinary row conversion failures follow `skip_undecodable`.
 
 `timeout_seconds` (5 to 600, default 120) begins before process launch and covers
@@ -143,3 +181,10 @@ staging run after PR review. No credentialed staging test is part of local revie
 Record the image
 digest, connector version and report in the release notes of any hosted
 rollout.
+
+The live runner creates temporary fixture views using `DATABRICKS_SETUP_TOKEN`
+for every run, then submits only the fixed table/view reader configuration with
+`DATABRICKS_TOKEN`. Grant that restricted identity SELECT on the fixture schema.
+Views are dropped after the suite, with an exit cleanup retry on failures. Slow
+case verification requires query history to expose the unique view identifier;
+if it is absent, the case fails instead of claiming cancellation was verified.

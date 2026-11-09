@@ -324,6 +324,8 @@ Before editing or reviewing Python code, read:
 
 Also read the following rule when its condition applies:
 
+- `.cursor/rules/trusted-integration-subprocesses.mdc` when adding or changing integration subprocess workers.
+
 - `.cursor/rules/cli-options.mdc` for Python command-line interfaces.
 - `.cursor/rules/pydantic-field-descriptions.mdc` for Pydantic models.
 - `.cursor/rules/pr-description.mdc` when the user requests a Roboflow-format PR

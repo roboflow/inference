@@ -18,6 +18,21 @@ spec.loader.exec_module(runner)
 
 
 class LiveRunnerTest(unittest.TestCase):
+    def setUp(self):
+        def fixture(statement):
+            marker = runner.re.search(r"/\* (rf_live_slow_[a-z0-9_]+) \*/", statement)
+            name = marker.group(1) if marker else "fixture_view"
+            columns = (
+                [f"note_{i}" for i in range(17)]
+                if "AS note_" in statement
+                else ["id", "note"]
+            )
+            return "catalog.schema." + name, columns
+
+        patcher = patch.object(runner, "create_fixture_view", side_effect=fixture)
+        self.create_view = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_dispatch_values_are_passed_literally_without_shell_execution(self):
         workflow = (
             SCRIPT.parents[2] / ".github/workflows/databricks_live_integration.yml"
@@ -176,7 +191,10 @@ class LiveRunnerTest(unittest.TestCase):
         with patch.object(runner, "env", return_value="configured"):
             runner.case_big_metadata(target, "catalog.schema.images", "token")
         self.assertEqual(target.run.call_count, 2)
-        query = target.run.call_args_list[1].args[0]["steps"][0]["sql_statement"]
+        query = self.create_view.call_args_list[1].args[0]
+        self.assertNotIn(
+            "sql_statement", target.run.call_args_list[1].args[0]["steps"][0]
+        )
         self.assertEqual(query.count("repeat('m', 4096)"), 17)
 
     def _slow_case(self, *, status="CANCELED", observe=True):
@@ -186,7 +204,7 @@ class LiveRunnerTest(unittest.TestCase):
 
         class Target:
             def run(self, specification, inputs):
-                state["query"] = specification["steps"][0]["sql_statement"]
+                state["query"] = specification["steps"][0]["table"]
                 queried.set()
                 if not observed.wait(timeout=3):
                     raise AssertionError("test observer did not run")

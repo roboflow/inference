@@ -65,10 +65,13 @@ class Behaviour:
     hold_running: bool = False
     # Return result links (URL_BASED_SET) instead of inline rows.
     result_links: List[str] = field(default_factory=list)
+    response_encoding: Optional[str] = None
+    chunked: bool = False
 
 
 @dataclass
 class Observations:
+    statements: List[Any] = field(default_factory=list)
     connections: List[Dict[str, Any]] = field(default_factory=list)
     requests: List[Dict[str, Any]] = field(default_factory=list)
     operation_states: List[str] = field(default_factory=list)
@@ -109,6 +112,7 @@ class _WarehouseHandler(TCLIService.Iface):
         return ttypes.TCloseSessionResp(status=_status())
 
     def ExecuteStatement(self, req):
+        self.observations.statements.append(req)
         with self._lock:
             self._cursor = 0
             self._cancelled = False
@@ -263,9 +267,20 @@ class _RequestHandler(http.server.BaseHTTPRequestHandler):
         payload = output.getvalue()
         self.send_response(200)
         self.send_header("Content-Type", "application/x-thrift")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        if self.server.behaviour.response_encoding:
+            self.send_header(
+                "Content-Encoding", self.server.behaviour.response_encoding
+            )
+        if self.server.behaviour.chunked:
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            self.wfile.write(
+                f"{len(payload):x}\r\n".encode() + payload + b"\r\n0\r\n\r\n"
+            )
+        else:
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
 
     @staticmethod
     def _thrift_method(body: bytes) -> Optional[str]:

@@ -61,8 +61,9 @@ class FakeCursor:
         self._recorder = recorder
         self._position = 0
 
-    def execute(self, statement: str) -> None:
+    def execute(self, statement: str, parameters=None) -> None:
         self._recorder["statement"] = statement
+        self._recorder["parameters"] = parameters
         delay = self._recorder.get("execute_delay")
         if delay:
             time.sleep(delay)
@@ -160,7 +161,10 @@ def run_block(**overrides: Any) -> list:
         "server_hostname": HOST,
         "http_path": HTTP_PATH,
         "access_token": "dapi-secret",
-        "sql_statement": "SELECT * FROM t",
+        "catalog": "main",
+        "schema_name": "vision",
+        "table": "images",
+        "metadata_columns": ["id"],
         "image_column": "bytes",
         "image_name_column": "id",
         "max_rows": 100,
@@ -183,7 +187,10 @@ def manifest(**overrides: Any) -> dict:
         "server_hostname": HOST,
         "http_path": HTTP_PATH,
         "access_token": "$inputs.databricks_token",
-        "sql_statement": "SELECT id, bytes FROM c.s.images",
+        "catalog": "main",
+        "schema_name": "vision",
+        "table": "images",
+        "metadata_columns": ["id"],
     }
     raw.update(overrides)
     return raw
@@ -503,7 +510,10 @@ def test_run_honours_disable_sinks_execution_policy() -> None:
                 server_hostname=HOST,
                 http_path=HTTP_PATH,
                 access_token="t",
-                sql_statement="q",
+                catalog="main",
+                schema_name="vision",
+                table="images",
+                metadata_columns=[],
                 image_column="bytes",
                 image_name_column=None,
                 max_rows=10,
@@ -527,6 +537,8 @@ def test_connection_kwargs_close_every_unpinned_request_path() -> None:
         "http_path": HTTP_PATH,
         "_port": 443,
         "use_cloud_fetch": False,
+        "use_inline_params": False,
+        "enable_query_result_lz4_compression": False,
         "enable_telemetry": False,
         "session_configuration": {"STATEMENT_TIMEOUT": "90"},
         "_socket_timeout": 30,
@@ -628,7 +640,10 @@ def test_run_times_out_and_cancels_a_slow_query() -> None:
                 server_hostname=HOST,
                 http_path=HTTP_PATH,
                 access_token="t",
-                sql_statement="q",
+                catalog="main",
+                schema_name="vision",
+                table="images",
+                metadata_columns=[],
                 image_column="bytes",
                 image_name_column=None,
                 max_rows=10,
@@ -688,7 +703,7 @@ def test_decode_image_accepts_bytes_bytearray_memoryview_and_base64() -> None:
         assert decode_image(payload).shape == (32, 48, 3)
 
 
-@pytest.mark.parametrize("image_format", ["JPEG", "PNG", "WEBP"])
+@pytest.mark.parametrize("image_format", ["JPEG", "PNG"])
 def test_decode_image_accepts_allowlisted_formats(image_format: str) -> None:
     assert decode_image(pil_bytes(image_format)).shape == (32, 48, 3)
 
@@ -707,7 +722,7 @@ def test_decode_image_rejects_tiff_with_lying_header_before_allocating() -> None
     buffer = io.BytesIO()
     Image.new("RGB", (60, 60)).save(buffer, format="TIFF")
     with mock.patch.object(v1.cv2, "imdecode") as imdecode:
-        with pytest.raises(ValueError, match="TIFF"):
+        with pytest.raises(ValueError, match="not allowed"):
             decode_image(buffer.getvalue())
     imdecode.assert_not_called()
 
@@ -771,7 +786,7 @@ def test_run_budget_covers_metadata_and_names() -> None:
     rows = [{"id": "x" * 200, "bytes": jpeg_bytes(), "note": "y" * 3000}]
     with fake_databricks(rows), mock.patch.object(v1, "MAX_RUN_BYTES", 3_000):
         with pytest.raises(ValueError, match="byte budget"):
-            run_block()
+            run_block(metadata_columns=["id", "note"])
 
 
 def test_run_budget_failure_is_not_skippable() -> None:
@@ -804,7 +819,7 @@ def test_nested_metadata_is_capped_in_depth_and_size() -> None:
     rows = [{"id": 1, "bytes": jpeg_bytes(), "note": "y" * 60_000}]
     with fake_databricks(rows), mock.patch.object(v1, "MAX_RUN_BYTES", 6_000):
         with pytest.raises(ValueError, match="byte budget"):
-            run_block()
+            run_block(metadata_columns=["id", "note"])
 
 
 def test_image_names_are_length_capped() -> None:
@@ -849,12 +864,13 @@ def test_run_emits_one_element_per_row_and_strips_binary_columns() -> None:
         },
     ]
     with fake_databricks(rows) as recorder:
-        result = run_block()
+        result = run_block(metadata_columns=["id", "raccoon_name", "weight", "thumb"])
     assert [element["image_names"] for element in result] == ["1", "2"]
     assert result[0]["metadata"] == {"id": 1, "raccoon_name": "rocky", "weight": 4.2}
     assert isinstance(result[0]["images"], WorkflowImageData)
     assert result[0]["images"].numpy_image.shape == (32, 48, 3)
-    assert recorder["statement"] == "SELECT * FROM t"
+    assert "FROM IDENTIFIER(:source) LIMIT :row_limit" in recorder["statement"]
+    assert recorder["parameters"]["source"] == "`main`.`vision`.`images`"
     assert recorder["connection_closed"] and recorder["cursor_closed"]
 
 
@@ -923,7 +939,10 @@ SOURCE_WORKFLOW = {
             "server_hostname": HOST,
             "http_path": HTTP_PATH,
             "access_token": "$inputs.databricks_token",
-            "sql_statement": "$inputs.sql",
+            "catalog": "main",
+            "schema_name": "vision",
+            "table": "images",
+            "metadata_columns": ["id", "raccoon_name"],
             "image_name_column": "id",
             "max_rows": 5,
         }
@@ -951,7 +970,7 @@ def test_engine_runs_block_as_input_free_step_producing_a_batch() -> None:
             runtime_parameters={"databricks_token": "dapi-xyz", "sql": "SELECT 1"}
         )
     assert recorder["connect_kwargs"]["access_token"] == "dapi-xyz"
-    assert recorder["statement"] == "SELECT 1"
+    assert recorder["parameters"]["row_limit"] == 5
     assert len(result) == 1
     assert result[0]["names"] == ["7", "8", "9"]
     assert [m["raccoon_name"] for m in result[0]["metadata"]] == [

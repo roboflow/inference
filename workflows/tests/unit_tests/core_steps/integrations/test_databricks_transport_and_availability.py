@@ -220,7 +220,10 @@ def test_workflow_referencing_an_unavailable_block_is_rejected_with_the_reason(
                 "server_hostname": HOST,
                 "http_path": "/sql/1.0/warehouses/abc",
                 "access_token": "$inputs.token",
-                "sql_statement": "SELECT 1",
+                "catalog": "main",
+                "schema_name": "vision",
+                "table": "images",
+                "metadata_columns": ["id"],
             }
         ],
         "outputs": [

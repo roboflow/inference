@@ -49,6 +49,7 @@ class PinnedDestination:
     hostname: str
     ip_address: str
     port: int = 443
+    max_response_bytes: int = 64 * 1024 * 1024 + 65536
 
 
 _PINNED_DESTINATION: contextvars.ContextVar[Optional[PinnedDestination]] = (
@@ -128,6 +129,14 @@ def install_pinned_transport(*, worker_only: bool = False) -> type:
             ImportError
         ) as error:  # pragma: no cover - exercised by availability tests
             raise RuntimeError("databricks-sql-connector is not installed") from error
+
+        _guard_response_parsing()
+        if worker_only:
+            from databricks.sql.backend import thrift_backend
+
+            # Request column-based Thrift results even if the host installed Arrow.
+            # Only the disposable interpreter changes this connector global.
+            thrift_backend.pyarrow = None
 
         if (
             _INSTALLED
@@ -231,6 +240,107 @@ def _guard_result_link_downloads() -> None:
     connector_utils.ThriftCloudFetchQueue = PinnedThriftCloudFetchQueue
 
 
+def _guard_response_parsing() -> None:
+    from databricks.sql.thrift_api.TCLIService import ttypes
+    from thrift.protocol import TBinaryProtocol
+
+    original = TBinaryProtocol.TBinaryProtocol
+    if getattr(original, "_roboflow_bounded", False):
+        return
+
+    class BoundedProtocol(original):
+        _roboflow_bounded = True
+
+        def __init__(self, trans, *args, **kwargs):
+            pin = getattr(trans, "_roboflow_destination", None)
+            self._bounded = pin is not None
+            self._depth = 0
+            self._items = 0
+            if pin is not None:
+                kwargs["string_length_limit"] = pin.max_response_bytes
+                kwargs["container_length_limit"] = 65536
+            super().__init__(trans, *args, **kwargs)
+
+        def readMessageBegin(self):
+            self._depth = 0
+            self._items = 0
+            return super().readMessageBegin()
+
+        def _enter(self, items=1):
+            if self._bounded:
+                self._depth += 1
+                self._items += items
+                if self._depth > 64 or self._items > 131072:
+                    raise PinnedTransportError(
+                        "warehouse response structure exceeds its limit"
+                    )
+
+        def _leave(self):
+            if self._bounded:
+                self._depth -= 1
+
+        def readStructBegin(self):
+            self._enter()
+            return super().readStructBegin()
+
+        def readStructEnd(self):
+            self._leave()
+            return super().readStructEnd()
+
+        def readListBegin(self):
+            result = super().readListBegin()
+            self._enter(result[1])
+            return result
+
+        def readListEnd(self):
+            self._leave()
+            return super().readListEnd()
+
+        def readSetBegin(self):
+            result = super().readSetBegin()
+            self._enter(result[1])
+            return result
+
+        def readSetEnd(self):
+            self._leave()
+            return super().readSetEnd()
+
+        def readMapBegin(self):
+            result = super().readMapBegin()
+            self._enter(2 * result[2])
+            return result
+
+        def readMapEnd(self):
+            self._leave()
+            return super().readMapEnd()
+
+    TBinaryProtocol.TBinaryProtocol = BoundedProtocol
+    original_metadata_read = ttypes.TGetResultSetMetadataResp.read
+
+    def read_metadata(self, protocol):
+        original_metadata_read(self, protocol)
+        if getattr(protocol, "_bounded", False) and (
+            self.arrowSchema
+            or self.lz4Compressed
+            or self.resultFormat not in (None, ttypes.TSparkRowSetType.COLUMN_BASED_SET)
+        ):
+            raise PinnedTransportError("only column-based Thrift results are allowed")
+
+    ttypes.TGetResultSetMetadataResp.read = read_metadata
+    original_row_read = ttypes.TRowSet.read
+
+    def read_rows(self, protocol):
+        original_row_read(self, protocol)
+        if getattr(protocol, "_bounded", False) and (
+            self.arrowBatches or self.resultLinks
+        ):
+            raise PinnedTransportError(
+                "Arrow, LZ4 and result links (cloud fetch) are refused"
+            )
+
+    ttypes.TRowSet.read = read_rows
+
+
 class _PinnedMixin:
     """Behaviour mixed into the connector's ``THttpClient``.
 
@@ -301,7 +411,53 @@ class _PinnedMixin:
         if pin is not None:
             headers = dict(headers)
             headers["Host"] = pin.hostname
+            headers["Accept-Encoding"] = "identity"
         return super().setCustomHeaders(headers)  # type: ignore[misc]
+
+    def flush(self):
+        self._roboflow_read_bytes = 0
+        super().flush()
+        pin = self._roboflow_destination
+        if pin is None:
+            return
+        response = self._THttpClient__resp
+        encoding = response.headers.get("Content-Encoding", "identity").lower()
+        length = response.headers.get("Content-Length")
+        try:
+            if encoding != "identity":
+                raise PinnedTransportError(
+                    "compressed warehouse HTTP responses are refused"
+                )
+            if length is not None and (
+                int(length) < 0 or int(length) > pin.max_response_bytes
+            ):
+                raise PinnedTransportError("warehouse response exceeds its byte limit")
+        except (ValueError, PinnedTransportError):
+            self.close()
+            raise
+
+    def read(self, size):
+        pin = self._roboflow_destination
+        if pin is None:
+            return super().read(size)
+        remaining = pin.max_response_bytes - self._roboflow_read_bytes
+        amount = min(size, remaining + 1) if size >= 0 else remaining + 1
+        data = self._THttpClient__resp.read(amount, decode_content=False)
+        self._roboflow_read_bytes += len(data)
+        if len(data) > remaining:
+            self.close()
+            raise PinnedTransportError("warehouse response exceeds its byte limit")
+        return data
+
+    def close(self):
+        if self._roboflow_destination is None:
+            return super().close()
+        response = getattr(self, "_THttpClient__resp", None)
+        if response is not None:
+            # Never drain an attacker-controlled body during error cleanup.
+            response.close()
+            response.release_conn()
+            self._THttpClient__resp = None
 
     def _set_pool(self, pool: HTTPSConnectionPool) -> None:
         # The connector stores the pool in a name-mangled attribute of its own
