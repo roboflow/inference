@@ -11,6 +11,11 @@ from inference.core.env import DEVICE, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
+# DEVICE is unset unless the env sets it. Fall back to the GPU, as the sibling
+# modules (transformers, smolvlm, trocr) do, instead of loading on the CPU.
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 def _repeated_bos_ban(model: Any, processor: Any) -> Optional[List[List[int]]]:
     """bad_words_ids banning the <s><s> bigram, or None when the ban cannot apply.
@@ -41,6 +46,24 @@ def _repeated_bos_ban(model: Any, processor: Any) -> Optional[List[List[int]]]:
     return ban
 
 
+def _is_remote_code_package(cache_dir: str) -> bool:
+    """True for a full fine-tune saved with the vendored remote-code Florence-2 classes.
+
+    Such a package has text_config.model_type "florence2_language" in config.json and
+    ships modeling_florence2.py. The native Florence2Config maps text_config through
+    CONFIG_MAPPING, which has no "florence2_language" key, so the native classes fail
+    to load it with KeyError.
+    """
+    try:
+        with open(os.path.join(cache_dir, "config.json")) as f:
+            text_config = json.load(f).get("text_config") or {}
+    except (OSError, ValueError):
+        return False
+    return text_config.get("model_type") == "florence2_language" and os.path.exists(
+        os.path.join(cache_dir, "modeling_florence2.py")
+    )
+
+
 class Florence2Processing:
     def predict(self, image_in: Image, prompt="", history=None, **kwargs):
         (decoded,) = super().predict(image_in, prompt, history, **kwargs)
@@ -69,6 +92,9 @@ class Florence2(Florence2Processing, TransformerModel):
     skip_special_tokens = False
 
     def initialize_model(self, **kwargs):
+        if _is_remote_code_package(self.cache_dir):
+            self._initialize_remote_code_package()
+            return
         try:
             from transformers import (
                 AutoConfig,
@@ -89,6 +115,34 @@ class Florence2(Florence2Processing, TransformerModel):
                 "Florence2Processor",
             )
         super().initialize_model(**kwargs)
+
+    def _initialize_remote_code_package(self):
+        # Load the model AND the processor with the package's own config object.
+        # Without it the processor's AutoTokenizer rebuilds the config through the
+        # native Florence2Config and hits the same KeyError.
+        self.transformers_class = import_class_from_file(
+            os.path.join(self.cache_dir, "modeling_florence2.py"),
+            "Florence2ForConditionalGeneration",
+        )
+        self.processor_class = import_class_from_file(
+            os.path.join(self.cache_dir, "processing_florence2.py"),
+            "Florence2Processor",
+        )
+        config = self.transformers_class.config_class.from_pretrained(self.cache_dir)
+        self.model = (
+            self.transformers_class.from_pretrained(
+                self.cache_dir,
+                config=config,
+                device_map=DEVICE,
+                torch_dtype=self.default_dtype,
+                local_files_only=True,
+            )
+            .eval()
+            .to(self.dtype)
+        )
+        self.processor = self.processor_class.from_pretrained(
+            self.cache_dir, config=config, local_files_only=True
+        )
 
 
 class LoRAFlorence2(Florence2Processing, LoRATransformerModel):

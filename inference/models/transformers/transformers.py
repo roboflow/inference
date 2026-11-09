@@ -22,7 +22,13 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     LMMInferenceResponse,
 )
-from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, OFFLINE_MODE
+from inference.core.env import (
+    DEVICE,
+    HUGGINGFACE_TOKEN,
+    LMM_DEFAULT_MAX_NEW_TOKENS,
+    MODEL_CACHE_DIR,
+    OFFLINE_MODE,
+)
 from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
@@ -190,7 +196,8 @@ class TransformerModel(RoboflowInferenceModel):
             )
             generation = self.model.generate(
                 **prepared_inputs,
-                max_new_tokens=1000,
+                max_new_tokens=kwargs.get("max_new_tokens")
+                or LMM_DEFAULT_MAX_NEW_TOKENS,
                 do_sample=False,
                 early_stopping=False,
                 no_repeat_ngram_size=0,

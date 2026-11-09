@@ -9,6 +9,11 @@ from transformers.utils import is_flash_attn_2_available
 from inference.core.env import DEVICE, MODEL_CACHE_DIR, OFFLINE_MODE
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
+# DEVICE is unset unless the env sets it. Fall back to the GPU, as the sibling
+# modules (transformers, smolvlm, trocr) do, instead of loading on the CPU.
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 def _get_paligemma_attn_implementation():
     """Use flash_attention_2 if available, otherwise eager.
@@ -20,7 +25,7 @@ def _get_paligemma_attn_implementation():
         try:
             import flash_attn  # noqa: F401
 
-            if _is_model_running_against_ampere_plus_aarch(device=DEVICE):
+            if _is_model_running_against_ampere_plus_aarch(device=torch.device(DEVICE)):
                 return "flash_attention_2"
             return "eager"
         except ImportError:
