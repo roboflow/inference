@@ -21,7 +21,6 @@ import numpy as np
 import orjson
 
 from inference_model_manager.hash_namespacing import namespace_client_hash_id
-from inference_server import configuration
 from inference_server.legacy.bridge import Route
 from inference_server.legacy.entities import (
     Sam3VideoEmbedRequest,
@@ -71,20 +70,24 @@ def read_clip_frames(path: str, *, max_frames: int) -> List[np.ndarray]:
 
     Args:
         path: File holding the clip.
-        max_frames: Most frames a clip may have.
+        max_frames: Most frames a clip may have: the frames the tracker's
+            clip cache holds.
 
     Returns:
         The RGB ``HWC`` ``uint8`` frames.
 
     Raises:
         LegacyHTTPError: 400 when the clip does not decode or has fewer than
-            two frames, 413 when it has more than ``max_frames``.
+            two frames, 413 when it has more than ``max_frames`` (from the
+            header's frame count, before anything is decoded).
     """
+    limit = (
+        f"the most a clip may have is {max_frames}, which is what "
+        "SAM3_VIDEO_CACHE_MAX_GB holds."
+    )
     frame_count = probe_video(path)[1]
     if frame_count > max_frames:
-        raise LegacyHTTPError(
-            413, f"The video has more than {max_frames} frames, the most allowed."
-        )
+        raise LegacyHTTPError(413, f"The video has {frame_count} frames; {limit}")
 
     # The header's count is unverified: decode one window one frame longer
     # than the cap, so decoding stops there either way.
@@ -93,7 +96,7 @@ def read_clip_frames(path: str, *, max_frames: int) -> List[np.ndarray]:
         raise LegacyHTTPError(400, "The video has no frames.")
     if len(frames) > max_frames:
         raise LegacyHTTPError(
-            413, f"The video has more than {max_frames} frames, the most allowed."
+            413, f"The video has more than {max_frames} frames; {limit}"
         )
 
     return frames
@@ -122,10 +125,13 @@ async def embed_video(
             for one over the size or frame cap.
     """
     started = time.perf_counter()
+    limits = await bridge.infer_params_only(
+        route, api_key, "video_cache_limits", {}, record=False
+    )
     video = inference_request.video
     async with video_source_path(video.type, video.value) as path:
         frames = await asyncio.to_thread(
-            read_clip_frames, path, max_frames=configuration.SAM3_VIDEO_MAX_FRAMES
+            read_clip_frames, path, max_frames=limits["max_frames"]
         )
 
     described = await bridge.infer_params_only(

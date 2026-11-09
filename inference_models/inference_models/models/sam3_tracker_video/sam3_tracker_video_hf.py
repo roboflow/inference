@@ -38,6 +38,12 @@ are recomputed away by the next propagation. So in a shared session one
 object's prompts on a frame another object was already run on would be
 silently dropped. Each object is propagated forward and then backward from
 its own first prompted frame, so every frame is computed once per object.
+
+Embedded clips are kept in host RAM, within ``SAM3_VIDEO_CACHE_MAX_GB``: a
+frame is held as its preprocessed pixels until it is encoded and as its
+encoder output afterwards. The limit is turned into a number of frames from
+the bytes one frame can hold; the least recently used clips are evicted to
+stay within it, and it is also the longest clip that can be embedded.
 """
 
 import threading
@@ -46,17 +52,29 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from inference_models.configuration import SAM3_VIDEO_MAX_CACHED_CLIPS
+from inference_models.configuration import SAM3_VIDEO_CACHE_MAX_GB
 from inference_models.errors import MissingDependencyError, ModelInputError
+from inference_models.logger import LOGGER
 from inference_models.models.common.hf_streaming_video import HFStreamingVideoBase
 from inference_models.models.common.rle_utils import torch_mask_to_coco_rle
 from inference_models.models.sam3_tracker_video.clip_cache import (
+    CACHE_LIMIT_SETTING,
+    PositionEmbeddings,
     VideoClip,
     VideoClipCache,
+    cache_frame_limit,
+    cached_frame_bytes,
 )
 
 #: One object's point prompts: frame index -> ((x, y, label), ...) in click order.
 ObjectPrompts = Dict[int, Tuple[Tuple[float, float, int], ...]]
+
+#: Frames preprocessed at a time when a clip is embedded. The video processor
+#: holds about 40 MB per frame while it runs (measured: resized, rescaled and
+#: normalised full-precision copies), so 16 frames keep the extra memory of an
+#: embed near 0.65 GB whatever the clip's length. Preprocessing time per frame
+#: is the same from 8 to 32 frames at a time.
+EMBED_CHUNK_FRAMES = 16
 
 
 class SAM3TrackerVideo(HFStreamingVideoBase):
@@ -70,7 +88,21 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        self._video_clip_cache = VideoClipCache(size_limit=SAM3_VIDEO_MAX_CACHED_CLIPS)
+        self._cached_frame_bytes = cached_frame_bytes(self._model.config, self._dtype)
+        self._video_clip_cache = VideoClipCache(
+            max_frames=cache_frame_limit(
+                SAM3_VIDEO_CACHE_MAX_GB, frame_bytes=self._cached_frame_bytes
+            )
+        )
+        self._position_embeddings = PositionEmbeddings()
+        LOGGER.info(
+            "SAM3 video clip cache: %s=%s GB, %d bytes per cached frame, "
+            "limit of %d frames.",
+            CACHE_LIMIT_SETTING,
+            SAM3_VIDEO_CACHE_MAX_GB,
+            self._cached_frame_bytes,
+            self._video_clip_cache.max_frames,
+        )
 
     @classmethod
     def _resolve_transformers_classes(cls) -> Tuple[Any, Any]:
@@ -95,6 +127,24 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
     # Offline (whole-clip) tracking
     # ------------------------------------------------------------------
 
+    def video_cache_limits(self) -> dict:
+        """What the clip cache holds, for a caller that refuses a clip before
+        decoding it.
+
+        Returns:
+            ``max_gb`` (the ``SAM3_VIDEO_CACHE_MAX_GB`` setting),
+            ``bytes_per_frame`` (most bytes one cached frame holds) and
+            ``max_frames`` (frames the cache holds, which is also the most
+            frames one clip may have).
+        """
+        limits = {
+            "max_gb": SAM3_VIDEO_CACHE_MAX_GB,
+            "bytes_per_frame": self._cached_frame_bytes,
+            "max_frames": self._video_clip_cache.max_frames,
+        }
+
+        return limits
+
     @torch.inference_mode()
     def embed_video(
         self,
@@ -105,8 +155,16 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
     ) -> dict:
         """Preprocess a clip and keep it under ``video_id`` for offline tracking.
 
-        Embedding a clip again under the same id replaces it. The image
-        encoder runs on a frame the first time any session needs it; with
+        Embedding a clip again under the same id replaces it. The clip under
+        that id and the least recently used clips that have to go for this
+        one to fit are forgotten before it is preprocessed, so their memory
+        is free while it is built; a call already running on one of them
+        keeps it and finishes. Frames are preprocessed ``EMBED_CHUNK_FRAMES``
+        at a time and each is kept as its own tensor in the model's dtype, so
+        the extra memory of an embed is one chunk in full precision.
+
+        The image encoder runs on a frame the first time any session needs
+        it, after which the frame's pixels are released; with
         ``encode_frames`` a background thread also encodes every frame, one
         frame per hold of the model lock so other calls interleave, and stops
         once the clip is replaced or evicted.
@@ -121,7 +179,8 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             ``video_id``, ``n_frames``, ``height`` and ``width`` of the clip.
 
         Raises:
-            ModelInputError: If there are no frames or they differ in size.
+            ModelInputError: If there are no frames, they differ in size, or
+                there are more than the cache holds.
         """
         if not frames:
             raise ModelInputError(message="A video needs at least one frame.")
@@ -132,15 +191,12 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
                 message=f"All frames of a video must have one size, got {sorted(sizes)}."
             )
 
-        processed = self._processor.video_processor(
-            videos=[np.asarray(frame) for frame in frames],
-            device="cpu",
-            return_tensors="pt",
-        )
+        self._video_clip_cache.make_room(video_id, n_frames=len(frames))
         clip = VideoClip(
-            processed.pixel_values_videos[0].to(dtype=self._dtype),
-            video_size=tuple(int(v) for v in processed.original_sizes[0]),
+            self._preprocess_frames(frames),
+            video_size=tuple(int(v) for v in sizes.pop()),
             inference_device=self._device,
+            position_embeddings=self._position_embeddings,
         )
         self._video_clip_cache.put(video_id, clip)
 
@@ -157,6 +213,30 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         }
 
         return description
+
+    def _preprocess_frames(self, frames: List[np.ndarray]) -> List[torch.Tensor]:
+        """The model input of each frame, as one tensor per frame in the model's dtype.
+
+        The video processor resizes, rescales and normalises each frame on its
+        own, so preprocessing a chunk at a time gives the same values as
+        preprocessing the whole clip.
+        """
+        preprocessed: List[torch.Tensor] = []
+        for start in range(0, len(frames), EMBED_CHUNK_FRAMES):
+            chunk = self._processor.video_processor(
+                videos=[
+                    np.asarray(frame)
+                    for frame in frames[start : start + EMBED_CHUNK_FRAMES]
+                ],
+                device="cpu",
+                return_tensors="pt",
+            ).pixel_values_videos[0]
+            # A copy per frame, so that each frame is its own allocation and
+            # none of them keeps the full-precision chunk alive.
+            preprocessed += [f.to(dtype=self._dtype, copy=True) for f in chunk]
+            del chunk
+
+        return preprocessed
 
     def _encode_clip_frames(self, video_id: str, clip: VideoClip) -> None:
         session = self._clip_session(clip)
@@ -290,7 +370,6 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         )
 
         session = Sam3TrackerVideoInferenceSession(
-            video=clip.pixel_values,
             video_height=clip.video_size[0],
             video_width=clip.video_size[1],
             inference_device=self._device,
@@ -298,6 +377,10 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             inference_state_device=self._device,
             dtype=self._dtype,
         )
+        # The session reads frames from the clip (the model uses the number
+        # of frames and one frame by index), so a frame released by the clip
+        # is held by no session either.
+        session.processed_frames = clip.frames
         # The clip stands in for the session's one-frame feature cache, so
         # every session on the clip reuses the frames already encoded.
         session.cache = clip

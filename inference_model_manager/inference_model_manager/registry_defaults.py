@@ -1050,6 +1050,15 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "serialize_passthrough",
             "roboflow-sam3-video-propagation-v1",
         ),
+        (
+            "video_cache_limits",
+            "video_cache_limits",
+            False,
+            {},
+            "validate_passthrough",
+            "serialize_passthrough",
+            "roboflow-sam3-video-cache-limits-v1",
+        ),
     ],
     # --- Text-only OCR ---
     "TextOnlyOCRModel": [

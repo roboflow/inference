@@ -2292,8 +2292,8 @@ async def _sam3_video_route(
         "caller's video_id, for /sam3/video/segment and /sam3/video/propagate. "
         "Every decoded frame is a frame, numbered from 0. The clip stays in the "
         "worker's memory until newer clips evict it "
-        "(SAM3_VIDEO_MAX_CACHED_CLIPS), so calls on one clip must reach the "
-        "same worker."
+        "(SAM3_VIDEO_CACHE_MAX_GB, which also sets the longest clip accepted), "
+        "so calls on one clip must reach the same worker."
     ),
 )
 @with_legacy_errors

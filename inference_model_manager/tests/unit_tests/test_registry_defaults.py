@@ -262,7 +262,12 @@ def test_sam3_tracker_video_configs_match_signatures():
 
     cfgs = {c[0]: _unpack_config(c) for c in _ACTION_CONFIGS["SAM3TrackerVideo"]}
 
-    assert set(cfgs) == {"embed_video", "segment_video_frame", "propagate_video"}
+    assert set(cfgs) == {
+        "embed_video",
+        "segment_video_frame",
+        "propagate_video",
+        "video_cache_limits",
+    }
     assert [name for name, cfg in cfgs.items() if cfg[2]] == ["embed_video"]
     for name, cfg in cfgs.items():
         method = getattr(SAM3TrackerVideo, cfg[1])

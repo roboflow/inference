@@ -450,7 +450,15 @@ MAX_VIDEO_DURATION_SECONDS = get_float_from_env(
 SAM3_EXEC_MODE = os.environ.get("SAM3_EXEC_MODE", "local").lower()
 # SAM3 offline video tracking (/sam3/video/*).
 SAM3_VIDEO_MODEL_ID = os.environ.get("SAM3_VIDEO_MODEL_ID", "sam3trackervideo")
-SAM3_VIDEO_MAX_FRAMES = get_integer_from_env("SAM3_VIDEO_MAX_FRAMES", default=600)
+# Host RAM, in GB, the tracker's cache of embedded clips may hold. The tracker
+# (inference_models) reads the same variable and turns it into a number of
+# frames, which is also the longest clip the routes accept.
+SAM3_VIDEO_CACHE_MAX_GB = get_float_from_env("SAM3_VIDEO_CACHE_MAX_GB", default=16.0)
+if not 0 < SAM3_VIDEO_CACHE_MAX_GB < float("inf"):
+    raise ValueError(
+        "SAM3_VIDEO_CACHE_MAX_GB must be a positive number of GB, got "
+        f"{SAM3_VIDEO_CACHE_MAX_GB}"
+    )
 SAM3_FINE_TUNED_MODELS_ENABLED = get_boolean_from_env(
     "SAM3_FINE_TUNED_MODELS_ENABLED", default=SAM3_EXEC_MODE != "remote"
 )

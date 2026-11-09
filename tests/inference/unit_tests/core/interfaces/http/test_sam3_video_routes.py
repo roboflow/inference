@@ -41,6 +41,14 @@ class SAM3TrackerVideo:
 
     def __init__(self):
         self.calls = []
+        self.max_frames = 1507
+
+    def video_cache_limits(self):
+        return {
+            "max_gb": 16.0,
+            "bytes_per_frame": 10_616_832,
+            "max_frames": self.max_frames,
+        }
 
     def embed_video(self, frames, *, video_id, encode_frames=False):
         self.calls.append(
@@ -193,8 +201,8 @@ def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(client, loads, c
     assert loads.ids == [MODEL_ID]
 
 
-def test_embed_refuses_a_clip_over_the_frame_cap(client, loads, clip, monkeypatch):
-    monkeypatch.setattr(sam3_video, "SAM3_VIDEO_MAX_FRAMES", 10)
+def test_embed_refuses_a_clip_longer_than_the_cache_holds(client, loads, clip):
+    loads.model.max_frames = 10
 
     response = client.post(
         "/sam3/video/embed",
@@ -206,8 +214,17 @@ def test_embed_refuses_a_clip_over_the_frame_cap(client, loads, clip, monkeypatc
     )
 
     assert response.status_code == 413, response.text
-    assert "more than 10 frames" in response.json()["message"]
+    message = response.json()["message"]
+    assert "The video has 25 frames; the most a clip may have is 10" in message
+    assert "SAM3_VIDEO_CACHE_MAX_GB" in message
     assert loads.model.calls == []
+
+
+def test_a_clip_whose_header_understates_its_frames_is_refused(clip, monkeypatch):
+    monkeypatch.setattr(sam3_video, "probe_video", lambda path: (25.0, 5))
+
+    with pytest.raises(sam3_video.PayloadTooLargeError, match="more than 10 frames"):
+        sam3_video.read_clip_frames(str(clip), max_frames=10)
 
 
 def test_segment_passes_every_click_and_the_frame(client, loads):
