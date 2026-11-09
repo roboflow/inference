@@ -1201,36 +1201,6 @@ def test_two_real_sessions_encode_simultaneously(tmp_path) -> None:
     assert all(count == 120 for count, _, _ in results.values())
 
 
-@requires_nvenc
-@pytest.mark.parametrize("max_width", [None, 1280])
-def test_graph_conversion_matches_the_eager_conversion(max_width) -> None:
-    import torch
-
-    adapter = nvenc_ring.PyNvVideoCodecAdapter(max_width=max_width)
-    device = torch.device("cuda", 0)
-    width, height = nvenc_ring.encoded_size(1920, 1080, max_width=max_width)
-    session = adapter.open_session(width, height, 30.0, 300, 4_000_000, device)
-    (slot,) = adapter.allocate_slots(1, 1920, 1080, device)
-    frames = list(_synthetic_frames(4))
-    converted = []
-    try:
-        for ordinal, frame in enumerate(frames):
-            ready = adapter.stage(frame, slot, width, height)
-            adapter.encode(session, slot, ready, ordinal, ordinal == 0)
-            converted.append(session.nv12.clone())
-        mode = adapter.conversion_mode(session)
-        expected = torch.empty_like(session.nv12)
-        work = torch.empty_like(session.work)
-        for frame, nv12 in zip(frames, converted):
-            fitted = adapter._fit(frame, width=width, height=height)
-            nvenc_ring.rgb_to_nv12(fitted, expected, work)
-            assert torch.equal(nv12, expected)
-    finally:
-        adapter.destroy(session)
-
-    assert mode == "graph"
-
-
 def _cuda_image(tensor):
     from roboflow_workflows.execution_engine.entities.base import (
         ImageParentMetadata,
@@ -1351,6 +1321,7 @@ def test_startup_pool_returns_its_device_memory_after_the_backlog_drains() -> No
     frames = list(_synthetic_frames(90))
     torch.cuda.synchronize()
     torch.cuda.empty_cache()
+    reserved_before = torch.cuda.memory_reserved()
     ring = nvenc_ring.NvencRing("0", pre_roll_seconds=5.0, declared_fps=30.0)
     try:
         ring.submit(timestamp(0), 0, _cuda_image(frames[0]))
@@ -1373,15 +1344,22 @@ def test_startup_pool_returns_its_device_memory_after_the_backlog_drains() -> No
     finally:
         ring.close()
 
+    steady_bytes = backend["pool_frames"] * 3 * 1920 * 1080
+    session_bytes = nvenc_ring.PyNvVideoCodecAdapter().scratch_bytes(1920, 1080)
+    margin = 16 * 1024 * 1024  # allocator rounding, graph pool, events
+    details = (reserved_before, reserved_peak, reserved_after, extension_bytes)
     assert stats["startup_pool_frames"] > stats["pool_frames"]
     assert backend["startup_pool_released"], backend
     assert backend["pool_allocated_frames"] == backend["pool_frames"]
-    # the extension block (24 slots, 149 MB at 1080p) left the caching allocator
-    assert reserved_peak - reserved_after >= 0.9 * extension_bytes, (
-        reserved_peak,
-        reserved_after,
-        extension_bytes,
-    )
+    # the extension block (24 slots, 149 MB at 1080p) left the caching allocator;
+    # the session's own buffers were allocated after the peak was sampled
+    assert (
+        reserved_peak - reserved_after >= extension_bytes - session_bytes - margin
+    ), details
+    # steady state: the 8-slot pool and the session buffers, nothing more
+    assert (
+        reserved_after - reserved_before <= steady_bytes + session_bytes + margin
+    ), details
 
 
 @requires_nvenc

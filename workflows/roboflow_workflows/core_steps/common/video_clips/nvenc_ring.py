@@ -31,14 +31,12 @@ GOP-aligned captures, lifecycle and the MP4 remux. This module adds the encoder:
   runtime's settings (rf-video-processor ``nvenc_encoders.NvEncoder``): P3,
   ultra-low-latency tuning, CBR with a 250 ms VBV, ``bf=0``, no lookahead, SPS/PPS
   repeated on every IDR, torch's primary CUDA context and a private CUDA stream.
-  Per frame it waits on the slot's event, copies the slot into the session's
-  source buffer and replays a CUDA graph of the resize (``max_width``) and the
-  RGB to BT.709 NV12 conversion (captured once per session), then encodes and
-  synchronizes: about five torch calls per frame instead of about forty. Each
-  eager torch call releases and re-takes the GIL, and under gVisor every
-  contended GIL hand-off is a futex round trip through the sentry, so the eager
-  path slowed the host's own threads; it remains the fallback when a graph
-  cannot be captured. IDRs are forced
+  Per frame it waits on the slot's event, resizes (``max_width``), converts RGB to
+  BT.709 NV12 into the session's buffer, encodes and synchronizes. The thread's
+  CUDA device is set once when the session opens, not per frame. (A CUDA graph
+  of the conversion was tried and rejected: capturing it while the host and the
+  other recorders use CUDA failed in 1 of 6 captures on an L4 and left the
+  stream unusable.) IDRs are forced
   when the base asks; keyframe flags are read back from the access units (IDR
   NAL). The session is destroyed on the encoder thread before it exits; a session
   still alive at interpreter exit segfaults, so an ``atexit`` hook also closes any
@@ -742,31 +740,6 @@ class _Session:
     vram_bytes: int
     nv12: Any = None
     work: Any = None
-    # The captured conversion (``_GraphConverter``) or None for the eager path.
-    converter: Any = None
-    conversion: str = "pending"
-
-
-class _GraphConverter:
-    """A CUDA graph of ``_fit`` + ``rgb_to_nv12`` reading a fixed source buffer.
-
-    Replaying it costs one torch call (one GIL release) instead of the ~40 the
-    eager conversion makes. The source buffer has the staging slot's shape; each
-    frame is copied into it on the session stream before the replay.
-    """
-
-    def __init__(self, torch: Any, source: Any, graph: Any):
-        self._torch = torch
-        self.source = source
-        self.graph = graph
-
-    @property
-    def shape(self) -> Tuple[int, ...]:
-        return tuple(self.source.shape)
-
-    def __call__(self, rgb: Any) -> None:
-        self.source.copy_(rgb)
-        self.graph.replay()
 
 
 class PyNvVideoCodecAdapter:
@@ -817,8 +790,8 @@ class PyNvVideoCodecAdapter:
         return 3 * width * height
 
     def scratch_bytes(self, width: int, height: int) -> int:
-        """Return the device bytes a session's NV12, float and graph-source buffers take."""
-        return width * height * 3 // 2 + width * height * 4 + width * height * 3
+        """Return the device bytes a session's NV12 and float buffers take."""
+        return width * height * 3 // 2 + width * height * 4
 
     def allocate_slots(
         self, count: int, width: int, height: int, device: Any
@@ -944,7 +917,8 @@ class PyNvVideoCodecAdapter:
         with torch.cuda.stream(session.stream):
             if ready is not None:
                 session.stream.wait_event(ready)
-            self._convert(session, slot.rgb)
+            rgb = self._fit(slot.rgb, width=session.width, height=session.height)
+            rgb_to_nv12(rgb, session.nv12, session.work)
             surface = _NV12Surface(
                 session.nv12, session.width, session.height, session.stream.cuda_stream
             )
@@ -976,63 +950,9 @@ class PyNvVideoCodecAdapter:
         _cuda_driver().set_current(session.context)
         session.stream.synchronize()
         session.encoder = None
-        session.converter = None
         session.nv12 = None
         session.work = None
         session.stream = None
-
-    def conversion_mode(self, session: _Session) -> str:
-        """Return ``graph``, ``eager`` or ``pending`` (no frame converted yet)."""
-        return session.conversion
-
-    def _convert(self, session: _Session, rgb: Any) -> None:
-        # Session stream is current. Graph replay when one is captured for this
-        # source shape, else capture it now; eager conversion as the fallback.
-        converter = session.converter
-        if converter is not None and converter.shape == tuple(rgb.shape):
-            converter(rgb)
-            return None
-
-        if session.conversion != "eager":
-            converter = self._capture_converter(session, rgb)
-            if converter is not None:
-                session.converter = converter
-                session.conversion = "graph"
-                converter(rgb)
-                return None
-            session.conversion = "eager"
-        self._convert_eager(session, rgb)
-
-    def _convert_eager(self, session: _Session, rgb: Any) -> None:
-        fitted = self._fit(rgb, width=session.width, height=session.height)
-        rgb_to_nv12(fitted, session.nv12, session.work)
-
-    def _capture_converter(
-        self, session: _Session, rgb: Any
-    ) -> Optional[_GraphConverter]:
-        # Captured once per session (and source shape) on the session's stream in
-        # thread-local mode, so the host's threads keep using CUDA meanwhile. The
-        # graph only writes session buffers (nv12, work) and its own pool.
-        torch = self._torch
-        try:
-            source = torch.empty_like(rgb)
-            source.copy_(rgb)
-            self._convert_eager(session, source)  # loads the kernels first
-            graph = torch.cuda.CUDAGraph()
-            graph.capture_begin(capture_error_mode="thread_local")
-            try:
-                self._convert_eager(session, source)
-            finally:
-                graph.capture_end()
-        except Exception as error:
-            LOGGER.warning(
-                "NVENC conversion graph capture failed, converting eagerly: %r", error
-            )
-            return None
-
-        converter = _GraphConverter(torch, source, graph)
-
-        return converter
 
     def session_vram_bytes(self, session: _Session) -> int:
         """Return the VRAM the session took when it opened (free-memory delta)."""
@@ -1206,7 +1126,6 @@ class NvencRing(BaseEncodedRing):
         self._forced: Deque[Tuple[int, bool]] = deque()
         self._forced_idrs = 0
         self._keyframes = 0
-        self._last_conversion: Optional[str] = None
 
         if queue_depth is None:
             queue_depth = max(
@@ -1344,13 +1263,7 @@ class NvencRing(BaseEncodedRing):
         return outputs
 
     def _close_encoder(self) -> None:
-        session = self._session
-        if session is not None and hasattr(self._adapter, "conversion_mode"):
-            try:
-                self._last_conversion = self._adapter.conversion_mode(session)
-            except Exception:
-                pass
-        self._session = None
+        session, self._session = self._session, None
         self._session_flushed = False
         self._session_size = None
         self._forced.clear()
@@ -1367,13 +1280,6 @@ class NvencRing(BaseEncodedRing):
                 self._encoder_open = False
 
     def _backend_stats(self) -> Dict[str, Any]:
-        session, adapter = self._session, self._adapter
-        conversion = None
-        if session is not None and hasattr(adapter, "conversion_mode"):
-            try:
-                conversion = adapter.conversion_mode(session)
-            except Exception:
-                conversion = None
         with self._pool_lock:
             size = self._pool_size
             allocated = self._allocated_slots
@@ -1396,7 +1302,6 @@ class NvencRing(BaseEncodedRing):
                 "forced_idrs": self._forced_idrs,
                 "keyframes": self._keyframes,
                 "startup_failed": self._startup_failed,
-                "conversion": conversion or self._last_conversion,
             }
             vram_bytes = self._session_vram_bytes
             scratch_size = self._scratch_size
