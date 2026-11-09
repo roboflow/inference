@@ -55,8 +55,10 @@ def report_request_usage(fn: Any) -> Any:
     The row is recorded through the collector on ``request.app.state`` when
     the handler returns and when it raises an ``Exception``, which is then
     re-raised. Without a collector nothing is recorded. A failure while
-    recording is logged and never changes the response. A handler without an
-    ``inference_request`` argument is attributed from the JSON object in the
+    recording is logged and never changes the response, except an invalid
+    authenticated batch billing context, which is raised before the handler
+    runs. A handler without an ``inference_request`` argument is attributed
+    from the JSON object in the
     request body (``api_key``, ``model_id``, ``source``, ``source_info``),
     except the catch-all route, which reads its image from the body. A
     workflow run handler (``workflow_request`` argument) is attributed to the
@@ -182,8 +184,11 @@ def _scope_of(
 def batch_billing_context(raw: Any, service_secret: Any) -> Optional[str]:
     """Validate a batch billing context authenticated by the service secret.
 
-    Mirrors ``read_batch_billing_context`` of the legacy server, so both
-    serving stacks report the same canonical context.
+    Validates and canonicalises like ``read_batch_billing_context`` of the
+    legacy server. This stack honours the context on every route wrapped by
+    ``report_request_usage``; the legacy server only on handlers that bind
+    ``request``, such as the ``/{dataset_id}/{version_id}`` route the batch
+    proxy calls.
 
     Args:
         raw: ``billing_context`` query parameter of the request.
@@ -205,7 +210,7 @@ def batch_billing_context(raw: Any, service_secret: Any) -> Optional[str]:
         context = json.loads(raw)
         media = context["media"]
         multiplier = context["multiplier"]
-    except (ValueError, TypeError, KeyError):
+    except (ValueError, TypeError, KeyError, RecursionError):
         raise InvalidBatchBillingContextError(
             "Invalid authenticated batch billing context"
         ) from None

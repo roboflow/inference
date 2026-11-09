@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -14,11 +15,11 @@ def _handler(request, countinference=True, service_secret=None):
     pass
 
 
-def _request(media="image", multiplier=0.1):
+def _request(media="image", multiplier=0.1, version="batch-v1"):
     return SimpleNamespace(
         query_params={
             "billing_context": json.dumps(
-                {"version": "batch-v1", "media": media, "multiplier": multiplier}
+                {"version": version, "media": media, "multiplier": multiplier}
             )
         }
     )
@@ -144,3 +145,72 @@ def test_context_reaches_nested_usage_and_resets(
     assert usage_batch_billing_context.get() is None
     handler(request=_request())
     assert seen[1] is None
+
+
+INVALID_CONTEXT_REQUESTS = [
+    {"media": "audio"},
+    {"version": "batch-v2"},
+    {"multiplier": 0},
+]
+
+
+@pytest.mark.parametrize("invalid", INVALID_CONTEXT_REQUESTS)
+def test_invalid_authenticated_context_never_runs_the_sync_handler(
+    usage_collector_with_mocked_threads, configured_service_secret, invalid
+):
+    collector = usage_collector_with_mocked_threads
+    calls = []
+
+    @collector(category="request")
+    def handler(request, api_key, countinference=True, service_secret=None):
+        calls.append(api_key)
+
+    with pytest.raises(ValueError):
+        handler(
+            request=_request(**invalid),
+            api_key="key",
+            service_secret=configured_service_secret,
+        )
+
+    assert calls == []
+    assert "key" not in collector._usage
+
+    handler(request=_request(), api_key="key", service_secret=configured_service_secret)
+
+    assert calls == ["key"]
+    assert collector._usage["key"]
+
+
+@pytest.mark.parametrize("invalid", INVALID_CONTEXT_REQUESTS)
+def test_invalid_authenticated_context_never_runs_the_async_handler(
+    usage_collector_with_mocked_threads, configured_service_secret, invalid
+):
+    collector = usage_collector_with_mocked_threads
+    calls = []
+
+    @collector(category="request")
+    async def handler(request, api_key, countinference=True, service_secret=None):
+        calls.append(api_key)
+
+    with pytest.raises(ValueError):
+        asyncio.run(
+            handler(
+                request=_request(**invalid),
+                api_key="key",
+                service_secret=configured_service_secret,
+            )
+        )
+
+    assert calls == []
+    assert "key" not in collector._usage
+
+    asyncio.run(
+        handler(
+            request=_request(),
+            api_key="key",
+            service_secret=configured_service_secret,
+        )
+    )
+
+    assert calls == ["key"]
+    assert collector._usage["key"]
