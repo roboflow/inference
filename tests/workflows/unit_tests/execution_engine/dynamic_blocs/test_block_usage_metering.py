@@ -9,7 +9,7 @@ remotely.
 
 import json
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest import mock
 
 import pytest
@@ -22,8 +22,11 @@ from inference.core.workflows.errors import DynamicBlockCodeError, DynamicBlockE
 from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
     block_scaffolding,
-    modal_executor,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+    block_state as engine_block_state,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import modal_executor
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_duration import (
     BLOCK_DURATION_SOURCE_CLIENT_WALL_CLOCK,
     BLOCK_DURATION_SOURCE_LOCAL_RUNTIME,
@@ -61,6 +64,13 @@ class _StubWorkspaceResolver:
     def resolve_workspace(self, api_key):
         self.calls.append(api_key)
         return self._workspace
+
+
+@pytest.fixture(autouse=True)
+def _forget_engine_warnings():
+    engine_block_state._WARNED.clear()
+    yield
+    engine_block_state._WARNED.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -795,3 +805,112 @@ def test_remote_block_failing_inside_the_sandbox_is_billed_what_it_spent(
     # exception and the row says `RuntimeError`.
     assert details["error_type"] == "DynamicBlockCodeError"
     assert rows[0]["execution_duration"] == pytest.approx(0.4)
+
+
+def _echo_state_response(echoed_state: dict) -> dict:
+    response = {
+        "success": True,
+        "result": json.dumps({"result": 8}),
+        "block_state": json.dumps(echoed_state),
+        "execution_time_seconds": 0.6,
+    }
+
+    return response
+
+
+@pytest.mark.parametrize(
+    "attribute",
+    [
+        "_usage_block_kind",
+        "_usage_block_type",
+        "_usage_resource_id",
+        "_api_key",
+        "_workflow_step_type",
+        "_workflow_step_name",
+        "_execution_observer",
+    ],
+)
+def test_an_echo_cannot_redirect_the_usage_record(
+    isolated_modal_executor_cache, monkeypatch, attribute
+):
+    warned = []
+    monkeypatch.setattr(
+        engine_block_state.logger,
+        "warning",
+        lambda message, *args, **kwargs: warned.append(message % args),
+    )
+    block_class, python_code = _assemble_block(_PASSTHROUGH_BLOCK, "echo-usage")
+    block = _modal_block(block_class)
+    block._workflow_step_name = "my_step"
+    block._workflow_step_type = "MeteredBlock"
+    response = _echo_state_response({"counter": 2, attribute: "attacker"})
+    class_values = {
+        name: getattr(block_class, name)
+        for name in ("_usage_block_kind", "_usage_block_type", "_usage_resource_id")
+    }
+    results = []
+
+    def run_block():
+        with _real_modal_executor_with_faked_transport(response):
+            results.append(block.run(a=3, b=5))
+
+    rows = _recorded_rows(run_block)
+
+    assert results == [{"result": 8}]
+    assert len(warned) == 1
+    assert len(rows) == 1, rows
+    details = json.loads(rows[0]["resource_details"])
+    assert rows[0]["resource_id"] == (
+        f"custom_python/{compute_block_code_fingerprint(python_code)}"
+    )
+    assert details["block_kind"] == "custom_python"
+    assert details["block_type"] == "MeteredBlock"
+    assert details["step_name"] == "my_step"
+    assert "counter" not in vars(block)
+    assert "attacker" not in vars(block).values()
+    assert {name: getattr(block_class, name) for name in class_values} == class_values
+
+
+def test_carrying_state_leaves_the_usage_records_of_a_call_unchanged(
+    isolated_modal_executor_cache,
+):
+    response = _echo_state_response({"counter": 1})
+
+    def stateless_entry_point(executor, **kwargs):
+        kwargs.pop("block_state")
+        result = executor.execute_remote(**kwargs)
+
+        return result, {}
+
+    def recorded_rows(entry_point_patch):
+        block_class, _ = _assemble_block(_PASSTHROUGH_BLOCK, "state-records")
+        block = _modal_block(block_class)
+
+        def run_block():
+            with _real_modal_executor_with_faked_transport(response):
+                with entry_point_patch:
+                    block.run(a=3, b=5)
+
+        rows = [
+            {
+                key: value
+                for key, value in row.items()
+                if key not in ("timestamp_start", "timestamp_stop")
+            }
+            for row in _recorded_rows(run_block)
+        ]
+
+        return rows
+
+    with_state = recorded_rows(nullcontext())
+    without_state = recorded_rows(
+        mock.patch.object(
+            modal_executor.ModalExecutor,
+            "execute_remote_with_state",
+            autospec=True,
+            side_effect=stateless_entry_point,
+        )
+    )
+
+    assert len(with_state) == 1
+    assert with_state == without_state

@@ -96,6 +96,7 @@ class _InProcessHttpExecutor:
         self.requests = []
         self.responses = []
         self.drop_echo = False
+        self.old_server = False
         self._client = client.ModalExecutor(workspace_id="test-ws")
         self._client._get_endpoint_url = lambda workspace: "http://modal.test"
         self._client._post_execute = self._post
@@ -113,8 +114,11 @@ class _InProcessHttpExecutor:
             request["code_str"] = payload["python_code"].run_function_code
             request["imports"] = payload["python_code"].imports or []
         self.requests.append(request)
-        response = asyncio.run(self.server.execute_block(_FakeRequest(request)))
-        if self.drop_echo:
+        served_request = dict(request)
+        if self.old_server:
+            served_request.pop("block_state_json", None)
+        response = asyncio.run(self.server.execute_block(_FakeRequest(served_request)))
+        if self.drop_echo or self.old_server:
             response.pop("block_state", None)
         self.responses.append(response)
 
@@ -147,12 +151,14 @@ class _InProcessWsExecutor:
         server = user_cls.__new__(user_cls)
         server.workspace_id = "test-ws"
         user_cls.identify(server)
+        self.server = server
         self._session = TestClient(user_cls.wsapp(server)).websocket_connect("/ws")
         self._ws = self._session.__enter__()
         _OPEN_WS_EXECUTORS.append(self)
         self.requests = []
         self.responses = []
         self.drop_echo = False
+        self.old_server = False
         self._client = _ws_client()
         self._client._send_recv_with_retry = self._send_recv
 
@@ -164,10 +170,18 @@ class _InProcessWsExecutor:
         self._session = None
 
     def _send_recv(self, frame_bytes, workspace, request_id=None):
-        self.requests.append(msgpack.unpackb(frame_bytes, raw=False))
+        request = msgpack.unpackb(frame_bytes, raw=False)
+        self.requests.append(request)
+        if self.old_server:
+            served_request = {
+                key: value
+                for key, value in request.items()
+                if key != "block_state_json"
+            }
+            frame_bytes = msgpack.packb(served_request, use_bin_type=True)
         self._ws.send_bytes(frame_bytes)
         response = msgpack.unpackb(self._ws.receive_bytes(), raw=False)
-        if self.drop_echo:
+        if self.drop_echo or self.old_server:
             response.pop("block_state", None)
         self.responses.append(response)
         response_bytes = msgpack.packb(response, use_bin_type=True)
@@ -181,22 +195,115 @@ class _InProcessWsExecutor:
         return self._client.execute_remote(**kwargs)
 
 
-def _build_block(monkeypatch, modal_app, code: str, transport: str):
-    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
-    monkeypatch.setattr(
-        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
-    )
-    monkeypatch.setattr(client, "validate_code_in_modal", lambda *a, **k: None)
-    if transport == "http":
-        executor = _InProcessHttpExecutor(modal_app)
-    else:
-        executor = _InProcessWsExecutor(modal_app)
-
+def _route_to(monkeypatch, executor) -> None:
     @contextmanager
     def acquire(workspace_id):
         yield executor
 
     monkeypatch.setattr(block_scaffolding, "_acquire_modal_executor", acquire)
+
+
+class _WireSocket:
+    """The socket the engine's websocket executor holds, backed by the real ASGI app."""
+
+    def __init__(self, harness, session, ws):
+        self._harness = harness
+        self._session = session
+        self._ws = ws
+
+    def send_binary(self, frame: bytes) -> None:
+        self._harness.sent.append(frame)
+        self._ws.send_bytes(frame)
+
+    def recv(self) -> bytes:
+        data = self._ws.receive_bytes()
+        if self._harness.lose_next_response:
+            self._harness.lose_next_response = False
+            self._harness.lost.append(data)
+            raise ConnectionError("connection dropped after the server answered")
+
+        if self._harness.foreign_request_id is not None:
+            response = msgpack.unpackb(data, raw=False)
+            if "request_id" in response:
+                response["request_id"] = self._harness.foreign_request_id
+                data = msgpack.packb(response, use_bin_type=True)
+        self._harness.received.append(data)
+
+        return data
+
+    def gettimeout(self):
+        return None
+
+    def settimeout(self, value) -> None:
+        pass
+
+    def close(self) -> None:
+        if self._session is None:
+            return
+
+        self._session.__exit__(None, None, None)
+        self._session = None
+
+
+class _WireWsExecutor:
+    """The engine's websocket executor with its own send/receive retry loop.
+
+    Only the connection is replaced: each (re)connect opens a new socket to the
+    real websocket ASGI app and runs the executor's real handshake.
+    """
+
+    def __init__(self, modal_app):
+        from fastapi.testclient import TestClient
+
+        cls = modal_app.Executor
+        user_cls = cls._get_user_cls() if hasattr(cls, "_get_user_cls") else cls
+        self.server = user_cls.__new__(user_cls)
+        self.server.workspace_id = "test-ws"
+        user_cls.identify(self.server)
+        self._app = user_cls.wsapp(self.server)
+        self._test_client_class = TestClient
+        self._sockets = []
+        self.sent = []
+        self.received = []
+        self.lost = []
+        self.lose_next_response = False
+        self.foreign_request_id = None
+        self._client = _ws_client()
+        self._client._connect = self._connect
+        _OPEN_WS_EXECUTORS.append(self)
+
+    def _connect(self, workspace_id) -> None:
+        session = self._test_client_class(self._app).websocket_connect("/ws")
+        socket = _WireSocket(self, session, session.__enter__())
+        self._sockets.append(socket)
+        self._client._ws = socket
+        self._client._hashes_sent_on_ws = set()
+        self._client._handshake()
+
+    def close(self) -> None:
+        for socket in self._sockets:
+            socket.close()
+
+    def execution_frames(self) -> list:
+        frames = [frame for frame in self.sent if b"request_id" in frame]
+
+        return frames
+
+    def execute_remote_with_state(self, **kwargs):
+        return self._client.execute_remote_with_state(**kwargs)
+
+
+def _build_block(monkeypatch, modal_app, code: str, transport: str, executor=None):
+    monkeypatch.setattr(client, "MODAL_AVAILABLE", True)
+    monkeypatch.setattr(
+        block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"
+    )
+    monkeypatch.setattr(client, "validate_code_in_modal", lambda *a, **k: None)
+    if executor is None and transport == "http":
+        executor = _InProcessHttpExecutor(modal_app)
+    elif executor is None:
+        executor = _InProcessWsExecutor(modal_app)
+    _route_to(monkeypatch, executor)
     block_class = block_scaffolding.assembly_custom_python_block(
         block_type_name="StateBlock",
         unique_identifier=f"state-{transport}",
@@ -753,3 +860,245 @@ def test_sandbox_refuses_too_many_top_level_attributes_before_encoding(
     assert problem is not None
     assert problem[1] == "state is too large"
     assert elapsed < 1.0
+
+
+def _pooled_ws_executor(modal_app):
+    inner = _InProcessWsExecutor(modal_app)
+    pooled = client.PooledWebSocketModalExecutor("test-ws")
+    pooled._executors = [inner._client]
+    pooled._active_counts = [0]
+
+    return pooled, inner
+
+
+@pytest.mark.parametrize("transport", TRANSPORTS)
+def test_two_blocks_sharing_one_executor_keep_separate_state(
+    monkeypatch, modal_app, transport
+):
+    if transport == "http":
+        shared = _InProcessHttpExecutor(modal_app)
+    else:
+        shared, _ = _pooled_ws_executor(modal_app)
+    first, _ = _build_block(
+        monkeypatch, modal_app, USER_STATE_CODE, transport, executor=shared
+    )
+    second, _ = _build_block(
+        monkeypatch, modal_app, USER_STATE_CODE, transport, executor=shared
+    )
+
+    values = []
+    for block in (first, second, first, second, first):
+        values.append(block.run(image=1)["value"])
+
+    assert values == [1, 1, 2, 2, 3]
+    assert first.user_state == 3
+    assert second.user_state == 2
+
+
+def test_a_block_keeps_its_state_when_a_different_pooled_executor_serves_it(
+    monkeypatch, modal_app
+):
+    first_pool, first_inner = _pooled_ws_executor(modal_app)
+    second_pool, second_inner = _pooled_ws_executor(modal_app)
+    block, _ = _build_block(
+        monkeypatch, modal_app, USER_STATE_CODE, "ws", executor=first_pool
+    )
+
+    values = _values(block, 2)
+    _route_to(monkeypatch, second_pool)
+    values += _values(block, 2)
+    _route_to(monkeypatch, first_pool)
+    values += _values(block, 1)
+
+    assert values == [1, 2, 3, 4, 5]
+    assert json.loads(second_inner.requests[0]["block_state_json"]) == {"user_state": 2}
+    assert len(first_inner.requests) == 3
+    assert len(second_inner.requests) == 2
+
+
+def test_websocket_code_hash_retry_frame_carries_the_same_state(monkeypatch, modal_app):
+    block, executor = _build_block(monkeypatch, modal_app, USER_STATE_CODE, "ws")
+    block.run(image=1)
+    executor.server._code_namespaces.clear()
+
+    value = block.run(image=2)["value"]
+
+    first_try, retry = executor.requests[1], executor.requests[2]
+    assert "code_str" not in first_try
+    assert executor.responses[1]["error_type"] == "UnknownCodeHash"
+    assert "code_str" in retry
+    assert first_try["request_id"] != retry["request_id"]
+    assert first_try["block_state_json"] == retry["block_state_json"]
+    assert json.loads(retry["block_state_json"]) == {"user_state": 1}
+    assert value == 2
+
+
+RUN_COUNTING_CODE = (
+    "RUNS = []\n"
+    "def run(self, image):\n"
+    "    RUNS.append(image)\n"
+    "    self.user_state = getattr(self, 'user_state', 0) + 1\n"
+    "    return {'value': [self.user_state, len(RUNS)]}\n"
+)
+
+
+def test_resend_after_a_dropped_connection_is_answered_from_the_response_cache(
+    monkeypatch, modal_app
+):
+    executor = _WireWsExecutor(modal_app)
+    block, _ = _build_block(
+        monkeypatch, modal_app, RUN_COUNTING_CODE, "ws", executor=executor
+    )
+    first = block.run(image=1)["value"]
+    executor.lose_next_response = True
+
+    resent = block.run(image=2)["value"]
+    after = block.run(image=3)["value"]
+
+    original_frame, resent_frame = executor.execution_frames()[1:3]
+    request = msgpack.unpackb(original_frame, raw=False)
+    assert original_frame == resent_frame
+    assert json.loads(request["block_state_json"]) == {"user_state": 1}
+    assert len(executor.lost) == 1
+    assert executor.received[-2] == executor.lost[0]
+    cached_response = executor.server._ws_response_cache.get(request["request_id"])
+    assert cached_response == executor.lost[0]
+    assert json.loads(msgpack.unpackb(cached_response, raw=False)["block_state"]) == {
+        "user_state": 2
+    }
+    assert [first, resent, after] == [[1, 1], [2, 2], [3, 3]]
+    assert block.user_state == 3
+
+
+def test_a_response_for_another_request_is_rejected_and_its_state_never_applied(
+    monkeypatch, modal_app
+):
+    executor = _WireWsExecutor(modal_app)
+    block, _ = _build_block(
+        monkeypatch, modal_app, RUN_COUNTING_CODE, "ws", executor=executor
+    )
+    _values(block, 2)
+    executor.foreign_request_id = "someone-elses-request"
+
+    with pytest.raises(Exception, match="did not match the request in flight"):
+        block.run(image=3)
+
+    assert block.user_state == 2
+    assert collect_block_state(block) == {"user_state": 2}
+    executor.foreign_request_id = None
+    assert block.run(image=4)["value"][0] == 3
+
+
+def test_websocket_state_just_under_one_mib_is_carried_in_chunked_frames(
+    monkeypatch, modal_app
+):
+    filler = MIB - len('{"count":1,"value_under_test":""}')
+    executor = _WireWsExecutor(modal_app)
+    block, _ = _build_block(
+        monkeypatch,
+        modal_app,
+        _state_value_code(f"'x' * {filler}"),
+        "ws",
+        executor=executor,
+    )
+
+    values = _values(block, 3)
+
+    chunk_control_prefix = msgpack.packb({"_chunked": 1}, use_bin_type=True)[:-1]
+    sent_controls = [f for f in executor.sent if f.startswith(chunk_control_prefix)]
+    received_controls = [
+        f for f in executor.received if f.startswith(chunk_control_prefix)
+    ]
+    assert values == [1, 2, 3]
+    assert len(sent_controls) == 2
+    assert len(received_controls) == 3
+    assert max(len(frame) for frame in executor.sent) == 1024 * 1024
+    assert len(block.value_under_test) == filler
+
+
+NO_OP_CODE = "def run(self, image):\n    return {'value': 1}\n"
+
+
+class _ClockedTime:
+    def __init__(self, now: list):
+        self._now = now
+
+    def perf_counter(self) -> float:
+        return self._now[0]
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+
+@pytest.mark.parametrize("transport", TRANSPORTS)
+def test_reported_runtime_excludes_the_sandbox_state_decode_and_encode(
+    monkeypatch, modal_app, transport
+):
+    now = [0.0]
+    real_encode = modal_app._encode_block_state
+    real_decode = modal_app._decode_block_state_json
+
+    def slow_encode(state):
+        now[0] += 0.25
+
+        return real_encode(state)
+
+    def slow_decode(block_state_json):
+        now[0] += 0.5
+
+        return real_decode(block_state_json)
+
+    monkeypatch.setattr(modal_app, "time", _ClockedTime(now))
+    monkeypatch.setattr(modal_app, "_encode_block_state", slow_encode)
+    monkeypatch.setattr(modal_app, "_decode_block_state_json", slow_decode)
+    block, executor = _build_block(monkeypatch, modal_app, NO_OP_CODE, transport)
+
+    block.run(image=1)
+
+    assert now[0] == 0.75
+    assert executor.responses[0]["execution_time_seconds"] == 0.0
+
+
+@pytest.mark.parametrize("transport", TRANSPORTS)
+def test_counter_over_new_and_old_servers_restarts_on_every_old_one(
+    monkeypatch, modal_app, engine_warnings, transport
+):
+    block, executor = _build_block(monkeypatch, modal_app, USER_STATE_CODE, transport)
+
+    values = []
+    for old_server in (False, False, True, True, False, False):
+        executor.old_server = old_server
+        values.append(block.run(image=1)["value"])
+
+    assert values == [1, 2, 1, 1, 1, 2]
+    assert json.loads(executor.requests[2]["block_state_json"]) == {"user_state": 2}
+    assert all("block_state" not in executor.responses[i] for i in (2, 3))
+    assert any("server did not return state" in w for w in engine_warnings)
+
+
+def test_engine_warning_set_stays_capped_after_many_distinct_refused_names(
+    engine_warnings,
+):
+    block = _ScaffoldedBlock()
+
+    for index in range(5000):
+        apply_block_state(block, {f"__refused_{index}__": 1})
+
+    assert engine_state._MAX_WARNINGS < 5000
+    assert 0 < len(engine_state._WARNED) <= engine_state._MAX_WARNINGS
+    assert len(engine_warnings) == 5000
+
+
+def test_sandbox_warning_set_stays_capped_after_many_distinct_refused_names(
+    modal_app,
+):
+    stderr_buf = modal_app.StringIO()
+
+    for index in range(5000):
+        modal_app._echo_block_state(
+            None, {f"refused_{index}": (1,)}, code_hash="hash", stderr_buf=stderr_buf
+        )
+
+    assert modal_app._BLOCK_STATE_MAX_WARNINGS < 5000
+    assert 0 < len(modal_app._BLOCK_STATE_WARNED) <= modal_app._BLOCK_STATE_MAX_WARNINGS
+    assert stderr_buf.getvalue().count("not carried") == 5000
