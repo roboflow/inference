@@ -124,6 +124,13 @@ def serialise_sv_detections(
     despite the ``sv`` prefix it now consumes native tensor objects, not
     ``sv.Detections``.
     """
+    if (detections.image_metadata or {}).get("native_obb") or any(
+        (entry or {}).get("native_obb") for entry in (detections.bboxes_metadata or [])
+    ):
+        from roboflow_workflows.core_steps.common.oriented import serialise_native_obb
+
+        return serialise_native_obb(detections)
+
     serialized_image_metadata, serialized_detections, _ = _serialise_sv_detections(
         detections=detections
     )

@@ -5,6 +5,7 @@ import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.execution_engine.constants import (
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
 )
@@ -20,6 +21,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     Selector,
 )
@@ -131,6 +133,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
+                ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
             ]
         )
@@ -195,6 +198,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
                 name=OUTPUT_DETECTIONS_KEY,
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],
             ),
@@ -691,6 +695,28 @@ def correct_detections(
     transformed_rect_width: float,
     transformed_rect_height: float,
 ) -> sv.Detections:
+    """Warp detections into the destination perspective frame.
+
+    Args:
+        detections: Predictions in the source frame.
+        perspective_transformer: Source-to-destination homography.
+        transformed_rect_width: Destination width in pixels.
+        transformed_rect_height: Destination height in pixels.
+
+    Returns:
+        Warped predictions; native outputs retain policy and destination dimensions.
+    """
+    if detections.metadata.get(NATIVE_OBB):
+        detections = detections[:]
+        dimensions = [
+            int(round(transformed_rect_height)),
+            int(round(transformed_rect_width)),
+        ]
+        detections.metadata["image_dimensions"] = dimensions
+        detections.data["image_dimensions"] = np.tile(dimensions, (len(detections), 1))
+        if not len(detections):
+            return detections
+
     corrected_detections: List[sv.Detections] = []
     for i in range(len(detections)):
         # copy
@@ -757,9 +783,17 @@ def correct_detections(
                 ),
                 m=perspective_transformer,
             ).reshape(-1, 2)
-            detection[ORIENTED_BOX_COORDINATES] = np.array(
-                [np.around(corrected_obb).astype(np.float32)]
+            corrected_corners = (
+                corrected_obb.astype(np.float64)
+                if detection.metadata.get(NATIVE_OBB)
+                else np.around(corrected_obb).astype(np.float32)
             )
+            detection[ORIENTED_BOX_COORDINATES] = np.array([corrected_corners])
+            if detection.metadata.get(NATIVE_OBB):
+                detection.xyxy = np.concatenate(
+                    (corrected_corners.min(0), corrected_corners.max(0))
+                )[None]
+
         corrected_detections.append(detection)
     return sv.Detections.merge(corrected_detections)
 

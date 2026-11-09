@@ -16,6 +16,7 @@ from roboflow_workflows.core_steps.common.deserializers import (
 from roboflow_workflows.core_steps.common.deserializers import (
     deserialize_video_metadata_kind,
 )
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.core_steps.common.tensor_native import (
     native_detections_from_inference_predictions,
 )
@@ -159,6 +160,28 @@ def _parse_image_metadata_fields(parameter: str, image: Any):
     return parent_metadata, workflow_root_ancestor_metadata, video_metadata
 
 
+def _reject_native_oriented_detections(parameter: str, detections: Any) -> None:
+    """Keep native OBB semantics out of ordinary tensor detection kinds."""
+    native_payload = (
+        isinstance(detections, dict)
+        and detections.get("task_type") == "oriented-object-detection"
+    )
+    native_carrier = isinstance(detections, (Detections, InstanceDetections)) and (
+        bool((detections.image_metadata or {}).get(NATIVE_OBB))
+        or any(
+            (row or {}).get(NATIVE_OBB, False)
+            for row in (detections.bboxes_metadata or [])
+        )
+    )
+    if native_payload or native_carrier:
+        raise RuntimeInputError(
+            public_message=f"Runtime parameter `{parameter}` contains native oriented "
+            "detections; declare oriented_object_detection_prediction instead of "
+            "an ordinary detection kind.",
+            context="workflow_execution | runtime_input_validation",
+        )
+
+
 def deserialize_detections_kind(
     parameter: str,
     detections: Any,
@@ -173,7 +196,19 @@ def deserialize_detections_kind(
     prediction dicts (center ``x``/``y``/``width``/``height``). Lineage carried by the
     serialised predictions is reconstructed onto the placeholder image so crop-aware
     coordinate recovery downstream keeps working.
+
+    Args:
+        parameter: Runtime parameter name used in validation errors and lineage.
+        detections: Ordinary serialized predictions or an existing tensor carrier.
+
+    Returns:
+        Tensor detections preserving ordinary prediction geometry and lineage.
+
+    Raises:
+        RuntimeInputError: If the input is malformed or carries native OBB semantics.
     """
+    _reject_native_oriented_detections(parameter=parameter, detections=detections)
+
     if isinstance(detections, (Detections, InstanceDetections)):
         return detections
     raw_predictions = _validate_serialized_detections(
@@ -197,7 +232,19 @@ def deserialize_rle_detections_kind(
     then rebuilds ``InstancesRLEMasks`` from each serialised prediction's COCO RLE
     (``RLE_MASK_KEY_IN_INFERENCE_RESPONSE``) and returns a native
     ``InstanceDetections``. Used for the rle-instance-seg and semantic-seg kinds.
+
+    Args:
+        parameter: Runtime parameter name used in validation errors and lineage.
+        detections: Ordinary RLE predictions or an existing tensor carrier.
+
+    Returns:
+        Tensor detections preserving ordinary segmentation masks and lineage.
+
+    Raises:
+        RuntimeInputError: If the input is malformed or carries native OBB semantics.
     """
+    _reject_native_oriented_detections(parameter=parameter, detections=detections)
+
     if isinstance(detections, (Detections, InstanceDetections)):
         return detections
     raw_predictions = _validate_serialized_detections(

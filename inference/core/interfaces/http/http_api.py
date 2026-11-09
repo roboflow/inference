@@ -69,6 +69,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
+    OrientedObjectDetectionInferenceRequest,
     SemanticSegmentationInferenceRequest,
     ensure_wire_safe_mask_format,
 )
@@ -123,6 +124,7 @@ from inference.core.entities.responses.inference import (
     LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
+    OrientedObjectDetectionInferenceResponse,
     SemanticSegmentationInferenceResponse,
     StubResponse,
 )
@@ -2223,6 +2225,27 @@ class HttpInterface(BaseInterface):
                 return process_inference_request(
                     inference_request,
                     api_key=api_key,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+
+            @app.post(
+                "/infer/oriented_object_detection",
+                response_model=Union[
+                    OrientedObjectDetectionInferenceResponse,
+                    List[OrientedObjectDetectionInferenceResponse],
+                ],
+                summary="Native oriented object detection",
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_oriented_objects(
+                inference_request: OrientedObjectDetectionInferenceRequest,
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                return process_inference_request(
+                    inference_request,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
@@ -5102,6 +5125,8 @@ class HttpInterface(BaseInterface):
                 elif task_type == "classification":
                     inference_request_type = ClassificationInferenceRequest
                     args = {"include_anomaly_map": include_anomaly_map}
+                elif task_type == "oriented-object-detection":
+                    inference_request_type = OrientedObjectDetectionInferenceRequest
                 elif task_type == "keypoint-detection":
                     inference_request_type = KeypointsDetectionInferenceRequest
                     args = {"keypoint_confidence": keypoint_confidence}
@@ -5140,7 +5165,7 @@ class HttpInterface(BaseInterface):
                 inference_response = self.model_manager.infer_from_request_sync(
                     inference_request.model_id,
                     inference_request,
-                    active_learning_eligible=True,
+                    active_learning_eligible=task_type != "oriented-object-detection",
                     background_tasks=background_tasks,
                 )
                 logger.debug("Response ready.")

@@ -1,3 +1,6 @@
+from roboflow_workflows.core_steps.common.oriented_entities import (
+    OrientedWorkflowInferenceResponse,
+)
 from roboflow_workflows.execution_engine.entities.base import VideoMetadata
 from roboflow_workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
@@ -6,6 +9,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     QR_CODE_DETECTION_KIND,
     VIDEO_METADATA_KIND,
 )
@@ -21,6 +25,9 @@ from roboflow_workflows.execution_engine.v1.introspection.kinds_schemas import (
 )
 
 KIND_TO_SCHEMA_REGISTER = {
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND.name: OrientedWorkflowInferenceResponse.model_json_schema(
+        by_alias=True
+    ),
     IMAGE_KIND.name: ImageSchema.schema(),
     VIDEO_METADATA_KIND.name: VideoMetadata.schema(),
     IMAGE_KEYPOINTS_KIND.name: ImageKeyPoints.schema(),

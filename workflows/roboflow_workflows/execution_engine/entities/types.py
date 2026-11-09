@@ -1436,3 +1436,12 @@ def Selector(
         ),
         Field(json_schema_extra=json_schema_extra),
     ]
+
+
+ORIENTED_OBJECT_DETECTION_PREDICTION_KIND = Kind(
+    name="oriented_object_detection_prediction",
+    description="Native OBB with ordered float corners and frozen class front semantics.",
+    docs="Native OBB detections use original-image pixel coordinates and clockwise radians. Inside Workflows ordered corners preserve front through crops and warps. A perspective warp can emit an explicit quadrilateral; it is never silently refitted into a native rectangle.",
+    serialised_data_type="dict",
+    internal_data_type="sv.Detections",
+)

@@ -708,6 +708,8 @@ def test_get_union_mask() -> None:
     result = get_union_mask(detections=detections)
 
     # then
+    assert result.dtype == bool
+    np.testing.assert_array_equal(result, np.logical_or(mask1, mask2))
     assert np.allclose(
         sv.mask_to_xyxy(np.array([result])), [[100, 100, 500, 500]], atol=1e-5
     )
@@ -759,6 +761,8 @@ def test_get_intersection_mask() -> None:
     result = get_intersection_mask(detections=detections)
 
     # then
+    assert result.dtype == bool
+    np.testing.assert_array_equal(result, np.logical_and(mask1, mask2))
     assert np.allclose(
         sv.mask_to_xyxy(np.array([result])), [[180, 150, 300, 300]], atol=1e-5
     )

@@ -46,6 +46,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
+    OrientedObjectDetectionInferenceRequest,
     SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
@@ -149,6 +150,41 @@ class ModelManagerModelsProvider:
             source=_WORKFLOW_SOURCE,
         )
         return self._dump(self._infer(model_id=model_id, request=request))
+
+    def run_oriented_object_detection(
+        self,
+        model_id,
+        images,
+        api_key=None,
+        confidence=0.5,
+        max_detections=300,
+        class_filter=None,
+    ):
+        """Run native OBB inference for a Workflow model block.
+
+        Args:
+            model_id: Registered native model.
+            images: Input images or crop references.
+            api_key: Model access credential.
+            confidence: Numeric class threshold.
+            max_detections: Per-image detection cap.
+            class_filter: Optional accepted names.
+
+        Returns:
+            Native response dictionaries.
+        """
+        request = OrientedObjectDetectionInferenceRequest(
+            api_key=api_key,
+            model_id=model_id,
+            image=images,
+            confidence=confidence,
+            max_detections=max_detections,
+            class_filter=class_filter,
+            source=_WORKFLOW_SOURCE,
+            disable_active_learning=True,
+        )
+        responses = self._dump(self._infer(model_id=model_id, request=request))
+        return responses
 
     def run_classification(
         self,

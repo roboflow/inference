@@ -4,6 +4,10 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError, field_serializer
+from roboflow_workflows.core_steps.common.oriented_entities import (
+    OrientedObjectDetectionInferenceResponse,
+    OrientedObjectDetectionPrediction,
+)
 
 from inference.core.workflows.core_steps.common.inference_response_entities import (  # noqa: F401
     CvInferenceResponse,
@@ -454,6 +458,8 @@ def response_from_type(model_type, response_dict):
         return InstanceSegmentationInferenceResponse(**response_dict)
     elif model_type == "semantic-segmentation":
         return SemanticSegmentationInferenceResponse(**response_dict)
+    elif model_type == "oriented-object-detection":
+        return OrientedObjectDetectionInferenceResponse(**response_dict)
     elif model_type == "object-detection":
         return ObjectDetectionInferenceResponse(**response_dict)
     else:

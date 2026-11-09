@@ -59,12 +59,17 @@ def test_auto_model_reports_canonical_package_after_fresh_and_cached_loads(
         model_packages=[package],
     )
     monkeypatch.setattr(core, "get_model_from_provider", lambda **kwargs: metadata)
-    model_class = SimpleNamespace(
-        from_pretrained=lambda *args, **kwargs: SimpleNamespace()
-    )
+    initialization_options = []
+
+    def load_package(*args, **kwargs):
+        initialization_options.append(kwargs)
+        return SimpleNamespace()
+
+    model_class = SimpleNamespace(from_pretrained=load_package)
     monkeypatch.setattr(core, "resolve_model_class", lambda **kwargs: model_class)
 
     first = core.AutoModel.from_pretrained("alias/1", backend="onnx", device="cpu")
+    assert "oriented_box_metadata" not in initialization_options[0]
 
     first_metadata = getattr(first, "resolved_model", None)
     assert isinstance(first_metadata, ResolvedModelMetadata)

@@ -3,7 +3,18 @@ import statistics
 from collections import Counter
 from enum import Enum
 from functools import lru_cache
-from typing import Dict, Generator, List, Literal, Optional, Set, Tuple, Type, Union
+from typing import (
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 from uuid import uuid4
 
 import numpy as np
@@ -263,6 +274,27 @@ class DetectionsConsensusBlockV1(WorkflowBlock):
         detections_merge_coordinates_aggregation: AggregationMode,
         detections_merge_mask_aggregation: MaskAggregationMode,
     ) -> BlockResult:
+        """Fuse each image's prediction sources using the block's consensus strategy.
+
+        Args:
+            predictions_batches: One batch per model source, aligned by image.
+            required_votes: Minimum matching sources for an accepted detection.
+            class_aware: Restrict votes to matching class names.
+            iou_threshold: Minimum overlap for a candidate vote.
+            confidence: Minimum aggregated detection confidence.
+            classes_to_consider: Optional accepted class names.
+            required_objects: Minimum total or per-class consensus count.
+            presence_confidence_aggregation: Confidence aggregation for presence.
+            detections_merge_confidence_aggregation: Output confidence/class policy.
+            detections_merge_coordinates_aggregation: Ordinary box coordinate policy.
+            detections_merge_mask_aggregation: Ordinary mask merge policy.
+
+        Returns:
+            Per-image predictions and object-presence information.
+
+        Raises:
+            ValueError: If no prediction source is supplied or image lineage differs.
+        """
         if len(predictions_batches) < 1:
             raise ValueError(
                 f"Consensus step requires at least one source of predictions."
@@ -274,7 +306,7 @@ class DetectionsConsensusBlockV1(WorkflowBlock):
                 object_present,
                 presence_confidence,
                 consensus_detections,
-            ) = agree_on_consensus_for_all_detections_sources(
+            ) = self._agree_on_consensus(
                 detections_from_sources=list(detections_from_sources),
                 required_votes=required_votes,
                 class_aware=class_aware,
@@ -295,6 +327,10 @@ class DetectionsConsensusBlockV1(WorkflowBlock):
                 }
             )
         return results
+
+    def _agree_on_consensus(self, **kwargs):
+        result = agree_on_consensus_for_all_detections_sources(**kwargs)
+        return result
 
 
 def does_not_detect_objects_in_any_source(
@@ -345,7 +381,23 @@ def get_detections_from_different_sources_with_max_overlap(
     iou_threshold: float,
     class_aware: bool,
     detections_already_considered: Set[str],
+    *,
+    _iou_calculator: Optional[Callable[..., float]] = None,
 ) -> Dict[int, Tuple[sv.Detections, float]]:
+    """Select the strongest unconsumed localization match from each other source.
+
+    Args:
+        detection: Single detection receiving candidate votes.
+        source: Index of its prediction source.
+        detections_from_sources: All sources in the same image frame.
+        iou_threshold: Minimum overlap for a vote.
+        class_aware: Restrict votes to the same class name.
+        detections_already_considered: Identities consumed by previous consensus.
+        _iou_calculator: Optional version-specific localization strategy.
+
+    Returns:
+        Source index to matching detection and overlap score.
+    """
     current_max_overlap = {}
     for other_source, other_detection in enumerate_detections(
         detections_from_sources=detections_from_sources,
@@ -358,7 +410,7 @@ def get_detections_from_different_sources_with_max_overlap(
             and detection["class_name"][0] != other_detection["class_name"][0]
         ):
             continue
-        iou_value = calculate_iou(
+        iou_value = (_iou_calculator or calculate_iou)(
             detection_a=detection,
             detection_b=other_detection,
         )
@@ -401,7 +453,33 @@ def agree_on_consensus_for_all_detections_sources(
     detections_merge_confidence_aggregation: AggregationMode,
     detections_merge_coordinates_aggregation: AggregationMode,
     detections_merge_mask_aggregation: MaskAggregationMode,
+    *,
+    _iou_calculator: Optional[Callable[..., float]] = None,
+    _detection_merger: Optional[Callable[..., sv.Detections]] = None,
 ) -> Tuple[str, bool, Dict[str, float], sv.Detections]:
+    """Compute consensus across the prediction sources for one image.
+
+    Args:
+        detections_from_sources: Predictions in the same image frame.
+        required_votes: Minimum distinct matching sources.
+        class_aware: Restrict votes to the same class name.
+        iou_threshold: Minimum overlap for a vote.
+        confidence: Minimum merged detection confidence.
+        classes_to_consider: Optional accepted class names.
+        required_objects: Minimum total or per-class object count.
+        presence_confidence_aggregation: Presence confidence policy.
+        detections_merge_confidence_aggregation: Output confidence/class policy.
+        detections_merge_coordinates_aggregation: Ordinary box coordinate policy.
+        detections_merge_mask_aggregation: Ordinary mask merge policy.
+        _iou_calculator: Optional version-specific localization strategy.
+        _detection_merger: Optional version-specific contributor merge strategy.
+
+    Returns:
+        Parent identity, presence flag, presence confidence and fused detections.
+
+    Raises:
+        ValueError: If nonempty sources do not share one parent image identity.
+    """
     if does_not_detect_objects_in_any_source(
         detections_from_sources=detections_from_sources
     ):
@@ -423,6 +501,8 @@ def agree_on_consensus_for_all_detections_sources(
             detections_already_considered,
         ) = get_consensus_for_single_detection(
             detection=detection,
+            _iou_calculator=_iou_calculator,
+            _detection_merger=_detection_merger,
             source_id=source_id,
             detections_from_sources=detections_from_sources,
             iou_threshold=iou_threshold,
@@ -465,13 +545,37 @@ def get_consensus_for_single_detection(
     detections_merge_coordinates_aggregation: AggregationMode,
     detections_merge_mask_aggregation: MaskAggregationMode,
     detections_already_considered: Set[str],
+    *,
+    _iou_calculator: Optional[Callable[..., float]] = None,
+    _detection_merger: Optional[Callable[..., sv.Detections]] = None,
 ) -> Tuple[List[sv.Detections], Set[str]]:
+    """Build at most one consensus detection and mark its contributors consumed.
+
+    Args:
+        detection: Candidate anchor detection.
+        source_id: Anchor source index.
+        detections_from_sources: All sources in the same image frame.
+        iou_threshold: Minimum overlap for a vote.
+        class_aware: Restrict votes to matching class names.
+        required_votes: Minimum distinct matching sources.
+        confidence: Minimum aggregated detection confidence.
+        detections_merge_confidence_aggregation: Output confidence/class policy.
+        detections_merge_coordinates_aggregation: Ordinary coordinate policy.
+        detections_merge_mask_aggregation: Ordinary mask policy.
+        detections_already_considered: Previously consumed detection identities.
+        _iou_calculator: Optional version-specific localization strategy.
+        _detection_merger: Optional version-specific contributor merge strategy.
+
+    Returns:
+        Accepted consensus detections and updated consumed identities.
+    """
     if detection and detection["detection_id"][0] in detections_already_considered:
         return [], detections_already_considered
     consensus_detections = []
     detections_with_max_overlap = (
         get_detections_from_different_sources_with_max_overlap(
             detection=detection,
+            _iou_calculator=_iou_calculator,
             source=source_id,
             detections_from_sources=detections_from_sources,
             iou_threshold=iou_threshold,
@@ -502,7 +606,7 @@ def get_consensus_for_single_detection(
         [detection]
         + [matched_value[0] for matched_value in detections_with_max_overlap.values()]
     )
-    merged_detection = merge_detections(
+    merged_detection = (_detection_merger or merge_detections)(
         detections=detections_to_merge,
         confidence_aggregation_mode=detections_merge_confidence_aggregation,
         boxes_aggregation_mode=detections_merge_coordinates_aggregation,
