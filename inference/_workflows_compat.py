@@ -38,6 +38,11 @@ Rules:
   module-level state, caches, monkeypatches and configuration singletons stay
   singular. The loader replaces its temporary legacy module in ``sys.modules``
   after importing the canonical module, leaving canonical metadata untouched.
+  The replaced object (that temporary module, or a legacy package swapped by
+  ``alias_legacy_root``) forwards attribute lookups to the canonical module: a
+  thread that found it in ``sys.modules`` mid-import keeps it, and CPython's
+  ``from <legacy> import <name>`` then reads ``<name>`` from it. This is not a
+  proxy; ``sys.modules`` never holds it once the import finishes.
 - Aliasing an inventoried ENTERPRISE module triggers ``import inference.core``
   first so the server env / configuration installation runs before any
   enterprise sink freezes standalone security defaults.
@@ -197,6 +202,22 @@ def _bind_host_exports(module, exports: Tuple[Tuple[str, str], ...]) -> None:
         setattr(module, name, getattr(importlib.import_module(host_module), name))
 
 
+def _forward_to_canonical(module, canonical) -> None:
+    # Threads that found ``module`` in sys.modules mid-import keep it: the
+    # from-import fast path waits for the import, then reads names from it.
+    if module is canonical:
+        return
+
+    def __getattr__(name: str):
+        return getattr(canonical, name)
+
+    def __dir__():
+        return dir(canonical)
+
+    module.__getattr__ = __getattr__
+    module.__dir__ = __dir__
+
+
 class _WorkflowsCompatLoader(importlib.abc.Loader):
     """Replace the temporary legacy module without altering canonical metadata."""
 
@@ -212,6 +233,7 @@ class _WorkflowsCompatLoader(importlib.abc.Loader):
         canonical = importlib.import_module(self._canonical_name)
         if self._canonical_name in _HOST_EXPORTS:
             _bind_host_exports(canonical, _HOST_EXPORTS[self._canonical_name])
+        _forward_to_canonical(module, canonical)
         sys.modules[self._legacy_name] = canonical
 
     def get_code(self, fullname):  # type: ignore[override]
@@ -327,6 +349,9 @@ def alias_legacy_root(legacy_name: str) -> None:
         raise ImportError(f"{legacy_name!r} is not a mapped legacy Workflows prefix")
     _bootstrap_for_enterprise(legacy_name)
     canonical_module = importlib.import_module(canonical)
+    replaced = sys.modules.get(legacy_name)
+    if replaced is not None:
+        _forward_to_canonical(replaced, canonical_module)
     sys.modules[legacy_name] = canonical_module
     parent_name, _, attr = legacy_name.rpartition(".")
     if parent_name:
