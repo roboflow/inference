@@ -426,6 +426,58 @@ def test_render_example_crops_keeps_the_largest_boxes_in_label_order() -> None:
         assert CROP_MIN_EDGE <= max(crop.shape[:2]) <= CROP_MAX_EDGE
 
 
+@pytest.mark.parametrize("labels", [["cat"], ["dog", "cat"]])
+@pytest.mark.parametrize("equal_area", [False, True], ids=["increasing", "equal"])
+def test_render_example_crops_encodes_only_three_boxes_per_label_per_image(
+    labels: List[str], equal_area: bool
+) -> None:
+    # given
+    pixels = np.random.default_rng(0).integers(
+        0, 256, size=(100, 200, 3), dtype=np.uint8
+    )
+    _, encoded = cv2.imencode(".png", pixels)
+    image = {"type": "base64", "value": base64.b64encode(encoded).decode("ascii")}
+    boxes = [
+        {
+            "class": label,
+            "x": 60 + index % 80,
+            "y": 50,
+            "width": 20 if equal_area else 20 + index / 10,
+            "height": 20,
+        }
+        for index in range(1000)
+        for label in reversed(labels)
+    ]
+    selected = []
+    for label in labels:
+        label_boxes = [box for box in boxes if box["class"] == label]
+        selected.extend(label_boxes[:3] if equal_area else label_boxes[-3:][::-1])
+
+    examples = validate_reference_examples(
+        [{"image": image, "annotations": boxes}],
+        task_type="object-detection",
+        labels=labels,
+    )
+    expected_examples = validate_reference_examples(
+        [{"image": image, "annotations": selected}],
+        task_type="object-detection",
+        labels=labels,
+    )
+    expected = render_example_crops(expected_examples, labels=labels)
+
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "_crop_base64",
+        wraps=vlm_reference_examples._crop_base64,
+    ) as encode_crop:
+        groups = render_example_crops(examples, labels=labels)
+
+    # then
+    assert groups == expected
+    assert encode_crop.call_count == 3 * len(labels)
+
+
 def test_render_example_crops_keeps_the_largest_boxes_across_examples() -> None:
     # given
     examples = validate_reference_examples(

@@ -378,9 +378,9 @@ def render_example_crops(
 ) -> List[Tuple[str, List[str]]]:
     """Load each example image in turn and cut crops of its boxes, grouped by label.
 
-    A box is cropped while its image is loaded if it is among the largest of its label
-    so far. The image is released before the next one loads, so the examples never
-    hold more than one full-size image.
+    Boxes are considered largest first within each image, encoding at most
+    ``MAX_CROPS_PER_LABEL`` crops per label per image. The image is released before
+    the next one loads, so the examples never hold more than one full-size image.
 
     Args:
         examples: Validated examples.
@@ -601,7 +601,9 @@ class _LargestCrops:
         self._arrivals = 0
 
     def add(self, example: LoadedReferenceExample) -> None:
-        for label, x_min, y_min, x_max, y_max in example.boxes:
+        # Processing larger boxes first avoids replacing crops within this image.
+        ordered_boxes = sorted(example.boxes, key=lambda box: -_area(box[1:]))
+        for label, x_min, y_min, x_max, y_max in ordered_boxes:
             box = (x_min, y_min, x_max, y_max)
             rank = (-_area(box), self._arrivals)
             self._arrivals += 1
