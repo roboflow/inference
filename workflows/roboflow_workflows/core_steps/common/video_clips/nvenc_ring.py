@@ -31,8 +31,14 @@ GOP-aligned captures, lifecycle and the MP4 remux. This module adds the encoder:
   runtime's settings (rf-video-processor ``nvenc_encoders.NvEncoder``): P3,
   ultra-low-latency tuning, CBR with a 250 ms VBV, ``bf=0``, no lookahead, SPS/PPS
   repeated on every IDR, torch's primary CUDA context and a private CUDA stream.
-  Per frame it waits on the slot's event, resizes (``max_width``), converts RGB to
-  BT.709 NV12 into the session's buffer, encodes and synchronizes. IDRs are forced
+  Per frame it waits on the slot's event, copies the slot into the session's
+  source buffer and replays a CUDA graph of the resize (``max_width``) and the
+  RGB to BT.709 NV12 conversion (captured once per session), then encodes and
+  synchronizes: about five torch calls per frame instead of about forty. Each
+  eager torch call releases and re-takes the GIL, and under gVisor every
+  contended GIL hand-off is a futex round trip through the sentry, so the eager
+  path slowed the host's own threads; it remains the fallback when a graph
+  cannot be captured. IDRs are forced
   when the base asks; keyframe flags are read back from the access units (IDR
   NAL). The session is destroyed on the encoder thread before it exits; a session
   still alive at interpreter exit segfaults, so an ``atexit`` hook also closes any
@@ -43,7 +49,10 @@ full pool counts ``queue_drops``. Until the ring's session is open the pool may 
 to a start-up headroom of ``STARTUP_POOL_MAX_FRAMES`` (32) slots, capped at
 ``STARTUP_POOL_MAX_BYTES`` (192 MiB) of device memory, so the frames that arrive
 while NVENC opens the session (0.35-0.8 s measured) are queued instead of dropped;
-the extra slots are freed once the backlog drains. Frames refused in that window
+the extra slots are freed once the backlog drains and their block is handed back
+to the driver (one ``torch.cuda.empty_cache()`` per stream start-up, on the encoder
+thread), so a recorder's steady-state VRAM is the 8-slot pool plus the session.
+Frames refused in that window
 count as ``startup_dropped``. Device memory is not host memory, so the host byte
 budget does not count the pool; ``vram_bytes_estimate`` in the ring's stats does.
 
@@ -566,8 +575,8 @@ class NvencAdapter(Protocol):
 
     ``frame_size``, ``staging_size``, ``allocate_slots`` and ``stage`` run on the
     pipeline thread; ``stage`` must enqueue at most one copy and one event on the
-    caller's stream. ``open_session``, ``encode``, ``flush`` and ``destroy`` run on
-    the ring thread only. ``encode``/``flush`` return ``(input_ordinal,
+    caller's stream. ``open_session``, ``encode``, ``flush``, ``destroy`` and
+    ``release_cached_memory`` run on the ring thread only. ``encode``/``flush`` return ``(input_ordinal,
     access_unit)`` pairs in output order; the ring maps ordinals back to frames.
     """
 
@@ -592,6 +601,8 @@ class NvencAdapter(Protocol):
     def flush(self, session: Any) -> List[Tuple[int, bytes]]: ...
 
     def destroy(self, session: Any) -> None: ...
+
+    def release_cached_memory(self) -> None: ...
 
     def tensor_device(self, tensor: Any) -> Any: ...
 
@@ -731,6 +742,31 @@ class _Session:
     vram_bytes: int
     nv12: Any = None
     work: Any = None
+    # The captured conversion (``_GraphConverter``) or None for the eager path.
+    converter: Any = None
+    conversion: str = "pending"
+
+
+class _GraphConverter:
+    """A CUDA graph of ``_fit`` + ``rgb_to_nv12`` reading a fixed source buffer.
+
+    Replaying it costs one torch call (one GIL release) instead of the ~40 the
+    eager conversion makes. The source buffer has the staging slot's shape; each
+    frame is copied into it on the session stream before the replay.
+    """
+
+    def __init__(self, torch: Any, source: Any, graph: Any):
+        self._torch = torch
+        self.source = source
+        self.graph = graph
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return tuple(self.source.shape)
+
+    def __call__(self, rgb: Any) -> None:
+        self.source.copy_(rgb)
+        self.graph.replay()
 
 
 class PyNvVideoCodecAdapter:
@@ -781,8 +817,8 @@ class PyNvVideoCodecAdapter:
         return 3 * width * height
 
     def scratch_bytes(self, width: int, height: int) -> int:
-        """Return the device bytes a session's NV12 and float buffers take."""
-        return width * height * 3 // 2 + width * height * 4
+        """Return the device bytes a session's NV12, float and graph-source buffers take."""
+        return width * height * 3 // 2 + width * height * 4 + width * height * 3
 
     def allocate_slots(
         self, count: int, width: int, height: int, device: Any
@@ -898,14 +934,17 @@ class PyNvVideoCodecAdapter:
         ordinal: int,
         force_idr: bool,
     ) -> List[Tuple[int, bytes]]:
-        """Convert and encode one slot; returns the access units NVENC released."""
+        """Convert and encode one slot; returns the access units NVENC released.
+
+        Runs on the thread that opened the session, whose current CUDA device
+        ``open_session`` set, so no per-frame device switch is needed.
+        """
         torch = self._torch
         _cuda_driver().set_current(session.context)
-        with torch.cuda.device(session.device), torch.cuda.stream(session.stream):
+        with torch.cuda.stream(session.stream):
             if ready is not None:
                 session.stream.wait_event(ready)
-            rgb = self._fit(slot.rgb, width=session.width, height=session.height)
-            rgb_to_nv12(rgb, session.nv12, session.work)
+            self._convert(session, slot.rgb)
             surface = _NV12Surface(
                 session.nv12, session.width, session.height, session.stream.cuda_stream
             )
@@ -937,13 +976,80 @@ class PyNvVideoCodecAdapter:
         _cuda_driver().set_current(session.context)
         session.stream.synchronize()
         session.encoder = None
+        session.converter = None
         session.nv12 = None
         session.work = None
         session.stream = None
 
+    def conversion_mode(self, session: _Session) -> str:
+        """Return ``graph``, ``eager`` or ``pending`` (no frame converted yet)."""
+        return session.conversion
+
+    def _convert(self, session: _Session, rgb: Any) -> None:
+        # Session stream is current. Graph replay when one is captured for this
+        # source shape, else capture it now; eager conversion as the fallback.
+        converter = session.converter
+        if converter is not None and converter.shape == tuple(rgb.shape):
+            converter(rgb)
+            return None
+
+        if session.conversion != "eager":
+            converter = self._capture_converter(session, rgb)
+            if converter is not None:
+                session.converter = converter
+                session.conversion = "graph"
+                converter(rgb)
+                return None
+            session.conversion = "eager"
+        self._convert_eager(session, rgb)
+
+    def _convert_eager(self, session: _Session, rgb: Any) -> None:
+        fitted = self._fit(rgb, width=session.width, height=session.height)
+        rgb_to_nv12(fitted, session.nv12, session.work)
+
+    def _capture_converter(
+        self, session: _Session, rgb: Any
+    ) -> Optional[_GraphConverter]:
+        # Captured once per session (and source shape) on the session's stream in
+        # thread-local mode, so the host's threads keep using CUDA meanwhile. The
+        # graph only writes session buffers (nv12, work) and its own pool.
+        torch = self._torch
+        try:
+            source = torch.empty_like(rgb)
+            source.copy_(rgb)
+            self._convert_eager(session, source)  # loads the kernels first
+            graph = torch.cuda.CUDAGraph()
+            graph.capture_begin(capture_error_mode="thread_local")
+            try:
+                self._convert_eager(session, source)
+            finally:
+                graph.capture_end()
+        except Exception as error:
+            LOGGER.warning(
+                "NVENC conversion graph capture failed, converting eagerly: %r", error
+            )
+            return None
+
+        converter = _GraphConverter(torch, source, graph)
+
+        return converter
+
     def session_vram_bytes(self, session: _Session) -> int:
         """Return the VRAM the session took when it opened (free-memory delta)."""
         return session.vram_bytes
+
+    def release_cached_memory(self) -> None:
+        """Give device blocks the caching allocator holds back to the driver.
+
+        Called once per ring, after the start-up pool's extension block was
+        freed: torch keeps freed blocks cached, so without this the start-up
+        headroom (up to 192 MiB per stream) would stay reserved for the life of
+        the process. ``empty_cache`` is process-wide (it also returns the
+        host's own unused cached blocks, which torch re-allocates on demand)
+        and synchronises the device once; that is acceptable once per stream
+        start-up and is never done per frame.
+        """
+        self._torch.cuda.empty_cache()
 
     def _fit(self, rgb: Any, *, width: int, height: int) -> Any:
         source_height, source_width = int(rgb.shape[1]), int(rgb.shape[2])
@@ -1070,6 +1176,11 @@ class NvencRing(BaseEncodedRing):
         self._pool_limit_startup = self._pool_frames
         self._free_slots: List[Any] = []
         self._extension_slots: set = set()
+        self._extension_allocated = 0
+        # The start-up extension block, once every slot of it is gone, is handed
+        # back to the driver by the encoder thread (``release_cached_memory``).
+        self._startup_release_pending = False
+        self._startup_pool_released = False
         self._allocated_slots = 0
         self._peak_in_use = 0
         self._pool_drops = 0
@@ -1095,6 +1206,7 @@ class NvencRing(BaseEncodedRing):
         self._forced: Deque[Tuple[int, bool]] = deque()
         self._forced_idrs = 0
         self._keyframes = 0
+        self._last_conversion: Optional[str] = None
 
         if queue_depth is None:
             queue_depth = max(
@@ -1214,6 +1326,7 @@ class NvencRing(BaseEncodedRing):
 
         # The encoder is done with the slot (stream synchronised): reuse it now.
         self._release_slot(staged)
+        self._release_startup_pool_memory()
         if force_keyframe:
             self._forced_idrs += 1
         outputs = self._to_outputs(access_units)
@@ -1231,7 +1344,13 @@ class NvencRing(BaseEncodedRing):
         return outputs
 
     def _close_encoder(self) -> None:
-        session, self._session = self._session, None
+        session = self._session
+        if session is not None and hasattr(self._adapter, "conversion_mode"):
+            try:
+                self._last_conversion = self._adapter.conversion_mode(session)
+            except Exception:
+                pass
+        self._session = None
         self._session_flushed = False
         self._session_size = None
         self._forced.clear()
@@ -1248,6 +1367,13 @@ class NvencRing(BaseEncodedRing):
                 self._encoder_open = False
 
     def _backend_stats(self) -> Dict[str, Any]:
+        session, adapter = self._session, self._adapter
+        conversion = None
+        if session is not None and hasattr(adapter, "conversion_mode"):
+            try:
+                conversion = adapter.conversion_mode(session)
+            except Exception:
+                conversion = None
         with self._pool_lock:
             size = self._pool_size
             allocated = self._allocated_slots
@@ -1258,6 +1384,7 @@ class NvencRing(BaseEncodedRing):
                 "pool_peak_frames": self._peak_in_use,
                 "pool_free_frames": len(self._free_slots),
                 "pool_drops": self._pool_drops,
+                "startup_pool_released": self._startup_pool_released,
                 "stage_errors": self._stage_errors,
                 "sessions_open": self._sessions_opened - self._sessions_destroyed,
                 "sessions_opened": self._sessions_opened,
@@ -1269,6 +1396,7 @@ class NvencRing(BaseEncodedRing):
                 "forced_idrs": self._forced_idrs,
                 "keyframes": self._keyframes,
                 "startup_failed": self._startup_failed,
+                "conversion": conversion or self._last_conversion,
             }
             vram_bytes = self._session_vram_bytes
             scratch_size = self._scratch_size
@@ -1316,6 +1444,7 @@ class NvencRing(BaseEncodedRing):
                 return None
             self._free_slots = list(reversed(steady)) + list(reversed(extra))
             self._extension_slots = {id(slot) for slot in extra}
+            self._extension_allocated += len(extra)
             self._allocated_slots = len(steady) + len(extra)
             slot = self._take_free_slot_locked()
 
@@ -1355,6 +1484,7 @@ class NvencRing(BaseEncodedRing):
                 # Start-up is over: let the extension block go.
                 self._extension_slots.discard(id(slot))
                 self._allocated_slots -= 1
+                self._mark_extension_gone_locked()
                 return None
             self._free_slots.append(slot)
             self._end_startup_headroom_locked()
@@ -1381,6 +1511,30 @@ class NvencRing(BaseEncodedRing):
             self._extension_slots.discard(id(slot))
         self._free_slots = kept
         self._allocated_slots -= len(dropped)
+        self._mark_extension_gone_locked()
+
+    def _mark_extension_gone_locked(self) -> None:
+        # Once no slot of the extension block is referenced, torch has the block
+        # back in its cache; the encoder thread then returns it to the driver.
+        if self._extension_slots or self._extension_allocated == 0:
+            return None
+        if not self._startup_pool_released:
+            self._startup_release_pending = True
+
+    def _release_startup_pool_memory(self) -> None:
+        # Encoder thread, pool lock not held: at most once per ring.
+        with self._pool_lock:
+            if not self._startup_release_pending:
+                return None
+            self._startup_release_pending = False
+            self._startup_pool_released = True
+        release = getattr(self._adapter, "release_cached_memory", None)
+        if release is None:
+            return None
+        try:
+            release()
+        except Exception as error:
+            LOGGER.warning("Releasing the NVENC start-up pool failed: %r", error)
 
     def _open_session(self, *, size: Tuple[int, int], device: Any) -> None:
         width, height = size
