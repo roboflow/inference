@@ -102,9 +102,19 @@ A clip is approximate evidence with reported bounds.
 * **Encoder start-up (NVENC).** See [Encoder start-up](#encoder-start-up): frames
   that arrive before the GPU encoder is ready are not recorded and are counted as
   `startup_dropped`.
-* **Stale frames.** Frames processed more than `max_processing_lag_seconds` (default
-  5) after their capture timestamp are not recorded, for example the first frames
-  after a slow model load. Frames read from video files are exempt.
+* **Stale frames.** A frame whose processing lag (the time from its capture
+  timestamp to the recorder's step) exceeds `max_processing_lag_seconds` (default 5)
+  never enters a clip; it is counted as `stale_dropped`. Frames read from video files
+  are exempt. This is the stale rule, not an encoder limit, and it matters when a
+  host processes its first frames late. On the Serverless Streaming sandbox the
+  first frame was processed 5.1-5.3 s after it was grabbed under gVisor (2.1 s under
+  runc) because of model warm-up. A trigger on one of those first frames anchors the
+  window on the old frame: the frames that follow arrive 2.1 s (runc) or more than
+  5 s (gVisor) later, so the clip is short (about 88 frames of a 10 s window under
+  runc, 1 frame under gVisor), or the video ends as `clip_failed` ("No frames were
+  buffered in the requested window") when the recorder sees the trigger frame
+  itself later than the limit. Raise `max_processing_lag_seconds` on such hosts if
+  early triggers need clips.
 * **Restarts.** A frame number going backwards or a resolution change starts a new
   recording; a clip in progress ends there as partial (`reset` or
   `resolution_change`). The previous recording's memory is freed as soon as its
@@ -210,11 +220,16 @@ The recorder picks a backend per stream at its first frame:
 * **NVENC**, when the frame is a CUDA tensor and PyNvVideoCodec imports (Serverless
   Streaming GPU runners). Inside the step the recorder makes one GPU-to-GPU copy of
   the frame into a pooled buffer on the pipeline's own CUDA stream and records one
-  event: two CUDA calls per frame. The wait, the `max_width` resize, the NV12
-  conversion and the encode run on the recorder's own thread and CUDA stream, so no
-  frame is copied to the CPU and only encoded packets reach host memory. Keeping
-  the pipeline thread to two CUDA calls matters under gVisor, where every CUDA
-  driver call goes through the sandbox. On an RTX 4080 at 1080p the step costs
+  event: two CUDA calls per frame. The wait, the `max_width` resize, a copy into a
+  packed RGBA buffer and the encode run on the recorder's own thread and CUDA
+  stream, so no frame is copied to the CPU and only encoded packets reach host
+  memory. NVENC converts RGB to YUV itself (decoded colours match a BT.709
+  conversion: mean error 1 grey level on an L4 colour-bar test), so the recorder's
+  thread makes about four CUDA and encoder calls per frame. Keeping both threads to
+  a few calls matters under gVisor, where every CUDA driver call goes through the
+  sandbox and every call that releases the GIL competes with the host's threads:
+  converting to NV12 in torch (about forty calls per frame) raised the Serverless
+  Streaming preview's p95 latency by about 25% with two recorders on 2 CPUs. On an RTX 4080 at 1080p the step costs
   0.09-0.14 ms per frame (p50; p95 at most 0.32 ms), down from 0.45-0.76 ms (p95 up
   to 1.2 ms) when the conversion ran in the step. Bitrate: 4 Mbit/s at 1080p30 by
   default, scaled by pixel rate.
@@ -224,7 +239,9 @@ The recorder picks a backend per stream at its first frame:
 
 Both write an IDR frame every output second and mux clips to MP4 with
 `+faststart`. Encoding, muxing and uploading never use the Workflow's shared thread
-pools.
+pools. Clips are muxed one at a time per process, with a short pause every 32
+packets, so clips that finish together do not compete with the pipeline at once;
+a clip held in memory is uploaded as one buffer.
 
 ### Encoder start-up
 
@@ -247,8 +264,10 @@ per stream. Neither runs on the pipeline thread:
   L4); when two streams start together, the second session is ready 0.6-1.0 s after
   the first frame. Until its session is open, a stream's GPU frame pool may grow
   from 8 to 32 frames (190 MiB at 1080p, never more than 192 MiB), so those frames
-  are kept; the extra frames are released once the backlog is encoded. Frames
-  refused in that window are also counted as `startup_dropped`.
+  are kept. Once the backlog is encoded the extra frames are released and their
+  GPU memory is handed back to the driver (one `torch.cuda.empty_cache()` per
+  stream start-up), so steady state holds the 8-frame pool. Frames refused in that
+  window are also counted as `startup_dropped`.
 
 Measured on an RTX 4080 with 1080p CUDA frames, 300 frames per run, three runs per
 row, the warm-up started 3 s before the first frame (a stand-in for the model load)
@@ -280,6 +299,12 @@ Measured in validation with the x264 backend at 1080p (CRF 23):
 * Each x264 encoder adds about 60 MB of process memory.
 * Each NVENC session used 64-142 MB of VRAM, plus its frame pool: 8 RGB frames (50 MB
   at 1080p) in steady state and up to 190 MiB at 1080p, capped at 192 MiB while the session opens.
+  The start-up extra is returned to the driver once the backlog is encoded. On an L4
+  with the Serverless Streaming processor at 1080p, two recorders raised whole-GPU
+  memory from 516 MiB to 784 MiB in steady state, about 134 MiB per recorder (torch
+  reserved 206 MiB in all); one recorder raised it to 669 MiB (153 MiB, which includes
+  the once-per-process NVENC start-up). Before the start-up pool was returned, two
+  recorders held 1042 MiB (about 263 MiB each, torch reserved 498 MiB).
 
 Process-wide caps bound the total: `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` covers buffered
 packets, encoder queues, finished clips and in-flight uploads (not the NVENC GPU
@@ -332,10 +357,13 @@ implementation are pending.
 | Jetson AGX Orin | 4x1080p30 (-3.8 to -4.0%) | 8x720p30: about -5% (-5.4% over 30 s) |
 | Jetson Orin NX, Orin Nano | Not tested | |
 | GPU server (L4, RTX 4080), numpy frames | 720p targets (RTX 4080) | 8x1080p30 in a CPU-decode harness (the L4 baseline alone used 6.5 cores) |
-| Serverless Streaming sandbox (L4 standing in for L40S, real processor, raw and annotated recorders, NVENC) | 1x1080p30 at 30.0 fps under runc and gVisor with 2 CPUs; +4 ms decode-to-result latency, about 0.9 ms per frame on the pipeline thread | The x264 path instead of NVENC: 21 fps |
+| Serverless Streaming sandbox (L4 standing in for L40S, the cell's processor image, rfdetr-nano, raw and annotated recorders, NVENC, 2 repeats) | runc, 8 vCPU, two recorders: 30.0 fps, viewer p95 154.1 to 157.3 ms (+2.1%). gVisor (runsc-kvm-nvproxy) with 2 CPUs and one recorder: p95 157.6 to 162.2 ms (+2.9%). gVisor with 4 CPUs and two recorders: 156.8 to 162.1 ms (+3.4%). fps within 0.6% everywhere; about 0.15-0.29 ms per frame on the pipeline thread | gVisor with 2 CPUs and two recorders: p95 157.6 to 170.0 and 179.6 ms (+7.7% and +14.1%, so the 10% bar is met in one repeat of two), 30.0 fps; the extra latency sits mostly in the second after two clips finish together. The x264 path instead of NVENC: 21 fps |
 
 Recording cost grows with processed fps and resolution. On constrained devices set
-`max_width` or lower the model fps before adding streams.
+`max_width` or lower the model fps before adding streams. On a 2-CPU gVisor sandbox,
+keep to one recorder per stream, or give the sandbox 4 CPUs, when the preview's
+latency matters; host CPU was 0.50 cores with recorders off, 0.60 with one and 0.65
+with two.
 
 ## Environment variables
 

@@ -1334,16 +1334,23 @@ def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
     _warm_process()
     ring = nvenc_ring.NvencRing("0", pre_roll_seconds=20.0, declared_fps=30.0)
     startup_drop_indices = []
+    queue_drop_indices = []
+    released_at_index = None
     submit_ms = []
     try:
         for index, frame in enumerate(_synthetic_frames(300)):
             image = _cuda_image(frame)  # its first call imports the engine
-            before = ring.stats().startup_dropped
+            before = ring.stats()
             started = time.perf_counter()
             ring.submit(timestamp(index), index, image)
             submit_ms.append((time.perf_counter() - started) * 1000)
-            if ring.stats().startup_dropped > before:
+            after = ring.stats()
+            if after.startup_dropped > before.startup_dropped:
                 startup_drop_indices.append(index)
+            if after.queue_drops > before.queue_drops:
+                queue_drop_indices.append(index)
+            if released_at_index is None and after.extra["startup_pool_released"]:
+                released_at_index = index
             time.sleep(1 / 120)  # 4x real time: stresses the session-open window
         handle = ring.capture(timestamp(0), timestamp(299))
         # prepare_close drops frames still waiting for the encoder (counted as
@@ -1357,13 +1364,17 @@ def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
     count, pts, size = _decode(_artifact_path(artifact, tmp_path, "ring.mp4"))
     stats = ring.stats()
     losses = _loss_details(artifact, stats)
+    losses["queue_drop_indices"] = queue_drop_indices
+    losses["startup_pool_released_at_index"] = released_at_index
+    losses["startup_pool_release_ms"] = stats.extra.get("startup_pool_release_ms")
+    losses["pool_peak_frames"] = stats.extra.get("pool_peak_frames")
 
     # every frame is either in the clip or reported as start-up loss; on failure
     # the message names the counter that took the frame
-    assert count + stats.startup_dropped == 300, (count, losses)
-    assert artifact.report.loss.startup_dropped == stats.startup_dropped, losses
+    assert count + stats.startup_dropped == 300, f"count={count} {losses}"
+    assert artifact.report.loss.startup_dropped == stats.startup_dropped, str(losses)
     # steady state: the pool never fills
-    assert stats.queue_drops == 0, losses
+    assert stats.queue_drops == 0, str(losses)
     # start-up loss, if any, is confined to the session-open window (< 1 s)
     assert max(startup_drop_indices, default=-1) < 120
     # the warmed process never stalls the caller (it used to take 1.4-4.2 s)
@@ -1449,8 +1460,8 @@ def test_two_rings_record_simultaneously_at_30_fps_without_loss(tmp_path) -> Non
         stats = rings[index].stats()
         losses = _loss_details(artifact, stats)
         # the start-up pool covers both sessions opening at once
-        assert count == 150, (count, losses)
-        assert stats.startup_dropped == 0, losses
-        assert stats.queue_drops == 0, losses
+        assert count == 150, f"count={count} {losses}"
+        assert stats.startup_dropped == 0, str(losses)
+        assert stats.queue_drops == 0, str(losses)
         assert pts[0] == 0
     assert all(ring.stats().extra["sessions_open"] == 0 for ring in rings)
