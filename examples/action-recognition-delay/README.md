@@ -18,7 +18,8 @@ has completed or that later overlapping windows will not add evidence.
 
 - `image`: a presentation image, downscaled before storage to a maximum side of
   640 pixels without upscaling or changing aspect ratio. Models should keep using
-  the original image. During warmup this is a blank waiting screen.
+  the original image. The overlay contains only matching action labels; no text
+  is drawn when there are no matches. During warmup the image is blank.
 - `displayed_frame_number`: the source index of the image actually displayed;
   null during warmup. Image video metadata also describes this old frame.
 - `actions`: unique, sorted classes currently known for that displayed frame.

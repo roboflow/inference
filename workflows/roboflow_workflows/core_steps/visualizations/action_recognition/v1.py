@@ -53,7 +53,8 @@ source PTS; missing/invalid FPS is rejected. Dropped frames can increase the
 actual delay: the newest stored frame at or before the target is displayed.
 No sleep or extra inference is performed. Model latency still affects playback.
 
-During warmup the image is a blank waiting screen and status is `buffering`.
+Only matching action labels are drawn. During warmup the image is blank and
+status is `buffering`.
 `ready` means an old image is available, NOT that analysis is complete. An empty
 actions list means no matching action is currently known; missing/failed analyses
 and later overlapping windows can leave or revise gaps. There is no coverage or
@@ -323,7 +324,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             if available
             else np.zeros((size[1], size[0], 3), dtype=np.uint8)
         )
-        _draw_labels(output, actions=actions, frame_number=displayed)
+        _draw_labels(output, actions=actions)
         result = {
             "image": WorkflowImageData.copy_and_replace(
                 origin_image_data=oldest if available else image,
@@ -336,21 +337,15 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         return result
 
 
-def _draw_labels(image, *, actions, frame_number):
+def _draw_labels(image, *, actions):
+    if not actions:
+        return
+
     height, width = image.shape[:2]
     scale = max(0.25, min(width / 900, height / 500, 0.7))
     line_height = max(12, round(32 * scale))
-    labels = (
-        ["Preparing delayed video"]
-        if frame_number is None
-        else [f"Frame {frame_number} | Latest known actions"]
-        + (actions or ["No matching action currently known"])
-    )
     capacity = max(1, (height - 8) // line_height)
-    if len(labels) > capacity:
-        labels = labels[: max(0, capacity - 1)] + [
-            f"+{len(labels) - capacity + 1} more"
-        ]
+    labels = actions[:capacity]
     cv2.rectangle(
         image,
         (0, 0),
