@@ -122,6 +122,11 @@ class Qwen25VL(TransformerModel):
 
     def initialize_model(self, **kwargs):
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
+        if not os.path.exists(config_file) and os.path.exists(
+            os.path.join(self.cache_dir, "config.json")
+        ):
+            self._initialize_full_model()
+            return
 
         config = load_compatible_adapter_config(
             config_file=config_file,
@@ -201,6 +206,30 @@ class Qwen25VL(TransformerModel):
             token=token,
             chat_template=chat_template,
             local_files_only=OFFLINE_MODE,
+        )
+
+    def _initialize_full_model(self):
+        # A full fine-tune package is a self-contained checkpoint (config.json with
+        # its own quantization_config, the weights, a chat template) and has no
+        # adapter_config.json. Load it from the package directory.
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and DEVICE and "cuda" in DEVICE)
+            else "eager"
+        )
+        self.base_model = self.transformers_class.from_pretrained(
+            self.cache_dir,
+            device_map=DEVICE,
+            attn_implementation=attn_implementation,
+            local_files_only=True,
+        )
+        self.model = self.base_model.eval()
+        self.processor = self.processor_class.from_pretrained(
+            self.cache_dir,
+            chat_template=_read_chat_template(self.cache_dir),
+            min_pixels=256 * 28 * 28,
+            max_pixels=1280 * 28 * 28,
+            local_files_only=True,
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
