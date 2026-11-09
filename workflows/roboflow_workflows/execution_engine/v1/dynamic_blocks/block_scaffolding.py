@@ -452,10 +452,6 @@ def assembly_custom_python_block(
             if not workspace_id:
                 workspace_id = MODAL_ANONYMOUS_WORKSPACE_NAME
 
-            # The sandbox cannot keep this instance, so its user attributes
-            # travel with every call and the mutated set comes back: that is
-            # what makes `self.x = ...` on frame 1 visible on frame 2 under
-            # remote execution, exactly as it is in local mode.
             block_state = collect_block_state(self)
 
             with _acquire_modal_executor(workspace_id) as executor:
