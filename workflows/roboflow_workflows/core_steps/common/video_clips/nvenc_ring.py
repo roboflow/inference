@@ -405,7 +405,7 @@ def _warm_up_process(timings: Dict[str, float]) -> None:
     timings["nvenc_open_ms"] = (time.perf_counter() - step) * 1000
     step = time.perf_counter()
     try:
-        slot = adapter.allocate_slot(width, height, device)
+        (slot,) = adapter.allocate_slots(1, width, height, device)
         with torch.cuda.stream(stream):
             for ordinal in range(WARM_UP_PROBE_FRAMES):
                 source = frame if ordinal % 2 == 0 else gray
@@ -564,7 +564,7 @@ def is_idr_access_unit(data: bytes) -> bool:
 class NvencAdapter(Protocol):
     """Every torch / PyNvVideoCodec call the ring makes (the testability seam).
 
-    ``frame_size``, ``staging_size``, ``allocate_slot`` and ``stage`` run on the
+    ``frame_size``, ``staging_size``, ``allocate_slots`` and ``stage`` run on the
     pipeline thread; ``stage`` must enqueue at most one copy and one event on the
     caller's stream. ``open_session``, ``encode``, ``flush`` and ``destroy`` run on
     the ring thread only. ``encode``/``flush`` return ``(input_ordinal,
@@ -575,7 +575,9 @@ class NvencAdapter(Protocol):
 
     def staging_size(self, tensor: Any) -> Tuple[int, int]: ...
 
-    def allocate_slot(self, width: int, height: int, device: Any) -> Any: ...
+    def allocate_slots(
+        self, count: int, width: int, height: int, device: Any
+    ) -> List[Any]: ...
 
     def stage(self, tensor: Any, slot: Any, width: int, height: int) -> Any: ...
 
@@ -782,13 +784,32 @@ class PyNvVideoCodecAdapter:
         """Return the device bytes a session's NV12 and float buffers take."""
         return width * height * 3 // 2 + width * height * 4
 
-    def allocate_slot(self, width: int, height: int, device: Any) -> _StagingSlot:
-        """Allocate one RGB staging slot (and its reusable event) on ``device``."""
-        torch = self._torch
-        rgb = torch.empty((3, height, width), dtype=torch.uint8, device=device)
-        slot = _StagingSlot(rgb=rgb, event=torch.cuda.Event())
+    def allocate_slots(
+        self, count: int, width: int, height: int, device: Any
+    ) -> List[_StagingSlot]:
+        """Allocate ``count`` RGB staging slots on ``device`` in one block.
 
-        return slot
+        One allocation (one ``cudaMalloc`` at most) instead of one per slot, and
+        each slot's event is created now: the pool is filled at a stream's first
+        frame, often while another stream's encoder session is opening, and
+        per-slot allocations then stalled the pipeline thread for up to 20 ms.
+
+        Returns:
+            The slots; they share the block, which is freed with the last one.
+        """
+        if count <= 0:
+            return []
+
+        torch = self._torch
+        block = torch.empty((count, 3, height, width), dtype=torch.uint8, device=device)
+        stream = torch.cuda.current_stream(device)
+        slots = []
+        for index in range(count):
+            event = torch.cuda.Event()
+            event.record(stream)
+            slots.append(_StagingSlot(rgb=block[index], event=event))
+
+        return slots
 
     def stage(self, tensor: Any, slot: _StagingSlot, width: int, height: int) -> Any:
         """Copy ``tensor`` into ``slot`` on the caller's current stream.
@@ -1048,8 +1069,9 @@ class NvencRing(BaseEncodedRing):
         self._pool_size: Optional[Tuple[int, int]] = None
         self._pool_limit_startup = self._pool_frames
         self._free_slots: List[Any] = []
+        self._extension_slots: set = set()
         self._allocated_slots = 0
-        self._peak_slots = 0
+        self._peak_in_use = 0
         self._pool_drops = 0
         self._stage_errors = 0
         # Pool-lock state shared with the encoder thread: is a session open, and
@@ -1224,7 +1246,6 @@ class NvencRing(BaseEncodedRing):
                 self._session_vram_bytes = 0
                 self._scratch_size = None
                 self._encoder_open = False
-                self._startup_headroom = True
 
     def _backend_stats(self) -> Dict[str, Any]:
         with self._pool_lock:
@@ -1234,7 +1255,7 @@ class NvencRing(BaseEncodedRing):
                 "pool_frames": self._pool_frames,
                 "startup_pool_frames": self._pool_limit_startup,
                 "pool_allocated_frames": allocated,
-                "pool_peak_frames": self._peak_slots,
+                "pool_peak_frames": self._peak_in_use,
                 "pool_free_frames": len(self._free_slots),
                 "pool_drops": self._pool_drops,
                 "stage_errors": self._stage_errors,
@@ -1266,32 +1287,48 @@ class NvencRing(BaseEncodedRing):
     def _acquire_slot(self, staging: Tuple[int, int], *, device: Any) -> Optional[Any]:
         width, height = staging
         with self._pool_lock:
-            if self._pool_size != staging:
-                # New size: forget idle slots; outstanding ones are dropped on return.
-                self._pool_size = staging
-                self._free_slots = []
-                self._allocated_slots = 0
-                self._pool_limit_startup = self._startup_limit(width, height)
-            if self._free_slots:
-                return self._free_slots.pop()
-            limit = (
-                self._pool_limit_startup
-                if self._startup_headroom
-                else self._pool_frames
-            )
-            if self._allocated_slots >= limit:
-                self._pool_drops += 1
-                return None
-            self._allocated_slots += 1
-            self._peak_slots = max(self._peak_slots, self._allocated_slots)
+            if self._pool_size == staging:
+                return self._take_free_slot_locked()
+            # First frame at this size: forget idle slots (outstanding ones are
+            # dropped on return) and fill the whole pool below, outside the lock.
+            self._pool_size = staging
+            self._free_slots = []
+            self._extension_slots = set()
+            self._allocated_slots = 0
+            self._peak_in_use = 0
+            limit = self._startup_limit(width, height)
+            self._pool_limit_startup = limit
+            extension = limit - self._pool_frames if self._startup_headroom else 0
 
         try:
-            slot = self._adapter.allocate_slot(width, height, device)
+            steady = self._adapter.allocate_slots(
+                self._pool_frames, width, height, device
+            )
+            extra = self._adapter.allocate_slots(extension, width, height, device)
         except Exception:
             with self._pool_lock:
                 if self._pool_size == staging:
-                    self._allocated_slots -= 1
+                    self._pool_size = None
             raise
+
+        with self._pool_lock:
+            if self._pool_size != staging:
+                return None
+            self._free_slots = list(reversed(steady)) + list(reversed(extra))
+            self._extension_slots = {id(slot) for slot in extra}
+            self._allocated_slots = len(steady) + len(extra)
+            slot = self._take_free_slot_locked()
+
+        return slot
+
+    def _take_free_slot_locked(self) -> Optional[Any]:
+        if not self._free_slots:
+            self._pool_drops += 1
+            return None
+
+        slot = self._free_slots.pop()
+        in_use = self._allocated_slots - len(self._free_slots)
+        self._peak_in_use = max(self._peak_in_use, in_use)
 
         return slot
 
@@ -1311,15 +1348,21 @@ class NvencRing(BaseEncodedRing):
             if staged.released:
                 return None
             staged.released = True
-            if staged.staging == self._pool_size:
-                self._free_slots.append(staged.slot)
-                self._end_startup_headroom_locked()
-            staged.slot = None
-            staged.ready = None
+            slot, staged.slot, staged.ready = staged.slot, None, None
+            if staged.staging != self._pool_size:
+                return None
+            if not self._startup_headroom and id(slot) in self._extension_slots:
+                # Start-up is over: let the extension block go.
+                self._extension_slots.discard(id(slot))
+                self._allocated_slots -= 1
+                return None
+            self._free_slots.append(slot)
+            self._end_startup_headroom_locked()
 
     def _end_startup_headroom_locked(self) -> None:
         # The headroom lasts until the session is open and the start-up backlog
-        # has drained to the steady-state pool; then the extra slots are freed.
+        # has drained to the steady-state pool; then the extension slots are
+        # dropped (in-use ones when they come back) and their block is freed.
         if not self._startup_headroom or not self._encoder_open:
             return None
 
@@ -1328,9 +1371,16 @@ class NvencRing(BaseEncodedRing):
             return None
 
         self._startup_headroom = False
-        while self._allocated_slots > self._pool_frames and self._free_slots:
-            self._free_slots.pop()
-            self._allocated_slots -= 1
+        kept = [
+            slot for slot in self._free_slots if id(slot) not in self._extension_slots
+        ]
+        dropped = [
+            slot for slot in self._free_slots if id(slot) in self._extension_slots
+        ]
+        for slot in dropped:
+            self._extension_slots.discard(id(slot))
+        self._free_slots = kept
+        self._allocated_slots -= len(dropped)
 
     def _open_session(self, *, size: Tuple[int, int], device: Any) -> None:
         width, height = size

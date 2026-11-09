@@ -86,6 +86,7 @@ class FakeAdapter:
         self.raw_payloads = raw_payloads
         self.lock = threading.Lock()
         self.slots_allocated = 0
+        self.allocations = 0
         self.staged: List[Any] = []
         self.sessions: List[FakeSession] = []
         self.destroyed: List[FakeSession] = []
@@ -113,10 +114,15 @@ class FakeAdapter:
     def scratch_bytes(self, width, height):
         return width * height * 4
 
-    def allocate_slot(self, width, height, device):
+    def allocate_slots(self, count, width, height, device):
         with self.lock:
-            self.slots_allocated += 1
-            return ("slot", self.slots_allocated, width, height)
+            slots = []
+            for _ in range(count):
+                self.slots_allocated += 1
+                slots.append(("slot", self.slots_allocated, width, height))
+            if count:
+                self.allocations += 1
+            return slots
 
     def stage(self, tensor, slot, width, height):
         self.threads["stage"].add(threading.get_ident())
@@ -395,7 +401,7 @@ def test_prepared_frame_holds_no_image_and_reports_no_host_bytes() -> None:
 def test_stage_failure_returns_the_slot() -> None:
     adapter = FakeAdapter()
     adapter.stage = lambda *args: (_ for _ in ()).throw(RuntimeError("bad tensor"))
-    ring = make_ring(adapter, pool_frames=1)
+    ring = make_ring(adapter, pool_frames=1, startup_pool_frames=0)
 
     with pytest.raises(RuntimeError):
         ring._prepare_frame(FakeImage())
@@ -408,16 +414,17 @@ def test_stage_failure_returns_the_slot() -> None:
 
 def test_resolution_change_resets_the_pool_and_drops_old_slots() -> None:
     adapter = FakeAdapter()
-    ring = make_ring(adapter, pool_frames=2)
+    ring = make_ring(adapter, pool_frames=2, startup_pool_frames=0)
     old = ring._prepare_frame(FakeImage(1920, 1080))
 
     new = ring._prepare_frame(FakeImage(1280, 720))
     ring._discard_frame(old)
     stats = ring._backend_stats()
 
+    # the old 1080p slot is dropped, not returned to the 720p pool
     assert new.payload.size == (1280, 720)
-    assert stats["pool_allocated_frames"] == 1
-    assert stats["pool_free_frames"] == 0
+    assert stats["pool_allocated_frames"] == 2
+    assert stats["pool_free_frames"] == 1
     ring.close()
 
 
@@ -481,9 +488,9 @@ def test_encode_frame_maps_delayed_outputs_and_keyframe_flags() -> None:
     assert [force for _, _, force in adapter.encoded] == pattern
     assert stats["forced_idrs"] == 2
     assert stats["keyframes"] == 2
-    # every slot comes back after its encode, so one slot served all five frames
-    assert stats["pool_allocated_frames"] == 1
-    assert stats["pool_free_frames"] == 1
+    # every slot comes back after its encode, so one slot at a time was in use
+    assert stats["pool_peak_frames"] == 1
+    assert stats["pool_free_frames"] == stats["pool_allocated_frames"]
     ring._close_encoder()
     ring.close()
 
@@ -592,7 +599,7 @@ def test_close_encoder_without_session_is_a_no_op() -> None:
 
 def test_backend_stats_report_vram_estimate() -> None:
     adapter = FakeAdapter()
-    ring = make_ring(adapter, pool_frames=8)
+    ring = make_ring(adapter, pool_frames=8, startup_pool_frames=0)
 
     ring._encode_frame(ring._prepare_frame(FakeImage()), pts=0, force_keyframe=True)
     held = ring._prepare_frame(FakeImage())  # reuses the slot returned by encode
@@ -600,7 +607,8 @@ def test_backend_stats_report_vram_estimate() -> None:
     stats = ring._backend_stats()
 
     assert held is not None
-    slots = 2 * 1920 * 1080 * 3 // 2
+    # the whole steady pool is allocated with the first frame
+    slots = 8 * 1920 * 1080 * 3 // 2
     scratch = 1920 * 1080 * 4
     assert stats["vram_bytes_estimate"] == 64 * 1024 * 1024 + slots + scratch
     assert stats["sessions_open"] == 1
@@ -687,7 +695,7 @@ def test_capture_resolves_to_an_mp4_artifact_through_the_real_base() -> None:
 def test_prepare_close_drops_unencoded_slots_and_flushes_before_destroy() -> None:
     gate = threading.Event()
     adapter = FakeAdapter(gate=gate, delay_frames=2)
-    ring = make_ring(adapter, pool_frames=8, queue_depth=64)
+    ring = make_ring(adapter, pool_frames=8, startup_pool_frames=0, queue_depth=64)
 
     for index in range(8):
         ring.submit(timestamp(index), index, FakeImage())
@@ -984,19 +992,23 @@ def test_session_open_window_uses_the_startup_pool_then_shrinks() -> None:
         startup_dropped = ring.stats().startup_dropped
         open_gate.set()
         assert wait_for(lambda: len(adapter.encoded) == 10)
-        assert wait_for(lambda: ring._backend_stats()["pool_allocated_frames"] <= 4)
+        assert wait_for(lambda: ring._backend_stats()["pool_allocated_frames"] == 4)
         drained = ring._backend_stats()
         stats = ring.stats()
     finally:
         ring.close()
 
-    # 10 slots while the session opens; the 4 frames beyond are start-up loss
+    # 10 slots while the session opens, in two allocations (steady + extension);
+    # the 4 frames beyond are start-up loss
     assert opening["pool_allocated_frames"] == 10
+    assert opening["pool_free_frames"] == 0
+    assert adapter.allocations == 2
     assert opening["startup_pool_frames"] == 10
     assert startup_dropped == 4
     assert stats.queue_drops == 0
     assert drained["pool_peak_frames"] == 10
-    assert drained["pool_allocated_frames"] <= 4
+    assert drained["pool_allocated_frames"] == 4
+    assert drained["pool_free_frames"] == 4
     assert drained["session_open_ms_first"] >= 0
 
 
@@ -1017,7 +1029,8 @@ def test_steady_state_pool_applies_after_the_startup_backlog_drains() -> None:
     finally:
         ring.close()
 
-    assert backend["pool_allocated_frames"] == 4
+    assert backend["pool_allocated_frames"] == 4  # the extension was released
+    assert backend["pool_free_frames"] == 0
     assert stats.startup_dropped == 0
     assert stats.queue_drops == 7  # 4 slots taken, 7 refused
 
@@ -1076,7 +1089,7 @@ def test_real_adapter_encodes_1080p_without_host_copies(tmp_path) -> None:
 
     device = torch.device("cuda", 0)
     session = adapter.open_session(1920, 1080, 30.0, 300, 4_000_000, device)
-    slot = adapter.allocate_slot(1920, 1080, device)
+    (slot,) = adapter.allocate_slots(1, 1920, 1080, device)
     access_units = []
     try:
         for ordinal, frame in enumerate(_synthetic_frames(300)):
@@ -1114,7 +1127,7 @@ def test_two_real_sessions_encode_simultaneously(tmp_path) -> None:
         adapter = nvenc_ring.PyNvVideoCodecAdapter()
         device = torch.device("cuda", 0)
         session = adapter.open_session(1920, 1080, 30.0, 300, 4_000_000, device)
-        slot = adapter.allocate_slot(1920, 1080, device)
+        (slot,) = adapter.allocate_slots(1, 1920, 1080, device)
         units = []
         try:
             for ordinal, frame in enumerate(_synthetic_frames(120)):
