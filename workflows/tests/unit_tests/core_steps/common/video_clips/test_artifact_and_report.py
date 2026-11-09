@@ -99,6 +99,7 @@ def test_report_serialises_with_iso_timestamps() -> None:
         "decimated": 3,
         "ring_drops": 0,
         "queue_drops": 0,
+        "startup_dropped": 0,
         "stale_dropped": 1,
         "inference_gaps": 0,
         "pts_clamped": 0,

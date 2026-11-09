@@ -18,6 +18,9 @@ class LossCounts:
         ring_drops: In-window frames evicted by the ring byte cap.
         queue_drops: In-window frames dropped because the ingest queue was full
             or was dropped at shutdown.
+        startup_dropped: In-window frames dropped because the encoder was still
+            starting: the process-wide NVENC warm-up had not finished, or the
+            ring's encoder session was opening and its start-up pool was full.
         stale_dropped: In-window frames the recorder skipped because their
             processing lag exceeded `max_processing_lag_seconds`.
         inference_gaps: Intervals between written frames much longer than the
@@ -29,6 +32,7 @@ class LossCounts:
     decimated: int = 0
     ring_drops: int = 0
     queue_drops: int = 0
+    startup_dropped: int = 0
     stale_dropped: int = 0
     inference_gaps: int = 0
     pts_clamped: int = 0
@@ -43,6 +47,7 @@ class LossCounts:
             "decimated": self.decimated,
             "ring_drops": self.ring_drops,
             "queue_drops": self.queue_drops,
+            "startup_dropped": self.startup_dropped,
             "stale_dropped": self.stale_dropped,
             "inference_gaps": self.inference_gaps,
             "pts_clamped": self.pts_clamped,
