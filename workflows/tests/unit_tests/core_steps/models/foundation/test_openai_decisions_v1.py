@@ -310,6 +310,20 @@ def test_run_flags_answers_it_cannot_decode(decision: dict) -> None:
     assert result["answers"] == decision.get("answers")
 
 
+def test_run_flags_multi_label_answers_that_miss_a_class() -> None:
+    answers = [_predicate_answer("class_0", 0.9), _predicate_answer("helmets", 0.1)]
+
+    result = _run_with_decision(
+        {"answers": answers},
+        task_type="multi-label-classification",
+        classes=["cat", "dog"],
+    )
+
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+    assert result["answers"] == answers
+
+
 def test_run_flags_a_refused_question() -> None:
     answers = [
         _predicate_answer("helmets", 0.9),
@@ -369,3 +383,18 @@ def test_multi_label_prediction_gives_every_class_its_statement_probability() ->
         "inference_id": "inference",
         "parent_id": "parent",
     }
+
+
+def test_multi_label_prediction_reads_each_class_from_its_named_answer() -> None:
+    prediction = build_multi_label_prediction(
+        [_predicate_answer("class_1", 0.2), _predicate_answer("class_0", 0.8)],
+        image=_build_image(),
+        classes=["cat", "dog"],
+        inference_id="inference",
+    )
+
+    assert prediction["predictions"] == {
+        "cat": {"confidence": 0.8, "class_id": 0},
+        "dog": {"confidence": 0.2, "class_id": 1},
+    }
+    assert prediction["predicted_classes"] == ["cat"]

@@ -108,6 +108,7 @@ MAX_CHOICES = 255
 
 SINGLE_LABEL_INSTRUCTIONS = "Which of these classes best describes the image?"
 MULTI_LABEL_INSTRUCTIONS_TEMPLATE = "The image shows {class_name}."
+MULTI_LABEL_QUESTION_NAME_TEMPLATE = "class_{class_id}"
 
 PREDICTED_CLASS_MIN_PROBABILITY = 0.5
 """Probability from which a multi-label class counts as present in the image."""
@@ -503,7 +504,7 @@ def build_questions(
         decision_questions = [
             {
                 "type": "predicate",
-                "name": f"class_{class_id}",
+                "name": MULTI_LABEL_QUESTION_NAME_TEMPLATE.format(class_id=class_id),
                 "instructions": MULTI_LABEL_INSTRUCTIONS_TEMPLATE.format(
                     class_name=class_name
                 ),
@@ -784,7 +785,8 @@ def build_multi_label_prediction(
     """Build the multi-label classification prediction from ``predicate`` answers.
 
     Args:
-        answers: One ``predicate`` answer per class, in class order.
+        answers: One ``predicate`` answer per class, named after the class's
+            question.
         image: Workflow image the prediction refers to.
         classes: Class names, in class id order.
         inference_id: Identifier attached to the prediction.
@@ -796,13 +798,23 @@ def build_multi_label_prediction(
         ``predicted_classes``.
 
     Raises:
-        ValueError: If an answer is not a ``predicate`` answer.
+        ValueError: If a class has no ``predicate`` answer under its question's
+            name.
     """
-    if any(answer.get("type") != "predicate" for answer in answers):
+    answers_by_name = {answer.get("name"): answer for answer in answers}
+    class_answers = [
+        answers_by_name.get(
+            MULTI_LABEL_QUESTION_NAME_TEMPLATE.format(class_id=class_id)
+        )
+        for class_id in range(len(classes))
+    ]
+    if any(
+        answer is None or answer.get("type") != "predicate" for answer in class_answers
+    ):
         raise ValueError("every class needs a predicate answer")
     probabilities = {
         class_name: float(answer["probability"])
-        for class_name, answer in zip(classes, answers)
+        for class_name, answer in zip(classes, class_answers)
     }
 
     height, width = image.numpy_image.shape[:2]
