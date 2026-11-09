@@ -2014,3 +2014,27 @@ def test_invalid_authenticated_batch_context_is_never_served_unrecorded(
     # Serving the call without its usage row would make it free.
     assert response.status_code >= 400
     assert _rows_of(usage_collector, "model") == []
+
+
+def test_overly_nested_authenticated_batch_context_is_never_served_unrecorded(
+    usage_collector, monkeypatch
+):
+    calls = []
+
+    async def handler(request: Request):
+        calls.append(request)
+        return {"ok": True}
+
+    def overly_nested(raw):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    monkeypatch.setattr(
+        request_hook, "json", SimpleNamespace(loads=overly_nested, dumps=json.dumps)
+    )
+    client = _hook_app(usage_collector, handler)
+
+    response = client.post("/probe?api_key=k" + _batch_query("[[]]", SECRET))
+
+    assert response.status_code >= 400
+    assert calls == []
