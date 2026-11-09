@@ -44,6 +44,18 @@ from roboflow_workflows.core_steps.common.vlm_decoding.argon_segmentation import
     ARGON_SEGMENTATION_SCHEMA,
     decode_argon_segmentations,
 )
+from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    MAX_REFERENCE_EXAMPLES,
+    REFERENCE_EXAMPLES_DESCRIPTION,
+    REFERENCE_EXAMPLES_EXAMPLE,
+    REFERENCE_EXAMPLES_TASK,
+    TARGET_IMAGE_INTRO,
+    ReferenceExamples,
+    ReferencePartsCache,
+    gemini_reference_parts_for,
+    validate_reference_examples,
+    with_reference_parts,
+)
 from roboflow_workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from roboflow_workflows.environment import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -265,6 +277,20 @@ captioning, structured answering, visual question answering).
 Separate `roboflow_core/vlm_as_detector@v2` and
 `roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
 
+### Reference examples
+
+For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
+labeled example images. The block draws each example's boxes and labels on the
+image (longest edge 1024 pixels) and sends the examples before the image to label,
+so Gemini sees what each class looks like and how tightly it is boxed. Box every
+object of the listed classes in each example. The examples go with every image, so
+they add input tokens to each request; they come first, so the provider can cache
+them across a batch. Without examples the request is unchanged.
+
+A selector can provide the whole list, such as `$inputs.reference_examples`, but
+selectors inside an example are not resolved: to build the examples from a step's
+predictions, that step has to output the list in this format.
+
 ### API Key Options
 
 This block supports two API key modes:
@@ -370,6 +396,21 @@ class BlockManifest(WorkflowBlockManifest):
                 "task_type": {
                     "values": TASKS_REQUIRING_CLASSES,
                     "required": True,
+                },
+            },
+        },
+    )
+    reference_examples: Optional[
+        Union[Selector(kind=[LIST_OF_VALUES_KIND]), ReferenceExamples]
+    ] = Field(
+        default=None,
+        description=REFERENCE_EXAMPLES_DESCRIPTION,
+        examples=[REFERENCE_EXAMPLES_EXAMPLE, "$inputs.reference_examples"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "required": False,
                 },
             },
         },
@@ -492,6 +533,12 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        if isinstance(self.reference_examples, list):
+            validate_reference_examples(
+                self.reference_examples,
+                task_type=self.task_type,
+                labels=self.classes if isinstance(self.classes, list) else None,
+            )
         validate_reasoning_level(
             model=self.model_version,
             level=self.thinking_level,
@@ -558,6 +605,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
     ):
         self._api_key = api_key
         self._platform_client = platform_client
+        self._reference_parts_cache = ReferencePartsCache()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -585,6 +633,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
         google_code_execution: Optional[bool],
         max_concurrent_requests: Optional[int],
         api_key: str = "rf_key:account",
+        reference_examples: Optional[List[Any]] = None,
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gemini_prompting(
@@ -602,6 +651,8 @@ class GoogleGeminiBlockV6(WorkflowBlock):
             thinking_level=thinking_level,
             google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
+            reference_examples=reference_examples,
+            reference_parts_cache=self._reference_parts_cache,
         )
         results = []
         for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
@@ -651,6 +702,8 @@ def run_gemini_prompting(
     thinking_level: Optional[str],
     google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
+    reference_examples: Optional[List[Any]] = None,
+    reference_parts_cache: Optional[ReferencePartsCache] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
@@ -660,6 +713,15 @@ def run_gemini_prompting(
         raise ValueError(
             "Code execution is not supported with segmentation JSON output"
         )
+    reference_parts = []
+    if reference_examples:
+        validate_reference_examples(
+            reference_examples, task_type=task_type, labels=classes
+        )
+        reference_parts = gemini_reference_parts_for(
+            reference_examples, labels=classes, cache=reference_parts_cache
+        )
+
     gemini_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
@@ -683,6 +745,13 @@ def run_gemini_prompting(
             thinking_level=thinking_level,
             max_tokens=max_tokens,
         )
+        if reference_parts:
+            generated_prompt["contents"]["parts"] = with_reference_parts(
+                generated_prompt["contents"]["parts"],
+                reference_parts=reference_parts,
+                target_intro={"text": TARGET_IMAGE_INTRO},
+                is_image_part=lambda part: "inline_data" in part,
+            )
 
         if (
             google_code_execution
