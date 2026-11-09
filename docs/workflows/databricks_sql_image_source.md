@@ -33,7 +33,7 @@ from changing SQL structure. Requires SQL warehouse support for IDENTIFIER.
 This does not prove authorization or tenant ownership, enforce read-only grants,
 or bound view computation. Provision a dedicated identity with SELECT on the
 intended sources and CAN USE on the warehouse. SQL LIMIT bounds returned rows,
-not warehouse cost. Aggregate admission controls are a separate stacked change.
+not warehouse cost. Aggregate admission controls are described below.
 
 ## Enabling and disabling
 
@@ -188,3 +188,67 @@ for every run, then submits only the fixed table/view reader configuration with
 Views are dropped after the suite, with an exit cleanup retry on failures. Slow
 case verification requires query history to expose the unique view identifier;
 if it is absent, the case fails instead of claiming cancellation was verified.
+
+## Aggregate admission control
+
+Before launching the child or resolving the Databricks hostname, the parent
+validates destination syntax and acquires one admission lease. Hosted execution
+requires both the injected host Redis controller and an authenticated Roboflow
+workspace resolved from the host API key. Workflow inputs cannot choose a tenant
+ID, admission backend or quota. The Databricks token is not the tenancy key.
+Authentication may use the trusted platform API; no Databricks DNS/network occurs
+before admission.
+
+Both the legacy and standalone server bind the controller to their existing
+Workflows Redis cache client. There is no admission fallback during Redis errors.
+A hosted worker whose cache fell back to memory refuses the Databricks block.
+Self-hosted/standalone execution uses process-local limits when no Redis client
+is bound and treats the installation as one tenant. Multi-process self-hosting
+must bind Redis to aggregate across its workers.
+
+Each setting below is a positive integer (maximum 100000), read at startup.
+All workers sharing the quota namespace must use the same settings.
+
+| Environment variable | Default | Scope |
+|---|---:|---|
+| `DATABRICKS_ADMISSION_TENANT_CONCURRENCY` | 2 | Active invocations per authenticated workspace |
+| `DATABRICKS_ADMISSION_WORKSPACE_CONCURRENCY` | 8 | Active invocations per Databricks hostname, across tenants |
+| `DATABRICKS_ADMISSION_WAREHOUSE_CONCURRENCY` | 4 | Active invocations per hostname + warehouse/cluster path |
+| `DATABRICKS_ADMISSION_FLEET_CONCURRENCY` | 32 | Active Databricks invocations across the shared Redis scope |
+| `DATABRICKS_ADMISSION_TENANT_RATE` | 30 | Admissions per tenant per rolling 60 seconds |
+| `DATABRICKS_ADMISSION_WORKSPACE_RATE` | 120 | Admissions per destination hostname per rolling 60 seconds |
+| `DATABRICKS_ADMISSION_WAREHOUSE_RATE` | 60 | Admissions per destination endpoint per rolling 60 seconds |
+| `DATABRICKS_ADMISSION_FLEET_RATE` | 300 | Admissions per shared Redis scope per rolling 60 seconds |
+
+One atomic Lua script checks all eight quotas using Redis time and records the
+lease only if all pass. No unbounded queue is created. Rejected runs return a
+controlled execution error; callers should back off. Successful admissions count
+even if credentials, decoding or execution later fail. `/endpoints/<id>` and
+`/warehouses/<id>` share a warehouse quota; case and a trailing hostname dot are
+normalized. Destination identity is hostname-based, not proof of workspace
+ownership or equivalence across different hostnames/IP aliases.
+
+Concurrency is released after the worker supervisor finishes, including result
+loading and termination cleanup. Rate entries last 60 seconds. Orphan leases
+expire at the remaining invocation deadline plus 65 seconds (35-second cleanup
+allowance plus scheduling tolerance); Redis keys expire too. Failed release keeps
+the lease until expiry and logs a credential-free warning. OS stalls, orphaned
+processes surviving beyond the lease, or Redis state loss can break a strict
+physical-process ceiling: retain pod/process resource limits and verify shutdown
+behavior in staging.
+
+All hosted worker pools to be covered by a fleet quota must share the same Redis
+scope. Use non-evicting Redis storage for these keys and monitor capacity/errors;
+evicting, flushing or losing quota keys resets protection. Configure consistent
+limits and size pod memory/temp storage for the maximum local concurrency before
+enabling the block. Defaults are conservative starting values, not measured
+production capacity. This PR neither audits deployed gateway limits nor changes
+other Workflow blocks, ingress traffic, or remote-query cancellation guarantees.
+
+Offline Lua regression command (test-only dependencies, not runtime dependencies):
+`uv run --with 'fakeredis[lua]' pytest workflows/tests/unit_tests/core_steps/integrations/test_databricks_admission.py`.
+Set `DATABRICKS_ADMISSION_TEST_REDIS_BINARY` to a local redis-server binary to
+also run the eight-process test against a disposable Unix-socket Redis. It checks
+atomic ceilings, rate persistence, orphan expiry and outage rejection.
+A deployed shared Redis multi-worker staging check, operator values, overload/recovery
+monitoring, and final-image validation remain rollout requirements.

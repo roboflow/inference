@@ -1532,6 +1532,9 @@ else:
         TriangleVisualizationBlockV1,
     )
 
+from roboflow_workflows.core_steps.integrations.databricks.admission import (
+    DEFAULT_ADMISSION,
+)
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
     BAR_CODE_DETECTION_KIND,
@@ -1600,6 +1603,7 @@ REGISTERED_INITIALIZERS = {
     "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     "inner_workflow_dispatch_depth": 0,
     "disable_sinks": False,
+    "databricks_admission": DEFAULT_ADMISSION,
     # Standalone default. The server overrides it with
     # `workflows_core.platform_client` at every composition root. An object,
     # not a function: call_if_callable() would invoke a function registered

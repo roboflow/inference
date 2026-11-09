@@ -9,6 +9,10 @@ flags or a `roboflow_api` function observes what production does.
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from roboflow_workflows.core_steps.integrations.databricks.admission import (
+    admission_from_cache,
+)
+
 import inference.core.env as env
 import inference.core.managers.metrics as metrics
 import inference.core.roboflow_api as roboflow_api
@@ -362,12 +366,14 @@ def default_inner_workflow_spec_resolver(
 # Module-level singletons: one client and one resolver per process.
 SERVER_PLATFORM_CLIENT = ServerRoboflowPlatformClient()
 SERVER_WORKSPACE_RESOLVER = ServerWorkspaceResolver()
+SERVER_DATABRICKS_ADMISSION = admission_from_cache(server_cache)
 
 
 def workflows_platform_bindings() -> Dict[str, Any]:
     """The `workflows_core.*` init parameters every composition root installs."""
     return {
         "workflows_core.cache": server_cache,
+        "workflows_core.databricks_admission": SERVER_DATABRICKS_ADMISSION,
         "workflows_core.platform_client": SERVER_PLATFORM_CLIENT,
         "workflows_core.workspace_resolver": SERVER_WORKSPACE_RESOLVER,
         "workflows_core.inner_workflow_spec_resolver": default_inner_workflow_spec_resolver,

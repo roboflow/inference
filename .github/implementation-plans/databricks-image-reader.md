@@ -80,3 +80,19 @@ explicit rollout gates when their infrastructure/credentials are unavailable.
 - The implementation scope was agreed in the task conversation. No Slack message
   is sent by this task; the internal maintainer discussion/review remains part of
   the draft-PR process.
+
+## Admission implementation (separate stacked draft)
+
+Reuse the Redis client exposed by the existing Workflows cache in both server
+hosts; register a Databricks-only controller initializer. The block obtains its
+workspace from the host platform client and host API key, never a Workflow input.
+The standalone default is a shared process-local controller; hosted execution
+refuses it. One Lua operation checks tenant, destination workspace, destination
+warehouse and fleet concurrency plus rolling-minute admission counts before any
+Databricks subprocess/DNS. Reuse the existing invocation supervisor for the lease
+lifetime. No other block or execution-engine path is migrated.
+
+Tests cover independent clients, eight separate processes against Redis 7.4.2,
+denial before DNS/worker launch, authenticated identity, endpoint aliases, lease
+release/expiry, rates after failed runs and Redis outage. Production quotas and
+Redis non-eviction/shared-scope configuration remain operator rollout decisions.

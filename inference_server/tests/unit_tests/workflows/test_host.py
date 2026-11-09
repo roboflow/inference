@@ -630,6 +630,7 @@ def test_workflows_platform_bindings_expose_the_module_singletons():
     bindings = host.workflows_platform_bindings()
     assert bindings == {
         "workflows_core.cache": host.WORKFLOWS_CACHE,
+        "workflows_core.databricks_admission": host.DATABRICKS_ADMISSION,
         "workflows_core.platform_client": host.PLATFORM_CLIENT,
         "workflows_core.workspace_resolver": host.WORKSPACE_RESOLVER,
         "workflows_core.inner_workflow_spec_resolver": host.inner_workflow_spec_resolver,

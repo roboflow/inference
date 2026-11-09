@@ -4,6 +4,9 @@ This is the canonical changelog for the `roboflow-workflows` package, including
 blocks, dependencies, and execution-engine behavior. Add engine behavior changes
 under `## Unreleased
 
+- Add Databricks-specific aggregate admission before worker launch: atomic Redis-backed tenant, workspace, warehouse and fleet rate/concurrency limits; authenticated workspace identity on hosted workers; fail closed without shared admission; process-local operator limits for self-hosting.
+
+
 - Restrict Databricks image reads to a fixed SELECT with native identifier and LIMIT parameters; replace `sql_statement` with catalog/schema/table and explicit metadata columns. Reject WebP before decoder construction, preflight worker JSON size, and enforce HTTP/Thrift allocation bounds while refusing compressed and Arrow/LZ4 results. Share trusted subprocess supervision across integrations; update fixture views and security regressions.
 ` → `### Execution engine`; one entry is sufficient.
 

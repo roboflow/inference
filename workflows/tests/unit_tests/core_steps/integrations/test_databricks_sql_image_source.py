@@ -521,7 +521,7 @@ def test_run_honours_disable_sinks_execution_policy() -> None:
                 skip_undecodable=True,
             )
     assert "connect_kwargs" not in recorder
-    assert DatabricksSQLImageSourceBlockV1.get_init_parameters() == ["disable_sinks"]
+    assert "disable_sinks" in DatabricksSQLImageSourceBlockV1.get_init_parameters()
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,9 @@ from roboflow_workflows.configuration import (
     configure_process,
     resolve_image_tensor_device,
 )
+from roboflow_workflows.core_steps.integrations.databricks.admission import (
+    admission_from_cache,
+)
 
 from inference_models.utils.environment import (
     get_boolean_from_env,
@@ -1389,6 +1392,7 @@ PLATFORM_CLIENT = ServerRoboflowPlatformClient()
 WORKSPACE_RESOLVER = ServerWorkspaceResolver()
 GUARDED_IMAGE_CODEC = ServerImageCodec()
 WORKFLOWS_CACHE = build_workflows_cache()
+DATABRICKS_ADMISSION = admission_from_cache(WORKFLOWS_CACHE)
 
 
 def bind_image_codec(init_parameters: Dict[str, Any]) -> None:
@@ -1400,6 +1404,7 @@ def bind_image_codec(init_parameters: Dict[str, Any]) -> None:
 def workflows_platform_bindings() -> Dict[str, Any]:
     return {
         "workflows_core.cache": WORKFLOWS_CACHE,
+        "workflows_core.databricks_admission": DATABRICKS_ADMISSION,
         "workflows_core.platform_client": PLATFORM_CLIENT,
         "workflows_core.workspace_resolver": WORKSPACE_RESOLVER,
         "workflows_core.inner_workflow_spec_resolver": inner_workflow_spec_resolver,

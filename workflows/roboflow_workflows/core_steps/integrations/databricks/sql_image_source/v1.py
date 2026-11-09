@@ -21,6 +21,11 @@ import cv2
 import numpy as np
 from PIL import Image
 from pydantic import ConfigDict, Field, field_validator
+from roboflow_workflows.core_steps.integrations.databricks.admission import (
+    DEFAULT_ADMISSION,
+    AdmissionRejected,
+    DatabricksAdmission,
+)
 from roboflow_workflows.core_steps.integrations.databricks.availability import (
     CONNECTOR_INSTALL_HINT,
     DISABLED_HINT,
@@ -71,6 +76,10 @@ from roboflow_workflows.prototypes.block import (
     WorkflowBlockManifest,
     actual_restrictions_of,
     is_workflow_selector,
+)
+from roboflow_workflows.prototypes.platform_client import (
+    OFFLINE_PLATFORM_CLIENT,
+    RoboflowPlatformClient,
 )
 from roboflow_workflows.utils.url_input import (
     URLAddressNotAllowedError,
@@ -400,12 +409,22 @@ class BlockManifest(WorkflowBlockManifest):
 class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
     """Block emitting rows of a Databricks SQL query as Workflow images."""
 
-    def __init__(self, disable_sinks: bool = False):
+    def __init__(
+        self,
+        disable_sinks: bool = False,
+        *,
+        api_key: Optional[str] = None,
+        platform_client: RoboflowPlatformClient = OFFLINE_PLATFORM_CLIENT,
+        databricks_admission: DatabricksAdmission = DEFAULT_ADMISSION,
+    ):
         self._disable_sinks = disable_sinks
+        self._api_key = api_key
+        self._platform_client = platform_client
+        self._admission = databricks_admission
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["disable_sinks"]
+        return ["disable_sinks", "api_key", "platform_client", "databricks_admission"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -473,7 +492,32 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
             allow_non_global=ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES,
             hosted=running_on_hosted_platform(),
         )
-        results = run_isolated(request, limits=limits, deadline=deadline)
+        hosted = limits["hosted"]
+        self._admission.require_shared_backend(hosted=hosted)
+        hostname = normalise_hostname(server_hostname)
+        path_kind = classify_http_path(http_path)
+        if hosted and path_kind != "warehouse":
+            raise ValueError("Hosted Databricks execution requires a SQL warehouse")
+        tenant = "self-hosted"
+        if hosted:
+            if not self._api_key:
+                raise AdmissionRejected(
+                    "Hosted Databricks execution requires an authenticated workspace"
+                )
+            try:
+                tenant = self._platform_client.get_roboflow_workspace(self._api_key)
+            except Exception:
+                raise AdmissionRejected(
+                    "Could not authenticate the Databricks caller workspace"
+                ) from None
+            if not isinstance(tenant, str) or not tenant:
+                raise AdmissionRejected(
+                    "Could not authenticate the Databricks caller workspace"
+                )
+        with self._admission.admit(
+            tenant=tenant, hostname=hostname, http_path=http_path, deadline=deadline
+        ):
+            results = run_isolated(request, limits=limits, deadline=deadline)
         return results
 
     def _run_in_process(
