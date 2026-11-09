@@ -6,12 +6,17 @@ and how tightly it is boxed. There are two renderings because the providers read
 them differently: whole images with the boxes drawn on them (Gemini) and crops of
 the boxes grouped by label (OpenAI). The examples go first in the request, so every
 image of a batch shares the same prefix and the provider can cache it. The example
-images load and render one at a time, so they hold one full-size image at most.
+images load and render one at a time, so they hold one full-size image at most. The
+blocks keep the rendered parts for the whole process in
+``SHARED_REFERENCE_PARTS_CACHE``.
 """
 
 import base64
+import hashlib
 import json
 import threading
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import (
     Annotated,
@@ -41,6 +46,9 @@ CROP_MIN_MARGIN = 8
 CROP_MIN_EDGE = 128
 CROP_MAX_EDGE = 384
 SELECTOR_PREFIXES = ("$inputs.", "$steps.")
+REFERENCE_PARTS_CACHE_ENTRIES = 8
+REFERENCE_PARTS_CACHE_MAX_BYTES = 32 * 1024 * 1024
+REFERENCE_PARTS_CACHE_TTL_SECONDS = 15 * 60
 
 REFERENCE_CROPS_INTRO = (
     "Reference examples: crops of labeled objects taken from other images of the "
@@ -163,44 +171,171 @@ class LoadedReferenceExample:
     boxes: Tuple[Tuple[str, float, float, float, float], ...]
 
 
-class ReferencePartsCache:
-    """The reference parts one block instance built last.
+@dataclass(frozen=True)
+class _CachedParts:
+    parts: List[dict]
+    size: int
+    expires_at: float
 
-    A block instance lives as long as its execution engine: one job on a worker, one
-    request on a server. So every image of a job gets the examples without fetching
-    them again, and the next job sees what their URLs serve by then. One entry is
-    enough for a job, and it keeps a long-running pipeline whose examples change from
-    growing.
-    """
+
+class _PendingBuild:
+    """A build in progress; callers asking for its key wait for its outcome."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._key: Optional[str] = None
+        self._done = threading.Event()
         self._parts: List[dict] = []
+        self._error: Optional[BaseException] = None
+
+    def finish(self, parts: List[dict]) -> None:
+        self._parts = parts
+        self._done.set()
+
+    def fail(self, error: BaseException) -> None:
+        self._error = error
+        self._done.set()
+
+    def wait(self) -> List[dict]:
+        self._done.wait()
+        if self._error is not None:
+            raise self._error
+
+        return self._parts
+
+
+class ReferencePartsCache:
+    """Reference parts built recently, shared by the block instances of a process.
+
+    Each execution engine has its own block instances, and a host can run several
+    engines at once, such as one per thread. The blocks share
+    ``SHARED_REFERENCE_PARTS_CACHE``, so a process fetches and renders an example set
+    once instead of once per engine.
+
+    A hosted server runs the requests of many callers in one process, so an entry only
+    serves identical examples: its key holds every example as given (the image URL or
+    data, and the annotations), the labels and the rendering. A caller gets the parts
+    built for another only by sending the same examples, and example images load
+    through the process's image codec, under the same URL policy for every caller.
+    Examples with an in-memory image have no key and render on every call.
+
+    An entry expires ``ttl_seconds`` after it is built, so a later run sees what the
+    URLs serve by then. The least recently used entries go first once there are more
+    than ``max_entries`` or their strings, mostly base64 images, exceed ``max_bytes``;
+    parts larger than ``max_bytes`` are not kept. Callers that ask for a key while it
+    is being built wait for that build and get its parts or its error, while other keys
+    build at the same time. A failed build is not kept, so the next call builds again.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_entries: int = REFERENCE_PARTS_CACHE_ENTRIES,
+        max_bytes: int = REFERENCE_PARTS_CACHE_MAX_BYTES,
+        ttl_seconds: float = REFERENCE_PARTS_CACHE_TTL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        """Create an empty cache.
+
+        Args:
+            max_entries: Most example sets kept at once.
+            max_bytes: Most characters the kept parts hold in total.
+            ttl_seconds: How long an entry serves after it is built.
+            clock: Monotonic time in seconds.
+        """
+        self._max_entries = max_entries
+        self._max_bytes = max_bytes
+        self._ttl_seconds = ttl_seconds
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._entries: "OrderedDict[str, _CachedParts]" = OrderedDict()
+        self._size = 0
+        self._pending: Dict[str, _PendingBuild] = {}
 
     def get_or_build(
         self, key: Optional[str], *, build: Callable[[], List[dict]]
     ) -> List[dict]:
-        """Return the parts of ``key``, building them unless they were built last.
+        """Return the parts of ``key``, building them unless an entry has them.
 
         Args:
-            key: Identifies the examples and labels; ``None`` builds without caching.
+            key: Identifies the examples, the labels and the rendering; ``None``
+                builds without caching.
             build: Fetches and renders the examples.
 
         Returns:
-            Content parts to place before the target image.
+            Content parts to place before the target image, shared with other
+            callers.
+
+        Raises:
+            Exception: Whatever ``build`` raised, also in the callers that waited
+                for that build.
         """
         if key is None:
             parts = build()
             return parts
 
-        # Threads sharing the block wait for the first fetch instead of repeating it.
+        # A digest keeps the keys small when examples carry base64 images.
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
         with self._lock:
-            if key != self._key:
-                self._parts = build()
-                self._key = key
-            parts = self._parts
+            self._drop_expired()
+            entry = self._entries.get(digest)
+            if entry is not None:
+                self._entries.move_to_end(digest)
+                return entry.parts
+
+            pending = self._pending.get(digest)
+            is_builder = pending is None
+            if pending is None:
+                pending = _PendingBuild()
+                self._pending[digest] = pending
+
+        if not is_builder:
+            parts = pending.wait()
+            return parts
+
+        try:
+            parts = build()
+        except BaseException as error:
+            with self._lock:
+                del self._pending[digest]
+            pending.fail(error)
+            raise
+
+        size = _parts_size(parts)
+        with self._lock:
+            del self._pending[digest]
+            self._keep(digest, parts=parts, size=size)
+        pending.finish(parts)
         return parts
+
+    def clear(self) -> None:
+        """Drop every entry; builds in progress still finish and are kept."""
+        with self._lock:
+            self._entries.clear()
+            self._size = 0
+
+    def _drop_expired(self) -> None:
+        now = self._clock()
+        expired = [
+            digest for digest, entry in self._entries.items() if entry.expires_at <= now
+        ]
+        for digest in expired:
+            self._size -= self._entries.pop(digest).size
+
+    def _keep(self, digest: str, *, parts: List[dict], size: int) -> None:
+        if size > self._max_bytes:
+            return
+
+        expires_at = self._clock() + self._ttl_seconds
+        self._entries[digest] = _CachedParts(
+            parts=parts, size=size, expires_at=expires_at
+        )
+        self._size += size
+        while len(self._entries) > self._max_entries or self._size > self._max_bytes:
+            _, evicted = self._entries.popitem(last=False)
+            self._size -= evicted.size
+
+
+# Every instance of the Gemini and OpenAI blocks in the process uses this cache.
+SHARED_REFERENCE_PARTS_CACHE = ReferencePartsCache()
 
 
 def validate_reference_examples(
@@ -418,10 +553,12 @@ def gemini_reference_parts_for(
     Args:
         value: Examples accepted by ``validate_reference_examples``.
         labels: Block labels.
-        cache: The block's cache; without one the examples load on every call.
+        cache: Keeps the parts for later calls, as ``SHARED_REFERENCE_PARTS_CACHE``
+            does for the block; without one the examples load on every call.
 
     Returns:
-        Content parts to place before the target image.
+        Content parts to place before the target image. A cache shares them with
+        other callers, so they are not to be modified.
     """
 
     def render(examples: List[ReferenceExample]) -> List[dict]:
@@ -430,7 +567,9 @@ def gemini_reference_parts_for(
         rendered = _gemini_parts(boxed_images, numbers=numbers)
         return rendered
 
-    parts = _reference_parts(value, labels=labels, cache=cache, render=render)
+    parts = _reference_parts(
+        value, labels=labels, rendering="gemini", cache=cache, render=render
+    )
     return parts
 
 
@@ -445,14 +584,17 @@ def openai_reference_parts_for(
     Args:
         value: Examples accepted by ``validate_reference_examples``.
         labels: Labels the model returns.
-        cache: The block's cache; without one the examples load on every call.
+        cache: Keeps the parts for later calls, as ``SHARED_REFERENCE_PARTS_CACHE``
+            does for the block; without one the examples load on every call.
 
     Returns:
-        Content parts to place before the target image.
+        Content parts to place before the target image. A cache shares them with
+        other callers, so they are not to be modified.
     """
     parts = _reference_parts(
         value,
         labels=labels,
+        rendering="openai",
         cache=cache,
         render=lambda examples: _openai_parts(
             render_example_crops(examples, labels=labels)
@@ -559,6 +701,7 @@ def _reference_parts(
     value: Optional[Sequence[Any]],
     *,
     labels: Sequence[str],
+    rendering: str,
     cache: Optional[ReferencePartsCache],
     render: Callable[[List[ReferenceExample]], List[dict]],
 ) -> List[dict]:
@@ -567,26 +710,42 @@ def _reference_parts(
         return built
 
     if cache is None:
-        cache = ReferencePartsCache()
+        parts = build()
+        return parts
 
-    parts = cache.get_or_build(_cache_key(value, labels=labels), build=build)
+    key = _cache_key(value, labels=labels, rendering=rendering)
+    parts = cache.get_or_build(key, build=build)
     return parts
 
 
 def _cache_key(
-    value: Optional[Sequence[Any]], *, labels: Sequence[str]
+    value: Optional[Sequence[Any]], *, labels: Sequence[str], rendering: str
 ) -> Optional[str]:
     items = [
         item.model_dump(by_alias=True) if isinstance(item, ReferenceExample) else item
         for item in value or []
     ]
     try:
-        key = json.dumps([items, list(labels)], sort_keys=True)
+        # Both blocks share the cache, and each renders the examples its own way.
+        key = json.dumps([rendering, items, list(labels)], sort_keys=True)
     except TypeError:
         # An in-memory image has no JSON form, and rendering it needs no fetch.
         return None
 
     return key
+
+
+def _parts_size(value: Any) -> int:
+    # Characters of every string; the base64 images make up nearly all of them.
+    if isinstance(value, str):
+        size = len(value)
+    elif isinstance(value, dict):
+        size = sum(_parts_size(item) for item in value.values())
+    elif isinstance(value, (list, tuple)):
+        size = sum(_parts_size(item) for item in value)
+    else:
+        size = 0
+    return size
 
 
 class _LargestCrops:

@@ -49,6 +49,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     REFERENCE_EXAMPLES_DESCRIPTION,
     REFERENCE_EXAMPLES_EXAMPLE,
     REFERENCE_EXAMPLES_TASK,
+    SHARED_REFERENCE_PARTS_CACHE,
     TARGET_IMAGE_INTRO,
     ReferenceExamples,
     ReferencePartsCache,
@@ -605,7 +606,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
     ):
         self._api_key = api_key
         self._platform_client = platform_client
-        self._reference_parts_cache = ReferencePartsCache()
+        self._reference_parts_cache = SHARED_REFERENCE_PARTS_CACHE
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:

@@ -1,7 +1,9 @@
 import base64
+import threading
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, Iterator, List, Optional, Tuple
 from unittest.mock import patch
 
 import cv2
@@ -77,6 +79,28 @@ def server_like_codec():
     set_image_codec(codec)
     yield codec
     reset_image_codec()
+
+
+@pytest.fixture
+def waiting_callers() -> Iterator[threading.Semaphore]:
+    """Released once by every caller that starts waiting for a build in progress."""
+    waiting = threading.Semaphore(0)
+    wait = vlm_reference_examples._PendingBuild.wait
+
+    def counted_wait(pending: Any) -> List[dict]:
+        waiting.release()
+        return wait(pending)
+
+    with patch.object(vlm_reference_examples._PendingBuild, "wait", new=counted_wait):
+        yield waiting
+
+
+def _recording_build(text: str, builds: List[str]) -> Callable[[], List[dict]]:
+    def build() -> List[dict]:
+        builds.append(text)
+        return [{"text": text}]
+
+    return build
 
 
 def _image_base64(
@@ -690,7 +714,7 @@ def test_reference_parts_cache_keeps_nothing_from_a_failed_build(
     assert server_like_codec.fetched_urls == [url["value"]]
 
 
-def test_reference_parts_of_a_new_cache_see_the_image_a_url_serves_now(
+def test_reference_parts_see_the_image_a_url_serves_once_they_expire(
     server_like_codec: _ServerLikeCodec,
 ) -> None:
     # given
@@ -700,19 +724,158 @@ def test_reference_parts_of_a_new_cache_see_the_image_a_url_serves_now(
         np.full((100, 200, 3), 30, dtype=np.uint8),
         np.full((100, 200, 3), 220, dtype=np.uint8),
     ]
-    first_job, second_job = ReferencePartsCache(), ReferencePartsCache()
+    now = [0.0]
+    cache = ReferencePartsCache(ttl_seconds=60, clock=lambda: now[0])
 
     # when
-    first = gemini_reference_parts_for(examples, labels=["cat"], cache=first_job)
-    repeated = gemini_reference_parts_for(examples, labels=["cat"], cache=first_job)
-    second = gemini_reference_parts_for(examples, labels=["cat"], cache=second_job)
+    first = gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+    now[0] = 59.0
+    before_expiry = gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+    now[0] = 60.0
+    after_expiry = gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
 
     # then
-    assert repeated == first
+    assert before_expiry == first
     assert len(server_like_codec.fetched_urls) == 2
     corner = (2, 2)
     assert abs(int(_decode(first[2]["inline_data"]["data"])[corner][0]) - 30) < 8
-    assert abs(int(_decode(second[2]["inline_data"]["data"])[corner][0]) - 220) < 8
+    assert (
+        abs(int(_decode(after_expiry[2]["inline_data"]["data"])[corner][0]) - 220) < 8
+    )
+
+
+def test_reference_parts_stay_cached_for_several_example_sets() -> None:
+    # given
+    cache = ReferencePartsCache()
+    first_set, second_set = [_example()], [_example(width=300)]
+
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
+    ) as load_image:
+        for examples in (first_set, second_set, first_set, second_set):
+            gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+
+    # then
+    assert load_image.call_count == 2
+
+
+def test_gemini_and_openai_parts_of_the_same_examples_are_cached_apart() -> None:
+    # given
+    cache = ReferencePartsCache()
+
+    # when
+    gemini = gemini_reference_parts_for([_example()], labels=["cat"], cache=cache)
+    openai = openai_reference_parts_for([_example()], labels=["cat"], cache=cache)
+
+    # then
+    assert gemini[0] == {"text": REFERENCE_BOXED_INTRO}
+    assert openai[0] == {"type": "input_text", "text": REFERENCE_CROPS_INTRO}
+
+
+def test_reference_parts_cache_drops_the_least_recently_used_entry_first() -> None:
+    # given
+    cache = ReferencePartsCache(max_entries=2)
+    builds: List[str] = []
+
+    # when
+    for key in ["a", "b", "a", "c", "a", "b"]:
+        cache.get_or_build(key, build=_recording_build(key, builds))
+
+    # then
+    assert builds == ["a", "b", "c", "b"]
+
+
+def test_reference_parts_cache_keeps_its_parts_within_max_bytes() -> None:
+    # given
+    cache = ReferencePartsCache(max_bytes=10)
+    builds: List[str] = []
+    too_large = "x" * 11
+
+    # when
+    for key in ["aaaa", "bbbb", "cccc", too_large, too_large, "bbbb", "aaaa"]:
+        cache.get_or_build(key, build=_recording_build(key, builds))
+
+    # then
+    assert builds == ["aaaa", "bbbb", "cccc", too_large, too_large, "aaaa"]
+
+
+def test_reference_parts_cache_builds_a_key_once_for_concurrent_callers(
+    waiting_callers: threading.Semaphore,
+) -> None:
+    # given
+    cache = ReferencePartsCache()
+    builds: List[str] = []
+
+    def build() -> List[dict]:
+        builds.append("parts")
+        # Finish only once the three other callers wait for this build.
+        for _ in range(3):
+            assert waiting_callers.acquire(timeout=10)
+        return [{"text": "parts"}]
+
+    # when
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        calls = [pool.submit(cache.get_or_build, "key", build=build) for _ in range(4)]
+        results = [call.result(timeout=20) for call in calls]
+
+    # then
+    assert builds == ["parts"]
+    assert all(result is results[0] for result in results)
+
+
+def test_reference_parts_cache_builds_other_keys_while_one_is_building() -> None:
+    # given
+    cache = ReferencePartsCache()
+    building, release = threading.Event(), threading.Event()
+
+    def slow_build() -> List[dict]:
+        building.set()
+        release.wait(timeout=10)
+        return [{"text": "slow"}]
+
+    # when
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        slow = pool.submit(cache.get_or_build, "slow", build=slow_build)
+        assert building.wait(timeout=10)
+        fast = cache.get_or_build("fast", build=lambda: [{"text": "fast"}])
+        slow_was_building = not slow.done()
+        release.set()
+        slow_parts = slow.result(timeout=10)
+
+    # then
+    assert fast == [{"text": "fast"}]
+    assert slow_was_building
+    assert slow_parts == [{"text": "slow"}]
+
+
+def test_reference_parts_cache_gives_waiting_callers_the_error_and_keeps_nothing(
+    waiting_callers: threading.Semaphore,
+) -> None:
+    # given
+    cache = ReferencePartsCache()
+    builds: List[str] = []
+
+    def failing_build() -> List[dict]:
+        builds.append("failed")
+        assert waiting_callers.acquire(timeout=10)
+        raise OSError("connection reset")
+
+    # when
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        calls = [
+            pool.submit(cache.get_or_build, "key", build=failing_build)
+            for _ in range(2)
+        ]
+        errors = [call.exception(timeout=20) for call in calls]
+    parts = cache.get_or_build("key", build=_recording_build("parts", builds))
+
+    # then
+    assert [str(error) for error in errors] == ["connection reset"] * 2
+    assert builds == ["failed", "parts"]
+    assert parts == [{"text": "parts"}]
 
 
 @pytest.mark.parametrize(

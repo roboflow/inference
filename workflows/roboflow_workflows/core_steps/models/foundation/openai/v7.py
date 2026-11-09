@@ -56,6 +56,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     REFERENCE_EXAMPLES_DESCRIPTION,
     REFERENCE_EXAMPLES_EXAMPLE,
     REFERENCE_EXAMPLES_TASK,
+    SHARED_REFERENCE_PARTS_CACHE,
     TARGET_IMAGE_INTRO,
     ReferenceExamples,
     ReferencePartsCache,
@@ -893,7 +894,7 @@ class OpenAIBlockV7(WorkflowBlock):
     ):
         self._api_key = api_key
         self._platform_client = platform_client
-        self._reference_parts_cache = ReferencePartsCache()
+        self._reference_parts_cache = SHARED_REFERENCE_PARTS_CACHE
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -1055,8 +1056,8 @@ def run_openai_prompting(
         service_tier: OpenAI service tier, omitted from the request when ``None``.
         reference_examples: Optional labeled example images for object detection,
             in the format ``validate_reference_examples`` accepts.
-        reference_parts_cache: The block's cache of the parts built for the
-            examples; without one they load on every call.
+        reference_parts_cache: Keeps the parts built for the examples, the
+            process-wide cache for the block; without one they load on every call.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples, one per input
