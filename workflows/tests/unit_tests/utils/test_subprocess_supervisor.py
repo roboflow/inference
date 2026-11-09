@@ -10,15 +10,22 @@ from roboflow_workflows.utils.subprocess_supervisor import run_in_subprocess
 def test_result_callback_precedes_cleanup_and_cleanup_survives_invalid_result(
     tmp_path, monkeypatch
 ):
+    """Verify result callback precedes cleanup and cleanup survives invalid result.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     (tmp_path / "worker_fixture.py").write_text(
         "import sys\nfrom pathlib import Path\nPath(sys.argv[1], 'result').write_text('ok')\n"
     )
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
     directories = []
 
-    def read_result(directory):
+    def _read_result(directory):
         directories.append(directory)
         assert (directory / "result").read_text() == "ok"
+
         return "loaded"
 
     assert (
@@ -26,14 +33,14 @@ def test_result_callback_precedes_cleanup_and_cleanup_survives_invalid_result(
             {},
             worker_module="worker_fixture",
             deadline=time.monotonic() + 5,
-            read_result=read_result,
+            read_result=_read_result,
         )
         == "loaded"
     )
     assert not directories[-1].exists()
 
-    def invalid_result(directory):
-        read_result(directory)
+    def _invalid_result(directory):
+        _read_result(directory)
         raise ValueError("invalid result")
 
     with pytest.raises(ValueError, match="invalid result"):
@@ -41,7 +48,7 @@ def test_result_callback_precedes_cleanup_and_cleanup_survives_invalid_result(
             {},
             worker_module="worker_fixture",
             deadline=time.monotonic() + 5,
-            read_result=invalid_result,
+            read_result=_invalid_result,
         )
     assert not directories[-1].exists()
 
@@ -52,6 +59,13 @@ def test_result_callback_precedes_cleanup_and_cleanup_survives_invalid_result(
 def test_malformed_or_oversized_worker_errors_are_bounded(
     tmp_path, monkeypatch, report
 ):
+    """Verify malformed or oversized worker errors are bounded.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+        report (str): Malformed or oversized worker error-file contents.
+    """
     (tmp_path / "worker_fixture.py").write_text(
         "import sys\nfrom pathlib import Path\n"
         + f"Path(sys.argv[1], 'error.json').write_text({report!r})\nsys.exit(1)\n"

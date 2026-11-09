@@ -72,6 +72,8 @@ class Behaviour:
 
 @dataclass
 class Observations:
+    """Collect HTTP, TLS and Thrift events observed by the fixture warehouse."""
+
     statements: List[Any] = field(default_factory=list)
     connections: List[Dict[str, Any]] = field(default_factory=list)
     requests: List[Dict[str, Any]] = field(default_factory=list)
@@ -113,13 +115,21 @@ class _WarehouseHandler(TCLIService.Iface):
         return ttypes.TCloseSessionResp(status=_status())
 
     def ExecuteStatement(self, req):
+        """Record a statement and create its simulated operation handle.
+
+        Args:
+            req (TExecuteStatementReq): Deserialized connector execution request.
+
+        Returns:
+            TExecuteStatementResp: Successful operation handle for subsequent polling.
+        """
         self.observations.statements.append(req)
         with self._lock:
             self._cursor = 0
             self._cancelled = False
             self._operation = _handle_identifier()
             self.observations.operation_states.append("RUNNING")
-        return ttypes.TExecuteStatementResp(
+        response = ttypes.TExecuteStatementResp(
             status=_status(),
             operationHandle=ttypes.TOperationHandle(
                 operationId=self._operation,
@@ -128,6 +138,8 @@ class _WarehouseHandler(TCLIService.Iface):
             ),
             directResults=None,
         )
+
+        return response
 
     def GetOperationStatus(self, req):
         if self._cancelled:
@@ -236,6 +248,7 @@ class _RequestHandler(http.server.BaseHTTPRequestHandler):
         return
 
     def do_POST(self) -> None:  # noqa: N802 - http.server interface
+        """Serve one scripted HTTP response or dispatch a Thrift request."""
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         record = {
@@ -252,7 +265,9 @@ class _RequestHandler(http.server.BaseHTTPRequestHandler):
             if action.close_connection:
                 self.close_connection = True
                 self.connection.close()
+
                 return
+
             self.send_response(action.status or 500)
             for key, value in action.headers.items():
                 self.send_header(key, value)
@@ -260,7 +275,9 @@ class _RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             if action.body:
                 self.wfile.write(action.body)
+
             return
+
         output = TTransport.TMemoryBuffer()
         processor = TCLIService.Processor(self.server.handler)
         processor.process(
@@ -301,7 +318,7 @@ class FakeWarehouse(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, behaviour: Behaviour, certificate_host: str = HOST):
+    def __init__(self, behaviour: Behaviour, *, certificate_host: str = HOST):
         self._tls_directory = tempfile.TemporaryDirectory(prefix="databricks-test-tls-")
         tls_dir = Path(self._tls_directory.name)
         configuration = tls_dir / "openssl.cnf"

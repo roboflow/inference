@@ -36,67 +36,70 @@ def bounded_json_bytes(value: Any, *, max_bytes: int) -> bytes:
     """
     remaining = max_bytes
 
-    def reserve(size: int) -> None:
+    def _reserve(size: int) -> None:
         nonlocal remaining
         remaining -= size
         if remaining < 0:
             raise ValueError("Worker request exceeds its byte limit")
 
-    def string_size(text: str) -> None:
+    def _string_size(text: str) -> None:
         # Even unescaped ASCII needs this many bytes. Reject huge inputs in O(1).
         if len(text) + 2 > remaining:
             raise ValueError("Worker request exceeds its byte limit")
 
-        reserve(2)
+        _reserve(2)
         for character in text:
             code = ord(character)
             if character in '"\\\b\f\n\r\t':
-                reserve(2)
+                _reserve(2)
             elif code < 32:
-                reserve(6)
+                _reserve(6)
             elif code < 128:
-                reserve(1)
+                _reserve(1)
             elif code < 2048:
-                reserve(2)
+                _reserve(2)
             elif 0xD800 <= code <= 0xDFFF:
                 raise ValueError("Worker request contains invalid Unicode")
             else:
-                reserve(3 if code < 65536 else 4)
+                _reserve(3 if code < 65536 else 4)
 
-    def measure(item: Any, depth: int = 0) -> None:
+    def _measure(item: Any, *, depth: int = 0) -> None:
         if depth > 32:
             raise ValueError("Worker request nesting exceeds its limit")
 
         if isinstance(item, str):
-            string_size(item)
+            _string_size(item)
         elif item is None:
-            reserve(4)
+            _reserve(4)
         elif isinstance(item, bool):
-            reserve(4 if item else 5)
+            _reserve(4 if item else 5)
         elif isinstance(item, int):
             if item.bit_length() > 64:
                 raise ValueError("Worker request integer exceeds 64 bits")
-            reserve(len(str(item)))
+
+            _reserve(len(str(item)))
         elif isinstance(item, float):
             if not math.isfinite(item):
                 raise ValueError("Worker request contains a non-finite number")
-            reserve(len(json.dumps(item, allow_nan=False)))
+
+            _reserve(len(json.dumps(item, allow_nan=False)))
         elif isinstance(item, (list, tuple, dict)):
-            reserve(2 + max(0, len(item) - 1))
+            _reserve(2 + max(0, len(item) - 1))
             if isinstance(item, dict):
                 for key, entry in item.items():
                     if not isinstance(key, str):
                         raise ValueError("Worker request keys must be strings")
-                    string_size(key)
-                    reserve(1)
-                    measure(entry, depth + 1)
+
+                    _string_size(key)
+                    _reserve(1)
+                    _measure(entry, depth=depth + 1)
             else:
                 for entry in item:
-                    measure(entry, depth + 1)
+                    _measure(entry, depth=depth + 1)
         else:
             raise ValueError("Worker request contains an unsupported value")
 
-    measure(value)
+    _measure(value)
     payload = json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")
@@ -123,7 +126,7 @@ def _stop_worker(process: subprocess.Popen, *, cleanup_deadline: float) -> None:
         process.wait(timeout=max(0.1, cleanup_deadline - time.monotonic()))
 
 
-def _read_error(directory: Path, secrets: Sequence[str]) -> Exception:
+def _read_error(directory: Path, *, secrets: Sequence[str]) -> Exception:
     path = directory / "error.json"
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
@@ -131,14 +134,20 @@ def _read_error(directory: Path, secrets: Sequence[str]) -> Exception:
         with os.fdopen(descriptor, "rb") as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                 raise ValueError("Worker error must be a regular file")
+
             payload = stream.read(_MAX_ERROR_BYTES + 1)
         if len(payload) > _MAX_ERROR_BYTES:
             raise ValueError("Worker error exceeds its limit")
+
         error = json.loads(payload)
         if not isinstance(error, dict) or not isinstance(error.get("message"), str):
             raise ValueError("Invalid worker error")
     except (OSError, ValueError, RecursionError):
-        return RuntimeError("Integration worker failed without a valid error report")
+        worker_error = RuntimeError(
+            "Integration worker failed without a valid error report"
+        )
+
+        return worker_error
 
     message = error["message"]
     for secret in secrets:
@@ -147,7 +156,9 @@ def _read_error(directory: Path, secrets: Sequence[str]) -> Exception:
     exception_type = {"TimeoutError": TimeoutError, "ValueError": ValueError}.get(
         error.get("kind"), RuntimeError
     )
-    return exception_type(message)
+    worker_error = exception_type(message)
+
+    return worker_error
 
 
 def run_in_subprocess(
@@ -201,10 +212,11 @@ def run_in_subprocess(
                 raise TimeoutError("Integration worker deadline expired") from None
             _check_deadline(deadline)
             if process.returncode != 0:
-                raise _read_error(directory, secrets)
+                raise _read_error(directory, secrets=secrets)
 
             result = read_result(directory)
             _check_deadline(deadline)
+
             return result
         finally:
             _stop_worker(process, cleanup_deadline=time.monotonic() + cleanup_seconds)
