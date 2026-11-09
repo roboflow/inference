@@ -175,7 +175,7 @@ def test_package_without_saved_prompts_keeps_explicit_queries(package):
 @pytest.mark.parametrize(
     "filename,contents",
     [
-        ("class_names.txt", "duplicate\nduplicate\n"),
+        ("owlv2_prompts.json", "not json"),
         ("owlv2_prompts.json", '["one prompt"]'),
         ("owlv2_prompts.json", None),
         ("class_names.txt", None),

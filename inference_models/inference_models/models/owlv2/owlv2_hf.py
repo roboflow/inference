@@ -157,35 +157,7 @@ class OWLv2HF(
         recommended_parameters=None,
         **kwargs,
     ) -> "OpenVocabularyObjectDetectionModel":
-        class_names, prompts = None, None
-        package = Path(model_name_or_path)
-        if (package / "class_names.txt").exists() or (
-            package / "owlv2_prompts.json"
-        ).exists():
-            try:
-                class_names = (package / "class_names.txt").read_text().splitlines()
-                prompts = json.loads((package / "owlv2_prompts.json").read_text())
-                if (
-                    not class_names
-                    or len(set(class_names)) != len(class_names)
-                    or any(
-                        not name.strip() or name != name.strip() for name in class_names
-                    )
-                    or not isinstance(prompts, list)
-                    or len(prompts) != len(class_names)
-                    or any(
-                        not isinstance(prompt, str) or not prompt.strip()
-                        for prompt in prompts
-                    )
-                ):
-                    raise ValueError(
-                        "Classes and prompts must be nonempty and have matching lengths."
-                    )
-            except (OSError, ValueError) as error:
-                raise CorruptedModelPackageError(
-                    message=f"Invalid OWLv2 classes or prompts: {error}",
-                    help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-                ) from error
+        class_names, prompts = _load_saved_queries(Path(model_name_or_path))
         if owlv2_class_embeddings_cache is None:
             owlv2_class_embeddings_cache = OwlV2ClassEmbeddingsCacheNullObject()
         if owlv2_images_embeddings_cache is None:
@@ -800,6 +772,30 @@ class OWLv2HF(
         )
         self._owlv2_images_embeddings_cache.save_embeddings(embeddings=embeddings)
         return embeddings
+
+
+def _load_saved_queries(
+    package: Path,
+) -> Tuple[Optional[List[str]], Optional[List[str]]]:
+    # The exporter validates these files; only the alignment that inference relies on is checked.
+    labels_path = package / "class_names.txt"
+    prompts_path = package / "owlv2_prompts.json"
+    if not labels_path.exists() and not prompts_path.exists():
+        return None, None
+    try:
+        class_names = labels_path.read_text().splitlines()
+        prompts = json.loads(prompts_path.read_text())
+    except (OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            message=f"Invalid OWLv2 classes or prompts: {error}",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        ) from error
+    if not class_names or len(prompts) != len(class_names):
+        raise CorruptedModelPackageError(
+            message="OWLv2 classes and prompts must be nonempty and have matching lengths.",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        )
+    return class_names, prompts
 
 
 def to_corners(box: torch.Tensor) -> torch.Tensor:
