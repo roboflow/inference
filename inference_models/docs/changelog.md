@@ -11,7 +11,13 @@
   background), `segment_video_frame` returns one frame's masks for click
   previews, and `propagate_video` tracks every point-prompted object forward and
   backward from its first prompted frame, one session per object. Clips are kept
-  in a per-model cache sized by `SAM3_VIDEO_MAX_CACHED_CLIPS` (default 4).
+  in a per-model cache in host RAM, bounded by `SAM3_VIDEO_CACHE_MAX_GB`
+  (default 16): the limit is turned into a number of frames from the bytes one
+  cached frame holds (`video_cache_limits` reports both), the least recently
+  used clips are evicted to stay within it, and a clip with more frames than it
+  holds is refused. A clip is preprocessed 16 frames at a time, and a frame's
+  preprocessed pixels are released once its encoder output is cached, so a
+  cached frame holds one or the other.
 
 ## `0.39.8`
 
