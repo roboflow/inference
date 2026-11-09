@@ -5,6 +5,9 @@ import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.core_steps.transformations.perspective_correction._mask_geometry import (
+    _warp_instance_mask,
+)
 from roboflow_workflows.execution_engine.constants import (
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
 )
@@ -68,7 +71,7 @@ This block corrects perspective distortion by transforming coordinates from a pe
    - Handles extended dimensions when polygon extension is enabled
 5. Applies perspective transformation to detections (if provided):
    - Transforms bounding box coordinates from perspective view to top-down coordinates
-   - Transforms instance segmentation masks by converting masks to polygons, transforming polygon vertices, and converting back to masks in the new coordinate space
+   - Transforms instance segmentation masks to the destination coordinate space while preserving separate regions and holes
    - Transforms keypoint coordinates for keypoint detection predictions
    - Updates all coordinate data to reflect the corrected perspective
 6. Optionally warps images (if `warp_image` is True):
@@ -691,53 +694,48 @@ def correct_detections(
     transformed_rect_width: float,
     transformed_rect_height: float,
 ) -> sv.Detections:
+    """Transform each detection into the destination coordinate space.
+
+    Args:
+        detections (sv.Detections): Source boxes and optional instance masks.
+        perspective_transformer (np.ndarray): Homography from source to destination.
+        transformed_rect_width (float): Width of the destination canvas.
+        transformed_rect_height (float): Height of the destination canvas.
+
+    Returns:
+        sv.Detections: Transformed detections in their original row order.
+    """
+    resolution_wh = (
+        int(round(transformed_rect_width)),
+        int(round(transformed_rect_height)),
+    )
     corrected_detections: List[sv.Detections] = []
     for i in range(len(detections)):
-        # copy
         detection = detections[i]
-        mask = np.array(detection.mask)
-        if (
-            not np.array_equal(mask, np.array(None))
-            and len(mask) > 0
-            and isinstance(mask[0], np.ndarray)
-        ):
-            polygon = np.array(sv.mask_to_polygons(mask[0]), dtype=np.float32)
-            # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
-            corrected_polygon: np.ndarray = cv.perspectiveTransform(
-                src=polygon, m=perspective_transformer
-            ).reshape(-1, 2)
-            mask_bool = sv.polygon_to_mask(
-                polygon=np.around(corrected_polygon).astype(np.int32),
-                resolution_wh=(
-                    int(round(transformed_rect_width)),
-                    int(round(transformed_rect_height)),
-                ),
-            ).astype(bool)
-            detection.mask = np.array([mask_bool])
-            detection.xyxy = np.array(
-                [
-                    np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(
-                        np.int32
-                    )
-                ]
+        corrected_box = None
+        if detection.mask is not None:
+            corrected_mask, corrected_box = _warp_instance_mask(
+                np.asarray(detection.mask)[0],
+                transform=perspective_transformer,
+                resolution_wh=resolution_wh,
             )
-        else:
+            detection.mask = corrected_mask[np.newaxis, ...]
+
+        if corrected_box is None:
             xmin, ymin, xmax, ymax = np.around(detection.xyxy[0]).tolist()
             polygon = np.array(
                 [[[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]]],
                 dtype=np.float32,
             )
             # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
-            corrected_polygon: np.ndarray = cv.perspectiveTransform(
+            corrected_polygon = cv.perspectiveTransform(
                 src=polygon, m=perspective_transformer
             ).reshape(-1, 2)
-            detection.xyxy = np.array(
-                [
-                    np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(
-                        np.int32
-                    )
-                ]
-            )
+            corrected_box = np.around(
+                sv.polygon_to_xyxy(polygon=corrected_polygon)
+            ).astype(np.int32)
+
+        detection.xyxy = corrected_box[np.newaxis, ...]
         if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detection.data:
             corrected_key_points = cv.perspectiveTransform(
                 src=np.array(

@@ -18,6 +18,9 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Perspective Correction v1 preserves separate regions and holes when transforming
+  an instance segmentation mask.
+
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 
