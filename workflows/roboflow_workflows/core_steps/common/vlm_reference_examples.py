@@ -5,7 +5,8 @@ examples before the image to label, so the model sees what each label looks like
 and how tightly it is boxed. There are two renderings because the providers read
 them differently: whole images with the boxes drawn on them (Gemini) and crops of
 the boxes grouped by label (OpenAI). The examples go first in the request, so every
-image of a batch shares the same prefix and the provider can cache it.
+image of a batch shares the same prefix and the provider can cache it. The example
+images load and render one at a time, so they hold one full-size image at most.
 """
 
 import base64
@@ -49,6 +50,12 @@ REFERENCE_BOXED_INTRO = (
     "Reference examples: other images of the same dataset where every object with "
     "one of the labels is outlined by a colored box with its label written on it. "
     "They show what each label looks like and how tightly it is boxed."
+)
+REFERENCE_NUMBERED_INTRO = (
+    "Reference examples: other images of the same dataset where every object with "
+    "one of the labels is outlined by a colored box with a number written on it. "
+    "They show what each label looks like and how tightly it is boxed. The numbers "
+    "stand for these labels:"
 )
 TARGET_IMAGE_INTRO = "Target image:"
 # On its own line, because a detection prompt can end with the list of labels.
@@ -243,10 +250,49 @@ def validate_reference_examples(
     return examples
 
 
-def load_reference_examples(
+def numbered_labels(
     examples: Sequence[ReferenceExample],
-) -> List[LoadedReferenceExample]:
-    """Decode the example images and convert their boxes to clipped corners.
+    *,
+    labels: Sequence[str],
+) -> Optional[Dict[str, str]]:
+    """Pick numbers to write on the boxes in place of labels the font cannot draw.
+
+    Pillow's default font has glyphs for ASCII only and draws any other character as
+    the same box, so labels in other scripts would all look alike. When an example
+    uses a label outside printable ASCII, every label is written as its 1-based
+    position in ``labels`` instead, and the request text maps the numbers back to the
+    labels.
+
+    Args:
+        examples: Validated examples.
+        labels: Block labels.
+
+    Returns:
+        A number per label the examples use, in the order of ``labels``, or ``None``
+        when all of those labels are printable ASCII and are written as they are.
+    """
+    used_labels = {
+        annotation.class_name
+        for example in examples
+        for annotation in example.annotations
+    }
+    if all(label.isascii() and label.isprintable() for label in used_labels):
+        return None
+
+    numbers = {
+        label: str(position)
+        for position, label in enumerate(labels, start=1)
+        if label in used_labels
+    }
+    return numbers
+
+
+def load_reference_example(
+    example: ReferenceExample,
+    *,
+    index: int,
+) -> LoadedReferenceExample:
+    """Decode an example image and convert its boxes to clipped corners.
 
     Images load like a workflow image input of an HTTP request: URLs follow the host's
     policy and a local path is never read. The block cannot see the engine's
@@ -254,130 +300,107 @@ def load_reference_examples(
     definition or its inputs.
 
     Args:
-        examples: Validated examples.
+        example: Validated example.
+        index: Position of the example in its list, for error messages.
 
     Returns:
-        One loaded example per input, in order.
+        The decoded image with its boxes.
 
     Raises:
-        RuntimeInputError: If an image cannot be loaded, which includes a local path.
+        RuntimeInputError: If the image cannot be loaded, which includes a local path.
         ValueError: If a box lies entirely outside its image.
     """
-    loaded = []
-    for index, example in enumerate(examples):
-        image = deserialize_image_kind(
-            f"reference_examples[{index}].image",
-            example.image,
-            prevent_local_images_loading=True,
-        )
-        pixels, _ = load_image(image.to_inference_format(numpy_preferred=True))
-        height, width = pixels.shape[:2]
-        boxes = []
-        for box in example.annotations:
-            x_min = max(0.0, box.x - box.width / 2)
-            y_min = max(0.0, box.y - box.height / 2)
-            x_max = min(float(width), box.x + box.width / 2)
-            y_max = min(float(height), box.y + box.height / 2)
-            if x_max <= x_min or y_max <= y_min:
-                raise ValueError(
-                    f"`reference_examples[{index}]` has a box outside its "
-                    f"{width}x{height} image"
-                )
-            boxes.append((box.class_name, x_min, y_min, x_max, y_max))
-        loaded.append(LoadedReferenceExample(image=pixels, boxes=tuple(boxes)))
+    image = deserialize_image_kind(
+        f"reference_examples[{index}].image",
+        example.image,
+        prevent_local_images_loading=True,
+    )
+    pixels, _ = load_image(image.to_inference_format(numpy_preferred=True))
+    height, width = pixels.shape[:2]
+    boxes = []
+    for box in example.annotations:
+        x_min = max(0.0, box.x - box.width / 2)
+        y_min = max(0.0, box.y - box.height / 2)
+        x_max = min(float(width), box.x + box.width / 2)
+        y_max = min(float(height), box.y + box.height / 2)
+        if x_max <= x_min or y_max <= y_min:
+            raise ValueError(
+                f"`reference_examples[{index}]` has a box outside its "
+                f"{width}x{height} image"
+            )
+        boxes.append((box.class_name, x_min, y_min, x_max, y_max))
+    loaded = LoadedReferenceExample(image=pixels, boxes=tuple(boxes))
     return loaded
 
 
 def render_boxed_examples(
-    examples: Sequence[LoadedReferenceExample],
+    examples: Sequence[ReferenceExample],
     *,
     labels: Sequence[str],
+    numbers: Optional[Dict[str, str]] = None,
 ) -> List[str]:
-    """Draw every box and its label on each example image.
+    """Load each example image in turn and draw its boxes and labels on it.
+
+    An image is released once drawn, before the next one loads, so the examples
+    never hold more than one full-size image.
 
     Args:
-        examples: Loaded examples.
+        examples: Validated examples.
         labels: Block labels; a label's position picks its box color.
+        numbers: Numbers to write in place of the labels, from ``numbered_labels``.
 
     Returns:
         One base64 JPEG per example, downscaled to ``BOXED_IMAGE_MAX_EDGE``.
+
+    Raises:
+        RuntimeInputError: If an image cannot be loaded.
+        ValueError: If a box lies entirely outside its image.
     """
     label_positions = {label: index for index, label in enumerate(labels)}
-    rendered = []
-    for example in examples:
-        height, width = example.image.shape[:2]
-        scale = min(1.0, BOXED_IMAGE_MAX_EDGE / max(height, width))
-        pixels = example.image
-        if scale < 1.0:
-            pixels = cv2.resize(
-                pixels,
-                (max(1, round(width * scale)), max(1, round(height * scale))),
-                interpolation=cv2.INTER_AREA,
-            )
-        canvas = Image.fromarray(np.ascontiguousarray(pixels[:, :, ::-1]))
-        draw = ImageDraw.Draw(canvas)
-        line_width = max(2, round(max(canvas.size) / 400))
-        font = _label_font(max(12, round(max(canvas.size) / 70)))
-
-        for label, x_min, y_min, x_max, y_max in example.boxes:
-            color = _BOX_COLORS[label_positions[label] % len(_BOX_COLORS)]
-            box = [x_min * scale, y_min * scale, x_max * scale, y_max * scale]
-            draw.rectangle(box, outline=color, width=line_width)
-            left, top, right, bottom = draw.textbbox((0, 0), label, font=font)
-            tag_top = box[1] - (bottom - top) - 4
-            if tag_top < 0:
-                tag_top = box[1] + line_width
-            draw.rectangle(
-                [
-                    box[0],
-                    tag_top,
-                    box[0] + right - left + 4,
-                    tag_top + bottom - top + 4,
-                ],
-                fill=color,
-            )
-            draw.text(
-                (box[0] + 2 - left, tag_top + 2 - top),
-                label,
-                fill=_text_color(color),
-                font=font,
-            )
-
-        bgr = np.ascontiguousarray(np.asarray(canvas)[:, :, ::-1])
-        rendered.append(_jpeg_base64(bgr))
+    tags = {label: (numbers or {}).get(label, label) for label in labels}
+    # Each loaded example goes straight into the drawing, so nothing keeps its image
+    # once the JPEG is made.
+    rendered = [
+        _draw_boxes(
+            load_reference_example(example, index=index),
+            label_positions=label_positions,
+            tags=tags,
+        )
+        for index, example in enumerate(examples)
+    ]
     return rendered
 
 
 def render_example_crops(
-    examples: Sequence[LoadedReferenceExample],
+    examples: Sequence[ReferenceExample],
     *,
     labels: Sequence[str],
 ) -> List[Tuple[str, List[str]]]:
-    """Cut crops of the example boxes, grouped by label.
+    """Load each example image in turn and cut crops of its boxes, grouped by label.
+
+    A box is cropped while its image is loaded if it is among the largest of its label
+    so far. The image is released before the next one loads, so the examples never
+    hold more than one full-size image.
 
     Args:
-        examples: Loaded examples.
+        examples: Validated examples.
         labels: Block labels; groups follow this order.
 
     Returns:
         ``(label, crops)`` pairs with up to ``MAX_CROPS_PER_LABEL`` base64 JPEG crops
-        each, largest boxes first. Labels without boxes are left out.
-    """
-    by_label: Dict[str, List[Tuple[np.ndarray, Tuple[float, float, float, float]]]] = {
-        label: [] for label in labels
-    }
-    for example in examples:
-        for label, x_min, y_min, x_max, y_max in example.boxes:
-            by_label[label].append((example.image, (x_min, y_min, x_max, y_max)))
+        each, largest boxes first and equal ones in the order given. Labels without
+        boxes are left out.
 
-    groups = []
-    for label in labels:
-        largest_first = sorted(by_label[label], key=lambda item: -_area(item[1]))
-        chosen = largest_first[:MAX_CROPS_PER_LABEL]
-        if chosen:
-            groups.append(
-                (label, [_crop_base64(image, box=box) for image, box in chosen])
-            )
+    Raises:
+        RuntimeInputError: If an image cannot be loaded.
+        ValueError: If a box lies entirely outside its image.
+    """
+    largest_crops = _LargestCrops(labels)
+    for index, example in enumerate(examples):
+        # Passed straight in, so nothing keeps the image once its crops are cut.
+        largest_crops.add(load_reference_example(example, index=index))
+
+    groups = largest_crops.groups()
     return groups
 
 
@@ -389,6 +412,9 @@ def gemini_reference_parts_for(
 ) -> List[dict]:
     """Build Gemini content parts for validated examples: boxed images.
 
+    When ``numbered_labels`` picks numbers for the boxes, the text before the images
+    maps them to the labels.
+
     Args:
         value: Examples accepted by ``validate_reference_examples``.
         labels: Block labels.
@@ -397,14 +423,14 @@ def gemini_reference_parts_for(
     Returns:
         Content parts to place before the target image.
     """
-    parts = _reference_parts(
-        value,
-        labels=labels,
-        cache=cache,
-        render=lambda examples: _gemini_parts(
-            render_boxed_examples(examples, labels=labels)
-        ),
-    )
+
+    def render(examples: List[ReferenceExample]) -> List[dict]:
+        numbers = numbered_labels(examples, labels=labels)
+        boxed_images = render_boxed_examples(examples, labels=labels, numbers=numbers)
+        rendered = _gemini_parts(boxed_images, numbers=numbers)
+        return rendered
+
+    parts = _reference_parts(value, labels=labels, cache=cache, render=render)
     return parts
 
 
@@ -500,8 +526,18 @@ def _parse_reference_examples(value: Optional[Sequence[Any]]) -> List[ReferenceE
     return examples
 
 
-def _gemini_parts(boxed_images: Sequence[str]) -> List[dict]:
-    parts = [{"text": REFERENCE_BOXED_INTRO}]
+def _gemini_parts(
+    boxed_images: Sequence[str], *, numbers: Optional[Dict[str, str]]
+) -> List[dict]:
+    intro = REFERENCE_BOXED_INTRO
+    if numbers:
+        legend = "\n".join(
+            f"{number}: {json.dumps(label, ensure_ascii=False)}"
+            for label, number in numbers.items()
+        )
+        intro = f"{REFERENCE_NUMBERED_INTRO}\n{legend}"
+
+    parts = [{"text": intro}]
     for index, data in enumerate(boxed_images, start=1):
         parts.append({"text": f"Reference image {index}:"})
         parts.append({"inline_data": {"mime_type": "image/jpeg", "data": data}})
@@ -524,10 +560,10 @@ def _reference_parts(
     *,
     labels: Sequence[str],
     cache: Optional[ReferencePartsCache],
-    render: Callable[[List[LoadedReferenceExample]], List[dict]],
+    render: Callable[[List[ReferenceExample]], List[dict]],
 ) -> List[dict]:
     def build() -> List[dict]:
-        built = render(load_reference_examples(_parse_reference_examples(value)))
+        built = render(_parse_reference_examples(value))
         return built
 
     if cache is None:
@@ -551,6 +587,90 @@ def _cache_key(
         return None
 
     return key
+
+
+class _LargestCrops:
+    """Crops of the largest boxes of each label, cut while each example is loaded."""
+
+    def __init__(self, labels: Sequence[str]) -> None:
+        self._labels = list(labels)
+        # (-area, arrival, crop) sorts the largest box first, then the first given.
+        self._kept: Dict[str, List[Tuple[float, int, str]]] = {
+            label: [] for label in labels
+        }
+        self._arrivals = 0
+
+    def add(self, example: LoadedReferenceExample) -> None:
+        for label, x_min, y_min, x_max, y_max in example.boxes:
+            box = (x_min, y_min, x_max, y_max)
+            rank = (-_area(box), self._arrivals)
+            self._arrivals += 1
+            kept = self._kept[label]
+            if len(kept) == MAX_CROPS_PER_LABEL:
+                last = max(kept)
+                if rank > last[:2]:
+                    continue
+
+                kept.remove(last)
+            kept.append((*rank, _crop_base64(example.image, box=box)))
+
+    def groups(self) -> List[Tuple[str, List[str]]]:
+        groups = [
+            (label, [crop for _, _, crop in sorted(self._kept[label])])
+            for label in self._labels
+            if self._kept[label]
+        ]
+        return groups
+
+
+def _draw_boxes(
+    example: LoadedReferenceExample,
+    *,
+    label_positions: Dict[str, int],
+    tags: Dict[str, str],
+) -> str:
+    height, width = example.image.shape[:2]
+    scale = min(1.0, BOXED_IMAGE_MAX_EDGE / max(height, width))
+    pixels = example.image
+    if scale < 1.0:
+        pixels = cv2.resize(
+            pixels,
+            (max(1, round(width * scale)), max(1, round(height * scale))),
+            interpolation=cv2.INTER_AREA,
+        )
+    canvas = Image.fromarray(np.ascontiguousarray(pixels[:, :, ::-1]))
+    draw = ImageDraw.Draw(canvas)
+    line_width = max(2, round(max(canvas.size) / 400))
+    font = _label_font(max(12, round(max(canvas.size) / 70)))
+
+    for label, x_min, y_min, x_max, y_max in example.boxes:
+        color = _BOX_COLORS[label_positions[label] % len(_BOX_COLORS)]
+        tag = tags[label]
+        box = [x_min * scale, y_min * scale, x_max * scale, y_max * scale]
+        draw.rectangle(box, outline=color, width=line_width)
+        left, top, right, bottom = draw.textbbox((0, 0), tag, font=font)
+        tag_top = box[1] - (bottom - top) - 4
+        if tag_top < 0:
+            tag_top = box[1] + line_width
+        draw.rectangle(
+            [
+                box[0],
+                tag_top,
+                box[0] + right - left + 4,
+                tag_top + bottom - top + 4,
+            ],
+            fill=color,
+        )
+        draw.text(
+            (box[0] + 2 - left, tag_top + 2 - top),
+            tag,
+            fill=_text_color(color),
+            font=font,
+        )
+
+    bgr = np.ascontiguousarray(np.asarray(canvas)[:, :, ::-1])
+    encoded = _jpeg_base64(bgr)
+    return encoded
 
 
 def _area(box: Tuple[float, float, float, float]) -> float:

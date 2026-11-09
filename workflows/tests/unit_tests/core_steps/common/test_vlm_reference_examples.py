@@ -1,4 +1,5 @@
 import base64
+import weakref
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 from unittest.mock import patch
@@ -6,6 +7,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 import pytest
+from PIL import ImageDraw
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common import vlm_reference_examples
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
@@ -14,11 +16,12 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_BOXED_INTRO,
     REFERENCE_CROPS_INTRO,
+    REFERENCE_NUMBERED_INTRO,
     TARGET_IMAGE_INTRO,
     TARGET_ONLY_RULE,
     ReferencePartsCache,
     gemini_reference_parts_for,
-    load_reference_examples,
+    load_reference_example,
     openai_reference_parts_for,
     render_boxed_examples,
     render_example_crops,
@@ -88,9 +91,10 @@ def _example(
     width: int = 200,
     height: int = 100,
     annotations: Optional[List[dict]] = None,
+    color: Tuple[int, int, int] = (255, 255, 255),
 ) -> dict:
     return {
-        "image": {"type": "base64", "value": _image_base64(width, height)},
+        "image": {"type": "base64", "value": _image_base64(width, height, color)},
         "annotations": (
             annotations
             if annotations is not None
@@ -282,7 +286,7 @@ def test_manifest_rejects_more_literal_examples_than_the_limit(
         )
 
 
-def test_load_reference_examples_clips_boxes_to_the_image() -> None:
+def test_load_reference_example_clips_boxes_to_the_image() -> None:
     # given
     examples = validate_reference_examples(
         [
@@ -297,14 +301,14 @@ def test_load_reference_examples_clips_boxes_to_the_image() -> None:
     )
 
     # when
-    loaded = load_reference_examples(examples)
+    loaded = load_reference_example(examples[0], index=0)
 
     # then
-    assert loaded[0].image.shape == (100, 200, 3)
-    assert loaded[0].boxes == (("cat", 170.0, 0.0, 200.0, 30.0),)
+    assert loaded.image.shape == (100, 200, 3)
+    assert loaded.boxes == (("cat", 170.0, 0.0, 200.0, 30.0),)
 
 
-def test_load_reference_examples_rejects_a_box_outside_its_image() -> None:
+def test_load_reference_example_rejects_a_box_outside_its_image() -> None:
     # given
     examples = validate_reference_examples(
         [
@@ -320,7 +324,7 @@ def test_load_reference_examples_rejects_a_box_outside_its_image() -> None:
 
     # when / then
     with pytest.raises(ValueError, match="outside its 200x100 image"):
-        load_reference_examples(examples)
+        load_reference_example(examples[0], index=0)
 
 
 @pytest.mark.parametrize(
@@ -328,7 +332,7 @@ def test_load_reference_examples_rejects_a_box_outside_its_image() -> None:
     [lambda path: path, lambda path: {"type": "file", "value": path}],
     ids=["bare path", "file dict"],
 )
-def test_load_reference_examples_never_reads_a_local_file(
+def test_load_reference_example_never_reads_a_local_file(
     server_like_codec: _ServerLikeCodec, tmp_path: Path, as_image
 ) -> None:
     # given
@@ -342,11 +346,11 @@ def test_load_reference_examples_never_reads_a_local_file(
 
     # when / then
     with pytest.raises(RuntimeInputError, match=r"reference_examples\[0\]\.image"):
-        load_reference_examples(examples)
+        load_reference_example(examples[0], index=0)
     assert server_like_codec.local_reads == []
 
 
-def test_load_reference_examples_fetches_urls_through_the_codec(
+def test_load_reference_example_fetches_urls_through_the_codec(
     server_like_codec: _ServerLikeCodec,
 ) -> None:
     # given
@@ -359,11 +363,39 @@ def test_load_reference_examples_fetches_urls_through_the_codec(
     )
 
     # when
-    loaded = load_reference_examples(examples)
+    loaded = load_reference_example(examples[0], index=0)
 
     # then
     assert server_like_codec.fetched_urls == [url]
-    assert loaded[0].image[0, 0].tolist() == [7, 7, 7]
+    assert loaded.image[0, 0].tolist() == [7, 7, 7]
+
+
+@pytest.mark.parametrize("render", [render_boxed_examples, render_example_crops])
+def test_rendering_releases_each_example_image_before_the_next_one_loads(
+    server_like_codec: _ServerLikeCodec, render
+) -> None:
+    # given
+    url = {"type": "url", "value": "https://example.com/labeled.jpg"}
+    examples = validate_reference_examples(
+        [{**_example(), "image": url}] * 3,
+        task_type="object-detection",
+        labels=["cat"],
+    )
+    fetched_images = []
+    alive_at_each_fetch = []
+
+    def fetch_url(value: str, cv_imread_flags: int = cv2.IMREAD_COLOR) -> np.ndarray:
+        alive_at_each_fetch.append(sum(image() is not None for image in fetched_images))
+        image = np.full((100, 200, 3), 255, dtype=np.uint8)
+        fetched_images.append(weakref.ref(image))
+        return image
+
+    # when
+    with patch.object(server_like_codec, "fetch_url", new=fetch_url):
+        render(examples, labels=["cat"])
+
+    # then
+    assert alive_at_each_fetch == [0, 0, 0]
 
 
 def test_render_example_crops_keeps_the_largest_boxes_in_label_order() -> None:
@@ -375,12 +407,10 @@ def test_render_example_crops_keeps_the_largest_boxes_in_label_order() -> None:
         {"x": 50, "y": 70, "width": 20, "height": 20, "class": "cat"},
         {"x": 180, "y": 20, "width": 20, "height": 10, "class": "dog"},
     ]
-    examples = load_reference_examples(
-        validate_reference_examples(
-            [_example(annotations=boxes)],
-            task_type="object-detection",
-            labels=["dog", "cat", "bird"],
-        )
+    examples = validate_reference_examples(
+        [_example(annotations=boxes)],
+        task_type="object-detection",
+        labels=["dog", "cat", "bird"],
     )
 
     # when
@@ -396,28 +426,66 @@ def test_render_example_crops_keeps_the_largest_boxes_in_label_order() -> None:
         assert CROP_MIN_EDGE <= max(crop.shape[:2]) <= CROP_MAX_EDGE
 
 
+def test_render_example_crops_keeps_the_largest_boxes_across_examples() -> None:
+    # given
+    examples = validate_reference_examples(
+        [
+            _example(
+                annotations=[
+                    {"x": 30, "y": 30, "width": 40, "height": 40, "class": "cat"},
+                    {"x": 120, "y": 50, "width": 20, "height": 20, "class": "cat"},
+                ],
+                color=(10, 10, 10),
+            ),
+            _example(
+                annotations=[
+                    {"x": 50, "y": 50, "width": 40, "height": 40, "class": "cat"}
+                ],
+                color=(100, 100, 100),
+            ),
+            _example(
+                annotations=[
+                    {"x": 50, "y": 50, "width": 30, "height": 30, "class": "cat"},
+                    {"x": 130, "y": 50, "width": 50, "height": 50, "class": "cat"},
+                ],
+                color=(200, 200, 200),
+            ),
+        ],
+        task_type="object-detection",
+        labels=["cat"],
+    )
+
+    # when
+    groups = render_example_crops(examples, labels=["cat"])
+
+    # then
+    # The 50x50 box of the last example, then both 40x40 boxes in the order given.
+    shades = [int(_decode(crop)[0, 0, 0]) for crop in groups[0][1]]
+    assert len(shades) == 3
+    for shade, expected in zip(shades, [200, 10, 100]):
+        assert abs(shade - expected) < 8
+
+
 def test_render_boxed_examples_downscales_and_draws_in_the_label_color() -> None:
     # given
-    examples = load_reference_examples(
-        validate_reference_examples(
-            [
-                _example(
-                    width=2048,
-                    height=1024,
-                    annotations=[
-                        {
-                            "x": 1024,
-                            "y": 512,
-                            "width": 800,
-                            "height": 400,
-                            "class": "dog",
-                        }
-                    ],
-                )
-            ],
-            task_type="object-detection",
-            labels=["cat", "dog"],
-        )
+    examples = validate_reference_examples(
+        [
+            _example(
+                width=2048,
+                height=1024,
+                annotations=[
+                    {
+                        "x": 1024,
+                        "y": 512,
+                        "width": 800,
+                        "height": 400,
+                        "class": "dog",
+                    }
+                ],
+            )
+        ],
+        task_type="object-detection",
+        labels=["cat", "dog"],
     )
 
     # when
@@ -443,6 +511,32 @@ def test_gemini_reference_parts_number_the_boxed_images() -> None:
     assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
     assert parts[3] == {"text": "Reference image 2:"}
     assert len(parts) == 5
+
+
+def test_gemini_reference_parts_number_the_labels_when_one_is_outside_ascii() -> None:
+    # given
+    boxes = [
+        {"x": 30, "y": 50, "width": 30, "height": 20, "class": "猫"},
+        {"x": 100, "y": 50, "width": 30, "height": 20, "class": "狗"},
+        {"x": 170, "y": 50, "width": 30, "height": 20, "class": "cat"},
+    ]
+
+    # when
+    with patch.object(
+        ImageDraw.ImageDraw,
+        "text",
+        autospec=True,
+        side_effect=ImageDraw.ImageDraw.text,
+    ) as draw_text:
+        parts = gemini_reference_parts_for(
+            [_example(annotations=boxes)], labels=["cat", "猫", "鸟", "狗"]
+        )
+
+    # then
+    assert parts[0] == {
+        "text": f'{REFERENCE_NUMBERED_INTRO}\n1: "cat"\n2: "猫"\n4: "狗"'
+    }
+    assert [call.args[2] for call in draw_text.call_args_list] == ["2", "4", "1"]
 
 
 def test_openai_reference_parts_group_crops_by_label() -> None:
@@ -599,10 +693,10 @@ def test_numpy_image_of_a_reference_example_keeps_its_pixels() -> None:
     )
 
     # when
-    loaded = load_reference_examples(examples)
+    loaded = load_reference_example(examples[0], index=0)
 
     # then
-    assert np.array_equal(loaded[0].image, pixels)
+    assert np.array_equal(loaded.image, pixels)
 
 
 def test_with_reference_parts_puts_references_first_and_points_at_the_target() -> None:
