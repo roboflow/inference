@@ -8,6 +8,7 @@ concept-tracker family).  Hand-rolled fakes (rather than permissive
 ``MagicMock``s) make any call outside that surface fail loudly.
 """
 
+from types import SimpleNamespace
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -100,6 +101,15 @@ class _FakeModelOutputs:
 
 
 class _FakeSam3TrackerVideoModel:
+    # The tracker sizes its clip cache from the model's shapes when it is built.
+    config = SimpleNamespace(
+        image_size=56,
+        vision_config=SimpleNamespace(
+            backbone_feature_sizes=[[16, 16], [8, 8], [4, 4]], fpn_hidden_size=256
+        ),
+        mask_decoder_config=SimpleNamespace(hidden_size=256),
+    )
+
     def __init__(self):
         self.frames_seen = 0
 
