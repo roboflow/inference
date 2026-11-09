@@ -1187,9 +1187,10 @@ def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
     submit_ms = []
     try:
         for index, frame in enumerate(_synthetic_frames(300)):
+            image = _cuda_image(frame)  # its first call imports the engine
             before = ring.stats().startup_dropped
             started = time.perf_counter()
-            ring.submit(timestamp(index), index, _cuda_image(frame))
+            ring.submit(timestamp(index), index, image)
             submit_ms.append((time.perf_counter() - started) * 1000)
             if ring.stats().startup_dropped > before:
                 startup_drop_indices.append(index)
