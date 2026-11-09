@@ -21,9 +21,11 @@ def _main() -> int:
         payload = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)
         if len(payload) > _MAX_REQUEST_BYTES:
             raise ValueError("Databricks worker request exceeds its limit")
+
         message = json.loads(payload)
         if message["version"] != 1:
             raise ValueError("Unsupported Databricks worker request")
+
         request = message["request"]
         limits = message["limits"]
         deadline = message["deadline"]
@@ -74,6 +76,7 @@ def _main() -> int:
             json.dumps(dict(version=1, rows=manifest), ensure_ascii=False),
             encoding="utf-8",
         )
+
         return 0
     except BaseException as error:
         # Never echo a raw traceback, query, or connector exception to logs.
@@ -89,6 +92,7 @@ def _main() -> int:
         (directory / "error.json").write_text(
             json.dumps(dict(kind=kind, message=text[:256])), encoding="utf-8"
         )
+
         return 1
 
 

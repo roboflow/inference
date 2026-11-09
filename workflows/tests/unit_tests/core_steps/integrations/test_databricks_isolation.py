@@ -38,7 +38,7 @@ REQUEST = dict(
 )
 
 
-def _worker_module(tmp_path, monkeypatch, source):
+def _worker_module(tmp_path, *, monkeypatch, source):
     (tmp_path / "isolated_fixture.py").write_text(source)
     package = Path(v1.__file__).parents[5]
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(tmp_path), str(package)]))
@@ -48,14 +48,20 @@ def _worker_module(tmp_path, monkeypatch, source):
 def test_successful_child_roundtrip_leaves_parent_connector_unchanged(
     tmp_path, monkeypatch
 ):
+    """Verify successful child roundtrip leaves parent connector unchanged.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     import thrift.transport.THttpClient  # noqa: F401
     from databricks.sql.auth import thrift_http_client
 
     original = thrift_http_client.THttpClient
     _worker_module(
         tmp_path,
-        monkeypatch,
-        """
+        monkeypatch=monkeypatch,
+        source="""
 import sys
 import numpy as np
 import cv2
@@ -67,13 +73,15 @@ sys.exit(worker._main())
 """,
     )
 
-    def invoke():
-        return isolation.run_isolated(
+    def _invoke():
+        rows = isolation.run_isolated(
             REQUEST, limits=LIMITS, deadline=time.monotonic() + 20
         )
 
+        return rows
+
     with ThreadPoolExecutor(2) as pool:
-        results = list(pool.map(lambda _: invoke(), range(2)))
+        results = list(pool.map(lambda _: _invoke(), range(2)))
     assert thrift_http_client.THttpClient is original
     for rows in results:
         assert rows[0]["images"].numpy_image.shape == (4, 5, 3)
@@ -82,35 +90,47 @@ sys.exit(worker._main())
 
 
 def test_worker_launch_failure_cleans_directory(monkeypatch):
+    """Verify worker launch failure cleans directory.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     seen = []
 
-    def fail(args, **kwargs):
+    def _fail(args, **kwargs):
         seen.append(Path(args[-1]))
         assert REQUEST["access_token"] not in str(args)
         raise OSError("launch failed")
 
-    monkeypatch.setattr(supervisor.subprocess, "Popen", fail)
+    monkeypatch.setattr(supervisor.subprocess, "Popen", _fail)
     with pytest.raises(OSError, match="launch failed"):
         isolation.run_isolated(REQUEST, limits=LIMITS, deadline=time.monotonic() + 20)
     assert seen and not seen[0].exists()
 
 
 def test_hung_child_is_killed_reaped_and_artifacts_removed(tmp_path, monkeypatch):
+    """Verify hung child is killed reaped and artifacts removed.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     _worker_module(
         tmp_path,
-        monkeypatch,
-        "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(100)\n",
+        monkeypatch=monkeypatch,
+        source="import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(100)\n",
     )
     monkeypatch.setattr(isolation, "_CLEANUP_SECONDS", 0.5)
     launched = []
     real_popen = subprocess.Popen
 
-    def record(*args, **kwargs):
+    def _record(*args, **kwargs):
         process = real_popen(*args, **kwargs)
         launched.append(process)
+
         return process
 
-    monkeypatch.setattr(supervisor.subprocess, "Popen", record)
+    monkeypatch.setattr(supervisor.subprocess, "Popen", _record)
     started = time.monotonic()
     with pytest.raises(TimeoutError):
         isolation.run_isolated(REQUEST, limits=LIMITS, deadline=started + 0.3)
@@ -120,6 +140,7 @@ def test_hung_child_is_killed_reaped_and_artifacts_removed(tmp_path, monkeypatch
 
 
 def test_production_worker_rejects_host_without_exposing_token():
+    """Verify production worker rejects host without exposing token."""
     with pytest.raises(ValueError, match="server_hostname") as error:
         isolation.run_isolated(
             dict(REQUEST, server_hostname="localhost"),
@@ -130,6 +151,11 @@ def test_production_worker_rejects_host_without_exposing_token():
 
 
 def test_expired_run_never_launches(monkeypatch):
+    """Verify expired run never launches.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     monkeypatch.setattr(
         supervisor.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched")
     )
@@ -139,6 +165,12 @@ def test_expired_run_never_launches(monkeypatch):
 
 @pytest.mark.parametrize("policy", ["disabled", "sinks", "missing"])
 def test_production_guards_refuse_before_launch(monkeypatch, policy):
+    """Verify production guards refuse before launch.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+        policy (str): Disabled, sink-disabled or missing-connector execution policy.
+    """
     monkeypatch.setattr(
         supervisor.subprocess, "Popen", lambda *a, **kw: pytest.fail("launched")
     )
@@ -166,6 +198,13 @@ def _output(tmp_path, array, **row_changes):
     ],
 )
 def test_rejects_invalid_array_before_loading(tmp_path, monkeypatch, array):
+    """Verify rejects invalid array before loading.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+        array (np.ndarray): Array whose dtype, shape or allocation size is under test.
+    """
     _output(tmp_path, array)
     monkeypatch.setattr(np, "load", lambda *a, **kw: pytest.fail("allocated"))
     with pytest.raises(RuntimeError, match="array"):
@@ -175,6 +214,11 @@ def test_rejects_invalid_array_before_loading(tmp_path, monkeypatch, array):
 
 
 def test_rejects_path_traversal(tmp_path):
+    """Verify rejects path traversal.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+    """
     _output(tmp_path, np.zeros((1, 1, 3), dtype=np.uint8), file="../outside.npy")
     with pytest.raises(RuntimeError, match="path"):
         isolation._read_outputs(
@@ -183,6 +227,11 @@ def test_rejects_path_traversal(tmp_path):
 
 
 def test_rejects_symlink(tmp_path):
+    """Verify rejects symlink.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+    """
     _output(tmp_path, np.zeros((1, 1, 3), dtype=np.uint8))
     (tmp_path / "0.npy").rename(tmp_path / "outside.npy")
     (tmp_path / "0.npy").symlink_to(tmp_path / "outside.npy")
@@ -193,6 +242,12 @@ def test_rejects_symlink(tmp_path):
 
 
 def test_rejects_inflated_header_before_allocation(tmp_path, monkeypatch):
+    """Verify rejects inflated header before allocation.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     _output(tmp_path, np.zeros((1, 1, 3), dtype=np.uint8))
     with (tmp_path / "0.npy").open("wb") as stream:
         np.lib.format.write_array_header_1_0(
@@ -207,6 +262,12 @@ def test_rejects_inflated_header_before_allocation(tmp_path, monkeypatch):
 
 
 def test_rejects_budget_before_allocation(tmp_path, monkeypatch):
+    """Verify rejects budget before allocation.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     _output(tmp_path, np.zeros((4, 5, 3), dtype=np.uint8))
     monkeypatch.setattr(np, "load", lambda *a, **kw: pytest.fail("allocated"))
     with pytest.raises(RuntimeError, match="budget"):
@@ -219,10 +280,16 @@ def test_rejects_budget_before_allocation(tmp_path, monkeypatch):
 
 
 def test_child_error_redacts_token(tmp_path, monkeypatch):
+    """Verify child error redacts token.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     _worker_module(
         tmp_path,
-        monkeypatch,
-        """
+        monkeypatch=monkeypatch,
+        source="""
 import sys
 from roboflow_workflows.core_steps.integrations.databricks.sql_image_source import v1, worker, transport
 def fail(*a, **kw):
@@ -238,12 +305,23 @@ sys.exit(worker._main())
 
 
 def test_worker_crash_has_controlled_error(tmp_path, monkeypatch):
-    _worker_module(tmp_path, monkeypatch, "import os\nos._exit(7)\n")
+    """Verify worker crash has controlled error.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
+    _worker_module(tmp_path, monkeypatch=monkeypatch, source="import os\nos._exit(7)\n")
     with pytest.raises(RuntimeError, match="worker failed"):
         isolation.run_isolated(REQUEST, limits=LIMITS, deadline=time.monotonic() + 20)
 
 
 def test_partial_manifest_is_rejected(tmp_path):
+    """Verify partial manifest is rejected.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+    """
     (tmp_path / "manifest.json").write_text('{"version": 1, "rows": [')
     with pytest.raises(RuntimeError, match="manifest"):
         isolation._read_outputs(
@@ -252,6 +330,11 @@ def test_partial_manifest_is_rejected(tmp_path):
 
 
 def test_deadline_checked_after_last_row(monkeypatch):
+    """Verify deadline checked after last row.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     import cv2
 
     payload = cv2.imencode(".png", np.zeros((4, 5, 3), dtype=np.uint8))[1].tobytes()
@@ -261,12 +344,13 @@ def test_deadline_checked_after_last_row(monkeypatch):
     )
     original = v1.decode_image
 
-    def delayed(*args, **kwargs):
+    def _delayed(*args, **kwargs):
         result = original(*args, **kwargs)
         time.sleep(0.05)
+
         return result
 
-    monkeypatch.setattr(v1, "decode_image", delayed)
+    monkeypatch.setattr(v1, "decode_image", _delayed)
     with pytest.raises(TimeoutError):
         v1.DatabricksSQLImageSourceBlockV1()._run_in_process(
             **dict(REQUEST, max_rows=1, metadata_columns=[]),
@@ -275,10 +359,16 @@ def test_deadline_checked_after_last_row(monkeypatch):
 
 
 def test_unicode_metadata_roundtrips_within_byte_budget(tmp_path, monkeypatch):
+    """Verify unicode metadata roundtrips within byte budget.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     _worker_module(
         tmp_path,
-        monkeypatch,
-        """
+        monkeypatch=monkeypatch,
+        source="""
 import sys
 import numpy as np
 import cv2
@@ -301,6 +391,11 @@ sys.exit(worker._main())
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs require Unix")
 def test_fifo_is_rejected_without_blocking(tmp_path):
+    """Verify fifo is rejected without blocking.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+    """
     (tmp_path / "manifest.json").write_text(
         json.dumps(
             dict(version=1, rows=[dict(file="0.npy", image_names="n", metadata={})])
@@ -314,6 +409,12 @@ def test_fifo_is_rejected_without_blocking(tmp_path):
 
 
 def test_regular_outputs_work_without_unix_open_flags(tmp_path, monkeypatch):
+    """Verify regular outputs work without unix open flags.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     _output(tmp_path, np.zeros((1, 1, 3), dtype=np.uint8))
     monkeypatch.delattr(os, "O_NONBLOCK", raising=False)
     monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)

@@ -2,10 +2,7 @@
 
 This is the canonical changelog for the `roboflow-workflows` package, including
 blocks, dependencies, and execution-engine behavior. Add engine behavior changes
-under `## Unreleased
-
-- Restrict Databricks image reads to a fixed SELECT with native identifier and LIMIT parameters; replace `sql_statement` with catalog/schema/table and explicit metadata columns. Reject WebP before decoder construction, preflight worker JSON size, and enforce HTTP/Thrift allocation bounds while refusing compressed and Arrow/LZ4 results. Share trusted subprocess supervision across integrations; update fixture views and security regressions.
-` → `### Execution engine`; one entry is sufficient.
+under `## Unreleased` → `### Execution engine`; one entry is sufficient.
 
 Package releases record their bundled execution-engine compatibility version,
 which can remain unchanged across package releases. The package version and
@@ -39,6 +36,8 @@ for contributor and maintainer responsibilities.
   - Bounds, per block invocation and configurable: `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES` (1 GiB over encoded bytes, decoded pixels, names and metadata, reserved before decoding), `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` (32 MiB) and `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` (25 MP, read from the header; JPEG / PNG only; decoded shape re-checked); metadata capped per value, nesting and row; the connector's inline result chunk bounded to 8 rows / twice the image byte limit with a server-side row limit. `timeout_seconds` starts before isolated worker launch, with a server-side `STATEMENT_TIMEOUT`, bounded retries and a 35 s child cleanup allowance. Cancellation is best effort; parent output loading checks the deadline between bounded operations.
 
 ### Fixed
+
+- Restrict Databricks image reads to a fixed SELECT with native identifier and LIMIT parameters; replace `sql_statement` with catalog/schema/table and explicit metadata columns. Reject WebP before decoder construction, preflight worker JSON size, and enforce HTTP/Thrift allocation bounds while refusing compressed and Arrow/LZ4 results. Share trusted subprocess supervision across integrations; update fixture views and security regressions.
 
 - Isolate each Databricks image-source invocation in a disposable subprocess, so connector transport patches cannot affect unrelated clients. Bind validated destinations to transport lifetime, refuse relative redirects, enforce supported connector version, and validate bounded temporary outputs before loading. Local transport fixtures and the protected live-test runner now cover the intended failure paths; staging acceptance remains separate.
 

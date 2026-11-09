@@ -65,11 +65,19 @@ class FakeRow:
 
 
 class FakeCursor:
+    """Record connector calls and expose deterministic fixture rows."""
+
     def __init__(self, rows: List[Dict[str, Any]]):
         self._rows = rows
         self._position = 0
 
     def execute(self, statement: str, parameters=None) -> None:
+        """Record a query and its separate bound parameters.
+
+        Args:
+            statement (str): SQL template submitted by the block.
+            parameters (Optional[dict]): Native bound parameters supplied to the connector.
+        """
         pass
 
     def fetchmany(self, size: int) -> List[FakeRow]:
@@ -100,6 +108,14 @@ class FakeConnection:
 
 @contextmanager
 def fake_databricks(rows: List[Dict[str, Any]]) -> Iterator[None]:
+    """Install a fake connector and resolver for a scoped block execution.
+
+    Args:
+        rows (List[Dict[str, Any]]): Warehouse rows exposed by the fake cursor.
+
+    Yields:
+        None: The fake connector remains installed until the context exits.
+    """
     from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1 import (
         DatabricksSQLImageSourceBlockV1,
     )

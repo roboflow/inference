@@ -28,9 +28,9 @@ def run_isolated(
     """Run one image-source invocation without modifying parent connector state.
 
     Args:
-        request: Resolved block inputs, including the credential.
-        limits: Effective limits and destination policy from the parent host.
-        deadline: Absolute monotonic deadline including launch and output loading.
+        request (Dict[str, Any]): Resolved block inputs, including the credential.
+        limits (Dict[str, Any]): Effective limits and destination policy from the parent host.
+        deadline (float): Absolute monotonic deadline including launch and output loading.
 
     Returns:
         The block's ordinary image, name and metadata output rows.
@@ -45,7 +45,7 @@ def run_isolated(
         WorkflowImageData,
     )
 
-    def read_result(directory: Path) -> List[Dict[str, Any]]:
+    def _read_result(directory: Path) -> List[Dict[str, Any]]:
         rows = _read_outputs(
             directory, max_rows=request["max_rows"], limits=limits, deadline=deadline
         )
@@ -65,6 +65,7 @@ def run_isolated(
                     metadata=row["metadata"],
                 )
             )
+
         return results
 
     try:
@@ -72,13 +73,14 @@ def run_isolated(
             dict(version=1, request=request, limits=limits, deadline=deadline),
             worker_module=_WORKER_MODULE,
             deadline=deadline,
-            read_result=read_result,
+            read_result=_read_result,
             secrets=(request.get("access_token", ""),),
             max_request_bytes=_MAX_REQUEST_BYTES,
             cleanup_seconds=_CLEANUP_SECONDS,
         )
     except TimeoutError:
         raise TimeoutError("Databricks query exceeded timeout_seconds") from None
+
     return results
 
 
@@ -87,10 +89,12 @@ def _read_json(path: Path, *, max_bytes: int) -> Any:
         content = stream.read(max_bytes + 1)
     if len(content) > max_bytes:
         raise RuntimeError("Databricks worker manifest exceeds its limit")
+
     try:
         result = json.loads(content)
     except (ValueError, RecursionError) as error:
         raise RuntimeError("Invalid Databricks worker manifest") from error
+
     return result
 
 
@@ -103,11 +107,15 @@ def _open_regular(path: Path):
     )
     if path.is_symlink():
         raise RuntimeError("Databricks worker output cannot be a symlink")
+
     descriptor = os.open(path, flags)
     if not stat.S_ISREG(os.fstat(descriptor).st_mode):
         os.close(descriptor)
         raise RuntimeError("Databricks worker output must be a regular file")
-    return os.fdopen(descriptor, "rb")
+
+    stream = os.fdopen(descriptor, "rb")
+
+    return stream
 
 
 def _read_outputs(
@@ -122,6 +130,7 @@ def _read_outputs(
     )
     if not isinstance(manifest, dict) or manifest.get("version") != 1:
         raise RuntimeError("Unsupported Databricks worker output version")
+
     rows = manifest.get("rows")
     if not isinstance(rows, list) or len(rows) > max_rows:
         raise RuntimeError("Invalid Databricks worker output count")
@@ -132,6 +141,7 @@ def _read_outputs(
         _check_deadline(deadline)
         if not isinstance(row, dict) or set(row) != {"file", "image_names", "metadata"}:
             raise RuntimeError("Invalid Databricks worker row")
+
         name, metadata = row["image_names"], row["metadata"]
         if (
             not isinstance(name, str)
@@ -139,13 +149,16 @@ def _read_outputs(
             or not isinstance(metadata, dict)
         ):
             raise RuntimeError("Invalid Databricks worker name or metadata")
+
         metadata_bytes = len(json.dumps(metadata, ensure_ascii=False).encode("utf-8"))
         if metadata_bytes > 65536 or row["file"] != f"{index}.npy":
             raise RuntimeError("Invalid Databricks worker metadata or image path")
+
         with _open_regular(directory / f"{index}.npy") as stream:
             version = np.lib.format.read_magic(stream)
             if version != (1, 0):
                 raise RuntimeError("Unsupported Databricks image file version")
+
             shape, fortran, dtype = np.lib.format.read_array_header_1_0(
                 stream, max_header_size=1024
             )
@@ -159,17 +172,21 @@ def _read_outputs(
                 or shape[0] * shape[1] > limits["max_image_pixels"]
             ):
                 raise RuntimeError("Invalid Databricks image array")
+
             nbytes = shape[0] * shape[1] * 3
             if os.fstat(stream.fileno()).st_size != stream.tell() + nbytes:
                 raise RuntimeError("Invalid Databricks image file size")
+
             used += nbytes + len(name) + metadata_bytes
             if used > limits["max_run_bytes"]:
                 raise RuntimeError(
                     "Databricks worker outputs exceed the invocation budget"
                 )
+
             _check_deadline(deadline)
             stream.seek(0)
             image = np.load(stream, allow_pickle=False, max_header_size=1024)
         result.append(dict(images=image, image_names=name, metadata=metadata))
     _check_deadline(deadline)
+
     return result

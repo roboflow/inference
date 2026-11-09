@@ -62,6 +62,7 @@ def test_installed_transport_is_the_class_the_backend_instantiates() -> None:
 
 
 def test_pinned_pool_preserves_hostname_for_tls_and_host() -> None:
+    """Verify pinned pool preserves hostname for tls and host."""
     pin = transport.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     with transport.pinned_destination(pin):
         client = _client()
@@ -78,6 +79,7 @@ def test_pinned_pool_preserves_hostname_for_tls_and_host() -> None:
 
 def test_dns_change_after_validation_cannot_steer_the_connection() -> None:
     # Validation saw a public answer; by connect time DNS answers private.
+    """Verify dns change after validation cannot steer the connection."""
     pin = transport.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     with mock.patch.object(
         socket,
@@ -94,6 +96,7 @@ def test_dns_change_after_validation_cannot_steer_the_connection() -> None:
 
 
 def test_transport_refuses_a_target_that_differs_from_the_pin() -> None:
+    """Verify transport refuses a target that differs from the pin."""
     pin = transport.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     with transport.pinned_destination(pin):
         client = _client("other.cloud.databricks.com")
@@ -102,6 +105,7 @@ def test_transport_refuses_a_target_that_differs_from_the_pin() -> None:
 
 
 def test_transport_refuses_proxies_and_disabled_tls_verification_while_pinned() -> None:
+    """Verify transport refuses proxies and disabled tls verification while pinned."""
     from databricks.sql.auth import thrift_http_client
     from databricks.sql.types import SSLOptions
 
@@ -121,6 +125,7 @@ def test_transport_refuses_proxies_and_disabled_tls_verification_while_pinned() 
 
 
 def test_cross_host_redirects_are_refused_by_the_pinned_pool() -> None:
+    """Verify cross host redirects are refused by the pinned pool."""
     pin = transport.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     with transport.pinned_destination(pin):
         client = _client()
@@ -192,6 +197,12 @@ def test_workflow_referencing_an_unavailable_block_is_rejected_with_the_reason(
     monkeypatch,
     request,
 ) -> None:
+    """Verify workflow referencing an unavailable block is rejected with the reason.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+        request (pytest.FixtureRequest): Pytest request used to isolate fixture teardown.
+    """
     from roboflow_workflows.core_steps import loader
     from roboflow_workflows.execution_engine.introspection import blocks_loader
     from roboflow_workflows.execution_engine.v1.compiler.syntactic_parser import (
@@ -240,6 +251,7 @@ def test_workflow_referencing_an_unavailable_block_is_rejected_with_the_reason(
 
 
 def test_unified_http_client_is_refused_while_pinned_and_untouched_outside() -> None:
+    """Verify unified http client is refused while pinned and untouched outside."""
     from databricks.sql.common.unified_http_client import UnifiedHttpClient
 
     transport.install_pinned_transport()
@@ -262,31 +274,35 @@ def test_unified_http_client_is_refused_while_pinned_and_untouched_outside() -> 
 
 
 def test_transport_retains_its_pin_when_reopened_on_another_thread() -> None:
+    """Verify transport retains its pin when reopened on another thread."""
     pin = transport.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     with transport.pinned_destination(pin):
         client = _client()
         client.open()
 
-    def reopen():
+    def _reopen():
         assert transport.current_pin() is None
         client.open()
         client.setCustomHeaders({"User-Agent": "test"})
-        return _pool_of(client)
+        result = _pool_of(client)
+
+        return result
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        pool = executor.submit(reopen).result(timeout=5)
+        pool = executor.submit(_reopen).result(timeout=5)
     assert pool.host == PUBLIC_IP
     assert pool.conn_kw["server_hostname"] == HOST
     assert getattr(client, "_THttpClient__custom_headers")["Host"] == HOST
 
 
 def test_secondary_guard_does_not_block_an_unowned_thread() -> None:
+    """Verify secondary guard does not block an unowned thread."""
     from databricks.sql.common.unified_http_client import UnifiedHttpClient
 
     transport.install_pinned_transport()
     client = UnifiedHttpClient.__new__(UnifiedHttpClient)
 
-    def request():
+    def _request():
         with pytest.raises(Exception) as info:
             with client.request_context(mock.MagicMock(value="GET"), "https://x/"):
                 pass
@@ -295,10 +311,15 @@ def test_secondary_guard_does_not_block_an_unowned_thread() -> None:
     with transport.pinned_destination(
         transport.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     ), ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(request).result(timeout=5)
+        executor.submit(_request).result(timeout=5)
 
 
 def test_worker_guard_blocks_secondary_requests_after_context_exit(monkeypatch) -> None:
+    """Verify worker guard blocks secondary requests after context exit.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     from databricks.sql.common.unified_http_client import UnifiedHttpClient
 
     # Undo only the process policy after this test; production workers never reset it.
@@ -306,17 +327,22 @@ def test_worker_guard_blocks_secondary_requests_after_context_exit(monkeypatch) 
     transport.install_pinned_transport(worker_only=True)
     client = UnifiedHttpClient.__new__(UnifiedHttpClient)
 
-    def request():
+    def _request():
         assert transport.current_pin() is None
         with pytest.raises(transport.PinnedTransportError, match="refused"):
             with client.request_context(mock.MagicMock(value="GET"), "https://x/"):
                 pass
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(request).result(timeout=5)
+        executor.submit(_request).result(timeout=5)
 
 
 def test_worker_refuses_automatic_kernel_recovery_before_network(monkeypatch) -> None:
+    """Verify worker refuses automatic kernel recovery before network.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
     from databricks import sql
     from databricks.sql import client
 
@@ -343,6 +369,12 @@ def test_worker_refuses_automatic_kernel_recovery_before_network(monkeypatch) ->
 
 @pytest.mark.parametrize("backend", ["use_kernel", "use_sea"])
 def test_worker_refuses_explicit_non_thrift_backend(monkeypatch, backend) -> None:
+    """Verify worker refuses explicit non thrift backend.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+        backend (str): Non-Thrift backend requested to test fail-closed behavior.
+    """
     from databricks.sql.session import Session
 
     monkeypatch.setattr(transport, "_WORKER_ONLY", False)

@@ -73,7 +73,7 @@ def pinned_destination(destination: PinnedDestination) -> Iterator[None]:
     """Scope within which the connector's transport connects to ``destination``.
 
     Args:
-        destination: Hostname, validated IP address and port to connect to.
+        destination (PinnedDestination): Hostname, validated IP address and port to connect to.
 
     Yields:
         Nothing; the pin is active for the calling context until exit.
@@ -107,7 +107,7 @@ def install_pinned_transport(*, worker_only: bool = False) -> type:
     Idempotent and process-wide; production callers must use a dedicated worker.
 
     Args:
-        worker_only: Permanently refuse secondary requests in this process, even
+        worker_only (bool): Permanently refuse secondary requests in this process, even
             from background threads and after the construction context exits.
 
     Returns:
@@ -151,19 +151,21 @@ def install_pinned_transport(*, worker_only: bool = False) -> type:
             _guard_unified_http_client()
             _guard_result_link_downloads()
             _INSTALLED = True
+
             return base
 
-        class PinnedTHttpClient(_PinnedMixin, base):  # type: ignore[misc,valid-type]
+        class _PinnedTHttpClient(_PinnedMixin, base):  # type: ignore[misc,valid-type]
             pass
 
-        PinnedTHttpClient.__name__ = base.__name__
-        PinnedTHttpClient.__qualname__ = base.__qualname__
-        thrift_http_client.THttpClient = PinnedTHttpClient
+        _PinnedTHttpClient.__name__ = base.__name__
+        _PinnedTHttpClient.__qualname__ = base.__qualname__
+        thrift_http_client.THttpClient = _PinnedTHttpClient
         _guard_non_thrift_backends()
         _guard_unified_http_client()
         _guard_result_link_downloads()
         _INSTALLED = True
-        return PinnedTHttpClient
+
+        return _PinnedTHttpClient
 
 
 def _guard_non_thrift_backends() -> None:
@@ -173,18 +175,20 @@ def _guard_non_thrift_backends() -> None:
 
     if getattr(Session, "_roboflow_backend_guard", False):
         return
+
     original_init = Session.__init__
 
-    def init(self, *args, **kwargs):
+    def _init(self, *args, **kwargs):
         if (_WORKER_ONLY or _PINNED_DESTINATION.get() is not None) and (
             kwargs.get("use_kernel") or kwargs.get("use_sea")
         ):
             raise PinnedTransportError(
                 "the Databricks worker requires the Thrift backend"
             )
+
         original_init(self, *args, **kwargs)
 
-    Session.__init__ = init
+    Session.__init__ = _init
     Session._roboflow_backend_guard = True
 
 
@@ -198,17 +202,23 @@ def _guard_unified_http_client() -> None:
     client_class = unified_http_client.UnifiedHttpClient
     if getattr(client_class, "_roboflow_pinned_guard", False):
         return
+
     original_request_context = client_class.request_context
 
-    def request_context(self, method, url, headers=None, **kwargs):
+    def _request_context(self, method, url, headers=None, **kwargs):
         if _WORKER_ONLY or _PINNED_DESTINATION.get() is not None:
             raise PinnedTransportError(
                 "secondary request refused: the Databricks block only "
                 "speaks to the pinned warehouse over the Thrift transport"
             )
-        return original_request_context(self, method, url, headers=headers, **kwargs)
 
-    client_class.request_context = request_context
+        request_context = original_request_context(
+            self, method, url, headers=headers, **kwargs
+        )
+
+        return request_context
+
+    client_class.request_context = _request_context
     client_class._roboflow_pinned_guard = True
 
 
@@ -224,7 +234,7 @@ def _guard_result_link_downloads() -> None:
     if getattr(queue_class, "_roboflow_pinned_guard", False):
         return
 
-    class PinnedThriftCloudFetchQueue(queue_class):  # type: ignore[misc,valid-type]
+    class _PinnedThriftCloudFetchQueue(queue_class):  # type: ignore[misc,valid-type]
         _roboflow_pinned_guard = True
 
         def __init__(self, *args, **kwargs):
@@ -233,11 +243,12 @@ def _guard_result_link_downloads() -> None:
                     "the warehouse returned result links (cloud fetch) although "
                     "inline results were requested; downloading them is refused"
                 )
+
             super().__init__(*args, **kwargs)
 
-    PinnedThriftCloudFetchQueue.__name__ = queue_class.__name__
-    PinnedThriftCloudFetchQueue.__qualname__ = queue_class.__qualname__
-    connector_utils.ThriftCloudFetchQueue = PinnedThriftCloudFetchQueue
+    _PinnedThriftCloudFetchQueue.__name__ = queue_class.__name__
+    _PinnedThriftCloudFetchQueue.__qualname__ = queue_class.__qualname__
+    connector_utils.ThriftCloudFetchQueue = _PinnedThriftCloudFetchQueue
 
 
 def _guard_response_parsing() -> None:
@@ -248,7 +259,7 @@ def _guard_response_parsing() -> None:
     if getattr(original, "_roboflow_bounded", False):
         return
 
-    class BoundedProtocol(original):
+    class _BoundedProtocol(original):
         _roboflow_bounded = True
 
         def __init__(self, trans, *args, **kwargs):
@@ -262,9 +273,16 @@ def _guard_response_parsing() -> None:
             super().__init__(trans, *args, **kwargs)
 
         def readMessageBegin(self):
+            """Reset structural counters and read the Thrift message header.
+
+            Returns:
+                tuple: Message name, type and sequence ID from the underlying protocol.
+            """
             self._depth = 0
             self._items = 0
-            return super().readMessageBegin()
+            message_header = super().readMessageBegin()
+
+            return message_header
 
         def _enter(self, items=1):
             if self._bounded:
@@ -280,44 +298,86 @@ def _guard_response_parsing() -> None:
                 self._depth -= 1
 
         def readStructBegin(self):
+            """Account for a nested Thrift struct before reading its fields."""
             self._enter()
-            return super().readStructBegin()
+            struct_header = super().readStructBegin()
+
+            return struct_header
 
         def readStructEnd(self):
+            """Release the current Thrift struct nesting level."""
             self._leave()
-            return super().readStructEnd()
+            struct_end = super().readStructEnd()
+
+            return struct_end
 
         def readListBegin(self):
+            """Read a list header and account for its elements.
+
+            Returns:
+                tuple: Element type and count from the underlying protocol.
+
+            Raises:
+                PinnedTransportError: Structural depth or aggregate element limits are exceeded.
+            """
             result = super().readListBegin()
             self._enter(result[1])
+
             return result
 
         def readListEnd(self):
+            """Release the current Thrift list nesting level."""
             self._leave()
-            return super().readListEnd()
+            list_end = super().readListEnd()
+
+            return list_end
 
         def readSetBegin(self):
+            """Read a set header and account for its elements.
+
+            Returns:
+                tuple: Element type and count from the underlying protocol.
+
+            Raises:
+                PinnedTransportError: Structural depth or aggregate element limits are exceeded.
+            """
             result = super().readSetBegin()
             self._enter(result[1])
+
             return result
 
         def readSetEnd(self):
+            """Release the current Thrift set nesting level."""
             self._leave()
-            return super().readSetEnd()
+            set_end = super().readSetEnd()
+
+            return set_end
 
         def readMapBegin(self):
+            """Read a map header and account for its keys and values.
+
+            Returns:
+                tuple: Key type, value type and entry count from the underlying protocol.
+
+            Raises:
+                PinnedTransportError: Structural depth or aggregate element limits are exceeded.
+            """
             result = super().readMapBegin()
             self._enter(2 * result[2])
+
             return result
 
         def readMapEnd(self):
+            """Release the current Thrift map nesting level."""
             self._leave()
-            return super().readMapEnd()
+            map_end = super().readMapEnd()
 
-    TBinaryProtocol.TBinaryProtocol = BoundedProtocol
+            return map_end
+
+    TBinaryProtocol.TBinaryProtocol = _BoundedProtocol
     original_metadata_read = ttypes.TGetResultSetMetadataResp.read
 
-    def read_metadata(self, protocol):
+    def _read_metadata(self, protocol):
         original_metadata_read(self, protocol)
         if getattr(protocol, "_bounded", False) and (
             self.arrowSchema
@@ -326,10 +386,10 @@ def _guard_response_parsing() -> None:
         ):
             raise PinnedTransportError("only column-based Thrift results are allowed")
 
-    ttypes.TGetResultSetMetadataResp.read = read_metadata
+    ttypes.TGetResultSetMetadataResp.read = _read_metadata
     original_row_read = ttypes.TRowSet.read
 
-    def read_rows(self, protocol):
+    def _read_rows(self, protocol):
         original_row_read(self, protocol)
         if getattr(protocol, "_bounded", False) and (
             self.arrowBatches or self.resultLinks
@@ -338,7 +398,7 @@ def _guard_response_parsing() -> None:
                 "Arrow, LZ4 and result links (cloud fetch) are refused"
             )
 
-    ttypes.TRowSet.read = read_rows
+    ttypes.TRowSet.read = _read_rows
 
 
 class _PinnedMixin:
@@ -355,21 +415,32 @@ class _PinnedMixin:
             raise PinnedTransportError(
                 "worker transport requires a validated destination"
             )
+
         super().__init__(*args, **kwargs)
 
-    def open(self):  # noqa: D102 - connector interface
+    def open(self):
+        """Open the connector pool against its captured destination.
+
+        Raises:
+            PinnedTransportError: The target, proxy or TLS settings violate the pin.
+        """
         pin = self._roboflow_destination
         if pin is None:
-            return super().open()  # type: ignore[misc]
+            open_result = super().open()  # type: ignore[misc]
+
+            return open_result
+
         if self.scheme != "https":
             raise PinnedTransportError(
                 "pinned transport requires https, got " + str(self.scheme)
             )
+
         if self.using_proxy():
             raise PinnedTransportError(
                 "pinned transport refuses to use an HTTP(S) proxy: the proxy would "
                 "resolve the destination outside the validating block"
             )
+
         expected_port = pin.port
         actual_port = self.port or 443
         if self.host != pin.hostname or actual_port != expected_port:
@@ -377,6 +448,7 @@ class _PinnedMixin:
                 f"transport target {self.host}:{actual_port} does not match the "
                 f"validated destination {pin.hostname}:{expected_port}"
             )
+
         ssl_options = self._ssl_options
         pool_kwargs: Dict[str, Any] = {
             "maxsize": self.max_connections,
@@ -392,6 +464,7 @@ class _PinnedMixin:
                     "pinned transport requires TLS certificate "
                     "and hostname verification"
                 )
+
             pool_kwargs.update(
                 {
                     "ca_certs": ssl_options.tls_trusted_ca_file,
@@ -402,24 +475,39 @@ class _PinnedMixin:
             )
         pool = _PinnedHTTPSConnectionPool(pin.ip_address, expected_port, **pool_kwargs)
         self._set_pool(pool)
+
         return None
 
     def setCustomHeaders(
         self, headers: Dict[str, str]
     ):  # noqa: N802 - connector interface
+        """Set connector headers while preserving the pinned host and identity encoding.
+
+        Args:
+            headers (Dict[str, str]): Caller-supplied HTTP headers, copied for pinned clients.
+        """
         pin = self._roboflow_destination
         if pin is not None:
             headers = dict(headers)
             headers["Host"] = pin.hostname
             headers["Accept-Encoding"] = "identity"
-        return super().setCustomHeaders(headers)  # type: ignore[misc]
+        header_result = super().setCustomHeaders(headers)  # type: ignore[misc]
+
+        return header_result
 
     def flush(self):
+        """Send the buffered request and validate response headers before body parsing.
+
+        Raises:
+            PinnedTransportError: The response is compressed or exceeds the byte limit.
+            ValueError: The Content-Length header is not a valid integer.
+        """
         self._roboflow_read_bytes = 0
         super().flush()
         pin = self._roboflow_destination
         if pin is None:
             return
+
         response = self._THttpClient__resp
         encoding = response.headers.get("Content-Encoding", "identity").lower()
         length = response.headers.get("Content-Length")
@@ -428,6 +516,7 @@ class _PinnedMixin:
                 raise PinnedTransportError(
                     "compressed warehouse HTTP responses are refused"
                 )
+
             if length is not None and (
                 int(length) < 0 or int(length) > pin.max_response_bytes
             ):
@@ -437,9 +526,23 @@ class _PinnedMixin:
             raise
 
     def read(self, size):
+        """Read response bytes without exceeding the captured destination's budget.
+
+        Args:
+            size (int): Requested byte count; negative values request the remaining body.
+
+        Returns:
+            bytes: Undecompressed response data within the response budget.
+
+        Raises:
+            PinnedTransportError: The response body exceeds its byte limit.
+        """
         pin = self._roboflow_destination
         if pin is None:
-            return super().read(size)
+            data = super().read(size)
+
+            return data
+
         remaining = pin.max_response_bytes - self._roboflow_read_bytes
         amount = min(size, remaining + 1) if size >= 0 else remaining + 1
         data = self._THttpClient__resp.read(amount, decode_content=False)
@@ -447,11 +550,16 @@ class _PinnedMixin:
         if len(data) > remaining:
             self.close()
             raise PinnedTransportError("warehouse response exceeds its byte limit")
+
         return data
 
     def close(self):
+        """Close the response without draining an untrusted body."""
         if self._roboflow_destination is None:
-            return super().close()
+            close_result = super().close()
+
+            return close_result
+
         response = getattr(self, "_THttpClient__resp", None)
         if response is not None:
             # Never drain an attacker-controlled body during error cleanup.
@@ -482,14 +590,29 @@ class _PinnedHTTPSConnectionPool(HTTPSConnectionPool):
         kwargs["decode_content"] = False
         response = super()._make_request(conn, method, url, **kwargs)
 
-        def discard_body():
+        def _discard_body():
             response.close()
             response.release_conn()
 
-        response.drain_conn = discard_body
+        response.drain_conn = _discard_body
+
         return response
 
     def urlopen(self, method, url, *args, **kwargs):
+        """Send a request while refusing both absolute and relative redirects.
+
+        Args:
+            method (str): HTTP request method forwarded to urllib3.
+            url (str): Request target forwarded to urllib3.
+            *args (Any): Positional urllib3 options, including its recursive retry arguments.
+            **kwargs (Any): Keyword urllib3 options; redirects are always disabled.
+
+        Returns:
+            HTTPResponse: The response whose body remains subject to bounded reads.
+
+        Raises:
+            PinnedTransportError: The warehouse returns a redirect response.
+        """
         # urllib3's reconnect path passes body, headers, retries and redirect
         # positionally; avoid supplying redirect twice on that recursive call.
         if len(args) >= 4:

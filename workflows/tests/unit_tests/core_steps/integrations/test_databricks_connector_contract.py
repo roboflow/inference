@@ -17,6 +17,7 @@ sql = pytest.importorskip("databricks.sql", reason="databricks extra not install
 
 
 def test_connector_version_is_within_the_declared_range() -> None:
+    """Verify connector version is within the declared range."""
     from packaging.version import Version
 
     version = Version(sql.__version__)
