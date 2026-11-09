@@ -487,3 +487,34 @@ def test_http_compression_is_rejected_before_thrift_parsing():
     with warehouse(harness.Behaviour(response_encoding="gzip")):
         with pytest.raises(RuntimeError, match="compressed warehouse"):
             run_block()
+
+
+def test_retryable_error_body_is_discarded_without_reading_or_decompression(
+    monkeypatch,
+):
+    from urllib3.response import HTTPResponse
+
+    original = HTTPResponse.read
+    rejected_body_reads = []
+
+    def guarded_read(self, *args, **kwargs):
+        if self.status == 503:
+            rejected_body_reads.append(self.status)
+            pytest.fail("urllib3 drained an untrusted retry body before the byte check")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(HTTPResponse, "read", guarded_read)
+    behaviour = harness.Behaviour(
+        rows=image_rows(1),
+        http_script=[
+            harness.HttpAction(
+                status=503,
+                headers={"Content-Encoding": "gzip", "Retry-After": "0"},
+                body=b"untrusted retry body" * 100,
+            )
+        ],
+    )
+    with warehouse(behaviour) as server:
+        assert len(run_block()) == 1
+    assert rejected_body_reads == []
+    assert server.observations.thrift_methods.count("OpenSession") == 2

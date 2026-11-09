@@ -48,6 +48,7 @@ class HttpAction:
 
     status: Optional[int] = None
     headers: Dict[str, str] = field(default_factory=dict)
+    body: bytes = b""
     close_connection: bool = False
     hang_seconds: float = 0.0
 
@@ -255,8 +256,10 @@ class _RequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(action.status or 500)
             for key, value in action.headers.items():
                 self.send_header(key, value)
-            self.send_header("Content-Length", "0")
+            self.send_header("Content-Length", str(len(action.body)))
             self.end_headers()
+            if action.body:
+                self.wfile.write(action.body)
             return
         output = TTransport.TMemoryBuffer()
         processor = TCLIService.Processor(self.server.handler)

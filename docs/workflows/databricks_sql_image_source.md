@@ -97,7 +97,8 @@ The connector requests inline chunks of at most 8 rows and
 The transport enforces an HTTP body cap of
 `max(1 MiB, 2 x MAX_IMAGE_BYTES) + 64 KiB` on every response, including chunked
 responses. Oversized Content-Length is rejected before reading; no rejected body
-is drained. HTTP compression is refused. Thrift strings are limited to this byte
+is drained. Retryable HTTP errors are discarded at the urllib3 response boundary
+before its retry logic can drain or decompress their bodies. HTTP compression is refused. Thrift strings are limited to this byte
 cap, containers to 65,536 entries, total structural items to 131,072 and nesting
 to 64 levels. The worker requests column-based results and rejects Arrow schemas,
 Arrow/LZ4 batches and result links before their native decoders run. This remains
