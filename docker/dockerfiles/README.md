@@ -26,10 +26,6 @@ The four images below run Python 3.10 and stay on Pillow 12.3 without the Pillow
 | `roboflow/roboflow-inference-server-trt` | `roboflow/roboflow-inference-server-gpu` |
 | `roboflow/roboflow-inference-server-udp-gpu` | `roboflow/roboflow-inference-server-gpu` |
 
-## GPU host driver
-
-`roboflow/roboflow-inference-server-gpu` is built on CUDA 12.6.3 and needs NVIDIA driver 560.35.05 or newer.
-
 ## Base image
 
 The `roboflow/l46-ml` image is based on the `l4t-ml` image from the [jetson-containers](https://github.com/dusty-nv/jetson-containers/tree/master/packages/l4t/l4t-ml) repository. The image is built on a Jetson with support for GPU acceleration using common ML tools.
