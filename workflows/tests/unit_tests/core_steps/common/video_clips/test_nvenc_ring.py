@@ -92,6 +92,7 @@ class FakeAdapter:
         self.destroyed: List[FakeSession] = []
         self.encoded: List[tuple] = []
         self.calls: List[str] = []
+        self.memory_releases = 0
         self.threads = {
             "stage": set(),
             "open": set(),
@@ -172,6 +173,11 @@ class FakeAdapter:
 
     def session_vram_bytes(self, session):
         return 64 * 1024 * 1024
+
+    def release_cached_memory(self):
+        self.threads.setdefault("release", set()).add(threading.get_ident())
+        with self.lock:
+            self.memory_releases += 1
 
     def _access_unit(self, ordinal, force_idr):
         if self.raw_payloads:
@@ -1039,6 +1045,45 @@ def test_steady_state_pool_applies_after_the_startup_backlog_drains() -> None:
     assert stats.queue_drops == 7  # 4 slots taken, 7 refused
 
 
+def test_startup_pool_memory_goes_back_to_the_driver_once_it_shrinks() -> None:
+    open_gate = threading.Event()
+    adapter = FakeAdapter(open_gate=open_gate)
+    ring = make_ring(adapter, pool_frames=4, startup_pool_frames=10, queue_depth=64)
+    try:
+        for index in range(10):
+            ring.submit(timestamp(index), index, FakeImage())
+        assert adapter.memory_releases == 0  # extension slots still queued
+        open_gate.set()
+        assert wait_for(lambda: len(adapter.encoded) == 10)
+        assert wait_for(lambda: adapter.memory_releases == 1)
+        for index in range(10, 40):  # steady state: never released again
+            ring.submit(timestamp(index), index, FakeImage())
+            assert wait_for(lambda: len(adapter.encoded) == index + 1)
+        backend = ring._backend_stats()
+    finally:
+        ring.close()
+
+    assert adapter.memory_releases == 1
+    assert backend["startup_pool_released"] is True
+    assert backend["pool_allocated_frames"] == 4
+    assert adapter.threads["release"] == adapter.threads["encode"]
+
+
+def test_no_memory_release_without_a_startup_extension() -> None:
+    adapter = FakeAdapter()
+    ring = make_ring(adapter, pool_frames=4, startup_pool_frames=0)
+    try:
+        for index in range(12):
+            ring.submit(timestamp(index), index, FakeImage())
+            assert wait_for(lambda: len(adapter.encoded) == index + 1)
+        backend = ring._backend_stats()
+    finally:
+        ring.close()
+
+    assert adapter.memory_releases == 0
+    assert backend["startup_pool_released"] is False
+
+
 def test_nvenc_queue_depth_covers_the_startup_pool() -> None:
     ring = make_ring(FakeAdapter(), pool_frames=8)
     try:
@@ -1156,6 +1201,66 @@ def test_two_real_sessions_encode_simultaneously(tmp_path) -> None:
     assert all(count == 120 for count, _, _ in results.values())
 
 
+def _colour_test_frame(width: int = 1920, height: int = 1080):
+    import torch
+
+    # Gradients plus saturated colour bars in the top third.
+    x = torch.linspace(0, 255, width, device="cuda")
+    frame = torch.zeros(3, height, width, device="cuda")
+    frame[0] = x
+    frame[1] = x.flip(0)
+    frame[2] = torch.linspace(0, 255, height, device="cuda")[:, None]
+    bars = [(255, 255, 255), (255, 255, 0), (0, 255, 255), (0, 255, 0)]
+    bars += [(255, 0, 255), (255, 0, 0), (0, 0, 255), (0, 0, 0)]
+    for index, colour in enumerate(bars):
+        left, right = index * width // 8, (index + 1) * width // 8
+        frame[:, : height // 3, left:right] = torch.tensor(
+            colour, device="cuda", dtype=torch.float32
+        )[:, None, None]
+    return frame.round().clamp(0, 255).to(torch.uint8)
+
+
+@requires_nvenc
+@pytest.mark.parametrize("max_width", [None, 1280])
+def test_real_adapter_keeps_the_colours_of_the_rgb_frame(max_width, tmp_path) -> None:
+    import numpy as np
+    import torch
+
+    frame = _colour_test_frame()
+    adapter = nvenc_ring.PyNvVideoCodecAdapter(max_width=max_width)
+    width, height = nvenc_ring.encoded_size(1920, 1080, max_width=max_width)
+    session = adapter.open_session(
+        width, height, 30.0, 300, 8_000_000, torch.device("cuda", 0)
+    )
+    (slot,) = adapter.allocate_slots(1, 1920, 1080, session.device)
+    units = []
+    try:
+        for ordinal in range(30):
+            ready = adapter.stage(frame, slot, width, height)
+            units.extend(adapter.encode(session, slot, ready, ordinal, ordinal == 0))
+        units.extend(adapter.flush(session))
+    finally:
+        adapter.destroy(session)
+    path = tmp_path / "colours.mp4"
+    _mux_annex_b([data for _, data in units], path, fps=30)
+    with av.open(str(path)) as container:
+        # The stream carries no colour description (as with the NV12 input it
+        # replaced): decode it as BT.709, the matrix both conversions use.
+        decoded = [
+            f.reformat(format="rgb24", src_colorspace="ITU709").to_ndarray()
+            for f in container.decode(video=0)
+        ]
+    expected = adapter._fit(frame, width=width, height=height)
+    expected = expected.clamp(0, 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+    error = np.abs(decoded[15].astype(int) - expected.astype(int))
+
+    assert len(decoded) == 30
+    assert decoded[15].shape == (height, width, 3)
+    # same fidelity as the BT.709 NV12 conversion it replaced (L4: mean 1.0, p99 3)
+    assert error.mean() < 2.0, error.mean()
+    assert np.percentile(error, 99) <= 8
+
+
 def _cuda_image(tensor):
     from roboflow_workflows.execution_engine.entities.base import (
         ImageParentMetadata,
@@ -1180,6 +1285,34 @@ def _artifact_path(artifact, tmp_path, name: str):
     return payload
 
 
+def _wait_until_drained(ring, timeout: float = 10.0) -> None:
+    # Every submitted frame has left the ingest queue: encoded or counted lost.
+    def drained() -> bool:
+        stats = ring.stats()
+        lost = stats.startup_dropped + stats.queue_drops + stats.decimated
+        return stats.queue_depth == 0 and (
+            stats.frames_encoded + stats.encode_errors + lost >= stats.frames_submitted
+        )
+
+    assert wait_for(drained, timeout=timeout), ring.stats().to_dict()
+
+
+def _loss_details(artifact, stats) -> dict:
+    # Which counter took a frame: the clip report's loss fields and the ring's.
+    details = {
+        "report_loss": artifact.report.loss.to_dict(),
+        "report_frames": artifact.report.frames,
+        "report_partial": artifact.report.partial,
+        "ring": {
+            key: value
+            for key, value in stats.to_dict().items()
+            if key != "extra" and isinstance(value, int)
+        },
+    }
+
+    return details
+
+
 def _warm_process() -> None:
     # What the recorder block starts in its __init__; on a real host the model
     # load hides it before the first frame.
@@ -1201,30 +1334,47 @@ def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
     _warm_process()
     ring = nvenc_ring.NvencRing("0", pre_roll_seconds=20.0, declared_fps=30.0)
     startup_drop_indices = []
+    queue_drop_indices = []
+    released_at_index = None
     submit_ms = []
     try:
         for index, frame in enumerate(_synthetic_frames(300)):
             image = _cuda_image(frame)  # its first call imports the engine
-            before = ring.stats().startup_dropped
+            before = ring.stats()
             started = time.perf_counter()
             ring.submit(timestamp(index), index, image)
             submit_ms.append((time.perf_counter() - started) * 1000)
-            if ring.stats().startup_dropped > before:
+            after = ring.stats()
+            if after.startup_dropped > before.startup_dropped:
                 startup_drop_indices.append(index)
+            if after.queue_drops > before.queue_drops:
+                queue_drop_indices.append(index)
+            if released_at_index is None and after.extra["startup_pool_released"]:
+                released_at_index = index
             time.sleep(1 / 120)  # 4x real time: stresses the session-open window
         handle = ring.capture(timestamp(0), timestamp(299))
+        # prepare_close drops frames still waiting for the encoder (counted as
+        # queue_drops by design), so let the queue drain first: at 4x real time
+        # the last frame can still be queued when the loop ends.
+        _wait_until_drained(ring)
         ring.prepare_close(30.0)
         artifact = handle.future.result(timeout=60)
     finally:
         ring.close()
     count, pts, size = _decode(_artifact_path(artifact, tmp_path, "ring.mp4"))
     stats = ring.stats()
+    losses = _loss_details(artifact, stats)
+    losses["queue_drop_indices"] = queue_drop_indices
+    losses["startup_pool_released_at_index"] = released_at_index
+    losses["startup_pool_release_ms"] = stats.extra.get("startup_pool_release_ms")
+    losses["pool_peak_frames"] = stats.extra.get("pool_peak_frames")
 
-    # every frame is either in the clip or reported as start-up loss
-    assert count + stats.startup_dropped == 300
-    assert artifact.report.loss.startup_dropped == stats.startup_dropped
+    # every frame is either in the clip or reported as start-up loss; on failure
+    # the message names the counter that took the frame
+    assert count + stats.startup_dropped == 300, f"count={count} {losses}"
+    assert artifact.report.loss.startup_dropped == stats.startup_dropped, str(losses)
     # steady state: the pool never fills
-    assert stats.queue_drops == 0
+    assert stats.queue_drops == 0, str(losses)
     # start-up loss, if any, is confined to the session-open window (< 1 s)
     assert max(startup_drop_indices, default=-1) < 120
     # the warmed process never stalls the caller (it used to take 1.4-4.2 s)
@@ -1232,6 +1382,55 @@ def test_ring_records_300_1080p_frames_into_a_decodable_mp4(tmp_path) -> None:
     assert size == (1920, 1080)
     assert pts[0] == 0 and pts == sorted(pts) and len(set(pts)) == count
     assert stats.extra["sessions_open"] == 0
+
+
+@requires_nvenc
+def test_startup_pool_returns_its_device_memory_after_the_backlog_drains() -> None:
+    import torch
+
+    _warm_process()
+    frames = list(_synthetic_frames(90))
+    torch.cuda.synchronize()
+    torch.cuda.empty_cache()
+    reserved_before = torch.cuda.memory_reserved()
+    ring = nvenc_ring.NvencRing("0", pre_roll_seconds=5.0, declared_fps=30.0)
+    try:
+        ring.submit(timestamp(0), 0, _cuda_image(frames[0]))
+        stats = ring._backend_stats()
+        extension_bytes = (stats["startup_pool_frames"] - stats["pool_frames"]) * (
+            3 * 1920 * 1080
+        )
+        reserved_peak = torch.cuda.memory_reserved()
+        for index, frame in enumerate(frames[1:], start=1):
+            ring.submit(timestamp(index), index, _cuda_image(frame))
+            time.sleep(1 / 30)
+        deadline = time.monotonic() + 10
+        while (
+            not ring._backend_stats()["startup_pool_released"]
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.05)
+        backend = ring._backend_stats()
+        reserved_after = torch.cuda.memory_reserved()
+    finally:
+        ring.close()
+
+    steady_bytes = backend["pool_frames"] * 3 * 1920 * 1080
+    session_bytes = nvenc_ring.PyNvVideoCodecAdapter().scratch_bytes(1920, 1080)
+    margin = 16 * 1024 * 1024  # allocator rounding, graph pool, events
+    details = (reserved_before, reserved_peak, reserved_after, extension_bytes)
+    assert stats["startup_pool_frames"] > stats["pool_frames"]
+    assert backend["startup_pool_released"], backend
+    assert backend["pool_allocated_frames"] == backend["pool_frames"]
+    # the extension block (24 slots, 149 MB at 1080p) left the caching allocator;
+    # the session's own buffers were allocated after the peak was sampled
+    assert (
+        reserved_peak - reserved_after >= extension_bytes - session_bytes - margin
+    ), details
+    # steady state: the 8-slot pool and the session buffers, nothing more
+    assert (
+        reserved_after - reserved_before <= steady_bytes + session_bytes + margin
+    ), details
 
 
 @requires_nvenc
@@ -1248,6 +1447,8 @@ def test_two_rings_record_simultaneously_at_30_fps_without_loss(tmp_path) -> Non
             time.sleep(1 / 30)
         handles = [ring.capture(timestamp(0), timestamp(149)) for ring in rings]
         for ring in rings:
+            _wait_until_drained(ring)
+        for ring in rings:
             ring.prepare_close(30.0)
         artifacts = [handle.future.result(timeout=60) for handle in handles]
     finally:
@@ -1257,9 +1458,10 @@ def test_two_rings_record_simultaneously_at_30_fps_without_loss(tmp_path) -> Non
     for index, artifact in enumerate(artifacts):
         count, pts, _ = _decode(_artifact_path(artifact, tmp_path, f"ring{index}.mp4"))
         stats = rings[index].stats()
+        losses = _loss_details(artifact, stats)
         # the start-up pool covers both sessions opening at once
-        assert count == 150, stats.to_dict()
-        assert stats.startup_dropped == 0
-        assert stats.queue_drops == 0
+        assert count == 150, f"count={count} {losses}"
+        assert stats.startup_dropped == 0, str(losses)
+        assert stats.queue_drops == 0, str(losses)
         assert pts[0] == 0
     assert all(ring.stats().extra["sessions_open"] == 0 for ring in rings)

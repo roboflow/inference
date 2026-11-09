@@ -32,10 +32,11 @@ import re
 import threading
 import time
 from concurrent.futures import Future, InvalidStateError
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from queue import Empty, Queue
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -78,6 +79,7 @@ INGESTION_POLL_INTERVAL_SECONDS = 2.0
 BACKOFF_INITIAL_SECONDS = 1.0
 BACKOFF_MAX_SECONDS = 30.0
 PUT_TIMEOUT_SECONDS = (10.0, 300.0)
+PUT_READ_CHUNK_BYTES = 1024 * 1024
 WORKER_POLL_SECONDS = 0.5
 TRANSIENT_4XX = (408, 429)
 ERROR_BODY_CHARACTERS = 300
@@ -508,7 +510,7 @@ class ClipUploader:
         self, job: _UploadJob, artifact: Any
     ) -> "tuple[str, Optional[str], bool]":
         try:
-            with artifact.open_stream() as body:
+            with _put_body(artifact) as body:
                 response = self._http_put(
                     job.signed_url,
                     data=body,
@@ -625,6 +627,36 @@ class ClipUploader:
                 job.future.set_result(completion)
             except InvalidStateError:
                 pass
+
+
+@contextmanager
+def _put_body(artifact: Any) -> Iterator[Any]:
+    # In-memory clips go out as one buffer (one sendall, the GIL released once);
+    # file-backed clips stream from the file in PUT_READ_CHUNK_BYTES reads rather
+    # than http.client's 8 KiB blocks: hundreds of fewer Python round trips per
+    # clip, which matters under gVisor where each one is a sentry syscall.
+    if getattr(artifact, "in_memory", False):
+        yield artifact.read_bytes()
+        return
+    with artifact.open_stream() as stream:
+        yield _LargeChunkReader(stream, size=artifact.size_bytes)
+
+
+class _LargeChunkReader:
+    """File wrapper whose ``read`` ignores small block sizes (for http.client)."""
+
+    def __init__(self, stream: Any, *, size: int):
+        self._stream = stream
+        self._size = size
+
+    def __len__(self) -> int:
+        return self._size
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            return self._stream.read()
+        chunk = self._stream.read(max(size, PUT_READ_CHUNK_BYTES))
+        return chunk
 
 
 def _response_text(response: Any) -> str:

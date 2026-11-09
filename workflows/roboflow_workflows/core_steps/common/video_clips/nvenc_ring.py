@@ -23,7 +23,7 @@ GOP-aligned captures, lifecycle and the MP4 remux. This module adds the encoder:
   into the slot on the producer's (caller's) current stream and record the slot's
   event there: two CUDA API calls per frame. Later in-place drawing on the image
   is ordered after the copy by the stream itself, so no reference to the frame
-  survives the call. Every other CUDA call (stream waits, resize, NV12 conversion,
+  survives the call. Every other CUDA call (stream waits, resize, the RGBA copy,
   encode, synchronize) runs on the encoder thread, which matters under gVisor
   where each driver call is an ioctl through the sentry.
 * Encoder thread (``_encode_frame`` / ``_flush_encoder`` / ``_close_encoder``): one
@@ -31,8 +31,19 @@ GOP-aligned captures, lifecycle and the MP4 remux. This module adds the encoder:
   runtime's settings (rf-video-processor ``nvenc_encoders.NvEncoder``): P3,
   ultra-low-latency tuning, CBR with a 250 ms VBV, ``bf=0``, no lookahead, SPS/PPS
   repeated on every IDR, torch's primary CUDA context and a private CUDA stream.
-  Per frame it waits on the slot's event, resizes (``max_width``), converts RGB to
-  BT.709 NV12 into the session's buffer, encodes and synchronizes. IDRs are forced
+  The session takes packed RGBA (NVENC ``ABGR``, bytes R, G, B, A) and does the
+  colour conversion in the encoder. Per frame the thread waits on the slot's
+  event, resizes (``max_width``, rare), copies the CHW slot into the session's
+  HWC RGBA buffer (one copy kernel), encodes and synchronizes: four torch /
+  NVENC calls per frame. Converting to NV12 in torch took about forty calls,
+  each releasing and re-taking the GIL and launching a kernel; under gVisor on
+  2 CPUs that raised the host's preview p95 latency with two recorders by about
+  25%. Decoded colours match that BT.709 NV12 conversion (mean error 1.0 grey
+  levels against the source on an L4 colour-bar test for both). The thread's
+  CUDA device is set once when the session opens. (A CUDA graph of the torch
+  conversion was rejected: capturing it while the host used CUDA failed 1 in 6
+  to 1 in 10 captures and made the host's own CUDA calls fail meanwhile.)
+  IDRs are forced
   when the base asks; keyframe flags are read back from the access units (IDR
   NAL). The session is destroyed on the encoder thread before it exits; a session
   still alive at interpreter exit segfaults, so an ``atexit`` hook also closes any
@@ -43,7 +54,10 @@ full pool counts ``queue_drops``. Until the ring's session is open the pool may 
 to a start-up headroom of ``STARTUP_POOL_MAX_FRAMES`` (32) slots, capped at
 ``STARTUP_POOL_MAX_BYTES`` (192 MiB) of device memory, so the frames that arrive
 while NVENC opens the session (0.35-0.8 s measured) are queued instead of dropped;
-the extra slots are freed once the backlog drains. Frames refused in that window
+the extra slots are freed once the backlog drains and their block is handed back
+to the driver (one ``torch.cuda.empty_cache()`` per stream start-up, on the encoder
+thread), so a recorder's steady-state VRAM is the 8-slot pool plus the session.
+Frames refused in that window
 count as ``startup_dropped``. Device memory is not host memory, so the host byte
 budget does not count the pool; ``vram_bytes_estimate`` in the ring's stats does.
 
@@ -118,14 +132,6 @@ WARM_UP_PROBE_BITRATE = 300_000
 # second, so the encoder's periodic IDR is set to ten output seconds.
 BACKSTOP_GOP_OUTPUT_SECONDS = 10.0
 H264_NAL_IDR = 5
-
-# BT.709 limited range: Y = 16 + 219/255 (Kr R + Kg G + Kb B); chroma uses 224/255.
-# The chroma rows fold in the 2x2 box average (/4); chroma is linear in RGB.
-_KR, _KB = 0.2126, 0.0722
-_KG = 1 - _KR - _KB
-_Y = tuple(219 / 255 * k for k in (_KR, _KG, _KB))
-_U = tuple(224 / 255 / 4 * k for k in (-_KR / (2 - 2 * _KB), -_KG / (2 - 2 * _KB), 0.5))
-_V = tuple(224 / 255 / 4 * k for k in (0.5, -_KG / (2 - 2 * _KR), -_KB / (2 - 2 * _KR)))
 
 
 @functools.lru_cache(maxsize=1)
@@ -484,7 +490,7 @@ def resolve_pool_frames() -> int:
     """Resolve the GPU pool size from ``WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES``.
 
     Returns:
-        Number of NV12 frame slots per ring, default 8, clamped to 1-256.
+        Number of RGB frame slots per ring, default 8, clamped to 1-256.
     """
     raw = read_env(POOL_FRAMES_ENV)
     if not raw:
@@ -524,7 +530,7 @@ def encoded_size(
     """Compute the encoded frame size for a source frame.
 
     Scales down (never up) to ``max_width`` keeping the aspect ratio, then drops the
-    odd edge row/column because NV12 needs even dimensions.
+    odd edge row/column because the encoder's 4:2:0 output needs even dimensions.
 
     Args:
         width: Source width in pixels.
@@ -566,8 +572,8 @@ class NvencAdapter(Protocol):
 
     ``frame_size``, ``staging_size``, ``allocate_slots`` and ``stage`` run on the
     pipeline thread; ``stage`` must enqueue at most one copy and one event on the
-    caller's stream. ``open_session``, ``encode``, ``flush`` and ``destroy`` run on
-    the ring thread only. ``encode``/``flush`` return ``(input_ordinal,
+    caller's stream. ``open_session``, ``encode``, ``flush``, ``destroy`` and
+    ``release_cached_memory`` run on the ring thread only. ``encode``/``flush`` return ``(input_ordinal,
     access_unit)`` pairs in output order; the ring maps ordinals back to frames.
     """
 
@@ -593,6 +599,8 @@ class NvencAdapter(Protocol):
 
     def destroy(self, session: Any) -> None: ...
 
+    def release_cached_memory(self) -> None: ...
+
     def tensor_device(self, tensor: Any) -> Any: ...
 
     def slot_bytes(self, width: int, height: int) -> int: ...
@@ -600,46 +608,6 @@ class NvencAdapter(Protocol):
     def scratch_bytes(self, width: int, height: int) -> int: ...
 
     def session_vram_bytes(self, session: Any) -> int: ...
-
-
-def rgb_to_nv12(rgb: Any, nv12: Any, work: Any) -> Any:
-    """Convert a CHW RGB tensor to limited-range BT.709 NV12 on its device.
-
-    Same arithmetic as the Serverless Streaming runtime: one float32 luma-sized
-    scratch reused for both chroma planes, 2x2 box chroma subsampling.
-
-    Args:
-        rgb: ``(3, H, W)`` uint8 or float tensor, even ``H`` and ``W``.
-        nv12: ``(H * 3 // 2, W)`` uint8 output tensor on the same device.
-        work: ``(H, W)`` float32 scratch tensor on the same device.
-
-    Returns:
-        ``nv12``, filled.
-    """
-    import torch
-
-    _, height, width = rgb.shape
-    r, g, b = rgb.unbind(0)
-    torch.mul(r, _Y[0], out=work)
-    work.add_(g, alpha=_Y[1]).add_(b, alpha=_Y[2]).add_(16).round_().clamp_(16, 235)
-    nv12[:height].copy_(work)
-    quarter = (height // 2) * (width // 2)
-    for index, coefficients in enumerate((_U, _V)):
-        plane = work.view(-1)[index * quarter : (index + 1) * quarter]
-        plane = plane.view(height // 2, width // 2)
-        terms = [
-            (channel[dy::2, dx::2], k)
-            for dy in (0, 1)
-            for dx in (0, 1)
-            for channel, k in zip((r, g, b), coefficients)
-        ]
-        torch.mul(terms[0][0], terms[0][1], out=plane)
-        for channel, k in terms[1:]:
-            plane.add_(channel, alpha=k)
-        plane.add_(128).round_().clamp_(16, 240)
-        nv12[height:, index::2].copy_(plane)
-
-    return nv12
 
 
 def _rgb_chw(tensor: Any) -> Any:
@@ -665,22 +633,17 @@ class _CudaPlane:
         }
 
 
-class _NV12Surface:
+class _RGBASurface:
+    # One packed plane (H, W, 4); PyNvVideoCodec wants the plane itself from
+    # ``cuda()`` for packed formats (a list for planar ones such as NV12).
     def __init__(self, tensor: Any, width: int, height: int, stream: int):
         self.tensor = tensor  # ownership, not just pointers
-        self.planes = [
-            _CudaPlane(tensor, (height, width, 1), (width, 1, 1), 0, stream),
-            _CudaPlane(
-                tensor,
-                (height // 2, width // 2, 2),
-                (width, 2, 1),
-                width * height,
-                stream,
-            ),
-        ]
+        self.plane = _CudaPlane(
+            tensor, (height, width, 4), (width * 4, 4, 1), 0, stream
+        )
 
-    def cuda(self) -> list:
-        return self.planes
+    def cuda(self) -> Any:
+        return self.plane
 
 
 class _CudaDriver:
@@ -729,8 +692,7 @@ class _Session:
     width: int
     height: int
     vram_bytes: int
-    nv12: Any = None
-    work: Any = None
+    rgba: Any = None
 
 
 class PyNvVideoCodecAdapter:
@@ -738,12 +700,12 @@ class PyNvVideoCodecAdapter:
 
     The caller thread only copies the frame into a pooled RGB slot on its own
     stream and records the slot's event. The encoder thread waits on that event
-    on the session's private stream, scales (``max_width``), converts to NV12 and
-    encodes.
+    on the session's private stream, scales (``max_width``), copies the frame into
+    the session's packed RGBA buffer and encodes (NVENC converts to YUV).
 
     Args:
         max_width: Optional output width cap; frames wider than this are scaled
-            down on the GPU (area filter) before the NV12 conversion.
+            down on the GPU (area filter) before encoding.
     """
 
     def __init__(self, *, max_width: Optional[int] = None):
@@ -781,8 +743,8 @@ class PyNvVideoCodecAdapter:
         return 3 * width * height
 
     def scratch_bytes(self, width: int, height: int) -> int:
-        """Return the device bytes a session's NV12 and float buffers take."""
-        return width * height * 3 // 2 + width * height * 4
+        """Return the device bytes of a session's RGBA input buffer."""
+        return width * height * 4
 
     def allocate_slots(
         self, count: int, width: int, height: int, device: Any
@@ -848,7 +810,7 @@ class PyNvVideoCodecAdapter:
         encoder = self._nvc.CreateEncoder(
             width,
             height,
-            "NV12",
+            "ABGR",
             False,
             gpu_id=device.index or 0,
             cudacontext=context,
@@ -872,10 +834,8 @@ class PyNvVideoCodecAdapter:
 
         vram_bytes = max(0, free_before - torch.cuda.mem_get_info(device)[0])
         with torch.cuda.stream(stream):
-            nv12 = torch.empty(
-                (height * 3 // 2, width), dtype=torch.uint8, device=device
-            )
-            work = torch.empty((height, width), dtype=torch.float32, device=device)
+            # Alpha is never read by the encoder's RGB conversion; set it once.
+            rgba = torch.full((height, width, 4), 255, dtype=torch.uint8, device=device)
         session = _Session(
             encoder=encoder,
             device=device,
@@ -884,8 +844,7 @@ class PyNvVideoCodecAdapter:
             width=width,
             height=height,
             vram_bytes=vram_bytes,
-            nv12=nv12,
-            work=work,
+            rgba=rgba,
         )
 
         return session
@@ -898,16 +857,20 @@ class PyNvVideoCodecAdapter:
         ordinal: int,
         force_idr: bool,
     ) -> List[Tuple[int, bytes]]:
-        """Convert and encode one slot; returns the access units NVENC released."""
+        """Convert and encode one slot; returns the access units NVENC released.
+
+        Runs on the thread that opened the session, whose current CUDA device
+        ``open_session`` set, so no per-frame device switch is needed.
+        """
         torch = self._torch
         _cuda_driver().set_current(session.context)
-        with torch.cuda.device(session.device), torch.cuda.stream(session.stream):
+        with torch.cuda.stream(session.stream):
             if ready is not None:
                 session.stream.wait_event(ready)
             rgb = self._fit(slot.rgb, width=session.width, height=session.height)
-            rgb_to_nv12(rgb, session.nv12, session.work)
-            surface = _NV12Surface(
-                session.nv12, session.width, session.height, session.stream.cuda_stream
+            session.rgba[:, :, :3].copy_(rgb.permute(1, 2, 0))
+            surface = _RGBASurface(
+                session.rgba, session.width, session.height, session.stream.cuda_stream
             )
             params = self._nvc.NV_ENC_PIC_PARAMS()
             # NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS
@@ -917,7 +880,7 @@ class PyNvVideoCodecAdapter:
             params.inputTimeStamp = ordinal
             packets = session.encoder.Encode(surface, params)
             # The binding copies CUDA-array input into its own registered buffers;
-            # once the stream is idle the slot and the NV12 buffer can be reused.
+            # once the stream is idle the slot and the RGBA buffer can be reused.
             session.stream.synchronize()
         access_units = _packets_to_bytes(packets)
 
@@ -937,13 +900,25 @@ class PyNvVideoCodecAdapter:
         _cuda_driver().set_current(session.context)
         session.stream.synchronize()
         session.encoder = None
-        session.nv12 = None
-        session.work = None
+        session.rgba = None
         session.stream = None
 
     def session_vram_bytes(self, session: _Session) -> int:
         """Return the VRAM the session took when it opened (free-memory delta)."""
         return session.vram_bytes
+
+    def release_cached_memory(self) -> None:
+        """Give device blocks the caching allocator holds back to the driver.
+
+        Called once per ring, after the start-up pool's extension block was
+        freed: torch keeps freed blocks cached, so without this the start-up
+        headroom (up to 192 MiB per stream) would stay reserved for the life of
+        the process. ``empty_cache`` is process-wide (it also returns the
+        host's own unused cached blocks, which torch re-allocates on demand)
+        and synchronises the device once; that is acceptable once per stream
+        start-up and is never done per frame.
+        """
+        self._torch.cuda.empty_cache()
 
     def _fit(self, rgb: Any, *, width: int, height: int) -> Any:
         source_height, source_width = int(rgb.shape[1]), int(rgb.shape[2])
@@ -954,7 +929,8 @@ class PyNvVideoCodecAdapter:
         scaled = self._torch.nn.functional.interpolate(
             rgb.unsqueeze(0).float(), size=(height, width), mode="area"
         )
-        return scaled.squeeze(0)
+        # Area averages stay within 0-255; round before the uint8 copy.
+        return scaled.squeeze(0).round_()
 
 
 def _packets_to_bytes(packets: Any) -> List[Tuple[int, bytes]]:
@@ -1070,6 +1046,11 @@ class NvencRing(BaseEncodedRing):
         self._pool_limit_startup = self._pool_frames
         self._free_slots: List[Any] = []
         self._extension_slots: set = set()
+        self._extension_allocated = 0
+        # The start-up extension block, once every slot of it is gone, is handed
+        # back to the driver by the encoder thread (``release_cached_memory``).
+        self._startup_release_pending = False
+        self._startup_pool_released = False
         self._allocated_slots = 0
         self._peak_in_use = 0
         self._pool_drops = 0
@@ -1214,6 +1195,7 @@ class NvencRing(BaseEncodedRing):
 
         # The encoder is done with the slot (stream synchronised): reuse it now.
         self._release_slot(staged)
+        self._release_startup_pool_memory()
         if force_keyframe:
             self._forced_idrs += 1
         outputs = self._to_outputs(access_units)
@@ -1258,6 +1240,7 @@ class NvencRing(BaseEncodedRing):
                 "pool_peak_frames": self._peak_in_use,
                 "pool_free_frames": len(self._free_slots),
                 "pool_drops": self._pool_drops,
+                "startup_pool_released": self._startup_pool_released,
                 "stage_errors": self._stage_errors,
                 "sessions_open": self._sessions_opened - self._sessions_destroyed,
                 "sessions_opened": self._sessions_opened,
@@ -1316,6 +1299,7 @@ class NvencRing(BaseEncodedRing):
                 return None
             self._free_slots = list(reversed(steady)) + list(reversed(extra))
             self._extension_slots = {id(slot) for slot in extra}
+            self._extension_allocated += len(extra)
             self._allocated_slots = len(steady) + len(extra)
             slot = self._take_free_slot_locked()
 
@@ -1355,6 +1339,7 @@ class NvencRing(BaseEncodedRing):
                 # Start-up is over: let the extension block go.
                 self._extension_slots.discard(id(slot))
                 self._allocated_slots -= 1
+                self._mark_extension_gone_locked()
                 return None
             self._free_slots.append(slot)
             self._end_startup_headroom_locked()
@@ -1381,6 +1366,30 @@ class NvencRing(BaseEncodedRing):
             self._extension_slots.discard(id(slot))
         self._free_slots = kept
         self._allocated_slots -= len(dropped)
+        self._mark_extension_gone_locked()
+
+    def _mark_extension_gone_locked(self) -> None:
+        # Once no slot of the extension block is referenced, torch has the block
+        # back in its cache; the encoder thread then returns it to the driver.
+        if self._extension_slots or self._extension_allocated == 0:
+            return None
+        if not self._startup_pool_released:
+            self._startup_release_pending = True
+
+    def _release_startup_pool_memory(self) -> None:
+        # Encoder thread, pool lock not held: at most once per ring.
+        with self._pool_lock:
+            if not self._startup_release_pending:
+                return None
+            self._startup_release_pending = False
+            self._startup_pool_released = True
+        release = getattr(self._adapter, "release_cached_memory", None)
+        if release is None:
+            return None
+        try:
+            release()
+        except Exception as error:
+            LOGGER.warning("Releasing the NVENC start-up pool failed: %r", error)
 
     def _open_session(self, *, size: Tuple[int, int], device: Any) -> None:
         width, height = size
