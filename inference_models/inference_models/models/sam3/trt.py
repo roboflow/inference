@@ -46,6 +46,10 @@ def build_sam3_engines(
     fp32_layer_patterns: Tuple[str, ...] = (),
     precision: Optional[str] = None,
     fp32_softmax: bool = True,
+    builder_optimization_level: int = 3,
+    max_aux_streams: Optional[int] = None,
+    io_dtypes: Optional[Dict[str, Dict[str, str]]] = None,
+    enable_fp8: bool = False,
 ) -> Dict:
     """Build static TensorRT engines with detailed inspection metadata.
 
@@ -58,6 +62,10 @@ def build_sam3_engines(
         fp32_layer_patterns (Tuple[str, ...]): Layer-name patterns that retain FP32.
         precision (Optional[str]): FP32, FP16, or BF16 computation. Replaces fp16.
         fp32_softmax (bool): Constrain Softmax operations to FP32 in reduced precision.
+        builder_optimization_level (int): TensorRT tactic search level, from 0 to 5.
+        max_aux_streams (Optional[int]): Maximum auxiliary streams, or the TRT default.
+        io_dtypes (Optional[Dict[str, Dict[str, str]]]): Per-component FP16/FP32 bindings.
+        enable_fp8 (bool): Enable FP8 kernels for an explicitly quantized ONNX graph.
 
     Returns:
         Dict: Engine provenance, checksums, and per-engine build durations.
@@ -81,6 +89,10 @@ def build_sam3_engines(
         raise ValueError("Unsupported SAM3 export manifest")
     elif workspace_gib < 1:
         raise ValueError("workspace_gib must be positive")
+    elif not 0 <= builder_optimization_level <= 5:
+        raise ValueError("builder_optimization_level must be between 0 and 5")
+    elif max_aux_streams is not None and max_aux_streams < 0:
+        raise ValueError("max_aux_streams must be nonnegative")
     elif engine_dir.exists() and any(engine_dir.iterdir()):
         raise ValueError(
             "Build into an empty directory to avoid mixing engine versions"
@@ -115,7 +127,26 @@ def build_sam3_engines(
                 raise ValueError(
                     f"Expected static, nonempty input: {tensor.name} {tensor.shape}"
                 )
+        binding_types = (io_dtypes or {}).get(part, {})
+        bindings = {
+            tensor.name: tensor
+            for tensor in (
+                *(network.get_input(i) for i in range(network.num_inputs)),
+                *(network.get_output(i) for i in range(network.num_outputs)),
+            )
+        }
+        for name, dtype in binding_types.items():
+            if name not in bindings or dtype not in ("fp16", "fp32"):
+                raise ValueError(f"Unsupported {part} binding override: {name}={dtype}")
+            elif bindings[name].dtype not in (trt.float32, trt.float16):
+                raise ValueError(f"Cannot change nonfloating binding: {name}")
+            bindings[name].dtype = trt.float16 if dtype == "fp16" else trt.float32
         configuration = builder.create_builder_config()
+        configuration.builder_optimization_level = builder_optimization_level
+        if max_aux_streams is not None:
+            configuration.max_aux_streams = max_aux_streams
+        if enable_fp8:
+            configuration.set_flag(trt.BuilderFlag.FP8)
         configuration.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
         configuration.set_memory_pool_limit(
             trt.MemoryPoolType.WORKSPACE, workspace_gib << 30
@@ -162,6 +193,10 @@ def build_sam3_engines(
         build_wall_seconds=build_seconds,
         fp32_layer_patterns=list(fp32_layer_patterns),
         fp32_constrained_layers=constrained_layers,
+        builder_optimization_level=builder_optimization_level,
+        max_aux_streams=max_aux_streams,
+        io_dtypes=io_dtypes or {},
+        enable_fp8=enable_fp8,
     )
     (engine_dir / "engines.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
