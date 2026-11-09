@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import AsyncMock, patch
 
@@ -99,6 +100,37 @@ async def test_object_detection_dispatch_returns_envelope(client, app_with_fake_
     call = proxy.infer.await_args.kwargs
     assert call["model_id"] == "acme/1"
     assert call["image"] == _JPEG
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_classes"),
+    [
+        ("", None),
+        ("&classes=weed", ["weed"]),
+        ("&classes=weed&classes=leaf", ["weed", "leaf"]),
+    ],
+)
+async def test_uploaded_owlv2_forwards_optional_text_queries(
+    client, app_with_fake_proxy, query, expected_classes
+):
+    _, proxy = app_with_fake_proxy
+    names = expected_classes or ["saved-label"]
+    proxy.infer.return_value = SimpleNamespace(
+        xyxy=[[1, 2, 3, 4]],
+        class_id=[0],
+        confidence=[0.9],
+        image_metadata={"class_names": names},
+    )
+    with _patch_stat("object-detection"):
+        response = await client.post(
+            "/v2/models/infer?model_id=acme/uploaded-owlv2" + query,
+            content=_JPEG,
+            headers={"authorization": "Bearer k", "content-type": "image/jpeg"},
+        )
+    assert response.status_code == 200
+    assert proxy.infer.await_args.kwargs["params"].get("classes") == expected_classes
+    assert response.json()["predictions"][0]["class_names"] == names
 
 
 @pytest.mark.asyncio

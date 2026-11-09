@@ -52,4 +52,6 @@ async def parse_object_detection_input(
 
     merged = dict(common.extra)
     merged.update(extra_params)
+    if isinstance(merged.get("classes"), str):
+        merged["classes"] = [merged["classes"]]
     return {"images": images, "params": merged}
