@@ -242,19 +242,47 @@ needs the calls of one clip routed to the same worker.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SAM3_VIDEO_MODEL_ID` | `sam3trackervideo` | Model the routes use when the request names none |
-| `SAM3_VIDEO_MAX_FRAMES` | `600` | Most frames `embed` decodes; a longer clip is refused with 413 |
-| `SAM3_VIDEO_MAX_CACHED_CLIPS` | `4` | Clips a worker keeps; the least recently used is evicted |
+| `SAM3_VIDEO_CACHE_MAX_GB` | `16` | Host RAM, in GB, the cached clips of a worker may hold (fractions allowed). It sets how many frames the worker keeps over all clips and so the longest clip `embed` accepts; a longer one is refused with 413 before it is decoded. The least recently used clips are evicted to make room |
 
-Cached clips live in host memory, and the cache limits the number of clips,
-not their size. In bfloat16, each frame takes about 6 MB of preprocessed
-pixels, plus about 11 MB of encoder output once the frame is encoded
-(`encode_frames`, or once a call has run on it). A 600-frame clip is about
-3.7 GB, or about 10 GB when every frame is encoded, so the default limits
-allow about 40 GB. `embed` also decodes the clip at its native resolution
-before resizing (about 3.7 GB for 600 frames at 1080p) while the older clips
-are still cached. Size `SAM3_VIDEO_MAX_FRAMES × SAM3_VIDEO_MAX_CACHED_CLIPS`
-to the host's memory: a worker that runs out is killed with every model it
-serves.
+Cached clips live in host memory, not on the GPU, and
+`SAM3_VIDEO_CACHE_MAX_GB` is the one setting that bounds them. The tracker
+turns it into a number of frames, `floor(GB × 1e9 / bytes per cached frame)`,
+and logs the result when the model loads. A cached frame is held as its
+preprocessed pixels (6,096,384 bytes in bfloat16) until it is encoded
+(`encode_frames`, or the first call that runs on it) and as its encoder output
+(10,616,832 bytes) afterwards, never both; the larger figure is the bytes per
+cached frame. Both figures are computed from the model's shapes and dtype, and
+a unit test checks the encoder output figure against a really encoded frame.
+
+| `SAM3_VIDEO_CACHE_MAX_GB` | Frames kept (computed) | Video at 6 fps | Video at 12 fps |
+|---|---|---|---|
+| `4` | 376 | 62 s | 31 s |
+| `8` | 753 | 125 s | 62 s |
+| `16` (default) | 1507 | 251 s | 125 s |
+| `32` | 3014 | 502 s | 251 s |
+
+The limit covers the cached frames only. Size the host as cache GB, plus the
+memory an embed needs while it runs, plus the process itself:
+
+- Embedding a clip first forgets the clips it replaces, so the cache stays
+  within its limit while the new clip is built. What an embed adds on top is
+  the decoded clip at its native resolution, held until the embed returns
+  (height × width × 3 bytes per frame of the clip being embedded: 1.8 MB at
+  1024×576, 6.2 MB at 1080p, computed), and about 0.65 GB while frames are
+  preprocessed, whatever the clip's length (16 frames at a time at about 40 MB
+  each, computed from a measured 40 MB per frame). There is no separate limit
+  on a clip's length, so the first part grows with the longest clip the cache
+  admits. Embeds running at the same time each add their own.
+- The process with the model loaded and no clip took 1.8 to 2.0 GB of host RAM
+  (measured on a 24 GB GPU; GPU memory peaked at 3.3 GB).
+
+Before this sizing, with the cache limited by number of clips, a 480-frame
+clip measured about 20 MB of host RAM per cached frame (pixels and encoder
+output both kept) and 17.5 to 19.9 GB of extra memory for about 10 s while it
+was embedded.
+
+A worker that runs out of memory is killed with every model it serves, so
+leave headroom.
 
 `propagate` answers once the whole clip is tracked, which for long clips or
 many objects takes longer than the default `INFERENCE_INFER_TIMEOUT_S` of 30 s;

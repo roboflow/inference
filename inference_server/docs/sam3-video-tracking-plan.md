@@ -65,17 +65,21 @@ flowchart LR
 
 Every segment and propagate call carries all the clicks, so the server holds
 no per-object state: only the clip, its preprocessed frames and the encoder
-output of frames seen so far. The cache keeps `SAM3_VIDEO_MAX_CACHED_CLIPS`
-clips per worker (default 4, least recently used evicted), and clips are capped
-at `SAM3_VIDEO_MAX_FRAMES` (default 600). A call on a clip the worker doesn't
-have answers 400 `No video embedded …`, and the caller embeds again. Losing a
-clip costs a re-embed, never data.
+output of frames seen so far. The cache is bounded in host RAM by
+`SAM3_VIDEO_CACHE_MAX_GB` (default 16), which the tracker turns into a number
+of frames over all clips (1507 at the default). The least recently used clips
+are evicted to stay within it, and a clip with more frames than it holds is
+refused with 413 from the header probe, before decoding; there is no separate
+limit on a clip's length. A call on a clip the worker doesn't have answers 400
+`No video embedded …`, and the caller embeds again. Losing a clip costs a
+re-embed, never data.
 
 Why this fits:
 
 - Clip input reuses the action recognition video input in `legacy/video.py`:
   `video_source_path` (same URL policy and `MAX_VIDEO_DOWNLOAD_SIZE_MB`),
-  `probe_video` (the frame cap is checked from the header before decoding)
+  `probe_video` (the clip's length is checked against what the cache holds
+  from the header, before decoding)
   and the sequential `read_frame_windows`. Frames are decoded in order and
   never sought, so frame N is the same pixels the caller's player shows, as
   long as the caller sends an intra-frame format such as MJPEG AVI.
@@ -116,6 +120,7 @@ Verification:
   - `inference_server/tests/unit_tests/legacy/test_router_sam3_video.py`: the routes, the stream's per-object lines, a mid-stream error line, heartbeats and stopping on close.
   - `tests/inference/unit_tests/core/interfaces/http/test_sam3_video_routes.py`: the same cases on the `inference` package's server, plus loading the tracker once, the access check and the route flag.
   - `inference_models/tests/unit_tests/models/test_sam3_tracker_video_offline.py`: the model methods and clip cache.
+  - `inference_models/tests/unit_tests/models/test_sam3_tracker_video_offline_hf.py`: the same methods on the real transformers model and processor with a small configuration: chunked preprocessing, the bytes of an encoded frame, and tracking on a clip whose pixels were released.
   - `inference_model_manager/tests/unit_tests/test_registry_defaults.py`.
 - End to end: an annotation client was run against these routes on a GPU
   machine, embedding clips, previewing clicks and tracking full clips.
@@ -147,17 +152,42 @@ Verification:
   - **Input needed:** none.
 
 - **Question:** Memory per cached clip.
-  - **Investigation:** a clip keeps its preprocessed frames and its encoder
-    output in CPU memory, and moves features to the GPU per use. In bfloat16
-    that is about 6 MB of preprocessed pixels per frame, plus about 11 MB of
-    encoder output once the frame is encoded (the model reduces the channels
-    of the two high-resolution maps before they are kept). This is computed,
-    not measured. A 480-frame clip is about 8 GB when every frame is encoded,
-    so CPU memory, not the GPU, limits how many clips a server keeps.
-  - **Recommendation:** size `SAM3_VIDEO_MAX_CACHED_CLIPS` and
-    `SAM3_VIDEO_MAX_FRAMES` to the machine's RAM (the defaults, 4 clips of up
-    to 600 frames, allow about 40 GB), and measure before raising either.
-  - **Input needed:** none, but it is open until measured.
+  - **Investigation:** host RAM, not GPU memory, is what cached clips cost
+    (GPU memory peaked at 3.3 GB, measured on a 24 GB GPU). The first version
+    kept every frame's preprocessed pixels for the clip's whole life and added
+    the encoder output on top, limited the cache by number of clips, and
+    preprocessed a clip in one call. Measured that way: about 20 MB of
+    resident memory per cached frame in steady state (6.5 MB of pixels plus
+    12.5 to 15 MB of encoder output), and about 40 MB per frame of extra
+    memory for about 10 s while a clip was embedded (17.5 to 19.9 GB for 480
+    frames), with the clip it replaced still cached. Two 480-frame clips took
+    21.4 to 22.3 GB, and embedding a third peaked at 39.1 GB.
+  - **What changed:**
+    - A clip is preprocessed 16 frames at a time and each frame is kept as its
+      own tensor in the model's dtype, so the extra memory of an embed is one
+      chunk in full precision (about 0.65 GB, computed from the measured 40 MB
+      per frame) instead of the whole clip. The video processor resizes,
+      rescales and normalises each frame on its own, so the values are the
+      same; a unit test compares them with the real processor.
+    - A frame's pixels are released when its encoder output is cached. The
+      output is then never dropped while the clip lives: the only place
+      transformers drops it is the session's `reset_inference_session`, which
+      the clip refuses with an error. So a cached frame holds its pixels
+      (6,096,384 bytes in bfloat16) or its encoder output (10,616,832 bytes),
+      never both. Both figures are computed from the model's shapes and dtype.
+    - The position embeddings, which are the same for every frame of every
+      clip, are kept once per model instead of once per clip (55.7 MB,
+      computed).
+    - The cache is limited by `SAM3_VIDEO_CACHE_MAX_GB` instead of a number of
+      clips: frames kept = `floor(GB × 1e9 / 10,616,832)`. A clip that is
+      embedded forgets the clips it replaces before it is built, so the cache
+      stays within the limit during an embed. A call already running on an
+      evicted clip keeps it and finishes.
+  - **Recommendation:** size the host as `SAM3_VIDEO_CACHE_MAX_GB`, plus the
+    embed's extra memory (the decoded clip, height × width × 3 bytes per frame
+    of the clip being embedded, plus about 0.65 GB), plus the process with the
+    model loaded (1.8 to 2.0 GB measured).
+  - **Input needed:** none.
 
 - **Question:** Clips shorter than two frames.
   - **Investigation:** reusing `probe_video` brings its rule that a clip needs
