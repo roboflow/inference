@@ -474,6 +474,21 @@ class _PinnedMixin:
 class _PinnedHTTPSConnectionPool(HTTPSConnectionPool):
     """Disable redirects at urllib3's request boundary, including relative URLs."""
 
+    def _make_request(self, conn, method, url, **kwargs):
+        # urllib3 handles retryable HTTP statuses inside urlopen(), before the
+        # connector receives the response. Its default drain_conn() reads the
+        # entire body, bypassing the connector's bounded read() on that path.
+        kwargs["preload_content"] = False
+        kwargs["decode_content"] = False
+        response = super()._make_request(conn, method, url, **kwargs)
+
+        def discard_body():
+            response.close()
+            response.release_conn()
+
+        response.drain_conn = discard_body
+        return response
+
     def urlopen(self, method, url, *args, **kwargs):
         # urllib3's reconnect path passes body, headers, retries and redirect
         # positionally; avoid supplying redirect twice on that recursive call.
