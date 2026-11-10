@@ -185,6 +185,18 @@ def test_keeps_model_unchanged_when_cuda_is_not_the_first_provider(
     ).exists()
 
 
+def count_fold_calls(monkeypatch: pytest.MonkeyPatch) -> list:
+    calls = []
+    fold_constants = onnx_attention_fusion._fold_constants
+
+    def counting_fold(*args, **kwargs):
+        calls.append(args)
+        fold_constants(*args, **kwargs)
+
+    monkeypatch.setattr(onnx_attention_fusion, "_fold_constants", counting_fold)
+    return calls
+
+
 def test_reuses_the_cached_fused_model(
     attention_model_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -192,11 +204,7 @@ def test_reuses_the_cached_fused_model(
     first_result = fuse_attention_for_cuda_execution(
         attention_model_path, providers=CUDA_PROVIDERS
     )
-
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("the cached model must be reused")
-
-    monkeypatch.setattr(onnx_attention_fusion, "_fold_constants", fail_if_called)
+    fold_calls = count_fold_calls(monkeypatch)
 
     # when
     second_result = fuse_attention_for_cuda_execution(
@@ -205,6 +213,7 @@ def test_reuses_the_cached_fused_model(
 
     # then
     assert second_result == first_result
+    assert fold_calls == []
 
 
 def test_remembers_that_a_model_has_no_fusable_attention(
@@ -213,17 +222,33 @@ def test_remembers_that_a_model_has_no_fusable_attention(
     # given
     model_path = export_model(Projection(), tmp_path)
     fuse_attention_for_cuda_execution(model_path, providers=CUDA_PROVIDERS)
-
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("the cached result must be reused")
-
-    monkeypatch.setattr(onnx_attention_fusion, "_fold_constants", fail_if_called)
+    fold_calls = count_fold_calls(monkeypatch)
 
     # when
     result = fuse_attention_for_cuda_execution(model_path, providers=CUDA_PROVIDERS)
 
     # then
     assert result == model_path
+    assert fold_calls == []
+
+
+def test_fuses_again_when_the_cached_fused_model_was_deleted(
+    attention_model_path: str,
+) -> None:
+    # given
+    fused_model_path = fuse_attention_for_cuda_execution(
+        attention_model_path, providers=CUDA_PROVIDERS
+    )
+    Path(fused_model_path).unlink()
+
+    # when
+    result = fuse_attention_for_cuda_execution(
+        attention_model_path, providers=CUDA_PROVIDERS
+    )
+
+    # then
+    assert result == fused_model_path
+    assert count_operators(result)["MultiHeadAttention"] == 1
 
 
 def test_keeps_model_unchanged_when_fusion_fails(

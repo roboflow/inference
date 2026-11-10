@@ -20,6 +20,7 @@ CUDA_PROVIDERS = [("CUDAExecutionProvider", {"device_id": 0}), "CPUExecutionProv
         ("coin_counting_rfdetr_nano_onnx_cs_stretch_package", 14),
         ("snakes_rfdetr_seg_onnx_static_bs_stretch_package", 16),
         ("balloons_rfdetr_sem_nano_onnx_static_bs_stretch_package", 12),
+        ("rfdetr_kp_preview_onnx_glue_sticks_package", 16),
     ],
 )
 def test_fuses_every_rfdetr_self_attention_block(

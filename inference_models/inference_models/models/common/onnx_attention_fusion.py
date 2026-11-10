@@ -46,11 +46,12 @@ def fuse_attention_for_cuda_execution(
     *,
     providers: List[Union[str, tuple]],
 ) -> str:
-    """Return a model path whose attention runs with ONNX Runtime's memory-efficient CUDA kernel.
+    """Return a model path whose attention is fused into ONNX Runtime's ``MultiHeadAttention`` op.
 
-    The fused model is written next to the source model and reused on later loads. The source model is
-    returned unchanged when CUDA is not the first execution provider, when the model has no unmasked
-    scaled-dot-product attention, or when the fusion fails.
+    The fused model is written to an ``attention_fusion`` directory next to the source model and reused
+    on later loads. The source model is returned unchanged when CUDA is not the first execution provider,
+    when the model has no unmasked scaled-dot-product attention with static shapes, or when the fusion
+    fails.
 
     Args:
         model_path: Path to the ONNX model the session would load.
@@ -98,17 +99,17 @@ def _load_or_fuse(model_path: str, *, cache_dir: Path) -> str:
     fused_model_path = cache_dir / FUSED_MODEL_FILE_NAME
     if result_path.exists():
         fused_blocks = json.loads(result_path.read_text())["fused_attention_blocks"]
-        return str(fused_model_path) if fused_blocks else model_path
+        if not fused_blocks:
+            return model_path
+
+        # The inference cache watchdog purges files one by one, so the fused model can be gone.
+        if fused_model_path.exists():
+            return str(fused_model_path)
 
     fused_blocks = _fuse_into(model_path, destination=fused_model_path)
-    result_path.write_text(
-        json.dumps(
-            {
-                "fused_attention_blocks": fused_blocks,
-                "transform_version": TRANSFORM_VERSION,
-            }
-        )
-    )
+    staged_result_path = result_path.with_suffix(".tmp")
+    staged_result_path.write_text(json.dumps({"fused_attention_blocks": fused_blocks}))
+    os.replace(staged_result_path, result_path)
     LOGGER.info(
         "Fused %d attention blocks of %s into MultiHeadAttention.",
         fused_blocks,
@@ -411,7 +412,7 @@ def _replace_attention_blocks(model, *, blocks: List[_AttentionBlock]) -> None:
 
 
 def _remove_unused_initializers(graph) -> None:
-    """Drop the scale constants the replaced blocks used; ONNX Runtime warns about each one."""
+    """Drop initializers no node reads, such as the replaced scales; ONNX Runtime warns about each one."""
     used = {name for node in graph.node for name in node.input}
     used.update(output.name for output in graph.output)
     initializers = [
