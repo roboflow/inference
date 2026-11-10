@@ -1,7 +1,10 @@
 import gc
+import os
 from collections import deque
 from threading import Lock
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
+
+import psutil
 
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
@@ -27,6 +30,8 @@ from inference.core.registries.roboflow import (
     ModelEndpointType,
     _check_if_api_key_has_access_to_model,
 )
+
+CGROUP_ROOT = "/sys/fs/cgroup"
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -317,6 +322,8 @@ class WithFixedSizeCache(ModelManagerDecorator):
             )
 
     def memory_pressure_detected(self) -> bool:
+        if not _cuda_is_available():
+            return _container_memory_pressure_detected()
         return_boolean = False
         try:
             import torch
@@ -338,9 +345,89 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 logger.debug(
                     f"Free memory: {free_memory}, Total memory: {total_memory}, threshold: {MEMORY_FREE_THRESHOLD}, return_boolean: {return_boolean}"
                 )
-            # TODO: Add memory calculation for other non-CUDA devices
         except Exception as e:
             logger.error(
                 f"Failed to check CUDA memory pressure: {e}, returning {return_boolean}"
             )
         return return_boolean
+
+
+def _cuda_is_available() -> bool:
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
+def _container_memory_pressure_detected() -> bool:
+    try:
+        free_fraction = container_memory_free_fraction()
+    except Exception as e:
+        logger.error(f"Failed to check container memory pressure: {e}, returning False")
+        return False
+    return_boolean = free_fraction < MEMORY_FREE_THRESHOLD
+    logger.debug(
+        f"Free memory fraction: {free_fraction:.3f}, threshold: {MEMORY_FREE_THRESHOLD}, return_boolean: {return_boolean}"
+    )
+    return return_boolean
+
+
+def container_memory_free_fraction() -> float:
+    """Returns the free fraction of the memory this process may use.
+
+    The cgroup memory limit of the container is the bound when it is set and is
+    lower than the host memory. Otherwise the host memory is the bound.
+    """
+    host_memory = psutil.virtual_memory()
+    cgroup_memory = _read_cgroup_memory(cgroup_root=CGROUP_ROOT)
+    if cgroup_memory is None or cgroup_memory[0] >= host_memory.total:
+        return host_memory.available / host_memory.total
+    limit, working_set = cgroup_memory
+    return (limit - working_set) / limit
+
+
+def _read_cgroup_memory(cgroup_root: str) -> Optional[Tuple[int, int]]:
+    """Reads (limit, working set) in bytes from cgroup v2, then cgroup v1.
+
+    The working set is usage minus inactive file cache, as the kubelet counts it.
+    The kernel can reclaim inactive file cache before it kills the container.
+    Returns None when no cgroup memory limit is set.
+    """
+    v2_limit_path = os.path.join(cgroup_root, "memory.max")
+    if os.path.exists(v2_limit_path):
+        limit = _read_cgroup_value(v2_limit_path)
+        if limit == "max":
+            return None
+        usage = int(_read_cgroup_value(os.path.join(cgroup_root, "memory.current")))
+        inactive_file = _read_memory_stat(
+            os.path.join(cgroup_root, "memory.stat"), key="inactive_file"
+        )
+        return int(limit), max(usage - inactive_file, 0)
+    v1_dir = os.path.join(cgroup_root, "memory")
+    v1_limit_path = os.path.join(v1_dir, "memory.limit_in_bytes")
+    if os.path.exists(v1_limit_path):
+        limit = int(_read_cgroup_value(v1_limit_path))
+        usage = int(_read_cgroup_value(os.path.join(v1_dir, "memory.usage_in_bytes")))
+        inactive_file = _read_memory_stat(
+            os.path.join(v1_dir, "memory.stat"), key="total_inactive_file"
+        )
+        return limit, max(usage - inactive_file, 0)
+    return None
+
+
+def _read_cgroup_value(path: str) -> str:
+    with open(path) as f:
+        return f.read().strip()
+
+
+def _read_memory_stat(path: str, key: str) -> int:
+    if not os.path.exists(path):
+        return 0
+    with open(path) as f:
+        for line in f:
+            name, _, value = line.partition(" ")
+            if name == key:
+                return int(value)
+    return 0
