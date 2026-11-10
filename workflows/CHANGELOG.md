@@ -16,6 +16,7 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- Add Claude Fable 5.2 to the Anthropic Claude v5 model options.
 - Add Muse Ember to the Meta VLM v3 model options.
 
 ## `0.2.15.post1`
