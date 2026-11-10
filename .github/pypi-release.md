@@ -1,9 +1,9 @@
 # PyPI and inference release runbook
 
-This runbook covers separate SDK/runtime publication and dependency coordination.
-Generalized per-file retry recovery is outside this change. SDK and runtime
-packages still share `inference/core/version.py`; runtime/CLI wheels still require
-exactly that SDK version. Independent SDK version numbering is not implemented.
+This runbook covers separate SDK/runtime publication, dependency coordination and
+verified retries of missing release files. SDK and runtime packages still share
+`inference/core/version.py`; runtime/CLI wheels still require exactly that SDK
+version. Independent SDK version numbering is not implemented.
 
 ## Existing PyPI authorization
 
@@ -12,6 +12,8 @@ no GitHub environment. All six projects already use this workflow's OIDC
 identity. No new trusted publisher, API token, or personal PyPI access is needed
 for this split. Keep the existing PyPI publisher entries, including the SDK's.
 The SDK upload and five-package upload have separate jobs and inventories.
+The three standalone publishers also keep their original workflow filenames and
+trusted-publisher identities.
 
 Before merging, review the Docker validation and build-only runs for all four
 package modes. Preserve the workflow filename and environment configuration:
@@ -25,9 +27,11 @@ version in source. Check that each run's SHA is the approved candidate.
 
 Retain a release record with package versions, selected upstream versions,
 workflow URLs, image digests, test commands/results, and publication receipts.
-Artifacts are retained for 90 days; archive needed evidence before expiration.
-Artifact names include their build attempt. Rerunning a failed publication job
-uses its original build output; rerunning the build retains a separate artifact.
+SDK/runtime build artifacts are retained for 90 days; archive needed evidence
+before expiration. Their names include the build attempt. Rerunning a failed
+publication job uses its original build output; rerunning the build retains a
+separate artifact. Standalone publisher jobs rebuild on rerun, so freeze both
+source and toolchain and inspect the verification result before proceeding.
 A source, metadata, dependency or toolchain change invalidates affected evidence.
 
 All local validation must execute in Docker, including smoke tests, benchmarks
@@ -59,9 +63,17 @@ an SDK failure or cancellation blocks runtime upload. Each runtime upload also
 verifies the actual SDK files in PyPI, including runtime-only dispatches.
 
 Runtime/all/dependencies modes resolve first-party dependencies from the built
-wheel metadata. They reuse compatible published versions, or dispatch missing same-checkout
-Models, Workflows and Streamvision versions in dependency order before runtime
-publication. Build-only runs emit the plan without dispatching child publishers.
+wheel metadata. They reuse complete compatible published versions, or dispatch
+missing same-checkout Models, Workflows and Streamvision versions in dependency
+order before runtime publication. An incomplete known standalone inventory can
+be repaired only when its selected version equals the compatible project version
+in this checkout. The original child publisher rebuilds it and verifies existing
+files before uploading missing files. An older incomplete version cannot be
+repaired from a different checkout. Changed source alone does not force a new
+upload when a complete compatible published dependency can be reused.
+Build-only runs emit the plan without dispatching child publishers, staging,
+uploading or running final publication verification. Dependency planning still
+reads PyPI and verifies published dependency metadata and files.
 The selected versions, file hashes and child run IDs are retained as evidence.
 The runtime publisher verifies the selected dependencies again before upload.
 
@@ -137,7 +149,7 @@ docker build -t inference-pypi-tests -f .release/pypi/Dockerfile .release/pypi
 docker image inspect inference-pypi-tests --format '{{.Id}}'
 git rev-parse HEAD
 docker run --rm -v "$PWD:/work" -w /work inference-pypi-tests \
-  python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py -v
+  python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py -v
 ```
 
 ## Standalone package release
@@ -150,13 +162,16 @@ Existing compatible versions can be reused. Do not raise dependency floors or
 bump unrelated packages merely to make all version numbers move together.
 
 Standalone publishers are manual workflows; a full release dispatches them from
-`publish.pypi.yml` only when its plan selects a missing version. They no longer
-start independently on a GitHub Release event. Their filenames and PyPI trust
+`publish.pypi.yml` only when its plan selects a missing version or an eligible
+incomplete inventory. They no longer start independently on a GitHub Release
+event. Their filenames and PyPI trust
 identities are unchanged. Each manual publisher checks the first-party
 dependencies in its built wheel before uploading; a missing dependency blocks
 that publication. Publish its required upstream first, then rerun the consumer.
-The coordinator sets `expected_version` and `expected_revision`; operators may
-also set these inputs to bind a standalone run to a reviewed candidate.
+Standalone publication attempts are serialized without cancelling an active
+attempt. The coordinator sets `expected_version` and `expected_revision`;
+operators may also set these inputs to bind a standalone run to a reviewed
+candidate.
 
 The resolver checks exact pins, version ranges, provided extras and Python
 3.10–3.13 compatibility. It includes internal dependencies declared by all extras
@@ -169,8 +184,8 @@ of package locks and installation tests.
 Before publication, inspect both source declarations and built metadata.
 Validate applicable locks for Models, Workflows and Streamvision; local checks
 must run in Docker.
-`make create_models_wheel` does not itself perform a lock check. Workflows builds
-both wheel and sdist, despite its Make target's name; preserve both in evidence.
+`make create_models_wheel` does not itself perform a lock check. Models and
+Workflows publishers build both wheel and sdist; preserve both in evidence.
 
 ## Full release
 
@@ -181,8 +196,9 @@ both wheel and sdist, despite its Make target's name; preserve both in evidence.
    `packages=dependencies`, `publish=false` and the expected source version.
    Review the retained plan. Then dispatch the same mode with `publish=true`.
    It publishes/verifies the SDK, reuses existing upstreams and dispatches missing
-   Models, Workflows and Streamvision versions in dependency order. Require the
-   coordinator to succeed before proceeding. The `publish_sdk` job is the sole
+   Models, Workflows and Streamvision versions or eligible incomplete inventories
+   in dependency order. Require the coordinator to succeed before proceeding.
+   The `publish_sdk` job is the sole
    SDK upload owner. A full release still needs the exact shared SDK version.
 3. For a public RC, publish required RC packages in that order, then dispatch
    `publish.pypi.yml` with `packages=runtime`, `publish=true` and its expected
@@ -205,7 +221,7 @@ both wheel and sdist, despite its Make target's name; preserve both in evidence.
    wheel and becomes a no-op when contents match. Runtime upload waits for that
    verification and dependency coordination. Standalone publishers run only if
    required by the plan. Monitor these jobs rather than launching duplicates.
-   Publication retry limitations below still apply.
+   Use the verified retry procedure below if publication fails.
 8. Verify stable package installation and image digests, complete production
    deployment/handoffs, and run production acceptance checks. Retain the record.
 
@@ -257,6 +273,12 @@ Keep the legacy server image default. Do not run
 of this release path. Production image build behavior is unchanged by the
 publisher split.
 
+The Makefile `upload_wheels` target still invokes raw Twine and is outside the
+verified workflow contract. Automatic package selection from source changes,
+Docker Hub coordination, test/approval orchestration and cross-package RC/post
+suffix enforcement are not implemented. Existing PEP 440 RC/post versions remain
+supported; choose versions and suffixes explicitly.
+
 ## Retry and recovery
 
 The dependency coordinator dispatches publishers using GitHub's returned run ID,
@@ -266,35 +288,70 @@ metadata, authentication error or timeout blocks runtime upload. Registry
 verification is read-only and checks downloaded wheels against registry hashes.
 Reusing a released dependency does not claim it was built from this checkout.
 
-If coordination fails, inspect its retained plan and child run URLs in the logs.
-A timeout, lost dispatch response or coordinator cancellation can leave a child
-running: inspect Actions before retrying. Retrying plans against current PyPI and
-reuses completed dependency versions; it does not repair partial releases. Keep
-the candidate ref frozen throughout the run. Do not rerun runtime publication
-after a partial runtime upload until the existing recovery procedure is followed.
+Runtime and standalone workflows use `bash .release/pypi/publish.sh prepare`
+before upload and `verify` afterward, selecting a `--profile`, the built
+`--directory`, a missing-only `--upload-directory` and a JSON `--receipt`.
+`--wait-seconds 600` bounds registry visibility retries. Uploads are performed by
+the existing workflow publishing action from that staged directory, without
+`skip-existing`.
 
-The SDK publisher checks PyPI before upload. Only an absent version permits
-upload. For an existing version, it checks the inventory, yanked state, registry
-SHA-256 and every wheel entry's contents and permissions against the candidate.
-ZIP timestamps/compression may differ; package code, dependency metadata,
-README, license, RECORD and WHEEL metadata may not. Toolchain changes can alter
-WHEEL metadata and require a new version. Verification receipts record both the
-candidate's hash and the actual published file hash, plus the verification run.
-They do not claim to identify a previous upload's original workflow run.
+| Profile | Complete inventory for one version |
+| --- | --- |
+| `runtime` | One wheel each for inference, inference-core, inference-cpu, inference-gpu and inference-cli |
+| `inference-models` | One wheel and one sdist |
+| `roboflow-workflows` | One wheel and one sdist |
+| `streamvision` | One wheel |
+
+Before any upload, preparation checks the exact known inventory and downloads
+every existing file. It verifies each registry SHA-256 and compares the complete
+archive against the candidate. Entry names, contents, metadata and permissions
+must match. ZIP timestamps/compression and tar/gzip timestamps, owner IDs and
+entry order may differ. Code, dependency metadata, README, license, RECORD and
+WHEEL metadata may not. A toolchain change can alter metadata and require a new
+version.
+
+| Observed state | Decision and operator action |
+| --- | --- |
+| Version absent (version endpoint HTTP 404) | Stage the complete candidate inventory and upload it. |
+| Some expected files published, all matching | Stage and upload only the missing files. |
+| Complete inventory, all matching | Upload nothing; verify the complete published inventory. |
+| Conflicting contents, yanked or unexpected files, empty/malformed existing inventory, registry hash mismatch | Stop before upload; investigate and use a new version for changed contents. |
+| Authentication/registry failure or visibility timeout | Stop; inspect the error and retry the same frozen candidate after resolving it. Failures never mean “missing”. |
+
+Preparation verifies all existing files before staging any upload. Final
+verification requires the complete inventory, including newly uploaded files,
+with bounded visibility retries. Receipts record candidate and published hashes,
+source revision, verification image and run; they do not establish the original
+upload's provenance.
+
+1. Inspect the failed run, retained artifacts, receipts, dependency plan and
+   child run URLs. A timeout, lost dispatch response or coordinator cancellation
+   can leave a child running; inspect Actions before starting another attempt.
+2. Keep the candidate ref frozen. For runtime publication, rerun the failed
+   `publish_runtime` job to reuse its retained five wheels. For a standalone
+   publisher, rerun its original workflow with the same candidate inputs; it
+   rebuilds and verifies every existing file before uploading any missing file.
+   Freezing the ref alone does not freeze toolchain output. A rebuilt content
+   conflict requires investigation and a new version, rather than bypassing
+   verification.
+3. If dependency coordination failed, rerun it after inspecting any child run.
+   It replans against current PyPI, reuses complete compatible dependencies and
+   dispatches eligible same-checkout repairs in dependency order. Require
+   successful child and registry verification before runtime publication.
+4. Require final complete-inventory verification and retain its receipts with
+   the candidate SHA, image ID and workflow URL. Never delete or overwrite
+   published files to make a retry pass. Workflow rollback cannot undo uploads.
+
+The SDK keeps its existing `release.sh prepare-sdk` / `verify-sdk` path. Only an
+absent version permits upload. An existing SDK must pass inventory, yanked-state,
+registry SHA-256 and complete wheel contents/permissions checks against the
+candidate; the same ZIP timestamp/compression tolerance applies.
 
 On an SDK upload failure, rerun the failed `publish_sdk` job to reuse its retained
 wheel; GitHub also reruns its dependent `publish_runtime` job in all/release mode.
 For SDK-only mode, runtime jobs stay skipped. If the upload actually completed,
 verification will detect it and skip a duplicate upload. Missing, yanked or
 conflicting SDKs block consumer upload.
-Registry/authentication failures never mean "missing". Transient errors and
-visibility delays have bounded retries; inspect the reported error on timeout.
-
-The five-package publisher is **not yet generally retry-safe**. After a partial
-upload, stop and inventory PyPI; do not add `skip-existing` or blindly rerun it.
-General per-file recovery is outside this change. Never delete/overwrite an
-existing release to make it match. A contents conflict requires investigation and usually a new
-version. Workflow rollback cannot undo already published files.
 
 If rolling back the split, restore the previous `publish.pypi.yml` behavior as
 one change. PyPI trust remains unchanged. Never leave two active SDK upload jobs

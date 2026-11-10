@@ -31,6 +31,9 @@ jobs:
       labels: depot-ubuntu-22.04-small
       group: public-depot
     timeout-minutes: 30
+    concurrency:
+      group: pypi-inference-models-${{ github.event.inputs.publish == 'true' && 'publish' || github.run_id }}
+      cancel-in-progress: false
     strategy:
       matrix:
         python-version: ["3.12"]
@@ -65,12 +68,20 @@ jobs:
           retention-days: 90
           if-no-files-found: error
           path: inference_models/dist/
-      - name: 🚀 Publish to PyPI
+      - name: Verify existing files and stage missing distributions
         if: ${{ github.event.inputs.publish == 'true' }}
+        id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile inference-models --directory inference_models/dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-prepare.json
+          echo "upload=$(jq -r '.upload' release-evidence/publication-prepare.json)" >> "$GITHUB_OUTPUT"
+      - name: 🚀 Publish to PyPI
+        if: ${{ github.event.inputs.publish == 'true' && steps.prepare.outputs.upload == 'true' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: inference_models/dist/
-          skip-existing: true
+          packages-dir: release-upload/
+      - name: Verify the complete published inventory
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/publish.sh verify --profile inference-models --directory inference_models/dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-receipt.json
       - uses: actions/upload-artifact@v4
         if: ${{ always() && github.event.inputs.publish == 'true' }}
         with:
