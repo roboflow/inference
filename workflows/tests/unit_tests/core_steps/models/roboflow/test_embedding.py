@@ -8,6 +8,10 @@ from roboflow_workflows.core_steps.models.roboflow.embedding.v1 import (
     BlockManifest,
     EmbeddingModelBlockV1,
 )
+from roboflow_workflows.environment import (
+    HOSTED_CLASSIFICATION_URL,
+    LOCAL_INFERENCE_API_URL,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
@@ -144,6 +148,87 @@ def test_remote_forwards_output_type_and_returns_compact_metadata(monkeypatch):
     info = result[0]["embedding_info"]
     assert info["space_id"] == "same-space"
     assert info == {"output_type": "logits", "space_id": "same-space"}
+
+
+def remote_embedding_response():
+    return {
+        "embeddings": [[2.0, 3.0]],
+        "embedding_info": {**response()["embedding_info"], "preprocessing": {}},
+        "time": 0.01,
+    }
+
+
+# The real_client tests fake only the HTTP layer, so a call the SDK rejects fails
+# here. The tests above mock InferenceHTTPClient and accept any arguments.
+@pytest.mark.parametrize(
+    "api_target, api_url",
+    [
+        ("hosted", HOSTED_CLASSIFICATION_URL),
+        ("self-hosted", LOCAL_INFERENCE_API_URL),
+    ],
+)
+@pytest.mark.parametrize(
+    "transport, sends_legacy_key, authorization_header",
+    [
+        ("legacy", True, None),
+        ("both", True, "Bearer key"),
+        ("header", False, "Bearer key"),
+    ],
+)
+def test_remote_real_client_sends_api_key_through_configured_transport(
+    monkeypatch,
+    requests_mock,
+    api_target,
+    api_url,
+    transport,
+    sends_legacy_key,
+    authorization_header,
+):
+    from roboflow_workflows.core_steps.models.roboflow.embedding import v1
+
+    monkeypatch.setattr(v1, "WORKFLOWS_REMOTE_API_TARGET", api_target)
+    monkeypatch.setattr(v1, "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", transport)
+    monkeypatch.setattr(v1, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE", 1)
+    requests_mock.post(
+        f"{api_url}/infer/embeddings",
+        json=remote_embedding_response(),
+    )
+    block = EmbeddingModelBlockV1(MagicMock(), "key", StepExecutionMode.REMOTE)
+
+    result = block.run(
+        Batch(indices=None, content=[image(), image()]),
+        "my-project/1",
+        "logits",
+    )
+
+    assert [item["embedding"] for item in result] == [[2.0, 3.0], [2.0, 3.0]]
+    assert all(item["embedding_info"]["space_id"] == "same-space" for item in result)
+    assert all("preprocessing" not in item["embedding_info"] for item in result)
+    assert requests_mock.call_count == 2
+    for sent in requests_mock.request_history:
+        payload = sent.json()
+        assert payload["model_id"] == "my-project/1"
+        assert payload["output_type"] == "logits"
+        assert payload["source"] == "workflow-execution"
+        sent_legacy_key = "api_key=key" in sent.url or payload.get("api_key") == "key"
+        assert sent_legacy_key is sends_legacy_key
+        assert sent.headers.get("Authorization") == authorization_header
+
+
+def test_tensor_variant_remote_path_works_with_real_client(requests_mock):
+    from roboflow_workflows.core_steps.models.roboflow.embedding.v1_tensor import (
+        EmbeddingModelBlockV1 as TensorEmbeddingBlock,
+    )
+
+    requests_mock.post(
+        f"{HOSTED_CLASSIFICATION_URL}/infer/embeddings",
+        json=remote_embedding_response(),
+    )
+    block = TensorEmbeddingBlock(MagicMock(), "key", StepExecutionMode.REMOTE)
+
+    result = block.run(Batch(indices=None, content=[image()]), "my-project/1")
+
+    assert result[0]["embedding"].tolist() == [2.0, 3.0]
 
 
 def test_empty_batch_does_not_load_model():
