@@ -19,7 +19,10 @@ from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.tensor_native import (
     take_detections_by_indices,
 )
-from roboflow_workflows.execution_engine.constants import CLASS_NAMES_KEY
+from roboflow_workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
+    CLASS_NAMES_KEY,
+)
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
@@ -361,9 +364,8 @@ def _class_mismatch_matrix(
     Compares class names when both sides carry them, falling back to class
     ids. Returns None when class identity is unavailable on either side —
     the two label spaces cannot be compared, so no penalty is applied.
-    Mirrors the numpy block's extractor chain: class names come from the
-    per-image ``image_metadata`` class-names map (the tensor-native carrier of
-    the numpy ``data["class_name"]`` column), class ids from ``class_id``.
+    Per-box labels take precedence over the per-image map, matching the
+    serializer and numpy's per-row ``data["class_name"]`` column.
     """
     extractors = (_class_name_labels, _class_id_labels)
     for extract in extractors:
@@ -385,16 +387,27 @@ def _class_mismatch_matrix(
 def _class_name_labels(
     detections: TensorNativeDetections,
 ) -> Optional[List[str]]:
-    """Per-detection class names resolved from the ``image_metadata`` class-names
-    map, or ``None`` when the prediction carries no map (the numpy block's
-    ``data.get(CLASS_NAME_DATA_FIELD) is None`` case)."""
+    """Resolve a name for every row, or return None to use the class-ID fallback."""
+    per_box_names = {
+        index: str(row[CLASS_NAME_KEY])
+        for index, row in enumerate(detections.bboxes_metadata or [])
+        if row and CLASS_NAME_KEY in row
+    }
+    if len(per_box_names) == len(detections):
+        return list(per_box_names.values())
+
     class_names_map = (detections.image_metadata or {}).get(CLASS_NAMES_KEY) or {}
-    if not class_names_map:
+    if not class_names_map or detections.class_id is None:
         return None
-    class_ids = detections.class_id.detach().to("cpu").numpy()
+
+    class_ids = detections.class_id.detach().to("cpu").tolist()
     return [
-        class_names_map.get(int(class_id), f"class_{int(class_id)}")
-        for class_id in class_ids
+        (
+            per_box_names[index]
+            if index in per_box_names
+            else class_names_map.get(class_id, f"class_{class_id}")
+        )
+        for index, class_id in enumerate(map(int, class_ids))
     ]
 
 
