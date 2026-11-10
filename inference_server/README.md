@@ -211,18 +211,50 @@ point-prompted objects over a whole clip with the `sam3trackervideo` model
 1. `embed` decodes a clip (every decoded frame is a frame, numbered from 0) and
    keeps it in the worker under the caller's `video_id`, scoped to the API key.
    `encode_frames` starts encoding every frame in the background.
-2. `segment` returns the masks on one frame of the objects clicked there, each
-   from all its clicks on the clip, without propagating; use it for click
-   previews.
+2. `segment` returns the masks on one frame of the objects clicked there: the
+   mask `propagate` would give each on that frame from the same clicks. Use it
+   for click previews. On an object's anchor (see below) it is one model call;
+   on another frame the object is tracked from its anchor to that frame, about
+   0.064 s per frame of distance on a 24 GB GPU once the frames are encoded.
 3. `propagate` tracks every clicked object over the clip: each object on its
-   own, forward from its first clicked frame and backward from there, so clicks
-   of different objects on the same frame never interfere. `frame_indices`
-   limits which frames come back.
+   own, from its anchor forward to the end and then backward to the start, so
+   clicks of different objects on the same frame never interfere.
+   `frame_indices` limits which frames come back.
 4. `propagate/stream` tracks the same way and answers as NDJSON: an `object`
    line with each object's masks as soon as it is tracked, a `heartbeat` line
    after every 15 s without another, and a last line that is `done`, or `error`
    with the status and body the call would have failed with. Use it behind a
    proxy that ends quiet responses, often after 60 to 100 s.
+
+Clicks and what they do:
+
+- An object's **anchor** is its first frame with an include point (`label` 1).
+  It is segmented from its own clicks alone, and the object is tracked from
+  there. Every object needs one: a request with an object that has exclude
+  points only answers 400 `Objects [3] have no include point; every object
+  needs one.`
+- Clicks on any other frame are a **correction**. They are applied when
+  tracking reaches that frame, on top of what the tracker remembers of the
+  object, and the corrected frame then conditions the frames tracked after it
+  (later frames for a click after the anchor, earlier frames for a click
+  before it). The frames between the anchor and the click, and the frames on
+  the other side of the anchor, keep the masks they have without the click.
+- Exclude points alone (`label` 0) are valid on a correction frame: they take
+  the mask off what it is on, for the case where the object has left the
+  picture and the mask moved to something else. The frames after stay empty
+  until the tracker finds the object again (measured: 34 and 87 frames, until
+  the clicked object came back into the picture). On the first frame where
+  the mask is wrong, the one nearest the anchor, one click was enough in the
+  cases measured. In the middle of a stretch where the mask is already wrong,
+  the first click often only shrinks it: click until `segment` shows an empty
+  mask, because a correction frame left showing the wrong thing conditions
+  the frames after it on the wrong thing.
+- An exclude click does not say the object is gone for good: the tracker
+  picks the object up when it sees it again. A client that knows the object
+  has left should drop the masks after that frame itself.
+- The tracker attends to at most four conditioning frames, the ones nearest
+  the frame it is tracking, so with more than three corrections on one side
+  of the anchor the farthest ones stop being read there.
 
 The HTTP server of the `inference` package exposes the same four routes with
 the same contract, behind `SAM3_VIDEO_ENABLED=true` (off by default there). It

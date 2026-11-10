@@ -14,6 +14,9 @@ from starlette.testclient import TestClient
 from inference.core.entities.requests.sam3_video import Sam3VideoPropagateRequest
 from inference.core.interfaces.http import sam3_video
 from inference_models.errors import ModelInputError
+from inference_models.models.sam3_tracker_video.sam3_tracker_video_hf import (
+    _prompts_by_object,
+)
 
 MODEL_ID = "sam3trackervideo"
 API_KEY = "k"
@@ -69,6 +72,7 @@ class SAM3TrackerVideo:
         }
 
     def segment_video_frame(self, video_id, *, prompts, frame_idx):
+        _prompts_by_object(prompts, n_frames=25)  # the tracker's own click rules
         self.calls.append(
             (
                 "segment_video_frame",
@@ -78,6 +82,7 @@ class SAM3TrackerVideo:
         return {"frame_idx": frame_idx, "masks": {"1": RLE}}
 
     def propagate_video(self, video_id, *, prompts, frame_indices=None):
+        _prompts_by_object(prompts, n_frames=25)  # the tracker's own click rules
         self.calls.append(
             (
                 "propagate_video",
@@ -420,6 +425,72 @@ def test_propagate_stream_refuses_an_object_without_an_include_point(client, loa
 
     assert response.status_code == 400, response.text
     assert "[3]" in response.json()["message"]
+    assert loads.model.calls == []
+
+
+CORRECTED = [
+    {"frame_idx": 4, "obj_id": 1, "x": 10.0, "y": 12.0, "label": 1},
+    {"frame_idx": 9, "obj_id": 1, "x": 40.0, "y": 20.0, "label": 0},
+    {"frame_idx": 1, "obj_id": 1, "x": 40.0, "y": 20.0, "label": 0},
+]
+
+
+@pytest.mark.parametrize(
+    "route, extra",
+    [
+        ("/sam3/video/segment", {"frame_idx": 9}),
+        ("/sam3/video/propagate", {}),
+        ("/sam3/video/propagate/stream", {}),
+    ],
+)
+def test_exclude_points_alone_are_accepted_off_the_objects_anchor(
+    client, loads, route, extra
+):
+    response = client.post(
+        route,
+        json={"api_key": API_KEY, "video_id": "clip-1", "prompts": CORRECTED, **extra},
+    )
+
+    assert response.status_code == 200, response.text
+    assert "error" not in response.text
+    [(_, params)] = loads.model.calls
+    assert params["prompts"] == CORRECTED
+
+
+NO_INCLUDE_POINT = "Objects [3] have no include point; every object needs one."
+
+
+@pytest.mark.parametrize(
+    "route, extra, message",
+    [
+        (
+            "/sam3/video/segment",
+            {"frame_idx": 1},
+            f"Error with model input. Cause: {NO_INCLUDE_POINT}",
+        ),
+        (
+            "/sam3/video/propagate",
+            {},
+            f"Error with model input. Cause: {NO_INCLUDE_POINT}",
+        ),
+        ("/sam3/video/propagate/stream", {}, NO_INCLUDE_POINT),
+    ],
+)
+def test_an_object_with_exclude_points_only_is_refused(
+    client, loads, route, extra, message
+):
+    prompts = PROMPTS + [
+        {"frame_idx": 1, "obj_id": 3, "x": 1.0, "y": 1.0, "label": 0},
+        {"frame_idx": 6, "obj_id": 3, "x": 1.0, "y": 1.0, "label": 0},
+    ]
+
+    response = client.post(
+        route,
+        json={"api_key": API_KEY, "video_id": "clip-1", "prompts": prompts, **extra},
+    )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == message
     assert loads.model.calls == []
 
 

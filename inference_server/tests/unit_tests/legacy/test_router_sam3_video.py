@@ -7,6 +7,9 @@ import pytest
 
 from inference_model_manager.hash_namespacing import namespace_client_hash_id
 from inference_models.errors import ModelInputError
+from inference_models.models.sam3_tracker_video.sam3_tracker_video_hf import (
+    _prompts_by_object,
+)
 from inference_server.legacy import sam3_video
 from inference_server.legacy.entities import Sam3VideoPropagateRequest
 from tests.unit_tests.legacy.conftest import FakeGateway
@@ -56,9 +59,11 @@ def _gateway(fake_stat, model_class_name="SAM3TrackerVideo", max_frames=1507):
         }
 
     def _segment(image, params):
+        _prompts_by_object(params["prompts"], n_frames=25)  # the tracker's rules
         return {"frame_idx": params["frame_idx"], "masks": {"1": RLE}}
 
     def _propagate(image, params):
+        _prompts_by_object(params["prompts"], n_frames=25)  # the tracker's rules
         return [
             {"frame_idx": i, "masks": {"1": RLE, "2": RLE}}
             for i in params["frame_indices"] or range(3)
@@ -293,6 +298,74 @@ def test_propagate_stream_refuses_an_object_without_an_include_point(
     assert response.status_code == 400, response.text
     assert "[3]" in response.json()["message"]
     assert _infer_calls(gateway) == []
+
+
+CORRECTED = [
+    {"frame_idx": 4, "obj_id": 1, "x": 10.0, "y": 12.0, "label": 1},
+    {"frame_idx": 9, "obj_id": 1, "x": 40.0, "y": 20.0, "label": 0},
+    {"frame_idx": 1, "obj_id": 1, "x": 40.0, "y": 20.0, "label": 0},
+]
+
+
+@pytest.mark.parametrize(
+    "route, extra",
+    [
+        ("/sam3/video/segment", {"frame_idx": 9}),
+        ("/sam3/video/propagate", {}),
+        ("/sam3/video/propagate/stream", {}),
+    ],
+)
+def test_exclude_points_alone_are_accepted_off_the_objects_anchor(
+    legacy_client, fake_stat, route, extra
+):
+    gateway = _gateway(fake_stat)
+
+    response = legacy_client(gateway).post(
+        route,
+        json={"api_key": API_KEY, "video_id": "clip-1", "prompts": CORRECTED, **extra},
+    )
+
+    assert response.status_code == 200, response.text
+    assert "error" not in response.text
+    [call] = _infer_calls(gateway)
+    assert call[3]["prompts"] == CORRECTED
+
+
+NO_INCLUDE_POINT = "Objects [3] have no include point; every object needs one."
+
+
+@pytest.mark.parametrize(
+    "route, extra, message",
+    [
+        (
+            "/sam3/video/segment",
+            {"frame_idx": 1},
+            f"Error with model input. Cause: {NO_INCLUDE_POINT}",
+        ),
+        (
+            "/sam3/video/propagate",
+            {},
+            f"Error with model input. Cause: {NO_INCLUDE_POINT}",
+        ),
+        ("/sam3/video/propagate/stream", {}, NO_INCLUDE_POINT),
+    ],
+)
+def test_an_object_with_exclude_points_only_is_refused(
+    legacy_client, fake_stat, route, extra, message
+):
+    gateway = _gateway(fake_stat)
+    prompts = PROMPTS + [
+        {"frame_idx": 1, "obj_id": 3, "x": 1.0, "y": 1.0, "label": 0},
+        {"frame_idx": 6, "obj_id": 3, "x": 1.0, "y": 1.0, "label": 0},
+    ]
+
+    response = legacy_client(gateway).post(
+        route,
+        json={"api_key": API_KEY, "video_id": "clip-1", "prompts": prompts, **extra},
+    )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == message
 
 
 @pytest.mark.asyncio

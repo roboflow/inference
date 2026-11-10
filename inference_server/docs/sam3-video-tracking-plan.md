@@ -42,11 +42,14 @@ methods on `SAM3TrackerVideo` in `inference_models`:
   `encode_frames`, a background thread runs the image encoder on every frame,
   one frame per hold of the model lock, so other calls interleave.
 - `POST /sam3/video/segment` returns one frame's masks for the objects
-  clicked there, from all their clicks, with no propagation. This is the
-  click preview.
+  clicked there: the mask `propagate` would give each on that frame from the
+  same clicks. This is the click preview. On an object's anchor it is one
+  model call; on another frame the object is tracked from its anchor to that
+  frame (see "Correction clicks" below).
 - `POST /sam3/video/propagate` tracks every object over the whole clip. Each
-  object gets its own session: its clicks are applied in frame order, then it
-  propagates forward from its first clicked frame and backward from there. The
+  object gets its own session and is tracked from its anchor, its first frame
+  with an include point: forward to the end, then backward to the start.
+  Clicks on its other frames are applied when tracking reaches them. The
   reply is COCO RLE on the asked frames, once the whole clip is tracked.
 - `POST /sam3/video/propagate/stream` tracks the same way and replies as
   NDJSON. Each object is one model call. An `object` line goes out as each
@@ -62,6 +65,133 @@ flowchart LR
     C --> D
     D -->|masks, or NDJSON per object| A
 ```
+
+### Correction clicks
+
+A click on a frame other than the object's anchor is a correction. The first
+version refused exclude points on a frame without an include point of the
+same object, which left no way to say "that is not my object": a user clicks
+a car, the car drives out of the picture, the mask moves to another car, and
+on that frame there is nothing of the first car to include.
+
+What the model does with a click depends on whether it has tracked the frame
+(`Sam3TrackerVideoModel.forward` in transformers 5.15.1):
+
+- On a frame it has not tracked, the click makes an *initial conditioning
+  frame*: the frame is segmented from its clicks alone, with no memory of the
+  object. Exclude points alone have nothing to exclude from there, and the
+  first version applied every clicked frame this way, before any tracking.
+- On a frame it has tracked, the frame's features are first fused with the
+  object's memory and the clicks are applied on top. This is the correction
+  path of interactive SAM video tools. Its output is stored as an ordinary
+  tracked frame: the next frames read it as one of the six most recent
+  frames, and a propagation that visits the frame again recomputes it without
+  the clicks.
+
+A tracked frame reads the (up to four) conditioning frames nearest to it,
+the six frames tracked before it, and object pointers from the conditioning
+frames behind it and up to fifteen frames tracked before it.
+
+So an object is tracked like this, in a session of its own:
+
+1. Its **anchor** is its first frame with an include point. It is the only
+   initial conditioning frame, and tracking starts there: forward to the end
+   of the clip, then backward to the start. A request whose clicks are all on
+   one frame per object runs exactly the model calls of the first version and
+   gives byte-identical masks.
+2. When tracking reaches a frame with clicks, the model is run on that frame
+   again with the clicks, as a correction. Tracking then continues from the
+   next frame; the corrected frame is never visited again.
+3. The corrected output is moved to the conditioning frames, so every frame
+   tracked after it attends to it, not only the next six. (The original SAM 2
+   predictor has a switch for this, `add_all_frames_to_correct_as_cond`,
+   which its training configuration turns on; the transformers port has
+   none.)
+4. The frames tracked just before the corrected frame, as many as a tracked
+   frame can read back (fifteen), are set aside, so the frames after the
+   correction start from the conditioning frames alone. (The original
+   predictor's `clear_non_cond_mem_around_input` does the same.)
+5. Steps 3 and 4 are undone when the direction ends. The backward pass then
+   reads the forward frames next to the anchor as they were tracked, and is
+   not conditioned on forward corrections.
+
+What a correction changes: its own frame and the frames tracked after it
+(later frames for a click after the anchor, earlier frames for a click
+before it). The frames between the anchor and the click, and the frames on
+the other side of the anchor, keep the masks they have without the click.
+
+Each step was chosen by measurement on the reported failure. The clip is a
+187-frame road scene played backward and then forward (373 frames at 6 fps),
+so that a clicked car drives toward the camera, leaves at the bottom, and
+later comes back; after it leaves, the tracker puts the mask on a distant
+vehicle. Two cars were tried, each with one include click:
+
+| Clicks | Car 1 (leaves at frame 117, wrong mask on 171 to 241, back at 258) | Car 2 (leaves at 161, wrong mask on 177 to 223, back at 233) |
+| --- | --- | --- |
+| Exclude click on the first wrong frame, output left where the model stores it | frame 171 empty, mask back on the wrong vehicle from 172 | 177 empty, back from 178 |
+| Same click, steps 3 and 4 | empty on 171 to 257 (87 frames), mask on the car again from 258 | empty on 177 to 210 (34 frames), mask on the car again from 211, as it comes back in |
+| Exclude clicks on a frame in the middle of the wrong stretch (200), step 3 only | first click shrinks the mask (261 to 227 px), second empties it; wrong vehicle again from 204 | first click 219 to 176 px, second empties it; wrong vehicle again from 204 |
+| Same clicks, steps 3 and 4 | empty on 200 to 257, mask on the car again from 258 | empty on 200 to 211, mask on the car again from 212 |
+
+Step 4 costs include corrections nothing: on eight corrections with include
+clicks, the masks of the 30 frames after the corrected frame were as close to
+the ones an annotator accepted with it as without it (mean IoU between 0.007
+lower and 0.018 higher).
+
+Two alternatives were measured and dropped. Feeding the mask the tracker had
+on the frame back into the decoder with the clicks, as the original predictor
+does (`prev_sam_mask_logits`, an argument nothing in the port passes), gave
+the same frames as not feeding it on the exclude cases, and on ten include
+corrections masks closer to the ones an annotator accepted in two and farther
+in seven. It also needs the model's private single-frame method.
+Setting the earlier frames aside *before* the correction instead of after
+makes one exclude click enough in the middle of a wrong stretch, but breaks
+corrections of a track that is right: an exclude click placed beside a
+correctly tracked car left its mask at an IoU of 0.00 to 0.69 with the mask
+before the click in eight tries (0.97 to 0.99 with the order used).
+
+What an exclude click does not do:
+
+- It is not a statement that the object is gone. The mask stays off until
+  the tracker finds the object again, and it does find it again, as the table
+  shows. A client that knows the object has left for good should drop the
+  masks after that frame itself.
+- In the middle of a stretch where the mask is already on the wrong thing,
+  one exclude click often only shrinks or moves the mask, because the frame
+  is corrected against several memories of the wrong thing. The preview
+  shows it; the user clicks again until the preview is empty. A correction
+  frame left showing the wrong thing conditions the frames after it on the
+  wrong thing. The reliable place for the click is the first wrong frame, the
+  one nearest the anchor.
+- A frame left empty conditions the frames after it on "no object", and can
+  delay the pick-up when the object returns: exclude clicks 28 frames before
+  car 1 came back delayed its pick-up from frame 258 to 313.
+- The model attends to at most four conditioning frames, the nearest ones,
+  so with more than three corrections on one side of the anchor the farthest
+  ones, and then the anchor, stop being read there.
+
+**Preview of a correction click.** `segment` returns the mask `propagate`
+would give on the frame, so for a correction it has to have the object's
+memory at that frame: it tracks the object from its anchor to the frame,
+applying the clicks on the frames in between, and stops there. For a frame
+before the anchor it first tracks the fifteen forward frames a backward frame
+can read. The cost is the tracker's time per frame times the distance from
+the anchor. The alternatives:
+
+- *The caller sends the object's previously tracked mask of the frame* and
+  the server corrects from that in one model call. The model has two ways to
+  take a mask and both were measured against the exact result on six exclude
+  clicks and sixteen include corrections. Used as the decoder's mask prompt with
+  the clicks and no memory, it returned an empty mask for all six exclude
+  clicks, where tracking empties the mask in two and keeps one in four, so it
+  would show a correction working that does not. Used as a conditioning
+  memory of the frame itself, it kept the mask in the two cases where
+  tracking empties it. Neither is a correct preview.
+- *No preview of corrections, only `propagate`*: the same tracking plus the
+  rest of the clip, so never cheaper than tracking to the frame.
+
+A client that wants faster previews far from the anchor can skip the preview
+there and call `propagate` (or the stream) directly.
 
 Every segment and propagate call carries all the clicks, so the server holds
 no per-object state: only the clip, its preprocessed frames and the encoder
@@ -119,8 +249,8 @@ Verification:
 - Unit tests:
   - `inference_server/tests/unit_tests/legacy/test_router_sam3_video.py`: the routes, the stream's per-object lines, a mid-stream error line, heartbeats and stopping on close.
   - `tests/inference/unit_tests/core/interfaces/http/test_sam3_video_routes.py`: the same cases on the `inference` package's server, plus loading the tracker once, the access check and the route flag.
-  - `inference_models/tests/unit_tests/models/test_sam3_tracker_video_offline.py`: the model methods and clip cache.
-  - `inference_models/tests/unit_tests/models/test_sam3_tracker_video_offline_hf.py`: the same methods on the real transformers model and processor with a small configuration: chunked preprocessing, the bytes of an encoded frame, and tracking on a clip whose pixels were released.
+  - `inference_models/tests/unit_tests/models/test_sam3_tracker_video_offline.py`: the model methods and clip cache, and the order and bookkeeping of correction clicks against a stand-in model.
+  - `inference_models/tests/unit_tests/models/test_sam3_tracker_video_offline_hf.py`: the same methods on the real transformers model and processor with a small configuration: chunked preprocessing, the bytes of an encoded frame, tracking on a clip whose pixels were released, the model calls a correction click makes (a tracked frame, run again with memory), that clicks on one frame per object give the first version's outputs, that a correction changes only the frames tracked after it, and that `segment` gives `propagate`'s mask.
   - `inference_model_manager/tests/unit_tests/test_registry_defaults.py`.
 - End to end: an annotation client was run against these routes on a GPU
   machine, embedding clips, previewing clicks and tracking full clips.

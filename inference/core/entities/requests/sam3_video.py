@@ -77,14 +77,16 @@ class Sam3VideoPointPrompt(BaseModel):
         ge=0,
         le=1,
         description=(
-            "1 to include the point in the object, 0 to exclude it. A frame "
-            "with exclude points of an object needs an include point of it too."
+            "1 to include the point in the object, 0 to exclude it. Every "
+            "object needs an include point on at least one frame; the first "
+            "such frame is its anchor. On its other frames exclude points "
+            "alone are valid."
         ),
     )
 
 
 class Sam3VideoSegmentRequest(Sam3VideoRequest):
-    """Request for the masks on one frame, without propagation.
+    """Request for the masks on one frame, as a preview of its clicks.
 
     Attributes:
         prompts (List[Sam3VideoPointPrompt]): All clicks on the clip, in click order.
@@ -94,7 +96,8 @@ class Sam3VideoSegmentRequest(Sam3VideoRequest):
     prompts: List[Sam3VideoPointPrompt] = Field(
         description=(
             "All clicks on the clip, in click order. Only objects with a click "
-            "on frame_idx are segmented, each from all its clicks."
+            "on frame_idx are segmented, each from all its clicks: an object "
+            "is tracked from its anchor to frame_idx when that is another frame."
         ),
     )
     frame_idx: int = Field(ge=0, description="Frame to return masks for.")
@@ -111,7 +114,7 @@ class Sam3VideoPropagateRequest(Sam3VideoRequest):
     prompts: List[Sam3VideoPointPrompt] = Field(
         description=(
             "All clicks on the clip, in click order. Every object needs an "
-            "include point."
+            "include point on at least one frame."
         ),
     )
     frame_indices: Optional[List[int]] = Field(
