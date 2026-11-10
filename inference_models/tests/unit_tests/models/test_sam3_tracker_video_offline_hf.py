@@ -110,6 +110,53 @@ def test_cached_frame_bytes_are_the_bytes_an_encoded_frame_holds(tracker):
     assert 3 * real.image_size**2 * 2 == 6_096_384
 
 
+def test_embedding_again_with_keep_existing_keeps_the_clip_and_what_it_encoded(tracker):
+    tracker.embed_video(_frames(3), video_id="v")
+    clip = tracker._video_clip_cache.get("v")
+    tracker._encode_clip_frames("v", clip)
+
+    described = tracker.embed_video(_frames(3), video_id="v", keep_existing=True)
+
+    assert tracker._video_clip_cache.get("v") is clip
+    assert all(clip.has_features(i) for i in range(3))
+    assert described == {"video_id": "v", "n_frames": 3, "height": H, "width": W}
+
+
+def test_keep_existing_replaces_a_clip_of_another_length_and_plain_embeds_replace(
+    tracker,
+):
+    tracker.embed_video(_frames(3), video_id="v")
+    first = tracker._video_clip_cache.get("v")
+
+    tracker.embed_video(_frames(4), video_id="v", keep_existing=True)
+    longer = tracker._video_clip_cache.get("v")
+    tracker.embed_video(_frames(4), video_id="v")
+
+    assert longer is not first
+    assert longer.n_frames == 4
+    assert tracker._video_clip_cache.get("v") is not longer
+
+
+def test_encoding_is_started_once_for_a_clip_that_is_kept(tracker):
+    with tracker._request_lock():
+        tracker.embed_video(_frames(2), video_id="v", encode_frames=True)
+        clip = tracker._video_clip_cache.get("v")
+        threads = threading.active_count()
+
+        tracker.embed_video(
+            _frames(2), video_id="v", encode_frames=True, keep_existing=True
+        )
+
+        assert tracker._video_clip_cache.get("v") is clip
+        assert threading.active_count() == threads
+        assert not any(clip.has_features(i) for i in range(2))
+
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread() and thread.daemon:
+            thread.join(timeout=60)
+    assert all(clip.has_features(i) for i in range(2))
+
+
 def test_background_encoding_starts_no_frame_while_a_request_is_open(tracker):
     tracker.embed_video(_frames(3), video_id="v")
     clip = tracker._video_clip_cache.get("v")

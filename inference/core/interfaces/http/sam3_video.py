@@ -268,6 +268,7 @@ def embed_video(
         frames,
         video_id=scoped_video_id(inference_request.video_id, inference_request.api_key),
         encode_frames=inference_request.encode_frames,
+        keep_existing=inference_request.keep_existing,
     )
     response = Sam3VideoEmbedResponse(
         video_id=inference_request.video_id,

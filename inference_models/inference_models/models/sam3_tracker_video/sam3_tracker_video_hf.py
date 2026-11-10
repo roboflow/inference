@@ -105,6 +105,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         self._open_requests_lock = threading.Lock()
         self._no_open_requests = threading.Event()
         self._no_open_requests.set()
+        self._encoding_clips: set = set()
         LOGGER.info(
             "SAM3 video clip cache: %s=%s GB, %d bytes per cached frame, "
             "limit of %d frames.",
@@ -162,10 +163,16 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         *,
         video_id: str,
         encode_frames: bool = False,
+        keep_existing: bool = False,
     ) -> dict:
         """Preprocess a clip and keep it under ``video_id`` for offline tracking.
 
-        Embedding a clip again under the same id replaces it. The clip under
+        Embedding a clip again under the same id replaces it, unless
+        ``keep_existing`` is set and the clip already under that id has the
+        same number of frames and frame size: that clip is then kept as it is,
+        with every frame it has encoded, and nothing is preprocessed. Use it
+        when an id always names the same clip, so that asking again for a clip
+        the worker still has costs no encoding. The clip under
         that id and the least recently used clips that have to go for this
         one to fit are forgotten before it is preprocessed, so their memory
         is free while it is built; a call already running on one of them
@@ -184,6 +191,8 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
                 the same size.
             video_id: Caller-chosen id the clip is kept under.
             encode_frames: Start encoding every frame in the background.
+            keep_existing: Keep the clip already under ``video_id`` when it
+                has this many frames of this size, instead of replacing it.
 
         Returns:
             ``video_id``, ``n_frames``, ``height`` and ``width`` of the clip.
@@ -201,19 +210,23 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
                 message=f"All frames of a video must have one size, got {sorted(sizes)}."
             )
 
-        self._video_clip_cache.make_room(video_id, n_frames=len(frames))
-        clip = VideoClip(
-            self._preprocess_frames(frames),
-            video_size=tuple(int(v) for v in sizes.pop()),
-            inference_device=self._device,
-            position_embeddings=self._position_embeddings,
-        )
-        self._video_clip_cache.put(video_id, clip)
+        video_size = tuple(int(v) for v in sizes.pop())
+        clip = self._video_clip_cache.peek(video_id) if keep_existing else None
+        if clip is None or (clip.n_frames, clip.video_size) != (
+            len(frames),
+            video_size,
+        ):
+            self._video_clip_cache.make_room(video_id, n_frames=len(frames))
+            clip = VideoClip(
+                self._preprocess_frames(frames),
+                video_size=video_size,
+                inference_device=self._device,
+                position_embeddings=self._position_embeddings,
+            )
+            self._video_clip_cache.put(video_id, clip)
 
         if encode_frames:
-            threading.Thread(
-                target=self._encode_clip_frames, args=(video_id, clip), daemon=True
-            ).start()
+            self._start_encoding(video_id, clip)
 
         description = {
             "video_id": video_id,
@@ -271,6 +284,27 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
                 self._open_requests -= 1
                 if self._open_requests == 0:
                     self._no_open_requests.set()
+
+    def _start_encoding(self, video_id: str, clip: VideoClip) -> None:
+        """Encode the clip's frames in the background, one thread per clip.
+
+        A clip kept by ``keep_existing`` may still be encoding from its first
+        embed, or have finished; either way no second thread is started for it.
+        """
+        with self._open_requests_lock:
+            if id(clip) in self._encoding_clips:
+                return
+
+            self._encoding_clips.add(id(clip))
+
+        def encode() -> None:
+            try:
+                self._encode_clip_frames(video_id, clip)
+            finally:
+                with self._open_requests_lock:
+                    self._encoding_clips.discard(id(clip))
+
+        threading.Thread(target=encode, daemon=True).start()
 
     def _encode_clip_frames(self, video_id: str, clip: VideoClip) -> None:
         session = self._clip_session(clip)

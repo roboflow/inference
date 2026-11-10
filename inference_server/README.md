@@ -213,6 +213,10 @@ point-prompted objects over a whole clip with the `sam3trackervideo` model
    `encode_frames` starts encoding every frame in the background; it pauses
    while a `segment` or `propagate` call is waiting or running, so a call
    made while a clip is still being encoded is not held until the end.
+   `keep_existing` keeps the clip the worker already has under that id (same
+   number of frames and frame size) with the frames it has encoded, instead of
+   replacing it: use it when an id always names the same clip, so asking again
+   costs no encoding.
 2. `segment` returns the masks on one frame of the objects clicked there: the
    mask `propagate` would give each on that frame from the same clicks. Use it
    for click previews. On an object's anchor (see below) it is one model call;

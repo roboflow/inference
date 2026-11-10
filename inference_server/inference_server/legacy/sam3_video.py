@@ -142,6 +142,7 @@ async def embed_video(
             "frames": frames,
             "video_id": namespace_client_hash_id(inference_request.video_id, api_key),
             "encode_frames": inference_request.encode_frames,
+            "keep_existing": inference_request.keep_existing,
         },
     )
     response = Sam3VideoEmbedResponse(
