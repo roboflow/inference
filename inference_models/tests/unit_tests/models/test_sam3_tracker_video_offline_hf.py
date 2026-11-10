@@ -10,6 +10,7 @@ it has tracked.
 import numpy as np
 import pytest
 import torch
+from pycocotools import mask as mask_utils
 from transformers import (
     Sam2ImageProcessor,
     Sam2VideoVideoProcessor,
@@ -175,7 +176,7 @@ def test_segment_and_propagate_with_corrections_release_every_frames_pixels(trac
 
 def _spy_on_frames(tracker, monkeypatch):
     """Record each frame the model runs: (frame, initial conditioning frame,
-    has points, reverse, the object's conditioning frames at that moment, its
+    its input, reverse, the object's conditioning frames at that moment, its
     other tracked frames at that moment)."""
     model, runs = tracker._model, []
     run_frame = model._run_single_frame_inference
@@ -189,7 +190,11 @@ def _spy_on_frames(tracker, monkeypatch):
             (
                 kwargs["frame_idx"],
                 kwargs["is_init_cond_frame"],
-                kwargs["point_inputs"] is not None,
+                (
+                    "points"
+                    if kwargs["point_inputs"] is not None
+                    else "mask" if kwargs["mask_inputs"] is not None else None
+                ),
                 kwargs["reverse"],
                 sorted(conditioning),
                 sorted(tracked),
@@ -210,26 +215,33 @@ def test_clicks_off_the_anchor_correct_a_frame_the_model_has_tracked(
         _prompt(0, 1, 60, 40, 0),
         _prompt(2, 1, 20, 20),
         _prompt(4, 1, 60, 40, 0),
+        _prompt(4, 1, 30, 30),
     ]
     runs = _spy_on_frames(tracker, monkeypatch)
 
-    tracker.propagate_video("v", prompts=prompts)
+    propagated = tracker.propagate_video("v", prompts=prompts)
 
     assert runs == [
         # The anchor, from its points alone.
-        (2, True, True, False, [], []),
-        (3, False, False, False, [2], []),
+        (2, True, "points", False, [], []),
+        (3, False, None, False, [2], []),
         # Frame 4 is tracked, then run again with its points and the memory.
-        (4, False, False, False, [2], [3]),
-        (4, False, True, False, [2], [3]),
+        (4, False, None, False, [2], [3]),
+        (4, False, "points", False, [2], [3]),
         # It conditions the frames tracked after it, which no longer read
         # frame 3. The backward pass is not conditioned on it and gets the
         # forward frames back as tracked frames.
-        (5, False, False, False, [2, 4], []),
-        (1, False, False, True, [2], [3, 4, 5]),
-        (0, False, False, True, [2], [1, 3, 4, 5]),
-        (0, False, True, True, [2], [1, 3, 4, 5]),
+        (5, False, None, False, [2, 4], []),
+        (1, False, None, True, [2], [3, 4, 5]),
+        # Exclude points alone: frame 0 is tracked, then given an empty mask.
+        (0, False, None, True, [2], [1, 3, 4, 5]),
+        (0, False, "mask", True, [2], [1, 3, 4, 5]),
     ]
+    assert not mask_utils.decode(_rle(propagated[0]["masks"]["1"])).any()
+
+
+def _rle(mask):
+    return {"size": mask["size"], "counts": mask["counts"].encode()}
 
 
 def _tracked_before_corrections(tracker, clip, obj_id, object_prompts):
@@ -286,11 +298,11 @@ def test_stopping_at_a_frame_gives_the_masks_of_tracking_the_whole_clip(tracker)
 
     with torch.inference_mode():
         tracked = dict(tracker._track_object(clip, 1, points))
-        for frame_idx in points:
+        for frame_idx in (anchor, anchor + 2, n_frames - 2):
             stopped = dict(tracker._track_object(clip, 1, points, only_frame=frame_idx))
             # The masks are logits, so equality is not two empty masks.
             assert torch.equal(stopped[frame_idx], tracked[frame_idx])
-            assert max(stopped) <= max(frame_idx, anchor + window - 1)
+            assert max(stopped) == frame_idx
 
 
 def test_a_correction_changes_only_the_frames_tracked_after_it(tracker):

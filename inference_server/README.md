@@ -239,19 +239,16 @@ Clicks and what they do:
   (later frames for a click after the anchor, earlier frames for a click
   before it). The frames between the anchor and the click, and the frames on
   the other side of the anchor, keep the masks they have without the click.
-- Exclude points alone (`label` 0) are valid on a correction frame: they take
-  the mask off what it is on, for the case where the object has left the
-  picture and the mask moved to something else. The frames after stay empty
-  until the tracker finds the object again (measured: 34 and 87 frames, until
-  the clicked object came back into the picture). On the first frame where
-  the mask is wrong, the one nearest the anchor, one click was enough in the
-  cases measured. In the middle of a stretch where the mask is already wrong,
-  the first click often only shrinks it: click until `segment` shows an empty
-  mask, because a correction frame left showing the wrong thing conditions
-  the frames after it on the wrong thing.
-- An exclude click does not say the object is gone for good: the tracker
-  picks the object up when it sees it again. A client that knows the object
-  has left should drop the masks after that frame itself.
+- Exclude points alone (`label` 0) on a correction frame mark the object
+  **absent** from that frame, for the case where the object has left the
+  picture and the mask moved to something else. The mask on that frame is
+  empty wherever the points are, and the frames tracked after it start from
+  "not here". To trim a mask where the object is still in the picture, add an
+  include point on the object on the same frame.
+- Marking an object absent does not say it is gone for good: the tracker
+  picks it up when it sees it again, and may pick up something else. A client
+  that knows the object has left should drop the masks after that frame
+  itself.
 - The tracker attends to at most four conditioning frames, the ones nearest
   the frame it is tracking, so with more than three corrections on one side
   of the anchor the farthest ones stop being read there.

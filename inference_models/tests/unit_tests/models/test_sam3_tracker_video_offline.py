@@ -65,6 +65,8 @@ class _FakeSession:
     def __init__(self, clip):
         self.cache = clip
         self.num_frames = clip.n_frames
+        self.video_height, self.video_width = H, W
+        self.mask_frames = []
         self._obj_id_to_idx = {}
         self.obj_ids = []
         self.point_inputs = {}
@@ -102,12 +104,26 @@ class _FakeProcessor:
         )
 
     def add_inputs_to_inference_session(
-        self, inference_session, frame_idx, obj_ids, input_points, input_labels
+        self,
+        inference_session,
+        frame_idx,
+        obj_ids,
+        input_points=None,
+        input_labels=None,
+        input_masks=None,
     ):
         idx = inference_session.obj_id_to_idx(obj_ids)
-        points = [
-            p for p, label in zip(input_points[0][0], input_labels[0][0]) if label == 1
-        ]
+        if input_masks is not None:  # the offline path only gives empty masks
+            assert not input_masks.any()
+            inference_session.mask_frames.append(frame_idx)
+            points = []
+        else:
+            assert 1 in input_labels[0][0]
+            points = [
+                p
+                for p, label in zip(input_points[0][0], input_labels[0][0])
+                if label == 1
+            ]
         inference_session.point_inputs[idx][frame_idx] = points
         inference_session.obj_with_new_inputs = [obj_ids]
 
@@ -401,10 +417,17 @@ def test_segment_tracks_from_the_anchor_to_the_frame_and_no_further(tracker):
 
     segmented = tracker.segment_video_frame("v", prompts=prompts, frame_idx=7)
 
-    (session,) = tracker.sessions
     assert segmented["masks"]["1"] == propagated[7]["masks"]["1"]
     assert _is_empty(segmented["masks"]["1"])
-    assert sorted({call[0] for call in session.calls}) == [2, 3, 4, 5, 6, 7]
+    # Exclude points alone mark the object absent: nothing is tracked.
+    assert tracker.sessions == []
+
+    segmented = tracker.segment_video_frame("v", prompts=prompts, frame_idx=10)
+
+    (session,) = tracker.sessions
+    assert segmented["masks"]["1"] == propagated[10]["masks"]["1"]
+    assert sorted({call[0] for call in session.calls}) == list(range(2, 11))
+    assert session.mask_frames == [7]
 
 
 def test_segment_on_the_anchor_is_one_model_call(tracker):
@@ -417,21 +440,18 @@ def test_segment_on_the_anchor_is_one_model_call(tracker):
     assert _center(segmented["masks"]["1"]) == pytest.approx((10, 10), abs=1)
 
 
-def test_segment_before_the_anchor_tracks_a_window_forward_then_back(tracker):
+def test_segment_of_exclude_points_before_the_anchor_is_empty_without_tracking(
+    tracker,
+):
     prompts = [_prompt(1, 1, 10, 10, label=0), _prompt(4, 1, 10, 10)]
     propagated = tracker.propagate_video("v", prompts=prompts)
     tracker.sessions.clear()
 
     segmented = tracker.segment_video_frame("v", prompts=prompts, frame_idx=1)
 
-    (session,) = tracker.sessions
     assert segmented["masks"]["1"] == propagated[1]["masks"]["1"]
-    # The stand-in's window is 4 frames (its object pointers): 3 frames
-    # forward of the anchor, then backward to the frame.
-    forward = sorted({call[0] for call in session.calls if not call[1]})
-    backward = [call[0] for call in session.calls if call[1]]
-    assert forward == [4, 5, 6, 7]
-    assert backward == [3, 2, 1, 1]
+    assert _is_empty(segmented["masks"]["1"])
+    assert tracker.sessions == []
 
 
 def test_unknown_or_evicted_clips_are_refused(tracker):

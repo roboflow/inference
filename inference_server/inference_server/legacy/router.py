@@ -2321,7 +2321,8 @@ async def sam3_video_embed(
         "the same clicks. On an object's anchor, its first frame with an "
         "include point, that is one model call; on another frame the object "
         "is tracked from its anchor to the frame, so the time grows with the "
-        "distance between them. Use it to preview a click."
+        "distance between them; a frame with exclude points alone is empty "
+        "without tracking. Use it to preview a click."
     ),
 )
 @with_legacy_errors
@@ -2349,8 +2350,8 @@ async def sam3_video_segment(
         "point: forward to the end and then backward to the start, so clicks "
         "of different objects on the same frame never interfere. Clicks on "
         "its other frames correct the track when tracking reaches them and "
-        "change the frames tracked after them; exclude points alone are "
-        "valid there."
+        "change the frames tracked after them; exclude points alone there "
+        "mark the object absent from that frame."
         " The response comes when the whole clip is tracked, which for long "
         "clips or many objects takes longer than the default "
         "INFERENCE_INFER_TIMEOUT_S of 30 s; raise it on servers that serve "

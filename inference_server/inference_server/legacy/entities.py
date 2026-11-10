@@ -2150,8 +2150,9 @@ class Sam3VideoPointPrompt(BaseModel):
         description=(
             "1 to include the point in the object, 0 to exclude it. Every "
             "object needs an include point on at least one frame; the first "
-            "such frame is its anchor. On its other frames exclude points "
-            "alone are valid."
+            "such frame is its anchor. Exclude points alone on another frame "
+            "mark the object absent from that frame: its mask there is empty "
+            "and the frames tracked after it start from that."
         ),
     )
 
