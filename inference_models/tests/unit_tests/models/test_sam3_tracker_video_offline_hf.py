@@ -2,8 +2,9 @@
 
 A ``Sam3TrackerVideoModel`` with a small configuration and random weights, and
 the real processor, run the session code the offline path depends on: what a
-session reads from a clip, what the encoder caches per frame, and what
-happens to a clip whose pixels were released.
+session reads from a clip, what the encoder caches per frame, what happens to
+a clip whose pixels were released, and how the model treats clicks on a frame
+it has tracked.
 """
 
 import numpy as np
@@ -143,10 +144,177 @@ def test_segment_and_propagate_are_the_same_on_a_clip_without_pixels(tracker):
     assert not any(lazy.frames.holds(i) for i in range(6))
 
 
+def test_segment_and_propagate_with_corrections_release_every_frames_pixels(tracker):
+    frames = _frames(8)
+    prompts = [
+        _prompt(1, 1, 20, 20, 0),
+        _prompt(3, 1, 20, 20),
+        _prompt(5, 1, 60, 40, 0),
+        _prompt(6, 1, 30, 30),
+    ]
+    tracker.embed_video(frames, video_id="lazy")
+    tracker.embed_video(frames, video_id="encoded")
+    encoded = tracker._video_clip_cache.get("encoded")
+    tracker._encode_clip_frames("encoded", encoded)
+
+    propagated = tracker.propagate_video("encoded", prompts=prompts)
+
+    assert [frame["frame_idx"] for frame in propagated] == list(range(8))
+    assert propagated == tracker.propagate_video("lazy", prompts=prompts)
+    lazy = tracker._video_clip_cache.get("lazy")
+    assert not any(lazy.frames.holds(i) for i in range(8))
+    for frame_idx in (1, 3, 5, 6):
+        assert (
+            tracker.segment_video_frame("lazy", prompts=prompts, frame_idx=frame_idx)
+            == tracker.segment_video_frame(
+                "encoded", prompts=prompts, frame_idx=frame_idx
+            )
+            == {"frame_idx": frame_idx, "masks": propagated[frame_idx]["masks"]}
+        )
+
+
+def _spy_on_frames(tracker, monkeypatch):
+    """Record each frame the model runs: (frame, initial conditioning frame,
+    has points, reverse, the object's conditioning frames at that moment, its
+    other tracked frames at that moment)."""
+    model, runs = tracker._model, []
+    run_frame = model._run_single_frame_inference
+
+    def _run(**kwargs):
+        session = kwargs["inference_session"]
+        outputs = session.output_dict_per_obj[kwargs["obj_idx"]]
+        conditioning = outputs["cond_frame_outputs"]
+        tracked = set(outputs["non_cond_frame_outputs"]) - {kwargs["frame_idx"]}
+        runs.append(
+            (
+                kwargs["frame_idx"],
+                kwargs["is_init_cond_frame"],
+                kwargs["point_inputs"] is not None,
+                kwargs["reverse"],
+                sorted(conditioning),
+                sorted(tracked),
+            )
+        )
+        return run_frame(**kwargs)
+
+    monkeypatch.setattr(model, "_run_single_frame_inference", _run)
+
+    return runs
+
+
+def test_clicks_off_the_anchor_correct_a_frame_the_model_has_tracked(
+    tracker, monkeypatch
+):
+    tracker.embed_video(_frames(6), video_id="v")
+    prompts = [
+        _prompt(0, 1, 60, 40, 0),
+        _prompt(2, 1, 20, 20),
+        _prompt(4, 1, 60, 40, 0),
+    ]
+    runs = _spy_on_frames(tracker, monkeypatch)
+
+    tracker.propagate_video("v", prompts=prompts)
+
+    assert runs == [
+        # The anchor, from its points alone.
+        (2, True, True, False, [], []),
+        (3, False, False, False, [2], []),
+        # Frame 4 is tracked, then run again with its points and the memory.
+        (4, False, False, False, [2], [3]),
+        (4, False, True, False, [2], [3]),
+        # It conditions the frames tracked after it, which no longer read
+        # frame 3. The backward pass is not conditioned on it and gets the
+        # forward frames back as tracked frames.
+        (5, False, False, False, [2, 4], []),
+        (1, False, False, True, [2], [3, 4, 5]),
+        (0, False, False, True, [2], [1, 3, 4, 5]),
+        (0, False, True, True, [2], [1, 3, 4, 5]),
+    ]
+
+
+def _tracked_before_corrections(tracker, clip, obj_id, object_prompts):
+    """The tracking of the build before corrections: every prompted frame is
+    an initial conditioning frame, then forward and backward from the first."""
+    session = tracker._clip_session(clip)
+    for frame_idx in sorted(object_prompts):
+        tracker._apply_points(
+            session, obj_id, frame_idx, object_prompts[frame_idx], reverse=False
+        )
+    masks = {}
+    for reverse in (False, True):
+        for output in tracker._model.propagate_in_video_iterator(
+            session, start_frame_idx=min(object_prompts), reverse=reverse
+        ):
+            masks[int(output.frame_idx)] = output.pred_masks
+    return masks
+
+
+@pytest.mark.parametrize("anchor", [0, 3, 6])
+def test_clicks_on_one_frame_track_as_before_corrections(tracker, anchor):
+    tracker.embed_video(_frames(7), video_id="v")
+    clip = tracker._video_clip_cache.get("v")
+    points = {anchor: ((20.0, 20.0, 1), (60.0, 40.0, 0), (30.0, 25.0, 1))}
+
+    with torch.inference_mode():
+        before = _tracked_before_corrections(tracker, clip, 1, points)
+        tracked = dict(tracker._track_object(clip, 1, points))
+        segmented = dict(tracker._track_object(clip, 1, points, only_frame=anchor))
+
+    assert sorted(tracked) == list(range(7))
+    assert all(torch.equal(tracked[i], before[i]) for i in range(7))
+    assert list(segmented) == [anchor]
+    assert torch.equal(segmented[anchor], before[anchor])
+
+
+def _window(tracker):
+    """Frames a tracked frame can read back: memory frames and object pointers."""
+    config = tracker._model.config
+    return max(config.num_maskmem, config.max_object_pointers_in_encoder)
+
+
+def test_stopping_at_a_frame_gives_the_masks_of_tracking_the_whole_clip(tracker):
+    window = _window(tracker)
+    n_frames, anchor = 2 * window + 8, window // 2
+    tracker.embed_video(_frames(n_frames), video_id="v")
+    clip = tracker._video_clip_cache.get("v")
+    points = {
+        1: ((60.0, 40.0, 0),),
+        anchor: ((20.0, 20.0, 1),),
+        anchor + 2: ((30.0, 30.0, 1),),
+        n_frames - 2: ((60.0, 40.0, 0),),
+    }
+
+    with torch.inference_mode():
+        tracked = dict(tracker._track_object(clip, 1, points))
+        for frame_idx in points:
+            stopped = dict(tracker._track_object(clip, 1, points, only_frame=frame_idx))
+            # The masks are logits, so equality is not two empty masks.
+            assert torch.equal(stopped[frame_idx], tracked[frame_idx])
+            assert max(stopped) <= max(frame_idx, anchor + window - 1)
+
+
+def test_a_correction_changes_only_the_frames_tracked_after_it(tracker):
+    window = _window(tracker)
+    n_frames, anchor = 2 * window + 8, 3
+    corrected = anchor + window + 2
+    tracker.embed_video(_frames(n_frames), video_id="v")
+    clip = tracker._video_clip_cache.get("v")
+    anchor_points = {anchor: ((20.0, 20.0, 1),)}
+    points = {**anchor_points, corrected: ((60.0, 40.0, 0),)}
+
+    with torch.inference_mode():
+        alone = dict(tracker._track_object(clip, 1, anchor_points))
+        tracked = dict(tracker._track_object(clip, 1, points))
+
+    same = [i for i in range(n_frames) if torch.equal(tracked[i], alone[i])]
+    assert same == list(range(corrected))
+
+
 def test_a_session_reset_cannot_drop_the_clips_features(tracker):
     tracker.embed_video(_frames(2), video_id="v")
     clip = tracker._video_clip_cache.get("v")
-    session = tracker._prompted_session(clip, 1, {0: ((20.0, 20.0, 1),)})[0]
+    session = tracker._clip_session(clip)
+    tracker._apply_points(session, 1, 0, ((20.0, 20.0, 1),), reverse=False)
 
     with pytest.raises(ModelRuntimeError, match="cannot be cleared"):
         session.reset_inference_session()

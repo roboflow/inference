@@ -4350,8 +4350,12 @@ class HttpInterface(BaseInterface):
                     summary="SAM3 video tracking: masks on one frame",
                     description=(
                         "Segment the objects clicked on one frame of an embedded "
-                        "clip, each from all its clicks on the clip, without "
-                        "propagating. Use it to preview a click."
+                        "clip. Each gets the mask /sam3/video/propagate would give "
+                        "it on that frame from the same clicks. On an object's "
+                        "anchor, its first frame with an include point, that is "
+                        "one model call; on another frame the object is tracked "
+                        "from its anchor to the frame, so the time grows with the "
+                        "distance between them. Use it to preview a click."
                     ),
                 )
                 @with_route_exceptions
@@ -4382,10 +4386,13 @@ class HttpInterface(BaseInterface):
                     summary="SAM3 video tracking: track over the whole clip",
                     description=(
                         "Track every clicked object over an embedded clip. Each "
-                        "object is tracked on its own, forward from its first "
-                        "clicked frame to the end and backward from there to the "
-                        "start, so clicks of different objects on the same frame "
-                        "never interfere. The response comes when the whole clip is "
+                        "object is tracked on its own from its anchor, its first "
+                        "frame with an include point: forward to the end and then "
+                        "backward to the start, so clicks of different objects on "
+                        "the same frame never interfere. Clicks on its other "
+                        "frames correct the track when tracking reaches them and "
+                        "change the frames tracked after them; exclude points "
+                        "alone are valid there. The response comes when the whole clip is "
                         "tracked. Behind a proxy that ends quiet responses, use "
                         "/sam3/video/propagate/stream."
                     ),

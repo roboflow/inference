@@ -31,13 +31,17 @@ embedded once under a caller-chosen id, point prompts may sit on any frames,
 and propagation runs forward and backward over the clip.
 
 Offline tracking gives each object its own session. In a shared session a
-model call on a frame computes every object there, and SAM3 keeps an
-object's points as a conditioning frame only when they are added before that
-frame was tracked for the object; points added to an already tracked frame
-are recomputed away by the next propagation. So in a shared session one
-object's prompts on a frame another object was already run on would be
-silently dropped. Each object is propagated forward and then backward from
-its own first prompted frame, so every frame is computed once per object.
+model call on a frame computes every object there, so one object's clicks
+would be applied in the middle of another object's tracking.
+
+An object's anchor is its first frame with an include point. The anchor is
+segmented from its clicks alone and the object is tracked from it, forward to
+the end of the clip and then backward to the start. Clicks on any other frame
+are a correction: they are applied when tracking reaches that frame, on top
+of what the tracker remembers of the object there, and the corrected frame
+then conditions the frames tracked after it. So exclude points alone are
+valid on a frame other than the anchor: they take the mask off whatever the
+tracker put it on. See ``_track_object``.
 
 Embedded clips are kept in host RAM, within ``SAM3_VIDEO_CACHE_MAX_GB``: a
 frame is held as its preprocessed pixels until it is encoded and as its
@@ -47,7 +51,7 @@ stay within it, and it is also the longest clip that can be embedded.
 """
 
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -263,9 +267,13 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
     ) -> dict:
         """Masks on one frame for the objects with prompts on it.
 
-        Each such object is segmented from all its prompts on the clip,
-        applied frame by frame in frame order, without propagation, as a
-        preview of a click before tracking.
+        The preview of a click: each such object gets the mask
+        ``propagate_video`` would give it on this frame from the same
+        prompts. On the object's anchor (its first frame with an include
+        point) that is one model call. On any other frame the object is
+        tracked from its anchor to this frame, with the clicks on the frames
+        in between applied on the way, so the time grows with the distance
+        from the anchor (see ``_track_object``).
 
         Args:
             video_id: Id the clip was embedded under.
@@ -280,8 +288,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
         Raises:
             ModelInputError: If the clip is unknown, a prompt is out of range,
-                or a frame has exclude points of an object without an include
-                point.
+                or an object has no include point on any frame.
         """
         clip = self._video_clip_cache.get(video_id)
         per_object = _prompts_by_object(prompts, n_frames=clip.n_frames)
@@ -297,8 +304,11 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
                 if frame_idx not in object_prompts:
                     continue
 
-                outputs = self._prompted_session(clip, obj_id, object_prompts)[1]
-                masks[str(obj_id)] = self._clip_masks(clip, outputs[frame_idx])[0]
+                for frame, pred_masks in self._track_object(
+                    clip, obj_id, object_prompts, only_frame=frame_idx
+                ):
+                    if frame == frame_idx:
+                        masks[str(obj_id)] = self._clip_masks(clip, pred_masks)[0]
 
         result = {"frame_idx": frame_idx, "masks": masks}
 
@@ -314,15 +324,16 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
     ) -> List[dict]:
         """Track every prompted object over the whole clip.
 
-        Each object gets its own session: its prompts are applied frame by
-        frame in frame order, then it is propagated forward from its first
-        prompted frame to the end of the clip and backward from there to the
-        start, so every frame is computed once per object.
+        Each object gets its own session and is tracked from its anchor, its
+        first frame with an include point: forward to the end of the clip,
+        then backward to the start. Its clicks on other frames are applied
+        when tracking reaches them (see ``_track_object``), so every frame is
+        computed once per object, and a frame with such clicks twice.
 
         Args:
             video_id: Id the clip was embedded under.
             prompts: Point prompts as for ``segment_video_frame``; every object
-                needs an include point.
+                needs an include point on at least one frame.
             frame_indices: Frames to return masks for; all frames when None.
                 The others are still tracked through.
 
@@ -332,8 +343,8 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
         Raises:
             ModelInputError: If the clip is unknown, there are no prompts, a
-                prompt or frame index is out of range, or a frame has exclude
-                points of an object without an include point.
+                prompt or frame index is out of range, or an object has no
+                include point on any frame.
         """
         clip = self._video_clip_cache.get(video_id)
         per_object = _prompts_by_object(prompts, n_frames=clip.n_frames)
@@ -351,21 +362,127 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         masks: Dict[int, Dict[str, dict]] = {i: {} for i in sorted(wanted)}
         with self._lock:
             for obj_id, object_prompts in per_object.items():
-                session = self._prompted_session(clip, obj_id, object_prompts)[0]
-                start = min(object_prompts)
-                for reverse in (False, True):
-                    for output in self._model.propagate_in_video_iterator(
-                        session, start_frame_idx=start, reverse=reverse
-                    ):
-                        frame = int(output.frame_idx)
-                        if frame in wanted:
-                            masks[frame][str(obj_id)] = self._clip_masks(
-                                clip, output.pred_masks
-                            )[0]
+                for frame, pred_masks in self._track_object(
+                    clip, obj_id, object_prompts
+                ):
+                    if frame in wanted:
+                        masks[frame][str(obj_id)] = self._clip_masks(clip, pred_masks)[
+                            0
+                        ]
 
         results = [{"frame_idx": i, "masks": masks[i]} for i in sorted(masks)]
 
         return results
+
+    def _track_object(
+        self,
+        clip: VideoClip,
+        obj_id: int,
+        object_prompts: ObjectPrompts,
+        *,
+        only_frame: Optional[int] = None,
+    ) -> Iterator[Tuple[int, torch.Tensor]]:
+        """Track one object in a session of its own, from its anchor outward.
+
+        The anchor, the object's first frame with an include point, is an
+        initial conditioning frame: the model segments it from its clicks
+        alone. The object is then tracked forward from the anchor and, after
+        that, backward from it.
+
+        Clicks on another frame are applied when tracking reaches the frame.
+        The model treats clicks on a frame it has tracked as a correction: it
+        runs the frame again with the object's memory and the clicks
+        together, where clicks on a frame it has not tracked would be
+        segmented alone, without memory. Two things are then done with the
+        corrected frame, both measured on the reported failure (the object
+        leaves the picture and the mask moves to another one):
+
+        - Its output is kept as a conditioning frame, which every frame
+          tracked after it in the same direction attends to. Left where the
+          model stores it, it would be one of the six most recent frames and
+          stop mattering seven frames later; a mask taken off the wrong
+          object was back on it on the next frame.
+        - The frames tracked just before it are set aside, as many as a
+          tracked frame can read back (the memory and object pointer
+          window), so the frames after it start from the conditioning frames
+          alone. With them, a mask taken off in the middle of a wrong stretch
+          was back on the wrong object four frames later.
+
+        Both are undone when the direction ends, so the backward pass reads
+        the forward frames next to the anchor as they were tracked and is
+        not conditioned on forward corrections. A correction therefore
+        changes its own frame and the frames tracked after it, and leaves
+        the frames between the anchor and itself, and the frames on the
+        other side of the anchor, as they are without it.
+
+        With ``only_frame``, tracking stops at that frame. A frame before the
+        anchor is tracked backward after as many forward frames as a backward
+        frame can read, which gives the masks of the full forward pass on the
+        backward frames.
+
+        Args:
+            clip: The embedded clip.
+            obj_id: The object's id.
+            object_prompts: The object's points by frame.
+            only_frame: Frame to stop at; the whole clip when None.
+
+        Yields:
+            ``(frame_idx, pred_masks)`` for each frame, in tracking order.
+        """
+        anchor = _anchor_frame(object_prompts)
+        session = self._clip_session(clip)
+        yield anchor, self._apply_points(
+            session, obj_id, anchor, object_prompts[anchor], reverse=False
+        )
+
+        config = self._model.config
+        # Frames a tracked frame reads back: memory frames and object pointers.
+        reach = max(config.num_maskmem, config.max_object_pointers_in_encoder) - 1
+        if only_frame is None:
+            passes = [(False, None), (True, None)]
+        elif only_frame > anchor:
+            passes = [(False, only_frame - anchor)]
+        elif only_frame < anchor:
+            passes = [(False, reach), (True, anchor - only_frame)]
+        else:
+            passes = []
+
+        outputs = session.output_dict_per_obj[session.obj_id_to_idx(obj_id)]
+        conditioning = outputs["cond_frame_outputs"]
+        tracked = outputs["non_cond_frame_outputs"]
+        for reverse, n_frames in passes:
+            corrected, set_aside = [], {}
+            for output in self._model.propagate_in_video_iterator(
+                session,
+                start_frame_idx=anchor,
+                max_frame_num_to_track=n_frames,
+                reverse=reverse,
+            ):
+                frame_idx = int(output.frame_idx)
+                if frame_idx == anchor:
+                    continue
+
+                pred_masks = output.pred_masks
+                if frame_idx in object_prompts:
+                    pred_masks = self._apply_points(
+                        session,
+                        obj_id,
+                        frame_idx,
+                        object_prompts[frame_idx],
+                        reverse=reverse,
+                    )
+                    conditioning[frame_idx] = tracked.pop(frame_idx)
+                    corrected.append(frame_idx)
+                    step = 1 if reverse else -1
+                    for behind in range(1, reach + 1):
+                        earlier = frame_idx + step * behind
+                        if earlier in tracked:
+                            set_aside[earlier] = tracked.pop(earlier)
+                yield frame_idx, pred_masks
+
+            for frame_idx in corrected:
+                tracked[frame_idx] = conditioning.pop(frame_idx)
+            tracked.update(set_aside)
 
     def _clip_session(self, clip: VideoClip) -> Any:
         from transformers.models.sam3_tracker_video.modeling_sam3_tracker_video import (
@@ -390,27 +507,28 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
         return session
 
-    def _prompted_session(
-        self, clip: VideoClip, obj_id: int, object_prompts: ObjectPrompts
-    ) -> Tuple[Any, Dict[int, torch.Tensor]]:
-        """A fresh session for one object with its prompts applied in frame order,
-        and the predicted masks on each prompted frame."""
-        session = self._clip_session(clip)
-        outputs = {}
-        for frame_idx in sorted(object_prompts):
-            points = object_prompts[frame_idx]
-            self._processor.add_inputs_to_inference_session(
-                inference_session=session,
-                frame_idx=frame_idx,
-                obj_ids=obj_id,
-                input_points=[[[[x, y] for x, y, _ in points]]],
-                input_labels=[[[label for _, _, label in points]]],
-            )
-            outputs[frame_idx] = self._model(
-                inference_session=session, frame_idx=frame_idx
-            ).pred_masks
+    def _apply_points(
+        self,
+        session: Any,
+        obj_id: int,
+        frame_idx: int,
+        points: Tuple[Tuple[float, float, int], ...],
+        *,
+        reverse: bool,
+    ) -> torch.Tensor:
+        """Run a frame with an object's points on it; the predicted masks."""
+        self._processor.add_inputs_to_inference_session(
+            inference_session=session,
+            frame_idx=frame_idx,
+            obj_ids=obj_id,
+            input_points=[[[[x, y] for x, y, _ in points]]],
+            input_labels=[[[label for _, _, label in points]]],
+        )
+        pred_masks = self._model(
+            inference_session=session, frame_idx=frame_idx, reverse=reverse
+        ).pred_masks
 
-        return session, outputs
+        return pred_masks
 
     def _clip_masks(self, clip: VideoClip, pred_masks: torch.Tensor) -> List[dict]:
         masks = self._processor.post_process_masks(
@@ -442,18 +560,17 @@ def _prompts_by_object(
             (float(prompt["x"]), float(prompt["y"]), label)
         )
 
-    exclude_only = sorted(
-        (frame_idx, obj_id)
+    no_include = sorted(
+        obj_id
         for obj_id, frames in grouped.items()
-        for frame_idx, points in frames.items()
-        if not any(label == 1 for _, _, label in points)
+        if not any(label == 1 for points in frames.values() for _, _, label in points)
     )
-    if exclude_only:
-        # Each prompted frame is segmented from its own points, so exclude
-        # points alone leave nothing to exclude from.
+    if no_include:
+        # The anchor is segmented from its own points, so an object with
+        # exclude points only has nothing to start from.
         raise ModelInputError(
-            message="Exclude points need an include point of the same object on "
-            f"the same frame: (frame, object) {exclude_only}."
+            message=f"Objects {no_include} have no include point; every object "
+            "needs one."
         )
 
     per_object = {
@@ -462,3 +579,14 @@ def _prompts_by_object(
     }
 
     return per_object
+
+
+def _anchor_frame(object_prompts: ObjectPrompts) -> int:
+    """The object's first frame with an include point."""
+    anchor = min(
+        frame_idx
+        for frame_idx, points in object_prompts.items()
+        if any(label == 1 for _, _, label in points)
+    )
+
+    return anchor
