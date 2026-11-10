@@ -264,22 +264,50 @@ a unit test checks the encoder output figure against a really encoded frame.
 The limit covers the cached frames only. Size the host as cache GB, plus the
 memory an embed needs while it runs, plus the process itself:
 
-- Embedding a clip first forgets the clips it replaces, so the cache stays
-  within its limit while the new clip is built. What an embed adds on top is
-  the decoded clip at its native resolution, held until the embed returns
-  (height × width × 3 bytes per frame of the clip being embedded: 1.8 MB at
-  1024×576, 6.2 MB at 1080p, computed), and about 0.65 GB while frames are
-  preprocessed, whatever the clip's length (16 frames at a time at about 40 MB
-  each, computed from a measured 40 MB per frame). There is no separate limit
-  on a clip's length, so the first part grows with the longest clip the cache
-  admits. Embeds running at the same time each add their own.
-- The process with the model loaded and no clip took 1.8 to 2.0 GB of host RAM
-  (measured on a 24 GB GPU; GPU memory peaked at 3.3 GB).
+- Embedding a clip forgets the clips it replaces before it builds the new one,
+  so the cached frames stay within the limit during an embed. What an embed
+  adds is the decoded clip at its native resolution, held from decoding until
+  the embed returns (height × width × 3 bytes per frame of the clip being
+  embedded: 1.8 MB at 1024×576, 6.2 MB at 1080p, computed), plus about 0.65 GB
+  while frames are preprocessed, whatever the clip's length (16 frames at a
+  time at about 40 MB each, computed from a measured 40 MB per frame). There is
+  no separate limit on a clip's length, so the first part grows with the
+  longest clip the cache admits. Embeds running at the same time each add
+  their own.
+- The process with the model loaded and one 60-frame clip took 1.1 to 2.1 GB
+  of host RAM (measured; GPU memory peaked at 3.3 GB).
 
-Before this sizing, with the cache limited by number of clips, a 480-frame
-clip measured about 20 MB of host RAM per cached frame (pixels and encoder
-output both kept) and 17.5 to 19.9 GB of extra memory for about 10 s while it
-was embedded.
+Measured on a 24 GB GPU with `SAM3_VIDEO_CACHE_MAX_GB=10.2` (960 frames), as
+resident memory of the server; clips are 1024×576, encoded in the background.
+"Before" is the first version of these routes, which kept each frame's pixels
+and encoder output, limited the cache to two clips of up to 480 frames, and
+preprocessed a clip in one call:
+
+| State | Before | Now | Now, with `MALLOC_MMAP_THRESHOLD_=1048576` |
+|---|---|---|---|
+| Model loaded, one 60-frame clip not encoded | 1.8 to 2.0 GB | 2.1 GB | 1.1 GB |
+| One 480-frame clip encoded, one 60-frame clip not | 12.5 GB | 9.2 GB | 6.6 GB |
+| Cache full: two 480-frame clips | 21.4 to 22.3 GB | 14.0 to 15.1 GB | 11.4 GB |
+| Cache full: sixteen 60-frame clips | | 15.8 GB | 11.6 GB |
+| Cache full: one 960-frame clip | | 18.3 GB | 11.6 GB |
+| Peak while a third 480-frame clip is embedded | 39.1 GB | 14.8 to 16.0 GB | 12.3 GB |
+| Peak of one 270-frame embed above the level before it | 8.4 to 9.3 GB | 0.4 GB | |
+| Peak of two 270-frame embeds at once above the level before | 18.0 GB | 2.1 GB | |
+
+A full cache of 960 frames holds 10.2 GB by the computed figure (960 ×
+10,616,832 bytes). What the "Now" column shows above that and the loaded
+model is memory the C allocator keeps after decoded frames and other
+short-lived buffers are freed: with the allocator's defaults it grew with the
+embeds and encoding threads the worker had seen, up to about 6.4 GB. Setting
+`MALLOC_MMAP_THRESHOLD_=1048576` in the server's environment makes glibc
+return freed buffers of 1 MB or more to the operating system. With it the
+full cache measured 11.4 to 11.6 GB in every state, which is the 10.2 GB of
+frames, the 0.7 GB the process took with the model loaded and no clip, and
+0.5 to 0.7 GB more (up to 0.7 MB per cached frame above the computed figure).
+It cost about 1.5 s on a 480-frame embed (10.2 to 11.0 s instead of 8.7 to
+8.9 s) and about 1 s on tracking one object over 480 frames (31.4 s instead of
+30.3 s). Without it, allow about 6.4 GB on top of the cache limit, the loaded
+model and the embed's own memory.
 
 A worker that runs out of memory is killed with every model it serves, so
 leave headroom.
