@@ -2127,6 +2127,15 @@ class Sam3VideoEmbedRequest(Sam3VideoRequest):
             "time a call needs it."
         ),
     )
+    keep_existing: bool = Field(
+        default=False,
+        description=(
+            "Keep the clip the worker already has under this id when it has "
+            "the same number of frames and frame size, with every frame it has "
+            "encoded, instead of replacing it. Use it when an id always names "
+            "the same clip."
+        ),
+    )
 
 
 class Sam3VideoPointPrompt(BaseModel):

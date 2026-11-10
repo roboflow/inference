@@ -113,6 +113,7 @@ def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(
             "video_id": "clip-1",
             "video": {"type": "base64", "value": clip_base64(clip)},
             "encode_frames": True,
+            "keep_existing": True,
         },
     )
 
@@ -126,6 +127,7 @@ def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(
     params = call[3]
     assert params["video_id"] == namespace_client_hash_id("clip-1", API_KEY)
     assert params["encode_frames"] is True
+    assert params["keep_existing"] is True
     assert len(params["frames"]) == 25
     assert params["frames"][0].shape == (48, 64, 3)
 

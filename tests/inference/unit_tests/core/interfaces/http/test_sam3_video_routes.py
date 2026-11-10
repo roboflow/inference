@@ -53,7 +53,9 @@ class SAM3TrackerVideo:
             "max_frames": self.max_frames,
         }
 
-    def embed_video(self, frames, *, video_id, encode_frames=False):
+    def embed_video(
+        self, frames, *, video_id, encode_frames=False, keep_existing=False
+    ):
         self.calls.append(
             (
                 "embed_video",
@@ -61,6 +63,7 @@ class SAM3TrackerVideo:
                     "frames": frames,
                     "video_id": video_id,
                     "encode_frames": encode_frames,
+                    "keep_existing": keep_existing,
                 },
             )
         )
@@ -189,6 +192,7 @@ def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(client, loads, c
             "video_id": "clip-1",
             "video": {"type": "base64", "value": clip_base64(clip)},
             "encode_frames": True,
+            "keep_existing": True,
         },
     )
 
@@ -201,6 +205,7 @@ def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(client, loads, c
     assert action == "embed_video"
     assert params["video_id"] == SCOPED_VIDEO_ID
     assert params["encode_frames"] is True
+    assert params["keep_existing"] is True
     assert len(params["frames"]) == 25
     assert params["frames"][0].shape == (48, 64, 3)
     assert loads.ids == [MODEL_ID]

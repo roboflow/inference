@@ -430,6 +430,22 @@ class VideoClipCache:
 
         return held
 
+    def peek(self, video_id: str) -> Optional[VideoClip]:
+        """Return the clip stored under ``video_id``, if any, as recently used.
+
+        Args:
+            video_id: Caller's id for the clip.
+
+        Returns:
+            The clip, or None when none is stored under ``video_id``.
+        """
+        with self._lock:
+            clip = self._clips.get(video_id)
+            if clip is not None:
+                self._clips.move_to_end(video_id)
+
+        return clip
+
     def get(self, video_id: str) -> VideoClip:
         """Return the clip stored under ``video_id``.
 

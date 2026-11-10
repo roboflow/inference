@@ -1019,6 +1019,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
                 "frames": {"type": "list", "required": True},
                 "video_id": {"type": "str", "required": True},
                 "encode_frames": {"type": "bool", "required": False, "default": False},
+                "keep_existing": {"type": "bool", "required": False, "default": False},
             },
             "validate_passthrough",
             "serialize_passthrough",
