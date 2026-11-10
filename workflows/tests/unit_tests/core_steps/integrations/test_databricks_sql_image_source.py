@@ -300,6 +300,7 @@ def test_manifest_declares_outputs_restrictions_and_nesting() -> None:
         "images",
         "image_names",
         "metadata",
+        "errors",
     }
     codes = {r.code for r in BlockManifest.get_restrictions()}
     assert codes == {"queries_warehouse_on_every_run"}
@@ -841,30 +842,102 @@ def test_run_budget_failure_is_not_skippable() -> None:
             run_block(skip_undecodable=True)
 
 
-def test_metadata_strings_are_truncated_and_rows_capped() -> None:
-    row = {"id": 1, "bytes": b"", "note": "n" * 10_000, "blob": b"\x00"}
-    metadata = build_metadata(row, image_column="bytes")
-    assert len(metadata["note"]) == v1.MAX_METADATA_VALUE_CHARS
-    assert "blob" not in metadata and "bytes" not in metadata
-    with mock.patch.object(v1, "MAX_METADATA_BYTES_PER_ROW", 100):
-        with pytest.raises(ValueError, match="metadata"):
-            build_metadata(row, image_column="bytes")
+@pytest.mark.parametrize("value", ["x" * 4096, "é" * 4096])
+def test_metadata_value_at_limit_is_preserved(value):
+    """Preserve accepted strings and existing binary-column filtering.
+
+    Args:
+        value (str): String at the character boundary.
+    """
+    assert build_metadata(
+        {"note": value, "bytes": b"", "blob": b"x"}, image_column="bytes"
+    ) == {"note": value}
 
 
-def test_nested_metadata_is_capped_in_depth_and_size() -> None:
-    """Verify nested metadata is capped in depth and size."""
-    deep = {"a": {"b": {"c": {"d": {"e": {"f": 1}}}}}}
-    converted = to_json_safe(deep)
-    assert converted["a"]["b"]["c"]["d"] == "{'e': {'f': 1}}"
-    wide = {"items": list(range(10_000))}
-    assert len(to_json_safe(wide)["items"]) == v1.MAX_METADATA_ITEMS
-    many_keys = {f"k{i}": i for i in range(10_000)}
-    assert len(to_json_safe(many_keys)) == v1.MAX_METADATA_ITEMS
-    # A tiny image with a large metadata column counts against the run budget.
-    rows = [{"id": 1, "bytes": jpeg_bytes(), "note": "y" * 60_000}]
-    with fake_databricks(rows), mock.patch.object(v1, "MAX_RUN_BYTES", 6_000):
-        with pytest.raises(ValueError, match="byte budget"):
-            run_block(metadata_columns=["id", "note"])
+@pytest.mark.parametrize(
+    "value, code",
+    [
+        ("x" * 4097, "METADATA_VALUE_TOO_LONG"),
+        ({"a": {"b": {"c": {"d": {}}}}}, "METADATA_TOO_DEEP"),
+        (list(range(257)), "METADATA_TOO_MANY_ITEMS"),
+        ({str(i): i for i in range(257)}, "METADATA_TOO_MANY_ITEMS"),
+        (["é" * 4096] * 8, "METADATA_TOO_LARGE"),
+        ({"k" * 4097: 1}, "METADATA_VALUE_TOO_LONG"),
+    ],
+)
+@pytest.mark.parametrize("skip_undecodable", [True, False])
+def test_metadata_limits_emit_error_only_rows(value, code, skip_undecodable):
+    """Reject an entire metadata row before image decoding without failing peers.
+
+    Args:
+        value (Any): Metadata exceeding one supported limit.
+        code (str): Expected diagnostic code.
+        skip_undecodable (bool): Independent image failure policy.
+    """
+    rows = [
+        {"id": 1, "bytes": jpeg_bytes(), "note": "ok"},
+        {"id": 2, "bytes": b"must not decode", "note": value},
+        {"id": 3, "bytes": jpeg_bytes(), "note": "after"},
+    ]
+    with fake_databricks(rows), mock.patch.object(
+        v1, "decode_image", wraps=decode_image
+    ) as decode:
+        result = run_block(metadata_columns=["note"], skip_undecodable=skip_undecodable)
+    assert decode.call_count == 2
+    assert result[0]["metadata"] == {"note": "ok"}
+    assert result[2]["metadata"] == {"note": "after"}
+    assert all(result[1][key] is None for key in ("images", "image_names", "metadata"))
+    error = result[1]["errors"]
+    assert error["row_index"] == 1
+    assert error["image_name"] == "2"
+    assert error["code"] == code
+    assert error["field"] == (None if code == "METADATA_TOO_LARGE" else "note")
+    assert len(json.dumps(error)) < 1024
+
+
+def test_metadata_depth_and_collection_boundaries_are_preserved():
+    """Keep four container levels and 256 collection members unchanged."""
+    value = {"a": {"b": {"c": list(range(256))}}}
+    assert to_json_safe(value) == value
+
+
+def test_metadata_row_byte_limit_is_exact_and_counts_unicode_and_escaping():
+    """Account for JSON keys, separators, escaping and UTF-8 bytes."""
+    value = {"note": ["é", "\n", {"x": True, "y": None}]}
+    size = v1.metadata_size(value)
+    with mock.patch.object(v1, "MAX_METADATA_BYTES_PER_ROW", size):
+        assert build_metadata(value, image_column="bytes") == value
+    with mock.patch.object(v1, "MAX_METADATA_BYTES_PER_ROW", size - 1):
+        with pytest.raises(v1.MetadataLimitExceeded) as error:
+            build_metadata(value, image_column="bytes")
+    assert error.value.code == "METADATA_TOO_LARGE"
+
+
+def test_rejected_metadata_is_not_stringified_or_fully_walked():
+    """Reject large/deep structures before inspecting their contents."""
+
+    class Unstringifiable(dict):
+        def __str__(self):
+            pytest.fail("stringified rejected metadata")
+
+        def items(self):
+            pytest.fail("walked rejected metadata")
+
+    for value in (
+        {"a": {"b": {"c": {"d": Unstringifiable()}}}},
+        Unstringifiable({i: i for i in range(257)}),
+    ):
+        with pytest.raises(v1.MetadataLimitExceeded):
+            build_metadata({"note": value}, image_column="bytes")
+
+
+def test_metadata_error_records_count_toward_invocation_budget():
+    """Fail the invocation if even its bounded diagnostics exhaust the budget."""
+    with fake_databricks(
+        [{"id": 1, "bytes": b"", "note": "x" * 4097}]
+    ), mock.patch.object(v1, "MAX_RUN_BYTES", 1):
+        with pytest.raises(v1.RunBudgetExceeded):
+            run_block(metadata_columns=["note"])
 
 
 def test_image_names_are_length_capped() -> None:
@@ -997,6 +1070,7 @@ SOURCE_WORKFLOW = {
         {"type": "JsonField", "name": "images", "selector": "$steps.db.images"},
         {"type": "JsonField", "name": "names", "selector": "$steps.db.image_names"},
         {"type": "JsonField", "name": "metadata", "selector": "$steps.db.metadata"},
+        {"type": "JsonField", "name": "errors", "selector": "$steps.db.errors"},
     ],
 }
 
@@ -1038,7 +1112,7 @@ def test_engine_returns_empty_lists_when_query_yields_no_rows() -> None:
         result = execution_engine.run(
             runtime_parameters={"databricks_token": "dapi-xyz", "sql": "SELECT 1"}
         )
-    assert result[0] == {"images": [], "names": [], "metadata": []}
+    assert result[0] == {"images": [], "names": [], "metadata": [], "errors": []}
 
 
 def test_engine_rejects_a_submitted_workflow_while_disabled_without_connecting(
@@ -1081,3 +1155,39 @@ def test_engine_rejects_a_submitted_workflow_while_disabled_without_connecting(
         recorder["resolver"].assert_not_called()
     finally:
         blocks_loader.clear_caches()
+
+
+@pytest.mark.parametrize("include_success", [False, True])
+def test_engine_reports_metadata_errors_when_some_or_all_rows_are_rejected(
+    include_success,
+):
+    """Preserve errors independently of successful image outputs.
+
+    Args:
+        include_success (bool): Whether a valid row accompanies the rejection.
+    """
+    rows = [{"id": 7, "bytes": b"not decoded", "raccoon_name": "x" * 4097}]
+    if include_success:
+        rows.append({"id": 8, "bytes": jpeg_bytes(), "raccoon_name": "bandit"})
+    engine = ExecutionEngine.init(
+        workflow_definition=SOURCE_WORKFLOW,
+        init_parameters={"workflows_core.step_execution_mode": StepExecutionMode.LOCAL},
+        max_concurrent_steps=1,
+    )
+    with fake_databricks(rows):
+        result = engine.run(
+            runtime_parameters={"databricks_token": "t", "sql": "unused"}
+        )[0]
+    assert result["images"][0] is None
+    assert result["names"][0] is None
+    assert result["metadata"][0] is None
+    assert result["errors"][0] == {
+        "row_index": 0,
+        "image_name": "7",
+        "field": "raccoon_name",
+        "code": "METADATA_VALUE_TOO_LONG",
+        "message": "Metadata text exceeds 4096 characters.",
+    }
+    if include_success:
+        assert result["names"][1] == "8"
+        assert result["errors"][1] is None

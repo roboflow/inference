@@ -20,7 +20,7 @@ Cases (see the PR discussion for the acceptance table):
 
     import        20 small JPEGs + metadata, fetched across several batches
     bad-image     malformed row is skipped, run succeeds, no restart needed
-    big-metadata  single values are truncated; an oversized total row is skipped
+    big-metadata  oversized metadata rows are reported, including all-rejected runs
     bad-token     invalid credential fails without exposing the token
     budget        only with --expect-budget-failure: a deployment configured
                   with a reduced DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES fails
@@ -361,6 +361,7 @@ def workflow_specification(
             {"type": "JsonField", "name": "images", "selector": "$steps.db.images"},
             {"type": "JsonField", "name": "names", "selector": "$steps.db.image_names"},
             {"type": "JsonField", "name": "metadata", "selector": "$steps.db.metadata"},
+            {"type": "JsonField", "name": "errors", "selector": "$steps.db.errors"},
         ],
     }
 
@@ -417,10 +418,13 @@ class LocalTarget:
                 f"{type(error).__name__}: {error}", time.monotonic() - started
             )
         images = result.get("images") or []
-        shapes = [tuple(image.numpy_image.shape) for image in images]
+        shapes = [
+            tuple(image.numpy_image.shape) for image in images if image is not None
+        ]
         outputs = {
             "names": result.get("names", []),
             "metadata": result.get("metadata", []),
+            "errors": result.get("errors", []),
             "shapes": shapes,
             "elapsed": time.monotonic() - started,
         }
@@ -480,6 +484,7 @@ class ServerTarget:
         result = {
             "names": output.get("names", []),
             "metadata": output.get("metadata", []),
+            "errors": output.get("errors", []),
             "shapes": shapes,
             "elapsed": elapsed,
         }
@@ -540,7 +545,7 @@ def case_bad_image(target, *, table: str, token: str) -> None:
 
 
 def case_big_metadata(target, *, table: str, token: str) -> None:
-    """Verify value truncation separately from aggregate metadata rejection.
+    """Verify value and aggregate limits, including an all-rejected import.
 
     Args:
         target (LocalTarget | ServerTarget): Local or server workflow runner.
@@ -548,16 +553,19 @@ def case_big_metadata(target, *, table: str, token: str) -> None:
         token (str): Read-only warehouse credential.
 
     Raises:
-        AssertionError: If truncation or row rejection differs from the contract.
+        AssertionError: If rejected metadata is not reported separately from images.
     """
     sql = f"SELECT id, bytes, note FROM {table} WHERE kind IN ('ok', 'bigmeta') ORDER BY id /* rf-live {RUN_ID} */"
     result = target.run(
         workflow_specification(sql, max_rows=100, timeout_seconds=120),
         inputs={"token": token},
     )
-    assert "901" in result["names"], "single oversized value should be truncated"
-    index = result["names"].index("901")
-    assert result["metadata"][index]["note"] == "m" * 4096
+    assert "901" not in result["names"]
+    errors = [error for error in result["errors"] if error is not None]
+    assert len(errors) == 1
+    assert errors[0]["image_name"] == "901"
+    assert errors[0]["code"] == "METADATA_VALUE_TOO_LONG"
+    assert sum(name is not None for name in result["names"]) == FIXTURE_ROWS
 
     # Seventeen independently bounded values exceed the 64 KiB row limit.
     columns = ", ".join(
@@ -573,8 +581,22 @@ def case_big_metadata(target, *, table: str, token: str) -> None:
         inputs={"token": token},
     )
     assert "901" not in result["names"], "metadata totaling over 64 KiB must be skipped"
-    assert len(result["names"]) == FIXTURE_ROWS
-    print("  big-metadata: value truncated; oversized total metadata row skipped")
+    assert sum(name is not None for name in result["names"]) == FIXTURE_ROWS
+    errors = [error for error in result["errors"] if error is not None]
+    assert len(errors) == 1 and errors[0]["code"] == "METADATA_TOO_LARGE"
+
+    result = target.run(
+        workflow_specification(
+            f"SELECT id, bytes, note FROM {table} WHERE id = 901 /* rf-live {RUN_ID} */",
+            max_rows=100,
+            timeout_seconds=120,
+        ),
+        inputs={"token": token},
+    )
+    assert result["names"] == [None] and result["metadata"] == [None]
+    assert result["shapes"] == []
+    assert result["errors"][0]["code"] == "METADATA_VALUE_TOO_LONG"
+    print("  big-metadata: rejected rows reported, including all-rejected import")
 
 
 def case_bad_token(target, *, table: str, token: str) -> None:

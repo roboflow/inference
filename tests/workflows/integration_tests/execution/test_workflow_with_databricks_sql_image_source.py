@@ -7,13 +7,15 @@ registered in a Roboflow project with the row key as the image name.
 
 import sys
 import types
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from copy import deepcopy
 from typing import Any, Dict, Iterator, List
 from unittest import mock
 from unittest.mock import MagicMock
 
 import cv2
 import numpy as np
+import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -212,3 +214,52 @@ def test_databricks_rows_are_uploaded_to_roboflow_with_row_keys_as_names(
         {"error_status": False, "message": "registered"},
         {"error_status": False, "message": "registered"},
     ]
+
+
+@pytest.mark.parametrize("include_success", [False, True])
+def test_metadata_rejections_skip_upload_and_reach_reporting_branch(
+    model_manager, include_success
+):
+    """Route only valid images to upload and rejected rows to error reporting.
+
+    Args:
+        model_manager (ModelManager): Host model manager fixture.
+        include_success (bool): Whether any fixture row has valid metadata.
+    """
+    definition = deepcopy(DATABRICKS_TO_ROBOFLOW_WORKFLOW)
+    definition["steps"][0]["metadata_columns"] = ["note"]
+    definition["steps"].append(
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "report",
+            "data": "$steps.db.errors",
+            "operations": [],
+        }
+    )
+    definition["outputs"].append(
+        {"type": "JsonField", "name": "errors", "selector": "$steps.report.output"}
+    )
+    rows = [{"id": 1, "bytes": b"not decoded", "note": "x" * 4097}]
+    if include_success:
+        rows.append({"id": 2, "bytes": jpeg_bytes(), "note": "valid"})
+    register = MagicMock(return_value=(False, "registered"))
+    engine = ExecutionEngine.init(
+        workflow_definition=definition,
+        init_parameters={
+            "workflows_core.model_manager": model_manager,
+            "workflows_core.api_key": "rf-test-key",
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    with ExitStack() as stack:
+        for target in _upload_registration_targets():
+            stack.enter_context(mock.patch(target, register))
+        stack.enter_context(fake_databricks(rows))
+        result = engine.run(runtime_parameters={"databricks_token": "t"})[0]
+    assert register.call_count == int(include_success)
+    assert result["errors"][0]["code"] == "METADATA_VALUE_TOO_LONG"
+    assert result["errors"][0]["row_index"] == 0
+    if include_success:
+        assert register.call_args.kwargs["image_name"] == "2"
+        assert result["errors"][1] is None

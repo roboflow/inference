@@ -354,7 +354,7 @@ def test_deadline_checked_after_last_row(monkeypatch):
     with pytest.raises(TimeoutError):
         v1.DatabricksSQLImageSourceBlockV1()._run_in_process(
             **dict(REQUEST, max_rows=1, metadata_columns=[]),
-            deadline=time.monotonic() + 0.02
+            deadline=time.monotonic() + 0.02,
         )
 
 
@@ -422,3 +422,127 @@ def test_regular_outputs_work_without_unix_open_flags(tmp_path, monkeypatch):
         tmp_path, max_rows=10, limits=LIMITS, deadline=time.monotonic() + 20
     )
     assert rows[0]["images"].shape == (1, 1, 3)
+
+
+@pytest.mark.parametrize("include_success", [False, True])
+def test_metadata_errors_roundtrip_through_worker(
+    tmp_path, monkeypatch, include_success
+):
+    """Return rejected rows through the real worker, including all-rejected runs.
+
+    Args:
+        tmp_path (Path): Temporary worker fixture directory.
+        monkeypatch (pytest.MonkeyPatch): Scoped worker-module override.
+        include_success (bool): Whether the fixture includes a valid image.
+    """
+    _worker_module(
+        tmp_path,
+        monkeypatch=monkeypatch,
+        source=f"""
+import sys
+import numpy as np
+import cv2
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source import v1, worker, transport
+v1.validate_destination = lambda *a, **kw: None
+rows = [{{"bytes": b"must not decode", "name": "x" * 4097}}]
+if {include_success!r}:
+    rows.append({{"bytes": cv2.imencode(".png", np.zeros((4, 5, 3), dtype=np.uint8))[1].tobytes(), "name": "valid"}})
+v1.iter_rows = lambda *a, **kw: (row for row in rows)
+transport.install_pinned_transport = lambda **kw: None
+sys.exit(worker._main())
+""",
+    )
+    rows = isolation.run_isolated(
+        dict(REQUEST, skip_undecodable=False),
+        limits=LIMITS,
+        deadline=time.monotonic() + 20,
+    )
+    assert len(rows) == (2 if include_success else 1)
+    assert rows[0] == dict(
+        images=None,
+        image_names=None,
+        metadata=None,
+        errors=dict(
+            row_index=0,
+            image_name=None,
+            field="name",
+            code="METADATA_VALUE_TOO_LONG",
+            message="Metadata text exceeds 4096 characters.",
+        ),
+    )
+    if include_success:
+        assert rows[1]["metadata"] == {"name": "valid"}
+        assert rows[1]["images"].numpy_image.shape == (4, 5, 3)
+        assert rows[1]["errors"] is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"row_index": True},
+        {"row_index": -1},
+        {"row_index": 10},
+        {"field": "x" * 256},
+        {"image_name": ["invalid"]},
+        {"code": "unknown"},
+        {"code": []},
+        {"message": "raw metadata"},
+        {"extra": "unexpected"},
+    ],
+)
+def test_worker_error_schema_is_validated(tmp_path, change):
+    """Reject malformed worker diagnostics before returning them downstream.
+
+    Args:
+        tmp_path (Path): Temporary manifest directory.
+        change (dict): Invalid fields to introduce into a valid diagnostic.
+    """
+    error = dict(
+        row_index=0,
+        image_name=None,
+        field="name",
+        code="METADATA_TOO_DEEP",
+        message="Metadata exceeds 4 nesting levels.",
+    )
+    error.update(change)
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(dict(version=1, rows=[dict(errors=error)]))
+    )
+    with pytest.raises(RuntimeError, match="row error"):
+        isolation._read_outputs(
+            tmp_path, max_rows=10, limits=LIMITS, deadline=time.monotonic() + 20
+        )
+
+
+def test_worker_error_records_are_counted_and_budgeted(tmp_path):
+    """Enforce diagnostic count and cumulative bytes even without image files.
+
+    Args:
+        tmp_path (Path): Temporary manifest directory.
+    """
+    error = dict(
+        row_index=0,
+        image_name=None,
+        field="name",
+        code="METADATA_TOO_DEEP",
+        message="Metadata exceeds 4 nesting levels.",
+    )
+    manifest = dict(version=1, rows=[dict(errors=error)])
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(RuntimeError, match="budget"):
+        isolation._read_outputs(
+            tmp_path,
+            max_rows=10,
+            limits=dict(LIMITS, max_run_bytes=1),
+            deadline=time.monotonic() + 20,
+        )
+    with pytest.raises(RuntimeError, match="count"):
+        isolation._read_outputs(
+            tmp_path, max_rows=0, limits=LIMITS, deadline=time.monotonic() + 20
+        )
+    manifest["rows"].append(dict(errors=error))
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(RuntimeError, match="Duplicate"):
+        isolation._read_outputs(
+            tmp_path, max_rows=10, limits=LIMITS, deadline=time.monotonic() + 20
+        )

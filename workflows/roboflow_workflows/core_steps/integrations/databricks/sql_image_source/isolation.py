@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import numpy as np
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.row_errors import (
+    validate_row_error,
+)
 from roboflow_workflows.utils.subprocess_supervisor import run_in_subprocess
 
 _WORKER_MODULE = (
@@ -33,7 +36,7 @@ def run_isolated(
         deadline (float): Absolute monotonic deadline including launch and output loading.
 
     Returns:
-        The block's ordinary image, name and metadata output rows.
+        Aligned image/name/metadata outputs and metadata-rejection diagnostics.
 
     Raises:
         TimeoutError: The invocation expires, including while loading outputs.
@@ -52,6 +55,17 @@ def run_isolated(
         results = []
         for row in rows:
             _check_deadline(deadline)
+            if "errors" in row:
+                results.append(
+                    dict(
+                        images=None,
+                        image_names=None,
+                        metadata=None,
+                        errors=row["errors"],
+                    )
+                )
+                continue
+
             image = WorkflowImageData(
                 parent_metadata=ImageParentMetadata(
                     parent_id=f"databricks.{row['image_names']}"
@@ -63,6 +77,7 @@ def run_isolated(
                     images=image,
                     image_names=row["image_names"],
                     metadata=row["metadata"],
+                    errors=None,
                 )
             )
 
@@ -137,8 +152,25 @@ def _read_outputs(
 
     result = []
     used = 0
+    error_indices = set()
     for index, row in enumerate(rows):
         _check_deadline(deadline)
+        if isinstance(row, dict) and set(row) == {"errors"}:
+            error = row["errors"]
+            validate_row_error(error, max_rows=max_rows)
+            if error["row_index"] in error_indices:
+                raise RuntimeError("Duplicate Databricks worker row error")
+
+            error_indices.add(error["row_index"])
+            used += len(json.dumps(error, ensure_ascii=False).encode("utf-8"))
+            if used > limits["max_run_bytes"]:
+                raise RuntimeError(
+                    "Databricks worker outputs exceed the invocation budget"
+                )
+
+            result.append(row)
+            continue
+
         if not isinstance(row, dict) or set(row) != {"file", "image_names", "metadata"}:
             raise RuntimeError("Invalid Databricks worker row")
 

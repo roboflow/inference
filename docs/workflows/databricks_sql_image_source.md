@@ -104,10 +104,63 @@ to 64 levels. The worker requests column-based results and rejects Arrow schemas
 Arrow/LZ4 batches and result links before their native decoders run. This remains
 an application bound with Python object overhead, not an RSS guarantee.
 
-Metadata values are truncated to 4096 characters and capped at 4 nesting levels,
-256 items per collection and 64 KiB per row. JPEG and PNG are accepted;
+Metadata strings (including nested keys) are limited to 4096 characters, containers
+to 4 nesting levels and 256 items per collection, and serialized metadata to 64 KiB
+per row (UTF-8 JSON, including keys and separators). Limits are checked during
+conversion, before walking an oversized/deep collection or retaining an oversized
+row. Values are never truncated or replaced with strings at the depth limit.
+JPEG and PNG are accepted;
 WebP and TIFF are rejected before constructing their decoders. Total budget exhaustion fails the step,
-while ordinary row conversion failures follow `skip_undecodable`.
+while ordinary image conversion failures follow `skip_undecodable`.
+
+### Rejected metadata rows
+
+A metadata limit violation skips the **entire row**, before image decoding, and
+returns a diagnostic on `$steps.<source>.errors`, regardless of `skip_undecodable`.
+This also succeeds when every fetched row is rejected for metadata. The diagnostic
+contains a zero-based `row_index` in the fetched result (not a stable table ID),
+`image_name` (null when no name column was configured), `field` (the top-level
+metadata column, or null for the aggregate row limit), `code` and `message`.
+Only the first metadata violation per row is reported; raw metadata is not echoed.
+
+| Code | Limit |
+| --- | --- |
+| `METADATA_VALUE_TOO_LONG` | A string or nested key exceeds 4096 characters. |
+| `METADATA_TOO_DEEP` | A container occurs at depth 4 or greater; each column starts at depth 0. |
+| `METADATA_TOO_MANY_ITEMS` | A collection contains more than 256 members, including binary members. |
+| `METADATA_TOO_LARGE` | Serialized metadata exceeds 64 KiB. |
+
+Successful entries have `images`, `image_names`, and `metadata`, with `errors=null`.
+Rejected entries have `errors`, with all three success outputs null. The engine
+preserves these positions in workflow JSON; it does not compact each output into
+an independent batch. Image-processing blocks that use the usual non-empty-input
+contract skip rejected entries automatically. Blocks explicitly accepting empty
+values must handle nulls. A separate reporting branch should consume **only**
+`errors`, not combine it with the success outputs (which are mutually exclusive).
+Expose that selector as a `JsonField` to include diagnostics in the API response.
+
+For example, a valid row followed by a rejected row produces:
+
+```json
+{
+  "image_names": ["inspection-41", null],
+  "metadata": [{"site": "A"}, null],
+  "errors": [null, {
+    "row_index": 1,
+    "image_name": "inspection-42",
+    "field": "annotations",
+    "code": "METADATA_TOO_DEEP",
+    "message": "Metadata exceeds 4 nesting levels."
+  }]
+}
+```
+
+Diagnostics are bounded by the fetched-row limit (at most 1000), fixed messages,
+255-character field/name limits and the invocation byte budget. The parent checks
+their schema, counts, indices and bytes before returning worker output. Connection,
+query, timeout and total-budget failures still fail the block. An import containing
+only skipped image-conversion failures still fails as before; metadata rejections
+remain reportable even without successful images.
 
 `timeout_seconds` (5 to 600, default 120) begins before process launch and covers
 imports, DNS, connection, execution, fetching, decoding and parent output loading.

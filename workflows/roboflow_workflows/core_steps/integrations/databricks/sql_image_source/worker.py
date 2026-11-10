@@ -62,6 +62,10 @@ def _main() -> int:
         manifest = []
         for index, row in enumerate(rows):
             v1._check_deadline(deadline)
+            if row.get("errors") is not None:
+                manifest.append({"errors": row["errors"]})
+                continue
+
             filename = f"{index}.npy"
             np.save(directory / filename, row["images"].numpy_image, allow_pickle=False)
             manifest.append(

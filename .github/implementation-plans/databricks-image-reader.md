@@ -80,3 +80,13 @@ explicit rollout gates when their infrastructure/credentials are unavailable.
 - The implementation scope was agreed in the task conversation. No Slack message
   is sent by this task; the internal maintainer discussion/review remains part of
   the draft-PR process.
+
+### Metadata rejection contract
+
+Metadata limit violations emit an error-only row (null image/name/metadata outputs),
+including when every row is rejected. Keep the existing batch lineage and let
+ordinary downstream steps filter empty inputs; report errors on a separate branch.
+Validate bounded diagnostics across the subprocess boundary and account for their
+bytes. Reject oversized/deep metadata before traversal or stringification. Test
+mixed and all-rejected rows through the real worker and workflow-to-upload path.
+No execution-engine or dependency changes are required.

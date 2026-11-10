@@ -7,7 +7,6 @@ column into Workflow images, one output element per returned row.
 import base64
 import contextlib
 import datetime
-import decimal
 import io
 import json
 import logging
@@ -32,6 +31,9 @@ from roboflow_workflows.core_steps.integrations.databricks.availability import (
 from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.query import (
     build_image_query,
     quote_identifier,
+)
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.row_errors import (
+    MetadataLimitExceeded,
 )
 from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.transport import (
     PinnedDestination,
@@ -179,7 +181,8 @@ does not verify read-only grants or tenant ownership of the workspace.
 
 Outputs are `images`, `image_names` (the configured column or a UUID), and
 `metadata` (explicitly selected non-binary metadata columns). Connect them to
-batch-aware downstream blocks. The block runs on every invocation, so gate it
+batch-aware downstream blocks. The separate `errors` output reports rows rejected
+for metadata limits. The block runs on every invocation, so gate it
 in a video pipeline to avoid one warehouse query per frame.
 
 Only Databricks workspace hosts and SQL endpoint paths are accepted. DNS answers
@@ -193,9 +196,12 @@ limited to 1 MiB before serialization. HTTP responses are byte capped and Thrift
 structure sizes bounded before materialization. JPEG/PNG headers are checked
 before pixel decoding (defaults: 32 MiB encoded, 25 MP); WebP and TIFF are refused.
 Encoded images, pixels, names and metadata count toward a 1 GiB invocation budget.
-Metadata strings are truncated to 4096 characters, nesting to 4 levels and 256
-items, and each row to 64 KiB. `skip_undecodable` skips invalid image rows; all
-rows skipped or total budget exhaustion fails the block.
+Metadata is limited to 4096 characters per string, 4 nesting levels, 256 items
+per collection and 64 KiB per row. Metadata limit violations skip the entire row
+and emit a bounded `errors` diagnostic, even when all rows are rejected and
+regardless of `skip_undecodable`. Successful rows have no error; rejected rows
+have no image, name or metadata outputs. Workflow JSON preserves null positions.
+`skip_undecodable` controls image failures; total budget exhaustion fails the block.
 
 `timeout_seconds` (5-600, default 120) covers worker startup through result loading.
 Cancellation is best effort; terminating the child does not prove the remote query
@@ -317,8 +323,9 @@ class BlockManifest(WorkflowBlockManifest):
     skip_undecodable: bool = Field(
         default=True,
         description="Skip rows whose image bytes cannot be decoded or exceed the per-image "
-        "limits, instead of failing the step. The step still fails when every row is "
-        "skipped.",
+        "limits, instead of failing the step. Metadata limit violations always emit "
+        "errors, including when all rows are rejected. If all rows fail image "
+        "conversion and no metadata errors are emitted, the step still fails.",
         examples=[True, False],
     )
 
@@ -368,6 +375,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="images", kind=[IMAGE_KIND]),
             OutputDefinition(name="image_names", kind=[STRING_KIND]),
             OutputDefinition(name="metadata", kind=[DICTIONARY_KIND]),
+            OutputDefinition(name="errors", kind=[DICTIONARY_KIND]),
         ]
 
     @classmethod
@@ -468,7 +476,7 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
             skip_undecodable (bool): Skip invalid rows; an entirely invalid result fails.
 
         Returns:
-            BlockResult: Image, image-name and metadata rows for downstream blocks.
+        BlockResult: Aligned success outputs and metadata-rejection diagnostics.
 
         Raises:
             ValueError: Input validation, decoding or an allocation budget fails.
@@ -605,6 +613,24 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
                     )
                     budget.reserve(len(name) + metadata_size(metadata))
                     numpy_image = decode_image(row[image_column], budget=budget)
+                except MetadataLimitExceeded as error:
+                    diagnostic = {
+                        "row_index": index,
+                        "image_name": name if image_name_column else None,
+                        "field": error.field,
+                        "code": error.code,
+                        "message": str(error),
+                    }
+                    budget.reserve(metadata_size(diagnostic))
+                    results.append(
+                        dict(
+                            images=None,
+                            image_names=None,
+                            metadata=None,
+                            errors=diagnostic,
+                        )
+                    )
+                    continue
                 except Exception as error:
                     if not skip_undecodable or isinstance(error, RunBudgetExceeded):
                         raise ValueError(
@@ -623,7 +649,12 @@ class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
                     numpy_image=numpy_image,
                 )
                 results.append(
-                    {"images": image, "image_names": name, "metadata": metadata}
+                    {
+                        "images": image,
+                        "image_names": name,
+                        "metadata": metadata,
+                        "errors": None,
+                    }
                 )
 
         _check_deadline(deadline)
@@ -1154,102 +1185,127 @@ def resolve_image_name(row: Dict[str, Any], *, image_name_column: Optional[str])
 
 
 def build_metadata(row: Dict[str, Any], *, image_column: str) -> Dict[str, Any]:
-    """Build the per-row metadata: every non-binary column except the image.
+    """Convert selected non-binary metadata without silently dropping excess data.
 
     Args:
-        row (Dict[str, Any]): Row returned by the query, keyed by column name.
-        image_column (str): Name of the image column to leave out.
+        row (Dict[str, Any]): Selected columns returned by the connector.
+        image_column (str): Image column to exclude.
 
     Returns:
-        JSON-serialisable dictionary; strings are truncated to
-        ``MAX_METADATA_VALUE_CHARS`` and nested values capped (see
-        :func:`to_json_safe`).
+        Dict[str, Any]: JSON-compatible metadata within the configured limits.
 
     Raises:
-        ValueError: If the row's metadata exceeds ``MAX_METADATA_BYTES_PER_ROW``.
+        MetadataLimitExceeded: A value, collection, depth or row exceeds a limit.
     """
-    metadata = {
-        key: to_json_safe(value)
-        for key, value in row.items()
-        if key != image_column and not _is_binary(value)
-    }
-    size = metadata_size(metadata)
-    if size > MAX_METADATA_BYTES_PER_ROW:
-        raise ValueError(
-            f"row metadata of {size} bytes exceeds {MAX_METADATA_BYTES_PER_ROW} bytes"
-        )
+    metadata = to_json_safe(
+        {key: value for key, value in row.items() if key != image_column}, depth=-1
+    )
 
     return metadata
 
 
 def metadata_size(metadata: Dict[str, Any]) -> int:
-    """Return the serialised size of ``metadata`` in bytes."""
-    return len(json.dumps(metadata, ensure_ascii=False).encode("utf-8"))
-
-
-def to_json_safe(value: Any, *, depth: int = 0) -> Any:
-    """Convert connector-returned values into JSON-serialisable equivalents.
+    """Return the serialized UTF-8 JSON size of metadata or a diagnostic.
 
     Args:
-        value (Any): Any value returned by the SQL connector.
-        depth (int): Nesting level of ``value``; containers deeper than
-            ``MAX_METADATA_DEPTH`` are stringified.
+        metadata (Dict[str, Any]): JSON-compatible metadata or error record.
 
     Returns:
-        ``Decimal`` as an exact string, dates and times in ISO 8601, strings
-        truncated to ``MAX_METADATA_VALUE_CHARS``, containers converted
-        recursively (binary members dropped, at most ``MAX_METADATA_ITEMS``
-        members, ``MAX_METADATA_DEPTH`` levels), scalars unchanged and any
-        other type as ``str(value)``.
+        int: Serialized size in bytes, including keys and separators.
     """
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
+    size = len(json.dumps(metadata, ensure_ascii=False).encode("utf-8"))
 
-    if isinstance(value, str):
-        result = (
-            value
-            if len(value) <= MAX_METADATA_VALUE_CHARS
-            else value[:MAX_METADATA_VALUE_CHARS]
-        )
+    return size
+
+
+class _MetadataBudget:
+    def __init__(self):
+        self.used = 0
+
+    def reserve(self, size: int) -> None:
+        """Account for JSON bytes before retaining another metadata value.
+
+        Args:
+            size (int): Additional serialized bytes.
+
+        Raises:
+            MetadataLimitExceeded: The cumulative row byte limit is exceeded.
+        """
+        self.used += size
+        if self.used > MAX_METADATA_BYTES_PER_ROW:
+            raise MetadataLimitExceeded("METADATA_TOO_LARGE")
+
+
+def to_json_safe(
+    value: Any,
+    *,
+    depth: int = 0,
+    _budget: Optional[_MetadataBudget] = None,
+    _field: Optional[str] = None,
+) -> Any:
+    """Convert metadata while rejecting excess size, nesting and collection items.
+
+    Args:
+        value (Any): Connector-returned metadata value.
+        depth (int): Container depth; -1 denotes the metadata column mapping.
+        _budget (Optional[_MetadataBudget]): Shared serialized-byte accounting.
+        _field (Optional[str]): Top-level metadata column for diagnostics.
+
+    Returns:
+        Any: JSON-compatible value. Decimals and dates retain their existing
+        string representation; binary container members are excluded.
+
+    Raises:
+        MetadataLimitExceeded: A metadata limit is exceeded, before descending
+            into an oversized or excessively nested collection.
+    """
+    budget = _budget if _budget is not None else _MetadataBudget()
+    if isinstance(value, (dict, list, tuple)):
+        if depth >= MAX_METADATA_DEPTH:
+            raise MetadataLimitExceeded("METADATA_TOO_DEEP", field=_field)
+
+        if len(value) > MAX_METADATA_ITEMS:
+            raise MetadataLimitExceeded("METADATA_TOO_MANY_ITEMS", field=_field)
+
+        budget.reserve(2)  # Braces or brackets.
+        result = {} if isinstance(value, dict) else []
+        items = value.items() if isinstance(value, dict) else enumerate(value)
+        for key, member in items:
+            if _is_binary(member):
+                continue
+
+            if result:
+                budget.reserve(2)  # Default JSON comma and space.
+
+            field = str(key) if depth == -1 else _field
+            if isinstance(value, dict):
+                key = str(key)
+                if len(key) > MAX_METADATA_VALUE_CHARS:
+                    raise MetadataLimitExceeded("METADATA_VALUE_TOO_LONG", field=_field)
+
+                budget.reserve(
+                    len(json.dumps(key, ensure_ascii=False).encode("utf-8")) + 2
+                )
+            converted = to_json_safe(
+                member, depth=depth + 1, _budget=budget, _field=field
+            )
+            if isinstance(result, dict):
+                result[key] = converted
+            else:
+                result.append(converted)
 
         return result
 
-    if isinstance(value, decimal.Decimal):
-        result = str(value)
-
-        return result
-
-    if isinstance(value, (datetime.date, datetime.datetime, datetime.time)):
+    if value is None or isinstance(value, (bool, int, float, str)):
+        result = value
+    elif isinstance(value, (datetime.date, datetime.datetime, datetime.time)):
         result = value.isoformat()
+    else:
+        result = str(value)
+    if isinstance(result, str) and len(result) > MAX_METADATA_VALUE_CHARS:
+        raise MetadataLimitExceeded("METADATA_VALUE_TOO_LONG", field=_field)
 
-        return result
-
-    if isinstance(value, dict):
-        if depth >= MAX_METADATA_DEPTH:
-            result = str(value)[:MAX_METADATA_VALUE_CHARS]
-
-            return result
-
-        items = [(k, v) for k, v in value.items() if not _is_binary(v)]
-        result = {
-            str(k): to_json_safe(v, depth=depth + 1)
-            for k, v in items[:MAX_METADATA_ITEMS]
-        }
-
-        return result
-
-    if isinstance(value, (list, tuple)):
-        if depth >= MAX_METADATA_DEPTH:
-            result = str(value)[:MAX_METADATA_VALUE_CHARS]
-
-            return result
-
-        items = [v for v in value if not _is_binary(v)]
-        result = [to_json_safe(v, depth=depth + 1) for v in items[:MAX_METADATA_ITEMS]]
-
-        return result
-
-    result = str(value)[:MAX_METADATA_VALUE_CHARS]
+    budget.reserve(len(json.dumps(result, ensure_ascii=False).encode("utf-8")))
 
     return result
 

@@ -197,18 +197,30 @@ class LiveRunnerTest(unittest.TestCase):
             with self.subTest(table=table), self.assertRaises(ValueError):
                 runner._fixture_table(table)
 
-    def test_metadata_checks_truncation_and_aggregate_overflow_separately(self):
-        """Verify metadata checks truncation and aggregate overflow separately."""
+    def test_metadata_checks_rejections_and_all_rejected_output(self):
+        """Verify metadata checks row errors and the all-rejected contract."""
         target = Mock()
         target.run.side_effect = [
-            {"names": ["901"], "metadata": [{"note": "m" * 4096}]},
-            {"names": [str(i) for i in range(runner.FIXTURE_ROWS)]},
+            {
+                "names": [str(i) for i in range(runner.FIXTURE_ROWS)] + [None],
+                "errors": [{"image_name": "901", "code": "METADATA_VALUE_TOO_LONG"}],
+            },
+            {
+                "names": [str(i) for i in range(runner.FIXTURE_ROWS)] + [None],
+                "errors": [{"code": "METADATA_TOO_LARGE"}],
+            },
+            {
+                "names": [None],
+                "metadata": [None],
+                "shapes": [],
+                "errors": [{"code": "METADATA_VALUE_TOO_LONG"}],
+            },
         ]
         with patch.object(runner, "env", return_value="configured"):
             runner.case_big_metadata(
                 target, table="catalog.schema.images", token="token"
             )
-        self.assertEqual(target.run.call_count, 2)
+        self.assertEqual(target.run.call_count, 3)
         query = self.create_view.call_args_list[1].args[0]
         self.assertNotIn(
             "sql_statement", target.run.call_args_list[1].args[0]["steps"][0]

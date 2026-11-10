@@ -37,6 +37,8 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Databricks image imports now skip entire rows exceeding metadata string, nesting, collection or row-byte limits and expose bounded `errors` diagnostics, including all-metadata-rejected runs. Accepted metadata is no longer silently truncated or stringified at the depth limit. Success and error outputs use aligned null positions so normal image consumers skip rejected rows and a separate branch can report errors.
+
 - Restrict Databricks image reads to a fixed SELECT with native identifier and LIMIT parameters; replace `sql_statement` with catalog/schema/table and explicit metadata columns. Reject WebP before decoder construction, preflight worker JSON size, and enforce HTTP/Thrift allocation bounds while refusing compressed and Arrow/LZ4 results. Share trusted subprocess supervision across integrations; update fixture views and security regressions.
 
 - Isolate each Databricks image-source invocation in a disposable subprocess, so connector transport patches cannot affect unrelated clients. Bind validated destinations to transport lifetime, refuse relative redirects, enforce supported connector version, and validate bounded temporary outputs before loading. Local transport fixtures and the protected live-test runner now cover the intended failure paths; staging acceptance remains separate.
