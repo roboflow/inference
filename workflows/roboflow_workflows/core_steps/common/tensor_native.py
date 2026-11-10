@@ -12,9 +12,11 @@ Supported prediction shapes:
 - ``Tuple[KeyPoints, Optional[Detections]]``     (keypoint-detection workflow kind)
 """
 
+from math import isfinite
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from uuid import uuid4
 
+import cv2
 import numpy as np
 import torch
 from pycocotools import mask as mask_utils
@@ -45,6 +47,8 @@ from roboflow_workflows.execution_engine.constants import (
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
     WIDTH_KEY,
     X_KEY,
     Y_KEY,
@@ -399,32 +403,32 @@ def split_key_point_prediction(
     return None, prediction
 
 
-def _read_root_coordinates_shift(
-    image_metadata: Optional[dict],
-) -> Optional[Tuple[float, float]]:
-    """Return the ``(shift_x, shift_y)`` offset that maps this prediction's local
-    coordinates back to the root (workflow input) image, or ``None`` when no shift
-    is needed.
-
-    The offset is the crop origin recorded at
-    ``image_metadata[ROOT_PARENT_COORDINATES_KEY] = [left_top_x, left_top_y]`` by
-    ``build_native_image_metadata``. ``None`` is returned (a no-op) only when the
-    key is absent or the prediction is provably root-anchored already. A zero
-    offset alone is NOT that proof: a crop taken at ``(0, 0)`` still has
-    crop-sized dimensions and its own lineage, and its masks still need
-    re-embedding onto the root canvas - so identity additionally requires the
-    image dimensions to match the root dimensions and the parent to BE the root.
-    A ``(0.0, 0.0)`` return means "no coordinate shift, but the conversion
-    (mask re-embedding + metadata rewrite) must still run".
-    """
+def _read_root_coordinate_transform(
+    image_metadata: Optional[dict], *, fallback_scale: float = 1.0
+) -> Optional[Tuple[float, float, float]]:
+    """Read the root offset and inverse scale, or None for an anchored prediction."""
     if not image_metadata:
         return None
     root_coordinates = image_metadata.get(ROOT_PARENT_COORDINATES_KEY)
     if not root_coordinates:
         return None
+
     shift_x, shift_y = float(root_coordinates[0]), float(root_coordinates[1])
-    if shift_x != 0.0 or shift_y != 0.0:
-        return shift_x, shift_y
+    scale = float(
+        image_metadata.get(SCALING_RELATIVE_TO_ROOT_PARENT_KEY, fallback_scale)
+    )
+    if not isfinite(scale) or scale <= 0.0:
+        raise ValueError(
+            f"Prediction root scale must be positive and finite, got {scale}."
+        )
+    inverse_scale = 1.0 / scale
+    if not isfinite(inverse_scale):
+        raise ValueError(f"Prediction root scale is too small to invert, got {scale}.")
+    transform = (shift_x, shift_y, inverse_scale)
+    if transform != (0.0, 0.0, 1.0):
+        return transform
+
+    # A crop at the origin can still need a root-sized mask and updated lineage.
     image_dimensions = image_metadata.get(IMAGE_DIMENSIONS_KEY)
     root_dimensions = image_metadata.get(ROOT_PARENT_DIMENSIONS_KEY)
     dimensions_confirm_root = (
@@ -437,7 +441,8 @@ def _read_root_coordinates_shift(
     )
     if dimensions_confirm_root and parent_is_root:
         return None
-    return shift_x, shift_y
+
+    return transform
 
 
 def _native_image_metadata_in_root_coordinates(image_metadata: dict) -> dict:
@@ -456,6 +461,9 @@ def _native_image_metadata_in_root_coordinates(image_metadata: dict) -> dict:
         new_metadata[PARENT_ID_KEY] = new_metadata[ROOT_PARENT_ID_KEY]
     if root_dimensions is not None:
         new_metadata[PARENT_DIMENSIONS_KEY] = list(root_dimensions)
+    for key in (SCALING_RELATIVE_TO_PARENT_KEY, SCALING_RELATIVE_TO_ROOT_PARENT_KEY):
+        if key in new_metadata:
+            new_metadata[key] = 1.0
     return new_metadata
 
 
@@ -470,39 +478,47 @@ _GEOMETRY_KEYS_SHIFTED_TO_ROOT = (
 )
 
 
-def _add_offset(
-    value: Union[List, np.ndarray], offset_xy: np.ndarray
+def _restore_point_coordinates(
+    value: Union[List, np.ndarray],
+    *,
+    offset_xy: np.ndarray,
+    inverse_scale: float,
+    frame_scale_xy: Tuple[float, float],
+    frame_dtype: type,
+    scale_dtype: type,
 ) -> Union[List, np.ndarray]:
-    """Add ``offset_xy`` ([x, y]) to a coordinate container - the exact inverse of
-    ``dynamic_crop/v1_tensor._subtract_offset``, with the same container- and
-    dtype-preservation rules: python lists stay lists, numpy arrays stay arrays,
-    integer coordinates stay integers (crop origins are integral, so the shift is
-    lossless), floats keep float precision. Empty/None payloads pass through."""
+    """Restore per-box coordinates while retaining list/array and integer/float kinds."""
     if value is None:
         return value
     was_list = isinstance(value, list)
     array = np.asarray(value)
     if array.size == 0:
         return value
+
     is_integer = np.issubdtype(array.dtype, np.integer)
+    if inverse_scale != 1.0:
+        if frame_scale_xy != (1.0, 1.0):
+            array = array.astype(frame_dtype) * np.asarray(
+                frame_scale_xy, dtype=np.float32
+            )
+        array = np.rint(array.astype(scale_dtype) * scale_dtype(inverse_scale))
     if is_integer:
-        shifted = array.astype(np.int64) + offset_xy.astype(np.int64)
+        restored = array.astype(np.int64) + offset_xy.astype(np.int64)
     else:
-        shifted = array.astype(float) + offset_xy
-    return shifted.tolist() if was_list else shifted
+        restored = array.astype(float) + offset_xy
+    return restored.tolist() if was_list else restored
 
 
-def _shift_bboxes_metadata_to_root_coordinates(
+def _restore_bboxes_metadata_in_root_coordinates(
     bboxes_metadata: Optional[List[dict]],
+    *,
     shift_x: float,
     shift_y: float,
+    inverse_scale: float,
+    frame_scale_xy: Tuple[float, float],
+    frame_dtype: type,
 ) -> Optional[List[dict]]:
-    """Copy the per-box metadata entries, shifting the geometry payloads the
-    tensor-native serialiser reads back (``keypoints_xy``, ``polygon``) - the
-    mirror of the per-row shifts numpy's ``sv_detections_to_root_coordinates``
-    applies to ``sv.Detections.data``. The per-box host mirror is dropped: the
-    ``xyxy`` tensor is shifted by the caller, so a carried mirror would be
-    stale — consumers fall back to tensor reads."""
+    """Restore per-box geometry and drop the host mirror of the old boxes."""
     if bboxes_metadata is None:
         return None
     offset_xy = np.asarray([shift_x, shift_y])
@@ -511,43 +527,120 @@ def _shift_bboxes_metadata_to_root_coordinates(
         entry = dict(entry)
         for key in _GEOMETRY_KEYS_SHIFTED_TO_ROOT:
             if key in entry:
-                entry[key] = _add_offset(entry[key], offset_xy)
+                # NumPy rounds keypoints in float32 and box/polygon geometry in float64.
+                scale_dtype = (
+                    np.float32
+                    if key == KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
+                    else np.float64
+                )
+                entry[key] = _restore_point_coordinates(
+                    entry[key],
+                    offset_xy=offset_xy,
+                    inverse_scale=inverse_scale,
+                    frame_scale_xy=frame_scale_xy,
+                    frame_dtype=frame_dtype,
+                    scale_dtype=scale_dtype,
+                )
         for key in HOST_MIRROR_KEYS:
             entry.pop(key, None)
         shifted_entries.append(entry)
     return shifted_entries
 
 
-def _shift_native_masks_to_root_coordinates(
-    mask: Union[torch.Tensor, InstancesRLEMasks, None],
+def _inverse_scaled_mask_size(
+    size_hw: Tuple[int, int], *, inverse_scale: float
+) -> Tuple[int, int]:
+    if inverse_scale == 1.0:
+        return size_hw
+
+    height, width = size_hw
+    scaled_height, scaled_width = height * inverse_scale, width * inverse_scale
+    if not isfinite(scaled_height) or not isfinite(scaled_width):
+        raise ValueError("Inverse-scaled mask size does not fit into the root canvas.")
+
+    return max(1, round(scaled_height)), max(1, round(scaled_width))
+
+
+def _nearest_mask_indices(
+    source_size: int, target_size: int, *, axis: int
+) -> np.ndarray:
+    """Use OpenCV's actual nearest-neighbor index convention, including ties."""
+    indices = np.arange(source_size, dtype=np.int32)
+    if source_size == target_size:
+        return indices
+
+    source = indices[:, None] if axis == 0 else indices[None, :]
+    size_wh = (1, target_size) if axis == 0 else (target_size, 1)
+    sampled = cv2.resize(source, size_wh, interpolation=cv2.INTER_NEAREST)
+    return sampled.ravel()
+
+
+def _restored_mask_indices(
+    encoded_hw: Tuple[int, int],
+    *,
+    frame_hw: Tuple[int, int],
+    image_hw: Tuple[int, int],
+    target_hw: Tuple[int, int],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compose encoded-to-frame and image-to-target sampling without a dense pad.
+
+    A negative index denotes zero padding outside the encoded frame.
+    """
+    axes = []
+    for axis, (encoded, frame, image, target) in enumerate(
+        zip(encoded_hw, frame_hw, image_hw, target_hw)
+    ):
+        if not 0 < frame <= image or encoded <= 0:
+            raise ValueError("The instance mask frame must fit inside its image grid.")
+        frame_indices = _nearest_mask_indices(encoded, frame, axis=axis)
+        image_indices = _nearest_mask_indices(image, target, axis=axis)
+        sampled = frame_indices[np.minimum(image_indices, frame - 1)]
+        sampled[image_indices >= frame] = -1
+        axes.append(sampled)
+    return axes[0], axes[1]
+
+
+def _restore_native_masks_in_root_coordinates(
+    detections: InstanceDetections,
+    *,
     shift_x: float,
     shift_y: float,
+    inverse_scale: float,
     root_dimensions: Optional[Sequence[int]],
 ) -> Union[torch.Tensor, InstancesRLEMasks, None]:
-    """Re-anchor crop-local instance masks onto the root-image canvas, mirroring
-    the numpy path's paste into an ``np.full((H_root, W_root), False)`` base.
-    Dense torch masks are pasted into a zeros canvas on the same device; RLE
-    masks are re-embedded without densifying the full canvas via
-    ``embed_rle_masks_in_larger_canvas``."""
+    """Restore crop-local masks on the root canvas after nearest-neighbor resizing."""
+    mask = detections.mask
     if mask is None:
         return None
     if root_dimensions is None:
         raise ValueError(
-            "Cannot shift tensor-native instance masks to root coordinates: the "
-            f"prediction carries a non-zero root offset but no "
+            "Cannot restore tensor-native instance masks to root coordinates: the "
+            "prediction needs root-coordinate conversion but does not have "
             f"`image_metadata['{ROOT_PARENT_DIMENSIONS_KEY}']` to size the root "
             "canvas. The producer block must attach the root lineage keys "
             "(see build_native_image_metadata)."
         )
     root_height, root_width = int(root_dimensions[0]), int(root_dimensions[1])
     offset_x, offset_y = int(shift_x), int(shift_y)
+    image_hw = detections._image_size() if inverse_scale != 1.0 else None
+    frame_hw = detections.mask_frame_size or image_hw
     if isinstance(mask, InstancesRLEMasks):
-        return embed_rle_masks_in_larger_canvas(
+        anchored_rle = embed_rle_masks_in_larger_canvas(
             masks=mask,
             offset_xy=(offset_x, offset_y),
             target_size_hw=(root_height, root_width),
+            slice_inverse_scale=inverse_scale,
+            slice_image_hw=image_hw,
+            slice_frame_hw=frame_hw,
         )
-    _, mask_height, mask_width = mask.shape
+        return anchored_rle
+
+    source_hw = tuple(mask.shape[-2:])
+    image_hw = image_hw or source_hw
+    frame_hw = frame_hw if inverse_scale != 1.0 and frame_hw is not None else image_hw
+    mask_height, mask_width = _inverse_scaled_mask_size(
+        image_hw, inverse_scale=inverse_scale
+    )
     if offset_x < 0 or offset_y < 0:
         raise ValueError(
             f"Cannot shift tensor-native instance masks to root coordinates: got "
@@ -563,23 +656,73 @@ def _shift_native_masks_to_root_coordinates(
     anchored = torch.zeros(
         (mask.shape[0], root_height, root_width), dtype=mask.dtype, device=mask.device
     )
+    if mask.shape[0] == 0:
+        return anchored
+
+    if (
+        source_hw != frame_hw
+        or frame_hw != image_hw
+        or image_hw != (mask_height, mask_width)
+    ):
+        rows, columns = _restored_mask_indices(
+            source_hw,
+            frame_hw=frame_hw,
+            image_hw=image_hw,
+            target_hw=(mask_height, mask_width),
+        )
+        rows = torch.as_tensor(rows, dtype=torch.long, device=mask.device)
+        columns = torch.as_tensor(columns, dtype=torch.long, device=mask.device)
+        mask = mask[:, rows[:, None], columns]
+        if frame_hw != image_hw:
+            mask.masked_fill_((rows[:, None] < 0) | (columns < 0), 0)
     anchored[:, offset_y : offset_y + mask_height, offset_x : offset_x + mask_width] = (
         mask
     )
     return anchored
 
 
-def _shift_native_detections_to_root_coordinates(
+def _restore_native_detections_in_root_coordinates(
     detections: TensorNativeDetections,
     shift_x: float,
     shift_y: float,
+    inverse_scale: float,
 ) -> TensorNativeDetections:
-    shift = torch.as_tensor(
-        [shift_x, shift_y, shift_x, shift_y],
-        dtype=detections.xyxy.dtype,
-        device=detections.xyxy.device,
-    )
-    shifted_xyxy = detections.xyxy + shift
+    xyxy = detections.xyxy
+    frame_scale_xy = (1.0, 1.0)
+    frame_dtype = np.float64
+    if inverse_scale != 1.0:
+        # The NumPy box path rounds float64 values. MPS has no float64 kernels,
+        # so only the small box tensor goes through the host on that device.
+        coordinates = xyxy.cpu() if xyxy.device.type == "mps" else xyxy
+        if (
+            isinstance(detections, InstanceDetections)
+            and detections.mask_size is not None
+            and len(detections) > 0
+        ):
+            mask_h, mask_w = detections.mask_size
+            frame_h, frame_w = detections.mask_frame_size or detections._image_size()
+            frame_scale_xy = (frame_w / mask_w, frame_h / mask_h)
+            if frame_scale_xy != (1.0, 1.0):
+                # Match to_supervision's multiplication by float32 grid factors.
+                # NumPy promotes wide integer inputs to float64 for this step.
+                wide_integer = not xyxy.is_floating_point() and xyxy.element_size() >= 4
+                frame_dtype = (
+                    np.float64
+                    if wide_integer or xyxy.dtype == torch.float64
+                    else np.float32
+                )
+                coordinate_dtype = (
+                    torch.float64 if frame_dtype is np.float64 else torch.float32
+                )
+                factors = coordinates.new_tensor(
+                    frame_scale_xy * 2, dtype=torch.float32
+                )
+                coordinates = coordinates.to(coordinate_dtype) * factors
+        coordinates = (coordinates.to(torch.float64) * inverse_scale).round()
+        output_dtype = torch.float64 if xyxy.dtype == torch.float64 else torch.float32
+        xyxy = coordinates.to(dtype=output_dtype, device=xyxy.device)
+    shift = xyxy.new_tensor([shift_x, shift_y, shift_x, shift_y])
+    restored_xyxy = xyxy + shift
     # Root canvas dims must be read BEFORE the metadata rewrite below collapses
     # the lineage to the root frame ([0, 0] offsets, root dims everywhere).
     root_dimensions = (
@@ -592,27 +735,31 @@ def _shift_native_detections_to_root_coordinates(
         if detections.image_metadata is not None
         else None
     )
-    bboxes_metadata = _shift_bboxes_metadata_to_root_coordinates(
-        bboxes_metadata=detections.bboxes_metadata,
+    bboxes_metadata = _restore_bboxes_metadata_in_root_coordinates(
+        detections.bboxes_metadata,
         shift_x=shift_x,
         shift_y=shift_y,
+        inverse_scale=inverse_scale,
+        frame_scale_xy=frame_scale_xy,
+        frame_dtype=frame_dtype,
     )
     if isinstance(detections, InstanceDetections):
         return InstanceDetections(
-            xyxy=shifted_xyxy,
+            xyxy=restored_xyxy,
             class_id=detections.class_id,
             confidence=detections.confidence,
-            mask=_shift_native_masks_to_root_coordinates(
-                mask=detections.mask,
+            mask=_restore_native_masks_in_root_coordinates(
+                detections,
                 shift_x=shift_x,
                 shift_y=shift_y,
+                inverse_scale=inverse_scale,
                 root_dimensions=root_dimensions,
             ),
             image_metadata=image_metadata,
             bboxes_metadata=bboxes_metadata,
         )
     return Detections(
-        xyxy=shifted_xyxy,
+        xyxy=restored_xyxy,
         class_id=detections.class_id,
         confidence=detections.confidence,
         image_metadata=image_metadata,
@@ -620,16 +767,19 @@ def _shift_native_detections_to_root_coordinates(
     )
 
 
-def _shift_native_key_points_to_root_coordinates(
+def _restore_native_key_points_in_root_coordinates(
     key_points: KeyPoints,
     shift_x: float,
     shift_y: float,
+    inverse_scale: float,
 ) -> KeyPoints:
-    shift = torch.as_tensor(
-        [shift_x, shift_y],
-        dtype=key_points.xy.dtype,
-        device=key_points.xy.device,
-    )
+    xy = key_points.xy
+    covariance = key_points.covariance
+    if inverse_scale != 1.0:
+        xy = (xy.to(torch.float32) * inverse_scale).round()
+        if covariance is not None:
+            covariance = covariance * (inverse_scale * inverse_scale)
+    shift = xy.new_tensor([shift_x, shift_y])
     image_metadata = (
         _native_image_metadata_in_root_coordinates(key_points.image_metadata)
         if key_points.image_metadata is not None
@@ -641,14 +791,12 @@ def _shift_native_key_points_to_root_coordinates(
         else None
     )
     return KeyPoints(
-        xy=key_points.xy + shift,
+        xy=xy + shift,
         class_id=key_points.class_id,
         confidence=key_points.confidence,
         image_metadata=image_metadata,
         key_points_metadata=key_points_metadata,
-        # Auxiliary RF-DETR tensors ride along unchanged - a pure translation
-        # affects neither positional covariance nor detection confidence.
-        covariance=key_points.covariance,
+        covariance=covariance,
         detection_confidence=key_points.detection_confidence,
     )
 
@@ -656,56 +804,70 @@ def _shift_native_key_points_to_root_coordinates(
 def native_detections_to_root_coordinates(
     prediction: TensorNativePrediction,
 ) -> TensorNativePrediction:
-    """Shift a tensor-native prediction from its crop-local coordinates back to the
-    root (workflow input) image coordinates, returning a copy.
+    """Restore a tensor-native prediction in workflow input-image coordinates.
 
-    Reads the crop origin from
-    ``image_metadata[ROOT_PARENT_COORDINATES_KEY] = [shift_x, shift_y]`` and adds
-    ``[shift_x, shift_y, shift_x, shift_y]`` to ``xyxy`` (and ``[shift_x, shift_y]``
-    to keypoint ``xy``). Instance masks are re-anchored onto the root-image canvas
-    (dense torch masks pasted into a zeros canvas; RLE masks re-embedded without
-    densifying), and the per-box ``keypoints_xy`` / ``polygon`` payloads in
-    ``bboxes_metadata`` are shifted - matching the mask paste and the ``data``-key
-    shifts of numpy's ``sv_detections_to_root_coordinates``. The keypoint-detection
-    tuple ``(KeyPoints, Detections)`` has both components shifted consistently.
-    This is the tensor-native mirror of ``sv_detections_to_root_coordinates``
-    (utils.py), used by the execution-engine output constructor when an output is
-    requested in PARENT coordinates.
+    Invert the recorded root scale before applying the crop origin. Resize
+    masks on the crop grid before placing them on the root canvas. The two
+    components of a keypoint-detection tuple share the same transform.
 
-    No-op (the input is returned unchanged) when the prediction carries no root
-    offset — i.e. the key is absent or the shift is ``[0, 0]`` (already
-    root-anchored, e.g. a model run directly on the workflow input image).
+    Args:
+        prediction (TensorNativePrediction): Detection, mask or keypoint prediction
+            with optional root lineage in its image metadata.
+
+    Returns:
+        TensorNativePrediction: Root-anchored prediction. The original object is
+            returned when no root transform is needed.
     """
     if isinstance(prediction, tuple):
         key_points, detections = prediction
-        shift = _read_root_coordinates_shift(
+        key_points_metadata = (
             key_points.image_metadata if key_points is not None else None
         )
-        if shift is None and detections is not None:
-            shift = _read_root_coordinates_shift(detections.image_metadata)
-        if shift is None:
+        detections_metadata = (
+            detections.image_metadata if detections is not None else None
+        )
+        transform = _read_root_coordinate_transform(
+            key_points_metadata,
+            fallback_scale=(detections_metadata or {}).get(
+                SCALING_RELATIVE_TO_ROOT_PARENT_KEY, 1.0
+            ),
+        )
+        if transform is None:
+            transform = _read_root_coordinate_transform(
+                detections_metadata,
+                fallback_scale=(key_points_metadata or {}).get(
+                    SCALING_RELATIVE_TO_ROOT_PARENT_KEY, 1.0
+                ),
+            )
+        if transform is None:
             return prediction
-        shift_x, shift_y = shift
-        shifted_key_points = (
-            _shift_native_key_points_to_root_coordinates(key_points, shift_x, shift_y)
+
+        rooted_key_points = (
+            _restore_native_key_points_in_root_coordinates(key_points, *transform)
             if key_points is not None
             else None
         )
-        shifted_detections = (
-            _shift_native_detections_to_root_coordinates(detections, shift_x, shift_y)
+        rooted_detections = (
+            _restore_native_detections_in_root_coordinates(detections, *transform)
             if detections is not None
             else None
         )
-        return shifted_key_points, shifted_detections
-    if isinstance(prediction, KeyPoints):
-        shift = _read_root_coordinates_shift(prediction.image_metadata)
-        if shift is None:
-            return prediction
-        return _shift_native_key_points_to_root_coordinates(prediction, *shift)
-    shift = _read_root_coordinates_shift(prediction.image_metadata)
-    if shift is None:
+        return rooted_key_points, rooted_detections
+
+    transform = _read_root_coordinate_transform(prediction.image_metadata)
+    if transform is None:
         return prediction
-    return _shift_native_detections_to_root_coordinates(prediction, *shift)
+
+    if isinstance(prediction, KeyPoints):
+        rooted_key_points = _restore_native_key_points_in_root_coordinates(
+            prediction, *transform
+        )
+        return rooted_key_points
+
+    rooted_detections = _restore_native_detections_in_root_coordinates(
+        prediction, *transform
+    )
+    return rooted_detections
 
 
 def instance_mask_to_numpy(
@@ -969,16 +1131,31 @@ def embed_rle_masks_in_larger_canvas(
     masks: InstancesRLEMasks,
     offset_xy: Tuple[int, int],
     target_size_hw: Tuple[int, int],
+    *,
+    slice_inverse_scale: float = 1.0,
+    slice_image_hw: Optional[Tuple[int, int]] = None,
+    slice_frame_hw: Optional[Tuple[int, int]] = None,
 ) -> InstancesRLEMasks:
-    """Place N slice-resolution RLE masks onto a larger all-zeros canvas, in RLE.
+    """Place slice-resolution RLE masks onto a larger all-zeros RLE canvas.
 
-    Each input mask sits at slice resolution ``masks.image_size == (h, w)``. The returned
-    masks live on a ``(H, W)`` canvas with the slice's top-left at ``offset_xy == (x0, y0)``;
-    everything outside the slice is zero. COCO RLE here is column-major (fortran), matching
-    ``torch_mask_to_coco_rle``. The big canvas is never densified -- only the small slice is
-    decoded to dense and run lengths are emitted directly onto the canvas.
+    Only the slice is decoded and optionally resized. Run lengths are then
+    emitted directly onto the larger canvas in column-major order.
+
+    Args:
+        masks (InstancesRLEMasks): Encoded masks on the source slice.
+        offset_xy (Tuple[int, int]): Origin of the restored slice in the target.
+        target_size_hw (Tuple[int, int]): Dimensions of the output canvas.
+        slice_inverse_scale (float): Multiplier from the input slice to the
+            target slice. At unit scale the existing slice grid is preserved.
+        slice_image_hw (Optional[Tuple[int, int]]): Image size before scaling.
+        slice_frame_hw (Optional[Tuple[int, int]]): Image-space extent of the encoded grid.
+
+    Returns:
+        InstancesRLEMasks: Masks encoded on the larger canvas.
     """
-    h, w = masks.image_size
+    image_hw = slice_image_hw or masks.image_size
+    frame_hw = slice_frame_hw or image_hw
+    h, w = _inverse_scaled_mask_size(image_hw, inverse_scale=slice_inverse_scale)
     x0, y0 = offset_xy
     target_h, target_w = target_size_hw
 
@@ -1000,8 +1177,21 @@ def embed_rle_masks_in_larger_canvas(
     # Decode only the small (h, w) slices to dense; the big canvas stays in run-list form.
     dense_slices = coco_rle_masks_to_numpy_mask(masks).astype(np.uint8)
 
+    rows, columns = None, None
+    encoded_hw = tuple(dense_slices.shape[-2:])
+    if slice_inverse_scale != 1.0 and (
+        encoded_hw != frame_hw or frame_hw != image_hw or image_hw != (h, w)
+    ):
+        rows, columns = _restored_mask_indices(
+            encoded_hw, frame_hw=frame_hw, image_hw=image_hw, target_hw=(h, w)
+        )
     embedded: List[bytes] = []
     for dense_slice in dense_slices:
+        if rows is not None and columns is not None:
+            dense_slice = dense_slice[rows[:, None], columns]
+            if frame_hw != image_hw:
+                dense_slice[rows < 0, :] = 0
+                dense_slice[:, columns < 0] = 0
         # Lay the (h, w) slice out as columns (column j of height h) -> shape (h, w).
         counts = _embed_single_mask_counts(
             column_major_slice=dense_slice,

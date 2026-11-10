@@ -31,10 +31,13 @@ from roboflow_workflows.execution_engine.constants import (
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
 )
 from supervision.config import ORIENTED_BOX_COORDINATES
 
 from inference_models.models.base.instance_segmentation import InstanceDetections
+from inference_models.models.base.keypoints_detection import KeyPoints
 from inference_models.models.base.object_detection import Detections
 from inference_models.models.base.types import InstancesRLEMasks
 
@@ -385,3 +388,247 @@ def test_root_conversion_parity_with_numpy_path() -> None:
     numpy_serialized = numpy_serialise_sv_detections(sv_root)
     tensor_serialized = tensor_serialise_sv_detections(native_root)
     assert numpy_serialized == tensor_serialized
+
+
+@pytest.mark.parametrize("encoding", ["dense", "rle"])
+def test_root_scale_restores_masks_boxes_and_per_box_geometry(encoding: str) -> None:
+    local_masks = _crop_local_dense_masks()
+    mask = (
+        torch.from_numpy(local_masks)
+        if encoding == "dense"
+        else _dense_masks_to_rle(local_masks)
+    )
+    mask_at_root_scale = local_masks.repeat(2, axis=1).repeat(2, axis=2)
+    detections = _native_instance_detections(mask=mask)
+    detections.image_metadata[SCALING_RELATIVE_TO_PARENT_KEY] = 0.5
+    detections.image_metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = 0.5
+    expected_mask = np.zeros((2, ROOT_H, ROOT_W), dtype=bool)
+    expected_mask[:, 50:130, 100:220] = mask_at_root_scale
+
+    result = native_detections_to_root_coordinates(detections)
+
+    torch.testing.assert_close(
+        result.xyxy,
+        torch.tensor([[120.0, 60.0, 160.0, 80.0], [180.0, 90.0, 210.0, 120.0]]),
+    )
+    assert isinstance(result.mask, type(mask))
+    np.testing.assert_array_equal(_decode_native_masks(result.mask), expected_mask)
+    metadata = result.bboxes_metadata[0]
+    expected_corners = [[120, 60], [160, 60], [160, 80], [120, 80]]
+    np.testing.assert_array_equal(
+        metadata[POLYGON_KEY_IN_SV_DETECTIONS], expected_corners
+    )
+    np.testing.assert_array_equal(metadata[ORIENTED_BOX_COORDINATES], expected_corners)
+    assert metadata[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] == [[122.0, 62.0], [158.0, 78.0]]
+    assert result.image_metadata[SCALING_RELATIVE_TO_PARENT_KEY] == 1.0
+    assert result.image_metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] == 1.0
+    assert detections.image_metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] == 0.5
+    assert detections.bboxes_metadata[0][KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] == [
+        [11.0, 6.0],
+        [29.0, 14.0],
+    ]
+    assert native_detections_to_root_coordinates(result) is result
+
+
+def test_root_scale_transforms_keypoint_tuple_and_covariance() -> None:
+    metadata = _native_image_metadata()
+    metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = 0.2
+    box = Detections(
+        xyxy=torch.tensor([[10.0, 5.0, 30.0, 15.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.5]),
+        image_metadata=metadata,
+        bboxes_metadata=[
+            {KEYPOINTS_XY_KEY_IN_SV_DETECTIONS: [[2.3, 3.7], [29.0, 14.0]]}
+        ],
+    )
+    points_metadata = dict(metadata)
+    del points_metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY]
+    points = KeyPoints(
+        xy=torch.tensor([[[2.3, 3.7], [29.0, 14.0]]]),
+        class_id=box.class_id,
+        confidence=torch.tensor([[0.9, 0.8]]),
+        image_metadata=points_metadata,
+        covariance=torch.tensor([[[[1.0, 0.0], [0.0, 2.0]], [[3.0, 0.0], [0.0, 4.0]]]]),
+        detection_confidence=box.confidence,
+    )
+
+    rooted_points, rooted_box = native_detections_to_root_coordinates((points, box))
+
+    torch.testing.assert_close(
+        rooted_points.xy, torch.tensor([[[112.0, 68.0], [245.0, 120.0]]])
+    )
+    torch.testing.assert_close(
+        rooted_box.xyxy, torch.tensor([[150.0, 75.0, 250.0, 125.0]])
+    )
+    torch.testing.assert_close(rooted_points.covariance, points.covariance * 25)
+    assert (
+        rooted_box.bboxes_metadata[0][KEYPOINTS_XY_KEY_IN_SV_DETECTIONS]
+        == rooted_points.xy[0].tolist()
+    )
+    assert rooted_points.confidence is points.confidence
+    assert rooted_points.detection_confidence is points.detection_confidence
+    torch.testing.assert_close(points.xy, torch.tensor([[[2.3, 3.7], [29.0, 14.0]]]))
+
+
+@pytest.mark.parametrize("scale", [0.0, -1.0, float("nan"), float("inf")])
+def test_root_scale_rejects_invalid_factors(scale: float) -> None:
+    detections = _native_instance_detections(mask=None)
+    detections.image_metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = scale
+
+    with pytest.raises(ValueError, match="root scale"):
+        native_detections_to_root_coordinates(detections)
+
+
+def test_root_scale_matches_numpy_rounding_for_box_and_polygon() -> None:
+    metadata = _native_image_metadata()
+    metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = 0.2
+    corners = np.array(
+        [[2.3, 2.3], [3.7, 2.3], [3.7, 3.7], [2.3, 3.7]], dtype=np.float32
+    )
+    detections = Detections(
+        xyxy=torch.tensor([[2.3, 2.3, 3.7, 3.7]], dtype=torch.float32),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.5]),
+        image_metadata=metadata,
+        bboxes_metadata=[{POLYGON_KEY_IN_SV_DETECTIONS: corners}],
+    )
+
+    result = native_detections_to_root_coordinates(detections)
+
+    torch.testing.assert_close(result.xyxy, torch.tensor([[111.0, 61.0, 119.0, 69.0]]))
+    np.testing.assert_array_equal(
+        result.bboxes_metadata[0][POLYGON_KEY_IN_SV_DETECTIONS],
+        [[111.0, 61.0], [119.0, 61.0], [119.0, 69.0], [111.0, 69.0]],
+    )
+
+
+def test_root_scale_preserves_numpy_nearest_neighbor_sampling() -> None:
+    metadata = _native_image_metadata()
+    metadata[IMAGE_DIMENSIONS_KEY] = [4, 14]
+    metadata[ROOT_PARENT_COORDINATES_KEY] = [1, 2]
+    metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = 14 / 18
+    local_mask = np.zeros((1, 4, 14), dtype=bool)
+    local_mask[:, :, 6] = True
+    local_box = [[6.0, 1.0, 7.0, 3.0]]
+    legacy = sv.Detections(
+        xyxy=np.array(local_box),
+        mask=local_mask,
+        data={key: np.array([value]) for key, value in metadata.items()},
+    )
+    encoded_mask = InstancesRLEMasks.from_coco_rle_masks(
+        image_size=(4, 14),
+        masks=[mask_utils.encode(np.asfortranarray(local_mask[0], dtype=np.uint8))],
+    )
+    expected = sv_detections_to_root_coordinates(legacy).mask
+
+    for mask in (torch.from_numpy(local_mask), encoded_mask):
+        detections = InstanceDetections(
+            xyxy=torch.tensor(local_box),
+            class_id=torch.tensor([0]),
+            confidence=torch.tensor([0.5]),
+            mask=mask,
+            image_metadata=metadata,
+        )
+
+        result = native_detections_to_root_coordinates(detections)
+
+        np.testing.assert_array_equal(_decode_native_masks(result.mask), expected)
+
+
+@pytest.mark.parametrize("encoding", ["dense", "rle"])
+@pytest.mark.parametrize(
+    ("image_hw", "frame_hw", "scale"),
+    [((4, 4), (4, 4), 0.5), ((5, 8), (4, 6), 0.5), ((5, 5), (5, 5), 5 / 3)],
+)
+def test_root_scale_normalizes_the_encoded_mask_grid(
+    encoding: str, image_hw: tuple[int, int], frame_hw: tuple[int, int], scale: float
+) -> None:
+    encoded_mask = np.array(
+        [[False, False, True], [False, True, True], [True, False, True]]
+    )
+    if encoding == "dense":
+        mask = torch.from_numpy(encoded_mask[None, ...])
+    else:
+        mask = InstancesRLEMasks.from_coco_rle_masks(
+            image_size=image_hw,
+            mask_size=encoded_mask.shape,
+            masks=[mask_utils.encode(np.asfortranarray(encoded_mask, dtype=np.uint8))],
+        )
+    metadata = _native_image_metadata()
+    metadata[IMAGE_DIMENSIONS_KEY] = list(image_hw)
+    metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = scale
+    detections = InstanceDetections(
+        xyxy=torch.tensor([[1.0, 0.0, 3.0, 3.0]]),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.5]),
+        mask=mask,
+        image_size=image_hw,
+        mask_frame_size=frame_hw,
+        image_metadata=metadata,
+    )
+    legacy = detections.to_supervision()
+    for key, value in metadata.items():
+        legacy[key] = np.array([value])
+    expected = sv_detections_to_root_coordinates(legacy)
+
+    result = native_detections_to_root_coordinates(detections)
+
+    np.testing.assert_array_equal(result.xyxy.numpy(), expected.xyxy)
+    np.testing.assert_array_equal(_decode_native_masks(result.mask), expected.mask)
+
+
+@pytest.mark.parametrize("encoding", ["dense", "rle"])
+def test_root_scale_keeps_empty_mask_batches_root_sized(encoding: str) -> None:
+    metadata = _native_image_metadata()
+    metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = 0.5
+    if encoding == "dense":
+        mask = torch.empty((0, 0, 0), dtype=torch.bool)
+    else:
+        mask = InstancesRLEMasks(image_size=(CROP_H, CROP_W), masks=[])
+    detections = InstanceDetections(
+        xyxy=torch.empty((0, 4)),
+        class_id=torch.empty((0,), dtype=torch.long),
+        confidence=torch.empty((0,)),
+        mask=mask,
+        image_metadata=metadata,
+    )
+
+    result = native_detections_to_root_coordinates(detections)
+
+    assert result.xyxy.shape == (0, 4)
+    if encoding == "dense":
+        assert result.mask.shape == (0, ROOT_H, ROOT_W)
+    else:
+        assert result.mask.image_size == (ROOT_H, ROOT_W)
+        assert result.mask.masks == []
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
+def test_root_scale_matches_box_and_polygon_frame_rounding(dtype: torch.dtype) -> None:
+    metadata = _native_image_metadata()
+    metadata[IMAGE_DIMENSIONS_KEY] = [4, 4]
+    metadata[ROOT_PARENT_COORDINATES_KEY] = [1, 2]
+    metadata[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = 1.6
+    box = [[0, 0, 3, 3]]
+    polygon = np.array([[0, 0], [3, 0], [3, 3], [0, 3]])
+    detections = InstanceDetections(
+        xyxy=torch.tensor(box, dtype=dtype),
+        class_id=torch.tensor([0]),
+        confidence=torch.tensor([0.5]),
+        mask=torch.ones((1, 3, 3), dtype=torch.bool),
+        image_size=(4, 4),
+        image_metadata=metadata,
+        bboxes_metadata=[{POLYGON_KEY_IN_SV_DETECTIONS: polygon}],
+    )
+    legacy = detections.to_supervision()
+    for key, value in metadata.items():
+        legacy[key] = np.array([value])
+    expected = sv_detections_to_root_coordinates(legacy)
+
+    result = native_detections_to_root_coordinates(detections)
+
+    np.testing.assert_array_equal(result.xyxy.numpy(), expected.xyxy)
+    restored = result.bboxes_metadata[0][POLYGON_KEY_IN_SV_DETECTIONS]
+    np.testing.assert_array_equal(restored[0], expected.xyxy[0, :2])
+    np.testing.assert_array_equal(restored[2], expected.xyxy[0, 2:])
