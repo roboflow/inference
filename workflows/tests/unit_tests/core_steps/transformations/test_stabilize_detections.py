@@ -250,3 +250,65 @@ def test_stabilize_detections_tensor_native_accepts_empty_untracked_detections()
 
     # then
     assert int(result[TENSOR_OUTPUT_KEY].xyxy.shape[0]) == 0
+
+
+@pytest.mark.parametrize("tensor_native", [False, True], ids=["numpy", "tensor-native"])
+@pytest.mark.parametrize(
+    "next_box, expected_gap_box",
+    [
+        pytest.param([6, 7, 14, 13], [6, 7, 14, 13], id="resize-in-place"),
+        pytest.param([10, 9, 14, 13], [12, 10, 16, 14], id="translate"),
+        pytest.param([9, 9, 14, 13], [10.5, 10, 15.5, 14], id="resize-and-translate"),
+    ],
+)
+def test_stabilize_detections_predicts_gap_from_box_center(
+    tensor_native, next_box, expected_gap_box
+):
+    # given
+    if tensor_native:
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("inference_models")
+        from roboflow_workflows.core_steps.transformations.stabilize_detections.v1_tensor import (
+            StabilizeTrackedDetectionsBlockV1 as TensorStabilizeBlockV1,
+        )
+
+        from inference_models.models.base.object_detection import Detections
+
+        block = TensorStabilizeBlockV1()
+    else:
+        block = StabilizeTrackedDetectionsBlockV1()
+
+    def make_detections(boxes):
+        xyxy = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
+        if tensor_native:
+            return Detections(
+                xyxy=torch.from_numpy(xyxy),
+                class_id=torch.zeros(len(xyxy), dtype=torch.long),
+                confidence=torch.ones(len(xyxy), dtype=torch.float32),
+                image_metadata={"class_names": {0: "object"}},
+                bboxes_metadata=[{"tracker_id": 3} for _ in xyxy],
+            )
+        return sv.Detections(xyxy=xyxy, tracker_id=np.full(len(xyxy), 3))
+
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata("video"),
+        video_metadata=VideoMetadata(
+            video_identifier="video", frame_number=1, frame_timestamp=0
+        ),
+        numpy_image=np.zeros((32, 32, 3), dtype=np.uint8),
+    )
+
+    # when
+    for boxes in ([[8, 8, 12, 12]], [next_box], []):
+        result = block.run(
+            image=image,
+            detections=make_detections(boxes),
+            smoothing_window_size=3,
+            bbox_smoothing_coefficient=1.0,
+        )
+
+    # then
+    xyxy = result["tracked_detections"].xyxy
+    np.testing.assert_allclose(
+        xyxy.cpu().numpy() if tensor_native else xyxy, [expected_gap_box]
+    )
