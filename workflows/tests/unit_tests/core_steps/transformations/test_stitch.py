@@ -1,5 +1,6 @@
 import cv2 as cv
 import numpy as np
+import pytest
 from roboflow_workflows.core_steps.transformations.stitch_images.v1 import (
     BlockManifest,
     stitch_images,
@@ -90,16 +91,44 @@ def test_stitch_images():
         max_allowed_reprojection_error=5,
     )
 
-    expected_res = np.zeros((640, 640, 3), dtype=np.uint8)
-    expected_res[:, :] = (255, 0, 0)
-    expected_res = cv.drawContours(
-        expected_res,
-        [contours + np.array([300, 0])],
-        -1,
-        (0, 0, 255),
-        -1,
+    # The anchor stays pixel-exact, with the moving image extending about 300
+    # pixels to the right. Homography estimation can round the outer edge by one.
+    assert res.shape[0] == 640
+    assert abs(res.shape[1] - 940) <= 1
+    np.testing.assert_array_equal(res[:, :640], img2)
+    extension = res[1:-1, 640:-1]
+    np.testing.assert_array_equal(
+        extension, np.broadcast_to([255, 0, 0], extension.shape)
     )
-    expected_res = cv.line(
-        expected_res, [600, 5], [600, 600], (0, 150, 150), 5, cv.LINE_8
+
+
+@pytest.mark.parametrize("offset", [(12, 7), (12, -7), (-12, 7), (-12, -7), (0, 0)])
+def test_stitch_canvas_contains_both_images(
+    offset: tuple[int, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exact homography isolates the real warp and paste from estimation noise."""
+    height, width = 96, 108
+    image = np.random.default_rng(14).integers(
+        12, 240, size=(height, width, 3), dtype=np.uint8
     )
-    assert np.allclose(res, expected_res)
+    shift_x, shift_y = offset
+    homography = np.array([[1.0, 0.0, shift_x], [0.0, 1.0, shift_y], [0.0, 0.0, 1.0]])
+    monkeypatch.setattr(cv, "findHomography", lambda **_: (homography, None))
+
+    stitched = stitch_images(
+        image1=image,
+        image2=image.copy(),
+        count_of_best_matches_per_query_descriptor=2,
+        max_allowed_reprojection_error=3,
+    )
+
+    assert stitched.shape == (height + abs(shift_y), width + abs(shift_x), 3)
+    anchor_x, anchor_y = max(0, -shift_x), max(0, -shift_y)
+    np.testing.assert_array_equal(
+        stitched[anchor_y : anchor_y + height, anchor_x : anchor_x + width], image
+    )
+    source_x = width - 1 if shift_x >= 0 else 0
+    source_y = height - 1 if shift_y >= 0 else 0
+    moved_x = anchor_x + shift_x + source_x
+    moved_y = anchor_y + shift_y + source_y
+    np.testing.assert_array_equal(stitched[moved_y, moved_x], image[source_y, source_x])
