@@ -51,6 +51,7 @@ stay within it, and it is also the longest clip that can be embedded.
 """
 
 import threading
+from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
@@ -100,6 +101,10 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             )
         )
         self._position_embeddings = PositionEmbeddings()
+        self._open_requests = 0
+        self._open_requests_lock = threading.Lock()
+        self._no_open_requests = threading.Event()
+        self._no_open_requests.set()
         LOGGER.info(
             "SAM3 video clip cache: %s=%s GB, %d bytes per cached frame, "
             "limit of %d frames.",
@@ -245,9 +250,33 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
         return preprocessed
 
+    @contextmanager
+    def _request_lock(self) -> Iterator[None]:
+        """The model lock for a caller's request, taken ahead of background encoding.
+
+        The encoding thread takes the lock once per frame and takes it again
+        the moment it lets go, so a request waiting on the plain lock was not
+        served until the whole clip was encoded. While any request is waiting
+        or running, the encoding thread starts no further frame.
+        """
+        with self._open_requests_lock:
+            self._open_requests += 1
+            self._no_open_requests.clear()
+
+        try:
+            with self._lock:
+                yield
+        finally:
+            with self._open_requests_lock:
+                self._open_requests -= 1
+                if self._open_requests == 0:
+                    self._no_open_requests.set()
+
     def _encode_clip_frames(self, video_id: str, clip: VideoClip) -> None:
         session = self._clip_session(clip)
         for frame_idx in range(clip.n_frames):
+            self._no_open_requests.wait()
+
             with self._lock, torch.inference_mode():
                 if not self._video_clip_cache.holds(video_id, clip):
                     return
@@ -300,7 +329,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             )
 
         masks = {}
-        with self._lock:
+        with self._request_lock():
             for obj_id, object_prompts in per_object.items():
                 if frame_idx not in object_prompts:
                     continue
@@ -368,7 +397,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             )
 
         masks: Dict[int, Dict[str, dict]] = {i: {} for i in sorted(wanted)}
-        with self._lock:
+        with self._request_lock():
             for obj_id, object_prompts in per_object.items():
                 for frame, pred_masks in self._track_object(
                     clip, obj_id, object_prompts
