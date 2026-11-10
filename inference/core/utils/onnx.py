@@ -84,9 +84,9 @@ def _run_session_with_tensor_iobinding(
 
     session.run_with_iobinding(binding)
 
-    # Preserve the existing float32 output contract for mixed precision inference.
-    predictions = [
-        prediction.astype(np.float32) for prediction in binding.copy_outputs_to_cpu()
-    ]
+    # Outputs are already on CPU. Keep only the final copy so returned arrays
+    # own their memory independently of the binding and its OrtValues.
+    outputs = binding.get_outputs()
+    predictions = [output.numpy().astype(np.float32, copy=True) for output in outputs]
 
     return predictions

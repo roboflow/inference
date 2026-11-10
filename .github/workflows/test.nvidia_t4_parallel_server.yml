@@ -15,6 +15,11 @@ on:
           - ''
           - regression_without_torch
           - regression_with_torch
+      run_iobinding_benchmark:
+        description: 'Compare NumPy and ONNX Runtime output allocation in Docker.'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -54,6 +59,23 @@ jobs:
             inference-parallel-tests:local -p no:cacheprovider \
             tests/inference/unit_tests/enterprise/parallel tests/docker/test_parallel_worker_startup.py \
             tests/inference/unit_tests/core/utils/test_onnx_iobinding.py
+      - name: Benchmark ONNX output allocation in Docker
+        if: ${{ inputs.run_iobinding_benchmark }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/onnx-iobinding-benchmark"
+          docker run --rm --gpus all --entrypoint python3 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/onnx-iobinding-benchmark,dst=/evidence" \
+            inference-parallel-tests:local \
+            -m development.benchmark_scripts.benchmark_onnx_iobinding \
+            --device cuda --output /evidence/results.json
+      - name: Upload ONNX allocation benchmark
+        if: ${{ !cancelled() && inputs.run_iobinding_benchmark }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: onnx-iobinding-benchmark
+          path: ${{ runner.temp }}/onnx-iobinding-benchmark/
+          if-no-files-found: error
       
       - name: 🔋 Start Test Docker without Torch Preprocessing - Parallel GPU
         id: start_without_torch

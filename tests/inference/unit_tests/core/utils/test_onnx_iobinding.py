@@ -64,3 +64,14 @@ def test_onnx_predictions_preserve_shape_values_and_output_order(
         assert prediction.shape == (batch_size, 2)
         assert prediction.dtype == expected_dtype
         np.testing.assert_array_equal(prediction, expected_values)
+        if mode in {"cpu_iobinding", "cuda"}:
+            assert prediction.flags.owndata
+
+    if mode in {"cpu_iobinding", "cuda"}:
+        # A subsequent binding must not overwrite earlier caller-owned results.
+        next_predictions = runner(session, input_name="images", input_data=inputs + 1)
+        for previous, current, expected_values in zip(
+            predictions, next_predictions, [expected, -expected]
+        ):
+            assert not np.shares_memory(previous, current)
+            np.testing.assert_array_equal(previous, expected_values)
