@@ -1,11 +1,13 @@
 """Tests for the OpenAI Decisions Switch block (``roboflow_core/open_ai_decisions_switch@v1``)."""
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 
 import numpy as np
 import pytest
+import requests
 import supervision as sv
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.flow_control.openai_decisions_switch.v1 import (
@@ -387,7 +389,42 @@ def test_run_serializes_detections_in_the_context() -> None:
     }
 
 
-def test_run_with_a_managed_key_posts_the_request_to_the_proxy() -> None:
+@pytest.mark.parametrize(
+    "context, expected_context",
+    [
+        pytest.param({"line": "A"}, {"line": "A"}, id="plain values"),
+        pytest.param(
+            {"depth": _batch(np.array([[0.25, 0.75]], dtype=np.float32))},
+            {"depth": [[0.25, 0.75]]},
+            id="numpy array from a batched output",
+        ),
+        pytest.param(
+            {
+                "count": _batch(np.int64(3)),
+                "score": np.float32(0.5),
+                "matches": np.bool_(True),
+                "scalar_array": np.array(2),
+            },
+            {"count": 3, "score": 0.5, "matches": True, "scalar_array": 2},
+            id="numpy scalars and zero-dimensional array",
+        ),
+        pytest.param(
+            {
+                "summary": _batch(
+                    {
+                        "counts": np.array([1, 2], dtype=np.int64),
+                        "nested": [{"score": np.float32(0.5)}, (np.int64(3),)],
+                    }
+                )
+            },
+            {"summary": {"counts": [1, 2], "nested": [{"score": 0.5}, [3]]}},
+            id="numpy values nested in containers",
+        ),
+    ],
+)
+def test_run_with_a_managed_key_posts_the_request_to_the_proxy(
+    context: Dict[str, Any], expected_context: Dict[str, Any]
+) -> None:
     # given
     platform_client = RecordingPlatformClient(post_response=_decision("damaged", 0.99))
     block = OpenAIDecisionsSwitchBlockV1(
@@ -402,7 +439,7 @@ def test_run_with_a_managed_key_posts_the_request_to_the_proxy() -> None:
         case_descriptions={},
         default_next_steps=DEFAULT_STEPS,
         min_confidence=0.9,
-        context={"line": "A"},
+        context=context,
         context_operations={},
         model_version="gpt-6-luna",
         image_detail="low",
@@ -417,10 +454,14 @@ def test_run_with_a_managed_key_posts_the_request_to_the_proxy() -> None:
     assert post["api_key"] == "rf-key"
     assert post["payload"]["openai_api_key"] == "rf_key:account"
     assert post["payload"]["model"] == "gpt-6-luna"
-    content = post["payload"]["input"][0]["content"]
+    prepared_request = requests.Request(
+        method="POST", url="https://example.invalid", json=post["payload"]
+    ).prepare()
+    payload = json.loads(prepared_request.body)
+    content = payload["input"][0]["content"]
     assert content[0]["type"] == "input_image"
     assert content[0]["detail"] == "low"
-    assert content[1] == {"type": "input_json", "data": {"line": "A"}}
+    assert content[1] == {"type": "input_json", "data": expected_context}
 
 
 ROUTING_WORKFLOW = {

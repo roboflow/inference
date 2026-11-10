@@ -9,6 +9,7 @@ the default steps.
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.query_language.entities.operations import (
@@ -451,9 +452,24 @@ def build_image_context(
         operations_chain = build_operations_chain(operations=operations)
         values[name] = operations_chain(values[name], global_parameters={})
 
-    image_context = serialize_wildcard_kind(values)
+    image_context = _normalize_numpy_values(serialize_wildcard_kind(values))
 
     return image_context
+
+
+def _normalize_numpy_values(value: Any) -> Any:
+    """Convert nested NumPy arrays and scalars to Python values for JSON encoding."""
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    elif isinstance(value, np.generic):
+        value = value.item()
+
+    if isinstance(value, dict):
+        value = {key: _normalize_numpy_values(item) for key, item in value.items()}
+    elif isinstance(value, (list, tuple)):
+        value = [_normalize_numpy_values(item) for item in value]
+
+    return value
 
 
 def build_switch_input(
