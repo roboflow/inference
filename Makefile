@@ -1,4 +1,4 @@
-.PHONY: style check_code_quality download_fonts create_workflows_wheel create_streamvision_wheel create_models_wheel create_isolation_wheels create_pypi_wheels
+.PHONY: style check_code_quality download_fonts create_workflows_wheel create_streamvision_wheel create_models_wheel create_isolation_wheels create_pypi_wheels create_pypi_sdk_wheel create_pypi_runtime_wheels
 
 serve:
 	SKIP_CODEGEN=1 python -m zensical serve
@@ -84,6 +84,21 @@ create_pypi_wheels:
 		${PYTHON} .release/pypi/$$script.setup.py bdist_wheel --dist-dir dist/pypi; \
 	done
 
+# Separate publication inventories. Keep create_pypi_wheels and image build
+# targets compatible with callers that need all six distributions.
+create_pypi_sdk_wheel:
+	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+	rm -rf dist/sdk build
+	${PYTHON} .release/pypi/inference.sdk.setup.py bdist_wheel --dist-dir dist/sdk
+
+create_pypi_runtime_wheels:
+	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+	rm -rf dist/pypi
+	set -e; for script in inference.core inference.cpu inference.gpu inference inference.cli; do \
+		rm -rf build/*; \
+		${PYTHON} .release/pypi/$$script.setup.py bdist_wheel --dist-dir dist/pypi; \
+	done
+
 create_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
@@ -123,4 +138,5 @@ create_inference_cli_whl:
 
 
 upload_wheels:
-	twine upload $(filter-out $(wildcard dist/roboflow_workflows-*.whl dist/inference_models-*.whl dist/streamvision-*.whl),$(wildcard dist/*.whl))
+	# The SDK is uploaded only by publish.pypi.inference_sdk.yml.
+	twine upload $(filter-out $(wildcard dist/inference_sdk-*.whl dist/roboflow_workflows-*.whl dist/inference_models-*.whl dist/streamvision-*.whl),$(wildcard dist/*.whl))

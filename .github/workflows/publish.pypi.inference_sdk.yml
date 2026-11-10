@@ -1,0 +1,90 @@
+name: Publish Inference SDK to PyPI
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        description: Publish inference-sdk (default builds only)
+      expected_version:
+        type: string
+        default: ""
+        description: Required for manual publication; must match package metadata
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.expected_version }}
+  PUBLISH: ${{ github.event_name == 'release' || inputs.publish == true }}
+
+jobs:
+  build:
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      artifact: ${{ steps.build.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build and inspect the SDK wheel in Docker
+        id: build
+        run: |
+          bash .release/pypi/release.sh build-sdk
+          echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
+          echo "artifact=sdk-wheel-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            dist/sdk/*.whl
+            dist/sdk-manifest.json
+            dist/version.txt
+
+  publish:
+    needs: build
+    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || inputs.publish == true) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: pypi-sdk-${{ needs.build.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: dist
+      - name: Verify an existing SDK or stage the missing wheel
+        id: prepare
+        run: |
+          bash .release/pypi/release.sh prepare-sdk --wait-seconds 600
+          echo "upload=$(jq -r '.upload' dist/sdk-decision.json)" >> "$GITHUB_OUTPUT"
+      - name: Publish the missing SDK wheel
+        if: ${{ steps.prepare.outputs.upload == 'true' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/sdk-upload/
+      - name: Verify the published bytes and package contents
+        run: bash .release/pypi/release.sh verify-sdk --wait-seconds 600
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-publication-receipt-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            dist/sdk-decision.json
+            dist/sdk-receipt.json
