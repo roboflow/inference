@@ -16,6 +16,8 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+- Add Muse Ember to the Meta VLM v3 model options.
+
 ## `0.2.15.post1`
 
 Bundled execution engine: `1.17.1`.
