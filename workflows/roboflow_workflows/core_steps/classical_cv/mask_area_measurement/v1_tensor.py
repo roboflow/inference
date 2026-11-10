@@ -158,8 +158,8 @@ def compute_detection_areas(
 ) -> List[float]:
     """Compute the area of all detections in square pixels.
 
-    For bounding-box-only detections, areas are computed in a single vectorized
-    operation. For detections with segmentation masks, the area is the count of
+    Bounding-box areas use Python scalars to avoid coordinate-dtype overflow.
+    For detections with segmentation masks, the area is the count of
     non-zero mask pixels (via ``cv2.countNonZero``). This correctly handles masks
     with holes — hole pixels are zero and are not counted. Falls back to the
     bounding box area when the mask pixel count is zero.
@@ -183,7 +183,7 @@ def compute_detection_areas(
             if count > 0:
                 areas.append(float(count))
                 continue
-        x1, y1, x2, y2 = detections.xyxy[i]
+        x1, y1, x2, y2 = detections.xyxy[i].tolist()
         areas.append(float((x2 - x1) * (y2 - y1)))
 
     return areas

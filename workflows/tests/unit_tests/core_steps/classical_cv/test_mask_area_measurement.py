@@ -367,3 +367,82 @@ def test_run_with_default_pixels_per_unit_areas_equal():
     out = result[OUTPUT_KEY]
     assert out.data[AREA_KEY_IN_SV_DETECTIONS][0] == 600.0
     assert out.data[AREA_CONVERTED_KEY_IN_SV_DETECTIONS][0] == 600.0
+
+
+@pytest.mark.parametrize("tensor_native", [False, True], ids=["numpy", "tensor-native"])
+@pytest.mark.parametrize(
+    "dtype, box, expected_area",
+    [
+        pytest.param("int8", [0, 0, 100, 100], 10000.0, id="int8-product"),
+        pytest.param("int16", [0, 0, 400, 400], 160000.0, id="int16-product"),
+        pytest.param("uint8", [0, 0, 200, 200], 40000.0, id="uint8-product"),
+        pytest.param("int16", [-20000, 0, 20000, 1], 40000.0, id="int16-subtraction"),
+        pytest.param("float16", [0, 0, 400, 400], 160000.0, id="float16-product"),
+        pytest.param(
+            "float16", [-40000, 0, 40000, 1], 80000.0, id="float16-subtraction"
+        ),
+        pytest.param("int64", [2**53, 0, 2**53 + 1, 1], 1.0, id="large-integer-origin"),
+        pytest.param("float32", [0.25, 0.5, 2.75, 2.0], 3.75, id="fractional-control"),
+    ],
+)
+@pytest.mark.parametrize("mask_pixels", [None, 0, 6], ids=["box", "empty-mask", "mask"])
+def test_run_preserves_area_across_coordinate_dtypes(
+    tensor_native, dtype, box, expected_area, mask_pixels
+):
+    """Measure in a wide arithmetic type without changing predictions or mask counts."""
+    # given
+    xyxy = np.array([box], dtype=dtype)
+    mask = None
+    if mask_pixels is not None:
+        mask = np.zeros((1, 512, 512), dtype=bool)
+        mask[0, 0, :mask_pixels] = True
+    if tensor_native:
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("inference_models")
+        from roboflow_workflows.core_steps.classical_cv.mask_area_measurement.v1_tensor import (
+            MaskAreaMeasurementBlockV1 as NativeBlock,
+        )
+
+        from inference_models.models.base.instance_segmentation import (
+            InstanceDetections,
+        )
+        from inference_models.models.base.object_detection import Detections
+
+        fields = {
+            "xyxy": torch.from_numpy(xyxy.copy()),
+            "class_id": torch.tensor([0]),
+            "confidence": torch.tensor([0.9]),
+            "image_metadata": {"class_names": {0: "object"}},
+            "bboxes_metadata": [{"detection_id": "original"}],
+        }
+        if mask is None:
+            detections = Detections(**fields)
+        else:
+            detections = InstanceDetections(**fields, mask=torch.from_numpy(mask))
+        block = NativeBlock()
+    else:
+        detections = sv.Detections(
+            xyxy=xyxy.copy(),
+            mask=mask,
+            class_id=np.array([0]),
+            confidence=np.array([0.9]),
+            data={"detection_id": np.array(["original"])},
+        )
+        block = MaskAreaMeasurementBlockV1()
+
+    # when
+    output = block.run(predictions=detections, pixels_per_unit=2.0)[OUTPUT_KEY]
+
+    # then
+    area = float(mask_pixels) if mask_pixels else expected_area
+    if tensor_native:
+        values = output.bboxes_metadata[0]
+        assert output.xyxy.dtype == detections.xyxy.dtype
+        assert output.xyxy.device == detections.xyxy.device
+        assert torch.equal(output.xyxy, detections.xyxy)
+    else:
+        values = {key: value[0] for key, value in output.data.items()}
+        np.testing.assert_array_equal(output.xyxy, xyxy, strict=True)
+    assert values[AREA_KEY_IN_SV_DETECTIONS] == area
+    assert values[AREA_CONVERTED_KEY_IN_SV_DETECTIONS] == area / 4
+    assert values["detection_id"] == "original"
