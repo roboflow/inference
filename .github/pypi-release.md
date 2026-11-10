@@ -1,7 +1,7 @@
 # PyPI and inference release runbook
 
-This runbook includes the SDK split (PR1) and dependency coordination (PR2).
-Generalized per-file retry recovery remains PR3. SDK and runtime
+This runbook covers separate SDK/runtime publication and dependency coordination.
+Generalized per-file retry recovery is outside this change. SDK and runtime
 packages still share `inference/core/version.py`; runtime/CLI wheels still require
 exactly that SDK version. Independent SDK version numbering is not implemented.
 
@@ -13,7 +13,7 @@ identity. No new trusted publisher, API token, or personal PyPI access is needed
 for this split. Keep the existing PyPI publisher entries, including the SDK's.
 The SDK upload and five-package upload have separate jobs and inventories.
 
-Before merging, review the Docker validation and build-only runs for all three
+Before merging, review the Docker validation and build-only runs for all four
 package modes. Preserve the workflow filename and environment configuration:
 changing either would require coordination with a PyPI project owner.
 
@@ -58,8 +58,8 @@ the runtime publication job waits for successful SDK publication and verificatio
 an SDK failure or cancellation blocks runtime upload. Each runtime upload also
 verifies the actual SDK files in PyPI, including runtime-only dispatches.
 
-Runtime/all modes resolve first-party dependencies from the built wheel metadata.
-They reuse compatible published versions, or dispatch missing same-checkout
+Runtime/all/dependencies modes resolve first-party dependencies from the built
+wheel metadata. They reuse compatible published versions, or dispatch missing same-checkout
 Models, Workflows and Streamvision versions in dependency order before runtime
 publication. Build-only runs emit the plan without dispatching child publishers.
 The selected versions, file hashes and child run IDs are retained as evidence.
@@ -172,7 +172,7 @@ must run in Docker.
 `make create_models_wheel` does not itself perform a lock check. Workflows builds
 both wheel and sdist, despite its Make target's name; preserve both in evidence.
 
-## Full release with PR1 and PR2
+## Full release
 
 1. Select versions and required upstream releases. Update source versions,
    requirements pins, pyprojects, locks and version-consistency checks together.
@@ -232,9 +232,9 @@ unrelated GPU or Jetson suites. Do not repeat unchanged exact-revision evidence.
 These GitHub Actions workflows provide release validation using their existing
 runner or container configuration. Record each run URL, candidate revision and
 result. The Docker requirement applies to local execution and reproductions;
-direct execution on a CI runner does not invalidate a workflow's evidence. PR1
-does not require a Docker migration of server, Models, Workflows or hosted-test
-infrastructure.
+direct execution on a CI runner does not invalidate a workflow's evidence. This
+change does not require a Docker migration of server, Models, Workflows or
+hosted-test infrastructure.
 
 ### Images and deployment
 
@@ -254,7 +254,8 @@ Confirm the final tag before dispatch. For build-only image checks use
 
 Keep the legacy server image default. Do not run
 `publish.pypi.inference_server_stack.yml` or `docker.inference_server.yml` as part
-of this release path. Production image build behavior is unchanged by PR1.
+of this release path. Production image build behavior is unchanged by the
+publisher split.
 
 ## Retry and recovery
 
@@ -291,8 +292,8 @@ visibility delays have bounded retries; inspect the reported error on timeout.
 
 The five-package publisher is **not yet generally retry-safe**. After a partial
 upload, stop and inventory PyPI; do not add `skip-existing` or blindly rerun it.
-General per-file recovery is PR3. Never delete/overwrite an existing release to
-make it match. A contents conflict requires investigation and usually a new
+General per-file recovery is outside this change. Never delete/overwrite an
+existing release to make it match. A contents conflict requires investigation and usually a new
 version. Workflow rollback cannot undo already published files.
 
 If rolling back the split, restore the previous `publish.pypi.yml` behavior as

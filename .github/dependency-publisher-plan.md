@@ -1,14 +1,14 @@
-# Implementation plan: dependency-first publication (PR2)
+# Implementation plan: dependency-first publication
 
 Author: Michal Taraszewski
 
-Stacked on PR1: https://github.com/roboflow/inference/pull/3374 at
-4c039331269ab809effccac5bce078c58b711dd8. Target PR1's branch until it merges.
+Stacked on the SDK publisher split: https://github.com/roboflow/inference/pull/3374
+at 4c039331269ab809effccac5bce078c58b711dd8. Target that PR's branch until it merges.
 
 ## 1. Problem
 
-PR1 verifies the exact SDK before publishing the five runtime distributions.
-Models, Workflows and Streamvision still publish independently on a release
+The SDK publisher verifies the exact SDK before publishing the five runtime
+distributions. Models, Workflows and Streamvision still publish independently on a release
 event. A consumer can become available before its required upstream versions,
 and operators must coordinate manual releases themselves.
 
@@ -47,17 +47,17 @@ The standalone workflows lose their automatic release trigger, avoiding duplicat
 uploads; full releases dispatch them when required. Their manual build-only and
 publish controls remain. Manual publishers verify the dependencies of their built
 wheels too. SDK-only mode skips dependency planning and runtime work. Runtime-only
-mode still requires the SDK to be prepublished. Build-only runtime/all mode emits
-a plan without dispatching publishers or uploading anything.
+mode still requires the SDK to be prepublished. Build-only runtime/all/dependencies
+mode emits a plan without dispatching publishers or uploading anything.
 
 The new packages=dependencies mode builds the same inventories and publishes
 only the SDK and required standalone dependencies. It prepares dependencies
 before image validation and GitHub Release creation, preserving the full release
-process while runtime partial-upload recovery remains deferred to PR3.
+process. Runtime partial-upload recovery is outside this change.
 
 The plan and registry receipts are retained with revision, workflow run IDs,
 versions and hashes. Runtime publication verifies the plan again immediately
-before upload. The SDK retains PR1's stricter same-candidate content verification.
+before upload. The SDK retains its stricter same-candidate content verification.
 Dependency reuse verifies registry hashes and wheel identity/dependency metadata;
 it does not pretend that an already released dependency was built from this checkout.
 
@@ -70,7 +70,8 @@ cycles; ordered dispatch; failed/cancelled/wrong-revision child runs; ref moveme
 dry runs with no mutations; final verification against the built consumer; and
 workflow ownership/permissions. Real runtime wheel metadata feeds the planner in
 an integration test. Representative mutations must fail the boundary tests.
-Run PR1's existing contract tests, formatting, actionlint and concurrency checks.
+Run the existing SDK release contract tests, formatting, actionlint and
+concurrency checks.
 
 ## 3. Decisions and limits
 
@@ -78,8 +79,8 @@ Run PR1's existing contract tests, formatting, actionlint and concurrency checks
 - Require universal pure-Python dependency wheels, matching these four projects.
   Check all declared internal dependencies including optional extras; conflicting
   conditional constraints fail conservatively rather than silently omitting an edge.
-- General per-file retry recovery remains PR3. Existing standalone skip-existing
-  behavior is unchanged; malformed/partial dependency releases fail verification
+- General per-file retry recovery is outside this change. Existing standalone
+  skip-existing behavior is unchanged; malformed/partial dependency releases fail verification
   rather than authorizing a replacement upload. Runtime partial-upload retries
   remain manual. Coordinator cancellation can leave an already-dispatched child
   running, but starts no subsequent consumer.
