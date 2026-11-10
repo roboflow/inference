@@ -247,19 +247,23 @@ def wrap_roboflow_api_errors(
                         return function(*args, **kwargs)
                     except RetryRequestError as error:
                         raise error.inner_error
-                except Timeout as error:
-                    record_error(error)
-                    raise RoboflowAPITimeoutError(
+                except Timeout:
+                    # Transport exceptions can include credentialed URLs. Keep
+                    # their raw messages/chains out of spans and public traces.
+                    safe_error = RoboflowAPITimeoutError(
                         "Timeout when attempting to connect to Roboflow API."
-                    ) from error
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 except (
                     requests.exceptions.ConnectionError,
                     ConnectionError,
-                ) as error:
-                    record_error(error)
-                    raise RoboflowAPIConnectionError(
+                ):
+                    safe_error = RoboflowAPIConnectionError(
                         "Could not connect to Roboflow API."
-                    ) from error
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 except requests.exceptions.HTTPError as error:
                     record_error(error)
                     user_handler_override = (
@@ -305,16 +309,20 @@ def wrap_roboflow_api_errors_async(
                         return await function(*args, **kwargs)
                     except RetryRequestError as error:
                         raise error.inner_error
-                except asyncio.TimeoutError as error:
-                    record_error(error)
-                    raise RoboflowAPITimeoutError(
+                except asyncio.TimeoutError:
+                    # Match the sync wrapper: neither telemetry nor formatted
+                    # exception chains may contain raw transport credentials.
+                    safe_error = RoboflowAPITimeoutError(
                         "Timeout when attempting to connect to Roboflow API."
-                    ) from error
-                except (aiohttp.ClientConnectionError, ConnectionError) as error:
-                    record_error(error)
-                    raise RoboflowAPIConnectionError(
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
+                except (aiohttp.ClientConnectionError, ConnectionError):
+                    safe_error = RoboflowAPIConnectionError(
                         "Could not connect to Roboflow API."
-                    ) from error
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 except (aiohttp.ContentTypeError, JSONDecodeError) as error:
                     record_error(error)
                     raise MalformedRoboflowAPIResponseError(
