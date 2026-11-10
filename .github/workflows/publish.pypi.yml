@@ -7,8 +7,8 @@ on:
       packages:
         type: choice
         default: all
-        options: [sdk, runtime, all]
-        description: Package group (runtime requires an already published SDK)
+        options: [sdk, runtime, all, dependencies]
+        description: Package group (dependencies prepares upstreams without uploading runtime)
       publish:
         type: boolean
         default: false
@@ -29,7 +29,7 @@ env:
 # No environment or reusable publishing workflow may change that OIDC identity.
 jobs:
   build_sdk:
-    if: ${{ github.event_name == 'release' || inputs.packages == 'sdk' || inputs.packages == 'all' }}
+    if: ${{ github.event_name == 'release' || inputs.packages == 'sdk' || inputs.packages == 'all' || inputs.packages == 'dependencies' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
@@ -98,7 +98,7 @@ jobs:
             dist/sdk-receipt.json
 
   build_runtime:
-    if: ${{ github.event_name == 'release' || inputs.packages == 'runtime' || inputs.packages == 'all' }}
+    if: ${{ github.event_name == 'release' || inputs.packages == 'runtime' || inputs.packages == 'all' || inputs.packages == 'dependencies' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
@@ -127,14 +127,62 @@ jobs:
             dist/*-manifest.json
             dist/version.txt
 
-  publish_runtime:
+  prepare_dependencies:
     needs: [build_runtime, publish_sdk]
+    if: >-
+      ${{ !cancelled() && github.repository == 'roboflow/inference' &&
+          needs.build_runtime.result == 'success' &&
+          (needs.publish_sdk.result == 'success' ||
+           (github.event_name == 'workflow_dispatch' &&
+            (inputs.packages == 'runtime' || inputs.publish != true) &&
+            needs.publish_sdk.result == 'skipped')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      artifact: ${{ steps.plan.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_runtime.outputs.artifact }}
+          path: dist
+      - name: Require the exact SDK before publishing upstream dependencies
+        if: ${{ github.event_name == 'release' || inputs.publish == true }}
+        run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
+      - name: Resolve dependencies and publish missing upstream versions in order
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          operation=plan
+          if [ "$PUBLISH" = "true" ]; then operation=coordinate; fi
+          bash .release/pypi/dependencies.sh "$operation"
+          echo "artifact=dependency-plan-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: dependency-plan-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            dist/dependency-plan.json
+            dist/dependency-receipt.json
+
+  publish_runtime:
+    needs: [build_runtime, publish_sdk, prepare_dependencies]
     # Runtime-only dispatches skip the SDK job; all/release runs require it to
     # finish verification successfully. A failed or cancelled SDK blocks upload.
     if: >-
       ${{ !cancelled() && github.repository == 'roboflow/inference' &&
           (github.event_name == 'release' || inputs.publish == true) &&
+          (github.event_name == 'release' || inputs.packages != 'dependencies') &&
           needs.build_runtime.result == 'success' &&
+          needs.prepare_dependencies.result == 'success' &&
           (needs.publish_sdk.result == 'success' ||
            (github.event_name == 'workflow_dispatch' && inputs.packages == 'runtime' &&
             needs.publish_sdk.result == 'skipped')) }}
@@ -156,12 +204,21 @@ jobs:
           path: dist
       - name: Verify the published SDK before uploading any consumer
         run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare_dependencies.outputs.artifact }}
+          path: dist
+      - name: Verify the selected dependencies against the retained consumer wheels
+        run: bash .release/pypi/dependencies.sh verify
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-sdk-verification-${{ github.run_attempt }}
           retention-days: 90
           if-no-files-found: error
-          path: dist/sdk-receipt.json
+          path: |
+            dist/sdk-receipt.json
+            dist/dependency-plan.json
+            dist/dependency-receipt.json
       - name: Publish the five runtime and CLI wheels
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

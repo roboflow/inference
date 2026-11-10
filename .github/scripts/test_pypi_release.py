@@ -279,11 +279,15 @@ def test_workflow_ownership_and_credential_boundaries():
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert inputs["publish"]["default"] == "false"
     assert inputs["packages"]["default"] == "all"
-    assert inputs["packages"]["options"] == ["sdk", "runtime", "all"]
+    assert inputs["packages"]["options"] == ["sdk", "runtime", "all", "dependencies"]
     assert "id-token" not in workflow["permissions"]
     jobs = workflow["jobs"]
     assert jobs["publish_sdk"]["needs"] == "build_sdk"
-    assert set(jobs["publish_runtime"]["needs"]) == {"build_runtime", "publish_sdk"}
+    assert set(jobs["publish_runtime"]["needs"]) == {
+        "build_runtime",
+        "publish_sdk",
+        "prepare_dependencies",
+    }
 
     for name, job in jobs.items():
         assert "environment" not in job
@@ -291,7 +295,7 @@ def test_workflow_ownership_and_credential_boundaries():
         uploads = [
             step for step in job["steps"] if step.get("uses", "").startswith("pypa/")
         ]
-        if name in {"build_sdk", "build_runtime"}:
+        if name in {"build_sdk", "build_runtime", "prepare_dependencies"}:
             assert "id-token" not in job.get("permissions", {})
             assert not uploads
             continue

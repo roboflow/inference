@@ -1,7 +1,7 @@
 # PyPI and inference release runbook
 
-This runbook works with the SDK publisher split alone. Dependency selection and
-generalized retry handling are later changes, not prerequisites. SDK and runtime
+This runbook includes the SDK split (PR1) and dependency coordination (PR2).
+Generalized per-file retry recovery remains PR3. SDK and runtime
 packages still share `inference/core/version.py`; runtime/CLI wheels still require
 exactly that SDK version. Independent SDK version numbering is not implemented.
 
@@ -44,6 +44,7 @@ skipping normal PR CI or migrating unrelated CI suites to Docker.
 | `publish.pypi.yml`, `packages=sdk` | SDK build only | `publish=true`, `expected_version=<SDK version>` |
 | `publish.pypi.yml`, `packages=runtime` | Five-package build only | `publish=true`, `expected_version=<shared version>` |
 | `publish.pypi.yml`, `packages=all` (default) | SDK and five-package builds | `publish=true`, `expected_version=<shared version>` |
+| `publish.pypi.yml`, `packages=dependencies` | SDK/runtime builds and dependency plan | `publish=true`, `expected_version=<shared version>`; uploads upstream dependencies only |
 | `publish.pypi.inference_exp.yml` | Models build only | `publish=true` |
 | `publish.pypi.roboflow_workflows.yml` | Workflows build only | `publish=true` |
 | `publish.pypi.streamvision.yml` | Streamvision build only | `publish=true` |
@@ -56,6 +57,17 @@ and requires the exact SDK to have been published already. In all/release mode,
 the runtime publication job waits for successful SDK publication and verification;
 an SDK failure or cancellation blocks runtime upload. Each runtime upload also
 verifies the actual SDK files in PyPI, including runtime-only dispatches.
+
+Runtime/all modes resolve first-party dependencies from the built wheel metadata.
+They reuse compatible published versions, or dispatch missing same-checkout
+Models, Workflows and Streamvision versions in dependency order before runtime
+publication. Build-only runs emit the plan without dispatching child publishers.
+The selected versions, file hashes and child run IDs are retained as evidence.
+The runtime publisher verifies the selected dependencies again before upload.
+
+`packages=dependencies` performs the same preparation, including SDK publication,
+but never uploads the five runtime packages. Use it before image validation and
+GitHub Release creation. SDK-only mode remains independent.
 
 Build-only examples (replace the ref/version):
 
@@ -125,7 +137,7 @@ docker build -t inference-pypi-tests -f .release/pypi/Dockerfile .release/pypi
 docker image inspect inference-pypi-tests --format '{{.Id}}'
 git rev-parse HEAD
 docker run --rm -v "$PWD:/work" -w /work inference-pypi-tests \
-  python -m pytest .github/scripts/test_pypi_release.py -v
+  python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py -v
 ```
 
 ## Standalone package release
@@ -137,42 +149,63 @@ Models and SDK; Streamvision's workflows extra needs compatible Workflows.
 Existing compatible versions can be reused. Do not raise dependency floors or
 bump unrelated packages merely to make all version numbers move together.
 
+Standalone publishers are manual workflows; a full release dispatches them from
+`publish.pypi.yml` only when its plan selects a missing version. They no longer
+start independently on a GitHub Release event. Their filenames and PyPI trust
+identities are unchanged. Each manual publisher checks the first-party
+dependencies in its built wheel before uploading; a missing dependency blocks
+that publication. Publish its required upstream first, then rerun the consumer.
+The coordinator sets `expected_version` and `expected_revision`; operators may
+also set these inputs to bind a standalone run to a reviewed candidate.
+
+The resolver checks exact pins, version ranges, provided extras and Python
+3.10–3.13 compatibility. It includes internal dependencies declared by all extras
+and platform markers, failing conservatively if their constraints conflict.
+It prefers published non-yanked universal wheels. If no published version fits,
+the same-checkout project version must fit; otherwise update versions/pins/locks
+explicitly before releasing. Third-party dependency resolution remains the job
+of package locks and installation tests.
+
 Before publication, inspect both source declarations and built metadata.
 Validate applicable locks for Models, Workflows and Streamvision; local checks
 must run in Docker.
 `make create_models_wheel` does not itself perform a lock check. Workflows builds
 both wheel and sdist, despite its Make target's name; preserve both in evidence.
 
-## Full release with only PR1 merged
+## Full release with PR1 and PR2
 
 1. Select versions and required upstream releases. Update source versions,
    requirements pins, pyprojects, locks and version-consistency checks together.
    Freeze and push each candidate after relocking; test the pushed SHA.
-2. Build and validate required upstream candidates. Publish SDK and Models as
-   needed, then Workflows, then Streamvision, verifying each before its consumer.
-   The `publish_sdk` job is the sole SDK upload owner. A full release still
-   needs a new SDK version when its exact shared-version pin requires one.
+2. Build and validate the candidate packages. Dispatch `publish.pypi.yml` with
+   `packages=dependencies`, `publish=false` and the expected source version.
+   Review the retained plan. Then dispatch the same mode with `publish=true`.
+   It publishes/verifies the SDK, reuses existing upstreams and dispatches missing
+   Models, Workflows and Streamvision versions in dependency order. Require the
+   coordinator to succeed before proceeding. The `publish_sdk` job is the sole
+   SDK upload owner. A full release still needs the exact shared SDK version.
 3. For a public RC, publish required RC packages in that order, then dispatch
    `publish.pypi.yml` with `packages=runtime`, `publish=true` and its expected
    RC version.
-   It waits up to ten minutes for a matching SDK before uploading any consumer.
+   It verifies the SDK and selected upstream dependencies before uploading any
+   runtime consumer. Missing standalone versions are coordinated automatically.
 4. Build the required legacy CPU/GPU/Jetson candidate images, record their
    digests, run runtime checks, deploy staging and run staging acceptance tests.
 5. If another candidate is needed, repeat with RC2, RC3, etc. Record new evidence;
    do not search only for `rc1` or reuse results after relevant changes.
 6. Prepare stable versions and locks. Build and validate stable artifacts again:
    RC and stable wheels contain different metadata and are not byte-identical.
-   Publish and verify required stable SDK/Models/Workflows/Streamvision versions
-   before stable consumers. Reuse unchanged compatible upstream releases.
+   Repeat `packages=dependencies` for the stable version and inspect its receipts.
+   RC and stable selections are separate. Reuse unchanged compatible upstreams.
 7. Merge the approved stable candidate, check its final SHA and dependency
    selections, then create the GitHub Release `v<VERSION>` at that commit.
    **Do not manually publish the five stable packages before this event.**
    The release automatically starts both package groups in `publish.pypi.yml`
-   plus existing standalone/image workflows. The SDK verifies its prepublished
+   plus existing image workflows. The SDK verifies its prepublished
    wheel and becomes a no-op when contents match. Runtime upload waits for that
-   verification. Monitor the automatic jobs rather than launching duplicates.
-   The remaining publishers retain their existing
-   behavior, including their current retry limitations.
+   verification and dependency coordination. Standalone publishers run only if
+   required by the plan. Monitor these jobs rather than launching duplicates.
+   Publication retry limitations below still apply.
 8. Verify stable package installation and image digests, complete production
    deployment/handoffs, and run production acceptance checks. Retain the record.
 
@@ -224,6 +257,20 @@ Keep the legacy server image default. Do not run
 of this release path. Production image build behavior is unchanged by PR1.
 
 ## Retry and recovery
+
+The dependency coordinator dispatches publishers using GitHub's returned run ID,
+checks that run's source SHA and workflow identity, and waits for success before
+checking PyPI. A moved candidate ref, child failure/cancellation, incompatible
+metadata, authentication error or timeout blocks runtime upload. Registry
+verification is read-only and checks downloaded wheels against registry hashes.
+Reusing a released dependency does not claim it was built from this checkout.
+
+If coordination fails, inspect its retained plan and child run URLs in the logs.
+A timeout, lost dispatch response or coordinator cancellation can leave a child
+running: inspect Actions before retrying. Retrying plans against current PyPI and
+reuses completed dependency versions; it does not repair partial releases. Keep
+the candidate ref frozen throughout the run. Do not rerun runtime publication
+after a partial runtime upload until the existing recovery procedure is followed.
 
 The SDK publisher checks PyPI before upload. Only an absent version permits
 upload. For an existing version, it checks the inventory, yanked state, registry

@@ -1,9 +1,15 @@
 name: Publish streamvision to PyPI
 on:
-  release:
-    types: [created]
   workflow_dispatch:
     inputs:
+      expected_version:
+        description: Expected package version (set by the release coordinator)
+        type: string
+        default: ""
+      expected_revision:
+        description: Expected commit SHA (set by the release coordinator)
+        type: string
+        default: ""
       publish:
         description: "Publish the built wheel to PyPI (false = build-only smoke test)"
         type: choice
@@ -18,13 +24,21 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.repository == 'roboflow/inference' }}
+    env:
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify the requested candidate revision and version
+        run: bash .release/pypi/dependencies.sh guard --package streamvision
       - name: 🐍 Set up Python 3.12
         uses: actions/setup-python@v6
         with:
@@ -43,12 +57,18 @@ jobs:
         with:
           name: streamvision-wheel
           path: dist/streamvision-*.whl
+      - name: Verify published dependencies before upload
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json
       - name: 🚀 Publish streamvision to PyPI
-        # Release-triggered runs always publish. Manual dispatches publish
-        # only when the operator explicitly opts in — default is build-only
-        # so smoke-testing the packaging never accidentally re-tags PyPI.
-        if: ${{ github.event_name == 'release' || github.event.inputs.publish == 'true' }}
+        if: ${{ github.event.inputs.publish == 'true' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
           skip-existing: true
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && github.event.inputs.publish == 'true' }}
+        with:
+          name: streamvision-dependencies-${{ github.run_attempt }}
+          path: release-evidence/
+          if-no-files-found: error
