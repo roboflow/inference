@@ -58,17 +58,19 @@ inventory checks, matching/conflicting SDK reuse, ZIP timestamp differences,
 registry/hash failures, delayed visibility and bounded timeouts. Validate the
 three package modes, build-only defaults, failed/skipped/cancelled dependencies,
 and preservation of the existing OIDC workflow identity. SDK unit,
-integration, E2E and installation workflows execute through Docker. Record exact
-image IDs, revisions, commands and results; no host fallback.
+integration, E2E and installation workflows execute through Docker. All local
+validation must use Docker with exact image IDs, revisions, commands and results
+recorded; there is no local host fallback. Other GitHub Actions workflows retain
+their existing runner or container execution.
 
 ## 3. Decisions and rollout prerequisites
 
 - Retain the current workflow filename, repository and absence of an environment
   for both upload jobs. Keep all six existing PyPI trusted-publisher entries.
   The split requires no external publisher configuration change.
-- Existing non-SDK host-executed validation is not accepted under the Docker
-  policy. Its Docker execution paths are a release prerequisite, not a reason
-  to include an unrelated whole-repository CI migration here.
+- Run normal PR CI. The local Docker requirement does not require suppressing
+  GitHub Actions or migrating unrelated workflows to Docker. Their existing
+  runner-based checks remain valid release evidence.
 - SDK receipts compare complete contents rather than historical input-fingerprint
   receipts. This is stricter about output equivalence and avoids guessing the
   setup script's transitive input closure.

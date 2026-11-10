@@ -30,9 +30,12 @@ Artifact names include their build attempt. Rerunning a failed publication job
 uses its original build output; rerunning the build retains a separate artifact.
 A source, metadata, dependency or toolchain change invalidates affected evidence.
 
-All validation must execute in Docker, including smoke tests, benchmarks and
-reproductions. Record image ID/digest, candidate revision, actual command and
-result. Missing Docker/dependencies/hardware is NO-GO; there is no host fallback.
+All local validation must execute in Docker, including smoke tests, benchmarks
+and reproductions. Record image ID/digest, candidate revision, actual command and
+result. Missing local Docker/dependencies/hardware is NO-GO for that validation;
+there is no local host fallback. GitHub Actions workflows retain their configured
+runner or container execution. The local Docker requirement does not require
+skipping normal PR CI or migrating unrelated CI suites to Docker.
 
 ## Publisher controls
 
@@ -135,7 +138,8 @@ Existing compatible versions can be reused. Do not raise dependency floors or
 bump unrelated packages merely to make all version numbers move together.
 
 Before publication, inspect both source declarations and built metadata.
-Validate applicable locks for Models, Workflows and Streamvision in Docker.
+Validate applicable locks for Models, Workflows and Streamvision; local checks
+must run in Docker.
 `make create_models_wheel` does not itself perform a lock check. Workflows builds
 both wheel and sdist, despite its Make target's name; preserve both in evidence.
 
@@ -192,13 +196,12 @@ unrelated GPU or Jetson suites. Do not repeat unchanged exact-revision evidence.
 | `integration_tests_inference_experimental_gpu.yml` | `extras=""`, `python_version=3.12`; requires GPU hardware |
 | `integration_tests_inference_server_x86.yml` | `server-image=legacy`, `use-inference-models=all`, `image_digest=<amd64 digest>`, `image_tag=""` |
 
-This table identifies coverage and current controls, not certification that
-every existing workflow runs in Docker. Non-SDK workflows that execute checks
-on the host cannot count as release validation under the Docker policy. Use a
-reviewed Docker execution path for their suites and record equivalent coverage;
-if one is unavailable, that gate remains NO-GO. PR1 does not rewrite all server,
-Models, Workflows or hosted-test infrastructure. This pre-existing prerequisite
-is not supplied by PR2 or PR3 either.
+These GitHub Actions workflows provide release validation using their existing
+runner or container configuration. Record each run URL, candidate revision and
+result. The Docker requirement applies to local execution and reproductions;
+direct execution on a CI runner does not invalidate a workflow's evidence. PR1
+does not require a Docker migration of server, Models, Workflows or hosted-test
+infrastructure.
 
 ### Images and deployment
 
@@ -207,7 +210,7 @@ is not supplied by PR2 or PR3 either.
 | `docker.cpu.yml`, `docker.gpu.yml` | `force_push=true`, `custom_tag` as explained below |
 | `docker.jetson.5.1.1.yml`, `docker.jetson.6.2.0.yml`, `docker.jetson.7.2.0.yml` | Same push/tag inputs, only for target platforms; 7.2 `rebuild_media=false` unless needed |
 | `modal.custom_python_block.deploy.yml` | `inference_version=<existing CPU image tag>`, `targets=us,eu`, `stage=staging`; later `stage=prod` |
-| `hosted_inference_e2e_test_staging.yml`, `hosted_inference_e2e_test_production.yml` | `test_target=serverless-v2`, `skip_warmup=false`; test execution must be in Docker |
+| `hosted_inference_e2e_test_staging.yml`, `hosted_inference_e2e_test_production.yml` | `test_target=serverless-v2`, `skip_warmup=false` |
 
 `custom_tag` is a **suffix**, despite the current UI description. Source version
 `1.9.0rc2` plus an empty suffix gives `1.9.0rc2`; adding `rc2` would give the
