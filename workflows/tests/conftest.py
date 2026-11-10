@@ -15,6 +15,10 @@ import pytest
 from filelock import FileLock
 from roboflow_workflows import configuration as workflows_configuration
 
+# V2 and V1/V2 compatibility suites run alone with their own conftests
+# (see tests/v2/conftest.py and tests/compatibility/v2/conftest.py).
+collect_ignore = ["v2", "compatibility"]
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _FONTS_HELPER = _PROJECT_ROOT / "build_scripts" / "download_fonts.py"
 _FONTS_ASSETS_DIR = (

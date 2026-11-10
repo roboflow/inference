@@ -48,12 +48,15 @@ def run_nms_for_object_detection(
             mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
-        if not torch.any(mask):
+        # One compaction (one host sync on CUDA) shared by all three gathers;
+        # nonzero keeps ascending order, as boolean-mask indexing does.
+        passing = mask.nonzero().squeeze(1)
+        if passing.numel() == 0:
             results.append(torch.zeros((0, 6), device=output.device))
             continue
-        bboxes = boxes[b][:, mask].T  # (num, 4) -- selects and then transposes
-        class_conf = class_conf[mask]
-        class_ids = class_ids[mask]
+        bboxes = boxes[b].index_select(1, passing).T  # (num, 4)
+        class_conf = class_conf.index_select(0, passing)
+        class_ids = class_ids.index_select(0, passing)
         if box_format == "xywh":
             # Vectorized [x, y, w, h] -> [x1, y1, x2, y2]
             xy = bboxes[:, :2]
@@ -114,9 +117,32 @@ def run_nms_for_instance_segmentation(
     class_agnostic: bool = False,
     box_format: Literal["xywh", "xyxy"] = "xywh",
 ) -> List[torch.Tensor]:
-    """
-    `conf_thresh`: scalar applies to all classes; 1-D tensor of shape
-    (num_classes,) indexed by class_id for per-class thresholds.
+    """Select confident anchors and run NMS on raw instance-segmentation output.
+
+    For each image, an anchor passes when its best class score is strictly
+    greater than its threshold. Passing anchors keep their anchor order and go
+    to ``torchvision.ops.batched_nms``; its keep order is preserved and then
+    truncated to ``max_detections``.
+
+    Args:
+        output: Raw model output of shape ``(batch, 4 + num_classes + 32,
+            num_anchors)``: four box channels, at least one class-score channel
+            and 32 mask coefficients.
+        conf_thresh: Scalar threshold for all classes, or a 1-D tensor of shape
+            ``(num_classes,)`` indexed by class id. A tensor is moved to
+            ``output.device``.
+        iou_thresh: IoU threshold passed to ``batched_nms``.
+        max_detections: Maximum rows kept per image after NMS.
+        class_agnostic: If True, NMS suppresses overlapping boxes across classes.
+        box_format: Box channel layout, ``"xywh"`` (center, width, height) or
+            ``"xyxy"``. Output boxes are always ``xyxy``.
+
+    Returns:
+        One tensor per image with rows ``[x1, y1, x2, y2, confidence,
+        class_id, 32 mask coefficients]`` (38 columns). Rows use the type
+        promotion of ``output.dtype`` and float32, because ``class_id`` is
+        stored with ``float()``. An image with no passing anchor yields
+        ``torch.zeros((0, 38))`` of the default dtype on ``output.device``.
     """
     bs = output.shape[0]
     boxes = output[:, :4, :]  # (N, 4, 8400)
@@ -133,13 +159,22 @@ def run_nms_for_instance_segmentation(
             mask = class_conf > conf_thresh.to(output.device)[class_ids]
         else:
             mask = class_conf > conf_thresh
-        if mask.sum() == 0:
-            results.append(torch.zeros((0, 38), device=output.device))
-            continue
-        bboxes = bboxes[mask]
-        class_conf = class_conf[mask]
-        class_ids = class_ids[mask]
-        box_masks = box_masks[mask]
+        if mask.ndim == 1:
+            # One ordered compaction serves the empty check and all four gathers.
+            selection = mask.nonzero(as_tuple=True)[0]
+            if selection.numel() == 0:
+                results.append(torch.zeros((0, 38), device=output.device))
+                continue
+        else:
+            # Out-of-contract threshold ranks keep the original boolean selection.
+            selection = mask
+            if mask.sum() == 0:
+                results.append(torch.zeros((0, 38), device=output.device))
+                continue
+        bboxes = bboxes[selection]
+        class_conf = class_conf[selection]
+        class_ids = class_ids[selection]
+        box_masks = box_masks[selection]
         if box_format == "xywh":
             # Vectorized [x, y, w, h] -> [x1, y1, x2, y2]
             xy = bboxes[:, :2]

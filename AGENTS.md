@@ -65,6 +65,8 @@ pytest tests/inference_cli/unit_tests/
 pytest tests/inference_sdk/unit_tests/
 pytest tests/workflows/unit_tests/
 (cd workflows && pytest tests/unit_tests/ tests/isolation/)
+(cd workflows && python -m pytest -c pytest-v2.ini)        # Workflows V2
+(cd stream_vision && python -m pytest -c pytest-v2.ini)    # Streamvision V2 adapter
 ```
 
 To run the entire suite while skipping slow tests:
@@ -146,8 +148,10 @@ standalone Python project.
 workflows/
   roboflow_workflows/    # importable package (distribution: roboflow-workflows)
   tests/
-    unit_tests/          # package unit tests
+    unit_tests/          # package unit tests (V1)
     isolation/           # isolation probe tests (WORKFLOWS_ISOLATION_WHEEL must be set)
+    v2/                  # Workflows V2: unit/, integration/, support/ (pytest-v2.ini)
+    compatibility/v2/    # V1/V2 comparisons with the V1 tensor bootstrap
   scripts/
     workflows_isolation_probe.py  # CLI tool, see below
   build_scripts/
@@ -208,6 +212,20 @@ cd workflows && python -m pytest tests/unit_tests tests/isolation
 
 Set `ENABLE_TENSOR_DATA_REPRESENTATION=True` for tensor-native mode (matches CI knob).
 
+Workflows V2 suites (`roboflow_workflows.v2`) run separately from `workflows/`;
+each command loads only its own conftests:
+
+```bash
+python -m pytest -c pytest-v2.ini                          # V2 unit + static integration
+python -m pytest -c pytest-v2.ini tests/v2/unit/engine/compiler   # one shard
+python -m pytest -c pytest-v2.ini tests/v2/integration/external/redis   # opt-in: owned redis-server
+python -m pytest -c pytest-v2.ini tests/v2/integration/external/models  # opt-in: cached model package
+ENABLE_TENSOR_DATA_REPRESENTATION=False python -m pytest -c pytest.ini \
+    --confcutdir=tests/compatibility/v2 tests/compatibility/v2   # repeat with True
+```
+
+Tests that read files outside the test tree use `tests/v2/support/paths.py`.
+
 ### Running the isolation probe
 
 ```bash
@@ -245,6 +263,7 @@ stream_vision/
   tests/
     unit_tests/          # package unit tests
     isolation/           # isolation probe tests (STREAMVISION_ISOLATION_WHEEL must be set)
+    v2/                  # Workflows V2 adapter tests (pytest-v2.ini)
   scripts/
     streamvision_isolation_probe.py  # CLI tool, see below
   pyproject.toml
@@ -271,6 +290,7 @@ make create_streamvision_wheel    # wheel lands in dist/streamvision-*.whl
 
 ```bash
 cd stream_vision && python -m pytest tests/unit_tests tests/isolation
+cd stream_vision && python -m pytest -c pytest-v2.ini   # Workflows V2 adapter
 ```
 
 ### Running the isolation probe

@@ -43,6 +43,10 @@ All pre-trained YOLOv8 object detection models are trained on the COCO dataset (
 | `torch-script` | `torch-cpu`, `torch-cu118`, `torch-cu124`, `torch-cu126`, `torch-cu128`, `torch-jp6-cu126` |
 | `trt` | `trt10` |
 
+For TensorRT, see [optional segmented postprocessing](yolov8.md) for the explicit
+selection option, supported inputs, and fallback behavior. The original
+postprocessor remains the default.
+
 ## Roboflow Platform Compatibility
 
 | Feature | Supported |

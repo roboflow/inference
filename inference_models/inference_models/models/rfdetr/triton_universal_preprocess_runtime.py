@@ -19,7 +19,6 @@ from typing import Any, List, Literal, Optional, Tuple, Union
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
-
 from inference_models import PreProcessingOverrides
 from inference_models.configuration import (
     INFERENCE_MODELS_RFDETR_TRITON_PREPROC_MAX_SOURCE_DIMENSION,
@@ -163,12 +162,22 @@ class UniversalFastPreprocessRuntime:
     """Run one explicit CUDA preprocessing plan for supported RF-DETR inputs.
 
     The runtime serializes access to its reusable staging/scratch buffers.
+    ``exact_uint8_normalization=True`` uses a cached table of CPU torchvision
+    normalized byte values; the default retains the existing fused arithmetic.
     Output tensors are allocated per call from PyTorch's CUDA allocator, so
     concurrent callers never alias outputs. CUDA inputs are read on the
     supplied preprocessing stream and have their allocator lifetime recorded.
+
+    Args:
+        device: CUDA target device.
+        exact_uint8_normalization: Use CPU torchvision normalized-byte lookup
+            values for the segmentation opt-in path. False preserves existing
+            callers' fused normalization arithmetic.
     """
 
-    def __init__(self, device: torch.device) -> None:
+    def __init__(
+        self, device: torch.device, *, exact_uint8_normalization: bool = False
+    ) -> None:
         if device.type != "cuda":
             raise ModelRuntimeError(
                 message="triton-universal-v1 requires a CUDA target device.",
@@ -178,6 +187,8 @@ class UniversalFastPreprocessRuntime:
                 ),
             )
         self._device = device
+        self._exact_uint8_normalization = exact_uint8_normalization
+        self._normalization_luts = {}
         self._uint8_state: Optional[_Uint8State] = None
         self._state_lock = threading.Lock()
         self._uint8_jit_failure_reason: Optional[str] = None
@@ -317,6 +328,20 @@ class UniversalFastPreprocessRuntime:
                     )
                 self._uint8_state = state
 
+            normalization_options = {}
+            if self._exact_uint8_normalization:
+                key = (means, stds)
+                lut = self._normalization_luts.get(key)
+                if lut is None:
+                    # CPU normalization mirrors the PIL reference; only this
+                    # small immutable table is copied, never the source image.
+                    with torch.cuda.stream(stream):
+                        lut = _exact_uint8_normalization_lut(means=means, stds=stds).to(
+                            self._device
+                        )
+                    self._normalization_luts[key] = lut
+                normalization_options["normalization_lut"] = lut
+
             output = torch.empty(
                 (len(batch.items), 3, target_h, target_w),
                 dtype=torch.float32,
@@ -343,6 +368,7 @@ class UniversalFastPreprocessRuntime:
                             stds=stds,
                             swap_rb=swap_rb,
                             launch_config=state.launch_config,
+                            **normalization_options,
                         )
                         if not (isinstance(item, torch.Tensor) and item.is_cuda):
                             slot_event = torch.cuda.Event()
@@ -618,6 +644,22 @@ class UniversalFastPreprocessRuntime:
                 "#modelruntimeerror"
             ),
         )
+
+
+def _exact_uint8_normalization_lut(*, means, stds):
+    # Use the reference operations in their original order and dtype, not an
+    # algebraic rearrangement. All 256 byte values are represented per channel.
+    values = np.broadcast_to(
+        np.arange(256, dtype=np.uint8)[None, :, None], (1, 256, 3)
+    ).copy()
+    tensor = TF.to_tensor(values)
+    lut = (
+        TF.normalize(tensor, mean=list(means), std=list(stds))
+        .reshape(3, 256)
+        .contiguous()
+    )
+
+    return lut
 
 
 def _request_uses_uint8_path(images) -> bool:

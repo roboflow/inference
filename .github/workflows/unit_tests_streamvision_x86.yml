@@ -80,6 +80,9 @@ jobs:
       - name: Package unit tests
         working-directory: stream_vision
         run: python -m pytest tests/unit_tests
+      - name: Workflows V2 adapter tests
+        working-directory: stream_vision
+        run: python -m pytest -c pytest-v2.ini
       - name: Installed-wheel isolation tests
         working-directory: stream_vision
         env:
