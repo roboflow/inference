@@ -13,8 +13,10 @@
   backward from its anchor, one session per object. An object's anchor is its
   first frame with an include point; clicks on other frames correct the track
   when tracking reaches them (the model runs the frame again with the object's
-  memory and the clicks) and condition the frames tracked after them, so
-  exclude points alone are valid there. `segment_video_frame` returns the mask
+  memory and the clicks) and condition the frames tracked after them. Exclude
+  points alone on such a frame mark the object absent from it: its mask there
+  is empty, for the case where the object has left the picture and the mask
+  moved to something else. `segment_video_frame` returns the mask
   `propagate_video` gives on that frame, tracking from the anchor to it when it
   is not the anchor. Clips are kept
   in a per-model cache in host RAM, bounded by `SAM3_VIDEO_CACHE_MAX_GB`

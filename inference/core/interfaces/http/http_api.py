@@ -4355,7 +4355,8 @@ class HttpInterface(BaseInterface):
                         "anchor, its first frame with an include point, that is "
                         "one model call; on another frame the object is tracked "
                         "from its anchor to the frame, so the time grows with the "
-                        "distance between them. Use it to preview a click."
+                        "distance between them; a frame with exclude points alone "
+                        "is empty without tracking. Use it to preview a click."
                     ),
                 )
                 @with_route_exceptions
@@ -4392,7 +4393,8 @@ class HttpInterface(BaseInterface):
                         "the same frame never interfere. Clicks on its other "
                         "frames correct the track when tracking reaches them and "
                         "change the frames tracked after them; exclude points "
-                        "alone are valid there. The response comes when the whole clip is "
+                        "alone there mark the object absent from that frame. "
+                        "The response comes when the whole clip is "
                         "tracked. Behind a proxy that ends quiet responses, use "
                         "/sam3/video/propagate/stream."
                     ),

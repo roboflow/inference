@@ -39,9 +39,9 @@ segmented from its clicks alone and the object is tracked from it, forward to
 the end of the clip and then backward to the start. Clicks on any other frame
 are a correction: they are applied when tracking reaches that frame, on top
 of what the tracker remembers of the object there, and the corrected frame
-then conditions the frames tracked after it. So exclude points alone are
-valid on a frame other than the anchor: they take the mask off whatever the
-tracker put it on. See ``_track_object``.
+then conditions the frames tracked after it. Exclude points alone are valid
+on a frame other than the anchor and mark the object absent from that frame.
+See ``_track_object``.
 
 Embedded clips are kept in host RAM, within ``SAM3_VIDEO_CACHE_MAX_GB``: a
 frame is held as its preprocessed pixels until it is encoded and as its
@@ -270,7 +270,8 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         The preview of a click: each such object gets the mask
         ``propagate_video`` would give it on this frame from the same
         prompts. On the object's anchor (its first frame with an include
-        point) that is one model call. On any other frame the object is
+        point) that is one model call, and on a frame with exclude points
+        alone the mask is empty by rule. On any other frame the object is
         tracked from its anchor to this frame, with the clicks on the frames
         in between applied on the way, so the time grows with the distance
         from the anchor (see ``_track_object``).
@@ -302,6 +303,13 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         with self._lock:
             for obj_id, object_prompts in per_object.items():
                 if frame_idx not in object_prompts:
+                    continue
+
+                if not _has_include_point(object_prompts[frame_idx]):
+                    # Exclude points alone mark the object absent: no tracking
+                    # is needed to know the mask is empty.
+                    absent = torch.full((1, 1, *clip.video_size), -1.0)
+                    masks[str(obj_id)] = self._clip_masks(clip, absent)[0]
                     continue
 
                 for frame, pred_masks in self._track_object(
@@ -390,12 +398,21 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         that, backward from it.
 
         Clicks on another frame are applied when tracking reaches the frame.
-        The model treats clicks on a frame it has tracked as a correction: it
-        runs the frame again with the object's memory and the clicks
-        together, where clicks on a frame it has not tracked would be
-        segmented alone, without memory. Two things are then done with the
-        corrected frame, both measured on the reported failure (the object
-        leaves the picture and the mask moves to another one):
+        The model treats inputs on a frame it has tracked as a correction,
+        where inputs on a frame it has not tracked would make another initial
+        conditioning frame, segmented without memory:
+
+        - Clicks with an include point: the model runs the frame again with
+          the object's memory and the clicks together.
+        - Exclude points alone: the object is marked absent from the frame,
+          by giving the model an empty mask as the frame's result. Applied
+          as clicks, exclude points alone did not take a mask off: in each
+          of four measured cases a single exclude click on a mask that sat
+          on the wrong thing left a smaller or a larger mask there.
+
+        Two things are then done with the corrected frame, both measured on
+        the reported failure (the object leaves the picture and the mask
+        moves to another one):
 
         - Its output is kept as a conditioning frame, which every frame
           tracked after it in the same direction attends to. Left where the
@@ -408,23 +425,24 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
           alone. With them, a mask taken off in the middle of a wrong stretch
           was back on the wrong object four frames later.
 
-        Both are undone when the direction ends, so the backward pass reads
-        the forward frames next to the anchor as they were tracked and is
-        not conditioned on forward corrections. A correction therefore
-        changes its own frame and the frames tracked after it, and leaves
-        the frames between the anchor and itself, and the frames on the
-        other side of the anchor, as they are without it.
+        Both are undone when the direction ends, so the backward pass is not
+        conditioned on forward corrections. A correction therefore changes
+        its own frame and the frames tracked after it, and leaves the frames
+        between the anchor and itself as they are without it. The frames on
+        the other side of the anchor change only when the correction is
+        within the window of the anchor, because the backward pass reads the
+        forward frames next to the anchor.
 
-        With ``only_frame``, tracking stops at that frame. A frame before the
-        anchor is tracked backward after as many forward frames as a backward
-        frame can read, which gives the masks of the full forward pass on the
-        backward frames.
+        With ``only_frame``, tracking stops at that frame, which is the
+        anchor or a later frame: an object's clicks before its anchor are
+        exclude points alone, whose mask is empty without tracking.
 
         Args:
             clip: The embedded clip.
             obj_id: The object's id.
             object_prompts: The object's points by frame.
-            only_frame: Frame to stop at; the whole clip when None.
+            only_frame: Frame at or after the anchor to stop at; the whole
+                clip when None.
 
         Yields:
             ``(frame_idx, pred_masks)`` for each frame, in tracking order.
@@ -442,8 +460,6 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             passes = [(False, None), (True, None)]
         elif only_frame > anchor:
             passes = [(False, only_frame - anchor)]
-        elif only_frame < anchor:
-            passes = [(False, reach), (True, anchor - only_frame)]
         else:
             passes = []
 
@@ -464,13 +480,15 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
                 pred_masks = output.pred_masks
                 if frame_idx in object_prompts:
-                    pred_masks = self._apply_points(
-                        session,
-                        obj_id,
-                        frame_idx,
-                        object_prompts[frame_idx],
-                        reverse=reverse,
-                    )
+                    points = object_prompts[frame_idx]
+                    if _has_include_point(points):
+                        pred_masks = self._apply_points(
+                            session, obj_id, frame_idx, points, reverse=reverse
+                        )
+                    else:
+                        pred_masks = self._mark_absent(
+                            session, obj_id, frame_idx, reverse=reverse
+                        )
                     conditioning[frame_idx] = tracked.pop(frame_idx)
                     corrected.append(frame_idx)
                     step = 1 if reverse else -1
@@ -530,6 +548,28 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
         return pred_masks
 
+    def _mark_absent(
+        self, session: Any, obj_id: int, frame_idx: int, *, reverse: bool
+    ) -> torch.Tensor:
+        """Run a frame with an empty mask as the object's input; the predicted masks.
+
+        The model takes a mask input as the frame's result, and an empty one
+        as the object not being on the frame.
+        """
+        self._processor.add_inputs_to_inference_session(
+            inference_session=session,
+            frame_idx=frame_idx,
+            obj_ids=obj_id,
+            input_masks=np.zeros(
+                (session.video_height, session.video_width), dtype=bool
+            ),
+        )
+        pred_masks = self._model(
+            inference_session=session, frame_idx=frame_idx, reverse=reverse
+        ).pred_masks
+
+        return pred_masks
+
     def _clip_masks(self, clip: VideoClip, pred_masks: torch.Tensor) -> List[dict]:
         masks = self._processor.post_process_masks(
             [pred_masks], original_sizes=[list(clip.video_size)], binarize=True
@@ -563,7 +603,7 @@ def _prompts_by_object(
     no_include = sorted(
         obj_id
         for obj_id, frames in grouped.items()
-        if not any(label == 1 for points in frames.values() for _, _, label in points)
+        if not any(_has_include_point(points) for points in frames.values())
     )
     if no_include:
         # The anchor is segmented from its own points, so an object with
@@ -586,7 +626,11 @@ def _anchor_frame(object_prompts: ObjectPrompts) -> int:
     anchor = min(
         frame_idx
         for frame_idx, points in object_prompts.items()
-        if any(label == 1 for _, _, label in points)
+        if _has_include_point(points)
     )
 
     return anchor
+
+
+def _has_include_point(points: Tuple[Tuple[float, float, int], ...]) -> bool:
+    return any(label == 1 for _, _, label in points)
