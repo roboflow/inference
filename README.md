@@ -256,6 +256,25 @@ If you have a Roboflow account & have linked an API key, you can also remotely
 [monitor and manage your running streams](https://app.roboflow.com/devices)
 via the Roboflow UI.
 
+### Stream video to Roboflow Cloud
+
+[Cloud Streaming](https://docs.roboflow.com/deployment/cloud-streaming) runs a Workflow on
+Roboflow's GPUs. The SDK publishes a local camera, video file or RTSP stream, or runs on a camera
+already connected to your workspace, and hands you each frame's results:
+
+```python
+from inference_sdk.cloud_streaming import CloudStreamingClient, WebcamSource
+
+client = CloudStreamingClient(api_key="<YOUR API KEY>")
+with client.start_stream(WebcamSource(), workflow="<YOUR WORKFLOW ID>") as stream:
+    for result in stream.results():
+        print(result.frame_id, result.outputs)
+```
+
+Publishing local video needs `pip install "inference-sdk[streaming]"`. See
+[examples/cloud_streaming](examples/cloud_streaming) for annotated output video, registered
+cameras and attaching to a running deployment.
+
 ## 🔑 connect to the cloud
 
 Without an API Key, you can access a wide range of pre-trained and foundational models and run public Workflows.

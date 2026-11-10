@@ -1,6 +1,7 @@
 import os
 import warnings
 
+from inference_sdk.cloud_streaming import CloudStreamingClient
 from inference_sdk.config import (
     InferenceSDKDeprecationWarning,
     InferenceSDKGuidanceWarning,

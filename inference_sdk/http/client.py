@@ -2,17 +2,7 @@ import base64
 import os
 import warnings
 from contextlib import contextmanager
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Generator,
-    List,
-    Literal,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
 from urllib.parse import urlencode
 
 import aiohttp
@@ -151,9 +141,6 @@ BufferFillingStrategy = Literal[
     "WAIT", "DROP_OLDEST", "ADAPTIVE_DROP_OLDEST", "DROP_LATEST", "ADAPTIVE_DROP_LATEST"
 ]
 BufferConsumptionStrategy = Literal["LAZY", "EAGER"]
-
-if TYPE_CHECKING:
-    from inference_sdk.webrtc.client import WebRTCClient
 
 
 def _collect_processing_time_from_response(
@@ -339,9 +326,6 @@ class InferenceHTTPClient:
         self.__inference_configuration = InferenceConfiguration.init_default()
         self.__client_mode = _determine_client_mode(api_url=api_url)
         self.__selected_model: Optional[str] = None
-        self.__webrtc_client: Optional["WebRTCClient"] = None
-        self.__webrtc_client_transport: Optional[ApiKeyTransport] = None
-        self.__webrtc_transport_stickiness_warned = False
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
@@ -370,26 +354,6 @@ class InferenceHTTPClient:
         """
         return self.__selected_model
 
-    @property
-    def webrtc(self) -> "WebRTCClient":
-        """Lazy accessor for the WebRTC client namespace.
-
-        Returns:
-            WebRTCClient: Namespaced WebRTC API bound to this HTTP client.
-        """
-        from inference_sdk.webrtc.client import WebRTCClient
-
-        if self.__webrtc_client is None:
-            # The transport is captured ONCE here - later configuration
-            # changes do not re-sync it (see __warn_if_webrtc_transport_is_stale).
-            self.__webrtc_client_transport = self.__resolved_api_key_transport()
-            self.__webrtc_client = WebRTCClient(
-                self.__api_url,
-                self.__api_key,
-                api_key_transport=self.__webrtc_client_transport.value,
-            )
-        return self.__webrtc_client
-
     @contextmanager
     def use_configuration(
         self, inference_configuration: InferenceConfiguration
@@ -404,12 +368,10 @@ class InferenceHTTPClient:
         """
         previous_configuration = self.__inference_configuration
         self.__inference_configuration = inference_configuration
-        self.__warn_if_webrtc_transport_is_stale()
         try:
             yield self
         finally:
             self.__inference_configuration = previous_configuration
-            self.__warn_if_webrtc_transport_is_stale()
 
     def configure(
         self, inference_configuration: InferenceConfiguration
@@ -423,7 +385,6 @@ class InferenceHTTPClient:
             InferenceHTTPClient: The client instance with updated configuration.
         """
         self.__inference_configuration = inference_configuration
-        self.__warn_if_webrtc_transport_is_stale()
         return self
 
     def select_api_v0(self) -> "InferenceHTTPClient":
@@ -3396,30 +3357,6 @@ class InferenceHTTPClient:
         )
         return unwrap_single_element_list(sequence=responses)
 
-    def __warn_if_webrtc_transport_is_stale(self) -> None:
-        # The webrtc namespace captures the api-key transport once, at first
-        # `client.webrtc` access, and deliberately keeps it (a streaming
-        # session should not change auth mid-flight). This warns - once per
-        # client - when a configuration change diverges from that captured
-        # value, so the change is not silently ignored for streaming.
-        if self.__webrtc_client is None or self.__webrtc_transport_stickiness_warned:
-            return
-        configured = (
-            self.__inference_configuration.api_key_transport or ApiKeyTransport.LEGACY
-        )
-        if configured is self.__webrtc_client_transport:
-            return
-        self.__webrtc_transport_stickiness_warned = True
-        warnings.warn(
-            f"api_key_transport changed to '{configured.value}', but this "
-            f"client's WebRTC namespace was already initialised with "
-            f"'{self.__webrtc_client_transport.value}' and keeps it - the "
-            "transport is captured once at first `client.webrtc` access. "
-            "Build a new InferenceHTTPClient to stream with a different "
-            "transport.",
-            InferenceSDKGuidanceWarning,
-        )
-
     def __resolved_api_key_transport(self) -> ApiKeyTransport:
         # None means the user made no choice - resolve to the legacy channel
         # (today's default) and recommend moving to the header transport once
@@ -3431,11 +3368,9 @@ class InferenceHTTPClient:
         return transport
 
     def __auth_headers(self) -> Dict[str, str]:
-        # Non-empty only in "both" / "header" transport modes - the header is
-        # the same form the SDK already uses toward the platform API
-        # (inference_sdk/webrtc/model_workflows.py). The key travels in a
-        # header - never in the URL - so request exceptions (whose text embeds
-        # the URL) cannot leak it.
+        # Non-empty only in "both" / "header" transport modes. The key travels
+        # in a header - never in the URL - so request exceptions (whose text
+        # embeds the URL) cannot leak it.
         if (
             self.__resolved_api_key_transport() is ApiKeyTransport.LEGACY
             or self.__api_key is None

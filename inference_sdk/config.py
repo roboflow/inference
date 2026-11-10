@@ -209,22 +209,7 @@ ALL_ROBOFLOW_API_URLS = {
 }
 
 
-# WebRTC configuration
-WEBRTC_INITIAL_FRAME_TIMEOUT = float(os.getenv("WEBRTC_INITIAL_FRAME_TIMEOUT", "90.0"))
-WEBRTC_VIDEO_QUEUE_MAX_SIZE = int(os.getenv("WEBRTC_VIDEO_QUEUE_MAX_SIZE", "8"))
-WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT = float(
-    os.getenv("WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT", "2.0")
-)
-
-# Video file upload via datachannel
-WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE = int(
-    os.getenv("WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE", "49152")
-)  # 48KB - safe for WebRTC
-WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT = int(
-    os.getenv("WEBRTC_VIDEO_UPLOAD_BUFFER_LIMIT", "262144")
-)  # 256KB max buffered before backpressure
-
-# Roboflow API base URL for TURN config and other services
+# Roboflow platform API base URL (Cloud Streaming)
 RF_API_BASE_URL = os.getenv("RF_API_BASE_URL", resolve_roboflow_service_url("api"))
 
 
