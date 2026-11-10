@@ -219,10 +219,11 @@ jobs:
   # Tells streaming-video-inference-services (video preview worker) that a
   # GitHub release is out, so its inference pin gets a bump PR within minutes.
   #
-  # Release events only. Manually dispatched builds (custom tags such as
-  # post1, or a VERSION tag from an arbitrary ref) are not announced, since
-  # their SHA may never reach main; SVIS's own 15-minute check of Docker Hub
-  # still picks those up if they are meant to ship.
+  # Published, non-pre-release GitHub releases only: a saved draft or a
+  # pre-release never pings. Manually dispatched builds (custom tags such as
+  # post1, or a VERSION tag from an arbitrary ref) are not announced from
+  # here. A post release is announced by pushing its annotated v<X.Y.Z>-postN
+  # tag, which notify-svis.yml picks up; SVIS finds commits by tag only.
   #
   # Fire-and-forget: runs only after the images are published, cannot fail
   # this workflow (continue-on-error), holds no permissions of its own, and
@@ -234,7 +235,11 @@ jobs:
   # job is a no-op until the App client id and key exist.
   notify-svis:
     needs: docker
-    if: ${{ github.repository == 'roboflow/inference' && github.event_name == 'release' }}
+    if: >-
+      ${{ github.repository == 'roboflow/inference'
+          && github.event_name == 'release'
+          && github.event.release.draft == false
+          && github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
     environment: svis-dispatch
     timeout-minutes: 5
