@@ -7,6 +7,8 @@ a clip whose pixels were released, and how the model treats clicks on a frame
 it has tracked.
 """
 
+import threading
+
 import numpy as np
 import pytest
 import torch
@@ -106,6 +108,24 @@ def test_cached_frame_bytes_are_the_bytes_an_encoded_frame_holds(tracker):
     real = Sam3TrackerVideoConfig()
     assert cached_frame_bytes(real, torch.bfloat16) == 10_616_832
     assert 3 * real.image_size**2 * 2 == 6_096_384
+
+
+def test_background_encoding_starts_no_frame_while_a_request_is_open(tracker):
+    tracker.embed_video(_frames(3), video_id="v")
+    clip = tracker._video_clip_cache.get("v")
+
+    with tracker._request_lock():
+        encoding = threading.Thread(
+            target=tracker._encode_clip_frames, args=("v", clip), daemon=True
+        )
+        encoding.start()
+        encoding.join(timeout=0.5)
+        assert encoding.is_alive()
+        assert not any(clip.has_features(i) for i in range(3))
+
+    encoding.join(timeout=60)
+    assert not encoding.is_alive()
+    assert all(clip.has_features(i) for i in range(3))
 
 
 def test_encoding_every_frame_releases_every_frames_pixels(tracker):

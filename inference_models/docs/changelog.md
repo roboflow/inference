@@ -8,7 +8,7 @@
 
 - `SAM3TrackerVideo` tracks whole clips offline: `embed_video` keeps a clip's
   preprocessed frames under a caller id (and can encode every frame in the
-  background), `segment_video_frame` returns one frame's masks for click
+  background, pausing while a call is waiting or running), `segment_video_frame` returns one frame's masks for click
   previews, and `propagate_video` tracks every point-prompted object forward and
   backward from its anchor, one session per object. An object's anchor is its
   first frame with an include point; clicks on other frames correct the track

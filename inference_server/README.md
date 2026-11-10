@@ -210,7 +210,9 @@ point-prompted objects over a whole clip with the `sam3trackervideo` model
 
 1. `embed` decodes a clip (every decoded frame is a frame, numbered from 0) and
    keeps it in the worker under the caller's `video_id`, scoped to the API key.
-   `encode_frames` starts encoding every frame in the background.
+   `encode_frames` starts encoding every frame in the background; it pauses
+   while a `segment` or `propagate` call is waiting or running, so a call
+   made while a clip is still being encoded is not held until the end.
 2. `segment` returns the masks on one frame of the objects clicked there: the
    mask `propagate` would give each on that frame from the same clicks. Use it
    for click previews. On an object's anchor (see below) it is one model call;
