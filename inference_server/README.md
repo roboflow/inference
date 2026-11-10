@@ -215,7 +215,8 @@ point-prompted objects over a whole clip with the `sam3trackervideo` model
    mask `propagate` would give each on that frame from the same clicks. Use it
    for click previews. On an object's anchor (see below) it is one model call;
    on another frame the object is tracked from its anchor to that frame, about
-   0.064 s per frame of distance on a 24 GB GPU once the frames are encoded.
+   0.063 s per frame of distance on a 24 GB GPU once the frames are encoded
+   (a frame with exclude points alone is empty and needs no tracking).
 3. `propagate` tracks every clicked object over the clip: each object on its
    own, from its anchor forward to the end and then backward to the start, so
    clicks of different objects on the same frame never interfere.

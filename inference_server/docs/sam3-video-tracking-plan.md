@@ -74,10 +74,10 @@ same object, which left no way to say "that is not my object": a user clicks
 a car, the car drives out of the picture, the mask moves to another car, and
 on that frame there is nothing of the first car to include.
 
-What the model does with a click depends on whether it has tracked the frame
-(`Sam3TrackerVideoModel.forward` in transformers 5.15.1):
+What the model does with an input depends on whether it has tracked the
+frame (`Sam3TrackerVideoModel.forward` in transformers 5.15.1):
 
-- On a frame it has not tracked, the click makes an *initial conditioning
+- On a frame it has not tracked, clicks make an *initial conditioning
   frame*: the frame is segmented from its clicks alone, with no memory of the
   object. Exclude points alone have nothing to exclude from there, and the
   first version applied every clicked frame this way, before any tracking.
@@ -87,6 +87,8 @@ What the model does with a click depends on whether it has tracked the frame
   tracked frame: the next frames read it as one of the six most recent
   frames, and a propagation that visits the frame again recomputes it without
   the clicks.
+- A mask given as input is taken as the frame's result, and an empty mask as
+  the object not being on the frame.
 
 A tracked frame reads the (up to four) conditioning frames nearest to it,
 the six frames tracked before it, and object pointers from the conditioning
@@ -97,11 +99,12 @@ So an object is tracked like this, in a session of its own:
 1. Its **anchor** is its first frame with an include point. It is the only
    initial conditioning frame, and tracking starts there: forward to the end
    of the clip, then backward to the start. A request whose clicks are all on
-   one frame per object runs exactly the model calls of the first version and
-   gives byte-identical masks.
+   one frame per object runs exactly the model calls of the first version.
 2. When tracking reaches a frame with clicks, the model is run on that frame
-   again with the clicks, as a correction. Tracking then continues from the
-   next frame; the corrected frame is never visited again.
+   again as a correction, and tracking continues from the next frame; the
+   corrected frame is never visited again. Clicks with an include point are
+   applied as clicks, with the object's memory. Exclude points alone mark the
+   object **absent**: the frame is given an empty mask.
 3. The corrected output is moved to the conditioning frames, so every frame
    tracked after it attends to it, not only the next six. (The original SAM 2
    predictor has a switch for this, `add_all_frames_to_correct_as_cond`,
@@ -111,87 +114,121 @@ So an object is tracked like this, in a session of its own:
    frame can read back (fifteen), are set aside, so the frames after the
    correction start from the conditioning frames alone. (The original
    predictor's `clear_non_cond_mem_around_input` does the same.)
-5. Steps 3 and 4 are undone when the direction ends. The backward pass then
-   reads the forward frames next to the anchor as they were tracked, and is
+5. Steps 3 and 4 are undone when the direction ends, so the backward pass is
    not conditioned on forward corrections.
 
 What a correction changes: its own frame and the frames tracked after it
 (later frames for a click after the anchor, earlier frames for a click
-before it). The frames between the anchor and the click, and the frames on
-the other side of the anchor, keep the masks they have without the click.
+before it). The frames between the anchor and the click keep the masks they
+have without it. The frames on the other side of the anchor change only when
+the correction is within fifteen frames of the anchor, because the backward
+pass reads the forward frames next to the anchor.
 
-Each step was chosen by measurement on the reported failure. The clip is a
-187-frame road scene played backward and then forward (373 frames at 6 fps),
-so that a clicked car drives toward the camera, leaves at the bottom, and
-later comes back; after it leaves, the tracker puts the mask on a distant
-vehicle. Two cars were tried, each with one include click:
+**Measured on the reported failure**, through the routes on a 24 GB GPU. The
+clip is a 187-frame road scene played backward and then forward (373 frames
+at 6 fps), so that a clicked car drives toward the camera, leaves at the
+bottom, and later comes back in; after it leaves, the tracker puts the mask
+on a distant vehicle. Two cars, each with one include click:
 
-| Clicks | Car 1 (leaves at frame 117, wrong mask on 171 to 241, back at 258) | Car 2 (leaves at 161, wrong mask on 177 to 223, back at 233) |
+| Clicks | Car 1 (clicked on frame 108, leaves at 117) | Car 2 (clicked on 139, leaves at 161) |
 | --- | --- | --- |
-| Exclude click on the first wrong frame, output left where the model stores it | frame 171 empty, mask back on the wrong vehicle from 172 | 177 empty, back from 178 |
-| Same click, steps 3 and 4 | empty on 171 to 257 (87 frames), mask on the car again from 258 | empty on 177 to 210 (34 frames), mask on the car again from 211, as it comes back in |
-| Exclude clicks on a frame in the middle of the wrong stretch (200), step 3 only | first click shrinks the mask (261 to 227 px), second empties it; wrong vehicle again from 204 | first click 219 to 176 px, second empties it; wrong vehicle again from 204 |
-| Same clicks, steps 3 and 4 | empty on 200 to 257, mask on the car again from 258 | empty on 200 to 211, mask on the car again from 212 |
+| Include click only | mask on the wrong vehicle on 172 to 204 and 208 to 226 (52 frames), on the car again from 258 | wrong on 177 to 223 (47 frames), on the car again from 233 |
+| Plus exclude points on the first wrong frame | empty on 172 to 229 (58 frames), no wrong frame left; on the car on 230 as it comes back in, empty on 231 to 257, on the car from 258 | empty on 177 to 210 (34 frames), no wrong frame left; on the car from 211, as it comes back in |
+| Plus exclude points on three frames of the wrong stretch | empty on 172 to 229, on the car from 230 | empty on 177 to 210, on the car from 211 |
+| Exclude points only in the middle of the wrong stretch | 172 to 187 keep the wrong mask (16 frames); empty on 188 to 229 | 177 to 199 keep the wrong mask (23 frames); empty on 200 to 211, on the car from 212 |
 
-Step 4 costs include corrections nothing: on eight corrections with include
-clicks, the masks of the 30 frames after the corrected frame were as close to
-the ones an annotator accepted with it as without it (mean IoU between 0.007
-lower and 0.018 higher).
+On the clip as recorded, where the wrong mask sits on the ten frames before
+a car drives in (the backward pass), exclude points on the wrong frame
+nearest the anchor emptied all ten, and the other 177 frames were identical
+to the ones without the click.
 
-Two alternatives were measured and dropped. Feeding the mask the tracker had
-on the frame back into the decoder with the clicks, as the original predictor
-does (`prev_sam_mask_logits`, an argument nothing in the port passes), gave
-the same frames as not feeding it on the exclude cases, and on ten include
-corrections masks closer to the ones an annotator accepted in two and farther
-in seven. It also needs the model's private single-frame method.
-Setting the earlier frames aside *before* the correction instead of after
-makes one exclude click enough in the middle of a wrong stretch, but breaks
-corrections of a track that is right: an exclude click placed beside a
-correctly tracked car left its mask at an IoU of 0.00 to 0.69 with the mask
-before the click in eight tries (0.97 to 0.99 with the order used).
+How the steps were chosen:
 
-What an exclude click does not do:
+- *Exclude points applied as clicks* (what the model does on its own) did
+  not take the mask off. Through the routes, a single exclude click on the
+  wrong mask left a mask there in six of six tries (54 to 35 px, 160 to
+  216 px, 156 to 98 px, 233 to 180 px, 215 to 171 px, 454 to 450 px), and that frame, now a conditioning
+  frame showing the wrong thing, kept the wrong mask on 30 of 45 and 47 of 47
+  frames of the stretch. Repeating the click two or three times emptied it.
+  Marking the object absent is the one click that always works, and it is
+  what the user in the report means.
+- *Without step 3* the click's frame was empty and the mask was back on the
+  wrong vehicle on the next frame. *With step 3 and without step 4*, a mask
+  taken off in the middle of a wrong stretch was back on it four frames
+  later.
+- Step 4 costs include corrections nothing: on twelve corrections with include
+  clicks, the masks of the 30 frames after the corrected frame were as close
+  to the ones an annotator accepted with it as without it (mean IoU between
+  0.007 lower and 0.065 higher).
+- Feeding the mask the tracker had on the frame back into the decoder with
+  the clicks, as the original predictor does (`prev_sam_mask_logits`, an
+  argument nothing in the port passes), gave masks closer to the accepted
+  ones on two of ten include corrections and farther on seven, and needs the
+  model's private single-frame method.
+- Setting the earlier frames aside *before* the correction instead of after
+  breaks corrections of a track that is right: an exclude click placed
+  beside a correctly tracked car left its mask at an IoU of 0.00 to 0.69 with
+  the mask before the click in eight tries (0.97 to 0.99 with the order
+  used). That was measured with exclude points applied as clicks.
 
-- It is not a statement that the object is gone. The mask stays off until
-  the tracker finds the object again, and it does find it again, as the table
-  shows. A client that knows the object has left for good should drop the
+A later include click, measured on a 41-frame clip where the tracked mask
+becomes partial: one include click on the missing part, twelve frames
+after the anchor, grew the mask on that frame from 2559 to 2811 px (IoU with
+the mask an annotator accepted 0.73 to 0.78) and raised the mean IoU of the
+thirteen frames after it from 0.57 to 0.60. The first version, which
+segmented that frame from the one click alone, shrank the mask to 1026 px
+(IoU 0.30) and lowered the frames after it to 0.33.
+
+What a correction does not do:
+
+- Marking an object absent is not a statement that it is gone for good. The
+  mask stays off until the tracker finds the object again, and it may find
+  something else. A client that knows the object has left should drop the
   masks after that frame itself.
-- In the middle of a stretch where the mask is already on the wrong thing,
-  one exclude click often only shrinks or moves the mask, because the frame
-  is corrected against several memories of the wrong thing. The preview
-  shows it; the user clicks again until the preview is empty. A correction
-  frame left showing the wrong thing conditions the frames after it on the
-  wrong thing. The reliable place for the click is the first wrong frame, the
-  one nearest the anchor.
-- A frame left empty conditions the frames after it on "no object", and can
-  delay the pick-up when the object returns: exclude clicks 28 frames before
-  car 1 came back delayed its pick-up from frame 258 to 313.
+- Exclude points alone cannot trim a mask on a frame where the object is.
+  The client adds an include point on the object on the same frame; the
+  clicks are then applied together, with the object's memory.
+- Frames tracked before the click are not changed. Exclude points in the
+  middle of a wrong stretch leave the wrong mask on the frames between the
+  start of the stretch and the click: the click belongs on the first wrong
+  frame, the one nearest the anchor.
 - The model attends to at most four conditioning frames, the nearest ones,
   so with more than three corrections on one side of the anchor the farthest
   ones, and then the anchor, stop being read there.
 
 **Preview of a correction click.** `segment` returns the mask `propagate`
-would give on the frame, so for a correction it has to have the object's
-memory at that frame: it tracks the object from its anchor to the frame,
-applying the clicks on the frames in between, and stops there. For a frame
-before the anchor it first tracks the fifteen forward frames a backward frame
-can read. The cost is the tracker's time per frame times the distance from
-the anchor. The alternatives:
+gives on the frame. For exclude points alone that is an empty mask, answered
+without the model (0.01 s). For clicks with an include point it has to have
+the object's memory at that frame: it tracks the object from its anchor to
+the frame, applying the clicks on the frames in between, and stops there.
+Such a frame is always after the anchor, since an object's clicks before its
+anchor are exclude points alone. Measured with every frame encoded: 0.04 s on
+the anchor, 0.18 s two frames from it, 0.79 s at 12 frames, 4.0 s at 63,
+8.4 s at 132 and 16.7 s at 264, which is 0.063 s per frame. The alternatives:
 
 - *The caller sends the object's previously tracked mask of the frame* and
   the server corrects from that in one model call. The model has two ways to
-  take a mask and both were measured against the exact result on six exclude
-  clicks and sixteen include corrections. Used as the decoder's mask prompt with
-  the clicks and no memory, it returned an empty mask for all six exclude
-  clicks, where tracking empties the mask in two and keeps one in four, so it
-  would show a correction working that does not. Used as a conditioning
-  memory of the frame itself, it kept the mask in the two cases where
-  tracking empties it. Neither is a correct preview.
+  take a mask, and both were measured against tracking on sixteen include
+  corrections. As the decoder's mask prompt with the clicks and no memory,
+  the preview's IoU with the tracked result was between 0.36 and 0.99 (below
+  0.9 in seven of sixteen). As a conditioning memory of the frame itself it
+  was between 0.00 and 0.99 (below 0.9 in nine). Neither is a correct preview.
 - *No preview of corrections, only `propagate`*: the same tracking plus the
   rest of the clip, so never cheaper than tracking to the frame.
 
 A client that wants faster previews far from the anchor can skip the preview
 there and call `propagate` (or the stream) directly.
+
+**Cost.** Tracking one object over 270 frames took 17.3 s and four objects
+69.1 s, against 17.1 to 17.4 s and 68.4 s before corrections; a correction
+adds one model call. Over 373 frames, one object took 25.6 s and the same
+object with exclude points on three frames 28.7 s. Requests whose clicks are
+on one frame per object gave byte-identical masks to the first version's
+(1574 of 1574 masks over five clips, segment and propagate), both servers
+freshly started and the clips embedded one at a time. A server that had
+embedded several clips at once before gave masks that differed from a fresh
+one's by a few pixels (IoU 0.999) on either version, so the comparison has to
+be made between servers with the same history.
 
 Every segment and propagate call carries all the clicks, so the server holds
 no per-object state: only the clip, its preprocessed frames and the encoder

@@ -407,7 +407,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         - Exclude points alone: the object is marked absent from the frame,
           by giving the model an empty mask as the frame's result. Applied
           as clicks, exclude points alone did not take a mask off: in each
-          of four measured cases a single exclude click on a mask that sat
+          of six measured cases a single exclude click on a mask that sat
           on the wrong thing left a smaller or a larger mask there.
 
         Two things are then done with the corrected frame, both measured on
