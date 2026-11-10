@@ -16,6 +16,14 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.15.post2`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Gemini 4 Carbon in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `xhigh` and `max` thinking levels.
+
 ## `0.2.15.post1`
 
 Bundled execution engine: `1.17.1`.

@@ -99,6 +99,12 @@ MODEL_ALIASES = {
 # we keep 2.5 unsupported.
 GEMINI_MODELS = [
     {
+        "id": "gemini-4-carbon",
+        "name": "Gemini 4 Carbon",
+        "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
+        "supports_native_code_execution": False,
+    },
+    {
         "id": "gemini-4-argon",
         "name": "Gemini 4 Argon",
         "thinking_levels": ["low", "high"],
@@ -172,6 +178,8 @@ GEMINI_MODELS = [
     },
 ]
 
+SEGMENTATION_MODEL_IDS = {"gemini-4-argon", "gemini-4-carbon"}
+
 MODEL_VERSION_IDS = [model["id"] for model in GEMINI_MODELS]
 
 MODEL_THINKING_LEVELS = {
@@ -193,7 +201,7 @@ MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
     model["id"] for model in GEMINI_MODELS if not model["thinking_levels"]
 ]
 
-THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high"]
+THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high", "xhigh", "max"]
 
 DETECTION_BOX_FORMAT = "yxyx_0_1000"
 """Box coordinate contract requested from Gemini for object detection.
@@ -228,7 +236,7 @@ RELEVANT_TASKS_METADATA["object-detection"] = {
 }
 RELEVANT_TASKS_METADATA["instance-segmentation"] = {
     "name": "Instance Segmentation",
-    "description": "Gemini 4 Argon only: predict masks with detached components and holes, decoded to RLE predictions.",
+    "description": "Gemini 4 Argon and Gemini 4 Carbon only: predict masks with detached components and holes, decoded to RLE predictions.",
 }
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -244,7 +252,7 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 ## Version Differences
 
-Instance segmentation is available only for `gemini-4-argon`. It uses lossless PNG
+Instance segmentation is available only for `gemini-4-argon` and `gemini-4-carbon`. It uses lossless PNG
 images up to 1600 pixels on the long edge and normalized YX polygons with
 detached components and holes. Predictions use RLE masks; bounding boxes are
 derived from the masks. Other Gemini models reject this task.
@@ -402,7 +410,8 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Controls the depth of internal reasoning for Gemini 3+ models. "
         "'minimal' matches no-thinking for most queries, 'low' minimizes latency and cost, "
-        "'medium' balances both, 'high' maximizes reasoning depth. Supported values differ "
+        "'medium' balances both, 'high' maximizes reasoning depth; 'xhigh' and 'max' go "
+        "deeper still and are supported only by Gemini 4 Carbon. Supported values differ "
         "per model (see the model dropdown): Gemini 3.1 Pro and Gemini 3.7/3.8 Flash have "
         "no 'minimal'; Gemini 3.1 Pro also cannot disable thinking. When unset, the Google "
         "API default for the selected model is used (e.g. 'high' for Gemini 3.1 Pro, "
@@ -471,11 +480,12 @@ class BlockManifest(WorkflowBlockManifest):
     def validate(self) -> "BlockManifest":
         if (
             self.task_type == "instance-segmentation"
-            and self.model_version != "gemini-4-argon"
+            and self.model_version not in SEGMENTATION_MODEL_IDS
             and not self.model_version.startswith("$")
         ):
             raise ValueError(
-                "Instance segmentation is supported only for gemini-4-argon"
+                "Instance segmentation is supported only for gemini-4-argon "
+                "and gemini-4-carbon"
             )
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(
@@ -654,8 +664,14 @@ def run_gemini_prompting(
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
-    if task_type == "instance-segmentation" and model_version != "gemini-4-argon":
-        raise ValueError("Instance segmentation is supported only for gemini-4-argon")
+    if (
+        task_type == "instance-segmentation"
+        and model_version not in SEGMENTATION_MODEL_IDS
+    ):
+        raise ValueError(
+            "Instance segmentation is supported only for gemini-4-argon "
+            "and gemini-4-carbon"
+        )
     if task_type == "instance-segmentation" and google_code_execution:
         raise ValueError(
             "Code execution is not supported with segmentation JSON output"
@@ -1229,12 +1245,12 @@ def prepare_instance_segmentation_prompt(
     max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
-    """Build an Argon-only structured request for components and holes.
+    """Build a structured request for components and holes.
 
     Args:
         base64_image (str): Lossless PNG image encoded as base64.
         classes (List[str]): Allowed instance labels.
-        model_version (str): Must be gemini-4-argon.
+        model_version (str): Must be gemini-4-argon or gemini-4-carbon.
         temperature (Optional[float]): Sampling temperature.
         thinking_level (Optional[str]): Model reasoning level.
         max_tokens (Optional[int]): Output token budget.
@@ -1246,8 +1262,10 @@ def prepare_instance_segmentation_prompt(
     Raises:
         ValueError: If model or classes do not support segmentation.
     """
-    if model_version != "gemini-4-argon" or not classes:
-        raise ValueError("Argon segmentation requires gemini-4-argon and classes")
+    if model_version not in SEGMENTATION_MODEL_IDS or not classes:
+        raise ValueError(
+            "Segmentation requires gemini-4-argon or gemini-4-carbon and classes"
+        )
 
     config = prepare_generation_config(
         max_tokens=max_tokens,
