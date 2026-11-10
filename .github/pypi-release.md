@@ -5,21 +5,17 @@ generalized retry handling are later changes, not prerequisites. SDK and runtime
 packages still share `inference/core/version.py`; runtime/CLI wheels still require
 exactly that SDK version. Independent SDK version numbering is not implemented.
 
-## One-time cutover before merging
+## Existing PyPI authorization
 
-1. In the **inference-sdk** PyPI project's Publishing settings, add a trusted
-   publisher with owner `roboflow`, repository `inference`, workflow filename
-   `publish.pypi.inference_sdk.yml`, and no environment (the workflow does not
-   declare one). Keep the existing five projects' publishers unchanged.
-2. Confirm that repository Actions policies permit the new workflow and that
-   the build runners have Docker. Keep this PR draft until configuration and
-   required validation evidence have been reviewed.
-3. Merge both publishers together. Never remove SDK ownership from the old
-   workflow in a separate deployment. After cutover, remove the old
-   `publish.pypi.yml` trusted-publisher entry from **inference-sdk only**.
+Both publication jobs stay in `publish.pypi.yml` in `roboflow/inference`, with
+no GitHub environment. All six projects already use this workflow's OIDC
+identity. No new trusted publisher, API token, or personal PyPI access is needed
+for this split. Keep the existing PyPI publisher entries, including the SDK's.
+The SDK upload and five-package upload have separate jobs and inventories.
 
-PyPI configuration is external to Git and is not changed by merging this PR.
-See [PyPI's trusted-publisher configuration](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
+Before merging, review the Docker validation and build-only runs for all three
+package modes. Preserve the workflow filename and environment configuration:
+changing either would require coordination with a PyPI project owner.
 
 ## Record the candidate
 
@@ -42,16 +38,32 @@ result. Missing Docker/dependencies/hardware is NO-GO; there is no host fallback
 
 | Workflow filename | Default manual run | Publishing inputs |
 | --- | --- | --- |
-| `publish.pypi.inference_sdk.yml` | SDK build only | `publish=true`, `expected_version=<SDK version>` |
-| `publish.pypi.yml` | Five-package build only | `publish=true`, `expected_version=<shared version>` |
+| `publish.pypi.yml`, `packages=sdk` | SDK build only | `publish=true`, `expected_version=<SDK version>` |
+| `publish.pypi.yml`, `packages=runtime` | Five-package build only | `publish=true`, `expected_version=<shared version>` |
+| `publish.pypi.yml`, `packages=all` (default) | SDK and five-package builds | `publish=true`, `expected_version=<shared version>` |
 | `publish.pypi.inference_exp.yml` | Models build only | `publish=true` |
 | `publish.pypi.roboflow_workflows.yml` | Workflows build only | `publish=true` |
 | `publish.pypi.streamvision.yml` | Streamvision build only | `publish=true` |
 
-For the SDK and five-package workflows, GitHub `release.created` enables
-publication automatically and checks the release tag against package metadata.
-The five-package workflow retains its filename and name, **Publish Wheels to
-PyPi**, so its existing trusted publishers remain valid.
+In **Publish Wheels to PyPi**, GitHub `release.created` selects both package
+groups, enables publication automatically and checks the release tag against
+package metadata. Manual runs default to `packages=all`, `publish=false`.
+SDK-only mode skips both runtime jobs. Runtime-only mode skips both SDK jobs
+and requires the exact SDK to have been published already. In all/release mode,
+the runtime publication job waits for successful SDK publication and verification;
+an SDK failure or cancellation blocks runtime upload. Each runtime upload also
+verifies the actual SDK files in PyPI, including runtime-only dispatches.
+
+Build-only examples (replace the ref/version):
+
+```sh
+gh workflow run publish.pypi.yml --repo roboflow/inference \
+  --ref release/candidate -f packages=sdk -f publish=false -f expected_version=1.9.0rc2
+gh workflow run publish.pypi.yml --repo roboflow/inference \
+  --ref release/candidate -f packages=runtime -f publish=false -f expected_version=1.9.0rc2
+gh workflow run publish.pypi.yml --repo roboflow/inference \
+  --ref release/candidate -f packages=all -f publish=false -f expected_version=1.9.0rc2
+```
 
 Build jobs have no OIDC permission. They retain the exact wheels later consumed
 by separate publication jobs. The five-package upload directory contains only
@@ -65,13 +77,15 @@ check; that reference is never uploaded by the five-package publisher.
    SDK requirements, packaging metadata or README are SDK artifact changes too.
 2. Run `Test PyPI release contracts` (`test.pypi.release.yml`) and the SDK checks
    listed below on that ref. Inspect the commands and image IDs in their logs.
-3. Dispatch the SDK publisher with `publish=false`. Inspect the retained wheel
-   and `sdk-manifest.json`; verify the version and dependency metadata.
-4. Dispatch with `publish=true` and `expected_version`. Example (replace values):
+3. Dispatch `publish.pypi.yml` with `packages=sdk`, `publish=false`. Inspect the
+   retained wheel and `sdk-manifest.json`; verify version and dependency metadata.
+4. Dispatch the same workflow with `packages=sdk`, `publish=true` and
+   `expected_version`. Example (replace values):
 
    ```sh
-   gh workflow run publish.pypi.inference_sdk.yml --repo roboflow/inference \
-     --ref release/sdk-1.9.0rc2 -f publish=true -f expected_version=1.9.0rc2
+   gh workflow run publish.pypi.yml --repo roboflow/inference \
+     --ref release/sdk-1.9.0rc2 -f packages=sdk \
+     -f publish=true -f expected_version=1.9.0rc2
    ```
 
 5. Require the publication job to finish its registry verification. Retain
@@ -132,10 +146,11 @@ both wheel and sdist, despite its Make target's name; preserve both in evidence.
    Freeze and push each candidate after relocking; test the pushed SHA.
 2. Build and validate required upstream candidates. Publish SDK and Models as
    needed, then Workflows, then Streamvision, verifying each before its consumer.
-   The SDK-only workflow is the sole SDK upload owner. A full release still
+   The `publish_sdk` job is the sole SDK upload owner. A full release still
    needs a new SDK version when its exact shared-version pin requires one.
 3. For a public RC, publish required RC packages in that order, then dispatch
-   the five-package publisher with `publish=true` and its expected RC version.
+   `publish.pypi.yml` with `packages=runtime`, `publish=true` and its expected
+   RC version.
    It waits up to ten minutes for a matching SDK before uploading any consumer.
 4. Build the required legacy CPU/GPU/Jetson candidate images, record their
    digests, run runtime checks, deploy staging and run staging acceptance tests.
@@ -148,10 +163,11 @@ both wheel and sdist, despite its Make target's name; preserve both in evidence.
 7. Merge the approved stable candidate, check its final SHA and dependency
    selections, then create the GitHub Release `v<VERSION>` at that commit.
    **Do not manually publish the five stable packages before this event.**
-   The release automatically starts the SDK and five-package workflows plus
-   existing standalone/image workflows. The SDK verifies its prepublished wheel
-   and becomes a no-op when contents match. Monitor the automatic jobs rather
-   than launching duplicates. The remaining publishers retain their existing
+   The release automatically starts both package groups in `publish.pypi.yml`
+   plus existing standalone/image workflows. The SDK verifies its prepublished
+   wheel and becomes a no-op when contents match. Runtime upload waits for that
+   verification. Monitor the automatic jobs rather than launching duplicates.
+   The remaining publishers retain their existing
    behavior, including their current retry limitations.
 8. Verify stable package installation and image digests, complete production
    deployment/handoffs, and run production acceptance checks. Retain the record.
@@ -215,9 +231,11 @@ WHEEL metadata and require a new version. Verification receipts record both the
 candidate's hash and the actual published file hash, plus the verification run.
 They do not claim to identify a previous upload's original workflow run.
 
-On an SDK upload failure, rerun the failed publication job to reuse its retained
-wheel. If the upload actually completed, verification will detect it and skip a
-duplicate upload. Missing, yanked or conflicting SDKs block consumer upload.
+On an SDK upload failure, rerun the failed `publish_sdk` job to reuse its retained
+wheel; GitHub also reruns its dependent `publish_runtime` job in all/release mode.
+For SDK-only mode, runtime jobs stay skipped. If the upload actually completed,
+verification will detect it and skip a duplicate upload. Missing, yanked or
+conflicting SDKs block consumer upload.
 Registry/authentication failures never mean "missing". Transient errors and
 visibility delays have bounded retries; inspect the reported error on timeout.
 
@@ -227,6 +245,6 @@ General per-file recovery is PR3. Never delete/overwrite an existing release to
 make it match. A contents conflict requires investigation and usually a new
 version. Workflow rollback cannot undo already published files.
 
-If rolling back the ownership split, restore both workflow changes together
-and restore the SDK's old trusted publisher first. Never leave two active SDK
-upload owners or no owner.
+If rolling back the split, restore the previous `publish.pypi.yml` behavior as
+one change. PyPI trust remains unchanged. Never leave two active SDK upload jobs
+or no SDK upload job.

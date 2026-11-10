@@ -270,26 +270,45 @@ def test_sdk_rejects_foreign_package_payload():
 
 
 def test_workflow_ownership_and_credential_boundaries():
-    for filename in ["publish.pypi.yml", "publish.pypi.inference_sdk.yml"]:
-        workflow = yaml.load(
-            (ROOT / ".github/workflows" / filename).read_text(), Loader=yaml.BaseLoader
-        )
-        assert workflow["on"]["release"]["types"] == ["created"]
-        assert (
-            workflow["on"]["workflow_dispatch"]["inputs"]["publish"]["default"]
-            == "false"
-        )
-        assert "id-token" not in workflow["permissions"]
-        assert workflow["jobs"]["publish"]["permissions"]["id-token"] == "write"
-        assert workflow["jobs"]["publish"]["needs"] == "build"
+    workflow = yaml.load(
+        (ROOT / ".github/workflows/publish.pypi.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    assert not (ROOT / ".github/workflows/publish.pypi.inference_sdk.yml").exists()
+    assert workflow["on"]["release"]["types"] == ["created"]
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert inputs["publish"]["default"] == "false"
+    assert inputs["packages"]["default"] == "all"
+    assert inputs["packages"]["options"] == ["sdk", "runtime", "all"]
+    assert "id-token" not in workflow["permissions"]
+    jobs = workflow["jobs"]
+    assert jobs["publish_sdk"]["needs"] == "build_sdk"
+    assert set(jobs["publish_runtime"]["needs"]) == {"build_runtime", "publish_sdk"}
+
+    for name, job in jobs.items():
+        assert "environment" not in job
+        assert "uses" not in job  # Upload stays in the already trusted workflow.
         uploads = [
-            step
-            for step in workflow["jobs"]["publish"]["steps"]
-            if step.get("uses", "").startswith("pypa/")
+            step for step in job["steps"] if step.get("uses", "").startswith("pypa/")
         ]
+        if name in {"build_sdk", "build_runtime"}:
+            assert "id-token" not in job.get("permissions", {})
+            assert not uploads
+            continue
+
+        assert job["permissions"]["id-token"] == "write"
         assert len(uploads) == 1
-        expected = "dist/sdk-upload/" if "inference_sdk" in filename else "dist/pypi/"
+        expected = "dist/sdk-upload/" if name == "publish_sdk" else "dist/pypi/"
         assert uploads[0]["with"]["packages-dir"] == expected
+
+    # The real registry gate must run before the consumer upload in every mode.
+    steps = jobs["publish_runtime"]["steps"]
+    gate = next(i for i, step in enumerate(steps) if "gate-sdk" in step.get("run", ""))
+    upload = next(
+        i for i, step in enumerate(steps) if step.get("uses", "").startswith("pypa/")
+    )
+    assert gate < upload
+    assert "if" not in steps[gate]
 
 
 def test_sdk_build_needs_no_runtime_cli_or_standalone_source(tmp_path, monkeypatch):

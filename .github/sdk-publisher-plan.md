@@ -23,7 +23,14 @@ flowchart LR
   G --> P[Upload five packages]
 ```
 
-Manual publishers default to build-only. Publication requires an expected version
+One existing trusted workflow, `publish.pypi.yml`, offers `packages=sdk`,
+`runtime`, or `all` (default). SDK and runtime each have separate build and publish
+jobs. Release events select both groups; SDK-only mode skips the runtime jobs.
+Runtime-only mode requires an already published SDK. Both OIDC upload jobs stay
+in the existing workflow, with no environment, so no PyPI access or new trust
+registration is required.
+
+Manual runs default to build-only. Publication requires an expected version
 matching source and wheel metadata; release events derive it from the tag.
 Separate build/publication jobs limit OIDC to publication and retain original
 artifacts. SDK-only publication does not install server/runtime dependencies.
@@ -35,8 +42,9 @@ does not equate a matching name/version with matching package contents. The
 receipt identifies the current verification, not an unproven original upload.
 
 The consumer publisher builds a lightweight SDK reference separately from its
-five-wheel upload inventory. It can independently verify a prepublished SDK or
-wait for the concurrent release-event SDK publisher. A missing/conflicting SDK
+five-wheel upload inventory. Runtime-only mode independently verifies a
+prepublished SDK. All/release mode waits for the SDK publication job to succeed
+before running that registry verification. A missing/conflicting SDK
 stops consumers. Generic `make upload_wheels` excludes SDK; existing six-wheel
 and production-image build targets retain their behavior.
 
@@ -47,22 +55,25 @@ prerequisites for the paths delivered here.
 
 Validation: Docker tests exercise real six-wheel vs split builds, metadata and
 inventory checks, matching/conflicting SDK reuse, ZIP timestamp differences,
-registry/hash failures, delayed visibility and bounded timeouts. SDK unit,
+registry/hash failures, delayed visibility and bounded timeouts. Validate the
+three package modes, build-only defaults, failed/skipped/cancelled dependencies,
+and preservation of the existing OIDC workflow identity. SDK unit,
 integration, E2E and installation workflows execute through Docker. Record exact
 image IDs, revisions, commands and results; no host fallback.
 
 ## 3. Decisions and rollout prerequisites
 
-- Configure the new SDK workflow's PyPI trusted publisher before merging the
-  atomic ownership change. Git changes cannot configure the PyPI project.
+- Retain the current workflow filename, repository and absence of an environment
+  for both upload jobs. Keep all six existing PyPI trusted-publisher entries.
+  The split requires no external publisher configuration change.
 - Existing non-SDK host-executed validation is not accepted under the Docker
   policy. Its Docker execution paths are a release prerequisite, not a reason
   to include an unrelated whole-repository CI migration here.
 - SDK receipts compare complete contents rather than historical input-fingerprint
   receipts. This is stricter about output equivalence and avoids guessing the
   setup script's transitive input closure.
-- Keep the PR draft until required checks and external trust configuration are
-  reviewed. No production publication is needed to run local regression tests.
+- Review required checks before merge. No production publication is needed to
+  run local regression tests or build-only checks.
 
 The contributor should share this plan for maintainer discussion as required by
 AGENTS.md. No Slack message or external publisher configuration is performed by

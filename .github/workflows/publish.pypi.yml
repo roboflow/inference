@@ -4,10 +4,15 @@ on:
     types: [created]
   workflow_dispatch:
     inputs:
+      packages:
+        type: choice
+        default: all
+        options: [sdk, runtime, all]
+        description: Package group (runtime requires an already published SDK)
       publish:
         type: boolean
         default: false
-        description: Publish the five runtime/CLI packages (default builds only)
+        description: Publish the selected packages (default builds only)
       expected_version:
         type: string
         default: ""
@@ -20,8 +25,80 @@ env:
   EXPECTED_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.expected_version }}
   PUBLISH: ${{ github.event_name == 'release' || inputs.publish == true }}
 
+# Keep publication in this file: all six PyPI projects already trust its identity.
+# No environment or reusable publishing workflow may change that OIDC identity.
 jobs:
-  build:
+  build_sdk:
+    if: ${{ github.event_name == 'release' || inputs.packages == 'sdk' || inputs.packages == 'all' }}
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      artifact: ${{ steps.build.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build and inspect the SDK wheel in Docker
+        id: build
+        run: |
+          bash .release/pypi/release.sh build-sdk
+          echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
+          echo "artifact=sdk-wheel-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            dist/sdk/*.whl
+            dist/sdk-manifest.json
+            dist/version.txt
+
+  publish_sdk:
+    needs: build_sdk
+    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || inputs.publish == true) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: pypi-sdk-${{ needs.build_sdk.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_sdk.outputs.artifact }}
+          path: dist
+      - name: Verify an existing SDK or stage the missing wheel
+        id: prepare
+        run: |
+          bash .release/pypi/release.sh prepare-sdk --wait-seconds 600
+          echo "upload=$(jq -r '.upload' dist/sdk-decision.json)" >> "$GITHUB_OUTPUT"
+      - name: Publish the missing SDK wheel
+        if: ${{ steps.prepare.outputs.upload == 'true' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/sdk-upload/
+      - name: Verify the published bytes and package contents
+        run: bash .release/pypi/release.sh verify-sdk --wait-seconds 600
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-publication-receipt-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            dist/sdk-decision.json
+            dist/sdk-receipt.json
+
+  build_runtime:
+    if: ${{ github.event_name == 'release' || inputs.packages == 'runtime' || inputs.packages == 'all' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
@@ -50,16 +127,24 @@ jobs:
             dist/*-manifest.json
             dist/version.txt
 
-  publish:
-    needs: build
-    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || inputs.publish == true) }}
+  publish_runtime:
+    needs: [build_runtime, publish_sdk]
+    # Runtime-only dispatches skip the SDK job; all/release runs require it to
+    # finish verification successfully. A failed or cancelled SDK blocks upload.
+    if: >-
+      ${{ !cancelled() && github.repository == 'roboflow/inference' &&
+          (github.event_name == 'release' || inputs.publish == true) &&
+          needs.build_runtime.result == 'success' &&
+          (needs.publish_sdk.result == 'success' ||
+           (github.event_name == 'workflow_dispatch' && inputs.packages == 'runtime' &&
+            needs.publish_sdk.result == 'skipped')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
     concurrency:
-      group: pypi-runtime-${{ needs.build.outputs.version }}
+      group: pypi-runtime-${{ needs.build_runtime.outputs.version }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
@@ -67,7 +152,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.build.outputs.artifact }}
+          name: ${{ needs.build_runtime.outputs.artifact }}
           path: dist
       - name: Verify the published SDK before uploading any consumer
         run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
