@@ -175,6 +175,11 @@ Verification:
       the clip refuses with an error. So a cached frame holds its pixels
       (6,096,384 bytes in bfloat16) or its encoder output (10,616,832 bytes),
       never both. Both figures are computed from the model's shapes and dtype.
+    - Pixels and encoder output sit on a private memory mapping per frame
+      instead of memory from the process allocator, so they go back to the
+      operating system the moment a frame is released or a clip evicted.
+      With allocator-backed frames, two cached 480-frame clips grew from
+      17.7 GB to 24.2 GB once a third clip had replaced the first (measured).
     - The position embeddings, which are the same for every frame of every
       clip, are kept once per model instead of once per clip (55.7 MB,
       computed).
@@ -183,11 +188,29 @@ Verification:
       embedded forgets the clips it replaces before it is built, so the cache
       stays within the limit during an embed. A call already running on an
       evicted clip keeps it and finishes.
+  - **Measured after the change**, same machine, cache limit 10.2 GB (960
+    frames): two cached 480-frame clips took 14.0 to 15.1 GB and embedding a
+    third peaked at 14.8 to 16.0 GB; one 270-frame embed peaked 0.4 GB above
+    the level before it (8.4 to 9.3 GB before) and two at once 2.1 GB (18.0 GB
+    before). Sixteen 60-frame clips filling the cache took 15.8 GB and one
+    960-frame clip 18.3 GB. The frames account for 10.2 GB of each; the rest
+    above the loaded model is memory the C allocator keeps after short-lived
+    buffers are freed, which grew with use up to about 6.4 GB. With
+    `MALLOC_MMAP_THRESHOLD_=1048576` in the server's environment, every
+    full-cache state measured 11.4 to 11.6 GB and the third-clip embed peaked
+    at 12.3 GB, for about 1.5 s more on a 480-frame embed. Embed time without
+    it was 8.7 to 8.9 s for 480 frames (11 to 17.6 s before) and 17.6 s for
+    960; tracking one object took 17.2 s over 270 frames, 30.3 s over 480 and
+    61.4 s over 960, unchanged per frame. Masks for the same clips and clicks
+    were identical to the first version's.
   - **Recommendation:** size the host as `SAM3_VIDEO_CACHE_MAX_GB`, plus the
     embed's extra memory (the decoded clip, height × width × 3 bytes per frame
     of the clip being embedded, plus about 0.65 GB), plus the process with the
-    model loaded (1.8 to 2.0 GB measured).
-  - **Input needed:** none.
+    model loaded (0.7 GB measured with no clip), and either set
+    `MALLOC_MMAP_THRESHOLD_=1048576` or allow about 6.4 GB for the allocator.
+  - **Input needed:** whether the server images should set
+    `MALLOC_MMAP_THRESHOLD_` themselves. It applies to every model in the
+    process, so it is left to the deployment here.
 
 - **Question:** Clips shorter than two frames.
   - **Investigation:** reusing `probe_video` brings its rule that a clip needs

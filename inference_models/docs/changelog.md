@@ -17,7 +17,8 @@
   used clips are evicted to stay within it, and a clip with more frames than it
   holds is refused. A clip is preprocessed 16 frames at a time, and a frame's
   preprocessed pixels are released once its encoder output is cached, so a
-  cached frame holds one or the other.
+  cached frame holds one or the other. Both sit on a private memory mapping
+  per frame, so they return to the operating system when released.
 
 ## `0.39.8`
 
