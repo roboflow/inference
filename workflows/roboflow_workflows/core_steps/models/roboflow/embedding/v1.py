@@ -187,10 +187,10 @@ class EmbeddingModelBlockV1(WorkflowBlock):
                     else LOCAL_INFERENCE_API_URL
                 ),
                 api_key=self._api_key,
-                api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
             )
             client.configure(
                 InferenceConfiguration(
+                    api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
                     max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
                     max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
                     source="workflow-execution",
