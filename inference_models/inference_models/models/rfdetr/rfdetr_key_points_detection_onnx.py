@@ -28,6 +28,9 @@ from inference_models.models.common.onnx import (
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
+from inference_models.models.common.onnx_attention_fusion import (
+    fuse_attention_for_cuda_execution,
+)
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
@@ -140,8 +143,12 @@ class RFDetrForKeyPointsONNX(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
+        model_path = fuse_attention_for_cuda_execution(
+            model_package_content["weights.onnx"],
+            providers=onnx_execution_providers,
+        )
         session = create_onnx_inference_session(
-            model_path=model_package_content["weights.onnx"],
+            model_path=model_path,
             providers=onnx_execution_providers,
         )
         model_input_size = get_onnx_static_input_spatial_size(session=session)
