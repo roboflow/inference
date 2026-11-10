@@ -1,6 +1,7 @@
 """Platform transport errors must be safe after workflow error serialization."""
 
 import traceback
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -30,7 +31,12 @@ def test_managed_transport_errors_redact_workflow_diagnostics(
         calls.append(url)
         raise failure("Request failed for " + url)
 
-    monkeypatch.setattr(roboflow_api.requests, "post", fail_request)
+    # Keep background telemetry on its own requests module binding.
+    monkeypatch.setattr(
+        roboflow_api,
+        "requests",
+        SimpleNamespace(post=fail_request, exceptions=requests.exceptions),
+    )
     step = {
         "type": block_type,
         "name": "model",
