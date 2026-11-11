@@ -15,6 +15,7 @@ from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError, ModelRuntimeError
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.roboflow.pre_processing import images_to_pillow
+from inference_models.models.common.torch import torch_default_dtype_lock
 from inference_models.utils.imports import import_class_from_file
 
 
@@ -96,10 +97,11 @@ class MoonDream2HF:
             self.post_init()
 
         model_class.__init__ = _patched_init
-        model = model_class.from_pretrained(
-            model_name_or_path,
-            local_files_only=local_files_only,
-        ).to(device)
+        with torch_default_dtype_lock():
+            model = model_class.from_pretrained(
+                model_name_or_path,
+                local_files_only=local_files_only,
+            ).to(device)
         _recompute_non_persistent_buffers(model_name_or_path, model)
         return cls(model=model, device=device)
 

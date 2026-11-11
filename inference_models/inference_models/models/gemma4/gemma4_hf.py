@@ -29,6 +29,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input_to_image_list,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 # HF Supported budgets for tokens representing images.
 # A higher token budget preserves more visual detail at the cost of additional compute,
@@ -190,10 +191,11 @@ class Gemma4HF:
 
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
-            base_model = AutoModelForMultimodalLM.from_pretrained(
-                base_model_path,
-                **load_kw,
-            )
+            with torch_default_dtype_lock():
+                base_model = AutoModelForMultimodalLM.from_pretrained(
+                    base_model_path,
+                    **load_kw,
+                )
             model = PeftModel.from_pretrained(base_model, model_name_or_path)
             if quantization_config is None:
                 model = model.merge_and_unload()
@@ -204,10 +206,11 @@ class Gemma4HF:
                 else model_name_or_path
             )
         else:
-            model = AutoModelForMultimodalLM.from_pretrained(
-                model_name_or_path,
-                **load_kw,
-            )
+            with torch_default_dtype_lock():
+                model = AutoModelForMultimodalLM.from_pretrained(
+                    model_name_or_path,
+                    **load_kw,
+                )
             processor_path = model_name_or_path
 
         processor = AutoProcessor.from_pretrained(
