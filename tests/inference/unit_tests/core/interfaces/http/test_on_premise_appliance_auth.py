@@ -23,6 +23,7 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.http.appliance_authorization import (
     CONFLICTING_API_KEYS_MESSAGE,
+    GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
     MISSING_API_KEY_MESSAGE,
     ApplianceKeyAuthorizer,
     read_request_api_key,
@@ -356,6 +357,30 @@ def test_refused_key_answer_is_cached(
             ServerlessUsageCheckResponse(status_code=200, workspace_id="w"),
             "UsageCheckStatus200",
         ),
+        (
+            ServerlessUsageCheckResponse(
+                status_code=200, workspace_db_id="db-id-a", under_cap=True
+            ),
+            "UsageCheckStatus200",
+        ),
+        (
+            ServerlessUsageCheckResponse(
+                status_code=200,
+                workspace_id="workspace-a\r\nX-Injected: 1",
+                workspace_db_id="db-id-a",
+                under_cap=True,
+            ),
+            "UsageCheckStatus200",
+        ),
+        (
+            ServerlessUsageCheckResponse(
+                status_code=200,
+                workspace_id="workspace-a",
+                workspace_db_id="db id\r\n",
+                under_cap=True,
+            ),
+            "UsageCheckStatus200",
+        ),
     ],
 )
 def test_unreachable_appliance_api_fails_closed_and_is_not_cached(
@@ -439,6 +464,33 @@ def test_other_methods_and_management_paths_need_a_key(
 
     assert response.status_code == 401
     lookup.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "method, path, body",
+    [
+        ("POST", "/model/remove", {"model_id": "other-workspace-project/1"}),
+        ("POST", "/model/clear", None),
+        ("GET", "/clear_cache", None),
+    ],
+)
+def test_workspace_key_cannot_call_global_management_routes(
+    monkeypatch, method, path, body
+) -> None:
+    lookup = AsyncMock(return_value=_under_cap())
+    interface = _build_appliance_interface(monkeypatch, lookup)
+
+    with TestClient(interface.app) as client:
+        response = client.request(method, path, params={"api_key": API_KEY}, json=body)
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "status": 403,
+        "message": GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
+    }
+    lookup.assert_awaited_once_with(api_key=API_KEY)
+    interface.model_manager.remove.assert_not_called()
+    interface.model_manager.clear.assert_not_called()
 
 
 def test_no_answer_or_log_line_contains_the_key(monkeypatch, caplog) -> None:

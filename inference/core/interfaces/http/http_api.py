@@ -260,10 +260,12 @@ from inference.core.interfaces.http.api_key_resolution import (
 )
 from inference.core.interfaces.http.appliance_authorization import (
     CONFLICTING_API_KEYS_MESSAGE,
+    GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
     MISSING_API_KEY_MESSAGE,
     ApplianceKeyAuthorizer,
     ConflictingApiKeysError,
     read_request_api_key,
+    request_is_global_management,
     request_skips_api_key_check,
 )
 from inference.core.interfaces.http.dependencies import (
@@ -1483,6 +1485,14 @@ class HttpInterface(BaseInterface):
                 decision = await appliance_key_authorizer.authorize(api_key)
                 if not decision.is_authorized:
                     return decision.to_response()
+                if request_is_global_management(request):
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "status": 403,
+                            "message": GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
+                        },
+                    )
 
                 # The route must run with the key that was checked. A route that
                 # reads a channel the request left empty falls back to

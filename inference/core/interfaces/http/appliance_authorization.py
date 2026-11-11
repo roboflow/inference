@@ -28,7 +28,11 @@ from inference.core.interfaces.http.api_key_resolution import (
     extract_api_key_from_headers,
 )
 from inference.core.logger import logger
-from inference.core.roboflow_api import ServerlessUsageCheckResponse
+from inference.core.roboflow_api import (
+    ServerlessUsageCheckResponse,
+    workspace_db_id_is_valid,
+    workspace_id_is_valid,
+)
 
 MISSING_API_KEY_MESSAGE = (
     "Missing api_key. Pass it as the api_key query parameter, the api_key JSON "
@@ -43,6 +47,10 @@ FORBIDDEN_API_KEY_MESSAGE = "The api_key is not allowed to use this inference se
 PAUSED_API_KEY_MESSAGE = (
     "Usage of this api_key is paused. Ask your workspace administrator to "
     "re-enable it."
+)
+GLOBAL_MANAGEMENT_ROUTE_MESSAGE = (
+    "This route acts on every workspace that uses this inference server. A "
+    "workspace api_key cannot call it on an appliance."
 )
 QUOTA_EXCEEDED_REASON = "credit_cap_exceeded"
 WORKSPACE_RESTRICTED_REASON = "workspace_restricted"
@@ -70,6 +78,9 @@ _DYNAMIC_BLOCKS_PATHS = frozenset(
 )
 # HEAD is not exempt: Starlette answers HEAD with the GET handler, which runs.
 _EXEMPT_METHODS = frozenset({"OPTIONS"})
+# These routes act on models that other workspaces loaded: they remove one
+# model by id, or every model. A workspace key does not own them.
+_GLOBAL_MANAGEMENT_PATHS = frozenset({"/model/remove", "/model/clear", "/clear_cache"})
 
 
 @dataclass(frozen=True)
@@ -227,7 +238,17 @@ class ApplianceKeyAuthorizer:
                     workspace_id=result.workspace_id, error=result.error
                 ),
             )
-        if result.status_code != 200 or result.under_cap is not True:
+        if (
+            result.status_code != 200
+            or result.under_cap is not True
+            or not workspace_id_is_valid(result.workspace_id)
+            or (
+                result.workspace_db_id is not None
+                and not workspace_db_id_is_valid(result.workspace_db_id)
+            )
+        ):
+            # Fail closed on an incomplete 200 too: the workspace id goes into a
+            # response header, so it must be present and safe there.
             return _appliance_api_unavailable(
                 error_type=f"UsageCheckStatus{result.status_code}"
             )
@@ -310,6 +331,20 @@ def _credits(value: Any) -> Optional[str]:
         return None
 
     return f"{number:g}"
+
+
+def request_is_global_management(request: Request) -> bool:
+    """Tell whether a request calls a route that acts on every workspace.
+
+    Args:
+        request: The incoming request.
+
+    Returns:
+        True for the routes that remove one loaded model by id or all loaded
+        models. In appliance mode no workspace key may call them.
+    """
+    # Raw ASGI path, as in request_skips_api_key_check.
+    return request.scope["path"] in _GLOBAL_MANAGEMENT_PATHS
 
 
 async def request_skips_api_key_check(request: Request) -> bool:
