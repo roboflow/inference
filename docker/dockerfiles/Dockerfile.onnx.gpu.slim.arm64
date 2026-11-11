@@ -110,6 +110,15 @@ p = ort.get_available_providers(); \
 assert 'CUDAExecutionProvider' in p, 'NO CUDA EP — this is a CPU-only build: %s' % p; \
 print('onnxruntime', ort.__version__, p)"
 
+# Guard: the CUDA execution provider's own libraries must resolve in this image.
+# get_available_providers() lists the providers compiled into the wheel; it does not load
+# libonnxruntime_providers_cuda.so. If that library needs CUDA libraries this base does not
+# have (for example a CUDA 12 build on this CUDA 13 base), sessions fall back to CPU at
+# runtime with only a log line. ldd needs no GPU, so the build can check it.
+RUN p=$(python -c "import onnxruntime, pathlib; print(next(pathlib.Path(onnxruntime.__file__).parent.rglob('libonnxruntime_providers_cuda.so')))") \
+ && if ldd "$p" | grep 'not found'; then echo "CUDA EP has unresolved libraries: $p"; exit 1; fi \
+ && echo "CUDA EP libraries resolve: $p"
+
 COPY inference inference
 COPY inference_sdk inference_sdk
 COPY inference_cli inference_cli
