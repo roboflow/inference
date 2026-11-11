@@ -25,7 +25,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 from typing import Dict, List
 
 import cv2
@@ -216,14 +215,37 @@ def _describe(config: dict) -> str:
     return ", ".join(f"{key}={value!r}" for key, value in sorted(config.items()))
 
 
-def _write_references(path: str, references: dict) -> None:
-    content = json.dumps(references, indent=2)
-    # One line per vector keeps the file short and its diffs readable.
-    content = re.sub(
-        r"\[\s+(-?[\d.e+-]+(?:,\s+-?[\d.e+-]+)*)\s+\]",
-        lambda match: "[" + re.sub(r",\s+", ", ", match.group(1)) + "]",
-        content,
+def _is_numeric_list(value) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) > 0
+        and all(
+            isinstance(item, (int, float)) and not isinstance(item, bool)
+            for item in value
+        )
     )
+
+
+def _write_references(path: str, references: dict) -> None:
+    # One line per vector keeps the file short and its diffs readable.
+    compact_lists = {}
+
+    def collapse(node):
+        if _is_numeric_list(node):
+            placeholder = f"__numeric_list_{len(compact_lists)}__"
+            compact_lists[placeholder] = (
+                "[" + ", ".join(json.dumps(item) for item in node) + "]"
+            )
+            return placeholder
+        if isinstance(node, list):
+            return [collapse(item) for item in node]
+        if isinstance(node, dict):
+            return {key: collapse(item) for key, item in node.items()}
+        return node
+
+    content = json.dumps(collapse(references), indent=2)
+    for placeholder, compact in compact_lists.items():
+        content = content.replace(json.dumps(placeholder), compact)
     with open(path, "w") as file:
         file.write(content + "\n")
 
