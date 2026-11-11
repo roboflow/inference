@@ -10,6 +10,9 @@ from typing import Optional
 
 from inference_models.errors import ModelLoadingError, ModelRuntimeError
 
+VLLM_UNAVAILABLE_STATUS_CODE = 503
+VLLM_TIMEOUT_STATUS_CODE = 504
+
 
 class NotServableOnVLLMError(ModelLoadingError):
     """The requested model cannot be served by the configured vLLM sidecar.
@@ -33,7 +36,18 @@ class VLLMProxyError(ModelRuntimeError):
 
 
 class VLLMConnectionError(VLLMProxyError):
-    """Could not connect to (or timed out talking to) the vLLM sidecar."""
+    """Could not connect to (or timed out talking to) the vLLM sidecar.
+
+    `status_code` is the HTTP status the failure maps to:
+    `VLLM_TIMEOUT_STATUS_CODE` when the sidecar did not answer within the
+    request timeout, `VLLM_UNAVAILABLE_STATUS_CODE` when the connection could
+    not be established or was dropped. Hosting servers record it in usage
+    rows and answer with it.
+    """
+
+    def __init__(self, message: str, status_code: int = VLLM_UNAVAILABLE_STATUS_CODE):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class VLLMHTTPError(VLLMProxyError):

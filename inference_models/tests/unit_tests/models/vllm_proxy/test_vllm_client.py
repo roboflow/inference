@@ -114,17 +114,44 @@ class TestChatCompletion:
         assert error.value.status_code == 500
         assert error.value.response_body == "boom"
 
-    def test_connection_error_raises_typed_error(self, client: VLLMClient) -> None:
-        client._session.request.side_effect = requests.exceptions.ConnectionError()
+    @pytest.mark.parametrize(
+        "raised",
+        [
+            requests.exceptions.ConnectionError(),
+            ConnectionRefusedError(),
+            ConnectionResetError(),
+        ],
+    )
+    def test_connection_error_raises_typed_error_reporting_503(
+        self, client: VLLMClient, raised: Exception
+    ) -> None:
+        client._session.request.side_effect = raised
 
-        with pytest.raises(VLLMConnectionError):
+        with pytest.raises(VLLMConnectionError) as error:
             client.chat_completion(model="m", messages=[])
 
-    def test_timeout_raises_typed_error(self, client: VLLMClient) -> None:
-        client._session.request.side_effect = requests.exceptions.Timeout()
+        assert error.value.status_code == 503
 
-        with pytest.raises(VLLMConnectionError):
+    @pytest.mark.parametrize(
+        "raised",
+        [
+            requests.exceptions.Timeout(),
+            requests.exceptions.ReadTimeout(),
+            requests.exceptions.ConnectTimeout(),
+        ],
+    )
+    def test_timeout_raises_typed_error_reporting_504(
+        self, client: VLLMClient, raised: Exception
+    ) -> None:
+        client._session.request.side_effect = raised
+
+        with pytest.raises(VLLMConnectionError) as error:
             client.chat_completion(model="m", messages=[])
+
+        assert error.value.status_code == 504
+
+    def test_connection_error_defaults_to_503(self) -> None:
+        assert VLLMConnectionError("unreachable").status_code == 503
 
 
 class TestLoraAdapterEndpoints:

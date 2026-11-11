@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- `VLLMConnectionError` (vLLM proxy backend) carries a `status_code`: `504` when
+  the vLLM sidecar does not answer within `VLLM_REQUEST_TIMEOUT_S`, `503` when
+  the connection cannot be established or is dropped. Hosting servers read it to
+  tag usage rows with `error_status_code` and to answer with that status instead
+  of a generic `500`. The exception type and message are unchanged.
+
 ## `0.39.8`
 
 ### Fixed

@@ -21,6 +21,7 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UsagePausedModelAccessError,
 )
+from inference_models.models.vllm_proxy.errors import VLLMConnectionError
 from inference_models.weights_providers.roboflow import RoboflowModelMetadata
 from inference_sdk.config import apply_duration_minimum, outbound_service_secret
 from inference_server import configuration
@@ -29,7 +30,11 @@ from inference_server.legacy.errors import SERVICE_MISCONFIGURATION_MESSAGE
 from inference_server.usage import request_hook
 from inference_server.usage.collector import UsageCollector
 from inference_server.usage.request_hook import report_request_usage
-from inference_server.usage.rows import USAGE_SCOPE, execution_duration
+from inference_server.usage.rows import (
+    USAGE_SCOPE,
+    exception_error_details,
+    execution_duration,
+)
 from tests.unit_tests.legacy.conftest import FakeGateway
 
 SECRET = "service-secret-1"
@@ -1951,3 +1956,16 @@ def test_undecodable_image_records_no_model_row_when_the_model_does_not_resolve(
 
     assert response.status_code == status_code
     assert _categories(usage_collector) == ["request"]
+
+
+@pytest.mark.parametrize("status_code", [503, 504])
+def test_vllm_connection_error_row_carries_its_status_code(status_code):
+    error = VLLMConnectionError("Could not reach vLLM sidecar", status_code=status_code)
+
+    details = exception_error_details(error, ())
+
+    assert details == {
+        "error": "VLLMConnectionError: Could not reach vLLM sidecar",
+        "error_type": "VLLMConnectionError",
+        "error_status_code": status_code,
+    }

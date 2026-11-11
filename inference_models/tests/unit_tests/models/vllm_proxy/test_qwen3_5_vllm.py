@@ -338,11 +338,12 @@ class TestSelfHealOnUnknownLora:
         self, model: Qwen35VLLMProxy, fake_manager: _FakeAdapterManager
     ) -> None:
         fake_manager.client.chat_completion.side_effect = VLLMConnectionError(
-            "Could not reach vLLM sidecar"
+            "Could not reach vLLM sidecar", status_code=504
         )
 
-        with pytest.raises(VLLMConnectionError):
+        with pytest.raises(VLLMConnectionError) as error:
             model.prompt(np.zeros((64, 64, 3), dtype=np.uint8))
+        assert error.value.status_code == 504
         assert fake_manager.client.chat_completion.call_count == 1
         assert fake_manager.invalidate_calls == []
 
