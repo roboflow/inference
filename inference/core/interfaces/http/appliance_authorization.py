@@ -34,6 +34,10 @@ MISSING_API_KEY_MESSAGE = (
     "Missing api_key. Pass it as the api_key query parameter, the api_key JSON "
     "field or an Authorization: Bearer header."
 )
+CONFLICTING_API_KEYS_MESSAGE = (
+    "The request carries different API keys in the api_key query parameter, the "
+    "Authorization: Bearer header and the api_key JSON field. Send one API key."
+)
 UNAUTHORIZED_API_KEY_MESSAGE = "Unauthorized api_key."
 FORBIDDEN_API_KEY_MESSAGE = "The api_key is not allowed to use this inference server."
 PAUSED_API_KEY_MESSAGE = (
@@ -339,36 +343,51 @@ async def request_skips_api_key_check(request: Request) -> bool:
     return False
 
 
-async def read_request_api_key(request: Request) -> Optional[str]:
-    """Read the API key of a request, in the order the routes use it.
+class ConflictingApiKeysError(Exception):
+    """Two channels of one request carry different API keys."""
 
-    The order is the query parameter ``api_key``, then the ``Authorization:
-    Bearer`` header, then the ``api_key`` field of a JSON body. It matches the
-    route handlers (``api_key_fallback`` and ``api_key_override``), so the key
-    the server checks is the key the route loads models and records usage with.
-    A present but empty query parameter wins over the other channels, as it does
-    in the routes, and counts as no key.
+
+async def read_request_api_key(request: Request) -> Optional[str]:
+    """Read the one API key of a request.
+
+    A request can carry a key in the query parameter ``api_key``, in the
+    ``Authorization: Bearer`` header and in the ``api_key`` field of a JSON
+    body. The routes do not all read the same channels: some read the query
+    parameter, and others read only the header and the body. So every channel
+    that carries a key must carry the same key; otherwise the server could
+    check one key and run the route with another. A present but empty query
+    parameter counts as no key, as it does in the routes that read it.
 
     Args:
         request: The incoming request.
 
     Returns:
         The key, or None when the request carries none.
+
+    Raises:
+        ConflictingApiKeysError: Two channels carry different keys.
     """
+    keys = []
     if "api_key" in request.query_params:
-        return request.query_params["api_key"] or None
+        query_api_key = request.query_params["api_key"]
+        if not query_api_key:
+            return None
+        keys.append(query_api_key)
 
     header_api_key = extract_api_key_from_headers(request.headers)
     if header_api_key:
-        return header_api_key
+        keys.append(header_api_key)
 
     json_body = await _read_json_body(request)
     if json_body is not None:
         body_api_key = json_body.get("api_key")
         if isinstance(body_api_key, str) and body_api_key:
-            return body_api_key
+            keys.append(body_api_key)
 
-    return None
+    if len(set(keys)) > 1:
+        raise ConflictingApiKeysError()
+
+    return keys[0] if keys else None
 
 
 async def _read_json_body(request: Request) -> Optional[dict]:

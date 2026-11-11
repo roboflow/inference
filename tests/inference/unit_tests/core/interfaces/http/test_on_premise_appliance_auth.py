@@ -22,6 +22,7 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.http.appliance_authorization import (
+    CONFLICTING_API_KEYS_MESSAGE,
     MISSING_API_KEY_MESSAGE,
     ApplianceKeyAuthorizer,
     read_request_api_key,
@@ -148,9 +149,7 @@ def test_bearer_header_key_is_accepted(monkeypatch) -> None:
     lookup.assert_awaited_once_with(api_key=API_KEY)
 
 
-def test_header_key_is_checked_before_the_json_body_key(monkeypatch) -> None:
-    # The routes prefer the header key over the body key (api_key_fallback,
-    # api_key_override), so the middleware must check the key the route uses.
+def test_header_and_body_with_the_same_key_are_accepted(monkeypatch) -> None:
     lookup = AsyncMock(return_value=_under_cap())
     model_manager = _model_manager()
     _patch_modes(monkeypatch, appliance=True)
@@ -161,10 +160,74 @@ def test_header_key_is_checked_before_the_json_body_key(monkeypatch) -> None:
         response = client.post(
             "/model/add",
             headers={"Authorization": f"Bearer {API_KEY}"},
-            json={"model_id": "project-a/1", "api_key": "body-key"},
+            json={"model_id": "project-a/1", "api_key": API_KEY},
         )
 
     assert response.status_code == 200
+    lookup.assert_awaited_once_with(api_key=API_KEY)
+    assert model_manager.add_model.call_args.args[1] == API_KEY
+
+
+OTHER_API_KEY = "appliance-key-9c2e"
+
+
+@pytest.mark.parametrize(
+    "path, params, headers, body_key",
+    [
+        # /infer/object_detection reads no query key: it runs with the body key.
+        ("/infer/object_detection", {"api_key": API_KEY}, {}, OTHER_API_KEY),
+        (INFER_PATH, {"api_key": API_KEY}, {}, OTHER_API_KEY),
+        (
+            INFER_PATH,
+            {"api_key": API_KEY},
+            {"Authorization": f"Bearer {OTHER_API_KEY}"},
+            None,
+        ),
+        ("/model/add", {}, {"Authorization": f"Bearer {API_KEY}"}, OTHER_API_KEY),
+    ],
+)
+def test_request_with_two_different_keys_is_refused(
+    monkeypatch, path, params, headers, body_key
+) -> None:
+    # The routes do not all read the same channel, so the server must not
+    # check one key and let the route run with another.
+    lookup = AsyncMock(return_value=_under_cap())
+    model_manager = _model_manager()
+    _patch_modes(monkeypatch, appliance=True)
+    monkeypatch.setattr(http_api, "get_serverless_usage_check_async", lookup)
+    interface = http_api.HttpInterface(model_manager=model_manager)
+    body = _inference_body(model_id="project-a/1")
+    if body_key is not None:
+        body["api_key"] = body_key
+
+    with TestClient(interface.app) as client:
+        response = client.post(path, params=params, headers=headers, json=body)
+
+    assert response.status_code == 400
+    assert response.json() == {"status": 400, "message": CONFLICTING_API_KEYS_MESSAGE}
+    assert API_KEY not in response.text
+    assert OTHER_API_KEY not in response.text
+    lookup.assert_not_awaited()
+    model_manager.add_model.assert_not_called()
+
+
+@pytest.mark.parametrize("path", ["/model/add", "/infer/object_detection"])
+def test_route_without_a_query_key_runs_with_the_checked_query_key(
+    monkeypatch, path
+) -> None:
+    lookup = AsyncMock(return_value=_under_cap())
+    model_manager = _model_manager()
+    _patch_modes(monkeypatch, appliance=True)
+    monkeypatch.setattr(http_api, "get_serverless_usage_check_async", lookup)
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    with TestClient(interface.app) as client:
+        client.post(
+            path,
+            params={"api_key": API_KEY},
+            json=_inference_body(model_id="project-a/1"),
+        )
+
     lookup.assert_awaited_once_with(api_key=API_KEY)
     assert model_manager.add_model.call_args.args[1] == API_KEY
 

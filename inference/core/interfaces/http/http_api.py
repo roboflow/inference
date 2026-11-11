@@ -259,8 +259,10 @@ from inference.core.interfaces.http.api_key_resolution import (
     header_api_key,
 )
 from inference.core.interfaces.http.appliance_authorization import (
+    CONFLICTING_API_KEYS_MESSAGE,
     MISSING_API_KEY_MESSAGE,
     ApplianceKeyAuthorizer,
+    ConflictingApiKeysError,
     read_request_api_key,
     request_skips_api_key_check,
 )
@@ -1462,7 +1464,16 @@ class HttpInterface(BaseInterface):
                 if await request_skips_api_key_check(request):
                     return await call_next(request)
 
-                api_key = await read_request_api_key(request)
+                try:
+                    api_key = await read_request_api_key(request)
+                except ConflictingApiKeysError:
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "status": 400,
+                            "message": CONFLICTING_API_KEYS_MESSAGE,
+                        },
+                    )
                 if api_key is None:
                     return JSONResponse(
                         status_code=401,
@@ -1473,13 +1484,19 @@ class HttpInterface(BaseInterface):
                 if not decision.is_authorized:
                     return decision.to_response()
 
-                response = (
-                    await _call_next_with_assume_identity_authorised_workspace_db_id(
+                # The route must run with the key that was checked. A route that
+                # reads a channel the request left empty falls back to
+                # `header_api_key` (api_key_fallback, api_key_override), so set it
+                # to the checked key for the rest of this request.
+                checked_key_token = header_api_key.set(api_key)
+                try:
+                    response = await _call_next_with_assume_identity_authorised_workspace_db_id(
                         request=request,
                         call_next=call_next,
                         workspace_db_id=decision.workspace_db_id,
                     )
-                )
+                finally:
+                    header_api_key.reset(checked_key_token)
                 response.headers[WORKSPACE_ID_HEADER] = decision.workspace_id
                 return response
 
