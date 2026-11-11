@@ -13,6 +13,7 @@ from roboflow_workflows.core_steps.transformations.track_class_lock.v1 import (
     MAX_TRACKS_PER_VIDEO,
     BlockManifest,
     TrackClassLockBlockV1,
+    _box_iou,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -712,3 +713,115 @@ def test_track_class_lock_tensor_variant_bounds_per_track_class_state() -> None:
     assert len(st["votes"]) <= MAX_CLASSES_PER_TRACK
     assert len(st["class_ids"]) <= MAX_CLASSES_PER_TRACK + 3
     assert st["locked"] is None
+
+
+@pytest.mark.parametrize(
+    "dtype,box_a,box_b,expected_iou",
+    [
+        (np.int16, [0, 0, 400, 400], [100, 0, 500, 400], 0.6),
+        (np.float16, [0, 0, 400, 400], [100, 0, 500, 400], 0.6),
+        (np.uint8, [0, 0, 200, 200], [50, 0, 250, 200], 0.6),
+        (np.int8, [-100, -100, 100, 100], [-50, -100, 100, 100], 0.75),
+        (np.int16, [-20000, 0, 20000, 1], [-10000, 0, 20000, 1], 0.75),
+        (np.float16, [-40000, 0, 40000, 1], [-20000, 0, 40000, 1], 0.75),
+        (np.int64, [2**53, 0, 2**53 + 1, 1], [2**53, 0, 2**53 + 1, 1], 1.0),
+        (np.float32, [0.25, 0.5, 2.75, 2.0], [1.25, 0.5, 3.75, 2.0], 3 / 7),
+    ],
+    ids=[
+        "int16-product",
+        "float16-product",
+        "uint8-product",
+        "int8-subtraction",
+        "int16-subtraction",
+        "float16-subtraction",
+        "large-integer-origin",
+        "fractional-float32",
+    ],
+)
+def test_box_iou_avoids_coordinate_dtype_overflow(
+    dtype: type, box_a: list, box_b: list, expected_iou: float
+) -> None:
+    # given
+    array_a = np.array(box_a, dtype=dtype)
+    array_b = np.array(box_b, dtype=dtype)
+    array_a.setflags(write=False)
+    array_b.setflags(write=False)
+
+    # when
+    result = _box_iou(box_a=array_a, box_b=array_b)
+    reversed_result = _box_iou(box_a=array_b, box_b=array_a)
+
+    # then
+    assert result == pytest.approx(expected_iou)
+    assert reversed_result == pytest.approx(expected_iou)
+    assert isinstance(result, float)
+    np.testing.assert_array_equal(array_a, box_a)
+    np.testing.assert_array_equal(array_b, box_b)
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.float16, np.float32])
+@pytest.mark.parametrize(
+    "overrides,expected_class",
+    [
+        ({}, "cat"),
+        ({"reattach_iou": 0.8}, "dog"),
+        ({"reattach_window": 0}, "dog"),
+    ],
+    ids=["inherit", "below-threshold", "disabled"],
+)
+def test_track_class_lock_reattachment_with_narrow_coordinates(
+    dtype: type, overrides: dict, expected_class: str
+) -> None:
+    # given
+    block = TrackClassLockBlockV1()
+    knobs = {**KNOBS, "min_votes": 1, "lead_margin": 0, **overrides}
+    original = _frame("cat", 0.9, tracker_id=7, xyxy=(0, 0, 400, 400))
+    original.xyxy = original.xyxy.astype(dtype)
+    block.run(image=_image(), detections=original, **knobs)
+    block.run(image=_image(), detections=_empty_frame(), **knobs)
+    returned = _frame("dog", 0.95, tracker_id=8, xyxy=(100, 0, 500, 400))
+    returned.xyxy = returned.xyxy.astype(dtype)
+    returned.data["detection_id"] = np.array(["returning-object"])
+
+    # when
+    output = block.run(image=_image(), detections=returned, **knobs)[
+        "tracked_detections"
+    ]
+
+    # then
+    assert output.data["class_name"].tolist() == [expected_class]
+    assert output.class_id.tolist() == [CLASS_IDS[expected_class]]
+    assert output.data["class_locked"].tolist() == [True]
+    expected_confidence = 0.9 if expected_class == "cat" else 0.95
+    assert output.confidence.tolist() == pytest.approx([expected_confidence])
+    np.testing.assert_array_equal(output.xyxy, returned.xyxy)
+    assert output.xyxy.dtype == returned.xyxy.dtype
+    assert output.tracker_id.tolist() == [8]
+    assert output.data["detection_id"].tolist() == ["returning-object"]
+    assert returned.class_id.tolist() == [CLASS_IDS["dog"]]
+    assert returned.data["class_name"].tolist() == ["dog"]
+    assert "class_locked" not in returned.data
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.float16, np.float32, np.uint8])
+@pytest.mark.parametrize(
+    "box_b",
+    [
+        [20, 0, 30, 10],
+        [10, 0, 20, 10],
+        [5, 5, 5, 10],
+        [5, 5, 10, 5],
+        [8, 2, 3, 7],
+    ],
+    ids=["disjoint", "touching-edge", "zero-width", "zero-height", "inverted"],
+)
+def test_box_iou_preserves_nonoverlapping_and_degenerate_boxes(
+    dtype: type, box_b: list
+) -> None:
+    # given
+    array_a = np.array([0, 0, 10, 10], dtype=dtype)
+    array_b = np.array(box_b, dtype=dtype)
+
+    # when / then
+    assert _box_iou(box_a=array_a, box_b=array_b) == 0.0
+    assert _box_iou(box_a=array_b, box_b=array_a) == 0.0

@@ -508,13 +508,17 @@ def _enforce_track_cap(tracks: Dict[int, dict]) -> None:
 
 
 def _box_iou(box_a: np.ndarray, box_b: np.ndarray) -> float:
-    inter_w = min(box_a[2], box_b[2]) - max(box_a[0], box_b[0])
-    inter_h = min(box_a[3], box_b[3]) - max(box_a[1], box_b[1])
+    # Use Python scalars before arithmetic to avoid coordinate-dtype overflow.
+    x1_a, y1_a, x2_a, y2_a = box_a.tolist()
+    x1_b, y1_b, x2_b, y2_b = box_b.tolist()
+
+    inter_w = min(x2_a, x2_b) - max(x1_a, x1_b)
+    inter_h = min(y2_a, y2_b) - max(y1_a, y1_b)
     if inter_w <= 0 or inter_h <= 0:
         return 0.0
     intersection = float(inter_w * inter_h)
-    area_a = float((box_a[2] - box_a[0]) * (box_a[3] - box_a[1]))
-    area_b = float((box_b[2] - box_b[0]) * (box_b[3] - box_b[1]))
+    area_a = float((x2_a - x1_a) * (y2_a - y1_a))
+    area_b = float((x2_b - x1_b) * (y2_b - y1_b))
     union = area_a + area_b - intersection
     if union <= 0:
         return 0.0
