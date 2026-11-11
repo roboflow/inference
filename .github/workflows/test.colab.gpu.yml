@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     if: ${{ !github.event.act }}
-    runs-on: arc-gpu-runner-set
+    runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 45
 
     steps:

@@ -12,10 +12,11 @@ Follow the shared repository guidance:
   `ubuntu-latest`, macOS and Windows jobs there. Paid CPU jobs use Depot
   (`depot-ubuntu-22.04-*` or `depot-ubuntu-24.04-*` with `group: public-depot`),
   never GitHub larger runners.
-- GPU jobs use `arc-gpu-runner-set`. Those runners are self-hosted: trigger GPU
-  workflows only on `push`, `workflow_dispatch` or `workflow_call` from such a
-  workflow, never on fork pull requests. Runner pods are ephemeral, so nothing
-  persists on the runner between jobs.
+- GPU jobs use `Roboflow-GPU-VM-Runner` (GitHub-hosted GPU). Depot has no
+  self-serve GPU runner, so do not add ARC or other non-Depot GPU runners
+  without a CI-policy decision. Trigger GPU workflows only on `push`,
+  `workflow_dispatch` or `workflow_call` from such a workflow, never on fork
+  pull requests.
 - Every job sets `timeout-minutes`; a hung job otherwise bills six hours.
 - Set `persist-credentials: false` on `actions/checkout` unless a later step
   pushes.

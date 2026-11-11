@@ -19,7 +19,7 @@ concurrency:
 jobs:
   unit-tests-inference-models-gpu:
     name: trt_extras:3.12
-    runs-on: arc-gpu-runner-set
+    runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout

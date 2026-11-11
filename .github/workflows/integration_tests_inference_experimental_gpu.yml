@@ -48,7 +48,7 @@ concurrency:
 jobs:
   integration-tests-inference-models-gpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}:cuda-graphs:${{ matrix.extras.enable_auto_cuda_graphs_for_trt }}
-    runs-on: arc-gpu-runner-set
+    runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 30
     strategy:
       matrix:

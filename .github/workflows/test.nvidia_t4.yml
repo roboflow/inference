@@ -114,7 +114,7 @@ jobs:
           && !github.event.act
           && (github.event_name != 'push' || inputs.private_image)
           && (!inputs.private_image || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
-    runs-on: arc-gpu-runner-set
+    runs-on: Roboflow-GPU-VM-Runner
     permissions:
       contents: read
       id-token: write
