@@ -74,7 +74,7 @@ RUN pip install --no-cache-dir --break-system-packages \
     -r requirements.cli.txt \
     -r requirements.sdk.http.txt \
     -r requirements.modal.txt \
-    "setuptools~=83.0.0" \
+    "setuptools~=84.2.1" \
  && rm -rf ~/.cache/pip
 
 # Build & install roboflow-workflows and streamvision from source, as the amd64 slim
@@ -103,7 +103,7 @@ print('torch', v, 'cuda', torch.version.cuda)"
 # Guard: onnxruntime must actually offer the CUDA execution provider. A GPU server that
 # quietly serves on CPU is THE failure mode of this port, and it is invisible until someone
 # reads a latency number. Assert the provider is present at BUILD time; the runtime proof
-# (that it is also selected, on a real device) is taken separately on the station.
+# (that it is also selected, on a real device) is taken separately on the build host.
 RUN python -c "\
 import onnxruntime as ort; \
 p = ort.get_available_providers(); \
