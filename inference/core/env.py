@@ -801,6 +801,11 @@ MODEL_ID = os.getenv("MODEL_ID")
 # confirmed the route responds, so this flag does not need to be flipped just
 # to keep that link from 404ing.
 ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
+# Serves the on-device WebGPU playground at /webgpu: a page that measures the
+# visitor's GPU (phone, tablet or laptop) and runs a small language model in the
+# browser via WebLLM. The server only hands out the page; prompts and outputs
+# stay on the device. Off by default.
+ENABLE_WEBGPU_PLAYGROUND = str2bool(os.getenv("ENABLE_WEBGPU_PLAYGROUND", False))
 # Origin allowed to make cross-origin calls into the builder API/CORS
 # middleware (see http_api.py) and embedded into editor.html for the builder
 # UI to call back out to. Defaults to this deployment's Roboflow app URL
