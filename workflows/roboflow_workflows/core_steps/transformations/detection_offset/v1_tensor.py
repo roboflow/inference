@@ -217,15 +217,31 @@ def _offset_xyxy(
     """Expand each box outward, clamped to image bounds. Percentage mode pads by
     a fraction of each box's own width/height; pixel mode pads by a fixed
     (offset // 2) on each side."""
+    uint8_boxes = xyxy.dtype == torch.uint8
+    if uint8_boxes:
+        # Widen before computing padding and keep the widened result for large images.
+        xyxy = xyxy.to(dtype=torch.int64)
+        # Larger positive requests cannot change the clipped coordinates.
+        offset_scale = 200 if use_percentage else 2
+        offset_width, offset_height = int(offset_width), int(offset_height)
+        if image_width is not None:
+            offset_width = min(offset_width, offset_scale * max(255, image_width))
+        if image_height is not None:
+            offset_height = min(offset_height, offset_scale * max(255, image_height))
+
     x1 = xyxy[:, 0]
     y1 = xyxy[:, 1]
     x2 = xyxy[:, 2]
     y2 = xyxy[:, 3]
     if use_percentage:
-        box_width = x2 - x1
-        box_height = y2 - y1
-        pad_x = (box_width * offset_width / 200).to(torch.int64).to(xyxy.dtype)
-        pad_y = (box_height * offset_height / 200).to(torch.int64).to(xyxy.dtype)
+        scaled_width = (x2 - x1) * offset_width
+        scaled_height = (y2 - y1) * offset_height
+        if uint8_boxes:
+            pad_x = torch.div(scaled_width, 200, rounding_mode="trunc")
+            pad_y = torch.div(scaled_height, 200, rounding_mode="trunc")
+        else:
+            pad_x = (scaled_width / 200).to(torch.int64).to(xyxy.dtype)
+            pad_y = (scaled_height / 200).to(torch.int64).to(xyxy.dtype)
     else:
         pad_x = torch.full_like(x1, float(offset_width // 2))
         pad_y = torch.full_like(y1, float(offset_height // 2))

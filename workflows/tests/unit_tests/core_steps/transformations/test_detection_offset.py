@@ -271,3 +271,95 @@ def test_run_offsets_by_percentage_when_percent_units_selected_tensor_native() -
     assert (
         y2 == 620
     ), "Bottom corner should be moved by 5% of detection height to the bottom"
+
+
+@pytest.mark.parametrize("tensor_native", [False, True], ids=["numpy", "tensor"])
+@pytest.mark.parametrize(
+    "use_percentage, offset_width, offset_height, top_left, bottom_right",
+    [
+        (False, 20, 10, [0, 0, 30, 35], [220, 235, 260, 258]),
+        (True, 100, 100, [0, 0, 29, 43], [220, 234, 260, 259]),
+    ],
+    ids=["pixels", "percent"],
+)
+@pytest.mark.parametrize("image_height, image_width", [(255, 255), (300, 320)])
+def test_offset_uint8_boxes_before_clipping(
+    tensor_native: bool,
+    use_percentage: bool,
+    offset_width: int,
+    offset_height: int,
+    top_left: list[int],
+    bottom_right: list[int],
+    image_height: int,
+    image_width: int,
+) -> None:
+    boxes = [[2, 3, 20, 30], [230, 240, 250, 253]]
+    detection_ids = ["top-left", "bottom-right"]
+    expected = [
+        top_left,
+        [
+            bottom_right[0],
+            bottom_right[1],
+            min(bottom_right[2], image_width),
+            min(bottom_right[3], image_height),
+        ],
+    ]
+
+    if tensor_native:
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("inference_models")
+        from roboflow_workflows.core_steps.transformations.detection_offset.v1_tensor import (
+            offset_detections as offset_native_detections,
+        )
+
+        from inference_models.models.base.object_detection import (
+            Detections as NativeDetections,
+        )
+
+        detections = NativeDetections(
+            xyxy=torch.tensor(boxes, dtype=torch.uint8),
+            class_id=torch.tensor([1, 2]),
+            confidence=torch.tensor([0.5, 0.75]),
+            image_metadata={"image_dimensions": [image_height, image_width]},
+            bboxes_metadata=[
+                {"detection_id": detection_id} for detection_id in detection_ids
+            ],
+        )
+        result = offset_native_detections(
+            prediction=detections,
+            offset_width=offset_width,
+            offset_height=offset_height,
+            use_percentage=use_percentage,
+        )
+        assert result.xyxy.device == detections.xyxy.device
+        assert result.image_metadata == detections.image_metadata
+        assert [row["parent_id"] for row in result.bboxes_metadata] == detection_ids
+        assert all(
+            row["detection_id"] != original
+            for row, original in zip(result.bboxes_metadata, detection_ids)
+        )
+    else:
+        image_dimensions = np.array([[image_height, image_width]] * len(boxes))
+        detections = sv.Detections(
+            xyxy=np.array(boxes, dtype=np.uint8),
+            class_id=np.array([1, 2]),
+            confidence=np.array([0.5, 0.75]),
+            data={
+                "image_dimensions": image_dimensions,
+                "detection_id": np.array(detection_ids),
+            },
+        )
+        result = offset_detections(
+            detections=detections,
+            offset_width=offset_width,
+            offset_height=offset_height,
+            use_percentage=use_percentage,
+        )
+        np.testing.assert_array_equal(result["image_dimensions"], image_dimensions)
+        assert result["parent_id"].tolist() == detection_ids
+        assert all(result["detection_id"] != np.array(detection_ids))
+
+    assert detections.xyxy.tolist() == boxes
+    assert result.xyxy.tolist() == expected
+    assert result.class_id.tolist() == [1, 2]
+    assert result.confidence.tolist() == [0.5, 0.75]

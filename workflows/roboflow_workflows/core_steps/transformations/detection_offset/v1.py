@@ -192,10 +192,34 @@ def offset_detections(
     detection_id_key: str = DETECTION_ID_KEY,
     use_percentage: bool = False,
 ) -> sv.Detections:
+    """Apply per-side padding and clip the expanded boxes to the image.
+
+    Args:
+        detections (sv.Detections): Predictions with xyxy boxes and image dimensions.
+        offset_width (int): Total horizontal offset.
+        offset_height (int): Total vertical offset.
+        parent_id_key (str): Metadata key for the original detection ID.
+        detection_id_key (str): Metadata key for the generated detection ID.
+        use_percentage (bool): Interpret the offsets as percentages of box size.
+
+    Returns:
+        sv.Detections: Padded predictions with updated box IDs.
+    """
     if len(detections) == 0:
         return detections
+
     _detections = deepcopy(detections)
     image_dimensions = detections.data["image_dimensions"]
+    boxes = _detections.xyxy
+    if boxes.dtype == np.uint8:
+        # Use signed Python integers for all padding arithmetic before clipping.
+        boxes = boxes.tolist()
+        # Beyond this request, even a one-pixel span reaches the clipping bounds.
+        offset_scale = 200 if use_percentage else 2
+        max_offset = offset_scale * max(255, int(np.max(image_dimensions)))
+        offset_width = min(int(offset_width), max_offset)
+        offset_height = min(int(offset_height), max_offset)
+
     if use_percentage:
         _detections.xyxy = np.array(
             [
@@ -211,7 +235,7 @@ def offset_detections(
                         y2 + int(box_height * offset_height / 200),
                     ),
                 )
-                for i, (x1, y1, x2, y2) in enumerate(_detections.xyxy)
+                for i, (x1, y1, x2, y2) in enumerate(boxes)
                 for box_width, box_height in [(x2 - x1, y2 - y1)]
             ]
         )
@@ -224,7 +248,7 @@ def offset_detections(
                     min(image_dimensions[i][1], x2 + offset_width // 2),
                     min(image_dimensions[i][0], y2 + offset_height // 2),
                 )
-                for i, (x1, y1, x2, y2) in enumerate(_detections.xyxy)
+                for i, (x1, y1, x2, y2) in enumerate(boxes)
             ]
         )
     _detections[parent_id_key] = detections[detection_id_key].copy()
