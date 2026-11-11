@@ -3109,6 +3109,13 @@ class HttpInterface(BaseInterface):
                     logger.info(
                         f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
                     )
+                    if (
+                        PINNED_MODELS
+                        and model_id in PINNED_MODELS
+                        and hasattr(self.model_manager, "pin_model")
+                    ):
+                        self.model_manager.pin_model(loaded_model_id)
+
                     try:
                         self.model_manager.add_model(
                             de_aliased,
@@ -3126,14 +3133,6 @@ class HttpInterface(BaseInterface):
                         with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
                         return
-
-                    # Pin if this model is in PINNED_MODELS
-                    if (
-                        PINNED_MODELS
-                        and model_id in PINNED_MODELS
-                        and hasattr(self.model_manager, "pin_model")
-                    ):
-                        self.model_manager.pin_model(loaded_model_id)
 
                 all_models = list(
                     dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))
@@ -4435,6 +4434,13 @@ class HttpInterface(BaseInterface):
                                 f"specifies '{inference_request.model_id}'",
                             )
                         inference_request.model_id = model_id
+                    elif (
+                        inference_request.model_id is None
+                        and inference_request.depth_version_id is not None
+                    ):
+                        inference_request.model_id = (
+                            f"depth-anything-v2/{inference_request.depth_version_id}"
+                        )
                     api_key = api_key_fallback(api_key)
                     if api_key is not None:
                         inference_request.api_key = api_key

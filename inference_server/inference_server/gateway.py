@@ -71,6 +71,49 @@ _SECRET_VALUE = re.compile(
 )
 
 
+def is_loaded_model_entry(entry: dict) -> bool:
+    """Tell whether one ``stats()["models"]`` entry describes a live model.
+
+    Args:
+        entry (dict): A single model entry as the gateway ``stats()`` reports it.
+
+    Returns:
+        True when the model is loaded or still loading, False otherwise,
+        including for a malformed entry.
+    """
+    if not isinstance(entry, dict):
+        return False
+
+    if entry.get("loaded") or entry.get("loading"):
+        return True
+
+    is_loaded = "loaded" not in entry and entry.get("state") not in (
+        "unloaded",
+        "not_loaded",
+    )
+
+    return is_loaded
+
+
+def loaded_model_entries(models: dict) -> dict:
+    """Keep the entries of a ``stats()["models"]`` dict that are loaded or loading.
+
+    Args:
+        models (dict): Entries keyed by model id, as the gateway ``stats()``
+            reports them.
+
+    Returns:
+        The entries whose model is loaded or still loading, in the original order.
+    """
+    loaded_entries = {
+        model_id: entry
+        for model_id, entry in models.items()
+        if is_loaded_model_entry(entry)
+    }
+
+    return loaded_entries
+
+
 class ReloadAfterEvictionError(RuntimeError):
     pass
 
@@ -203,6 +246,7 @@ class ModelManagerGateway:
         # reload to reuse instead of falling back to anonymous defaults.
         self._load_context: dict[str, tuple[str, str]] = {}
         self._load_failures: dict[str, tuple] = {}
+        self._pinned_ids: set[str] = set()
         self._shutting_down = False
 
     # ------------------------------------------------------------------
@@ -283,6 +327,8 @@ class ModelManagerGateway:
         device: Optional[str],
         pinned: bool = False,
     ) -> Optional[asyncio.Future]:
+        pinned = pinned or key in self._pinned_ids
+
         future = self._pending_loads.get(key)
         if future is not None and not future.done():
             return future
@@ -457,6 +503,7 @@ class ModelManagerGateway:
             )
             return failure or ("ok",)
 
+        self._pinned_ids.add(model_id)
         failure = await self._pinned_load(model_id, api_key, effective_timeout)
         if failure is not None:
             return failure
@@ -482,6 +529,7 @@ class ModelManagerGateway:
 
     async def unload(self, model_id: str) -> tuple:
         self._load_failures.pop(model_id, None)
+        self._pinned_ids.discard(model_id)
         try:
             await asyncio.get_running_loop().run_in_executor(
                 self._model_executor, lambda: self.manager.unload(model_id)

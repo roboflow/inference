@@ -632,6 +632,71 @@ def test_sv_detections_to_root_coordinates_when_shift_is_needed() -> None:
     ), "Expected oriented-box corners to be shifted into root coordinates"
 
 
+def _crop_detections_with_rle(
+    crop_masks: np.ndarray, root_coordinates: list, root_dimensions: list
+) -> sv.Detections:
+    rle_masks = []
+    for crop_mask in crop_masks:
+        rle_mask = mask_utils.encode(np.asfortranarray(crop_mask.astype(np.uint8)))
+        rle_mask["counts"] = rle_mask["counts"].decode("utf-8")
+        rle_masks.append(rle_mask)
+    count = len(crop_masks)
+    return sv.Detections(
+        xyxy=np.array([[3, 2, 8, 5]] * count, dtype=np.float64),
+        mask=crop_masks,
+        confidence=np.array([0.9] * count),
+        class_id=np.array([0] * count),
+        data={
+            "class_name": np.array(["obj"] * count),
+            "detection_id": np.array([f"d{i}" for i in range(count)]),
+            "parent_id": np.array(["crop"] * count),
+            "parent_coordinates": np.array([root_coordinates] * count),
+            "parent_dimensions": np.array([list(crop_masks.shape[1:])] * count),
+            "root_parent_id": np.array(["root"] * count),
+            "root_parent_coordinates": np.array([root_coordinates] * count),
+            "root_parent_dimensions": np.array([root_dimensions] * count),
+            "rle_mask": np.array(rle_masks, dtype=object),
+        },
+    )
+
+
+def test_sv_detections_to_root_coordinates_re_anchors_rle_masks() -> None:
+    # given
+    crop_masks = np.zeros((2, 10, 18), dtype=bool)
+    crop_masks[0, 2:5, 3:8] = True
+    expected_masks = np.zeros((2, 30, 50), dtype=bool)
+    expected_masks[:, 8:18, 12:30] = crop_masks
+    detections = _crop_detections_with_rle(
+        crop_masks=crop_masks, root_coordinates=[12, 8], root_dimensions=[30, 50]
+    )
+
+    # when
+    result = sv_detections_to_root_coordinates(detections=detections)
+
+    # then
+    for rle_mask, expected_mask in zip(result.data["rle_mask"], expected_masks):
+        assert rle_mask["size"] == [30, 50]
+        assert isinstance(rle_mask["counts"], str)
+        assert np.array_equal(mask_utils.decode(rle_mask).astype(bool), expected_mask)
+    serialized = serialise_rle_sv_detections(detections=result)
+    assert serialized["predictions"][0]["rle_mask"] == result.data["rle_mask"][0]
+
+
+def test_sv_detections_to_root_coordinates_keeps_rle_masks_that_do_not_move() -> None:
+    # given
+    crop_masks = np.zeros((1, 10, 18), dtype=bool)
+    crop_masks[0, 2:5, 3:8] = True
+    detections = _crop_detections_with_rle(
+        crop_masks=crop_masks, root_coordinates=[0, 0], root_dimensions=[10, 18]
+    )
+
+    # when
+    result = sv_detections_to_root_coordinates(detections=detections)
+
+    # then
+    assert result.data["rle_mask"][0] == detections.data["rle_mask"][0]
+
+
 def test_sv_detections_to_root_coordinates_when_scale_and_shift_is_needed() -> None:
     # given
     mask = np.zeros((2, 200, 100), dtype=np.bool_)

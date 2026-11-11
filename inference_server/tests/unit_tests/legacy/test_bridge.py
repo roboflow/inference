@@ -314,6 +314,25 @@ async def test_describe_lists_models_loaded_outside_the_bridge(fake_stat):
 
 
 @pytest.mark.asyncio
+async def test_describe_excludes_unloaded_directory_entries(fake_stat):
+    class _DirectoryGateway(FakeGateway):
+        async def stats(self):
+            return {
+                "models": {
+                    "ds/1": {"state": "loaded", "loaded": True},
+                    "ds/2": {"state": "loading", "loaded": False, "loading": True},
+                    "ds/3": {"state": "unloaded", "loaded": False, "loading": False},
+                }
+            }
+
+    bridge = LegacyModelBridge(_DirectoryGateway())
+    routes = await bridge.describe()
+    assert [r.model_id for r in routes] == ["ds/1", "ds/2"]
+    assert bridge._loaded_ids == {"ds/1", "ds/2"}
+    assert "ds/3" not in bridge
+
+
+@pytest.mark.asyncio
 async def test_offline_mode_skips_registry_and_uses_mro(fake_stat, monkeypatch):
     monkeypatch.setattr("inference_server.legacy.bridge.LEGACY_OFFLINE_MODE", True)
     gw = FakeGateway(

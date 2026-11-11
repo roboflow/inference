@@ -39,6 +39,7 @@ from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
     pre_process_network_input_to_image_list,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 GRANULARITY_2TASK = {
     "normal": "<CAPTION>",
@@ -115,13 +116,14 @@ class Florence2HF:
                 bnb_4bit_quant_type="nf4",
             )
         # Native HF Florence2 path only (require transformers >= 4.56)
-        model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
-            pretrained_model_name_or_path=base_model_path,
-            dtype=torch_dtype,
-            local_files_only=local_files_only,
-            trust_remote_code=trust_remote_code,
-            quantization_config=quantization_config,
-        )
+        with torch_default_dtype_lock():
+            model = Florence2ForConditionalGeneration.from_pretrained(  # type: ignore[arg-type]
+                pretrained_model_name_or_path=base_model_path,
+                dtype=torch_dtype,
+                local_files_only=local_files_only,
+                trust_remote_code=trust_remote_code,
+                quantization_config=quantization_config,
+            )
         if is_adapter_package:
             # Custom LoRA attach to also cover vision modules
             adapter_cfg_path = os.path.join(model_name_or_path, "adapter_config.json")

@@ -187,6 +187,7 @@ OBJECT_DETECTION_WORKFLOW = {
             "task_type": "object-detection",
             "classes": "$inputs.classes",
             "api_key": "$inputs.api_key",
+            "max_tokens": 4000,
         },
         {
             "type": "roboflow_core/vlm_as_detector@v2",

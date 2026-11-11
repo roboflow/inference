@@ -15,12 +15,12 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     Selector,
-    WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
@@ -144,7 +144,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/time_in_zone@v2"]
-    image: Union[WorkflowImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image",
         description="Input image for the current video frame containing embedded video metadata (fps, frame_number, frame_timestamp, video_identifier, video source) required for time calculation and state management. The block extracts video_metadata from the WorkflowImageData object. The fps and frame_number are used for video files to calculate timestamps (timestamp = frame_number / fps). For streamed video, frame_timestamp is used directly. The video_identifier is used to maintain separate tracking state and zone configurations for different videos. Used for zone visualization and reference. The image dimensions are used to validate zone coordinates. This version simplifies input by embedding metadata in the image object rather than requiring a separate metadata field.",
         examples=["$inputs.image", "$steps.cropping.crops"],

@@ -1,5 +1,62 @@
 # Changelog
 
+## Unreleased
+
+## `0.39.8`
+
+### Fixed
+
+- Pre-processing casts integer images to `torch.float32` before dividing by
+  `scaling_factor` in the stretch, center-crop and fit-longer-edge paths (numpy,
+  tensor and list inputs, and the letterbox batch). Integer division returned
+  `torch.get_default_dtype()`, so a process whose default dtype had been left at
+  `torch.bfloat16` sent bfloat16 inputs to ONNX models, which failed with
+  `ModelRuntimeError: model requires the input type to be torch.float32`.
+- RF-DETR pre-processing builds its numpy-path input tensor in `torch.float32`
+  instead of `TF.to_tensor`'s default dtype. With the default left at
+  `torch.bfloat16`, RF-DETR models were fed bfloat16-rounded inputs and returned
+  lower-precision predictions without raising an error.
+- Hugging Face model loads run inside a process-wide lock
+  (`torch_default_dtype_lock()` in `inference_models.models.common.torch`).
+  transformers' `from_pretrained` sets the process-global default dtype while it
+  builds a model and restores it afterwards. That is not thread-safe, and
+  overlapping loads (for example several bfloat16 VLMs loaded at once) could leave
+  the default stuck at `torch.bfloat16` for the rest of the process.
+- `AutoModel` loads check the default dtype after each model is built. If it is not
+  `torch.float32`, they log a warning naming the model and reset it.
+  `ModelManager` does not perform an additional reset after arbitrary model loads:
+  legacy Hugging Face loaders do not acquire the shared dtype lock, so another
+  model finishing could otherwise reset their temporary dtype mid-construction.
+  Legacy loader locking and recovery remain a follow-up.
+
+## `0.39.7`
+
+### Fixed
+
+- TensorRT CUDA graph capture and replay wait on the caller's CUDA stream and
+  record the input tensor on the graph stream before copying or executing it.
+  Previously, an input still being produced on the caller stream without a
+  tensor readiness event (RF-DETR tracker-based preprocessing, batch padding)
+  could be read too early and yield predictions for stale input when CUDA
+  graphs were enabled.
+
+### Changed
+
+- `FILE_LOCK_ACQUIRE_TIMEOUT` (`INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT`) defaults to
+  600 seconds instead of 20, so a model whose weights package is being downloaded by
+  another process waits for that download instead of failing on the package
+  materialization lock.
+
+## `0.39.6`
+
+### Changed
+
+- Security maintenance release, no functional change. Dependency floors move to the first release that fixes each advisory and the lockfile is refreshed to match:
+  - `GitPython>=3.2.1` (was `>=3.1.59`): GHSA-83vg-56qc-22m7, a submodule `.git` path was validated only after cloning into it (remote code execution). Lockfile: 3.1.62 -> 3.2.1.
+  - `onnx>=1.22.0` (was `>=1.21.0`) in every `onnx-*` extra: GHSA-hwpq-hmq9-wj77 (null dereference in the Upsample version-converter adapter) and GHSA-p893-rvq9-2xf9 (heap over-read in the Gemm version-converter adapter). Lockfile: 1.21.0 -> 1.23.2.
+  - `setuptools>=84.1.0` (was `>=83.0.0`): GHSA-xmj3-9gf7-h52w, Windows path escape through `namespace_packages.txt` during legacy wheel installation. Lockfile: 83.0.0 -> 84.2.1.
+  - `nbconvert>=7.17.2` (was `>=7.17.1`) in the `docs` group: GHSA-pjvx-prjx-h659, arbitrary file write through cell output filenames when exporting to Markdown. Lockfile: 7.17.1 -> 7.17.2.
+
 ## `0.39.5`
 
 ### Added

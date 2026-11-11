@@ -386,6 +386,84 @@ def test_metrics_route_reports_loaded_idle_models(monkeypatch):
     assert _gauge_value(body, "num_errors_coco_3") == 0.0
 
 
+def test_unloaded_models_are_removed_from_loaded_metrics(monkeypatch):
+    module = _reloaded_app(
+        monkeypatch,
+        _StatsGateway(
+            {
+                "coco/3": {"state": "loaded", "loaded": True},
+                "old/1": {"state": "unloaded", "loaded": False, "loading": False},
+            }
+        ),
+    )
+    try:
+        with TestClient(module.app) as client:
+            body = client.get("/metrics").text
+    finally:
+        monkeypatch.undo()
+        importlib.reload(module)
+
+    assert _gauge_value(body, "num_inferences_coco_3") == 0.0
+    assert "num_inferences_old_1" not in body
+
+
+def test_not_loaded_in_process_models_are_removed_from_loaded_metrics(monkeypatch):
+    module = _reloaded_app(
+        monkeypatch,
+        _StatsGateway(
+            {
+                "coco/3": {"state": "loaded"},
+                "old/1": {"state": "not_loaded"},
+            }
+        ),
+    )
+    try:
+        with TestClient(module.app) as client:
+            body = client.get("/metrics").text
+    finally:
+        monkeypatch.undo()
+        importlib.reload(module)
+
+    assert _gauge_value(body, "num_inferences_coco_3") == 0.0
+    assert "num_inferences_old_1" not in body
+
+
+def test_unloaded_models_in_list_shaped_stats_are_removed_from_loaded_metrics(
+    monkeypatch,
+):
+    class _ListStatsGateway(FakeGateway):
+        async def stats(self):
+            return {
+                "models": [
+                    {"model_id": "coco/3", "state": "loaded"},
+                    {
+                        "model_id": "mid/2",
+                        "state": "loading",
+                        "loaded": False,
+                        "loading": True,
+                    },
+                    {
+                        "model_id": "old/1",
+                        "state": "unloaded",
+                        "loaded": False,
+                        "loading": False,
+                    },
+                ]
+            }
+
+    module = _reloaded_app(monkeypatch, _ListStatsGateway())
+    try:
+        with TestClient(module.app) as client:
+            body = client.get("/metrics").text
+    finally:
+        monkeypatch.undo()
+        importlib.reload(module)
+
+    assert _gauge_value(body, "num_inferences_coco_3") == 0.0
+    assert _gauge_value(body, "num_inferences_mid_2") == 0.0
+    assert "num_inferences_old_1" not in body
+
+
 def test_model_gauge_help_strings_match_legacy():
     collector = _collector()
     collector.record("m/1", [0.01], error=False)

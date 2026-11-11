@@ -114,6 +114,7 @@ from inference_models.models.auto_loaders.presentation_utils import (
 )
 from inference_models.models.auto_loaders.ranking import rank_model_packages
 from inference_models.models.base.image_embeddings import ImageEmbeddingModel
+from inference_models.models.common.torch import reset_leaked_torch_default_dtype
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
 from inference_models.utils.content_addressed_artifact_cache import (
     ContentAddressedArtifactCache,
@@ -1645,7 +1646,8 @@ class AutoModel:
                 package selection and download issues. Default: False.
 
             model_download_file_lock_acquire_timeout: Timeout in seconds for acquiring
-                file locks during concurrent downloads. Default: FILE_LOCK_ACQUIRE_TIMEOUT (20).
+                file locks during concurrent downloads. Default:
+                FILE_LOCK_ACQUIRE_TIMEOUT (600).
 
             allow_untrusted_packages: Allow loading model packages with custom code that
                 haven't been verified. **Security risk** - only enable for trusted sources.
@@ -4341,6 +4343,8 @@ def load_model_with_capabilities(model_class, model_path, **kwargs):
             "PyTorch or Hugging Face classifier package for the same model version."
         )
     model = model_class.from_pretrained(model_path, **kwargs)
+    reset_leaked_torch_default_dtype(model_name_or_path=model_path)
+
     return prepare_required_capabilities(
         model,
         kwargs.get("required_capabilities"),

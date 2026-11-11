@@ -50,7 +50,7 @@ RUN pip3 install \
     -r requirements.sdk.http.txt \
     -r requirements.easyocr.txt \
     -r requirements.modal.txt \
-    "setuptools~=83.0.0" \
+    "setuptools~=84.2.1" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -91,6 +91,8 @@ ENV HOST=0.0.0.0
 ENV PORT=9001
 ENV NUM_CELERY_WORKERS=12
 ENV PYTHONPATH=/app/
+# Keep the worker import policy consistent with the GPU parallel image.
+ENV PYTORCH_NVML_BASED_CUDA_CHECK=1
 ENV REDIS_HOST="localhost"
 ENV REDIS_PORT="6380"
 ENV CORE_MODELS_ENABLED=false

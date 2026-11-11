@@ -130,15 +130,15 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
 
 # hashes are sha256[:16] - a change-detector, not a security control.
 _FROZEN_CONTRACTS = [
-    ("InferencePipeline.init", "87ac083f88c84541"),
-    ("InferencePipeline.init_with_yolo_world", "03e562b3c5e60eb9"),
-    ("InferencePipeline.init_with_workflow", "c1a048f36d371750"),
-    ("InferencePipeline.init_with_custom_logic", "072e4f2946ee2a47"),
+    ("InferencePipeline.init", "03780d66f83264e9"),
+    ("InferencePipeline.init_with_yolo_world", "568d58ad889728a5"),
+    ("InferencePipeline.init_with_workflow", "b6a6b80a7278d770"),
+    ("InferencePipeline.init_with_custom_logic", "4eef88c0efdabce0"),
     ("Stream.__init__", "ad88b06bfd0ef5aa"),
-    ("sinks.display_image", "f8e554f57455543c"),
-    ("sinks.render_boxes", "bd087e986582eec5"),
+    ("sinks.display_image", "96a5ac796c31b98a"),
+    ("sinks.render_boxes", "f1d9f447976564cd"),
     ("sinks.render_statistics", "12aa6eb0579b10d5"),
-    ("sinks.multi_sink", "f665e4f385adb432"),
+    ("sinks.multi_sink", "bddf797257b579b3"),
     ("sinks.active_learning_sink", "4c5b2c7e4b2c1f03"),
 ]
 
@@ -402,3 +402,24 @@ def test_active_learning_sink_signature_contract() -> None:
     ]
     assert all(p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters)
     assert signature.return_annotation is None
+
+
+def test_stable_signature_ignores_nested_union_order() -> None:
+    """Ignore equal nested union annotations cached in different import orders."""
+
+    def before(value): ...
+    def after(value): ...
+
+    # Clearing typing's caches reproduces imports that first create either order.
+    from typing import _cleanups
+
+    for cleanup in _cleanups:
+        cleanup()
+    before.__annotations__["value"] = List[Union[int, str]]
+    for cleanup in _cleanups:
+        cleanup()
+    after.__annotations__["value"] = List[Union[str, int]]
+
+    assert _stable_signature(before) == _stable_signature(after)
+    after.__annotations__["value"] = List[Union[str, float]]
+    assert _stable_signature(before) != _stable_signature(after)
