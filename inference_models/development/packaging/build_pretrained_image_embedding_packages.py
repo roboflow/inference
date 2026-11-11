@@ -20,8 +20,9 @@ not give a vector of the declared dimension.
     python build_pretrained_image_embedding_packages.py --output-dir ./packages \\
         --models dinov2/small siglip2/base-patch16-224
 
-DINOv3 weights are gated on Hugging Face: accept the DINOv3 License on the model
-page and export `HF_TOKEN` before building `dinov3/vits16`.
+All three source repositories are public; no Hugging Face token is needed. Meta's
+`facebook/dinov3-*` repositories are gated, but `dinov3/vits16` is built from the
+onnx-community export, which is not. Its weights remain under the DINOv3 License.
 """
 
 import argparse

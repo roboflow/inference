@@ -12,7 +12,7 @@ Pretrained vision backbones that turn an image into a single feature vector, for
     **DINOv2**: Apache 2.0, [Meta DINOv2](https://github.com/facebookresearch/dinov2)<br>**SigLIP2**: Apache 2.0, [Google SigLIP2](https://huggingface.co/google/siglip2-base-patch16-224)<br>**DINOv3**: [DINOv3 License](https://github.com/roboflow/inference/blob/main/inference_models/inference_models/models/dinov3/LICENSE.txt), [Meta DINOv3](https://github.com/facebookresearch/dinov3)
 
 !!! warning "DINOv3 License"
-    DINOv3 is released under Meta's DINOv3 License, the same as the [DINOv3 classifier](dinov3-classification.md). It allows research and commercial use but restricts some uses (trade controls, military and weapons applications, among others), requires acknowledging DINO Materials in publications and requires redistributing under the same terms. Its weights are gated on Hugging Face: accept the license on the model page before downloading them.
+    DINOv3 is released under Meta's DINOv3 License, the same as the [DINOv3 classifier](dinov3-classification.md). It allows research and commercial use but restricts some uses (trade controls, military and weapons applications, among others), requires acknowledging DINO Materials in publications and requires redistributing under the same terms. Meta's `facebook/dinov3-*` repositories are gated on Hugging Face; the onnx-community export this package uses is not, and its weights remain under the DINOv3 License.
 
 ## Model IDs
 
@@ -114,7 +114,6 @@ Only `feature_vector` embeddings are available. Requesting another `output_type`
 `inference_models/development/packaging/build_pretrained_image_embedding_packages.py` downloads the pinned files, writes the package layout above, checks the graph outputs, external data and preprocessing, loads the package to embed one image, and prints each file's size and sha256:
 
 ```bash
-export HF_TOKEN=...  # needed for the gated DINOv3 weights
 python inference_models/development/packaging/build_pretrained_image_embedding_packages.py \
     --output-dir ./packages
 ```
