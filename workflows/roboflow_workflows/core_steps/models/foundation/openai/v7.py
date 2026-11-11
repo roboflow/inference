@@ -50,6 +50,19 @@ from roboflow_workflows.core_steps.common.vlm_decoding import (
     decode_vlm_output,
     describe_vlm_prediction_outputs,
 )
+from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    MAX_CROPS_PER_LABEL,
+    MAX_REFERENCE_EXAMPLES,
+    REFERENCE_EXAMPLES_DESCRIPTION,
+    REFERENCE_EXAMPLES_EXAMPLE,
+    REFERENCE_EXAMPLES_TASK,
+    TARGET_IMAGE_INTRO,
+    ReferenceExamples,
+    ReferencePartsCache,
+    openai_reference_parts_for,
+    validate_reference_examples,
+    with_reference_parts,
+)
 from roboflow_workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from roboflow_workflows.environment import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -105,6 +118,12 @@ PLAIN_ABSOLUTE_STYLE = "plain-absolute"
 
 # GPT-5.6 Terra/Luna assumed to match Sol's `max` (docs describe the set family-wide).
 OPENAI_MODELS = [
+    {
+        "id": "gpt-6.1-terra",
+        "name": "GPT-6.1 Terra",
+        "reasoning_effort_values": ["none", "low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
     {
         "id": "gpt-6.1-sol",
         "name": "GPT-6.1 Sol",
@@ -457,6 +476,19 @@ The two lists are paired by position. Structured-output models constrain the
 returned label to `output_classes`, and decoded predictions use those stable
 labels. Omitting `output_classes` preserves the original `classes` contract.
 
+For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
+labeled example images. The block cuts up to {MAX_CROPS_PER_LABEL} crops per label
+from the examples' boxes (largest first) and sends them, grouped by label, before
+the image to label, so the model sees what each label looks like. Box labels are
+the output labels: `output_classes` when set, `classes` otherwise. The crops go
+with every image, so they add input tokens to each request; they come first, so
+the provider can cache them across a batch. Without examples the request is
+unchanged.
+
+A selector can provide the whole list, such as `$inputs.reference_examples`, but
+selectors inside an example are not resolved: to build the examples from a step's
+predictions, that step has to output the list in this format.
+
 The `instance-segmentation` task asks for one outline polygon per instance of
 the requested classes - a flat `[x1, y1, x2, y2, ...]` vertex list in absolute
 pixel coordinates of the uploaded image, enforced via structured outputs - and
@@ -650,6 +682,21 @@ class BlockManifest(WorkflowBlockManifest):
             },
         )
     )
+    reference_examples: Optional[
+        Union[Selector(kind=[LIST_OF_VALUES_KIND]), ReferenceExamples]
+    ] = Field(
+        default=None,
+        description=REFERENCE_EXAMPLES_DESCRIPTION,
+        examples=[REFERENCE_EXAMPLES_EXAMPLE, "$inputs.reference_examples"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "required": False,
+                },
+            },
+        },
+    )
     api_key: Union[
         Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
     ] = Field(
@@ -767,6 +814,16 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        if isinstance(self.reference_examples, list):
+            if isinstance(self.output_classes, list):
+                labels = self.output_classes
+            elif self.output_classes is None and isinstance(self.classes, list):
+                labels = self.classes
+            else:
+                labels = None
+            validate_reference_examples(
+                self.reference_examples, task_type=self.task_type, labels=labels
+            )
         validate_reasoning_level(
             model=self.model_version,
             level=self.reasoning_effort,
@@ -836,6 +893,7 @@ class OpenAIBlockV7(WorkflowBlock):
     ):
         self._api_key = api_key
         self._platform_client = platform_client
+        self._reference_parts_cache = ReferencePartsCache()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -865,6 +923,7 @@ class OpenAIBlockV7(WorkflowBlock):
         output_classes: Optional[List[str]] = None,
         api_key: str = "rf_key:account",
         service_tier: Optional[str] = None,
+        reference_examples: Optional[List[Any]] = None,
     ) -> BlockResult:
         resolved_output_classes = validate_output_classes(classes, output_classes)
         inference_images = [i.to_inference_format() for i in images]
@@ -885,6 +944,8 @@ class OpenAIBlockV7(WorkflowBlock):
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
             service_tier=service_tier,
+            reference_examples=reference_examples,
+            reference_parts_cache=self._reference_parts_cache,
         )
         box_format = get_detection_box_format(model_version)
         results = []
@@ -964,13 +1025,16 @@ def run_openai_prompting(
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
     service_tier: Optional[str] = None,
+    reference_examples: Optional[List[Any]] = None,
+    reference_parts_cache: Optional[ReferencePartsCache] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
     Each image is preprocessed according to the task type (see
     ``encode_image_for_task``), turned into a request payload by the prompt
     builder registered for the task in ``PROMPT_BUILDERS`` and executed via
-    ``execute_openai_requests``.
+    ``execute_openai_requests``. With ``reference_examples``, crops of the
+    examples go before the target image in every detection request.
 
     Args:
         roboflow_api_key: Roboflow API key, required only for proxied
@@ -989,16 +1053,31 @@ def run_openai_prompting(
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent OpenAI requests.
         service_tier: OpenAI service tier, omitted from the request when ``None``.
+        reference_examples: Optional labeled example images for object detection,
+            in the format ``validate_reference_examples`` accepts.
+        reference_parts_cache: The block's cache of the parts built for the
+            examples; without one they load on every call.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples, one per input
         image; token counts are ``None`` when the provider omits usage data.
 
     Raises:
-        ValueError: If the task type has no registered prompt builder.
+        ValueError: If the task type has no registered prompt builder, or the
+            reference examples are invalid for the task or the labels.
     """
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
+    reference_parts = []
+    if reference_examples:
+        labels = validate_output_classes(classes, output_classes)
+        validate_reference_examples(
+            reference_examples, task_type=task_type, labels=labels
+        )
+        reference_parts = openai_reference_parts_for(
+            reference_examples, labels=labels, cache=reference_parts_cache
+        )
+
     openai_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
@@ -1016,6 +1095,14 @@ def run_openai_prompting(
             image_height=image_height,
             model_version=model_version,
         )
+        if reference_parts:
+            message = generated_prompt["input"][0]
+            message["content"] = with_reference_parts(
+                message["content"],
+                reference_parts=reference_parts,
+                target_intro={"type": "input_text", "text": TARGET_IMAGE_INTRO},
+                is_image_part=lambda part: part.get("type") == "input_image",
+            )
         openai_prompts.append(generated_prompt)
     return execute_openai_requests(
         platform_client=platform_client,

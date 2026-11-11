@@ -2,12 +2,26 @@ import json
 from contextlib import contextmanager
 from dataclasses import dataclass
 from multiprocessing import shared_memory
-from typing import List, Union
+from typing import TYPE_CHECKING, List, Union
 
+import numpy as np
 from redis import Redis
+
+if TYPE_CHECKING:
+    import torch
 
 SUCCESS_STATE = 1
 FAILURE_STATE = -1
+
+
+def _image_to_numpy(image: Union[np.ndarray, "torch.Tensor"]) -> np.ndarray:
+    """Move preprocessed tensors to CPU memory before the NumPy IPC handoff."""
+    if isinstance(image, np.ndarray):
+        return image
+
+    array = image.detach().cpu().numpy()
+
+    return array
 
 
 @contextmanager

@@ -223,6 +223,9 @@ class ModelManager:
                         service_secret=service_secret,
                         **extra_init_kwargs,
                     )
+                    # Legacy HF loaders do not hold the shared dtype lock. A
+                    # manager-wide reset could overwrite another load's active
+                    # dtype; keep the reset in the AutoModel loading path.
                     bind_usage_model_descriptor(
                         model, model_id, resolved_identifier, model_id_alias
                     )
