@@ -71,7 +71,7 @@ PACKAGES: Dict[str, PackageSpec] = {
         architecture="dinov2",
         repository="onnx-community/dinov2-small",
         revision="8b1f705a3a7f6f062f6bdd21986c1583d3ef105d",
-        graph_file="onnx/model_fp16.onnx",
+        graph_file="onnx/model.onnx",
         output_name="last_hidden_state",
         token_index=0,
         dimension=384,
@@ -104,7 +104,7 @@ PACKAGES: Dict[str, PackageSpec] = {
         architecture="siglip2",
         repository="onnx-community/siglip2-base-patch16-224-ONNX",
         revision="ba1f3b0843f24bc5417d38e19c37b287d719b2f4",
-        graph_file="onnx/vision_model_fp16.onnx",
+        graph_file="onnx/vision_model.onnx",
         output_name="pooler_output",
         token_index=None,
         dimension=768,
@@ -278,7 +278,7 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         default=["CPUExecutionProvider"],
         help="Providers for the load-and-embed check, e.g. CUDAExecutionProvider "
-        "where the CPU provider lacks float16 kernels a graph needs.",
+        "to run it on a GPU.",
     )
     parser.add_argument(
         "--overwrite",

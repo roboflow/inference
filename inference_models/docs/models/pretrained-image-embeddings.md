@@ -18,11 +18,11 @@ Pretrained vision backbones that turn an image into a single feature vector, for
 
 | Model ID | Vector | Dimension | Input | Source |
 |----------|--------|-----------|-------|--------|
-| `dinov2/small` | CLS token of `last_hidden_state` | 384 | 224×224 | [`onnx-community/dinov2-small`](https://huggingface.co/onnx-community/dinov2-small), fp16 graph |
+| `dinov2/small` | CLS token of `last_hidden_state` | 384 | 224×224 | [`onnx-community/dinov2-small`](https://huggingface.co/onnx-community/dinov2-small), fp32 graph |
 | `dinov3/vits16` | CLS token of `last_hidden_state` | 384 | 224×224 | [`onnx-community/dinov3-vits16-pretrain-lvd1689m-ONNX`](https://huggingface.co/onnx-community/dinov3-vits16-pretrain-lvd1689m-ONNX), fp32 graph with external weights |
-| `siglip2/base-patch16-224` | `pooler_output` of the vision model | 768 | 224×224 | [`onnx-community/siglip2-base-patch16-224-ONNX`](https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX), fp16 graph |
+| `siglip2/base-patch16-224` | `pooler_output` of the vision model | 768 | 224×224 | [`onnx-community/siglip2-base-patch16-224-ONNX`](https://huggingface.co/onnx-community/siglip2-base-patch16-224-ONNX), fp32 graph |
 
-Each model's `embedding_info` names its vector with a versioned feature definition: `dinov2-cls-token@v1`, `dinov3-cls-token@v1` and `siglip2-pooler-output@v1`. Vectors with different feature definitions live in different spaces and must not be compared. fp16 graphs still return float32 embeddings.
+Each model's `embedding_info` names its vector with a versioned feature definition: `dinov2-cls-token@v1`, `dinov3-cls-token@v1` and `siglip2-pooler-output@v1`. Vectors with different feature definitions live in different spaces and must not be compared.
 
 Packages are built from pinned Hugging Face revisions with the developer script described in [Building Packages](#building-packages). Until they are published by a weights provider, load them from a local directory.
 
@@ -53,7 +53,7 @@ Packages are built from pinned Hugging Face revisions with the developer script 
   "source": {
     "repository": "onnx-community/dinov2-small",
     "revision": "8b1f705a3a7f6f062f6bdd21986c1583d3ef105d",
-    "file": "onnx/model_fp16.onnx"
+    "file": "onnx/model.onnx"
   }
 }
 ```

@@ -303,7 +303,7 @@ def dinov2_small_embedding_package() -> str:
         architecture="dinov2",
         repository="onnx-community/dinov2-small",
         revision="8b1f705a3a7f6f062f6bdd21986c1583d3ef105d",
-        graph_file="onnx/model_fp16.onnx",
+        graph_file="onnx/model.onnx",
         embedding_config={
             "output_name": "last_hidden_state",
             "token_index": 0,
@@ -336,7 +336,7 @@ def siglip2_base_patch16_224_embedding_package() -> str:
         architecture="siglip2",
         repository="onnx-community/siglip2-base-patch16-224-ONNX",
         revision="ba1f3b0843f24bc5417d38e19c37b287d719b2f4",
-        graph_file="onnx/vision_model_fp16.onnx",
+        graph_file="onnx/vision_model.onnx",
         embedding_config={
             "output_name": "pooler_output",
             "token_index": None,
@@ -355,11 +355,14 @@ def _download_pretrained_image_embedding_package(
     external_data_files: tuple = (),
 ) -> str:
     """Lay out a package from the files of its pinned Hugging Face revision, like
-    `development/packaging/build_pretrained_image_embedding_packages.py` does."""
+    `development/packaging/build_pretrained_image_embedding_packages.py` does. The
+    directory is named after the graph file too, so a cached package built from
+    another graph of the same revision is never reused."""
+    graph_name = os.path.splitext(os.path.basename(graph_file))[0]
     package_dir = os.path.join(
         MODELS_DIR,
         "pretrained-image-embeddings",
-        f"{repository.replace('/', '--')}-{revision}",
+        f"{repository.replace('/', '--')}-{revision}-{graph_name}",
     )
     repository_files = {
         "model.onnx": graph_file,
