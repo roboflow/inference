@@ -4,6 +4,11 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Fixed
+
+- Preserve declared and measured FPS on replacement frames with `DROP_OLDEST`
+  and `ADAPTIVE_DROP_OLDEST`.
+
 ## `0.1.5`
 
 ### Changed
