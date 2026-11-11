@@ -10,6 +10,7 @@ from roboflow_workflows.core_steps.classical_cv.detections_nearest_neighbor.v1 i
     OUTPUT_KEY_MATCHED_TARGET_DETECTIONS,
     OUTPUT_KEY_QUERY_PREDICTIONS,
     DetectionsNearestNeighborBlockV1,
+    resolve_keypoint_anchor_points,
 )
 from roboflow_workflows.core_steps.classical_cv.detections_nearest_neighbor.v1_tensor import (
     DetectionsNearestNeighborBlockV1 as TensorNativeDetectionsNearestNeighborBlockV1,
@@ -355,6 +356,15 @@ def test_keypoint_anchor_point_option() -> None:
         100.0 * math.sqrt(2),
         rel_tol=1e-6,
     )
+
+
+def test_empty_keypoint_anchor_points_keep_two_coordinate_columns() -> None:
+    points = resolve_keypoint_anchor_points(
+        detections=sv.Detections.empty(), keypoint_name="nose"
+    )
+
+    assert points.shape == (0, 2)
+    assert points.dtype == np.float64
 
 
 def test_keypoint_missing_on_detection_excludes_it_from_matching() -> None:
