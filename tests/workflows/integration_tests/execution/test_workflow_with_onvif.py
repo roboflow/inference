@@ -887,14 +887,13 @@ ONVIF_SOAP_RESPONSES = {
 
 BUFFER_SIZE = 1024
 
-movement_event = threading.Event()
 quit_flag: bool = False
 server_running: bool = False
 
 
 # simulate an ONVIF device locally using canned responses
 def run_server():
-    global movement_event, quit_flag, server_running
+    global quit_flag, server_running
     if server_running:
         return
     if quit_flag:
@@ -937,7 +936,6 @@ def run_server():
                         == "http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove"
                     ):
                         print("set continuous move")
-                        movement_event.set()
 
                     response_body = ONVIF_SOAP_RESPONSES.get(soap_action)
 
@@ -1009,6 +1007,30 @@ def wait_for_camera_configuration(camera: CameraWrapper, timeout: float) -> None
         time.sleep(0.05)
 
 
+def wait_for_camera_to_move(camera: CameraWrapper, *, timeout: float) -> bool:
+    """Wait until the camera has finished a ContinuousMove.
+
+    The ONVIF step only schedules the move on the camera event loop and reports
+    camera.seeking() straight away. seeking() turns True once the camera has
+    answered the move, which is after the fake camera has received it.
+
+    Args:
+        camera: Camera wrapper that the workflow's ONVIF step drives.
+        timeout: Seconds to wait for the move.
+
+    Returns:
+        True once the camera reports it is seeking, False if the timeout runs out.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if camera.seeking():
+            return True
+
+        time.sleep(0.01)
+
+    return False
+
+
 # equivalent to Range returned by ONVIF
 class RangeTest:
     Min: float
@@ -1049,8 +1071,12 @@ def test_workflow_with_onvif(
 
     output = result[0].get("output")
 
-    global movement_event, quit_flag
-    movement_event.wait(timeout=1)
+    global quit_flag
+    # the second run reports seeking from the move the first run scheduled
+    onvif_step = execution_engine._engine._compiled_workflow.steps["onvif_control"]
+    workflow_camera = onvif_step.step.cameras[(HOST, PORT)]
+    camera_moved = wait_for_camera_to_move(workflow_camera, timeout=20)
+    assert camera_moved, "the workflow's camera never finished its first move"
 
     result = execution_engine.run(
         runtime_parameters={

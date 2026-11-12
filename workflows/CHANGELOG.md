@@ -42,6 +42,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- ONVIF Sink (`roboflow_core/onvif_sink@v1`, NumPy and tensor variants) configures a camera once on the first frame. `connect_camera_async` and the first `continuous_move_async` both configured it at the same time, and `update_xaddrs()` empties the camera's service addresses while it asks for them again. One configuration could then find no PTZ service and mark the camera with a config error, and when it was the move's own configuration, that first move was dropped. A configuration that starts while another runs now waits for it and reuses the result, so the camera also no longer gets each configuration request twice.
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 - `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
