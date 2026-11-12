@@ -52,6 +52,7 @@ REFERENCE_PARTS_CACHE_ENTRIES = 8
 REFERENCE_PARTS_CACHE_MAX_BYTES = 32 * 1024 * 1024
 REFERENCE_PARTS_CACHE_TTL_SECONDS = 15 * 60
 REFERENCE_PARTS_PENDING_TIMEOUT_SECONDS = 60.0
+_IMAGE_KEY_CHUNK_SIZE = 64 * 1024
 
 REFERENCE_CROPS_INTRO = (
     "Reference examples: crops of labeled objects taken from other images of the "
@@ -785,18 +786,53 @@ def _reference_parts(
 def _cache_key(
     value: Optional[Sequence[Any]], *, labels: Sequence[str], rendering: str
 ) -> Optional[str]:
-    items = [
-        item.model_dump(by_alias=True) if isinstance(item, ReferenceExample) else item
-        for item in value or []
-    ]
+    items = []
+    image_digests = []
+    for item in value or []:
+        if isinstance(item, ReferenceExample):
+            item = item.model_dump(by_alias=True)
+
+        digest = None
+        if isinstance(item, dict) and "image" in item:
+            image, digest = _image_cache_key(item["image"])
+            if digest is not None:
+                item = {**item, "image": image}
+
+        items.append(item)
+        image_digests.append(digest)
+
+    key_parts = [rendering, items, list(labels)]
+    if any(image_digests):
+        # Keep digests outside caller-controlled values. A literal None or digest
+        # in an image cannot impersonate a fingerprinted payload. Order matters.
+        key_parts.append(image_digests)
+
     try:
         # Both blocks share the cache, and each renders the examples its own way.
-        key = json.dumps([rendering, items, list(labels)], sort_keys=True)
+        key = json.dumps(key_parts, sort_keys=True)
     except TypeError:
         # An in-memory image has no JSON form, and rendering it needs no fetch.
         return None
 
     return key
+
+
+def _image_cache_key(image: Any) -> Tuple[Any, Optional[str]]:
+    """Fingerprint large strings without copying them into a JSON document."""
+    payload = image.get("value") if isinstance(image, dict) else image
+    if not isinstance(payload, str) or len(payload) <= _IMAGE_KEY_CHUNK_SIZE:
+        return image, None
+
+    # Re-read every character on every lookup, with bounded temporary buffers.
+    # No identity memoization or extra cache retains caller-owned image data.
+    digest = hashlib.sha256()
+    for offset in range(0, len(payload), _IMAGE_KEY_CHUNK_SIZE):
+        chunk = payload[offset : offset + _IMAGE_KEY_CHUNK_SIZE]
+        digest.update(chunk.encode("utf-8", errors="surrogatepass"))
+
+    fingerprint = digest.hexdigest()
+    metadata = {**image, "value": None} if isinstance(image, dict) else None
+    return metadata, fingerprint
 
 
 def _parts_size(value: Any) -> int:

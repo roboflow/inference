@@ -1,6 +1,9 @@
 import base64
+import copy
+import hashlib
 import sys
 import threading
+import tracemalloc
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -691,6 +694,178 @@ def test_reference_parts_load_on_every_call_without_a_cache() -> None:
 
     # then
     assert load_image.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "parts_for", [gemini_reference_parts_for, openai_reference_parts_for]
+)
+@pytest.mark.parametrize("as_dict", [False, True])
+def test_large_inline_cache_reuses_equal_content_and_observes_mutation(
+    parts_for, as_dict
+):
+    rng = np.random.default_rng(3363)
+    pixels = rng.integers(0, 256, (300, 400, 3), dtype=np.uint8)
+    payloads = []
+    for image in [pixels, 255 - pixels]:
+        ok, encoded = cv2.imencode(".png", image)
+        assert ok
+        payloads.append(base64.b64encode(encoded).decode())
+    assert all(len(payload) > 64 * 1024 for payload in payloads)
+    example = _example()
+    example["image"] = (
+        {"type": "base64", "value": payloads[0]} if as_dict else payloads[0]
+    )
+    original = copy.deepcopy(example)
+    cache = ReferencePartsCache()
+
+    with patch.object(
+        vlm_reference_examples, "load_reference_example", wraps=load_reference_example
+    ) as load:
+        first = parts_for([example], labels=["cat"], cache=cache)
+        assert example == original
+        equal_payload = payloads[0].encode().decode()
+        assert equal_payload is not payloads[0]
+        example["image"] = (
+            {"value": equal_payload, "type": "base64"} if as_dict else equal_payload
+        )
+        assert parts_for([example], labels=["cat"], cache=cache) is first
+        assert load.call_count == 1
+        if as_dict:
+            example["image"]["value"] = payloads[1]
+        else:
+            example["image"] = payloads[1]
+        second = parts_for([example], labels=["cat"], cache=cache)
+        assert second != first
+        assert load.call_count == 2
+
+
+@pytest.mark.parametrize("length", [65535, 65536, 65537, 131073])
+@pytest.mark.parametrize("character", ["A", "é", "😀", "\ud800", '"', "\\"])
+def test_inline_cache_key_checks_every_chunk_and_unicode_character(length, character):
+    payload = character * length
+    example = {**_example(), "image": {"type": "base64", "value": payload}}
+    key = vlm_reference_examples._cache_key(
+        [example], labels=["cat"], rendering="gemini"
+    )
+    for position in {0, min(65535, length - 1), min(65536, length - 1), length - 1}:
+        example["image"]["value"] = payload[:position] + "B" + payload[position + 1 :]
+        changed = vlm_reference_examples._cache_key(
+            [example], labels=["cat"], rendering="gemini"
+        )
+        assert changed != key
+
+
+def test_large_inline_cache_key_preserves_metadata_order_and_provider():
+    examples = [
+        {**_example(), "image": {"type": "base64", "value": "A" * 131073}},
+        _example(),
+    ]
+    labels = ["cat", "dog"]
+
+    def key(value=examples, names=labels, provider="gemini"):
+        return vlm_reference_examples._cache_key(
+            value, labels=names, rendering=provider
+        )
+
+    original = copy.deepcopy(examples)
+    expected = key()
+    assert examples == original
+    assert key(list(reversed(examples))) != expected
+    assert key(names=list(reversed(labels))) != expected
+    assert key(provider="openai") != expected
+    for field, replacement in [
+        ("x", 51),
+        ("y", 51),
+        ("width", 41),
+        ("height", 21),
+        ("class", "dog"),
+    ]:
+        changed = copy.deepcopy(examples)
+        changed[0]["annotations"][0][field] = replacement
+        assert key(changed) != expected
+    for field, replacement in [("type", "url"), ("extra", "retained metadata")]:
+        changed = copy.deepcopy(examples)
+        changed[0]["image"][field] = replacement
+        assert key(changed) != expected
+    changed = copy.deepcopy(examples)
+    changed[0]["extra"] = "caller metadata"
+    assert key(changed) != expected
+    changed[0]["annotations"].append({**changed[0]["annotations"][0], "class": "dog"})
+    before_reorder = key(changed)
+    changed[0]["annotations"].reverse()
+    assert key(changed) != before_reorder
+    reordered = [{name: item[name] for name in reversed(item)} for item in examples]
+    assert key(reordered) == expected
+    model = vlm_reference_examples.ReferenceExample.model_validate(examples[0])
+    assert key([model]) == key([model.model_dump(by_alias=True)])
+
+
+@pytest.mark.parametrize("as_dict", [False, True])
+def test_large_inline_cache_key_cannot_be_forged_with_a_digest_or_placeholder(as_dict):
+    payload = "A" * 131073
+    fingerprint = hashlib.sha256(payload.encode()).hexdigest()
+    image = {"type": "base64", "value": payload} if as_dict else payload
+    example = {**_example(), "image": image}
+    key = vlm_reference_examples._cache_key(
+        [example], labels=["cat"], rendering="gemini"
+    )
+    cache = ReferencePartsCache()
+    cache.get_or_build(key, build=lambda: [{"text": "valid cached result"}])
+    for placeholder in [None, fingerprint, [fingerprint], {"sha256": fingerprint}]:
+        forged = {"type": "base64", "value": placeholder} if as_dict else placeholder
+        candidate = vlm_reference_examples._cache_key(
+            [{**example, "image": forged}], labels=["cat"], rendering="gemini"
+        )
+        assert candidate != key
+        assert cache.get_or_build(
+            candidate, build=lambda: [{"text": "cache miss"}]
+        ) == [{"text": "cache miss"}]
+
+
+def test_large_inline_cache_key_still_bypasses_mutable_in_memory_images():
+    examples = [
+        {**_example(), "image": "A" * 131073},
+        {
+            **_example(),
+            "image": {"type": "numpy", "value": np.zeros((20, 20, 3), dtype=np.uint8)},
+        },
+    ]
+    assert (
+        vlm_reference_examples._cache_key(examples, labels=["cat"], rendering="gemini")
+        is None
+    )
+
+
+@pytest.mark.parametrize("count", [1, 10])
+def test_large_inline_warm_lookup_has_bounded_temporary_memory(count):
+    # Isolate key construction from image decoding. Inputs and retained parts
+    # exist before tracing; the baseline allocates 8-80 MiB for this lookup.
+    examples = [
+        {**_example(), "image": {"type": "base64", "value": "A" * (4 * 1024 * 1024)}}
+        for _ in range(count)
+    ]
+    cache = ReferencePartsCache()
+    builds = []
+
+    def render(parsed):
+        builds.append(len(parsed))
+        return [{"text": "rendered"}]
+
+    def run():
+        return vlm_reference_examples._reference_parts(
+            examples, labels=["cat"], rendering="gemini", cache=cache, render=render
+        )
+
+    first = run()
+    tracemalloc.start()
+    try:
+        second = run()
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert second is first
+    assert builds == [count]
+    assert peak < 1024 * 1024
 
 
 def test_reference_parts_cache_keeps_nothing_from_a_failed_build(

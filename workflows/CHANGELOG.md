@@ -32,6 +32,9 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Large inline reference images use chunked content fingerprints for cache keys,
+  avoiding a full JSON copy of their image data on every warm lookup. Image
+  contents, metadata, annotations, label order and provider still determine reuse.
 - Reference-example cache waits expire 60 seconds after a build starts, allowing
   later calls to retry a stalled download. Expired builds cannot overwrite a
   newer result. The cache does not cancel the original synchronous download.
