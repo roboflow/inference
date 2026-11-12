@@ -370,6 +370,11 @@ definition; the last column is the new reader.
 |---|---|---|---|
 | `PROJECT` | `env.py:42` | `host.py:127`; `configuration.py:121` | `roboflow-platform` |
 | `ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES` | `env.py:97` | `host.py:177` | `True` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_ENABLED` | `env.py` | `host.py` | `not (GCP_SERVERLESS or LAMBDA)` |
+| `ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES` | `env.py` | `host.py` | `False` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES` | `env.py` | `host.py` | `1073741824` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` | `env.py` | `host.py` | `33554432` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` | `env.py` | `host.py` | `25000000` |
 | `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES` | `env.py:103` | `host.py:174` | `True`; server entry points: `False` (see "Server defaults") |
 | `POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES` | `env.py:110` | `host.py:180` | unset |
 | `POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES` | `env.py:122` | `host.py:183` | unset |
