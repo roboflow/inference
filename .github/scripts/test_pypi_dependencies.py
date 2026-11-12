@@ -1129,7 +1129,8 @@ def test_coordination_uses_one_deadline_and_fresh_final_registry(
         catalog={p["name"]: p for p in [models, workflows]},
         registry=_registry(),
     )
-    plan["source_revision"] = ""
+    monkeypatch.setenv("SOURCE_REVISION", "candidate")
+    plan["source_revision"] = "candidate"
     deadlines = []
 
     def dispatch(name, *, version, deadline):
@@ -1197,7 +1198,8 @@ def test_final_verification_requires_retained_publisher_receipt(monkeypatch, mis
     _PyPI(monkeypatch, [_package("inference-models", "2")])
     consumers = _runtime("inference-models==2")
     plan = dependencies._plan(consumers, catalog={}, registry=_registry())
-    plan["source_revision"] = ""
+    monkeypatch.setenv("SOURCE_REVISION", "candidate")
+    plan["source_revision"] = "candidate"
     entry = plan["packages"]["inference-models"]
     entry.update(action="publish", publisher_run_id=42)
     del entry[missing]
