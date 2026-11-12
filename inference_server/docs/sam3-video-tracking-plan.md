@@ -349,7 +349,10 @@ Verification:
       17.7 GB to 24.2 GB once a third clip had replaced the first (measured).
     - The position embeddings, which are the same for every frame of every
       clip, are kept once per model instead of once per clip (55.7 MB,
-      computed).
+      computed). That copy stays on the GPU, where each frame is checked
+      against it: moving it to the CPU for every frame's check and back for
+      every lookup took 46 of a first track's 130 ms per frame and 10 of a
+      later track's 22 ms per frame (L40S, 187 frames, measured 2026-11-11).
     - The cache is limited by `SAM3_VIDEO_CACHE_MAX_GB` instead of a number of
       clips: frames kept = `floor(GB × 1e9 / 10,616,832)`. A clip that is
       embedded forgets the clips it replaces before it is built, so the cache

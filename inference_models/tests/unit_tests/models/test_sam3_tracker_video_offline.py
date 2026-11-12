@@ -28,6 +28,7 @@ from inference_models.errors import (
 )
 from inference_models.models.sam3_tracker_video import sam3_tracker_video_hf
 from inference_models.models.sam3_tracker_video.clip_cache import (
+    PositionEmbeddings,
     VideoClipCache,
     cache_frame_limit,
     cached_frame_bytes,
@@ -748,6 +749,38 @@ def test_position_embeddings_are_shared_by_the_clips_of_a_model(tracker):
     different = dict(_features(), vision_pos_embeds=[torch.zeros(4, 1, 2)])
     with pytest.raises(ModelInputError, match="Position embeddings differ"):
         clip_w.cache_vision_features(1, different)
+
+
+def test_position_embeddings_are_kept_once_and_handed_out_without_copying():
+    embeds = PositionEmbeddings()
+    first = [torch.arange(8.0).view(2, 4), torch.ones(3)]
+
+    embeds.keep(0, first)
+    first[0].zero_()  # the frame's own tensors may be reused: the kept copy is not them
+    embeds.keep(1, [torch.arange(8.0).view(2, 4), torch.ones(3)])
+    handed = embeds.on(torch.device("cpu"))
+
+    assert torch.equal(handed[0], torch.arange(8.0).view(2, 4))
+    assert [t.data_ptr() for t in embeds.on(torch.device("cpu"))] == [
+        t.data_ptr() for t in handed
+    ]
+
+
+def test_position_embeddings_are_refused_on_another_device():
+    embeds = PositionEmbeddings()
+    embeds.keep(0, [torch.ones(2)])
+
+    with pytest.raises(ModelRuntimeError, match="kept on cpu"):
+        embeds.on(torch.device("meta"))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU")
+def test_position_embeddings_on_the_gpu_answer_cuda_and_cuda_0_alike():
+    embeds = PositionEmbeddings()
+    embeds.keep(0, [torch.ones(2, device="cuda")])
+
+    assert embeds.on(torch.device("cuda"))[0].device == torch.device("cuda", 0)
+    assert embeds.on(torch.device("cuda:0"))[0].device == torch.device("cuda", 0)
 
 
 def test_re_embedding_an_id_replaces_the_clip_and_stops_its_encoding(tracker):
