@@ -1,16 +1,25 @@
 """Reference examples through an engine set up like the HTTP API's, with the server's codec.
 
 A block cannot see `prevent_local_images_loading`, and the codec reads local files by default, so
-only a run through both shows that an example image cannot reach the disk.
+only a run through both shows that an example image cannot reach the disk. Engines of one process
+share the examples they fetched, which only runs through several engines show.
 """
 
 import base64
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, List
 from unittest import mock
 
 import cv2
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    REFERENCE_PARTS_CACHE_TTL_SECONDS,
+    SHARED_REFERENCE_PARTS_CACHE,
+)
 
 from inference.core.interfaces.workflows_image_codec import bind_image_codec
 from inference.core.utils import image_utils
@@ -35,6 +44,13 @@ def _reset_codec():
     reset_image_codec()
     yield
     reset_image_codec()
+
+
+@pytest.fixture(autouse=True)
+def _empty_reference_parts_cache():
+    SHARED_REFERENCE_PARTS_CACHE.clear()
+    yield
+    SHARED_REFERENCE_PARTS_CACHE.clear()
 
 
 def _engine(block: str, reference_examples: Any) -> ExecutionEngine:
@@ -150,7 +166,7 @@ def test_selector_inside_a_literal_example_is_refused_when_compiling(
 
 
 @BLOCKS
-def test_reference_image_fetched_once_per_engine_so_a_new_job_sees_a_changed_url(
+def test_reference_image_fetched_once_for_all_engines_until_it_expires(
     block: str,
 ) -> None:
     # given
@@ -160,24 +176,153 @@ def test_reference_image_fetched_once_per_engine_so_a_new_job_sees_a_changed_url
         np.full((100, 200, 3), 220, dtype=np.uint8),
     ]
     parameters = {"image": _target_image()}
+    now = [0.0]
 
     # when
     with mock.patch.object(
         image_utils, "load_image_from_url", side_effect=images
     ) as fetch, mock.patch(
         REQUESTS_SEAMS[block], return_value=[("[]", 1, 1)]
-    ) as requests:
+    ) as requests, mock.patch.object(
+        SHARED_REFERENCE_PARTS_CACHE, "_clock", new=lambda: now[0]
+    ):
         first_job = _engine(block, examples)
         first_job.run(runtime_parameters=parameters)
         first_job.run(runtime_parameters=parameters)
         second_job = _engine(block, examples)
         second_job.run(runtime_parameters=parameters)
+        now[0] = REFERENCE_PARTS_CACHE_TTL_SECONDS
+        first_job.run(runtime_parameters=parameters)
 
     # then
     assert fetch.call_count == 2
     assert abs(_blue_of_first_reference(block, requests, 0) - 30) < 8
     assert abs(_blue_of_first_reference(block, requests, 1) - 30) < 8
-    assert abs(_blue_of_first_reference(block, requests, 2) - 220) < 8
+    assert abs(_blue_of_first_reference(block, requests, 2) - 30) < 8
+    assert abs(_blue_of_first_reference(block, requests, 3) - 220) < 8
+
+
+@BLOCKS
+def test_engines_running_at_once_fetch_a_reference_image_once(block: str) -> None:
+    # given
+    examples = [{"image": {"type": "url", "value": URL}, "annotations": ANNOTATIONS}]
+    engines = [_engine(block, examples) for _ in range(4)]
+    parameters = {"image": _target_image()}
+    start = threading.Barrier(len(engines))
+
+    def fetch_slowly(*args: Any, **kwargs: Any) -> np.ndarray:
+        # Long enough for the other engines to ask for the examples meanwhile.
+        time.sleep(0.2)
+        return np.full((100, 200, 3), 30, dtype=np.uint8)
+
+    def run(engine: ExecutionEngine) -> None:
+        start.wait(timeout=10)
+        engine.run(runtime_parameters=parameters)
+
+    # when
+    with mock.patch.object(
+        image_utils, "load_image_from_url", side_effect=fetch_slowly
+    ) as fetch, mock.patch(
+        REQUESTS_SEAMS[block], return_value=[("[]", 1, 1)]
+    ) as requests, ThreadPoolExecutor(
+        max_workers=len(engines)
+    ) as pool:
+        list(pool.map(run, engines))
+
+    # then
+    assert fetch.call_count == 1
+    assert len(requests.call_args_list) == len(engines)
+    for call in range(len(engines)):
+        assert abs(_blue_of_first_reference(block, requests, call) - 30) < 8
+
+
+@BLOCKS
+def test_engine_retries_expired_download_without_waiting_for_stalled_engine(
+    block: str,
+) -> None:
+    started, release = threading.Event(), threading.Event()
+    request_lock = threading.Lock()
+    fetched = []
+    now = [0.0]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            with request_lock:
+                fetched.append(self.path)
+                number = len(fetched)
+            if number == 1:
+                started.set()
+                assert release.wait(timeout=15)
+            color = 30 if number == 1 else 220
+            _, png = cv2.imencode(".png", np.full((100, 200, 3), color, dtype=np.uint8))
+            payload = png.tobytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    examples = [
+        {
+            "image": {
+                "type": "url",
+                "value": f"http://127.0.0.1:{server.server_port}/reference.png",
+            },
+            "annotations": ANNOTATIONS,
+        }
+    ]
+    parameters = {"image": _target_image()}
+
+    try:
+        # Only the destination policy is relaxed for the local test server. The
+        # actual HTTP transport, image codec, rendering and engine all execute.
+        with mock.patch.multiple(
+            image_utils,
+            OFFLINE_MODE=False,
+            ALLOW_URL_INPUT=True,
+            ALLOW_NON_HTTPS_URL_INPUT=True,
+            ALLOW_URL_INPUT_WITHOUT_FQDN=True,
+            ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True,
+            WHITELISTED_DESTINATIONS_FOR_URL_INPUT=None,
+            BLACKLISTED_DESTINATIONS_FOR_URL_INPUT=None,
+            VALIDATE_IMAGE_URL_REDIRECTS=True,
+        ), mock.patch.object(
+            SHARED_REFERENCE_PARTS_CACHE, "_clock", new=lambda: now[0]
+        ), mock.patch(
+            REQUESTS_SEAMS[block], return_value=[("[]", 1, 1)]
+        ) as requests, ThreadPoolExecutor(
+            max_workers=2
+        ) as pool:
+            first_engine, second_engine = _engine(block, examples), _engine(
+                block, examples
+            )
+            first = pool.submit(first_engine.run, runtime_parameters=parameters)
+            try:
+                assert started.wait(timeout=5)
+                now[0] = 61.0
+                second = pool.submit(second_engine.run, runtime_parameters=parameters)
+                second.result(timeout=5)
+                assert not first.done()
+                assert len(fetched) == 2
+                assert abs(_blue_of_first_reference(block, requests, 0) - 220) < 8
+            finally:
+                release.set()
+            first.result(timeout=5)
+            assert abs(_blue_of_first_reference(block, requests, 1) - 30) < 8
+            _engine(block, examples).run(runtime_parameters=parameters)
+            assert abs(_blue_of_first_reference(block, requests, 2) - 220) < 8
+            assert len(fetched) == 2
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=5)
 
 
 @BLOCKS
