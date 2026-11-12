@@ -197,6 +197,14 @@ jobs:
           path: app_bundles/osx/Roboflow-Inference-${{ steps.determine_version.outputs.BUILD_VERSION_ENV || 'unknown' }}.dmg
           if-no-files-found: error
 
+      # Runs before the release upload, so a DMG whose server can't start is never published.
+      - name: Smoke test the DMG
+        working-directory: ./app_bundles/osx
+        timeout-minutes: 10
+        env:
+          BUILD_VERSION: ${{ steps.determine_version.outputs.BUILD_VERSION_ENV }}
+        run: python smoke_test.py --dmg "Roboflow-Inference-${BUILD_VERSION}.dmg"
+
       - name: Upload DMG to Release
         if: github.event_name == 'release' && steps.determine_version.outputs.BUILD_VERSION_ENV != '0.0.0-manual-dev' && steps.determine_version.outputs.BUILD_VERSION_ENV != ''
         uses: actions/upload-release-asset@v1
