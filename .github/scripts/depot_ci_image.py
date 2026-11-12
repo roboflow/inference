@@ -150,6 +150,62 @@ def _login(*, env: dict, token: str) -> None:
     )
 
 
+def _storage_inventory(index: str, manifest: dict) -> dict:
+    """Count referenced registry blobs once, without reading image configuration."""
+    blobs: dict[str, int] = {}
+    visited = {index}
+    pending = [manifest]
+    while pending:
+        current = pending.pop()
+        children = current.get("manifests", [])
+        descriptors = children or [current["config"], *current["layers"]]
+        for descriptor in descriptors:
+            digest = _digest(descriptor["digest"])
+            size = descriptor["size"]
+            if type(size) is not int or not 0 <= size <= 10**12:
+                raise ValueError("Invalid blob size")
+
+            if digest in blobs and blobs[digest] != size:
+                raise ValueError("Inconsistent blob size")
+
+            blobs[digest] = size
+            if len(blobs) > 4096:
+                raise ValueError("Too many registry blobs")
+
+            if children and digest not in visited:
+                visited.add(digest)
+                if len(visited) > 64:
+                    raise ValueError("Too many registry manifests")
+
+                pending.append(
+                    json.loads(
+                        _run(
+                            [
+                                "docker",
+                                "buildx",
+                                "imagetools",
+                                "inspect",
+                                "--raw",
+                                f"{_repository()}@{digest}",
+                            ]
+                        )
+                    )
+                )
+
+    # The root index has no parent descriptor. Its small metadata size is
+    # excluded explicitly; every referenced manifest, config and layer is counted.
+    return {
+        "schema": 1,
+        "family": os.environ["IMAGE_FAMILY"],
+        "source_sha": os.environ["GITHUB_SHA"],
+        "root_digest": index,
+        "excluded_root_manifests": 1,
+        "blobs": [
+            {"digest": digest, "size": size} for digest, size in sorted(blobs.items())
+        ],
+    }
+
+
 def _build() -> None:
     _validate()
     repository = _repository()
@@ -245,6 +301,14 @@ def _build() -> None:
                 children = {"amd64": index}
             else:
                 raise ValueError("CPU requires both architectures")
+
+            if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch":
+                # Manual cost probes expose only validated digests and byte counts.
+                # Shared parent layers can then be deduplicated across saved images.
+                print(
+                    "CI_IMAGE_STORAGE "
+                    + json.dumps(_storage_inventory(index, manifest))
+                )
 
             _emit("GITHUB_OUTPUT", "index_digest", index)
             for architecture, digest in children.items():
