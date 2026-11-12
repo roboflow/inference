@@ -141,14 +141,14 @@ class RFDetrForInstanceSegmentationOnnx(
             },
             max_allowed_input_size=rf_detr_max_input_resolution,
         )
-        model_path = fuse_attention_for_cuda_execution(
+        with fuse_attention_for_cuda_execution(
             model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
-        )
-        session = create_onnx_inference_session(
-            model_path=model_path,
-            providers=onnx_execution_providers,
-        )
+        ) as model_path:
+            session = create_onnx_inference_session(
+                model_path=model_path,
+                providers=onnx_execution_providers,
+            )
         model_input_size = get_onnx_static_input_spatial_size(session=session)
         if model_input_size is not None:
             inference_config = align_training_input_size_with_model(

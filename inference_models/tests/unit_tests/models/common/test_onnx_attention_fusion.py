@@ -7,6 +7,7 @@ import onnx
 import onnxruntime
 import pytest
 import torch
+from filelock import FileLock, Timeout
 
 from inference_models.models.common import onnx_attention_fusion
 from inference_models.models.common.onnx_attention_fusion import (
@@ -77,6 +78,20 @@ def run_on_cpu(model_path: str, model_input: np.ndarray) -> np.ndarray:
     return output
 
 
+def fuse(model_path: str, *, providers: list) -> str:
+    with fuse_attention_for_cuda_execution(model_path, providers=providers) as path:
+        return path
+
+
+def watchdog_can_lock(file_path: str) -> bool:
+    path = Path(file_path)
+    try:
+        with FileLock(str(path.parent / f".{path.name}.lock"), timeout=0):
+            return True
+    except Timeout:
+        return False
+
+
 @pytest.fixture
 def attention_model_path(tmp_path: Path) -> str:
     torch.manual_seed(0)
@@ -87,9 +102,7 @@ def test_fuses_sdpa_attention_into_multi_head_attention(
     attention_model_path: str,
 ) -> None:
     # when
-    fused_model_path = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    fused_model_path = fuse(attention_model_path, providers=CUDA_PROVIDERS)
 
     # then
     operators = count_operators(fused_model_path)
@@ -105,9 +118,7 @@ def test_fused_model_keeps_original_outputs(attention_model_path: str) -> None:
     )
 
     # when
-    fused_model_path = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    fused_model_path = fuse(attention_model_path, providers=CUDA_PROVIDERS)
 
     # then
     expected = run_on_cpu(attention_model_path, model_input)
@@ -119,9 +130,7 @@ def test_sets_scale_from_the_exported_query_and_key_scaling(
     attention_model_path: str,
 ) -> None:
     # when
-    fused_model_path = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    fused_model_path = fuse(attention_model_path, providers=CUDA_PROVIDERS)
 
     # then
     (attention_node,) = [
@@ -145,7 +154,7 @@ def test_keeps_masked_attention_unchanged(tmp_path: Path) -> None:
     model_path = export_model(SelfAttention(attention_mask=attention_mask), tmp_path)
 
     # when
-    result = fuse_attention_for_cuda_execution(model_path, providers=CUDA_PROVIDERS)
+    result = fuse(model_path, providers=CUDA_PROVIDERS)
 
     # then
     assert result == model_path
@@ -156,7 +165,7 @@ def test_keeps_model_without_attention_unchanged(tmp_path: Path) -> None:
     model_path = export_model(Projection(), tmp_path)
 
     # when
-    result = fuse_attention_for_cuda_execution(model_path, providers=CUDA_PROVIDERS)
+    result = fuse(model_path, providers=CUDA_PROVIDERS)
 
     # then
     assert result == model_path
@@ -174,9 +183,7 @@ def test_keeps_model_unchanged_when_cuda_is_not_the_first_provider(
     attention_model_path: str, providers: list
 ) -> None:
     # when
-    result = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=providers
-    )
+    result = fuse(attention_model_path, providers=providers)
 
     # then
     assert result == attention_model_path
@@ -201,15 +208,11 @@ def test_reuses_the_cached_fused_model(
     attention_model_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # given
-    first_result = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    first_result = fuse(attention_model_path, providers=CUDA_PROVIDERS)
     fold_calls = count_fold_calls(monkeypatch)
 
     # when
-    second_result = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    second_result = fuse(attention_model_path, providers=CUDA_PROVIDERS)
 
     # then
     assert second_result == first_result
@@ -221,11 +224,11 @@ def test_remembers_that_a_model_has_no_fusable_attention(
 ) -> None:
     # given
     model_path = export_model(Projection(), tmp_path)
-    fuse_attention_for_cuda_execution(model_path, providers=CUDA_PROVIDERS)
+    fuse(model_path, providers=CUDA_PROVIDERS)
     fold_calls = count_fold_calls(monkeypatch)
 
     # when
-    result = fuse_attention_for_cuda_execution(model_path, providers=CUDA_PROVIDERS)
+    result = fuse(model_path, providers=CUDA_PROVIDERS)
 
     # then
     assert result == model_path
@@ -236,15 +239,11 @@ def test_fuses_again_when_the_cached_fused_model_was_deleted(
     attention_model_path: str,
 ) -> None:
     # given
-    fused_model_path = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    fused_model_path = fuse(attention_model_path, providers=CUDA_PROVIDERS)
     Path(fused_model_path).unlink()
 
     # when
-    result = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    result = fuse(attention_model_path, providers=CUDA_PROVIDERS)
 
     # then
     assert result == fused_model_path
@@ -261,9 +260,32 @@ def test_keeps_model_unchanged_when_fusion_fails(
     monkeypatch.setattr(onnx_attention_fusion, "_fold_constants", broken_fold)
 
     # when
-    result = fuse_attention_for_cuda_execution(
-        attention_model_path, providers=CUDA_PROVIDERS
-    )
+    result = fuse(attention_model_path, providers=CUDA_PROVIDERS)
 
     # then
     assert result == attention_model_path
+
+
+@pytest.mark.parametrize("warm_cache", [False, True])
+def test_holds_the_watchdog_lock_of_the_fused_model_until_the_session_is_created(
+    attention_model_path: str, warm_cache: bool
+) -> None:
+    # given
+    if warm_cache:
+        fuse(attention_model_path, providers=CUDA_PROVIDERS)
+
+    # when
+    with fuse_attention_for_cuda_execution(
+        attention_model_path, providers=CUDA_PROVIDERS
+    ) as fused_model_path:
+        locked_while_loading = not watchdog_can_lock(fused_model_path)
+        session = onnxruntime.InferenceSession(
+            fused_model_path, providers=["CPUExecutionProvider"]
+        )
+
+    # then
+    assert locked_while_loading
+    assert watchdog_can_lock(fused_model_path)
+    Path(fused_model_path).unlink()
+    model_input = np.zeros((1, SEQUENCE_LENGTH, EMBEDDING_DIM), dtype=np.float32)
+    assert session.run(None, {"x": model_input})[0].shape == model_input.shape

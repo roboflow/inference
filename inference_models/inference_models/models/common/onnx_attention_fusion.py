@@ -9,13 +9,15 @@ fusions do not match this pattern, so this module adds the fusion before the ses
 import json
 import os
 import tempfile
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 from filelock import FileLock
 
+from inference_models.configuration import FILE_LOCK_ACQUIRE_TIMEOUT
 from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_file_identity
 
@@ -41,46 +43,58 @@ class _AttentionBlock:
     num_heads: int
 
 
+@contextmanager
 def fuse_attention_for_cuda_execution(
     model_path: str,
     *,
     providers: List[Union[str, tuple]],
-) -> str:
-    """Return a model path whose attention is fused into ONNX Runtime's ``MultiHeadAttention`` op.
+) -> Iterator[str]:
+    """Yield a model path whose attention is fused into ONNX Runtime's ``MultiHeadAttention`` op.
 
     The fused model is written to an ``attention_fusion`` directory next to the source model and reused
-    on later loads. The source model is returned unchanged when CUDA is not the first execution provider,
-    when the model has no unmasked scaled-dot-product attention with static shapes, or when the fusion
-    fails.
+    on later loads. Create the ONNX Runtime session inside the ``with`` block: until the block exits, the
+    lock the inference cache watchdog takes before deleting a file keeps the fused model on disk. The
+    source model is yielded unchanged when CUDA is not the first execution provider, when the model has no
+    unmasked scaled-dot-product attention with static shapes, or when the fusion fails.
 
     Args:
         model_path: Path to the ONNX model the session would load.
         providers: Execution providers the session will use, in priority order.
 
-    Returns:
+    Yields:
         Path to the fused model, or ``model_path`` when no fusion applies.
     """
     if not _runs_on_cuda_first(providers=providers):
-        return model_path
+        yield model_path
+        return
 
     cache_dir = (
         Path(model_path).parent
         / CACHE_DIR_NAME
         / f"{get_file_identity(model_path)}-v{TRANSFORM_VERSION}"
     )
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(cache_dir.with_suffix(".lock"))):
+    with ExitStack() as locks:
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            locks.enter_context(FileLock(str(cache_dir.with_suffix(".lock"))))
+            locks.enter_context(
+                FileLock(
+                    str(cache_dir / f".{FUSED_MODEL_FILE_NAME}.lock"),
+                    timeout=FILE_LOCK_ACQUIRE_TIMEOUT,
+                )
+            )
             fused_model_path = _load_or_fuse(model_path, cache_dir=cache_dir)
-    except Exception as error:
-        LOGGER.warning(
-            "Could not fuse attention for %s (%s). Loading the model without attention fusion.",
-            model_path,
-            error,
-        )
-        return model_path
+        except Exception as error:
+            LOGGER.warning(
+                "Could not fuse attention for %s (%s). Loading the model without attention fusion.",
+                model_path,
+                error,
+            )
+            fused_model_path = model_path
+        if fused_model_path == model_path:
+            locks.close()
 
-    return fused_model_path
+        yield fused_model_path
 
 
 def _runs_on_cuda_first(providers: List[Union[str, tuple]]) -> bool:

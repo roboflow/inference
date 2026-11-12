@@ -35,10 +35,12 @@ def test_fuses_every_rfdetr_self_attention_block(
     shutil.copy(package_dir / "weights.onnx", model_path)
 
     # when
-    fused_model_path = fuse_attention_for_cuda_execution(
+    with fuse_attention_for_cuda_execution(
         str(model_path), providers=CUDA_PROVIDERS
-    )
+    ) as fused_model_path:
+        operators = Counter(
+            node.op_type for node in onnx.load(fused_model_path).graph.node
+        )
 
     # then
-    operators = Counter(node.op_type for node in onnx.load(fused_model_path).graph.node)
     assert operators["MultiHeadAttention"] == expected_fused_blocks
