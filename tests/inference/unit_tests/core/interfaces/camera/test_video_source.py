@@ -168,7 +168,9 @@ def test_termination_interrupts_a_producer_blocked_waiting_for_a_frame() -> None
 
 
 def tear_down_source(source: VideoSource) -> None:
-    source.terminate(wait_on_frames_consumption=False)
+    # nothing reads the buffer after a test; purging it lets a decoding thread
+    # blocked on a full buffer finish, so terminate() can join it
+    source.terminate(wait_on_frames_consumption=False, purge_frames_buffer=True)
 
 
 def test_get_from_queue_when_empty_queue_given_and_await_not_desired() -> None:
