@@ -1,9 +1,13 @@
 # PyPI and inference release runbook
 
-This runbook works with the SDK publisher split alone. Dependency selection and
-generalized retry handling are later changes, not prerequisites. SDK and runtime
-packages still share `inference/core/version.py`; runtime/CLI wheels still require
-exactly that SDK version. Independent SDK version numbering is not implemented.
+This runbook covers SDK-only, runtime-only and full releases. Dependency selection
+remains manual, and the five-package publisher's retry limitations are described
+below. SDK and runtime packages still share `inference/core/version.py`;
+runtime/CLI wheels still require exactly that SDK version. Independent SDK version
+numbering is not implemented.
+
+**Manual dispatch builds only by default and can succeed without publishing
+anything.** Publication requires `publish=true` and `expected_version`.
 
 ## Existing PyPI authorization
 
@@ -30,12 +34,12 @@ Artifact names include their build attempt. Rerunning a failed publication job
 uses its original build output; rerunning the build retains a separate artifact.
 A source, metadata, dependency or toolchain change invalidates affected evidence.
 
-All local validation must execute in Docker, including smoke tests, benchmarks
-and reproductions. Record image ID/digest, candidate revision, actual command and
-result. Missing local Docker/dependencies/hardware is NO-GO for that validation;
-there is no local host fallback. GitHub Actions workflows retain their configured
-runner or container execution. The local Docker requirement does not require
-skipping normal PR CI or migrating unrelated CI suites to Docker.
+Run the local release-helper and SDK validation commands in this runbook in
+Docker, including their smoke tests and reproductions. Record image ID/digest,
+candidate revision, actual command and result. Missing local Docker, dependencies
+or hardware is NO-GO for those checks; there is no host fallback. Other GitHub
+Actions workflows retain their configured runner or container execution. This
+does not require skipping normal PR CI or migrating unrelated CI suites to Docker.
 
 ## Publisher controls
 
@@ -55,7 +59,9 @@ SDK-only mode skips both runtime jobs. Runtime-only mode skips both SDK jobs
 and requires the exact SDK to have been published already. In all/release mode,
 the runtime publication job waits for successful SDK publication and verification;
 an SDK failure or cancellation blocks runtime upload. Each runtime upload also
-verifies the actual SDK files in PyPI, including runtime-only dispatches.
+verifies the exact SDK version's registry integrity, including runtime-only
+dispatches. SDK publication uses a stricter candidate-content check; see
+[Retry and recovery](#retry-and-recovery).
 
 Build-only examples (replace the ref/version):
 
@@ -143,7 +149,7 @@ must run in Docker.
 `make create_models_wheel` does not itself perform a lock check. Workflows builds
 both wheel and sdist, despite its Make target's name; preserve both in evidence.
 
-## Full release with only PR1 merged
+## Full release
 
 1. Select versions and required upstream releases. Update source versions,
    requirements pins, pyprojects, locks and version-consistency checks together.
@@ -164,13 +170,22 @@ both wheel and sdist, despite its Make target's name; preserve both in evidence.
    RC and stable wheels contain different metadata and are not byte-identical.
    Publish and verify required stable SDK/Models/Workflows/Streamvision versions
    before stable consumers. Reuse unchanged compatible upstream releases.
-7. Merge the approved stable candidate, check its final SHA and dependency
-   selections, then create the GitHub Release `v<VERSION>` at that commit.
+   Freeze the reviewed stable candidate and its SDK build toolchain before
+   prepublishing the SDK. Keep SDK code, requirements, README, packaging metadata
+   and toolchain identical through the GitHub Release.
+7. Create the GitHub Release `v<VERSION>` at the approved SDK prepublication
+   commit, or merge the candidate and verify that the final commit's SDK build
+   inputs and toolchain are identical. Check the final SHA and dependency
+   selections. If SDK inputs or toolchain changed, choose a new shared version,
+   rebuild, retest and publish that candidate before cutting the release.
    **Do not manually publish the five stable packages before this event.**
    The release automatically starts both package groups in `publish.pypi.yml`
    plus existing standalone/image workflows. The SDK verifies its prepublished
-   wheel and becomes a no-op when contents match. Runtime upload waits for that
-   verification. Monitor the automatic jobs rather than launching duplicates.
+   wheel against the candidate's complete contents and becomes a no-op only when
+   they match. Runtime upload waits for that verification. The consumer gate's
+   registry-integrity policy does not bypass this strict SDK publication job in
+   all/release mode, including for SDKs built by an older toolchain. Monitor the
+   automatic jobs rather than launching duplicates.
    The remaining publishers retain their existing
    behavior, including their current retry limitations.
 8. Verify stable package installation and image digests, complete production
@@ -198,10 +213,10 @@ unrelated GPU or Jetson suites. Do not repeat unchanged exact-revision evidence.
 
 These GitHub Actions workflows provide release validation using their existing
 runner or container configuration. Record each run URL, candidate revision and
-result. The Docker requirement applies to local execution and reproductions;
-direct execution on a CI runner does not invalidate a workflow's evidence. PR1
-does not require a Docker migration of server, Models, Workflows or hosted-test
-infrastructure.
+result. The local Docker instructions above cover release-helper and SDK checks;
+direct execution on a CI runner does not invalidate a workflow's evidence. The
+SDK publisher split does not migrate server, Models, Workflows or hosted-test
+infrastructure to Docker.
 
 ### Images and deployment
 
@@ -221,32 +236,52 @@ Confirm the final tag before dispatch. For build-only image checks use
 
 Keep the legacy server image default. Do not run
 `publish.pypi.inference_server_stack.yml` or `docker.inference_server.yml` as part
-of this release path. Production image build behavior is unchanged by PR1.
+of this release path. The SDK publisher split leaves production image build
+behavior unchanged; the release owner coordinates these existing workflows.
 
 ## Retry and recovery
 
-The SDK publisher checks PyPI before upload. Only an absent version permits
-upload. For an existing version, it checks the inventory, yanked state, registry
-SHA-256 and every wheel entry's contents and permissions against the candidate.
-ZIP timestamps/compression may differ; package code, dependency metadata,
-README, license, RECORD and WHEEL metadata may not. Toolchain changes can alter
-WHEEL metadata and require a new version. Verification receipts record both the
-candidate's hash and the actual published file hash, plus the verification run.
-They do not claim to identify a previous upload's original workflow run.
+The SDK publisher's `prepare-sdk` and `verify-sdk` operations use strict
+candidate-content verification. Only an absent version permits upload. For an
+existing version, they check the inventory, yanked state, registry SHA-256 and
+every wheel entry's contents and permissions against the candidate. ZIP
+timestamps/compression may differ; package code, dependency metadata, README,
+license, RECORD and WHEEL metadata may not. Toolchain changes can alter WHEEL
+metadata and require a new version.
 
-On an SDK upload failure, rerun the failed `publish_sdk` job to reuse its retained
+The runtime consumer's `gate-sdk` operation uses registry-integrity verification:
+the exact required version must have the single expected SDK wheel, consistent
+distribution metadata, only SDK package and metadata paths, a non-yanked file and
+downloaded bytes matching PyPI's SHA-256.
+It does not compare those contents with the same-checkout SDK rebuild. A
+runtime-only dispatch can therefore consume a verified SDK released by an older
+toolchain. This does not allow SDK publication or publication retries to reuse
+different candidate contents.
+
+Receipts identify the policy as `candidate-content` or `registry-integrity` in
+`verification_policy` and retain candidate and published file hashes, source
+revision and verification run. A registry hash verifies downloaded bytes against
+the registry; it does not prove they came from this candidate's source or identify
+the original publisher's workflow run. The recorded source/run describe the
+current verification.
+
+If SDK publication fails, rerun the failed `publish_sdk` job to reuse its retained
 wheel; GitHub also reruns its dependent `publish_runtime` job in all/release mode.
-For SDK-only mode, runtime jobs stay skipped. If the upload actually completed,
-verification will detect it and skip a duplicate upload. Missing, yanked or
-conflicting SDKs block consumer upload.
+For SDK-only mode, runtime jobs stay skipped. An upload error still runs mandatory
+strict verification: if a duplicate upload was rejected while release JSON was
+lagging, verified matching contents can complete the job successfully. Missing,
+yanked or conflicting files fail verification. The SDK publication job has a
+30-minute timeout; each registry reconciliation uses a 600-second polling window,
+plus any in-flight request time. Runtime consumers independently reject missing,
+yanked or invalid registry files under their registry-integrity policy.
 Registry/authentication failures never mean "missing". Transient errors and
 visibility delays have bounded retries; inspect the reported error on timeout.
 
 The five-package publisher is **not yet generally retry-safe**. After a partial
 upload, stop and inventory PyPI; do not add `skip-existing` or blindly rerun it.
-General per-file recovery is PR3. Never delete/overwrite an existing release to
-make it match. A contents conflict requires investigation and usually a new
-version. Workflow rollback cannot undo already published files.
+General per-file recovery is not implemented. Never delete/overwrite an existing
+release to make it match. A contents conflict requires investigation and usually
+a new version. Workflow rollback cannot undo already published files.
 
 If rolling back the split, restore the previous `publish.pypi.yml` behavior as
 one change. PyPI trust remains unchanged. Never leave two active SDK upload jobs
