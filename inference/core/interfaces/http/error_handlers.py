@@ -83,6 +83,10 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowParameterBindingsError,
     InnerWorkflowTotalCountError,
 )
+from inference.models.vllm_proxy.errors import (
+    VLLM_TIMEOUT_STATUS_CODE,
+    VLLMConnectionError,
+)
 from inference_models.errors import (
     EnvironmentConfigurationError,
     FileHashSumMissmatch,
@@ -126,6 +130,24 @@ def _build_model_retrieval_error_response(
             "help_url": error.help_url,
         },
     )
+
+
+VLLM_TIMEOUT_MESSAGE = "Timed out waiting for the model serving backend."
+VLLM_UNAVAILABLE_MESSAGE = (
+    "Model serving backend is temporarily unavailable - retry request."
+)
+
+
+def _build_vllm_connection_error_response(
+    error: VLLMConnectionError,
+) -> JSONResponse:
+    """Answer with the status the error carries, as usage tracking records it."""
+    message = (
+        VLLM_TIMEOUT_MESSAGE
+        if error.status_code == VLLM_TIMEOUT_STATUS_CODE
+        else VLLM_UNAVAILABLE_MESSAGE
+    )
+    return JSONResponse(status_code=error.status_code, content={"message": message})
 
 
 def _build_execution_error_response(
@@ -639,6 +661,9 @@ def with_route_exceptions(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except VLLMConnectionError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = _build_vllm_connection_error_response(error)
         except HTTPException:
             raise
         except Exception as error:
@@ -1119,6 +1144,9 @@ def with_route_exceptions_async(route):
                     **error.get_structured_public_error_details(),
                 },
             )
+        except VLLMConnectionError as error:
+            logger.exception("%s: %s", type(error).__name__, error)
+            resp = _build_vllm_connection_error_response(error)
         except HTTPException:
             raise
         except Exception as error:
