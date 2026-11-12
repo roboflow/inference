@@ -1,4 +1,5 @@
 import json
+import re
 from contextvars import ContextVar, Token
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -818,6 +819,9 @@ def get_request_resource_details_from_kwargs(
     return resource_details
 
 
+# Same shape the batch service validates; the id is copied into usage rows.
+BATCH_BILLING_JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
 usage_batch_billing_context: ContextVar[Optional[str]] = ContextVar(
     "usage_batch_billing_context", default=None
 )
@@ -842,7 +846,8 @@ def read_batch_billing_context(
 
     Raises:
         ValueError: The authenticated context is not a ``batch-v1`` context
-            with an image or video media and a multiplier in (0, 1].
+            with an image or video media, a multiplier in (0, 1] and, when
+            present, a well-formed ``jobId``.
     """
     if "countinference" not in get_signature(func).parameters:
         return None
@@ -867,17 +872,24 @@ def read_batch_billing_context(
             # Comparisons reject NaN and infinities without converting huge ints.
             and 0 < multiplier <= 1
         )
-        if not valid:
+        job_id = context.get("jobId")
+        job_id_valid = job_id is None or (
+            isinstance(job_id, str)
+            and BATCH_BILLING_JOB_ID.fullmatch(job_id) is not None
+        )
+        if not valid or not job_id_valid:
             raise ValueError("Invalid batch billing context")
 
-        canonical = json.dumps(
-            {
-                "version": "batch-v1",
-                "media": context["media"],
-                "multiplier": multiplier,
-            },
-            sort_keys=True,
-        )
+        fields = {
+            "version": "batch-v1",
+            "media": context["media"],
+            "multiplier": multiplier,
+        }
+        if job_id is not None:
+            # Usage is aggregated per context, so the id keeps each job's usage apart.
+            fields["jobId"] = job_id
+
+        canonical = json.dumps(fields, sort_keys=True)
         return canonical
     except (ValueError, TypeError, KeyError):
         raise ValueError("Invalid authenticated batch billing context") from None

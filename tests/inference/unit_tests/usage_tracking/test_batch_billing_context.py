@@ -44,6 +44,45 @@ def test_only_authenticated_context_can_select_batch_rate(configured_service_sec
     }
 
 
+def _job_request(job_id):
+    request = _request()
+    context = json.loads(request.query_params["billing_context"])
+    request.query_params["billing_context"] = json.dumps({**context, "jobId": job_id})
+
+    return request
+
+
+def test_authenticated_context_keeps_the_job_it_names(configured_service_secret):
+    context = read_batch_billing_context(
+        _handler,
+        (),
+        {
+            "request": _job_request("job-nov-318dd5c75703"),
+            "service_secret": configured_service_secret,
+        },
+    )
+
+    assert json.loads(context) == {
+        "version": "batch-v1",
+        "media": "image",
+        "multiplier": 0.1,
+        "jobId": "job-nov-318dd5c75703",
+    }
+
+
+@pytest.mark.parametrize("job_id", ["", "job/1", "a" * 129, 7, ["job"]])
+def test_malformed_job_ids_fail_before_execution(configured_service_secret, job_id):
+    with pytest.raises(ValueError, match="Invalid authenticated"):
+        read_batch_billing_context(
+            _handler,
+            (),
+            {
+                "request": _job_request(job_id),
+                "service_secret": configured_service_secret,
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "multiplier", [0, -1, 1.1, float("nan"), float("inf"), 10**400, True, "0.1"]
 )

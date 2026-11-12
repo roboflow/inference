@@ -8,6 +8,7 @@ handler, so the model calls and workflow runs made inside it record their own
 import functools
 import json
 import logging
+import re
 import time
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -43,6 +44,8 @@ BODY_FIELDS = ("api_key", "model_id", "source", "source_info")
 WORKFLOW_REQUEST_ARGUMENT = "workflow_request"
 BATCH_BILLING_CONTEXT_VERSION = "batch-v1"
 BATCH_BILLING_MEDIA = ("image", "video")
+# Same shape the batch service validates; the id is copied into usage rows.
+BATCH_BILLING_JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 class InvalidBatchBillingContextError(ValueError):
@@ -200,8 +203,8 @@ def batch_billing_context(raw: Any, service_secret: Any) -> Optional[str]:
 
     Raises:
         InvalidBatchBillingContextError: The authenticated context is not a
-            ``batch-v1`` context with an image or video media and a
-            multiplier in (0, 1].
+            ``batch-v1`` context with an image or video media, a
+            multiplier in (0, 1] and, when present, a well-formed ``jobId``.
     """
     if raw is None or not service_secret_is_valid(service_secret):
         return None
@@ -221,19 +224,25 @@ def batch_billing_context(raw: Any, service_secret: Any) -> Optional[str]:
         and type(multiplier) in (int, float)
         and 0 < multiplier <= 1
     )
-    if not valid:
+    job_id = context.get("jobId")
+    job_id_valid = job_id is None or (
+        isinstance(job_id, str) and BATCH_BILLING_JOB_ID.fullmatch(job_id) is not None
+    )
+    if not valid or not job_id_valid:
         raise InvalidBatchBillingContextError(
             "Invalid authenticated batch billing context"
         )
 
-    canonical = json.dumps(
-        {
-            "media": media,
-            "multiplier": multiplier,
-            "version": BATCH_BILLING_CONTEXT_VERSION,
-        },
-        sort_keys=True,
-    )
+    fields = {
+        "media": media,
+        "multiplier": multiplier,
+        "version": BATCH_BILLING_CONTEXT_VERSION,
+    }
+    if job_id is not None:
+        # Usage is aggregated per context, so the id keeps each job's usage apart.
+        fields["jobId"] = job_id
+
+    canonical = json.dumps(fields, sort_keys=True)
 
     return canonical
 
