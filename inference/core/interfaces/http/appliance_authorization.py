@@ -435,12 +435,9 @@ async def _read_json_body(request: Request) -> Optional[dict]:
     content_type = request.headers.get("content-type", "")
     if content_type.split(";")[0].strip().lower() != "application/json":
         return None
-    try:
-        content_length = int(request.headers.get("content-length", 0) or 0)
-    except ValueError:
-        return None
-    if content_length <= 0:
-        return None
+    # Read the body even when Content-Length is absent: a chunked request has
+    # no length but can still carry an api_key or dynamic blocks. An empty
+    # body does not parse and gives None.
     try:
         body = await request.json()
     except Exception:

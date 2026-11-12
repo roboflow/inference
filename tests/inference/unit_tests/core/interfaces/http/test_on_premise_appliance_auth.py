@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from typing import List, Tuple
 from unittest.mock import AsyncMock, MagicMock
@@ -26,6 +27,7 @@ from inference.core.interfaces.http.appliance_authorization import (
     GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
     MISSING_API_KEY_MESSAGE,
     ApplianceKeyAuthorizer,
+    ConflictingApiKeysError,
     read_request_api_key,
     request_skips_api_key_check,
 )
@@ -613,9 +615,16 @@ def test_mode_off_adds_no_middleware_and_no_route(monkeypatch, serverless) -> No
 
 
 def _request(
-    method: str, path: str, body: bytes = b"", content_type: str = ""
+    method: str,
+    path: str,
+    body: bytes = b"",
+    content_type: str = "",
+    query_string: bytes = b"",
+    send_length: bool = True,
 ) -> Request:
-    headers = [(b"content-length", str(len(body)).encode())]
+    headers = []
+    if send_length:
+        headers.append((b"content-length", str(len(body)).encode()))
     if content_type:
         headers.append((b"content-type", content_type.encode()))
     scope = {
@@ -623,7 +632,7 @@ def _request(
         "method": method,
         "path": path,
         "raw_path": path.encode(),
-        "query_string": b"",
+        "query_string": query_string,
         "headers": headers,
     }
 
@@ -656,6 +665,79 @@ def test_block_description_needs_a_key_only_with_dynamic_blocks(
     )
 
     assert asyncio.run(request_skips_api_key_check(request)) is expected
+
+
+def test_chunked_json_body_is_read_without_content_length() -> None:
+    # A chunked request has no Content-Length header; its body still counts.
+    body_only = _request(
+        "POST",
+        INFER_PATH,
+        body=json.dumps({"api_key": API_KEY}).encode(),
+        content_type="application/json",
+        send_length=False,
+    )
+    two_keys = _request(
+        "POST",
+        INFER_PATH,
+        body=json.dumps({"api_key": OTHER_API_KEY}).encode(),
+        content_type="application/json",
+        query_string=f"api_key={API_KEY}".encode(),
+        send_length=False,
+    )
+    dynamic_blocks = _request(
+        "POST",
+        "/workflows/blocks/describe",
+        body=b'{"dynamic_blocks_definitions": [{"type": "x"}]}',
+        content_type="application/json",
+        send_length=False,
+    )
+
+    assert asyncio.run(read_request_api_key(body_only)) == API_KEY
+    with pytest.raises(ConflictingApiKeysError):
+        asyncio.run(read_request_api_key(two_keys))
+    assert asyncio.run(request_skips_api_key_check(dynamic_blocks)) is False
+
+
+def _chunked_json(payload: dict):
+    data = json.dumps(payload).encode()
+
+    def chunks():
+        yield data[: len(data) // 2]
+        yield data[len(data) // 2 :]
+
+    return chunks()
+
+
+def test_chunked_body_key_is_checked(monkeypatch) -> None:
+    lookup = AsyncMock(return_value=_under_cap())
+    interface = _build_appliance_interface(monkeypatch, lookup)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            INFER_PATH,
+            headers={"Content-Type": "application/json"},
+            content=_chunked_json(_inference_body(api_key=API_KEY)),
+        )
+
+    assert response.status_code == 200
+    lookup.assert_awaited_once_with(api_key=API_KEY)
+
+
+def test_chunked_body_with_another_key_is_refused(monkeypatch) -> None:
+    lookup = AsyncMock(return_value=_under_cap())
+    interface = _build_appliance_interface(monkeypatch, lookup)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            INFER_PATH,
+            params={"api_key": API_KEY},
+            headers={"Content-Type": "application/json"},
+            content=_chunked_json(_inference_body(api_key=OTHER_API_KEY)),
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"status": 400, "message": CONFLICTING_API_KEYS_MESSAGE}
+    lookup.assert_not_awaited()
 
 
 def test_host_header_cannot_change_the_checked_path() -> None:
