@@ -3,11 +3,18 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import onnx
-import onnxruntime
 import pytest
 import torch
 from filelock import FileLock, Timeout
+
+onnx = pytest.importorskip(
+    "onnx",
+    reason="onnx is not installed (requires the onnx-* extra)",
+)
+onnxruntime = pytest.importorskip(
+    "onnxruntime",
+    reason="onnxruntime is not installed (requires the onnx-* extra)",
+)
 
 from inference_models.models.common import onnx_attention_fusion
 from inference_models.models.common.onnx_attention_fusion import (
