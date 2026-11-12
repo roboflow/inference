@@ -358,7 +358,11 @@ class OPCUAConnectionManager:
         """Create and configure a new OPC UA client using the shared ThreadLoop."""
         logger.debug(f"OPC UA Connection Manager creating client for {url}")
         tloop = self._get_tloop()
-        client = Client(url=url, tloop=tloop, sync_wrapper_timeout=timeout)
+        # `timeout` is asyncua's per-request timeout: how long each request (every step of
+        # the connect, each lookup and the write) waits for the server's answer. Not
+        # `sync_wrapper_timeout`: asyncua applies that only to a ThreadLoop it creates
+        # itself, and this client runs on the shared one.
+        client = Client(url=url, timeout=timeout, tloop=tloop)
         # Ask for a short session timeout instead of the asyncua default of 1 hour, so a
         # session orphaned by a crash stops holding a server slot for the better part of an
         # hour. The server has the last word: it may revise the request upwards, and asyncua
@@ -533,7 +537,7 @@ class OPCUAConnectionManager:
             url: OPC UA server URL
             user_name: Optional username for authentication
             password: Optional password for authentication
-            timeout: Connection timeout in seconds
+            timeout: Seconds each request to the server waits for its answer
             max_retries: Maximum number of connection attempts (default 1)
             base_backoff: Base delay between retries (default 0)
 
@@ -561,7 +565,15 @@ class OPCUAConnectionManager:
             # working streams on another.
             if key in self._connections:
                 logger.debug(f"OPC UA Connection Manager reusing connection for {url}")
-                return self._connections[key]
+                client = self._connections[key]
+                # Sessions are pooled by server and credentials, not by timeout, so another
+                # write may have opened this one with a different `timeout`. Requests sent
+                # from now on, the session's watchdog reads included, wait this caller's;
+                # two writes sharing the session at once may each get the other's.
+                protocol = client.aio_obj.uaclient.protocol
+                if protocol is not None:  # None once a concurrent `close_all` closed it
+                    protocol.timeout = timeout
+                return client
 
             # Server-wide backoff: a session/connection limit belongs to the server, not to
             # one set of credentials, so every key for this URL waits it out.
@@ -1084,7 +1096,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     timeout: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=2,
-        description="The number of seconds to wait for a response from the OPC UA server before timing out.",
+        description="The number of seconds to wait for each response from the OPC UA server before timing out.",
         examples=[10, "$inputs.timeout"],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -1406,7 +1418,7 @@ def opc_connect_and_write_value(
         object_name: Target object path
         variable_name: Variable to write
         value: Value to write
-        timeout: Connection timeout in seconds
+        timeout: Seconds each request to the server waits for its answer
         node_lookup_mode: Path lookup strategy ('hierarchical' or 'direct')
         value_type: OPC UA data type for the value
         max_retries: Maximum number of connection attempts (default 1 = no retries)

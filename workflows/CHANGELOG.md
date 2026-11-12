@@ -53,6 +53,7 @@ for contributor and maintainer responsibilities.
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 - `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
+- OPC UA Writer (`roboflow_enterprise/opc_writer_sink@v1`) honors its `timeout` field again. Since the block began sharing one event loop between its clients (December 2025), the field had no effect: every request to the server waited asyncua's built-in 4 seconds. `timeout` now bounds each request (every step of the connect, the node lookups and the write), as the OPC UA Reader's does, and a pooled session takes the `timeout` of the write that reuses it. With the default of 2, a request the server answers after 2 to 4 seconds now fails where it used to succeed. Raise `timeout` for a slow server; values above 4 seconds now take effect too.
 
 ### Execution engine
 
