@@ -202,10 +202,12 @@ async def start_test_opc_server(
     )
     await direct_var.set_writable()
 
-    OPC_SERVER_STARTED = True
-
     async def run_server():
+        global OPC_SERVER_STARTED
+
         async with server:
+            # `async with` has started the server, so it accepts connections now
+            OPC_SERVER_STARTED = True
             while not STOP_OPC_SERVER:
                 await asyncio.sleep(0.1)
 
@@ -257,6 +259,13 @@ async def start_test_opc_server_with_string_nodeid(
         pass
 
 
+# Wall-clock bound on each blocking call of the read-back client below (connect,
+# browse, read). A connect takes several round trips between this thread, the client's
+# loop thread and the server's, and a busy CI runner can pause the whole process
+# mid-handshake. A healthy read-back returns long before the bound.
+READ_BACK_TIMEOUT_SECONDS = 5.0
+
+
 def _opc_connect_and_read_value(
     url: str,
     namespace: str,
@@ -264,10 +273,9 @@ def _opc_connect_and_read_value(
     password: Optional[str],
     object_name: str,
     variable_name: str,
-    timeout: int,
     direct_mode: bool = False,
 ) -> Union[bool, float, int, str]:
-    client = Client(url=url, sync_wrapper_timeout=timeout)
+    client = Client(url=url, sync_wrapper_timeout=READ_BACK_TIMEOUT_SECONDS)
     if user_name and password:
         client.set_user(user_name)
         client.set_password(password)
@@ -352,7 +360,7 @@ def test_opc_server():
     opc_variable_name = "MyVariable1"
     opc_initial_value = 1
 
-    asyncio.run_coroutine_threadsafe(
+    server_future = asyncio.run_coroutine_threadsafe(
         start_test_opc_server(
             url=opc_url,
             namespace=opc_namespace,
@@ -363,8 +371,11 @@ def test_opc_server():
         loop,
     )
 
+    # Wait until the server accepts connections; if it fails to start, raise its error
     while not OPC_SERVER_STARTED:
-        time.sleep(0.1)
+        if server_future.done():
+            server_future.result()
+        time.sleep(0.01)
 
     yield {
         "url": opc_url,
@@ -468,7 +479,6 @@ def test_workflow_with_opc_writer_sink(
         password=test_opc_server["password"],
         object_name=test_opc_server["object_name"],
         variable_name=variable_name,
-        timeout=1,
     )
 
     assert set(result[0].keys()) == {
@@ -521,7 +531,6 @@ def test_workflow_with_opc_writer_sink_direct_mode(test_opc_server) -> None:
         password=test_opc_server["password"],
         object_name=test_opc_server["object_name"],
         variable_name=test_opc_server["variable_name"],
-        timeout=1,
         direct_mode=True,
     )
 
@@ -610,7 +619,6 @@ def test_connection_pooling_reuses_connections(
         password=test_opc_server["password"],
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
-        timeout=1,
     )
     assert result_value == 200
 
@@ -946,18 +954,17 @@ def test_real_server_rejects_password_mismatch_without_reusing_pooled_session(
         "user_name": test_opc_server["user_name"],
         "object_name": test_opc_server["object_name"],
         "variable_name": "Int32Var",
-        "timeout": 2,
     }
     password = test_opc_server["password"]
     error, message = opc_connect_and_write_value(
-        **params, password=password, value=1001, value_type="Int32"
+        **params, password=password, value=1001, value_type="Int32", timeout=2
     )
     assert error is False, message
     key = manager._get_connection_key(params["url"], params["user_name"], password)
     original_client = manager._connections[key]
 
     error, message = opc_connect_and_write_value(
-        **params, password=wrong_password, value=2002, value_type="Int32"
+        **params, password=wrong_password, value=2002, value_type="Int32", timeout=2
     )
     assert error is True
     assert "AUTH ERROR" in message
@@ -965,7 +972,7 @@ def test_real_server_rejects_password_mismatch_without_reusing_pooled_session(
     assert manager._connections[key] is original_client
 
     error, message = opc_connect_and_write_value(
-        **params, password=password, value=1002, value_type="Int32"
+        **params, password=password, value=1002, value_type="Int32", timeout=2
     )
     assert error is False, message
     assert manager._connections[key] is original_client
