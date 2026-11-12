@@ -2,36 +2,68 @@ name: Google Colab GPU
 permissions:
   contents: read
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      depot_project:
+        description: "Sandbox Depot project for this manual run"
+        type: string
+        default: 7m01vtml7h
+  workflow_call:
+    inputs:
+      depot_project:
+        type: string
+        required: true
+    secrets:
+      API_KEY:
+        required: false
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-colab-gpu-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
+  image:
+    if: ${{ github.repository == 'roboflow/inference' && !github.event.act && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci_image_build.yml
+    with:
+      family: colab-gpu
+      depot_project: ${{ inputs.depot_project }}
   build:
-    if: ${{ !github.event.act }}
+    needs: image
     runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_FAMILY: colab-gpu
+      IMAGE_DIGEST: ${{ needs.image.outputs.amd64_digest }}
+      DEPOT_PROJECT_ID: ${{ inputs.depot_project }}
 
     steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: 🛎️ Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: 🔨 Build Docker
-        run: docker build -t inference-google-colab:gpu -f ./docker/dockerfiles/Dockerfile.google.colab.gpu .
+      - name: Validate trusted source and destination before authentication
+        env:
+          CI_DEPOT_ACTION: validate
+        run: python3 .github/scripts/depot_ci_image.py
+      - name: Set up Depot CLI
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
+      - name: Pull and verify the saved Colab image, then remove pull credentials
+        env:
+          CI_DEPOT_ACTION: pull
+        run: python3 .github/scripts/depot_ci_image.py
       - name: 🧪 Run tests
         env:
           ROBOFLOW_API_KEY: ${{ secrets.API_KEY }}
-        run: docker run -e ROBOFLOW_API_KEY --runtime nvidia inference-google-colab:gpu
+        run: docker run --rm -e ROBOFLOW_API_KEY --runtime nvidia "$INFERENCE_TEST_IMAGE"

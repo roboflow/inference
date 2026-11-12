@@ -9,6 +9,10 @@ on:
         description: "Depot project that builds and stores the CI image"
         type: string
         required: true
+      server_image_digest:
+        description: "Exact parallel server digest, required only for parallel-tests"
+        type: string
+        default: ""
     outputs:
       index_digest:
         value: ${{ jobs.build.outputs.index_digest }}
@@ -34,6 +38,7 @@ jobs:
     env:
       IMAGE_FAMILY: ${{ inputs.family }}
       DEPOT_PROJECT_ID: ${{ inputs.depot_project }}
+      SERVER_IMAGE_DIGEST: ${{ inputs.server_image_digest }}
       DOCKER_BUILD_SUMMARY: false
       DOCKER_BUILD_RECORD_UPLOAD: false
     outputs:

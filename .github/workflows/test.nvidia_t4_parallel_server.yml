@@ -2,10 +2,12 @@ name: Code Quality & Regression Tests - NVIDIA T4 (Parallel Server)
 permissions:
   contents: read
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
+      depot_project:
+        description: 'Sandbox Depot project for this manual run'
+        type: string
+        default: 7m01vtml7h
       test_name:
         description: 'Name of specific test to run. Leave empty to run all tests.'
         required: false
@@ -20,45 +22,110 @@ on:
         required: false
         default: false
         type: boolean
+  workflow_call:
+    inputs:
+      depot_project:
+        type: string
+        required: true
+      test_name:
+        type: string
+        default: ''
+      run_iobinding_benchmark:
+        type: boolean
+        default: false
+    secrets:
+      API_KEY:
+        required: false
+      ASL_INSTANCE_SEGMENTATION_API_KEY:
+        required: false
+      ASL_POLY_INSTANCE_SEG_API_KEY:
+        required: false
+      BCCD_FAVZ3_API_KEY:
+        required: false
+      BCCD_I4NYM_API_KEY:
+        required: false
+      CATS_AND_DOGS_SMNPL_API_KEY:
+        required: false
+      COINS_XAZ9I_API_KEY:
+        required: false
+      MELEE_API_KEY:
+        required: false
+      YOLONAS_TEST_API_KEY:
+        required: false
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-parallel-gpu-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
+  image:
+    if: ${{ github.repository == 'roboflow/inference' && !github.event.act && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci_image_build.yml
+    with:
+      family: parallel-gpu
+      depot_project: ${{ inputs.depot_project }}
+  test-image:
+    needs: image
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/ci_image_build.yml
+    with:
+      family: parallel-tests
+      depot_project: ${{ inputs.depot_project }}
+      server_image_digest: ${{ needs.image.outputs.amd64_digest }}
   build:
-    if: ${{ !github.event.act }}
+    needs: [image, test-image]
     runs-on: Roboflow-GPU-VM-Runner
 
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEPOT_PROJECT_ID: ${{ inputs.depot_project }}
 
     steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: 🛎️ Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: 🔨 Build Test Docker - Parallel GPU
-        run: |
-          docker build -t roboflow/roboflow-inference-server-gpu-parallel:test -f docker/dockerfiles/Dockerfile.onnx.gpu.parallel .
-      - name: 🔨 Build Docker test runner
-        run: |
-          docker build -t inference-parallel-tests:local -f docker/dockerfiles/Dockerfile.parallel.tests .
+      - name: Validate trusted source and destination before authentication
+        env:
+          CI_DEPOT_ACTION: validate
+          IMAGE_FAMILY: parallel-gpu
+        run: python3 .github/scripts/depot_ci_image.py
+      - name: Set up Depot CLI
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
+      - name: Pull and verify the saved server image, then remove pull credentials
+        env:
+          CI_DEPOT_ACTION: pull
+          IMAGE_FAMILY: parallel-gpu
+          IMAGE_DIGEST: ${{ needs.image.outputs.amd64_digest }}
+        run: python3 .github/scripts/depot_ci_image.py
+      - name: Pull and verify the saved test image, then remove pull credentials
+        env:
+          CI_DEPOT_ACTION: pull
+          IMAGE_FAMILY: parallel-tests
+          IMAGE_DIGEST: ${{ needs.test-image.outputs.amd64_digest }}
+          SERVER_IMAGE_DIGEST: ${{ needs.image.outputs.amd64_digest }}
+        run: python3 .github/scripts/depot_ci_image.py
       - name: 🧪 Shared-memory and CUDA worker startup tests
         id: parallel_unit_tests
         run: |
-          docker run --rm --gpus all --entrypoint python3 inference-parallel-tests:local \
+          docker run --rm --gpus all --entrypoint python3 "$INFERENCE_PARALLEL_TEST_IMAGE" \
             -c 'import torch; assert torch.cuda.is_available(), "CUDA device required for T4 coverage"'
           docker run --rm --gpus all -e PARALLEL_IMAGE_TEST=true -e PARALLEL_TEST_DEVICE=cuda \
             --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
-            inference-parallel-tests:local -p no:cacheprovider \
+            "$INFERENCE_PARALLEL_TEST_IMAGE" -p no:cacheprovider \
             tests/inference/unit_tests/enterprise/parallel tests/docker/test_parallel_worker_startup.py \
             tests/inference/unit_tests/core/utils/test_onnx_iobinding.py
       - name: Benchmark ONNX output allocation in Docker
@@ -68,7 +135,7 @@ jobs:
           docker run --rm --gpus all --entrypoint python3 \
             --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
             --mount "type=bind,src=$RUNNER_TEMP/onnx-iobinding-benchmark,dst=/evidence" \
-            inference-parallel-tests:local \
+            "$INFERENCE_PARALLEL_TEST_IMAGE" \
             -m development.benchmark_scripts.benchmark_onnx_iobinding \
             --device cuda --output /evidence/results.json
       - name: Upload ONNX allocation benchmark
@@ -81,13 +148,13 @@ jobs:
       
       - name: 🔋 Start Test Docker without Torch Preprocessing - Parallel GPU
         id: start_without_torch
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
+        if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_without_torch' }}
         run: |
           USE_INFERENCE_MODELS=false PORT=9101 INFERENCE_TEST_DOCKER_ARGS='-e USE_PYTORCH_FOR_PREPROCESSING=False' INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
           docker exec inference-test python3 -c 'from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING; assert USE_PYTORCH_FOR_PREPROCESSING is False'
       - name: 🧪 Regression Tests without Torch Preprocessing - Parallel GPU
         id: regression_tests_without_torch_preprocessing
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
+        if: ${{ inputs.test_name == '' || inputs.test_name == 'regression_without_torch' }}
         env:
           API_KEY: ${{ secrets.API_KEY }}
           asl_instance_segmentation_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
@@ -105,7 +172,7 @@ jobs:
             -e API_KEY -e asl_instance_segmentation_API_KEY -e asl_poly_instance_seg_API_KEY \
             -e bccd_favz3_API_KEY -e bccd_i4nym_API_KEY -e cats_and_dogs_smnpl_API_KEY \
             -e coins_xaz9i_API_KEY -e melee_API_KEY -e yolonas_test_API_KEY \
-            inference-parallel-tests:local -p no:cacheprovider \
+            "$INFERENCE_PARALLEL_TEST_IMAGE" -p no:cacheprovider \
             tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
       - name: 🚨 Show server logs on error
         if: ${{ always() && steps.start_without_torch.outcome != 'skipped' }}
@@ -116,7 +183,7 @@ jobs:
       
       - name: 🔋 Start Test Docker with Torch Preprocessing - Parallel GPU
         id: start_with_torch
-        if: ${{ !cancelled() && steps.parallel_unit_tests.outcome == 'success' && (github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch') }}
+        if: ${{ !cancelled() && steps.parallel_unit_tests.outcome == 'success' && (inputs.test_name == '' || inputs.test_name == 'regression_with_torch') }}
         run: |
           USE_INFERENCE_MODELS=false PORT=9101 INFERENCE_TEST_DOCKER_ARGS='-e USE_PYTORCH_FOR_PREPROCESSING=True' INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
           docker exec inference-test python3 -c 'from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING; assert USE_PYTORCH_FOR_PREPROCESSING is True'
@@ -140,7 +207,7 @@ jobs:
             -e API_KEY -e asl_instance_segmentation_API_KEY -e asl_poly_instance_seg_API_KEY \
             -e bccd_favz3_API_KEY -e bccd_i4nym_API_KEY -e cats_and_dogs_smnpl_API_KEY \
             -e coins_xaz9i_API_KEY -e melee_API_KEY -e yolonas_test_API_KEY \
-            inference-parallel-tests:local -p no:cacheprovider \
+            "$INFERENCE_PARALLEL_TEST_IMAGE" -p no:cacheprovider \
             tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
       - name: 🚨 Show server logs on error
         if: ${{ always() && steps.start_with_torch.outcome != 'skipped' }}

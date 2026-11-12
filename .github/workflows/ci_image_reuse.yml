@@ -17,7 +17,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 # Every push to main builds each image once here and tests it in both model
-# modes; the standalone CPU/T4 builds skip on pushes. A manual dispatch from any
+# modes; Colab and Parallel build their distinct images on Depot before GPU
+# tests. The standalone CPU/T4 builds skip on pushes. A manual dispatch from any
 # same-repository branch exercises the whole path.
 # Pushes to main save images in Depot project inference-ci (9x3fbbxlnm). A
 # manual dispatch defaults to manual-inference-ci-test (7m01vtml7h), and the
@@ -85,9 +86,37 @@ jobs:
       COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
       MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
       YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
+  colab-gpu:
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/test.colab.gpu.yml
+    with:
+      depot_project: ${{ github.event_name == 'push' && '9x3fbbxlnm' || inputs.depot_project || '7m01vtml7h' }}
+    secrets:
+      API_KEY: ${{ secrets.API_KEY }}
+  parallel-gpu:
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/test.nvidia_t4_parallel_server.yml
+    with:
+      depot_project: ${{ github.event_name == 'push' && '9x3fbbxlnm' || inputs.depot_project || '7m01vtml7h' }}
+    secrets:
+      API_KEY: ${{ secrets.API_KEY }}
+      ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+      ASL_POLY_INSTANCE_SEG_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+      BCCD_FAVZ3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+      BCCD_I4NYM_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+      CATS_AND_DOGS_SMNPL_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+      COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+      MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
+      YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
   image-tests-complete:
     name: CPU and GPU image tests complete
-    needs: [cpu-image, gpu-image, cpu-tests, gpu-tests]
+    needs: [cpu-image, gpu-image, cpu-tests, gpu-tests, colab-gpu, parallel-gpu]
     if: ${{ always() && github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -98,11 +127,13 @@ jobs:
           GPU_BUILD: ${{ needs.gpu-image.result }}
           CPU_TESTS: ${{ needs.cpu-tests.result }}
           GPU_TESTS: ${{ needs.gpu-tests.result }}
+          COLAB_GPU: ${{ needs.colab-gpu.result }}
+          PARALLEL_GPU: ${{ needs.parallel-gpu.result }}
           CPU_DIGEST: ${{ needs.cpu-image.outputs.amd64_digest }}
           CPU_ARM64_DIGEST: ${{ needs.cpu-image.outputs.arm64_digest }}
           GPU_DIGEST: ${{ needs.gpu-image.outputs.amd64_digest }}
         run: |
-          for result in "$CPU_BUILD" "$GPU_BUILD" "$CPU_TESTS" "$GPU_TESTS"; do
+          for result in "$CPU_BUILD" "$GPU_BUILD" "$CPU_TESTS" "$GPU_TESTS" "$COLAB_GPU" "$PARALLEL_GPU"; do
             if [ "$result" != success ]; then
               echo '::error::Image testing incomplete: a required build or test failed, skipped or was cancelled'
               exit 1
@@ -117,5 +148,6 @@ jobs:
           {
             echo 'CPU amd64 and GPU amd64 passed the existing server suites in both model modes.'
             echo 'CPU arm64 was built, but was not runtime-qualified.'
+            echo 'Colab GPU and Parallel GPU passed against their saved Depot images on the existing GPU runner.'
             echo 'Other required checks remain independent. This result does not authorize RC publication or deployment.'
           } >> "$GITHUB_STEP_SUMMARY"

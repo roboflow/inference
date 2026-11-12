@@ -159,6 +159,82 @@ class DepotImageTests(unittest.TestCase):
         ):
             image._validate()
 
+    def test_specialized_workflows_allow_manual_sandbox_runs_but_not_direct_pushes(
+        self,
+    ):
+        for filename in ["test.colab.gpu.yml", "test.nvidia_t4_parallel_server.yml"]:
+            workflow = f"roboflow/inference/.github/workflows/{filename}@{REF}"
+            with self.subTest(workflow=workflow), patch.dict(
+                os.environ,
+                {
+                    "GITHUB_WORKFLOW_REF": workflow,
+                    "GITHUB_EVENT_NAME": "workflow_dispatch",
+                },
+            ), patch.object(image, "_run", side_effect=self._run):
+                image._validate()
+                with patch.dict(os.environ, {"DEPOT_PROJECT_ID": "9x3fbbxlnm"}):
+                    with self.assertRaises(ValueError):
+                        image._validate()
+                with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}):
+                    with self.assertRaises(ValueError):
+                        image._authorize()
+
+    def test_parent_digest_is_required_only_for_the_parallel_test_image(self):
+        cases = [
+            {"IMAGE_FAMILY": "parallel-tests", "SERVER_IMAGE_DIGEST": value}
+            for value in ["", "latest", "sha256:bad", f"{REPOSITORY}@{DIGEST}"]
+        ] + [
+            {"IMAGE_FAMILY": family, "SERVER_IMAGE_DIGEST": DIGEST}
+            for family in ["cpu", "gpu", "colab-gpu", "parallel-gpu"]
+        ]
+        for env in cases:
+            self.calls.clear()
+            with self.subTest(env=env), patch.dict(os.environ, env), patch.object(
+                image, "_run", side_effect=self._run
+            ), self.assertRaises(ValueError):
+                image._build()
+            self.assertFalse(
+                any(args[0] in {"depot", "docker"} for args, _, _ in self.calls)
+            )
+
+    def test_specialized_consumers_verify_identity_and_keep_separate_local_ids(self):
+        for family in ["colab-gpu", "parallel-gpu", "parallel-tests"]:
+            labels = self.info["Config"]["Labels"]
+            labels["io.roboflow.ci.image-family"] = family
+            labels["io.roboflow.ci.server-image-digest"] = INDEX
+            output = (
+                "INFERENCE_PARALLEL_TEST_IMAGE"
+                if family == "parallel-tests"
+                else "INFERENCE_TEST_IMAGE"
+            )
+            with self.subTest(family=family), patch.dict(
+                os.environ,
+                {
+                    "IMAGE_FAMILY": family,
+                    "MODEL_MODE": "",
+                    "SERVER_IMAGE_DIGEST": INDEX if family == "parallel-tests" else "",
+                },
+            ), patch.object(image, "_run", side_effect=self._run):
+                (self.root / "env").unlink(missing_ok=True)
+                image._pull()
+                self.assertEqual(
+                    (self.root / "env").read_text(), f"{output}={IMAGE_ID}\n"
+                )
+                (self.root / "env").unlink()
+                labels["io.roboflow.ci.image-family"] = "gpu"
+                with self.assertRaises(ValueError):
+                    image._pull()
+                self.assertFalse((self.root / "env").exists())
+                labels["io.roboflow.ci.image-family"] = family
+                if family == "parallel-tests":
+                    for bad_parent in [None, DIGEST]:
+                        labels["io.roboflow.ci.server-image-digest"] = bad_parent
+                        with self.assertRaises(ValueError):
+                            image._pull()
+                        self.assertFalse((self.root / "env").exists())
+                        login = self.calls[-3]
+                        self.assertFalse(Path(login[1]["DOCKER_CONFIG"]).exists())
+
     def test_destination_and_digest_validation_precede_login(self):
         for key, value in [
             ("DEPOT_PROJECT_ID", ""),
@@ -262,11 +338,20 @@ class DepotImageTests(unittest.TestCase):
             ),
             ("gpu", {"manifests": [amd]}, {"amd64_digest": DIGEST}),
             ("gpu", {"schemaVersion": 2}, {"amd64_digest": INDEX}),
+            ("colab-gpu", {"manifests": [amd]}, {"amd64_digest": DIGEST}),
+            ("parallel-gpu", {"schemaVersion": 2}, {"amd64_digest": INDEX}),
+            ("parallel-tests", {"manifests": [amd]}, {"amd64_digest": DIGEST}),
         ]
         for family, manifest, children in cases:
             with self.subTest(
                 family=family, indexed="manifests" in manifest
-            ), patch.dict(os.environ, {"IMAGE_FAMILY": family}), patch.object(
+            ), patch.dict(
+                os.environ,
+                {
+                    "IMAGE_FAMILY": family,
+                    "SERVER_IMAGE_DIGEST": DIGEST if family == "parallel-tests" else "",
+                },
+            ), patch.object(
                 image, "_run", side_effect=self._run
             ):
                 self.calls.clear()
@@ -288,6 +373,30 @@ class DepotImageTests(unittest.TestCase):
                 )
                 self.assertIn(f"org.opencontainers.image.revision={SHA}", build)
                 self.assertIn(f"io.roboflow.ci.image-family={family}", build)
+                dockerfile = {
+                    "cpu": "Dockerfile.onnx.cpu",
+                    "gpu": "Dockerfile.onnx.gpu",
+                    "colab-gpu": "Dockerfile.google.colab.gpu",
+                    "parallel-gpu": "Dockerfile.onnx.gpu.parallel",
+                    "parallel-tests": "Dockerfile.parallel.tests",
+                }[family]
+                self.assertEqual(
+                    Path(build[build.index("--file") + 1]).name, dockerfile
+                )
+                if family == "parallel-tests":
+                    self.assertEqual(
+                        build[build.index("--build-arg") + 1],
+                        f"SERVER_IMAGE={REPOSITORY}@{DIGEST}",
+                    )
+                    self.assertIn(f"io.roboflow.ci.server-image-digest={DIGEST}", build)
+                    login_index = next(
+                        i
+                        for i, args in enumerate(commands)
+                        if args[:2] == ["docker", "login"]
+                    )
+                    self.assertLess(login_index, commands.index(build))
+                else:
+                    self.assertNotIn("--build-arg", build)
                 self.assertEqual(
                     build[build.index("--platform") + 1],
                     "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
@@ -375,14 +484,12 @@ class DepotImageTests(unittest.TestCase):
         depot = bindir / "depot"
         depot.write_text("#!/bin/sh\nprintf '%s' 'synthetic-pull-token'\n")
         docker = bindir / "docker"
-        docker.write_text(
-            """#!/bin/sh
+        docker.write_text("""#!/bin/sh
 cat > "$DOCKER_CONFIG/config.json"
 echo "synthetic-private-host synthetic-pull-token"
 echo "synthetic-private-host synthetic-pull-token" >&2
 exit 17
-"""
-        )
+""")
         for path in [git, depot, docker]:
             path.chmod(0o700)
         env = dict(os.environ, PATH=f"{bindir}:/usr/bin:/bin", CI_DEPOT_ACTION="pull")
@@ -422,6 +529,122 @@ exit 17
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_gpu_builds_use_depot_and_only_tests_allocate_gpu_runners(self):
+        orchestrator = _load("ci_image_reuse.yml")
+        for job_id, filename, family in [
+            ("colab-gpu", "test.colab.gpu.yml", "colab-gpu"),
+            ("parallel-gpu", "test.nvidia_t4_parallel_server.yml", "parallel-gpu"),
+        ]:
+            with self.subTest(workflow=filename):
+                workflow = _load(filename)
+                triggers = workflow.get("on", workflow.get(True))
+                self.assertEqual(set(triggers), {"workflow_dispatch", "workflow_call"})
+                self.assertEqual(
+                    triggers["workflow_dispatch"]["inputs"]["depot_project"]["default"],
+                    "7m01vtml7h",
+                )
+                caller = orchestrator["jobs"][job_id]
+                self.assertEqual(caller["uses"], f"./.github/workflows/{filename}")
+                self.assertEqual(
+                    caller["with"]["depot_project"],
+                    orchestrator["jobs"]["gpu-image"]["with"]["depot_project"],
+                )
+                self.assertIn(
+                    job_id, orchestrator["jobs"]["image-tests-complete"]["needs"]
+                )
+                self.assertNotEqual(
+                    workflow["concurrency"]["group"],
+                    orchestrator["concurrency"]["group"],
+                )
+                producer = workflow["jobs"]["image"]
+                self.assertEqual(
+                    producer["uses"], "./.github/workflows/ci_image_build.yml"
+                )
+                self.assertEqual(producer["with"]["family"], family)
+                self.assertIn(
+                    "github.repository == 'roboflow/inference'", producer["if"]
+                )
+                consumer = workflow["jobs"]["build"]
+                self.assertEqual(consumer["runs-on"], "Roboflow-GPU-VM-Runner")
+                steps = consumer["steps"]
+                scripts = "\n".join(step.get("run", "") for step in steps)
+                self.assertNotRegex(scripts, r"(?:docker|depot) build")
+                self.assertIn(
+                    (
+                        "$INFERENCE_TEST_IMAGE"
+                        if family == "colab-gpu"
+                        else "$INFERENCE_PARALLEL_TEST_IMAGE"
+                    ),
+                    scripts,
+                )
+                self.assertEqual(consumer["permissions"]["id-token"], "write")
+                self.assertTrue(
+                    any(
+                        step.get("env", {}).get("CI_DEPOT_ACTION") == "pull"
+                        for step in steps
+                    )
+                )
+        parallel = _load("test.nvidia_t4_parallel_server.yml")["jobs"]
+        self.assertEqual(set(parallel["build"]["needs"]), {"image", "test-image"})
+        self.assertEqual(
+            parallel["test-image"]["with"]["server_image_digest"],
+            "${{ needs.image.outputs.amd64_digest }}",
+        )
+        steps = parallel["build"]["steps"]
+        test_pull = next(
+            step
+            for step in steps
+            if step.get("env", {}).get("IMAGE_FAMILY") == "parallel-tests"
+        )
+        self.assertEqual(
+            test_pull["env"]["SERVER_IMAGE_DIGEST"],
+            "${{ needs.image.outputs.amd64_digest }}",
+        )
+        self.assertEqual(
+            test_pull["env"]["IMAGE_DIGEST"],
+            "${{ needs.test-image.outputs.amd64_digest }}",
+        )
+
+    def test_aggregate_gate_fails_for_incomplete_specialized_gpu_suites(self):
+        gate = _load("ci_image_reuse.yml")["jobs"]["image-tests-complete"]["steps"][0]
+        with TemporaryDirectory() as directory:
+            env = {
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "GITHUB_STEP_SUMMARY": str(Path(directory) / "summary"),
+                **{
+                    key: "success"
+                    for key in [
+                        "CPU_BUILD",
+                        "GPU_BUILD",
+                        "CPU_TESTS",
+                        "GPU_TESTS",
+                        "COLAB_GPU",
+                        "PARALLEL_GPU",
+                    ]
+                },
+                **{
+                    key: DIGEST
+                    for key in ["CPU_DIGEST", "CPU_ARM64_DIGEST", "GPU_DIGEST"]
+                },
+            }
+            result = subprocess.run(
+                ["bash", "-e", "-c", gate["run"]],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for key in ["COLAB_GPU", "PARALLEL_GPU"]:
+                for status in ["failure", "skipped", "cancelled", ""]:
+                    with self.subTest(suite=key, result=status):
+                        result = subprocess.run(
+                            ["bash", "-e", "-c", gate["run"]],
+                            env={**env, key: status},
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertNotEqual(result.returncode, 0)
+
     def test_one_project_from_the_orchestrator_and_no_stored_depot_tokens(self):
         orchestrator = _load("ci_image_reuse.yml")
         projects = {

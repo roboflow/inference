@@ -15,6 +15,20 @@ from tempfile import TemporaryDirectory
 from ci_image import _digest, _emit, _manifest_digests
 
 _ORCHESTRATOR = "roboflow/inference/.github/workflows/ci_image_reuse.yml"
+_MANUAL_WORKFLOWS = frozenset(
+    {
+        _ORCHESTRATOR,
+        "roboflow/inference/.github/workflows/test.colab.gpu.yml",
+        "roboflow/inference/.github/workflows/test.nvidia_t4_parallel_server.yml",
+    }
+)
+_DOCKERFILES = {
+    "cpu": "Dockerfile.onnx.cpu",
+    "gpu": "Dockerfile.onnx.gpu",
+    "colab-gpu": "Dockerfile.google.colab.gpu",
+    "parallel-gpu": "Dockerfile.onnx.gpu.parallel",
+    "parallel-tests": "Dockerfile.parallel.tests",
+}
 # Only a push to main may write into the CI project; the release project is
 # never a CI target. Manual dispatches must use a sandbox project.
 _PROTECTED_PROJECTS = frozenset({"9x3fbbxlnm", "grl7ffzxd7"})
@@ -37,12 +51,17 @@ def _authorize() -> None:
     sha = os.environ.get("GITHUB_SHA", "")
     event = os.environ.get("GITHUB_EVENT_NAME", "")
     main_push = event == "push" and ref == "refs/heads/main"
-    manual = event == "workflow_dispatch" and ref.startswith("refs/heads/")
+    workflow = os.environ.get("GITHUB_WORKFLOW_REF", "")
+    main_push = main_push and workflow == f"{_ORCHESTRATOR}@{ref}"
+    manual = (
+        event == "workflow_dispatch"
+        and ref.startswith("refs/heads/")
+        and workflow in {f"{name}@{ref}" for name in _MANUAL_WORKFLOWS}
+    )
     if (
         os.environ.get("GITHUB_REPOSITORY") != "roboflow/inference"
         or not re.fullmatch(r"[0-9a-f]{40}", sha)
         or not (main_push or manual)
-        or os.environ.get("GITHUB_WORKFLOW_REF") != f"{_ORCHESTRATOR}@{ref}"
     ):
         raise ValueError("Unapproved execution")
 
@@ -72,8 +91,17 @@ def _repository() -> str:
 def _validate() -> None:
     _authorize()
     _project()
-    if os.environ.get("IMAGE_FAMILY") not in {"cpu", "gpu"}:
+    family = os.environ.get("IMAGE_FAMILY")
+    if family not in _DOCKERFILES:
         raise ValueError("Invalid image family")
+
+    # The test environment must derive from the exact parallel server producer,
+    # never the mutable Docker Hub default in Dockerfile.parallel.tests.
+    parent = os.environ.get("SERVER_IMAGE_DIGEST", "")
+    if family == "parallel-tests":
+        _digest(parent)
+    elif parent:
+        raise ValueError("Unexpected parent image")
 
 
 def _pull_token(project: str) -> str:
@@ -121,6 +149,17 @@ def _build() -> None:
             _run(["git", "archive", "--format=tar", f"--output={archive}", sha])
             _run(["tar", "-xf", str(archive), "-C", str(context)])
             metadata = root / "metadata.json"
+            parent_args = []
+            if family == "parallel-tests":
+                parent = os.environ["SERVER_IMAGE_DIGEST"]
+                _login(env=dict(os.environ), token=_pull_token(project))
+                parent_args = [
+                    "--build-arg",
+                    f"SERVER_IMAGE={repository}@{parent}",
+                    "--label",
+                    f"io.roboflow.ci.server-image-digest={parent}",
+                ]
+
             _run(
                 [
                     "depot",
@@ -142,8 +181,9 @@ def _build() -> None:
                     f"org.opencontainers.image.revision={sha}",
                     "--label",
                     f"io.roboflow.ci.image-family={family}",
+                    *parent_args,
                     "--file",
-                    str(context / f"docker/dockerfiles/Dockerfile.onnx.{family}"),
+                    str(context / "docker/dockerfiles" / _DOCKERFILES[family]),
                     str(context),
                 ]
             )
@@ -168,7 +208,7 @@ def _build() -> None:
             )
             if "manifests" in manifest:
                 children = _manifest_digests(manifest, family=family)
-            elif family == "gpu":
+            elif family != "cpu":
                 children = {"amd64": index}
             else:
                 raise ValueError("CPU requires both architectures")
@@ -182,7 +222,11 @@ def _build() -> None:
 
 def _pull() -> None:
     _validate()
-    if os.environ.get("MODEL_MODE") not in {"true", "false"}:
+    family = os.environ["IMAGE_FAMILY"]
+    if family in {"cpu", "gpu"} and os.environ.get("MODEL_MODE") not in {
+        "true",
+        "false",
+    }:
         raise ValueError("Invalid model mode")
 
     digest = _digest(os.environ.get("IMAGE_DIGEST", ""))
@@ -205,9 +249,21 @@ def _pull() -> None:
         ):
             raise ValueError("Image identity mismatch")
 
+        if (
+            family == "parallel-tests"
+            and labels.get("io.roboflow.ci.server-image-digest")
+            != os.environ["SERVER_IMAGE_DIGEST"]
+        ):
+            raise ValueError("Test image parent mismatch")
+
         image_id = _digest(info["Id"])
 
-    _emit("GITHUB_ENV", "INFERENCE_TEST_IMAGE", image_id)
+    output = (
+        "INFERENCE_PARALLEL_TEST_IMAGE"
+        if family == "parallel-tests"
+        else "INFERENCE_TEST_IMAGE"
+    )
+    _emit("GITHUB_ENV", output, image_id)
 
 
 if __name__ == "__main__":
