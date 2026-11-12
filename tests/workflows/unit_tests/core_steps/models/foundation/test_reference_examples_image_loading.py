@@ -9,6 +9,7 @@ import base64
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, List
 from unittest import mock
 
@@ -233,6 +234,95 @@ def test_engines_running_at_once_fetch_a_reference_image_once(block: str) -> Non
     assert len(requests.call_args_list) == len(engines)
     for call in range(len(engines)):
         assert abs(_blue_of_first_reference(block, requests, call) - 30) < 8
+
+
+@BLOCKS
+def test_engine_retries_expired_download_without_waiting_for_stalled_engine(
+    block: str,
+) -> None:
+    started, release = threading.Event(), threading.Event()
+    request_lock = threading.Lock()
+    fetched = []
+    now = [0.0]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            with request_lock:
+                fetched.append(self.path)
+                number = len(fetched)
+            if number == 1:
+                started.set()
+                assert release.wait(timeout=15)
+            color = 30 if number == 1 else 220
+            _, png = cv2.imencode(".png", np.full((100, 200, 3), color, dtype=np.uint8))
+            payload = png.tobytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    examples = [
+        {
+            "image": {
+                "type": "url",
+                "value": f"http://127.0.0.1:{server.server_port}/reference.png",
+            },
+            "annotations": ANNOTATIONS,
+        }
+    ]
+    parameters = {"image": _target_image()}
+
+    try:
+        # Only the destination policy is relaxed for the local test server. The
+        # actual HTTP transport, image codec, rendering and engine all execute.
+        with mock.patch.multiple(
+            image_utils,
+            OFFLINE_MODE=False,
+            ALLOW_URL_INPUT=True,
+            ALLOW_NON_HTTPS_URL_INPUT=True,
+            ALLOW_URL_INPUT_WITHOUT_FQDN=True,
+            ALLOW_URL_TO_NON_GLOBAL_ADDRESSES=True,
+            WHITELISTED_DESTINATIONS_FOR_URL_INPUT=None,
+            BLACKLISTED_DESTINATIONS_FOR_URL_INPUT=None,
+            VALIDATE_IMAGE_URL_REDIRECTS=True,
+        ), mock.patch.object(
+            SHARED_REFERENCE_PARTS_CACHE, "_clock", new=lambda: now[0]
+        ), mock.patch(
+            REQUESTS_SEAMS[block], return_value=[("[]", 1, 1)]
+        ) as requests, ThreadPoolExecutor(
+            max_workers=2
+        ) as pool:
+            first_engine, second_engine = _engine(block, examples), _engine(
+                block, examples
+            )
+            first = pool.submit(first_engine.run, runtime_parameters=parameters)
+            try:
+                assert started.wait(timeout=5)
+                now[0] = 61.0
+                second = pool.submit(second_engine.run, runtime_parameters=parameters)
+                second.result(timeout=5)
+                assert not first.done()
+                assert len(fetched) == 2
+                assert abs(_blue_of_first_reference(block, requests, 0) - 220) < 8
+            finally:
+                release.set()
+            first.result(timeout=5)
+            assert abs(_blue_of_first_reference(block, requests, 1) - 30) < 8
+            _engine(block, examples).run(runtime_parameters=parameters)
+            assert abs(_blue_of_first_reference(block, requests, 2) - 220) < 8
+            assert len(fetched) == 2
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=5)
 
 
 @BLOCKS

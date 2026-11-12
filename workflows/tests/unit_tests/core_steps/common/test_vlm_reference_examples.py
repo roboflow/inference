@@ -1,4 +1,5 @@
 import base64
+import sys
 import threading
 import weakref
 from concurrent.futures import ThreadPoolExecutor
@@ -87,9 +88,9 @@ def waiting_callers() -> Iterator[threading.Semaphore]:
     waiting = threading.Semaphore(0)
     wait = vlm_reference_examples._PendingBuild.wait
 
-    def counted_wait(pending: Any) -> List[dict]:
+    def counted_wait(pending: Any, **kwargs: Any) -> List[dict]:
         waiting.release()
-        return wait(pending)
+        return wait(pending, **kwargs)
 
     with patch.object(vlm_reference_examples._PendingBuild, "wait", new=counted_wait):
         yield waiting
@@ -790,9 +791,9 @@ def test_reference_parts_cache_drops_the_least_recently_used_entry_first() -> No
 
 def test_reference_parts_cache_keeps_its_parts_within_max_bytes() -> None:
     # given
-    cache = ReferencePartsCache(max_bytes=10)
+    cache = ReferencePartsCache(max_bytes=2 * sys.getsizeof("aaaa"))
     builds: List[str] = []
-    too_large = "x" * 11
+    too_large = "x" * 200
 
     # when
     for key in ["aaaa", "bbbb", "cccc", too_large, too_large, "bbbb", "aaaa"]:
@@ -800,6 +801,185 @@ def test_reference_parts_cache_keeps_its_parts_within_max_bytes() -> None:
 
     # then
     assert builds == ["aaaa", "bbbb", "cccc", too_large, too_large, "aaaa"]
+
+
+@pytest.mark.parametrize("text", ["a" * 100, "é" * 100, "漢" * 100, "😀" * 100])
+def test_reference_parts_cache_accounts_for_unicode_storage(text: str) -> None:
+    cache = ReferencePartsCache(max_bytes=sys.getsizeof(text) - 1)
+    builds: List[str] = []
+    for _ in range(2):
+        assert cache.get_or_build("key", build=_recording_build(text, builds)) == [
+            {"text": text}
+        ]
+    assert builds == [text, text]
+    assert not cache._entries
+    assert cache._size == 0
+
+
+@pytest.mark.parametrize(
+    "parts_for", [gemini_reference_parts_for, openai_reference_parts_for]
+)
+def test_rendered_unicode_labels_cannot_exceed_cache_byte_budget(parts_for) -> None:
+    label = "😀" * 2000
+    cache = ReferencePartsCache(max_bytes=6000)
+    example = _example(
+        width=120,
+        height=80,
+        annotations=[{"class": label, "x": 60, "y": 40, "width": 40, "height": 20}],
+    )
+    with patch.object(
+        vlm_reference_examples,
+        "load_reference_example",
+        wraps=load_reference_example,
+    ) as load:
+        first = parts_for([example], labels=[label], cache=cache)
+        second = parts_for([example], labels=[label], cache=cache)
+    assert first == second
+    assert load.call_count == 2
+    assert not cache._entries
+    assert cache._size == 0
+
+
+def test_reference_parts_cache_evicts_by_unicode_bytes_and_releases_on_clear() -> None:
+    text = "😀" * 100
+    cache = ReferencePartsCache(max_bytes=sys.getsizeof(text))
+    builds: List[str] = []
+    for key in ["a", "b", "a"]:
+        cache.get_or_build(key, build=_recording_build(text, builds))
+        assert cache._size == sys.getsizeof(text)
+        assert len(cache._entries) == 1
+        cache.get_or_build(key, build=lambda: pytest.fail("newest entry was evicted"))
+    assert len(builds) == 3
+    cache.clear()
+    assert cache._size == 0
+    assert not cache._entries
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_reference_parts_cache_requires_a_finite_positive_pending_timeout(
+    timeout,
+) -> None:
+    with pytest.raises(ValueError, match="finite and positive"):
+        ReferencePartsCache(pending_timeout_seconds=timeout)
+
+
+def test_waiter_times_out_and_retry_succeeds_before_original_build_finishes() -> None:
+    # A fixed clock keeps the pending lease alive until the real Event wait times out.
+    cache = ReferencePartsCache(pending_timeout_seconds=0.05, clock=lambda: 0.0)
+    started, release = threading.Event(), threading.Event()
+
+    def stalled_build() -> List[dict]:
+        started.set()
+        assert release.wait(timeout=10)
+        return [{"text": "stale"}]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(cache.get_or_build, "key", build=stalled_build)
+        try:
+            assert started.wait(timeout=5)
+            waiter = pool.submit(
+                cache.get_or_build, "key", build=lambda: pytest.fail("duplicate build")
+            )
+            with pytest.raises(TimeoutError, match="Timed out waiting"):
+                waiter.result(timeout=5)
+            fresh = cache.get_or_build("key", build=lambda: [{"text": "fresh"}])
+            assert not first.done()
+        finally:
+            release.set()
+        assert first.result(timeout=5) == [{"text": "stale"}]
+
+    assert (
+        cache.get_or_build("key", build=lambda: pytest.fail("lost replacement"))
+        is fresh
+    )
+    assert cache._size == sys.getsizeof("fresh")
+
+
+@pytest.mark.parametrize("old_fails", [False, True])
+def test_expired_build_cannot_remove_or_overwrite_replacement(
+    old_fails: bool, waiting_callers: threading.Semaphore
+) -> None:
+    now = [0.0]
+    cache = ReferencePartsCache(clock=lambda: now[0])
+    old_started, new_started = threading.Event(), threading.Event()
+    release_old, release_new = threading.Event(), threading.Event()
+
+    def old_build() -> List[dict]:
+        old_started.set()
+        assert release_old.wait(timeout=10)
+        if old_fails:
+            raise OSError("old failure")
+        return [{"text": "old"}]
+
+    def new_build() -> List[dict]:
+        new_started.set()
+        assert release_new.wait(timeout=10)
+        return [{"text": "new"}]
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        old = pool.submit(cache.get_or_build, "key", build=old_build)
+        try:
+            assert old_started.wait(timeout=5)
+            old_waiter = pool.submit(cache.get_or_build, "key", build=new_build)
+            assert waiting_callers.acquire(timeout=5)
+            now[0] = 61.0
+            new = pool.submit(cache.get_or_build, "key", build=new_build)
+            assert new_started.wait(timeout=5)
+            with pytest.raises(TimeoutError, match="Timed out waiting"):
+                old_waiter.result(timeout=5)
+            new_waiter = pool.submit(
+                cache.get_or_build, "key", build=lambda: pytest.fail("duplicate retry")
+            )
+            assert waiting_callers.acquire(timeout=5)
+            release_old.set()
+            if old_fails:
+                with pytest.raises(OSError, match="old failure"):
+                    old.result(timeout=5)
+            else:
+                assert old.result(timeout=5) == [{"text": "old"}]
+            assert not new_waiter.done()
+            release_new.set()
+            assert new.result(timeout=5) == [{"text": "new"}]
+            assert new_waiter.result(timeout=5) is new.result()
+        finally:
+            release_old.set()
+            release_new.set()
+    assert (
+        cache.get_or_build("key", build=lambda: pytest.fail("lost retry"))
+        is new.result()
+    )
+
+
+def test_other_keys_expire_abandoned_pending_builds(
+    waiting_callers: threading.Semaphore,
+) -> None:
+    now = [0.0]
+    cache = ReferencePartsCache(clock=lambda: now[0])
+    started, release = threading.Event(), threading.Event()
+
+    def stalled_build() -> List[dict]:
+        started.set()
+        assert release.wait(timeout=10)
+        return [{"text": "expired"}]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(cache.get_or_build, "stalled", build=stalled_build)
+        try:
+            assert started.wait(timeout=5)
+            waiter = pool.submit(cache.get_or_build, "stalled", build=stalled_build)
+            assert waiting_callers.acquire(timeout=5)
+            now[0] = 61.0
+            cache.get_or_build("unrelated", build=lambda: [{"text": "healthy"}])
+            with pytest.raises(TimeoutError, match="Timed out waiting"):
+                waiter.result(timeout=5)
+            assert not cache._pending
+        finally:
+            release.set()
+        first.result(timeout=5)
+    assert len(cache._entries) == 1
+    assert cache.get_or_build(
+        "unrelated", build=lambda: pytest.fail("healthy entry was evicted")
+    ) == [{"text": "healthy"}]
 
 
 def test_reference_parts_cache_builds_a_key_once_for_concurrent_callers(

@@ -14,6 +14,8 @@ blocks keep the rendered parts for the whole process in
 import base64
 import hashlib
 import json
+import math
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -49,6 +51,7 @@ SELECTOR_PREFIXES = ("$inputs.", "$steps.")
 REFERENCE_PARTS_CACHE_ENTRIES = 8
 REFERENCE_PARTS_CACHE_MAX_BYTES = 32 * 1024 * 1024
 REFERENCE_PARTS_CACHE_TTL_SECONDS = 15 * 60
+REFERENCE_PARTS_PENDING_TIMEOUT_SECONDS = 60.0
 
 REFERENCE_CROPS_INTRO = (
     "Reference examples: crops of labeled objects taken from other images of the "
@@ -181,21 +184,30 @@ class _CachedParts:
 class _PendingBuild:
     """A build in progress; callers asking for its key wait for its outcome."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, expires_at: float) -> None:
+        self.expires_at = expires_at
         self._done = threading.Event()
         self._parts: List[dict] = []
         self._error: Optional[BaseException] = None
 
     def finish(self, parts: List[dict]) -> None:
+        if self._done.is_set():
+            return
+
         self._parts = parts
         self._done.set()
 
     def fail(self, error: BaseException) -> None:
+        if self._done.is_set():
+            return
+
         self._error = error
         self._done.set()
 
-    def wait(self) -> List[dict]:
-        self._done.wait()
+    def wait(self, *, timeout: float) -> List[dict]:
+        if not self._done.wait(timeout=timeout):
+            raise TimeoutError("Timed out waiting for reference examples to render")
+
         if self._error is not None:
             raise self._error
 
@@ -223,6 +235,10 @@ class ReferencePartsCache:
     parts larger than ``max_bytes`` are not kept. Callers that ask for a key while it
     is being built wait for that build and get its parts or its error, while other keys
     build at the same time. A failed build is not kept, so the next call builds again.
+    Waiting ends with TimeoutError at most ``pending_timeout_seconds`` after the
+    build started. Expired builds no longer own their key, so later callers can
+    retry. A late result is returned only to its original caller and never cached.
+    The cache does not cancel synchronous host image loading or start worker threads.
     """
 
     def __init__(
@@ -231,19 +247,30 @@ class ReferencePartsCache:
         max_entries: int = REFERENCE_PARTS_CACHE_ENTRIES,
         max_bytes: int = REFERENCE_PARTS_CACHE_MAX_BYTES,
         ttl_seconds: float = REFERENCE_PARTS_CACHE_TTL_SECONDS,
+        pending_timeout_seconds: float = REFERENCE_PARTS_PENDING_TIMEOUT_SECONDS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Create an empty cache.
 
         Args:
             max_entries: Most example sets kept at once.
-            max_bytes: Most characters the kept parts hold in total.
+            max_bytes: Most bytes occupied by retained string values, including
+                their Python object headers and Unicode representation.
             ttl_seconds: How long an entry serves after it is built.
+            pending_timeout_seconds: How long other callers may wait for a build,
+                measured from its start. Must be finite and positive.
             clock: Monotonic time in seconds.
+
+        Raises:
+            ValueError: If pending_timeout_seconds is not finite and positive.
         """
+        if not math.isfinite(pending_timeout_seconds) or pending_timeout_seconds <= 0:
+            raise ValueError("pending_timeout_seconds must be finite and positive")
+
         self._max_entries = max_entries
         self._max_bytes = max_bytes
         self._ttl_seconds = ttl_seconds
+        self._pending_timeout_seconds = pending_timeout_seconds
         self._clock = clock
         self._lock = threading.Lock()
         self._entries: "OrderedDict[str, _CachedParts]" = OrderedDict()
@@ -265,6 +292,7 @@ class ReferencePartsCache:
             callers.
 
         Raises:
+            TimeoutError: If the shared build exceeds its pending deadline.
             Exception: Whatever ``build`` raised, also in the callers that waited
                 for that build.
         """
@@ -284,26 +312,51 @@ class ReferencePartsCache:
             pending = self._pending.get(digest)
             is_builder = pending is None
             if pending is None:
-                pending = _PendingBuild()
+                pending = _PendingBuild(
+                    expires_at=self._clock() + self._pending_timeout_seconds
+                )
                 self._pending[digest] = pending
 
         if not is_builder:
-            parts = pending.wait()
+            try:
+                parts = pending.wait(
+                    timeout=max(0.0, pending.expires_at - self._clock())
+                )
+            except TimeoutError as error:
+                with self._lock:
+                    if self._pending.get(digest) is pending:
+                        del self._pending[digest]
+                        pending.fail(error)
+                raise
+
             return parts
 
         try:
             parts = build()
+            size = _parts_size(parts)
         except BaseException as error:
             with self._lock:
-                del self._pending[digest]
-            pending.fail(error)
+                if self._pending.get(digest) is pending:
+                    del self._pending[digest]
+                pending.fail(error)
             raise
 
-        size = _parts_size(parts)
         with self._lock:
-            del self._pending[digest]
-            self._keep(digest, parts=parts, size=size)
-        pending.finish(parts)
+            if self._pending.get(digest) is pending:
+                del self._pending[digest]
+                if pending.expires_at <= self._clock():
+                    pending.fail(
+                        TimeoutError(
+                            "Timed out waiting for reference examples to render"
+                        )
+                    )
+                else:
+                    try:
+                        self._keep(digest, parts=parts, size=size)
+                    except BaseException as error:
+                        pending.fail(error)
+                        raise
+                    pending.finish(parts)
         return parts
 
     def clear(self) -> None:
@@ -319,6 +372,17 @@ class ReferencePartsCache:
         ]
         for digest in expired:
             self._size -= self._entries.pop(digest).size
+
+        expired_pending = [
+            digest
+            for digest, pending in self._pending.items()
+            if pending.expires_at <= now
+        ]
+        for digest in expired_pending:
+            pending = self._pending.pop(digest)
+            pending.fail(
+                TimeoutError("Timed out waiting for reference examples to render")
+            )
 
     def _keep(self, digest: str, *, parts: List[dict], size: int) -> None:
         if size > self._max_bytes:
@@ -736,9 +800,10 @@ def _cache_key(
 
 
 def _parts_size(value: Any) -> int:
-    # Characters of every string; the base64 images make up nearly all of them.
+    # Count retained storage without allocating an encoded copy of large images.
+    # Summing repeated references conservatively overcounts shared strings.
     if isinstance(value, str):
-        size = len(value)
+        size = sys.getsizeof(value)
     elif isinstance(value, dict):
         size = sum(_parts_size(item) for item in value.values())
     elif isinstance(value, (list, tuple)):
