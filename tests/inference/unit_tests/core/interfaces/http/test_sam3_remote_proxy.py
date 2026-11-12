@@ -54,8 +54,7 @@ def remote_client(monkeypatch):
 
     def install_proxy(body: dict) -> _RecordingPost:
         post = _RecordingPost(body=body)
-        # Keep background telemetry on its own requests module binding.
-        monkeypatch.setattr(http_api, "requests", SimpleNamespace(post=post))
+        monkeypatch.setattr(http_api.requests, "post", post)
         return post
 
     return client, install_proxy
