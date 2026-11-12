@@ -56,12 +56,15 @@ jobs:
             dist/sdk/*.whl
             dist/sdk-manifest.json
             dist/version.txt
+      - name: Report build-only result
+        if: ${{ env.PUBLISH == 'false' }}
+        run: echo "SDK wheel built. Nothing was published (publish=false)." >> "$GITHUB_STEP_SUMMARY"
 
   publish_sdk:
     needs: build_sdk
     if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || inputs.publish == true) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -82,8 +85,10 @@ jobs:
           bash .release/pypi/release.sh prepare-sdk --wait-seconds 600
           echo "upload=$(jq -r '.upload' dist/sdk-decision.json)" >> "$GITHUB_OUTPUT"
       - name: Publish the missing SDK wheel
+        id: upload
         if: ${{ steps.prepare.outputs.upload == 'true' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: dist/sdk-upload/
       - name: Verify the published bytes and package contents
@@ -126,6 +131,9 @@ jobs:
             dist/sdk/*.whl
             dist/*-manifest.json
             dist/version.txt
+      - name: Report build-only result
+        if: ${{ env.PUBLISH == 'false' }}
+        run: echo "Runtime wheels built. Nothing was published (publish=false)." >> "$GITHUB_STEP_SUMMARY"
 
   prepare_dependencies:
     needs: [build_runtime, publish_sdk]
@@ -220,6 +228,6 @@ jobs:
             dist/dependency-plan.json
             dist/dependency-receipt.json
       - name: Publish the five runtime and CLI wheels
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: dist/pypi/

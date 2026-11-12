@@ -9,6 +9,9 @@ on:
       - .github/docker/Dockerfile.sdk-tests
       - .github/scripts/run_sdk_tests.sh
       - .github/scripts/test_pypi_release.py
+      - .github/scripts/test_pypi_workflow_conditions.mjs
+      - .github/pypi-workflow-tests/**
+      - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - inference_models/pyproject.toml
       - workflows/pyproject.toml
@@ -27,6 +30,9 @@ on:
       - .github/docker/Dockerfile.sdk-tests
       - .github/scripts/run_sdk_tests.sh
       - .github/scripts/test_pypi_release.py
+      - .github/scripts/test_pypi_workflow_conditions.mjs
+      - .github/pypi-workflow-tests/**
+      - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - inference_models/pyproject.toml
       - workflows/pyproject.toml
@@ -52,6 +58,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Test publication conditions and regression mutations in Docker
+        run: |
+          docker build --tag inference-pypi-workflow-tests --file .github/docker/Dockerfile.pypi-workflow-tests .github
+          image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-workflow-tests)
+          echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" "$image_id"
       - name: Test package inventories and registry failure boundaries in Docker
         run: |
           docker build --tag inference-pypi-tests --file .release/pypi/Dockerfile .release/pypi
