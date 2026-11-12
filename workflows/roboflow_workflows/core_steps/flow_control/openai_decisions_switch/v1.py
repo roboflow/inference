@@ -6,6 +6,7 @@ that names no case, falls below the minimum confidence or is a refusal goes to
 the default steps.
 """
 
+import math
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
@@ -95,8 +96,8 @@ this block decides from the image itself and from what earlier steps found in it
 3. Continues to the step of the chosen case when the model gives it a probability of at least
    `min_confidence`, and terminates the other branches.
 4. Continues to `default_next_steps` when the model chooses "{NONE_OPTION}", stays below
-   `min_confidence`, refuses to answer or returns an answer the block cannot read. When
-   `default_next_steps` is empty, the branch terminates for that image.
+   `min_confidence`, returns an invalid probability, refuses to answer or returns an answer
+   the block cannot read. When `default_next_steps` is empty, the branch terminates for that image.
 
 A failed request fails the workflow run, as it does in the other OpenAI blocks.
 
@@ -537,8 +538,8 @@ def read_selected_case(decision: Any, *, min_confidence: float) -> Optional[str]
 
     Returns:
         The chosen option, or ``None`` when the response holds no choice, its
-        probabilities cannot be read, or the choice's probability is below
-        ``min_confidence``.
+        probabilities cannot be read, or the choice's probability is non-finite,
+        outside [0, 1], or below ``min_confidence``.
     """
     answers = decision.get("answers") if isinstance(decision, dict) else None
     answer = answers[0] if isinstance(answers, list) and answers else None
@@ -563,7 +564,11 @@ def read_selected_case(decision: Any, *, min_confidence: float) -> Optional[str]
         return None
 
     choice = answer.get("choice")
-    if probabilities.get(choice, 0.0) < min_confidence:
+    probability = probabilities.get(choice, 0.0)
+    if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+        return None
+
+    if probability < min_confidence:
         return None
 
     return choice

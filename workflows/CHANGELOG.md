@@ -30,7 +30,7 @@ for contributor and maintainer responsibilities.
   - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
   - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
 - OpenAI Decisions Switch block (`roboflow_core/open_ai_decisions_switch@v1`): routes each image to a branch by asking OpenAI's Decisions API one `choice` question over `cases`.
-  - The model always has a "none of these" option. That answer, a probability below `min_confidence` (0.9 by default), a refusal or an answer the block cannot read runs `default_next_steps`, or terminates the branch for that image when there are none.
+  - The model always has a "none of these" option. That answer, a probability below `min_confidence` (0.9 by default), a non-finite probability or one outside [0, 1], a refusal or an answer the block cannot read runs `default_next_steps`, or terminates the branch for that image when there are none.
   - `case_descriptions` tells the model what a case means, and `context` sends values from earlier steps with each image as JSON, per image for batch-oriented values. Nested NumPy arrays and scalars are converted to JSON-compatible lists and values.
   - Like every flow control block it has no outputs; use the OpenAI Decisions block with Switch Case to keep the probabilities.
 
