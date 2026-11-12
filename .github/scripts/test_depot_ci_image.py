@@ -605,46 +605,6 @@ class WorkflowTests(unittest.TestCase):
             "${{ needs.test-image.outputs.amd64_digest }}",
         )
 
-    def test_aggregate_gate_fails_for_incomplete_specialized_gpu_suites(self):
-        gate = _load("ci_image_reuse.yml")["jobs"]["image-tests-complete"]["steps"][0]
-        with TemporaryDirectory() as directory:
-            env = {
-                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                "GITHUB_STEP_SUMMARY": str(Path(directory) / "summary"),
-                **{
-                    key: "success"
-                    for key in [
-                        "CPU_BUILD",
-                        "GPU_BUILD",
-                        "CPU_TESTS",
-                        "GPU_TESTS",
-                        "COLAB_GPU",
-                        "PARALLEL_GPU",
-                    ]
-                },
-                **{
-                    key: DIGEST
-                    for key in ["CPU_DIGEST", "CPU_ARM64_DIGEST", "GPU_DIGEST"]
-                },
-            }
-            result = subprocess.run(
-                ["bash", "-e", "-c", gate["run"]],
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            for key in ["COLAB_GPU", "PARALLEL_GPU"]:
-                for status in ["failure", "skipped", "cancelled", ""]:
-                    with self.subTest(suite=key, result=status):
-                        result = subprocess.run(
-                            ["bash", "-e", "-c", gate["run"]],
-                            env={**env, key: status},
-                            capture_output=True,
-                            text=True,
-                        )
-                        self.assertNotEqual(result.returncode, 0)
-
     def test_one_project_from_the_orchestrator_and_no_stored_depot_tokens(self):
         orchestrator = _load("ci_image_reuse.yml")
         projects = {

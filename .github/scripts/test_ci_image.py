@@ -622,6 +622,8 @@ class WorkflowContractTests(unittest.TestCase):
                 "GPU_BUILD": "success",
                 "CPU_TESTS": "success",
                 "GPU_TESTS": "success",
+                "COLAB_GPU": "success",
+                "PARALLEL_GPU": "success",
                 "CPU_DIGEST": DIGEST,
                 "CPU_ARM64_DIGEST": ARM_DIGEST,
                 "GPU_DIGEST": DIGEST,
@@ -632,7 +634,14 @@ class WorkflowContractTests(unittest.TestCase):
                 ).returncode,
                 0,
             )
-            for key in ("CPU_BUILD", "GPU_BUILD", "CPU_TESTS", "GPU_TESTS"):
+            for key in (
+                "CPU_BUILD",
+                "GPU_BUILD",
+                "CPU_TESTS",
+                "GPU_TESTS",
+                "COLAB_GPU",
+                "PARALLEL_GPU",
+            ):
                 for outcome in ("failure", "skipped", "cancelled", ""):
                     with self.subTest(key=key, outcome=outcome):
                         result = subprocess.run(
