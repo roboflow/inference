@@ -1,0 +1,68 @@
+name: Test PyPI release contracts
+on:
+  pull_request:
+    paths:
+      - .release/pypi/**
+      - .github/workflows/publish.pypi*.yml
+      - .github/workflows/test.pypi.release.yml
+      - .github/workflows/*inference_sdk*.yml
+      - .github/docker/Dockerfile.sdk-tests
+      - .github/scripts/run_sdk_tests.sh
+      - .github/scripts/test_pypi_release.py
+      - .github/scripts/test_pypi_workflow_conditions.mjs
+      - .github/pypi-workflow-tests/**
+      - .github/docker/Dockerfile.pypi-workflow-tests
+      - Makefile
+      - requirements/**
+      - inference/core/version.py
+      - inference_sdk/**
+  push:
+    branches: [main]
+    paths:
+      - .release/pypi/**
+      - .github/workflows/publish.pypi*.yml
+      - .github/workflows/test.pypi.release.yml
+      - .github/workflows/*inference_sdk*.yml
+      - .github/docker/Dockerfile.sdk-tests
+      - .github/scripts/run_sdk_tests.sh
+      - .github/scripts/test_pypi_release.py
+      - .github/scripts/test_pypi_workflow_conditions.mjs
+      - .github/pypi-workflow-tests/**
+      - .github/docker/Dockerfile.pypi-workflow-tests
+      - Makefile
+      - requirements/**
+      - inference/core/version.py
+      - inference_sdk/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Test publication conditions and regression mutations in Docker
+        run: |
+          docker build --tag inference-pypi-workflow-tests --file .github/docker/Dockerfile.pypi-workflow-tests .github
+          image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-workflow-tests)
+          echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" "$image_id"
+      - name: Test package inventories and registry failure boundaries in Docker
+        run: |
+          docker build --tag inference-pypi-tests --file .release/pypi/Dockerfile .release/pypi
+          image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-tests)
+          echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
+          docker run --rm -e SOURCE_REVISION="$GITHUB_SHA" \
+            -v "$GITHUB_WORKSPACE:/work" -w /work "$image_id" \
+            sh -c 'python -m black --check .release/pypi/release.py .github/scripts/test_pypi_release.py &&
+              python -m isort --check-only .release/pypi/release.py .github/scripts/test_pypi_release.py &&
+              python -m pytest .github/scripts/test_pypi_release.py -v'
