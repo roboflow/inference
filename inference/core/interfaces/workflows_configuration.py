@@ -57,6 +57,11 @@ def build_configuration_from_env() -> WorkflowsConfiguration:
             disabled_block_patterns=tuple(env.WORKFLOW_DISABLED_BLOCK_PATTERNS),
             allow_webhook_sink_to_non_global_addresses=env.ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
             allow_postgresql_sink_to_non_global_addresses=env.ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES,
+            databricks_sql_image_source_enabled=env.DATABRICKS_SQL_IMAGE_SOURCE_ENABLED,
+            allow_databricks_source_to_non_global_addresses=env.ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES,
+            databricks_sql_image_source_max_run_bytes=env.DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES,
+            databricks_sql_image_source_max_image_bytes=env.DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES,
+            databricks_sql_image_source_max_image_pixels=env.DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS,
             # env.py leaves these as None when unset / as `set` when the env
             # var is present. Copy as sorted tuple for frozen equality;
             # the workflows environment facade reconstructs a `set` for the

@@ -257,6 +257,26 @@ def test_server_configuration_builder_includes_enterprise_policy() -> None:
         is env.ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES
     )
     assert cfg.platform.lambda_runtime is env.LAMBDA
+    assert (
+        cfg.engine.databricks_sql_image_source_enabled
+        is env.DATABRICKS_SQL_IMAGE_SOURCE_ENABLED
+    )
+    assert (
+        cfg.engine.allow_databricks_source_to_non_global_addresses
+        is env.ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES
+    )
+    assert (
+        cfg.engine.databricks_sql_image_source_max_run_bytes
+        == env.DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES
+    )
+    assert (
+        cfg.engine.databricks_sql_image_source_max_image_bytes
+        == env.DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES
+    )
+    assert (
+        cfg.engine.databricks_sql_image_source_max_image_pixels
+        == env.DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS
+    )
     if env.POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES is None:
         assert cfg.engine.postgresql_sink_blacklisted_addresses is None
     else:

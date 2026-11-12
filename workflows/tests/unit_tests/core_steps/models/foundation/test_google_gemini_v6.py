@@ -15,7 +15,10 @@ import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common import vlm_reference_examples
-from roboflow_workflows.core_steps.common.vlm_reference_examples import ReferenceExample
+from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    SHARED_REFERENCE_PARTS_CACHE,
+    ReferenceExample,
+)
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     DETECTION_BOX_FORMAT,
     BlockManifest,
@@ -59,6 +62,14 @@ IMAGE_WIDTH = 800
 IMAGE_HEIGHT = 400
 DETECTION_OUTPUT = json.dumps([{"box_2d": [250, 100, 750, 500], "label": "cat"}])
 EXPECTED_XYXY = [80.0, 100.0, 400.0, 300.0]
+
+
+@pytest.fixture(autouse=True)
+def _empty_reference_parts_cache():
+    # Every block instance of the process shares this cache.
+    SHARED_REFERENCE_PARTS_CACHE.clear()
+    yield
+    SHARED_REFERENCE_PARTS_CACHE.clear()
 
 
 def _build_image(
@@ -633,7 +644,7 @@ def test_run_accepts_a_numpy_reference_image() -> None:
     assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
 
 
-def test_reference_images_load_once_per_block_instance() -> None:
+def test_reference_images_load_once_for_all_block_instances() -> None:
     # given
     first_block = GoogleGeminiBlockV6(api_key="rf-key")
     second_block = GoogleGeminiBlockV6(api_key="rf-key")
@@ -644,14 +655,17 @@ def test_reference_images_load_once_per_block_instance() -> None:
         "load_image",
         side_effect=vlm_reference_examples.load_image,
     ) as load_image:
+        _, first_parts = _run_detection_with_mock(
+            [_reference_example()], block=first_block
+        )
         _run_detection_with_mock([_reference_example()], block=first_block)
-        _run_detection_with_mock([_reference_example()], block=first_block)
-        loads_of_the_first_block = load_image.call_count
-        _run_detection_with_mock([_reference_example()], block=second_block)
+        _, second_parts = _run_detection_with_mock(
+            [_reference_example()], block=second_block
+        )
 
     # then
-    assert loads_of_the_first_block == 1
-    assert load_image.call_count == 2
+    assert load_image.call_count == 1
+    assert second_parts[:3] == first_parts[:3]
 
 
 def test_run_rejects_resolved_reference_examples_for_other_tasks() -> None:
