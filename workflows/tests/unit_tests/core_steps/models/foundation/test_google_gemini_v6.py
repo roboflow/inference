@@ -17,6 +17,7 @@ from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     GEMINI_MODELS,
     MODEL_VERSION_IDS,
     MODEL_VERSION_METADATA,
+    MODELS_SUPPORTING_NATIVE_CODE_EXECUTION,
     SEGMENTATION_MODEL_IDS,
     BlockManifest,
     GoogleGeminiBlockV6,
@@ -321,7 +322,10 @@ def test_manifest_accepts_gemini_3_8_flash() -> None:
 
 @pytest.mark.parametrize("model", ["gemini-2.5-pro", "gemini-3.8-flash"])
 def test_segmentation_rejects_other_gemini_models(model: str) -> None:
-    with pytest.raises(ValueError, match="only for gemini-4-argon and gemini-4-carbon"):
+    with pytest.raises(
+        ValueError,
+        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+    ):
         BlockManifest.model_validate(
             {
                 "type": "roboflow_core/google_gemini@v6",
@@ -489,7 +493,10 @@ def test_argon_segmentation_block_and_empty_output() -> None:
 
 
 def test_segmentation_runtime_rejects_resolved_other_model() -> None:
-    with pytest.raises(ValueError, match="only for gemini-4-argon and gemini-4-carbon"):
+    with pytest.raises(
+        ValueError,
+        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+    ):
         _run_block(
             task_type="instance-segmentation",
             raw_output="[]",
@@ -546,14 +553,18 @@ def _run_segmentation(model_version: str) -> dict:
     return execute.call_args.kwargs["gemini_prompts"][0]
 
 
-def test_carbon_is_first_listed_model() -> None:
-    assert GEMINI_MODELS[0]["id"] == "gemini-4-carbon"
-    assert MODEL_VERSION_IDS[0] == "gemini-4-carbon"
+def test_carbon_is_second_listed_model() -> None:
+    assert GEMINI_MODELS[1]["id"] == "gemini-4-carbon"
+    assert MODEL_VERSION_IDS[1] == "gemini-4-carbon"
     assert MODEL_VERSION_METADATA["gemini-4-carbon"]["name"] == "Gemini 4 Carbon"
 
 
-def test_segmentation_models_are_argon_and_carbon() -> None:
-    assert SEGMENTATION_MODEL_IDS == {"gemini-4-argon", "gemini-4-carbon"}
+def test_segmentation_models_are_argon_carbon_and_hydrogen() -> None:
+    assert SEGMENTATION_MODEL_IDS == {
+        "gemini-4-argon",
+        "gemini-4-carbon",
+        "gemini-4-hydrogen",
+    }
 
 
 @pytest.mark.parametrize("level", CARBON_THINKING_LEVELS)
@@ -630,7 +641,9 @@ def test_carbon_segmentation_prompt_accepts_model() -> None:
 
 
 def test_segmentation_prompt_rejects_other_model() -> None:
-    with pytest.raises(ValueError, match="gemini-4-argon or gemini-4-carbon"):
+    with pytest.raises(
+        ValueError, match="gemini-4-argon, gemini-4-carbon or gemini-4-hydrogen"
+    ):
         prepare_instance_segmentation_prompt(
             base64_image="aW1hZ2U=",
             classes=["ring"],
@@ -642,5 +655,68 @@ def test_segmentation_prompt_rejects_other_model() -> None:
 
 
 def test_run_gemini_prompting_rejects_segmentation_for_other_model() -> None:
-    with pytest.raises(ValueError, match="only for gemini-4-argon and gemini-4-carbon"):
+    with pytest.raises(
+        ValueError,
+        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+    ):
         _run_segmentation("gemini-3.8-flash")
+
+
+def test_hydrogen_is_first_listed_model() -> None:
+    assert GEMINI_MODELS[0]["id"] == "gemini-4-hydrogen"
+    assert MODEL_VERSION_IDS[0] == "gemini-4-hydrogen"
+    assert MODEL_VERSION_METADATA["gemini-4-hydrogen"]["name"] == "Gemini 4 Hydrogen"
+
+
+@pytest.mark.parametrize("level", CARBON_THINKING_LEVELS)
+def test_hydrogen_accepts_its_thinking_levels(level: str) -> None:
+    manifest = BlockManifest.model_validate(
+        _manifest_data("gemini-4-hydrogen", thinking_level=level)
+    )
+
+    assert manifest.thinking_level == level
+
+
+def test_hydrogen_rejects_minimal_thinking_level() -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            _manifest_data("gemini-4-hydrogen", thinking_level="minimal")
+        )
+
+
+def test_hydrogen_does_not_support_native_code_execution() -> None:
+    assert "gemini-4-hydrogen" not in MODELS_SUPPORTING_NATIVE_CODE_EXECUTION
+
+
+def test_hydrogen_segmentation_manifest_and_request() -> None:
+    manifest = BlockManifest.model_validate(
+        _segmentation_manifest_data("gemini-4-hydrogen")
+    )
+    outputs = {output.name: output.kind for output in manifest.get_actual_outputs()}
+    assert RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND in outputs["predictions"]
+
+    payload = _run_segmentation("gemini-4-hydrogen")
+
+    component = payload["generationConfig"]["response_schema"]["items"]["properties"][
+        "mask"
+    ]["items"]
+    assert set(component["required"]) == {"outer", "holes"}
+
+
+def test_hydrogen_segmentation_prompt_accepts_model() -> None:
+    payload = prepare_instance_segmentation_prompt(
+        base64_image="aW1hZ2U=",
+        classes=["ring"],
+        model_version="gemini-4-hydrogen",
+        temperature=0,
+        thinking_level="low",
+        max_tokens=1024,
+    )
+
+    assert "response_schema" in payload["generationConfig"]
+
+
+def test_run_gemini_prompting_accepts_segmentation_for_hydrogen() -> None:
+    payload = _run_segmentation("gemini-4-hydrogen")
+
+    assert "response_schema" in payload["generationConfig"]

@@ -23,6 +23,7 @@ Bundled execution engine: `1.17.1`.
 ### Added
 
 - Gemini 4 Carbon in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `xhigh` and `max` thinking levels.
+- Gemini 4 Hydrogen (`gemini-4-hydrogen`) in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `low`, `medium`, `high`, `xhigh` and `max` thinking levels.
 
 ## `0.2.15.post1`
 
