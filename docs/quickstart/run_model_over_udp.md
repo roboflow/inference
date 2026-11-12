@@ -1,4 +1,4 @@
 ---
 template: redirect.html
-redirect_url: https://docs.roboflow.com/reference/inference/inference-sdk/webrtc
+redirect_url: https://docs.roboflow.com/deployment/cloud-streaming
 ---

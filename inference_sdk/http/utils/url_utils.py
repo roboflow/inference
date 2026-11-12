@@ -338,32 +338,6 @@ def fetch_url_bytes(url: str, request_timeout: Optional[float] = None) -> bytes:
             session.close()
 
 
-def fetch_url_to_file(
-    url: str, destination_path: str, request_timeout: Optional[float] = None
-) -> None:
-    """Validate ``url`` and stream its content to ``destination_path`` with the
-    same SSRF protections as :func:`fetch_url_bytes`. Suitable for large files
-    (e.g. videos) that should not be buffered in memory.
-    """
-    with _map_url_fetch_errors(resource_name="file"):
-        prepared_url = validate_url_destination(url)
-        session = _build_sync_session(config.ALLOW_URL_TO_NON_GLOBAL_ADDRESSES)
-        try:
-            response = _open_url_response_sync(
-                session=session, url=prepared_url, request_timeout=request_timeout
-            )
-            with response, open(destination_path, "wb") as f:
-                for chunk in response.iter_content(
-                    chunk_size=_FILE_DOWNLOAD_CHUNK_SIZE
-                ):
-                    f.write(chunk)
-        finally:
-            session.close()
-
-
-_FILE_DOWNLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MiB
-
-
 @contextlib.contextmanager
 def _map_url_fetch_errors(resource_name: str) -> Iterator[None]:
     try:

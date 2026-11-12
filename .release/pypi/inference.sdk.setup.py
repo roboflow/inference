@@ -76,7 +76,7 @@ setuptools.setup(
     ),
     install_requires=read_requirements(["requirements/requirements.sdk.http.txt"]),
     extras_require={
-        "webrtc": read_requirements(["requirements/requirements.sdk.webrtc.txt"]),
+        "streaming": read_requirements(["requirements/requirements.sdk.streaming.txt"]),
     },
     classifiers=[
         "Development Status :: 5 - Production/Stable",

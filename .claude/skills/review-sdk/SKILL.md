@@ -2,7 +2,7 @@
 name: review-sdk
 description: >-
   Load for PRs touching inference_sdk/** (http/client.py InferenceHTTPClient, http/entities.py,
-  http/errors.py, http/utils/**, config.py, webrtc/**), tests/inference_sdk/**,
+  http/errors.py, http/utils/**, config.py, cloud_streaming/**), tests/inference_sdk/**,
   docs/inference_helpers/inference_sdk*, .release/pypi/inference.sdk.setup.py, or
   requirements/requirements.sdk.*.txt. Diff signals: a new client method, a new/renamed
   HTTPClientError subclass, a new InferenceConfiguration field, response.raise_for_status,
@@ -13,14 +13,14 @@ description: >-
 
 ## Scope
 PRs touching:
-- `inference_sdk/**` — the pip-installable `inference-sdk` package: `http/client.py`, `http/entities.py`, `http/errors.py`, `http/utils/**`, `config.py`, `webrtc/**`.
+- `inference_sdk/**` — the pip-installable `inference-sdk` package: `http/client.py`, `http/entities.py`, `http/errors.py`, `http/utils/**`, `config.py`, `cloud_streaming/**`.
 - `tests/inference_sdk/**`, `docs/inference_helpers/inference_sdk*` (top-level `inference_sdk.md` + `inference_sdk/` sub-pages), `.release/pypi/inference.sdk.setup.py`, `requirements/requirements.sdk.*.txt`.
 
 Legacy name: the package was `inference_client/` (renamed in #85). Treat any `inference_client/` path as stale.
 
 OUT of scope (other skills): server-side model code under `inference/models/**` and `inference/core/**` (review only the `inference_sdk/` side even in mixed PRs like #212), Workflows blocks, and `inference_cli/`.
 
-`inference_sdk` is a **thin, dependency-light HTTP/WebRTC client** for a Roboflow inference server. It must not import heavy `inference.core.*` / model code.
+`inference_sdk` is a **thin, dependency-light client** for a Roboflow inference server and the Cloud Streaming API. It must not import heavy `inference.core.*` / model code.
 
 ## Review checklist
 Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (optional).
@@ -32,7 +32,7 @@ Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (opt
 - **BLOCK** — No existing `HTTPClientError` subclass renamed/removed (public taxonomy; callers catch these).
 - **FLAG** — `InferenceConfiguration` field wired into the right `to_*_parameters()` mapping(s), correct `Optional`/default, dataclass still `frozen=True`.
 - **FLAG** — Deprecation/removal uses `@deprecated` / `@experimental` / `FeatureDeprecatedError` (warning vs hard error), not a bare `ValueError`.
-- **FLAG** — New public symbol exported in `inference_sdk/__init__.py` (and `webrtc/__init__.py` `__all__` for WebRTC).
+- **FLAG** — New public symbol exported in `inference_sdk/__init__.py` (and `cloud_streaming/__init__.py` `__all__` for Cloud Streaming).
 - **FLAG** — Tests added/updated under `tests/inference_sdk/unit_tests/**` for the new path.
 - **FLAG** — New runtime dependency pinned in `requirements/requirements.sdk.*.txt`; no heavy `inference.core`/model import pulled into the SDK.
 - **FLAG** — Sync HTTP path preserves per-thread `requests.Session` reuse (does not reintroduce a per-call `Session()` or force single requests through a `ThreadPoolExecutor`).
@@ -63,17 +63,17 @@ Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (opt
 
 - **HTTP session reuse + timeouts (sync path).** The sync executor keeps a per-thread `requests.Session` via `_get_thread_local_requests_session` and runs a single-request package on the caller thread (`make_parallel_requests` short-circuits when `len==1`, avoiding a one-off `ThreadPoolExecutor`) so sequential workflow frames reuse TCP/TLS connections. `requests.Session` is **not** thread-safe, so parallel requests stay isolated per worker thread and reset the session on exit (`_reset_thread_local_requests_session`). A change that reintroduces a per-call `Session()`, shares one `Session` across threads, or routes single requests through the pool regresses this (#2538 recovered ~71% sequential FPS by reusing sync sessions). Retries flow through `send_post_request(..., enable_retries=...)`, which maps `RetryError` → `HTTPCallErrorError` (#1521). Note the async path still opens a fresh `aiohttp.ClientSession()` per call — do not assume it reuses connections.
 
-- **Exports.** Top-level re-exports in `inference_sdk/__init__.py` (`InferenceHTTPClient`, `InferenceConfiguration`, `VisualisationResponseFormat`); WebRTC classes in both the `from .sources import ...` block and `__all__` of `inference_sdk/webrtc/__init__.py` (#2200 added `LocalStreamSource` to both).
+- **Exports.** Top-level re-exports in `inference_sdk/__init__.py` (`InferenceHTTPClient`, `CloudStreamingClient`, `InferenceConfiguration`, `VisualisationResponseFormat`); Cloud Streaming classes in both the imports and `__all__` of `inference_sdk/cloud_streaming/__init__.py`.
 
-- **Dependency-light.** Runtime deps pinned in `requirements/requirements.sdk.http.txt` / `.webrtc.txt`; a new third-party import needs a pin. Do not import heavy `inference.core.*`/model modules into `inference_sdk`.
+- **Dependency-light.** Runtime deps pinned in `requirements/requirements.sdk.http.txt` / `.streaming.txt`; a new third-party import needs a pin. Do not import heavy `inference.core.*`/model modules into `inference_sdk`.
 
 - **Signatures + docstrings.** Type-hinted public signatures with Google-style `Args:`/`Returns:`/`Raises:`. Image params typed `ImagesReference = Union[np.ndarray, PIL.Image.Image, str]`.
 
 ## Required companions
 - **Versioning:** no `inference/core/version.py` bump is required (release-time concern). `.release/pypi/inference.sdk.setup.py` copies it → `inference_sdk/version.py` at build time; never hand-edit the generated file.
-- **Tests:** `tests/inference_sdk/unit_tests/**` — `http/test_client.py`, `test_entities.py`, `http/utils/test_*.py` (key redaction → `test_requests.py`; session reuse → `http/utils/test_executors.py`), `test_config.py` for env-flags, a dedicated file for deprecations, `webrtc/` for WebRTC.
+- **Tests:** `tests/inference_sdk/unit_tests/**` — `http/test_client.py`, `test_entities.py`, `http/utils/test_*.py` (key redaction → `test_requests.py`; session reuse → `http/utils/test_executors.py`), `test_config.py` for env-flags, a dedicated file for deprecations, `cloud_streaming/` for Cloud Streaming.
 - **Docs:** `docs/inference_helpers/inference_sdk.md` and/or sub-pages (`inference_sdk/core_models.md`, `configuration.md`, `workflows.md`, `model_management.md`).
-- **Requirements:** a pin in `requirements/requirements.sdk.http.txt` / `.webrtc.txt` for any new runtime dependency.
+- **Requirements:** a pin in `requirements/requirements.sdk.http.txt` / `.streaming.txt` for any new runtime dependency.
 - There is **no dedicated SDK changelog** — docs are the changelog surface.
 
 ## Key files & Reference PRs
@@ -81,7 +81,7 @@ Severity tags: **BLOCK** (fix before merge) / **FLAG** (raise it) / **NIT** (opt
 - `inference_sdk/http/errors.py` — exception taxonomy. `inference_sdk/http/entities.py` — `InferenceConfiguration`, `HTTPClientMode`, `ImagesReference`, param-mapping tables.
 - `inference_sdk/http/utils/requests.py` — `api_key_safe_raise_for_status`, `deduct_api_key_from_string`.
 - `inference_sdk/http/utils/executors.py` — `_get_thread_local_requests_session`, `make_parallel_requests`, `send_post_request`.
-- `inference_sdk/http/utils/{loaders,encoding,request_building,aliases}.py`, `inference_sdk/config.py`, `inference_sdk/utils/decorators.py`, `inference_sdk/webrtc/{sources,session,client,config}.py`.
+- `inference_sdk/http/utils/{loaders,encoding,request_building,aliases}.py`, `inference_sdk/config.py`, `inference_sdk/utils/decorators.py`, `inference_sdk/cloud_streaming/{client,stream,results,sources}.py`.
 - `.release/pypi/inference.sdk.setup.py`, `docs/inference_helpers/inference_sdk.md` (+ `inference_sdk/` sub-pages).
 
 Reference PRs:
@@ -90,7 +90,6 @@ Reference PRs:
 - [#1521](https://github.com/roboflow/inference/pull/1521) — workflow retries; `workflow_run_retries_enabled`, `RetryError` mapping, `send_post_request`.
 - [#255](https://github.com/roboflow/inference/pull/255) — API key leak; wrong `@wrap_errors` (sync) on `infer_async`.
 - [#248](https://github.com/roboflow/inference/pull/248) — redact API key from `api_message`.
-- [#2200](https://github.com/roboflow/inference/pull/2200) — WebRTC `LocalStreamSource` export.
 - [#85](https://github.com/roboflow/inference/pull/85) — rename `inference_client/` → `inference_sdk/`.
 - [#70](https://github.com/roboflow/inference/pull/70) — baseline HTTP client.
 
