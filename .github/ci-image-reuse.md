@@ -106,6 +106,14 @@ apply.
 - Compare total GPU occupancy, Depot build costs and pull time before claiming
   savings. Offline checks establish routing and identity contracts, not live
   Depot authentication, GPU execution or a monetary saving.
+- Export Colab and both Parallel images as OCI layers compressed with Zstandard
+  level 3, including inherited layers. This changes transport compression, not
+  Dockerfile contents or the runtime environment. The first conversion incurs
+  extra builder work; subsequent exports can reuse compressed blobs in Depot.
+  CPU/T4 exports keep their existing defaults. Numeric `CI_IMAGE_METRICS` log
+  lines separate build/save, authentication and pull time without exposing
+  credentials or subprocess diagnostics. Compare cold GPU jobs and both cold
+  and warm Depot builds before attributing savings to compression.
 
 ### Depot Registry transport
 

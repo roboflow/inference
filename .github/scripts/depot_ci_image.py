@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -32,6 +33,23 @@ _DOCKERFILES = {
 # Only a push to main may write into the CI project; the release project is
 # never a CI target. Manual dispatches must use a sandbox project.
 _PROTECTED_PROJECTS = frozenset({"9x3fbbxlnm", "grl7ffzxd7"})
+_ZSTD_FAMILIES = frozenset({"colab-gpu", "parallel-gpu", "parallel-tests"})
+
+
+def _timing(phase: str, *, started: float) -> None:
+    # Numeric timings are safe to expose; subprocess output and credentials are not.
+    print(
+        "CI_IMAGE_METRICS "
+        + json.dumps(
+            {
+                "family": os.environ["IMAGE_FAMILY"],
+                "phase": phase,
+                "seconds": round(time.monotonic() - started, 3),
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
 
 
 def _run(args: list[str], *, env: dict | None = None, stdin: str | None = None) -> str:
@@ -160,6 +178,19 @@ def _build() -> None:
                     f"io.roboflow.ci.server-image-digest={parent}",
                 ]
 
+            # Recompress inherited layers too: Colab and CUDA bases dominate cold
+            # transfers. Depot retains the compressed blobs for subsequent builds.
+            # Keep the existing CPU/T4 export contract unchanged.
+            export_args = (
+                [
+                    "--output",
+                    "type=image,oci-mediatypes=true,compression=zstd,"
+                    "compression-level=3,force-compression=true",
+                ]
+                if family in _ZSTD_FAMILIES
+                else []
+            )
+            started = time.monotonic()
             _run(
                 [
                     "depot",
@@ -175,6 +206,7 @@ def _build() -> None:
                     "--platform",
                     "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
                     "--provenance=mode=min",
+                    *export_args,
                     "--metadata-file",
                     str(metadata),
                     "--label",
@@ -187,6 +219,7 @@ def _build() -> None:
                     str(context),
                 ]
             )
+            _timing("build-and-save", started=started)
             result = json.loads(metadata.read_text())
             saved = result.get("depot.build", {})
             if saved.get("projectID") != project or not saved.get("buildID"):
@@ -235,8 +268,12 @@ def _pull() -> None:
     # enters GITHUB_ENV or a test-step environment.
     with TemporaryDirectory(dir=os.environ["RUNNER_TEMP"]) as directory:
         env = dict(os.environ, DOCKER_CONFIG=directory)
+        started = time.monotonic()
         _login(env=env, token=_pull_token(_project()))
+        _timing("pull-auth", started=started)
+        started = time.monotonic()
         _run(["docker", "pull", "--platform", "linux/amd64", reference], env=env)
+        _timing("pull", started=started)
         info = json.loads(_run(["docker", "image", "inspect", reference], env=env))[0]
         labels = info.get("Config", {}).get("Labels") or {}
         if (

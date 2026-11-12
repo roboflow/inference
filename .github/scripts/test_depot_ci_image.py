@@ -1,11 +1,13 @@
 """Offline security and coverage checks for the Depot Registry CI image transport."""
 
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -367,6 +369,14 @@ class DepotImageTests(unittest.TestCase):
                 self.assertNotIn("--push", build)
                 self.assertNotIn("--tag", build)
                 self.assertIn("--provenance=mode=min", build)
+                if family in {"colab-gpu", "parallel-gpu", "parallel-tests"}:
+                    self.assertEqual(
+                        build[build.index("--output") + 1],
+                        "type=image,oci-mediatypes=true,compression=zstd,"
+                        "compression-level=3,force-compression=true",
+                    )
+                else:
+                    self.assertNotIn("--output", build)
                 self.assertEqual(build[build.index("--project") + 1], "exampleproject")
                 self.assertEqual(
                     build[build.index("--save-tag") + 1], f"ci-{family}-{SHA}"
@@ -413,6 +423,26 @@ class DepotImageTests(unittest.TestCase):
                 self.assertEqual(outputs, {"index_digest": INDEX, **children})
                 self.assertNotIn("example", (self.root / "output").read_text())
                 self.assertFalse((self.root / "builder/config.json").exists())
+
+    def test_pull_reports_only_fixed_numeric_metrics_without_private_metadata(self):
+        output = io.StringIO()
+        with patch.object(image, "_run", side_effect=self._run), patch.object(
+            image.time, "monotonic", side_effect=[10.0, 10.5, 11.0, 81.25]
+        ), redirect_stdout(output):
+            image._pull()
+        metrics = [
+            json.loads(line.removeprefix("CI_IMAGE_METRICS "))
+            for line in output.getvalue().splitlines()
+        ]
+        self.assertEqual(
+            metrics,
+            [
+                {"family": "cpu", "phase": "pull-auth", "seconds": 0.5},
+                {"family": "cpu", "phase": "pull", "seconds": 70.25},
+            ],
+        )
+        for private in [REPOSITORY, DIGEST, SHA, "synthetic-pull-token"]:
+            self.assertNotIn(private, output.getvalue())
 
     def test_bad_saved_metadata_and_incomplete_platforms_fail_closed(self):
         for metadata, manifest in [
