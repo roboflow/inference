@@ -125,6 +125,13 @@ class PositionEmbeddings:
     They depend only on the model's feature map sizes, not on the frame, so
     every frame of every clip must produce the same ones; a frame that does
     not is refused.
+
+    The copy stays on the device the encoder made it on, and every frame is
+    checked against it there. At the model's input size it is about 56 MB in
+    bfloat16: moving it to the CPU to check each frame, and back to the GPU on
+    every lookup of a frame's features, cost as much as encoding the frame
+    (46 ms of a frame's 130 ms in a first track on an L40S, and 10 of 22 ms
+    per frame in a track of frames already encoded).
     """
 
     def __init__(self):
@@ -142,25 +149,45 @@ class PositionEmbeddings:
                 make sharing them wrong.
         """
         if self._embeds is None:
-            self._embeds = [p.to("cpu") for p in embeds]
-        elif not all(torch.equal(a, b.to("cpu")) for a, b in zip(self._embeds, embeds)):
+            self._embeds = [p.clone() for p in embeds]
+            return
+
+        if not all(torch.equal(a, b) for a, b in zip(self._embeds, embeds)):
             raise ModelInputError(
                 message=f"Position embeddings differ on frame {frame_idx}; "
                 "every frame must share them."
             )
 
     def on(self, device: torch.device) -> List[torch.Tensor]:
-        """The kept position embeddings on ``device``.
+        """The kept position embeddings, on the device they were kept on.
 
         Args:
-            device: Device to move them to.
+            device: Device the caller needs them on; it must be the one the
+                encoder made them on.
 
         Returns:
             The position embeddings.
-        """
-        embeds = [p.to(device, non_blocking=True) for p in self._embeds]
 
-        return embeds
+        Raises:
+            ModelRuntimeError: If ``device`` is another device.
+        """
+        kept_on = self._embeds[0].device
+        if _device_of(kept_on) != _device_of(device):
+            raise ModelRuntimeError(
+                message=f"Position embeddings are kept on {kept_on}, but were "
+                f"asked for on {device}."
+            )
+
+        return self._embeds
+
+
+def _device_of(device: torch.device) -> torch.device:
+    """``device`` with its index, so that ``cuda`` and ``cuda:0`` compare equal."""
+    device = torch.device(device)
+    if device.type == "cuda" and device.index is None:
+        device = torch.device("cuda", torch.cuda.current_device())
+
+    return device
 
 
 class ClipFrames:
