@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Event, Thread
+from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import MagicMock
 
@@ -219,9 +220,42 @@ def test_base_watchdog_gives_correct_report_when_nothing_registered() -> None:
     ), "No video source registered, so metadata must be empty"
 
 
-def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_related_to_the_same_frame() -> (
-    None
-):
+class _ManualClock:
+    """Wall-clock and monotonic readings that move only when a test advances them."""
+
+    def __init__(self) -> None:
+        self._now = datetime(2026, 1, 1)
+        self._monotonic = 1000.0
+
+    def now(self) -> datetime:
+        return self._now
+
+    def monotonic(self) -> float:
+        return self._monotonic
+
+    def advance(self, seconds: float) -> None:
+        self._now += timedelta(seconds=seconds)
+        self._monotonic += seconds
+
+
+@pytest.fixture
+def manual_clock(monkeypatch: pytest.MonkeyPatch) -> _ManualClock:
+    clock = _ManualClock()
+
+    # latency events come from datetime.now(), sv.FPSMonitor ticks from time.monotonic()
+    monkeypatch.setattr(
+        "streamvision.stream.watchdog.datetime", SimpleNamespace(now=clock.now)
+    )
+    monkeypatch.setattr(
+        "supervision.utils.video.time", SimpleNamespace(monotonic=clock.monotonic)
+    )
+
+    return clock
+
+
+def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_related_to_the_same_frame(
+    manual_clock: _ManualClock,
+) -> None:
     # given
     watchdog = BasePipelineWatchDog()
     image = np.zeros((192, 168, 3))
@@ -229,67 +263,33 @@ def test_base_watchdog_gives_correct_report_when_all_events_are_in_series_relate
     source_mock.source_id = 0
     source_mock.describe_source.return_value = "METADATA"
     watchdog.register_video_sources(video_sources=[source_mock])
-    # when
-    first_frame_timestamp = datetime.now()
-    watchdog.on_model_inference_started(
-        frames=[
-            VideoFrame(
-                image=image,
-                source_id=0,
-                frame_id=1,
-                frame_timestamp=first_frame_timestamp,
-            )
-        ]
-    )
-    watchdog.on_model_prediction_ready(
-        frames=[
-            VideoFrame(
-                image=image,
-                source_id=0,
-                frame_id=1,
-                frame_timestamp=first_frame_timestamp,
-            )
-        ]
-    )
-    second_frame_timestamp = datetime.now()
-    watchdog.on_model_inference_started(
-        frames=[
-            VideoFrame(
-                image=image,
-                source_id=0,
-                frame_id=2,
-                frame_timestamp=second_frame_timestamp,
-            )
-        ]
-    )
-    watchdog.on_model_prediction_ready(
-        frames=[
-            VideoFrame(
-                image=image,
-                source_id=0,
-                frame_id=2,
-                frame_timestamp=second_frame_timestamp,
-            )
-        ]
-    )
-    end_of_emission_time = datetime.now()
-    result = watchdog.get_report()
 
     # when
+    for frame_id in (1, 2):
+        frame = VideoFrame(
+            image=image,
+            source_id=0,
+            frame_id=frame_id,
+            frame_timestamp=manual_clock.now(),
+        )
+        manual_clock.advance(seconds=0.01)
+        watchdog.on_model_inference_started(frames=[frame])
+        manual_clock.advance(seconds=0.03)
+        watchdog.on_model_prediction_ready(frames=[frame])
+        manual_clock.advance(seconds=0.06)
+    result = watchdog.get_report()
+
+    # then
     assert result.video_source_status_updates == [], "No updates emitted to watchdog"
-    max_average_e2e_latency = (
-        end_of_emission_time - first_frame_timestamp
-    ).total_seconds() / 2
     assert (
         len(result.latency_reports) == 1
     ), "Only one video source registered - hence only single latency report is expected"
-    assert (
-        result.latency_reports[0].e2e_latency <= max_average_e2e_latency
-    ), "Latency cannot be larger than time passed in test"
-    min_throughput = 2 / (end_of_emission_time - first_frame_timestamp).total_seconds()
-    assert (
-        result.inference_throughput >= min_throughput
-    ), "Throughput cannot be smaller than the one indicated by test time"
+    assert result.latency_reports[0].frame_decoding_latency == pytest.approx(0.01)
+    assert result.latency_reports[0].inference_latency == pytest.approx(0.03)
+    assert result.latency_reports[0].e2e_latency == pytest.approx(0.04)
+    assert result.inference_throughput == pytest.approx(
+        10.0
+    ), "Predictions were ready 100 ms apart"
     assert (
         len(result.sources_metadata) == 1
     ), "Only one video source registered - hence only single source metadata is expected"
