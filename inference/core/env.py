@@ -621,6 +621,36 @@ if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
         "connectivity. Unset OFFLINE_MODE for serverless runtimes."
     )
 
+# On-premise appliance mode. One install serves many workspaces, and the
+# appliance's own API (API_BASE_URL) is the authority on which API keys exist.
+# When True, every request needs a key that API accepts, workspace models keep
+# the per-model access check on every request, and core models serve any valid
+# key. Off by default; when off, no behaviour of the server changes.
+ON_PREMISE_APPLIANCE = str2bool(os.getenv("ON_PREMISE_APPLIANCE", "False"))
+# How long a key the appliance API accepted stays accepted without a new
+# lookup. This bounds how long a revoked key keeps working on one replica.
+ON_PREMISE_APPLIANCE_AUTH_CACHE_TTL_SECONDS = int(
+    os.getenv("ON_PREMISE_APPLIANCE_AUTH_CACHE_TTL_SECONDS", 300)
+)
+# How long a refused key stays refused without a new lookup.
+ON_PREMISE_APPLIANCE_AUTH_NEGATIVE_CACHE_TTL_SECONDS = int(
+    os.getenv("ON_PREMISE_APPLIANCE_AUTH_NEGATIVE_CACHE_TTL_SECONDS", 30)
+)
+# Upper bound on the entries of each key cache (accepted and refused).
+ON_PREMISE_APPLIANCE_AUTH_CACHE_MAX_SIZE = int(
+    os.getenv("ON_PREMISE_APPLIANCE_AUTH_CACHE_MAX_SIZE", 10_000)
+)
+# Longest wait for one appliance usage check before the request gets 503. The
+# appliance API is in-cluster, so this is much shorter than the 120 s default
+# timeout for calls to the Roboflow API.
+ON_PREMISE_APPLIANCE_AUTH_TIMEOUT_SECONDS = float(
+    os.getenv("ON_PREMISE_APPLIANCE_AUTH_TIMEOUT_SECONDS", 10)
+)
+# Most usage checks in flight at once per process.
+ON_PREMISE_APPLIANCE_AUTH_MAX_CONCURRENT_LOOKUPS = int(
+    os.getenv("ON_PREMISE_APPLIANCE_AUTH_MAX_CONCURRENT_LOOKUPS", 64)
+)
+
 # This variable affects extra headers passed to new weights provider created for
 # `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
 # makes the weights provider to reject request for model weights that are coming to
@@ -714,7 +744,17 @@ MAX_DETECTIONS = int(os.getenv(MAX_DETECTIONS_ENV, DEFAULT_MAX_DETECTIONS))
 MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
 # Enable models cache auth
-MODELS_CACHE_AUTH_ENABLED = str2bool(os.getenv("MODELS_CACHE_AUTH_ENABLED", False))
+MODELS_CACHE_AUTH_ENABLED = str2bool(
+    os.getenv("MODELS_CACHE_AUTH_ENABLED", ON_PREMISE_APPLIANCE)
+)
+if ON_PREMISE_APPLIANCE and not MODELS_CACHE_AUTH_ENABLED:
+    # Without the per-model check, a model loaded by one workspace's key serves
+    # every other valid key of the appliance.
+    raise ValueError(
+        "ON_PREMISE_APPLIANCE requires MODELS_CACHE_AUTH_ENABLED=True, so that a "
+        "workspace model serves only keys that can read it. Unset "
+        "MODELS_CACHE_AUTH_ENABLED (the mode turns it on) or set it to True."
+    )
 ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS = str2bool(
     os.getenv("ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS", False)
 )
@@ -776,6 +816,11 @@ METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
 
 # URL for posting metrics to Roboflow API, default is "{API_BASE_URL}/inference-stats"
 METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
+
+# Key the device-stats pingback sends in ON_PREMISE_APPLIANCE mode. Without it
+# the pingback falls back to ROBOFLOW_API_KEY / API_KEY and never borrows the key
+# of an inference request.
+METRICS_API_KEY = os.getenv("METRICS_API_KEY", None)
 
 # Model cache directory, default is "/tmp/cache"
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")

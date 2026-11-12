@@ -207,6 +207,12 @@ from inference.core.env import (
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
     OFFLINE_MODE,
+    ON_PREMISE_APPLIANCE,
+    ON_PREMISE_APPLIANCE_AUTH_CACHE_MAX_SIZE,
+    ON_PREMISE_APPLIANCE_AUTH_CACHE_TTL_SECONDS,
+    ON_PREMISE_APPLIANCE_AUTH_MAX_CONCURRENT_LOOKUPS,
+    ON_PREMISE_APPLIANCE_AUTH_NEGATIVE_CACHE_TTL_SECONDS,
+    ON_PREMISE_APPLIANCE_AUTH_TIMEOUT_SECONDS,
     OTEL_TRACING_ENABLED,
     PINNED_MODELS,
     PRELOAD_API_KEY,
@@ -251,6 +257,16 @@ from inference.core.interfaces.http.api_key_resolution import (
     api_key_override,
     extract_api_key_from_headers,
     header_api_key,
+)
+from inference.core.interfaces.http.appliance_authorization import (
+    CONFLICTING_API_KEYS_MESSAGE,
+    GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
+    MISSING_API_KEY_MESSAGE,
+    ApplianceKeyAuthorizer,
+    ConflictingApiKeysError,
+    read_request_api_key,
+    request_is_global_management,
+    request_skips_api_key_check,
 )
 from inference.core.interfaces.http.dependencies import (
     parse_body_content_for_legacy_request_handler,
@@ -462,6 +478,7 @@ if (
     and not (
         WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
         or DEDICATED_DEPLOYMENT_WORKSPACE_URL
+        or ON_PREMISE_APPLIANCE
     )
 ):
     # Logged rather than raised as a warning, because INFERENCE_WARNINGS_DISABLED must not
@@ -474,6 +491,35 @@ if (
         "custom Python, and set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own authentication "
         "in front of the server) if it is reachable from other machines. See "
         "https://docs.roboflow.com/deployment/self-hosted/inference-server/configuration/security"
+    )
+
+
+def _validate_on_premise_appliance_configuration() -> None:
+    """Refuse settings that would give the auth decision a second owner."""
+    conflicting_settings = [
+        name
+        for name, value in (
+            ("GCP_SERVERLESS", GCP_SERVERLESS),
+            ("LAMBDA", LAMBDA),
+            ("OFFLINE_MODE", OFFLINE_MODE),
+            ("DEDICATED_DEPLOYMENT_WORKSPACE_URL", DEDICATED_DEPLOYMENT_WORKSPACE_URL),
+            (
+                "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
+                WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT,
+            ),
+        )
+        if value
+    ]
+    if conflicting_settings:
+        raise RuntimeError(
+            "ON_PREMISE_APPLIANCE cannot be combined with "
+            f"{', '.join(conflicting_settings)}: each of them sets its own "
+            "authorization policy. Unset them for an on-premise appliance."
+        )
+
+    logger.info(
+        "ON_PREMISE_APPLIANCE: per-request API key authorization is on. Every "
+        "request needs an API key that the appliance API accepts."
     )
 
 
@@ -677,6 +723,8 @@ class HttpInterface(BaseInterface):
                 "workspace-whitelist authentication because API keys cannot be "
                 "mapped to workspaces without API connectivity."
             )
+        if ON_PREMISE_APPLIANCE:
+            _validate_on_premise_appliance_configuration()
 
         description = "Roboflow inference server"
 
@@ -1399,6 +1447,67 @@ class HttpInterface(BaseInterface):
                 )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                return response
+
+        if ON_PREMISE_APPLIANCE:
+            appliance_key_authorizer = ApplianceKeyAuthorizer(
+                lambda api_key: get_serverless_usage_check_async(api_key=api_key),
+                ttl_seconds=ON_PREMISE_APPLIANCE_AUTH_CACHE_TTL_SECONDS,
+                negative_ttl_seconds=ON_PREMISE_APPLIANCE_AUTH_NEGATIVE_CACHE_TTL_SECONDS,
+                max_size=ON_PREMISE_APPLIANCE_AUTH_CACHE_MAX_SIZE,
+                lookup_timeout_seconds=ON_PREMISE_APPLIANCE_AUTH_TIMEOUT_SECONDS,
+                max_concurrent_lookups=ON_PREMISE_APPLIANCE_AUTH_MAX_CONCURRENT_LOOKUPS,
+            )
+
+            @app.middleware("http")
+            async def check_authorization_on_premise_appliance(
+                request: Request, call_next
+            ):
+                if await request_skips_api_key_check(request):
+                    return await call_next(request)
+
+                try:
+                    api_key = await read_request_api_key(request)
+                except ConflictingApiKeysError:
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "status": 400,
+                            "message": CONFLICTING_API_KEYS_MESSAGE,
+                        },
+                    )
+                if api_key is None:
+                    return JSONResponse(
+                        status_code=401,
+                        content={"status": 401, "message": MISSING_API_KEY_MESSAGE},
+                    )
+
+                decision = await appliance_key_authorizer.authorize(api_key)
+                if not decision.is_authorized:
+                    return decision.to_response()
+                if request_is_global_management(request):
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "status": 403,
+                            "message": GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
+                        },
+                    )
+
+                # The route must run with the key that was checked. A route that
+                # reads a channel the request left empty falls back to
+                # `header_api_key` (api_key_fallback, api_key_override), so set it
+                # to the checked key for the rest of this request.
+                checked_key_token = header_api_key.set(api_key)
+                try:
+                    response = await _call_next_with_assume_identity_authorised_workspace_db_id(
+                        request=request,
+                        call_next=call_next,
+                        workspace_db_id=decision.workspace_db_id,
+                    )
+                finally:
+                    header_api_key.reset(checked_key_token)
+                response.headers[WORKSPACE_ID_HEADER] = decision.workspace_id
                 return response
 
         @app.middleware("http")
