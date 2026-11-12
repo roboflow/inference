@@ -98,6 +98,12 @@ for contributor and maintainer responsibilities.
   - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
   - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
 
+### Changed
+
+- Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
+  generation, a bounded mask cache, and lookup-table blending. Output pixels,
+  exposure thresholds, and focus scores are unchanged.
+
 ### Fixed
 
 - Video Clip Recorder, NVENC backend: the first frame of a GPU stream no longer stalls the pipeline thread. The process-wide NVENC start-up (the PyNvVideoCodec import, the CUDA context, the conversion kernels and a throwaway encoder session) now runs once per process on a background thread that the recorder starts when it is constructed on a CUDA host (torch already imported with CUDA image tensors or an initialised CUDA context, and PyNvVideoCodec installed); CPU hosts and hosts without PyNvVideoCodec do nothing and never import torch. Frames that arrive before it finishes are not buffered and are reported in a new `startup_dropped` loss count (clip report `loss.startup_dropped`, ring stats `startup_dropped`); the recorder never falls back to x264 while NVENC is still starting, and uses x264 only if the start-up finds NVENC unavailable or does not finish within 60 s. Until a stream's encoder session is open, its GPU frame pool may grow to 32 frames (at most 192 MiB of device memory, freed once the backlog drains), so the frames that arrive while NVENC opens the session are kept instead of dropped; frames refused in that window also count as `startup_dropped`, and a full pool afterwards still counts `queue_drops`.
