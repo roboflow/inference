@@ -493,6 +493,40 @@ def test_workspace_key_cannot_call_global_management_routes(
     interface.model_manager.clear.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "path, params",
+    [
+        ("/notebook/start", {"browserless": "true"}),
+        ("/logs", {}),
+    ],
+)
+def test_workspace_key_cannot_read_server_wide_notebook_or_logs(
+    monkeypatch, path, params
+) -> None:
+    import inference.core.logging.memory_handler as memory_handler
+
+    start_notebook = MagicMock()
+    get_recent_logs = MagicMock(return_value=[])
+    monkeypatch.setattr(http_api, "NOTEBOOK_ENABLED", True)
+    monkeypatch.setattr(http_api, "start_notebook", start_notebook)
+    monkeypatch.setattr(memory_handler, "is_memory_logging_enabled", lambda: True)
+    monkeypatch.setattr(memory_handler, "get_recent_logs", get_recent_logs)
+    lookup = AsyncMock(return_value=_under_cap())
+    interface = _build_appliance_interface(monkeypatch, lookup)
+
+    with TestClient(interface.app) as client:
+        response = client.get(path, params={"api_key": API_KEY, **params})
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "status": 403,
+        "message": GLOBAL_MANAGEMENT_ROUTE_MESSAGE,
+    }
+    lookup.assert_awaited_once_with(api_key=API_KEY)
+    start_notebook.assert_not_called()
+    get_recent_logs.assert_not_called()
+
+
 def test_no_answer_or_log_line_contains_the_key(monkeypatch, caplog) -> None:
     caplog.set_level(logging.DEBUG)
     statuses = []

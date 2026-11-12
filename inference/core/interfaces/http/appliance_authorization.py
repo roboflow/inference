@@ -78,9 +78,14 @@ _DYNAMIC_BLOCKS_PATHS = frozenset(
 )
 # HEAD is not exempt: Starlette answers HEAD with the GET handler, which runs.
 _EXEMPT_METHODS = frozenset({"OPTIONS"})
-# These routes act on models that other workspaces loaded: they remove one
-# model by id, or every model. A workspace key does not own them.
-_GLOBAL_MANAGEMENT_PATHS = frozenset({"/model/remove", "/model/clear", "/clear_cache"})
+# These routes act on state that every workspace shares. A workspace key does
+# not own it. /model/remove, /model/clear and /clear_cache remove models that
+# other workspaces loaded. /notebook/start gives the server notebook token
+# (NOTEBOOK_ENABLED). /logs returns the server log lines of every workspace
+# (ENABLE_IN_MEMORY_LOGS).
+_GLOBAL_MANAGEMENT_PATHS = frozenset(
+    {"/model/remove", "/model/clear", "/clear_cache", "/notebook/start", "/logs"}
+)
 
 
 @dataclass(frozen=True)
@@ -341,7 +346,8 @@ def request_is_global_management(request: Request) -> bool:
 
     Returns:
         True for the routes that remove one loaded model by id or all loaded
-        models. In appliance mode no workspace key may call them.
+        models, start the server notebook, or read the server logs. In
+        appliance mode no workspace key may call them.
     """
     # Raw ASGI path, as in request_skips_api_key_check.
     return request.scope["path"] in _GLOBAL_MANAGEMENT_PATHS
