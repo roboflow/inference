@@ -698,6 +698,45 @@ def test_run_times_out_and_cancels_a_slow_query() -> None:
     assert recorder["connection_closed"] is True
 
 
+@pytest.mark.parametrize("interrupted_method", ["execute", "fetchmany"])
+def test_deadline_interrupt_waits_for_query_cancellation(
+    interrupted_method: str,
+) -> None:
+    """Keep cancellation pending when the supervisor interrupts before the watchdog.
+
+    Args:
+        interrupted_method (str): Connector operation interrupted at the deadline.
+    """
+    recorder = {}
+    with fake_databricks([], recorder=recorder), mock.patch.object(
+        v1, "time"
+    ) as clock, mock.patch.object(
+        FakeCursor, interrupted_method
+    ) as operation, mock.patch.object(
+        FakeCursor, "cancel", autospec=True
+    ) as cancel:
+        clock.monotonic.return_value = 0.0
+
+        def _interrupt(*args: Any, **kwargs: Any) -> None:
+            clock.monotonic.return_value = 2.0
+            raise TimeoutError("Databricks query exceeded timeout_seconds")
+
+        def _record_cancellation(cursor: FakeCursor) -> None:
+            assert not recorder.get("cursor_closed")
+            assert not recorder.get("connection_closed")
+            recorder["cancelled"] = True
+
+        operation.side_effect = _interrupt
+        cancel.side_effect = _record_cancellation
+        with pytest.raises(TimeoutError, match="timeout_seconds"):
+            run_block(timeout_seconds=1)
+
+        cancel.assert_called_once()
+    assert recorder["cancelled"]
+    assert recorder["cursor_closed"]
+    assert recorder["connection_closed"]
+
+
 def test_run_closes_cursor_and_connection_when_the_row_loop_raises() -> None:
     rows = [{"id": 1, "content": jpeg_bytes()}]
     with fake_databricks(rows) as recorder:

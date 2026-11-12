@@ -960,7 +960,7 @@ def iter_rows(
                     try:
                         cursor.execute(sql_statement, parameters=parameters)
                     except Exception as error:
-                        if expired.is_set():
+                        if expired.is_set() or time.monotonic() >= deadline:
                             raise TimeoutError(
                                 "Databricks query exceeded timeout_seconds and was cancelled"
                             ) from None
@@ -978,7 +978,7 @@ def iter_rows(
                                 min(FETCH_BATCH_SIZE, max_rows - yielded)
                             )
                         except Exception as error:
-                            if expired.is_set():
+                            if expired.is_set() or time.monotonic() >= deadline:
                                 raise TimeoutError(
                                     "Databricks query exceeded timeout_seconds and was "
                                     "cancelled"
@@ -992,8 +992,19 @@ def iter_rows(
                             yield row.asDict()
                             yielded += 1
                 finally:
-                    watchdog.cancel()
-                    watchdog.join(timeout=0.1)
+                    if expired.is_set() or time.monotonic() >= deadline:
+                        # The supervisor can interrupt before the watchdog runs.
+                        # Let cancellation finish before cursor/session teardown,
+                        # within the existing bounded cleanup allowance.
+                        watchdog.join(
+                            timeout=max(
+                                0.0,
+                                deadline + CLEANUP_GRACE_SECONDS - time.monotonic(),
+                            )
+                        )
+                    else:
+                        watchdog.cancel()
+                        watchdog.join(timeout=0.1)
 
 
 def _cancel_query(cursor: Any, connection: Any, expired: threading.Event) -> None:
