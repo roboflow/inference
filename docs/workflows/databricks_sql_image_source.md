@@ -1,11 +1,39 @@
 # Databricks SQL Image Source
 
-`roboflow_core/databricks_sql_image_source@v1` runs a SQL statement on a
+`roboflow_core/databricks_sql_image_source@v1` reads selected columns from a table or view on a
 Databricks SQL warehouse and emits every returned row as a Workflow image, with
-an optional key column as the image name and the remaining columns as metadata.
+an optional key column as the image name and explicitly selected columns as metadata.
 This page is the operator guide: how the block is enabled, bounded and
 verified. The block's own description (shown in the Workflow builder) covers
 its inputs and outputs.
+
+## Query contract
+
+Configure `catalog`, `schema_name`, `table`, `image_column` (default `bytes`),
+optional `image_name_column`, `metadata_columns` (default empty, at most 32) and
+`max_rows` (1-1000). Each name is a single unquoted identifier, bounded to 255
+characters. Embedded backticks are escaped within each component; dots are literal
+parts of a component. The block executes only this template, extending the
+projection with additional bound identifiers for the name and metadata columns:
+
+```sql
+SELECT IDENTIFIER(:column_0)
+FROM IDENTIFIER(:source)
+LIMIT :row_limit
+```
+
+Native parameters contain the quoted names and integer limit. SQL fragments,
+expressions and `sql_statement` are not accepted; old workflow definitions must
+migrate to these inputs. For example, use `catalog=main`, `schema_name=vision`,
+`table=images_to_label`, `image_column=image_bytes`, `max_rows=100`.
+Define filters and joins in a customer-managed Databricks view. A view preserves
+selection flexibility; the fixed query and native parameter binding prevent input
+from changing SQL structure. Requires SQL warehouse support for IDENTIFIER.
+
+This does not prove authorization or tenant ownership, enforce read-only grants,
+or bound view computation. Provision a dedicated identity with SELECT on the
+intended sources and CAN USE on the warehouse. SQL LIMIT bounds returned rows,
+not warehouse cost. Aggregate admission controls are a separate stacked change.
 
 ## Enabling and disabling
 
@@ -19,7 +47,8 @@ its inputs and outputs.
 
 Installing the connector (`pip install "roboflow-workflows[databricks]"`,
 shipped in every Roboflow server image) and enabling the block are separate
-decisions. When the block is disabled, or the connector is missing:
+decisions. The transport supports connector **4.8.0**; the extra pins that version.
+When the block is disabled, or the connector is missing or unsupported:
 
 * `/workflows/blocks/describe` does not list it,
 * a Workflow that references it, saved or submitted inline, fails at compile
@@ -36,44 +65,115 @@ restart the container. During a rollback:
 * jobs already running on a worker that has not restarted finish or hit their
   own `timeout_seconds` deadline (at most 600 s) plus the cleanup interval
   below; a worker that is terminated mid-run cancels nothing on the warehouse,
-  the statement's server-side `STATEMENT_TIMEOUT` (equal to the deadline)
-  ends it,
+  rely on the warehouse statement timeout and verify its terminal state,
 * `WORKFLOW_DISABLED_BLOCK_PATTERNS=databricks` remains a valid additional
   safeguard on multi-tenant workers and is applied by the same mechanism.
 
 ## Memory and time bounds
 
-All budgets are **per block invocation**, not per process. Size them against
-the worker's memory and the number of Workflow requests one process serves at
-once:
+Each invocation runs DNS resolution, the SQL connector and image decoding in a
+fresh Python subprocess. The parent checks availability and `disable_sinks`
+before launch. Credentials and resolved configuration travel over a private
+pipe; connector patches never alter clients in the parent process. The serialized
+request (credentials and configuration together) is measured before serialization
+and limited to 1 MiB.
 
+All budgets are **per invocation**, and account for encoded image bytes, decoded
+pixels, names and metadata. They are application-data budgets, not hard process
+RSS limits. Connector buffers, Python imports, decode temporaries and filesystem
+cache require additional memory. Measure the candidate image at the intended
+concurrency before enabling hosted execution; do not infer a pod memory limit
+from `MAX_RUN_BYTES` alone.
+
+The child writes decoded arrays and a bounded manifest into a private temporary
+directory. The parent loads them only after the child exits successfully, checks
+array headers and file sizes before allocation, and removes the directory on
+success or failure. Provision temporary storage for up to the invocation budget
+plus file/manifest overhead per concurrent invocation. Disk exhaustion fails the
+step; no partial output is returned.
+
+The connector requests inline chunks of at most 8 rows and
+`2 x MAX_IMAGE_BYTES` bytes, with a server-side `row_limit` of `max_rows`.
+The transport enforces an HTTP body cap of
+`max(1 MiB, 2 x MAX_IMAGE_BYTES) + 64 KiB` on every response, including chunked
+responses. Oversized Content-Length is rejected before reading; no rejected body
+is drained. Retryable HTTP errors are discarded at the urllib3 response boundary
+before its retry logic can drain or decompress their bodies. HTTP compression is refused. Thrift strings are limited to this byte
+cap, containers to 65,536 entries, total structural items to 131,072 and nesting
+to 64 levels. The worker requests column-based results and rejects Arrow schemas,
+Arrow/LZ4 batches and result links before their native decoders run. This remains
+an application bound with Python object overhead, not an RSS guarantee.
+
+Metadata strings (including nested keys) are limited to 4096 characters, containers
+to 4 nesting levels and 256 items per collection, and serialized metadata to 64 KiB
+per row (UTF-8 JSON, including keys and separators). Limits are checked during
+conversion, before walking an oversized/deep collection or retaining an oversized
+row. Values are never truncated or replaced with strings at the depth limit.
+JPEG and PNG are accepted;
+WebP and TIFF are rejected before constructing their decoders. Total budget exhaustion fails the step,
+while ordinary image conversion failures follow `skip_undecodable`.
+
+### Rejected metadata rows
+
+A metadata limit violation skips the **entire row**, before image decoding, and
+returns a diagnostic on `$steps.<source>.errors`, regardless of `skip_undecodable`.
+This also succeeds when every fetched row is rejected for metadata. The diagnostic
+contains a zero-based `row_index` in the fetched result (not a stable table ID),
+`image_name` (null when no name column was configured), `field` (the top-level
+metadata column, or null for the aggregate row limit), `code` and `message`.
+Only the first metadata violation per row is reported; raw metadata is not echoed.
+
+| Code | Limit |
+| --- | --- |
+| `METADATA_VALUE_TOO_LONG` | A string or nested key exceeds 4096 characters. |
+| `METADATA_TOO_DEEP` | A container occurs at depth 4 or greater; each column starts at depth 0. |
+| `METADATA_TOO_MANY_ITEMS` | A collection contains more than 256 members, including binary members. |
+| `METADATA_TOO_LARGE` | Serialized metadata exceeds 64 KiB. |
+
+Successful entries have `images`, `image_names`, and `metadata`, with `errors=null`.
+Rejected entries have `errors`, with all three success outputs null. The engine
+preserves these positions in workflow JSON; it does not compact each output into
+an independent batch. Image-processing blocks that use the usual non-empty-input
+contract skip rejected entries automatically. Blocks explicitly accepting empty
+values must handle nulls. A separate reporting branch should consume **only**
+`errors`, not combine it with the success outputs (which are mutually exclusive).
+Expose that selector as a `JsonField` to include diagnostics in the API response.
+
+For example, a valid row followed by a rejected row produces:
+
+```json
+{
+  "image_names": ["inspection-41", null],
+  "metadata": [{"site": "A"}, null],
+  "errors": [null, {
+    "row_index": 1,
+    "image_name": "inspection-42",
+    "field": "annotations",
+    "code": "METADATA_TOO_DEEP",
+    "message": "Metadata exceeds 4 nesting levels."
+  }]
+}
 ```
-per invocation ≈ MAX_RUN_BYTES                       retained rows
-               + 2 x MAX_IMAGE_BYTES                 connector inline chunk (+ lz4 copy)
-               + MAX_IMAGE_BYTES + 3 x MAX_IMAGE_PIXELS   decode temporaries of one image
-```
 
-With the defaults that is about 1.2 GiB per invocation. For the hosted
-async-serverless workers the values files set 256 MiB / 16 MiB / 12 MP, about
-340 MiB per invocation, leaving headroom for models and concurrent requests
-within the per-process share of the pod's memory limit.
+Diagnostics are bounded by the fetched-row limit (at most 1000), fixed messages,
+255-character field/name limits and the invocation byte budget. The parent checks
+their schema, counts, indices and bytes before returning worker output. Connection,
+query, timeout and total-budget failures still fail the block. An import containing
+only skipped image-conversion failures still fails as before; metadata rejections
+remain reportable even without successful images.
 
-The connector's buffering is bounded explicitly: the cursor asks the warehouse
-for inline chunks of at most 8 rows and `2 x MAX_IMAGE_BYTES` bytes
-(`arraysize` / `buffer_size_bytes`), with a server-side `row_limit` of
-`max_rows`, cloud-fetch result links disabled and refused if a warehouse
-returns them anyway, and metadata capped per value (4096 characters), per
-nesting (4 levels, 256 items) and per row (64 KiB).
+`timeout_seconds` (5 to 600, default 120) begins before process launch and covers
+imports, DNS, connection, execution, fetching, decoding and parent output loading.
+The warehouse receives a statement timeout based on the remaining time. On
+expiry the parent terminates the child, giving cleanup a single 35-second
+allowance before forcing termination and reaping it. Connector cancellation and
+closing can block on the connector's request lock, so they are best effort;
+killing a client does not prove its warehouse query stopped. Verify warehouse
+terminal state in the deferred staging acceptance run.
 
-`timeout_seconds` (5 to 600, default 120) is the overall deadline for
-connecting, executing and polling, fetching and decoding. The statement is
-submitted with `STATEMENT_TIMEOUT` equal to it, HTTP retries are limited to 3
-attempts with at most a 5 s delay inside the remaining time, and redirects are
-refused. When the deadline passes a watchdog cancels the statement
-(`CancelOperation`) and closes the session; the step's thread then fails
-within one socket timeout (30 s) plus one retry delay (5 s). That 35 s is the
-**cleanup interval**: after it the step has returned, its execution slot is
-free and no connector thread remains.
+Parent output loading checks expiry between bounded operations and before
+returning success. Arbitrary OS/filesystem stalls are outside this wall-clock
+guarantee. A server restart is still required to change the rollout flag.
 
 ## Network policy
 
@@ -88,13 +188,15 @@ hostname for TLS SNI, certificate verification and the `Host` header, so a DNS
 change after validation cannot redirect the connection. Proxies, HTTP, disabled
 TLS verification and redirects are refused by the transport; the connector's
 second HTTP client (telemetry, feature flags, OAuth, cloud fetch, staging) is
-refused for the duration of the run from any thread.
+refused for the entire child-process lifetime, including its background threads.
+Unrelated clients in the parent process remain independent.
 
-Transport inventory for `databricks-sql-connector` 4.x (verified on 4.8.0 with
+Transport inventory for `databricks-sql-connector` 4.8.0 (verified with
 `urllib3` 2.8): one `urllib3` pool for every Thrift call (session, execute,
 polling, fetch, cancel, close, retries and reconnects) and one `PoolManager`
 for everything else. Both are covered as described above; the REST (SEA)
-backend is not used.
+and native kernel backends, including automatic fallback, are rejected before
+backend construction.
 
 ## Verification
 
@@ -121,10 +223,22 @@ Deterministic, in CI with the workflows unit tests:
 Credentialed, against a real warehouse: `workflows/scripts/databricks_live_integration.py`
 (see its docstring) runs import, bad image, oversized metadata, invalid
 credential, slow-query cancellation verified through the warehouse's query
-history, recovery and concurrent-job latency, in-process or through a server
-or async-serverless producer URL, plus `--expect-disabled` and
+history, recovery and concurrent-job latency, locally or through the synchronous server `/workflows/run` endpoint, plus `--expect-disabled` and
 `--expect-budget-failure` modes for deployments configured that way. The
 GitHub workflow `Databricks SQL Image Source - live warehouse integration`
-runs it on dispatch under the `databricks-live` environment. Record the image
+runs it on dispatch under the protected `databricks-live` environment. Configure
+its HTTPS server origin with the environment variable `DATABRICKS_LIVE_BASE_URL`
+(GitHub environment variable of the same name); callers cannot choose a URL in
+dispatch inputs. Requests refuse redirects. The synchronous runner does not
+validate the async-serverless producer/job API: that path requires a separate
+staging run after PR review. No credentialed staging test is part of local review.
+Record the image
 digest, connector version and report in the release notes of any hosted
 rollout.
+
+The live runner creates temporary fixture views using `DATABRICKS_SETUP_TOKEN`
+for every run, then submits only the fixed table/view reader configuration with
+`DATABRICKS_TOKEN`. Grant that restricted identity SELECT on the fixture schema.
+Views are dropped after the suite, with an exit cleanup retry on failures. Slow
+case verification requires query history to expose the unique view identifier;
+if it is absent, the case fails instead of claiming cancellation was verified.

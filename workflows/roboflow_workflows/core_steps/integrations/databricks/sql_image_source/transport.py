@@ -8,9 +8,10 @@ connector's own transport: the Thrift HTTP client opens its ``urllib3`` pool on
 the validated IP address while keeping the original hostname for TLS SNI,
 certificate hostname verification and the HTTP ``Host`` header.
 
-The pin is carried in a ``ContextVar`` that the block sets around ``connect()``.
-Outside such a scope the subclass behaves exactly like the connector's class, so
-other users of the connector in the same process are unaffected.
+The dedicated worker installs these hooks before connecting. A transport captures
+its pin at construction and retains it across reconnects and cancellation threads.
+The worker refuses secondary HTTP paths for its entire lifetime. The parent
+process never installs these hooks.
 
 Transport inventory for ``databricks-sql-connector`` 4.x (verified against
 4.8.0, ``urllib3`` 2.x, ``thrift`` 0.2x):
@@ -26,9 +27,9 @@ Transport inventory for ``databricks-sql-connector`` 4.x (verified against
   (``/api/2.0/connector-service/feature-flags/...``), OAuth / token federation,
   CloudFetch result-link downloads and staging (volume ingestion) transfers.
   None of these is needed by the block (PAT auth, telemetry off, cloud fetch
-  off, no staging), so while a pin is active this client refuses every request.
-* ``databricks.sql.backend.sea`` - the REST (SEA) backend, only with
-  ``use_sea=True``; not used.
+  off, no staging), so the dedicated worker refuses every such request.
+* REST (SEA) and native kernel backends, including automatic kernel recovery,
+  are refused before session construction; neither uses the pinned Thrift pool.
 """
 
 import contextlib
@@ -48,6 +49,7 @@ class PinnedDestination:
     hostname: str
     ip_address: str
     port: int = 443
+    max_response_bytes: int = 64 * 1024 * 1024 + 65536
 
 
 _PINNED_DESTINATION: contextvars.ContextVar[Optional[PinnedDestination]] = (
@@ -55,10 +57,9 @@ _PINNED_DESTINATION: contextvars.ContextVar[Optional[PinnedDestination]] = (
 )
 _INSTALL_LOCK = threading.Lock()
 _INSTALLED = False
-# Pins are scoped to the calling context, but the connector hands work to its
-# own threads (CloudFetch downloads, feature-flag refresh, telemetry flush)
-# where a ContextVar is invisible. This process-wide count of active pins lets
-# the guards refuse those paths from any thread while a block run is active.
+_WORKER_ONLY = False
+# Diagnostic count for checking context cleanup. Network policy uses the
+# dedicated worker lifetime, so background threads cannot outlive protection.
 _ACTIVE_PINS = 0
 _ACTIVE_PINS_LOCK = threading.Lock()
 
@@ -72,7 +73,7 @@ def pinned_destination(destination: PinnedDestination) -> Iterator[None]:
     """Scope within which the connector's transport connects to ``destination``.
 
     Args:
-        destination: Hostname, validated IP address and port to connect to.
+        destination (PinnedDestination): Hostname, validated IP address and port to connect to.
 
     Yields:
         Nothing; the pin is active for the calling context until exit.
@@ -100,11 +101,14 @@ def current_pin() -> Optional[PinnedDestination]:
     return _PINNED_DESTINATION.get()
 
 
-def install_pinned_transport() -> type:
+def install_pinned_transport(*, worker_only: bool = False) -> type:
     """Replace the connector's Thrift HTTP client with the pinning subclass.
 
-    Idempotent and process-wide. The subclass only changes behaviour while a
-    :func:`pinned_destination` scope is active in the calling context.
+    Idempotent and process-wide; production callers must use a dedicated worker.
+
+    Args:
+        worker_only (bool): Permanently refuse secondary requests in this process, even
+            from background threads and after the construction context exits.
 
     Returns:
         The transport class the connector now instantiates.
@@ -112,8 +116,9 @@ def install_pinned_transport() -> type:
     Raises:
         RuntimeError: If ``databricks-sql-connector`` is not installed.
     """
-    global _INSTALLED
+    global _INSTALLED, _WORKER_ONLY
     with _INSTALL_LOCK:
+        _WORKER_ONLY = _WORKER_ONLY or worker_only
         try:
             # The connector's auth module references `thrift.transport` as an
             # attribute of the `thrift` package, which only exists once the
@@ -125,6 +130,14 @@ def install_pinned_transport() -> type:
         ) as error:  # pragma: no cover - exercised by availability tests
             raise RuntimeError("databricks-sql-connector is not installed") from error
 
+        _guard_response_parsing()
+        if worker_only:
+            from databricks.sql.backend import thrift_backend
+
+            # Request column-based Thrift results even if the host installed Arrow.
+            # Only the disposable interpreter changes this connector global.
+            thrift_backend.pyarrow = None
+
         if (
             _INSTALLED
             and isinstance(thrift_http_client.THttpClient, type)
@@ -134,21 +147,49 @@ def install_pinned_transport() -> type:
 
         base = thrift_http_client.THttpClient
         if issubclass(base, _PinnedMixin):
+            _guard_non_thrift_backends()
             _guard_unified_http_client()
             _guard_result_link_downloads()
             _INSTALLED = True
+
             return base
 
-        class PinnedTHttpClient(_PinnedMixin, base):  # type: ignore[misc,valid-type]
+        class _PinnedTHttpClient(_PinnedMixin, base):  # type: ignore[misc,valid-type]
             pass
 
-        PinnedTHttpClient.__name__ = base.__name__
-        PinnedTHttpClient.__qualname__ = base.__qualname__
-        thrift_http_client.THttpClient = PinnedTHttpClient
+        _PinnedTHttpClient.__name__ = base.__name__
+        _PinnedTHttpClient.__qualname__ = base.__qualname__
+        thrift_http_client.THttpClient = _PinnedTHttpClient
+        _guard_non_thrift_backends()
         _guard_unified_http_client()
         _guard_result_link_downloads()
         _INSTALLED = True
-        return PinnedTHttpClient
+
+        return _PinnedTHttpClient
+
+
+def _guard_non_thrift_backends() -> None:
+    # Connector 4.8 can automatically retry a rejected Thrift session using its
+    # native kernel transport. Reject that switch before any backend is created.
+    from databricks.sql.session import Session
+
+    if getattr(Session, "_roboflow_backend_guard", False):
+        return
+
+    original_init = Session.__init__
+
+    def _init(self, *args, **kwargs):
+        if (_WORKER_ONLY or _PINNED_DESTINATION.get() is not None) and (
+            kwargs.get("use_kernel") or kwargs.get("use_sea")
+        ):
+            raise PinnedTransportError(
+                "the Databricks worker requires the Thrift backend"
+            )
+
+        original_init(self, *args, **kwargs)
+
+    Session.__init__ = _init
+    Session._roboflow_backend_guard = True
 
 
 def _guard_unified_http_client() -> None:
@@ -161,17 +202,23 @@ def _guard_unified_http_client() -> None:
     client_class = unified_http_client.UnifiedHttpClient
     if getattr(client_class, "_roboflow_pinned_guard", False):
         return
+
     original_request_context = client_class.request_context
 
-    def request_context(self, method, url, headers=None, **kwargs):
-        if _PINNED_DESTINATION.get() is not None or pin_active_anywhere():
+    def _request_context(self, method, url, headers=None, **kwargs):
+        if _WORKER_ONLY or _PINNED_DESTINATION.get() is not None:
             raise PinnedTransportError(
-                f"request to {_redact_url(url)} refused: the Databricks block only "
+                "secondary request refused: the Databricks block only "
                 "speaks to the pinned warehouse over the Thrift transport"
             )
-        return original_request_context(self, method, url, headers=headers, **kwargs)
 
-    client_class.request_context = request_context
+        request_context = original_request_context(
+            self, method, url, headers=headers, **kwargs
+        )
+
+        return request_context
+
+    client_class.request_context = _request_context
     client_class._roboflow_pinned_guard = True
 
 
@@ -187,50 +234,213 @@ def _guard_result_link_downloads() -> None:
     if getattr(queue_class, "_roboflow_pinned_guard", False):
         return
 
-    class PinnedThriftCloudFetchQueue(queue_class):  # type: ignore[misc,valid-type]
+    class _PinnedThriftCloudFetchQueue(queue_class):  # type: ignore[misc,valid-type]
         _roboflow_pinned_guard = True
 
         def __init__(self, *args, **kwargs):
-            if _PINNED_DESTINATION.get() is not None or pin_active_anywhere():
+            if _WORKER_ONLY or _PINNED_DESTINATION.get() is not None:
                 raise PinnedTransportError(
                     "the warehouse returned result links (cloud fetch) although "
                     "inline results were requested; downloading them is refused"
                 )
+
             super().__init__(*args, **kwargs)
 
-    PinnedThriftCloudFetchQueue.__name__ = queue_class.__name__
-    PinnedThriftCloudFetchQueue.__qualname__ = queue_class.__qualname__
-    connector_utils.ThriftCloudFetchQueue = PinnedThriftCloudFetchQueue
+    _PinnedThriftCloudFetchQueue.__name__ = queue_class.__name__
+    _PinnedThriftCloudFetchQueue.__qualname__ = queue_class.__qualname__
+    connector_utils.ThriftCloudFetchQueue = _PinnedThriftCloudFetchQueue
 
 
-def _redact_url(url: Any) -> str:
-    text = str(url)
-    return text.split("?", 1)[0][:200]
+def _guard_response_parsing() -> None:
+    from databricks.sql.thrift_api.TCLIService import ttypes
+    from thrift.protocol import TBinaryProtocol
+
+    original = TBinaryProtocol.TBinaryProtocol
+    if getattr(original, "_roboflow_bounded", False):
+        return
+
+    class _BoundedProtocol(original):
+        _roboflow_bounded = True
+
+        def __init__(self, trans, *args, **kwargs):
+            pin = getattr(trans, "_roboflow_destination", None)
+            self._bounded = pin is not None
+            self._depth = 0
+            self._items = 0
+            if pin is not None:
+                kwargs["string_length_limit"] = pin.max_response_bytes
+                kwargs["container_length_limit"] = 65536
+            super().__init__(trans, *args, **kwargs)
+
+        def readMessageBegin(self):
+            """Reset structural counters and read the Thrift message header.
+
+            Returns:
+                tuple: Message name, type and sequence ID from the underlying protocol.
+            """
+            self._depth = 0
+            self._items = 0
+            message_header = super().readMessageBegin()
+
+            return message_header
+
+        def _enter(self, items=1):
+            if self._bounded:
+                self._depth += 1
+                self._items += items
+                if self._depth > 64 or self._items > 131072:
+                    raise PinnedTransportError(
+                        "warehouse response structure exceeds its limit"
+                    )
+
+        def _leave(self):
+            if self._bounded:
+                self._depth -= 1
+
+        def readStructBegin(self):
+            """Account for a nested Thrift struct before reading its fields."""
+            self._enter()
+            struct_header = super().readStructBegin()
+
+            return struct_header
+
+        def readStructEnd(self):
+            """Release the current Thrift struct nesting level."""
+            self._leave()
+            struct_end = super().readStructEnd()
+
+            return struct_end
+
+        def readListBegin(self):
+            """Read a list header and account for its elements.
+
+            Returns:
+                tuple: Element type and count from the underlying protocol.
+
+            Raises:
+                PinnedTransportError: Structural depth or aggregate element limits are exceeded.
+            """
+            result = super().readListBegin()
+            self._enter(result[1])
+
+            return result
+
+        def readListEnd(self):
+            """Release the current Thrift list nesting level."""
+            self._leave()
+            list_end = super().readListEnd()
+
+            return list_end
+
+        def readSetBegin(self):
+            """Read a set header and account for its elements.
+
+            Returns:
+                tuple: Element type and count from the underlying protocol.
+
+            Raises:
+                PinnedTransportError: Structural depth or aggregate element limits are exceeded.
+            """
+            result = super().readSetBegin()
+            self._enter(result[1])
+
+            return result
+
+        def readSetEnd(self):
+            """Release the current Thrift set nesting level."""
+            self._leave()
+            set_end = super().readSetEnd()
+
+            return set_end
+
+        def readMapBegin(self):
+            """Read a map header and account for its keys and values.
+
+            Returns:
+                tuple: Key type, value type and entry count from the underlying protocol.
+
+            Raises:
+                PinnedTransportError: Structural depth or aggregate element limits are exceeded.
+            """
+            result = super().readMapBegin()
+            self._enter(2 * result[2])
+
+            return result
+
+        def readMapEnd(self):
+            """Release the current Thrift map nesting level."""
+            self._leave()
+            map_end = super().readMapEnd()
+
+            return map_end
+
+    TBinaryProtocol.TBinaryProtocol = _BoundedProtocol
+    original_metadata_read = ttypes.TGetResultSetMetadataResp.read
+
+    def _read_metadata(self, protocol):
+        original_metadata_read(self, protocol)
+        if getattr(protocol, "_bounded", False) and (
+            self.arrowSchema
+            or self.lz4Compressed
+            or self.resultFormat not in (None, ttypes.TSparkRowSetType.COLUMN_BASED_SET)
+        ):
+            raise PinnedTransportError("only column-based Thrift results are allowed")
+
+    ttypes.TGetResultSetMetadataResp.read = _read_metadata
+    original_row_read = ttypes.TRowSet.read
+
+    def _read_rows(self, protocol):
+        original_row_read(self, protocol)
+        if getattr(protocol, "_bounded", False) and (
+            self.arrowBatches or self.resultLinks
+        ):
+            raise PinnedTransportError(
+                "Arrow, LZ4 and result links (cloud fetch) are refused"
+            )
+
+    ttypes.TRowSet.read = _read_rows
 
 
 class _PinnedMixin:
     """Behaviour mixed into the connector's ``THttpClient``.
 
-    ``open()`` is the single place the connector creates its connection pool;
-    every request, retry and same-host redirect goes through that pool, so
-    pinning it pins them all. A redirect to another host is refused by
-    ``urllib3`` (``assert_same_host``), and the block additionally sets the
-    connector's redirect budget to zero.
+    The pin belongs to this client, including when another thread reopens it.
+    Every request uses a pool which refuses all redirects independently of the
+    connector's retry policy.
     """
 
-    def open(self):  # noqa: D102 - connector interface
-        pin = _PINNED_DESTINATION.get()
+    def __init__(self, *args, **kwargs):
+        self._roboflow_destination = _PINNED_DESTINATION.get()
+        if _WORKER_ONLY and self._roboflow_destination is None:
+            raise PinnedTransportError(
+                "worker transport requires a validated destination"
+            )
+
+        super().__init__(*args, **kwargs)
+
+    def open(self):
+        """Open the connector pool against its captured destination.
+
+        Raises:
+            PinnedTransportError: The target, proxy or TLS settings violate the pin.
+        """
+        pin = self._roboflow_destination
         if pin is None:
-            return super().open()  # type: ignore[misc]
+            open_result = super().open()  # type: ignore[misc]
+
+            return open_result
+
         if self.scheme != "https":
             raise PinnedTransportError(
                 "pinned transport requires https, got " + str(self.scheme)
             )
+
         if self.using_proxy():
             raise PinnedTransportError(
                 "pinned transport refuses to use an HTTP(S) proxy: the proxy would "
                 "resolve the destination outside the validating block"
             )
+
         expected_port = pin.port
         actual_port = self.port or 443
         if self.host != pin.hostname or actual_port != expected_port:
@@ -238,6 +448,7 @@ class _PinnedMixin:
                 f"transport target {self.host}:{actual_port} does not match the "
                 f"validated destination {pin.hostname}:{expected_port}"
             )
+
         ssl_options = self._ssl_options
         pool_kwargs: Dict[str, Any] = {
             "maxsize": self.max_connections,
@@ -250,8 +461,10 @@ class _PinnedMixin:
                 ssl_options, "tls_verify_hostname", True
             ):
                 raise PinnedTransportError(
-                    "pinned transport requires TLS certificate and hostname verification"
+                    "pinned transport requires TLS certificate "
+                    "and hostname verification"
                 )
+
             pool_kwargs.update(
                 {
                     "ca_certs": ssl_options.tls_trusted_ca_file,
@@ -260,18 +473,99 @@ class _PinnedMixin:
                     "key_password": ssl_options.tls_client_cert_key_password,
                 }
             )
-        pool = HTTPSConnectionPool(pin.ip_address, expected_port, **pool_kwargs)
+        pool = _PinnedHTTPSConnectionPool(pin.ip_address, expected_port, **pool_kwargs)
         self._set_pool(pool)
+
         return None
 
     def setCustomHeaders(
         self, headers: Dict[str, str]
     ):  # noqa: N802 - connector interface
-        pin = _PINNED_DESTINATION.get()
+        """Set connector headers while preserving the pinned host and identity encoding.
+
+        Args:
+            headers (Dict[str, str]): Caller-supplied HTTP headers, copied for pinned clients.
+        """
+        pin = self._roboflow_destination
         if pin is not None:
             headers = dict(headers)
             headers["Host"] = pin.hostname
-        return super().setCustomHeaders(headers)  # type: ignore[misc]
+            headers["Accept-Encoding"] = "identity"
+        header_result = super().setCustomHeaders(headers)  # type: ignore[misc]
+
+        return header_result
+
+    def flush(self):
+        """Send the buffered request and validate response headers before body parsing.
+
+        Raises:
+            PinnedTransportError: The response is compressed or exceeds the byte limit.
+            ValueError: The Content-Length header is not a valid integer.
+        """
+        self._roboflow_read_bytes = 0
+        super().flush()
+        pin = self._roboflow_destination
+        if pin is None:
+            return
+
+        response = self._THttpClient__resp
+        encoding = response.headers.get("Content-Encoding", "identity").lower()
+        length = response.headers.get("Content-Length")
+        try:
+            if encoding != "identity":
+                raise PinnedTransportError(
+                    "compressed warehouse HTTP responses are refused"
+                )
+
+            if length is not None and (
+                int(length) < 0 or int(length) > pin.max_response_bytes
+            ):
+                raise PinnedTransportError("warehouse response exceeds its byte limit")
+        except (ValueError, PinnedTransportError):
+            self.close()
+            raise
+
+    def read(self, size):
+        """Read response bytes without exceeding the captured destination's budget.
+
+        Args:
+            size (int): Requested byte count; negative values request the remaining body.
+
+        Returns:
+            bytes: Undecompressed response data within the response budget.
+
+        Raises:
+            PinnedTransportError: The response body exceeds its byte limit.
+        """
+        pin = self._roboflow_destination
+        if pin is None:
+            data = super().read(size)
+
+            return data
+
+        remaining = pin.max_response_bytes - self._roboflow_read_bytes
+        amount = min(size, remaining + 1) if size >= 0 else remaining + 1
+        data = self._THttpClient__resp.read(amount, decode_content=False)
+        self._roboflow_read_bytes += len(data)
+        if len(data) > remaining:
+            self.close()
+            raise PinnedTransportError("warehouse response exceeds its byte limit")
+
+        return data
+
+    def close(self):
+        """Close the response without draining an untrusted body."""
+        if self._roboflow_destination is None:
+            close_result = super().close()
+
+            return close_result
+
+        response = getattr(self, "_THttpClient__resp", None)
+        if response is not None:
+            # Never drain an attacker-controlled body during error cleanup.
+            response.close()
+            response.release_conn()
+            self._THttpClient__resp = None
 
     def _set_pool(self, pool: HTTPSConnectionPool) -> None:
         # The connector stores the pool in a name-mangled attribute of its own
@@ -283,3 +577,54 @@ class _PinnedMixin:
                 break
         attribute = f"_{base_name or 'THttpClient'}__pool"
         setattr(self, attribute, pool)
+
+
+class _PinnedHTTPSConnectionPool(HTTPSConnectionPool):
+    """Disable redirects at urllib3's request boundary, including relative URLs."""
+
+    def _make_request(self, conn, method, url, **kwargs):
+        # urllib3 handles retryable HTTP statuses inside urlopen(), before the
+        # connector receives the response. Its default drain_conn() reads the
+        # entire body, bypassing the connector's bounded read() on that path.
+        kwargs["preload_content"] = False
+        kwargs["decode_content"] = False
+        response = super()._make_request(conn, method, url, **kwargs)
+
+        def _discard_body():
+            response.close()
+            response.release_conn()
+
+        response.drain_conn = _discard_body
+
+        return response
+
+    def urlopen(self, method, url, *args, **kwargs):
+        """Send a request while refusing both absolute and relative redirects.
+
+        Args:
+            method (str): HTTP request method forwarded to urllib3.
+            url (str): Request target forwarded to urllib3.
+            *args (Any): Positional urllib3 options, including its recursive retry arguments.
+            **kwargs (Any): Keyword urllib3 options; redirects are always disabled.
+
+        Returns:
+            HTTPResponse: The response whose body remains subject to bounded reads.
+
+        Raises:
+            PinnedTransportError: The warehouse returns a redirect response.
+        """
+        # urllib3's reconnect path passes body, headers, retries and redirect
+        # positionally; avoid supplying redirect twice on that recursive call.
+        if len(args) >= 4:
+            args = (*args[:3], False, *args[4:])
+            kwargs.pop("redirect", None)
+        else:
+            kwargs["redirect"] = False
+        response = super().urlopen(method, url, *args, **kwargs)
+        if 300 <= response.status < 400:
+            # Do not drain an untrusted response body while rejecting a redirect.
+            response.close()
+            response.release_conn()
+            raise PinnedTransportError("warehouse redirects are refused")
+
+        return response

@@ -56,13 +56,22 @@ class FakeRow:
 
 
 class FakeCursor:
+    """Record connector calls and expose deterministic fixture rows."""
+
     def __init__(self, rows: List[Dict[str, Any]], recorder: Dict[str, Any]):
         self._rows = rows
         self._recorder = recorder
         self._position = 0
 
-    def execute(self, statement: str) -> None:
+    def execute(self, statement: str, parameters=None) -> None:
+        """Record a query and its separate bound parameters.
+
+        Args:
+            statement (str): SQL template submitted by the block.
+            parameters (Optional[dict]): Native bound parameters supplied to the connector.
+        """
         self._recorder["statement"] = statement
+        self._recorder["parameters"] = parameters
         delay = self._recorder.get("execute_delay")
         if delay:
             time.sleep(delay)
@@ -108,9 +117,20 @@ class FakeConnection:
 @contextmanager
 def fake_databricks(
     rows: List[Dict[str, Any]],
+    *,
     resolved_ips: List[str] = (PUBLIC_IP,),
     recorder: Dict[str, Any] = None,
 ) -> Iterator[Dict[str, Any]]:
+    """Install a fake connector and resolver while recording block side effects.
+
+    Args:
+        rows (List[Dict[str, Any]]): Warehouse rows exposed by the fake cursor.
+        resolved_ips (List[str]): IP addresses returned by the resolver fixture.
+        recorder (Optional[Dict[str, Any]]): Existing recorder to populate, or None.
+
+    Yields:
+        Dict[str, Any]: Captured connection, query, fetch and cleanup calls.
+    """
     recorder = recorder if recorder is not None else {}
 
     def connect(**kwargs: Any) -> FakeConnection:
@@ -129,6 +149,10 @@ def fake_databricks(
         v1, "install_pinned_transport"
     ) as install, mock.patch.object(
         v1, "connector_available", return_value=True
+    ), mock.patch.object(
+        DatabricksSQLImageSourceBlockV1,
+        "run",
+        DatabricksSQLImageSourceBlockV1._run_in_process,
     ):
         recorder["resolver"] = resolver
         recorder["install_pinned_transport"] = install
@@ -152,11 +176,22 @@ def pil_bytes(image_format: str, size=(48, 32)) -> bytes:
 
 
 def run_block(**overrides: Any) -> list:
+    """Run the image block with fixture defaults and explicit input overrides.
+
+    Args:
+        **overrides (Any): Block inputs replacing the fixture defaults.
+
+    Returns:
+        list: Image, name and metadata rows emitted by the block.
+    """
     parameters = {
         "server_hostname": HOST,
         "http_path": HTTP_PATH,
         "access_token": "dapi-secret",
-        "sql_statement": "SELECT * FROM t",
+        "catalog": "main",
+        "schema_name": "vision",
+        "table": "images",
+        "metadata_columns": ["id"],
         "image_column": "bytes",
         "image_name_column": "id",
         "max_rows": 100,
@@ -164,7 +199,9 @@ def run_block(**overrides: Any) -> list:
         "skip_undecodable": True,
     }
     parameters.update(overrides)
-    return DatabricksSQLImageSourceBlockV1().run(**parameters)
+    rows = DatabricksSQLImageSourceBlockV1()._run_in_process(**parameters)
+
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -173,15 +210,27 @@ def run_block(**overrides: Any) -> list:
 
 
 def manifest(**overrides: Any) -> dict:
+    """Build a workflow manifest using fixture defaults.
+
+    Args:
+        **overrides (Any): Manifest fields replacing the fixture defaults.
+
+    Returns:
+        dict: The raw manifest to submit to schema validation.
+    """
     raw = {
         "type": "roboflow_core/databricks_sql_image_source@v1",
         "name": "db",
         "server_hostname": HOST,
         "http_path": HTTP_PATH,
         "access_token": "$inputs.databricks_token",
-        "sql_statement": "SELECT id, bytes FROM c.s.images",
+        "catalog": "main",
+        "schema_name": "vision",
+        "table": "images",
+        "metadata_columns": ["id"],
     }
     raw.update(overrides)
+
     return raw
 
 
@@ -245,14 +294,21 @@ def test_manifest_rejects_literal_bad_path_at_compile_time(path: str) -> None:
 
 
 def test_manifest_declares_outputs_restrictions_and_nesting() -> None:
+    """Verify manifest declares outputs restrictions and nesting."""
     assert BlockManifest.get_output_dimensionality_offset() == 1
     assert {o.name for o in BlockManifest.describe_outputs()} == {
         "images",
         "image_names",
         "metadata",
+        "errors",
     }
     codes = {r.code for r in BlockManifest.get_restrictions()}
-    assert codes == {"unavailable_on_hosted_platform", "queries_warehouse_on_every_run"}
+    assert codes == {"queries_warehouse_on_every_run"}
+    with mock.patch.object(v1, "block_enabled", return_value=False):
+        assert {r.code for r in BlockManifest.get_restrictions()} == {
+            "unavailable_on_hosted_platform",
+            "queries_warehouse_on_every_run",
+        }
     parsed = BlockManifest.model_validate(manifest())
     discovery = parsed.get_actual_restrictions(ignore_environment_restrictions=True)
     assert {r.code for r in discovery.items} == codes
@@ -487,6 +543,7 @@ def test_run_refuses_when_connector_missing() -> None:
 
 
 def test_run_honours_disable_sinks_execution_policy() -> None:
+    """Verify run honours disable sinks execution policy."""
     with fake_databricks([{"id": 1, "bytes": jpeg_bytes()}]) as recorder:
         block = DatabricksSQLImageSourceBlockV1(disable_sinks=True)
         with pytest.raises(RuntimeError, match="disable_sinks"):
@@ -494,7 +551,10 @@ def test_run_honours_disable_sinks_execution_policy() -> None:
                 server_hostname=HOST,
                 http_path=HTTP_PATH,
                 access_token="t",
-                sql_statement="q",
+                catalog="main",
+                schema_name="vision",
+                table="images",
+                metadata_columns=[],
                 image_column="bytes",
                 image_name_column=None,
                 max_rows=10,
@@ -511,6 +571,7 @@ def test_run_honours_disable_sinks_execution_policy() -> None:
 
 
 def test_connection_kwargs_close_every_unpinned_request_path() -> None:
+    """Verify connection kwargs close every unpinned request path."""
     destination = v1.PinnedDestination(hostname=HOST, ip_address=PUBLIC_IP)
     kwargs = connection_kwargs(destination, http_path=HTTP_PATH, timeout_seconds=90.6)
     assert kwargs == {
@@ -518,6 +579,8 @@ def test_connection_kwargs_close_every_unpinned_request_path() -> None:
         "http_path": HTTP_PATH,
         "_port": 443,
         "use_cloud_fetch": False,
+        "use_inline_params": False,
+        "enable_query_result_lz4_compression": False,
         "enable_telemetry": False,
         "session_configuration": {"STATEMENT_TIMEOUT": "90"},
         "_socket_timeout": 30,
@@ -608,6 +671,7 @@ def test_repeated_failures_leave_no_threads_timers_or_open_connections() -> None
 
 
 def test_run_times_out_and_cancels_a_slow_query() -> None:
+    """Verify run times out and cancels a slow query."""
     rows = [{"id": 1, "bytes": jpeg_bytes()}]
     recorder = {"execute_delay": 1.5}
     with fake_databricks(rows, recorder=recorder), mock.patch.object(
@@ -615,11 +679,14 @@ def test_run_times_out_and_cancels_a_slow_query() -> None:
     ):
         started = time.monotonic()
         with pytest.raises(TimeoutError, match="timeout_seconds"):
-            DatabricksSQLImageSourceBlockV1().run(
+            DatabricksSQLImageSourceBlockV1()._run_in_process(
                 server_hostname=HOST,
                 http_path=HTTP_PATH,
                 access_token="t",
-                sql_statement="q",
+                catalog="main",
+                schema_name="vision",
+                table="images",
+                metadata_columns=[],
                 image_column="bytes",
                 image_name_column=None,
                 max_rows=10,
@@ -629,6 +696,45 @@ def test_run_times_out_and_cancels_a_slow_query() -> None:
     assert time.monotonic() - started < 5
     assert recorder["cancelled"] is True
     assert recorder["connection_closed"] is True
+
+
+@pytest.mark.parametrize("interrupted_method", ["execute", "fetchmany"])
+def test_deadline_interrupt_waits_for_query_cancellation(
+    interrupted_method: str,
+) -> None:
+    """Keep cancellation pending when the supervisor interrupts before the watchdog.
+
+    Args:
+        interrupted_method (str): Connector operation interrupted at the deadline.
+    """
+    recorder = {}
+    with fake_databricks([], recorder=recorder), mock.patch.object(
+        v1, "time"
+    ) as clock, mock.patch.object(
+        FakeCursor, interrupted_method
+    ) as operation, mock.patch.object(
+        FakeCursor, "cancel", autospec=True
+    ) as cancel:
+        clock.monotonic.return_value = 0.0
+
+        def _interrupt(*args: Any, **kwargs: Any) -> None:
+            clock.monotonic.return_value = 2.0
+            raise TimeoutError("Databricks query exceeded timeout_seconds")
+
+        def _record_cancellation(cursor: FakeCursor) -> None:
+            assert not recorder.get("cursor_closed")
+            assert not recorder.get("connection_closed")
+            recorder["cancelled"] = True
+
+        operation.side_effect = _interrupt
+        cancel.side_effect = _record_cancellation
+        with pytest.raises(TimeoutError, match="timeout_seconds"):
+            run_block(timeout_seconds=1)
+
+        cancel.assert_called_once()
+    assert recorder["cancelled"]
+    assert recorder["cursor_closed"]
+    assert recorder["connection_closed"]
 
 
 def test_run_closes_cursor_and_connection_when_the_row_loop_raises() -> None:
@@ -679,7 +785,7 @@ def test_decode_image_accepts_bytes_bytearray_memoryview_and_base64() -> None:
         assert decode_image(payload).shape == (32, 48, 3)
 
 
-@pytest.mark.parametrize("image_format", ["JPEG", "PNG", "WEBP"])
+@pytest.mark.parametrize("image_format", ["JPEG", "PNG"])
 def test_decode_image_accepts_allowlisted_formats(image_format: str) -> None:
     assert decode_image(pil_bytes(image_format)).shape == (32, 48, 3)
 
@@ -695,10 +801,11 @@ def test_decode_image_rejects_other_formats_without_decoding(image_format: str) 
 def test_decode_image_rejects_tiff_with_lying_header_before_allocating() -> None:
     # A TIFF whose header dimensions disagree with the pixel data was the known
     # bypass of a header-only cap; the format allowlist refuses it outright.
+    """Verify decode image rejects tiff with lying header before allocating."""
     buffer = io.BytesIO()
     Image.new("RGB", (60, 60)).save(buffer, format="TIFF")
     with mock.patch.object(v1.cv2, "imdecode") as imdecode:
-        with pytest.raises(ValueError, match="TIFF"):
+        with pytest.raises(ValueError, match="not allowed"):
             decode_image(buffer.getvalue())
     imdecode.assert_not_called()
 
@@ -759,10 +866,11 @@ def test_decode_image_reserves_encoded_and_decoded_bytes_from_the_budget() -> No
 
 
 def test_run_budget_covers_metadata_and_names() -> None:
+    """Verify run budget covers metadata and names."""
     rows = [{"id": "x" * 200, "bytes": jpeg_bytes(), "note": "y" * 3000}]
     with fake_databricks(rows), mock.patch.object(v1, "MAX_RUN_BYTES", 3_000):
         with pytest.raises(ValueError, match="byte budget"):
-            run_block()
+            run_block(metadata_columns=["id", "note"])
 
 
 def test_run_budget_failure_is_not_skippable() -> None:
@@ -773,29 +881,102 @@ def test_run_budget_failure_is_not_skippable() -> None:
             run_block(skip_undecodable=True)
 
 
-def test_metadata_strings_are_truncated_and_rows_capped() -> None:
-    row = {"id": 1, "bytes": b"", "note": "n" * 10_000, "blob": b"\x00"}
-    metadata = build_metadata(row, image_column="bytes")
-    assert len(metadata["note"]) == v1.MAX_METADATA_VALUE_CHARS
-    assert "blob" not in metadata and "bytes" not in metadata
-    with mock.patch.object(v1, "MAX_METADATA_BYTES_PER_ROW", 100):
-        with pytest.raises(ValueError, match="metadata"):
-            build_metadata(row, image_column="bytes")
+@pytest.mark.parametrize("value", ["x" * 4096, "é" * 4096])
+def test_metadata_value_at_limit_is_preserved(value):
+    """Preserve accepted strings and existing binary-column filtering.
+
+    Args:
+        value (str): String at the character boundary.
+    """
+    assert build_metadata(
+        {"note": value, "bytes": b"", "blob": b"x"}, image_column="bytes"
+    ) == {"note": value}
 
 
-def test_nested_metadata_is_capped_in_depth_and_size() -> None:
-    deep = {"a": {"b": {"c": {"d": {"e": {"f": 1}}}}}}
-    converted = to_json_safe(deep)
-    assert converted["a"]["b"]["c"]["d"] == "{'e': {'f': 1}}"
-    wide = {"items": list(range(10_000))}
-    assert len(to_json_safe(wide)["items"]) == v1.MAX_METADATA_ITEMS
-    many_keys = {f"k{i}": i for i in range(10_000)}
-    assert len(to_json_safe(many_keys)) == v1.MAX_METADATA_ITEMS
-    # A tiny image with a large metadata column counts against the run budget.
-    rows = [{"id": 1, "bytes": jpeg_bytes(), "note": "y" * 60_000}]
-    with fake_databricks(rows), mock.patch.object(v1, "MAX_RUN_BYTES", 6_000):
-        with pytest.raises(ValueError, match="byte budget"):
-            run_block()
+@pytest.mark.parametrize(
+    "value, code",
+    [
+        ("x" * 4097, "METADATA_VALUE_TOO_LONG"),
+        ({"a": {"b": {"c": {"d": {}}}}}, "METADATA_TOO_DEEP"),
+        (list(range(257)), "METADATA_TOO_MANY_ITEMS"),
+        ({str(i): i for i in range(257)}, "METADATA_TOO_MANY_ITEMS"),
+        (["é" * 4096] * 8, "METADATA_TOO_LARGE"),
+        ({"k" * 4097: 1}, "METADATA_VALUE_TOO_LONG"),
+    ],
+)
+@pytest.mark.parametrize("skip_undecodable", [True, False])
+def test_metadata_limits_emit_error_only_rows(value, code, skip_undecodable):
+    """Reject an entire metadata row before image decoding without failing peers.
+
+    Args:
+        value (Any): Metadata exceeding one supported limit.
+        code (str): Expected diagnostic code.
+        skip_undecodable (bool): Independent image failure policy.
+    """
+    rows = [
+        {"id": 1, "bytes": jpeg_bytes(), "note": "ok"},
+        {"id": 2, "bytes": b"must not decode", "note": value},
+        {"id": 3, "bytes": jpeg_bytes(), "note": "after"},
+    ]
+    with fake_databricks(rows), mock.patch.object(
+        v1, "decode_image", wraps=decode_image
+    ) as decode:
+        result = run_block(metadata_columns=["note"], skip_undecodable=skip_undecodable)
+    assert decode.call_count == 2
+    assert result[0]["metadata"] == {"note": "ok"}
+    assert result[2]["metadata"] == {"note": "after"}
+    assert all(result[1][key] is None for key in ("images", "image_names", "metadata"))
+    error = result[1]["errors"]
+    assert error["row_index"] == 1
+    assert error["image_name"] == "2"
+    assert error["code"] == code
+    assert error["field"] == (None if code == "METADATA_TOO_LARGE" else "note")
+    assert len(json.dumps(error)) < 1024
+
+
+def test_metadata_depth_and_collection_boundaries_are_preserved():
+    """Keep four container levels and 256 collection members unchanged."""
+    value = {"a": {"b": {"c": list(range(256))}}}
+    assert to_json_safe(value) == value
+
+
+def test_metadata_row_byte_limit_is_exact_and_counts_unicode_and_escaping():
+    """Account for JSON keys, separators, escaping and UTF-8 bytes."""
+    value = {"note": ["é", "\n", {"x": True, "y": None}]}
+    size = v1.metadata_size(value)
+    with mock.patch.object(v1, "MAX_METADATA_BYTES_PER_ROW", size):
+        assert build_metadata(value, image_column="bytes") == value
+    with mock.patch.object(v1, "MAX_METADATA_BYTES_PER_ROW", size - 1):
+        with pytest.raises(v1.MetadataLimitExceeded) as error:
+            build_metadata(value, image_column="bytes")
+    assert error.value.code == "METADATA_TOO_LARGE"
+
+
+def test_rejected_metadata_is_not_stringified_or_fully_walked():
+    """Reject large/deep structures before inspecting their contents."""
+
+    class Unstringifiable(dict):
+        def __str__(self):
+            pytest.fail("stringified rejected metadata")
+
+        def items(self):
+            pytest.fail("walked rejected metadata")
+
+    for value in (
+        {"a": {"b": {"c": {"d": Unstringifiable()}}}},
+        Unstringifiable({i: i for i in range(257)}),
+    ):
+        with pytest.raises(v1.MetadataLimitExceeded):
+            build_metadata({"note": value}, image_column="bytes")
+
+
+def test_metadata_error_records_count_toward_invocation_budget():
+    """Fail the invocation if even its bounded diagnostics exhaust the budget."""
+    with fake_databricks(
+        [{"id": 1, "bytes": b"", "note": "x" * 4097}]
+    ), mock.patch.object(v1, "MAX_RUN_BYTES", 1):
+        with pytest.raises(v1.RunBudgetExceeded):
+            run_block(metadata_columns=["note"])
 
 
 def test_image_names_are_length_capped() -> None:
@@ -823,6 +1004,7 @@ def test_to_json_safe_keeps_decimal_exact_and_stringifies_unknown_types() -> Non
 
 
 def test_run_emits_one_element_per_row_and_strips_binary_columns() -> None:
+    """Verify run emits one element per row and strips binary columns."""
     rows = [
         {
             "id": 1,
@@ -840,12 +1022,13 @@ def test_run_emits_one_element_per_row_and_strips_binary_columns() -> None:
         },
     ]
     with fake_databricks(rows) as recorder:
-        result = run_block()
+        result = run_block(metadata_columns=["id", "raccoon_name", "weight", "thumb"])
     assert [element["image_names"] for element in result] == ["1", "2"]
     assert result[0]["metadata"] == {"id": 1, "raccoon_name": "rocky", "weight": 4.2}
     assert isinstance(result[0]["images"], WorkflowImageData)
     assert result[0]["images"].numpy_image.shape == (32, 48, 3)
-    assert recorder["statement"] == "SELECT * FROM t"
+    assert "FROM IDENTIFIER(:source) LIMIT :row_limit" in recorder["statement"]
+    assert recorder["parameters"]["source"] == "`main`.`vision`.`images`"
     assert recorder["connection_closed"] and recorder["cursor_closed"]
 
 
@@ -914,7 +1097,10 @@ SOURCE_WORKFLOW = {
             "server_hostname": HOST,
             "http_path": HTTP_PATH,
             "access_token": "$inputs.databricks_token",
-            "sql_statement": "$inputs.sql",
+            "catalog": "main",
+            "schema_name": "vision",
+            "table": "images",
+            "metadata_columns": ["id", "raccoon_name"],
             "image_name_column": "id",
             "max_rows": 5,
         }
@@ -923,11 +1109,13 @@ SOURCE_WORKFLOW = {
         {"type": "JsonField", "name": "images", "selector": "$steps.db.images"},
         {"type": "JsonField", "name": "names", "selector": "$steps.db.image_names"},
         {"type": "JsonField", "name": "metadata", "selector": "$steps.db.metadata"},
+        {"type": "JsonField", "name": "errors", "selector": "$steps.db.errors"},
     ],
 }
 
 
 def test_engine_runs_block_as_input_free_step_producing_a_batch() -> None:
+    """Verify engine runs block as input free step producing a batch."""
     rows = [
         {"id": i, "bytes": jpeg_bytes(), "raccoon_name": n}
         for i, n in zip((7, 8, 9), ("rocky", "bandit", "meeko"))
@@ -942,7 +1130,7 @@ def test_engine_runs_block_as_input_free_step_producing_a_batch() -> None:
             runtime_parameters={"databricks_token": "dapi-xyz", "sql": "SELECT 1"}
         )
     assert recorder["connect_kwargs"]["access_token"] == "dapi-xyz"
-    assert recorder["statement"] == "SELECT 1"
+    assert recorder["parameters"]["row_limit"] == 5
     assert len(result) == 1
     assert result[0]["names"] == ["7", "8", "9"]
     assert [m["raccoon_name"] for m in result[0]["metadata"]] == [
@@ -963,7 +1151,7 @@ def test_engine_returns_empty_lists_when_query_yields_no_rows() -> None:
         result = execution_engine.run(
             runtime_parameters={"databricks_token": "dapi-xyz", "sql": "SELECT 1"}
         )
-    assert result[0] == {"images": [], "names": [], "metadata": []}
+    assert result[0] == {"images": [], "names": [], "metadata": [], "errors": []}
 
 
 def test_engine_rejects_a_submitted_workflow_while_disabled_without_connecting(
@@ -1006,3 +1194,39 @@ def test_engine_rejects_a_submitted_workflow_while_disabled_without_connecting(
         recorder["resolver"].assert_not_called()
     finally:
         blocks_loader.clear_caches()
+
+
+@pytest.mark.parametrize("include_success", [False, True])
+def test_engine_reports_metadata_errors_when_some_or_all_rows_are_rejected(
+    include_success,
+):
+    """Preserve errors independently of successful image outputs.
+
+    Args:
+        include_success (bool): Whether a valid row accompanies the rejection.
+    """
+    rows = [{"id": 7, "bytes": b"not decoded", "raccoon_name": "x" * 4097}]
+    if include_success:
+        rows.append({"id": 8, "bytes": jpeg_bytes(), "raccoon_name": "bandit"})
+    engine = ExecutionEngine.init(
+        workflow_definition=SOURCE_WORKFLOW,
+        init_parameters={"workflows_core.step_execution_mode": StepExecutionMode.LOCAL},
+        max_concurrent_steps=1,
+    )
+    with fake_databricks(rows):
+        result = engine.run(
+            runtime_parameters={"databricks_token": "t", "sql": "unused"}
+        )[0]
+    assert result["images"][0] is None
+    assert result["names"][0] is None
+    assert result["metadata"][0] is None
+    assert result["errors"][0] == {
+        "row_index": 0,
+        "image_name": "7",
+        "field": "raccoon_name",
+        "code": "METADATA_VALUE_TOO_LONG",
+        "message": "Metadata text exceeds 4096 characters.",
+    }
+    if include_success:
+        assert result["names"][1] == "8"
+        assert result["errors"][1] is None
