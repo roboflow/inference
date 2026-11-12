@@ -1,0 +1,8 @@
+FROM node:24-bookworm-slim
+
+WORKDIR /checks
+COPY pypi-workflow-tests/package.json pypi-workflow-tests/package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY scripts/test_pypi_workflow_conditions.mjs ./workflow-conditions.mjs
+
+CMD ["node", "/checks/workflow-conditions.mjs"]
