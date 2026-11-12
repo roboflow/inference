@@ -21,6 +21,7 @@ for contributor and maintainer responsibilities.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
+- `roboflow_core/embedding_model@v1` can reach the hosted Serverless API in remote step execution: Inference servers now expose `POST /infer/embeddings` on GCP Serverless, and bill each embedded image as a `model` usage row. One request carries at most 8 images there (`SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE`). No block code changes; the block needs a server with this route.
 
 ### Added
 
@@ -29,10 +30,6 @@ for contributor and maintainer responsibilities.
   - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
   - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
   - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
-
-### Changed
-
-- `roboflow_core/embedding_model@v1` can reach the hosted Serverless API in remote step execution: Inference servers now expose `POST /infer/embeddings` on GCP Serverless, and bill each embedded image as a `model` usage row. One request carries at most 8 images there (`SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE`). No block code changes; the block needs a server with this route.
 
 ### Fixed
 
