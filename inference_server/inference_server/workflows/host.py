@@ -480,6 +480,7 @@ from roboflow_workflows.utils.image_encoding import (  # noqa: E402
     convert_gray_image_to_bgr,
     decode_encoded_image_bytes,
 )
+
 from inference_model_manager.pipelines import InvalidPipelineIdError  # noqa: E402
 from inference_models.errors import (  # noqa: E402
     ModelNotFoundError,
@@ -776,6 +777,24 @@ class ServerRoboflowPlatformClient:
         params: Optional[List[Tuple[str, str]]] = None,
         http_errors_handlers: Optional[HttpErrorHandlers] = None,
     ) -> dict:
+        """Make a JSON POST request to the Roboflow API.
+
+        The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
+        waiting one and then two seconds. Other endpoints make one attempt.
+
+        Args:
+            endpoint: API endpoint path.
+            api_key: Roboflow API key.
+            payload: JSON payload.
+            params: Additional URL parameters.
+            http_errors_handlers: Optional custom HTTP error handlers by status code.
+
+        Returns:
+            dict: The decoded JSON response.
+
+        Raises:
+            RoboflowAPIRequestError: If the request fails.
+        """
         _refuse_when_offline(operation="make API requests")
         url_params: List[Tuple[str, str]] = []
         if api_key and api_key != "local":
@@ -787,14 +806,26 @@ class ServerRoboflowPlatformClient:
             url=f"{base_url.rstrip('/')}/{endpoint.strip('/')}",
             params=url_params,
         )
+        wrapped_url = self.wrap_url(url)
+        headers = self.build_api_headers()
         try:
-            response = _platform_request(
-                "post",
-                self.wrap_url(url),
-                json=payload,
-                headers=self.build_api_headers(),
-                timeout=API_REQUEST_TIMEOUT_S,
-            )
+            for attempt in range(3):
+                response = _platform_request(
+                    "post",
+                    wrapped_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=API_REQUEST_TIMEOUT_S,
+                )
+                if (
+                    endpoint.strip("/") != "apiproxy/google_vision_ocr"
+                    or response.status_code not in (502, 503, 504)
+                    or attempt == 2
+                ):
+                    break
+
+                response.close()
+                time.sleep(attempt + 1)
         except LegacyHTTPError as error:
             if error.status_code == 504:
                 raise RoboflowAPITimeoutError(

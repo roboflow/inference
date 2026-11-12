@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Callable, List, Literal, Optional, Tuple, Type, Union
 
 import cv2
@@ -47,6 +48,7 @@ _HUD_FOCUS_LABEL = "TFM Focus"
 _HUD_EXPOSURE_LABEL = "Exposure"
 # Per-channel histogram colours, indexed by BGR channel order.
 _HUD_CHANNEL_COLORS = ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+_MAX_CACHED_ZEBRA_MASK_BYTES = 16 * 1024 * 1024
 
 SHORT_DESCRIPTION: str = "Calculate a score to indicate how well-focused a camera is."
 LONG_DESCRIPTION = """
@@ -323,8 +325,39 @@ class CameraFocusBlockV2(WorkflowBlock):
 def _create_zebra_mask(shape: Tuple[int, int], spacing: int = 8) -> np.ndarray:
     """Create diagonal zebra stripe pattern mask."""
     height, width = shape
+    if spacing == 8:
+        # Only bit 3 determines the stripe; uint8 overflow preserves its phase.
+        rows = np.arange(height, dtype=np.uint8)[:, None]
+        columns = np.arange(width, dtype=np.uint8)
+        mask = ((rows + columns) & 8) == 0
+        return mask
+
     y, x = np.ogrid[:height, :width]
-    return ((x + y) // spacing) % 2 == 0
+    mask = ((x + y) // spacing) % 2 == 0
+    return mask
+
+
+@lru_cache(maxsize=1)
+def _cached_zebra_mask(shape: Tuple[int, int]) -> np.ndarray:
+    mask = _create_zebra_mask(shape)
+    mask.flags.writeable = False
+    return mask
+
+
+@lru_cache(maxsize=8)
+def _zebra_blend_tables(opacity: float) -> Tuple[np.ndarray, np.ndarray]:
+    values = np.arange(256, dtype=np.uint8)[:, None]
+    tables = []
+    for color in ((255, 0, 0), (0, 0, 255)):
+        # Match the original float arithmetic and truncation, not cv2 rounding.
+        table = (
+            (values * (1 - opacity) + np.array(color, dtype=np.uint8) * opacity)
+            .astype(np.uint8)
+            .reshape(256, 1, 3)
+        )
+        table.flags.writeable = False
+        tables.append(table)
+    return tables[0], tables[1]
 
 
 def _apply_zebra_warnings(
@@ -336,10 +369,29 @@ def _apply_zebra_warnings(
 ) -> np.ndarray:
     """Overlay zebra pattern on under/overexposed regions."""
     output = image.copy()
-    zebra = _create_zebra_mask(gray.shape)
+    zebra = (
+        _cached_zebra_mask(gray.shape)
+        if gray.size <= _MAX_CACHED_ZEBRA_MASK_BYTES
+        else _create_zebra_mask(gray.shape)
+    )
 
     underexposed = (gray < under_thresh) & zebra
     overexposed = (gray > over_thresh) & zebra
+
+    if (
+        image.dtype == np.uint8
+        and image.ndim == 3
+        and image.shape[2] == 3
+        and gray.shape == image.shape[:2]
+        and gray.size > 0
+        and type(opacity) in (int, float)
+        and 0 <= opacity <= 1
+    ):
+        blue_table, red_table = _zebra_blend_tables(opacity)
+        cv2.copyTo(cv2.LUT(output, blue_table), underexposed.view(np.uint8), output)
+        # The red blend must read the blue blend's output when thresholds overlap.
+        cv2.copyTo(cv2.LUT(output, red_table), overexposed.view(np.uint8), output)
+        return output
 
     blue = np.array([255, 0, 0], dtype=np.uint8)
     red = np.array([0, 0, 255], dtype=np.uint8)
