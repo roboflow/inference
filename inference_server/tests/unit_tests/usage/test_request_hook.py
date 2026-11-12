@@ -1978,6 +1978,20 @@ def test_authenticated_batch_context_is_carried_on_the_request_and_model_rows(
         assert row["resource_details"]["billing_context"] == CANONICAL_BATCH_CONTEXT
 
 
+def test_authenticated_batch_context_keeps_the_job_it_names(
+    usage_client, usage_collector, detection_gateway, monkeypatch
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+    context = json.dumps({**json.loads(BATCH_CONTEXT), "jobId": "job-1"})
+
+    response = _catch_all(client, _batch_query(context, SECRET))
+
+    assert response.status_code == 200, response.text
+    recorded = _model_row(usage_collector)["resource_details"]["billing_context"]
+    assert json.loads(recorded) == {**json.loads(BATCH_CONTEXT), "jobId": "job-1"}
+
+
 @pytest.mark.parametrize("secret", ["", "wrong-secret"])
 def test_batch_context_without_a_valid_secret_is_ignored(
     usage_client, usage_collector, detection_gateway, monkeypatch, secret
@@ -2001,6 +2015,12 @@ def test_batch_context_without_a_valid_secret_is_ignored(
         json.dumps({"version": "batch-v1", "media": "image", "multiplier": 0}),
         json.dumps({"version": "batch-v1", "media": "image", "multiplier": 10**400}),
         json.dumps({"version": "batch-v1", "media": "image", "multiplier": True}),
+        json.dumps(
+            {"version": "batch-v1", "media": "image", "multiplier": 0.5, "jobId": "a/b"}
+        ),
+        json.dumps(
+            {"version": "batch-v1", "media": "image", "multiplier": 0.5, "jobId": 7}
+        ),
     ],
 )
 def test_invalid_authenticated_batch_context_is_never_served_unrecorded(
