@@ -806,3 +806,55 @@ def test_real_split_build_preserves_all_six_package_contents(
     )
     with pytest.raises(ValueError, match="Unexpected publication inventory"):
         release._run("gate-sdk", wait_seconds=0)
+
+
+@pytest.mark.parametrize(
+    "remaining,expected", [(0, None), (4.5, 4.5), (60, 30), (None, 30)]
+)
+def test_optional_transport_deadline_clamps_timeout(monkeypatch, remaining, expected):
+    monkeypatch.setattr(release.time, "monotonic", lambda: 100)
+    calls = []
+
+    class Response(io.BytesIO):
+        def geturl(self):
+            return "https://pypi.org/file"
+
+    def open_url(request, *, timeout):
+        calls.append(timeout)
+        return Response(b"body")
+
+    monkeypatch.setattr(release.urllib.request, "urlopen", open_url)
+    deadline = None if remaining is None else 100 + remaining
+    if remaining == 0:
+        with pytest.raises(ValueError, match="timed out"):
+            release._read_url("https://pypi.org/file", deadline=deadline)
+        assert calls == []
+    else:
+        assert release._read_url("https://pypi.org/file", deadline=deadline) == b"body"
+        assert calls == [expected]
+
+
+def test_transport_rejects_success_after_inflight_deadline_overshoot(monkeypatch):
+    clock = [0]
+    calls = []
+    monkeypatch.setattr(release.time, "monotonic", lambda: clock[0])
+
+    class Response(io.BytesIO):
+        def geturl(self):
+            return "https://pypi.org/file"
+
+        def read(self, size=-1):
+            clock[0] += 2
+            return super().read(size)
+
+    def open_url(request, *, timeout):
+        calls.append(timeout)
+        return Response(b"body")
+
+    monkeypatch.setattr(release.urllib.request, "urlopen", open_url)
+    with pytest.raises(ValueError, match="timed out"):
+        release._read_url("https://pypi.org/file", deadline=1)
+    assert clock[0] == 2
+    with pytest.raises(ValueError, match="timed out"):
+        release._read_url("https://pypi.org/file", deadline=1)
+    assert calls == [1]

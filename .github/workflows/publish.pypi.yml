@@ -145,10 +145,13 @@ jobs:
             (inputs.packages == 'runtime' || inputs.publish != true) &&
             needs.publish_sdk.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: read
       actions: write
+    concurrency:
+      group: pypi-dependencies-${{ needs.build_runtime.outputs.version }}-${{ github.event_name == 'release' || inputs.publish == true }}
+      cancel-in-progress: false
     outputs:
       artifact: ${{ steps.plan.outputs.artifact }}
     steps:
@@ -162,15 +165,16 @@ jobs:
       - name: Require the exact SDK before publishing upstream dependencies
         if: ${{ github.event_name == 'release' || inputs.publish == true }}
         run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
-      - name: Resolve dependencies and publish missing upstream versions in order
+      - name: Resolve first-party dependency versions
         id: plan
+        run: |
+          bash .release/pypi/dependencies.sh plan --wait-seconds 600
+          echo "artifact=dependency-plan-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Publish missing upstream versions in dependency order
+        if: ${{ github.event_name == 'release' || inputs.publish == true }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          operation=plan
-          if [ "$PUBLISH" = "true" ]; then operation=coordinate; fi
-          bash .release/pypi/dependencies.sh "$operation"
-          echo "artifact=dependency-plan-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        run: bash .release/pypi/dependencies.sh coordinate --wait-seconds 9000
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
@@ -195,7 +199,7 @@ jobs:
            (github.event_name == 'workflow_dispatch' && inputs.packages == 'runtime' &&
             needs.publish_sdk.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -217,7 +221,7 @@ jobs:
           name: ${{ needs.prepare_dependencies.outputs.artifact }}
           path: dist
       - name: Verify the selected dependencies against the retained consumer wheels
-        run: bash .release/pypi/dependencies.sh verify
+        run: bash .release/pypi/dependencies.sh verify --wait-seconds 600
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-sdk-verification-${{ github.run_attempt }}

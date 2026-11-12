@@ -31,7 +31,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -59,13 +59,16 @@ jobs:
           path: dist/streamvision-*.whl
       - name: Verify published dependencies before upload
         if: ${{ github.event.inputs.publish == 'true' }}
-        run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json
+        run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
       - name: 🚀 Publish streamvision to PyPI
         if: ${{ github.event.inputs.publish == 'true' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: dist/
           skip-existing: true
+      - name: Verify published wheel contents against the built candidate
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/dependencies.sh verify-published --package streamvision --directory dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
       - uses: actions/upload-artifact@v4
         if: ${{ always() && github.event.inputs.publish == 'true' }}
         with:
