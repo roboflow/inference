@@ -78,3 +78,33 @@ def test_nested_index_includes_attestation_and_shared_config():
     with patch.object(image, "_run", side_effect=[json.dumps(inner), json.dumps(leaf)]):
         result = image._storage_inventory(ROOT, {"manifests": [descriptor(CHILD, 30)]})
     assert sum(blob["size"] for blob in result["blobs"]) == 55
+
+
+def test_transient_manifest_read_retries_without_exposing_errors(capsys):
+    with patch.object(
+        image,
+        "_run",
+        side_effect=[
+            ValueError("private-diagnostic"),
+            json.dumps({"schemaVersion": 2}),
+        ],
+    ) as run, patch.object(image.time, "sleep") as sleep:
+        assert image._read_manifest(ROOT) == {"schemaVersion": 2}
+    assert run.call_count == 2
+    sleep.assert_called_once_with(1)
+    assert capsys.readouterr().out == "CI_IMAGE_MANIFEST_RETRY attempt=1\n"
+
+
+def test_manifest_read_exhaustion_is_bounded_and_invalid_json_is_not_retried(capsys):
+    with patch.object(
+        image, "_run", side_effect=ValueError("private-diagnostic")
+    ) as run, patch.object(image.time, "sleep") as sleep, pytest.raises(ValueError):
+        image._read_manifest(ROOT)
+    assert run.call_count == 3
+    assert [call.args for call in sleep.call_args_list] == [(1,), (2,)]
+    assert "private-diagnostic" not in capsys.readouterr().out
+    with patch.object(image, "_run", return_value="invalid-json") as run, pytest.raises(
+        json.JSONDecodeError
+    ):
+        image._read_manifest(ROOT)
+    assert run.call_count == 1

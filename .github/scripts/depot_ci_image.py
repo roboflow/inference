@@ -150,6 +150,27 @@ def _login(*, env: dict, token: str) -> None:
     )
 
 
+def _read_manifest(digest: str) -> dict:
+    reference = f"{_repository()}@{_digest(digest)}"
+    for attempt in range(3):
+        try:
+            raw = _run(
+                ["docker", "buildx", "imagetools", "inspect", "--raw", reference]
+            )
+        except ValueError:
+            if attempt == 2:
+                raise
+
+            # A saved image can outlive a transient registry read failure.
+            # Retry only this read, never the build or a credential operation.
+            print(f"CI_IMAGE_MANIFEST_RETRY attempt={attempt + 1}", flush=True)
+            time.sleep(attempt + 1)
+        else:
+            return json.loads(raw)
+
+    raise ValueError("Manifest inspection failed")
+
+
 def _storage_inventory(index: str, manifest: dict) -> dict:
     """Count referenced registry blobs once, without reading image configuration."""
     blobs: dict[str, int] = {}
@@ -177,20 +198,7 @@ def _storage_inventory(index: str, manifest: dict) -> dict:
                 if len(visited) > 64:
                     raise ValueError("Too many registry manifests")
 
-                pending.append(
-                    json.loads(
-                        _run(
-                            [
-                                "docker",
-                                "buildx",
-                                "imagetools",
-                                "inspect",
-                                "--raw",
-                                f"{_repository()}@{digest}",
-                            ]
-                        )
-                    )
-                )
+                pending.append(_read_manifest(digest))
 
     # The root index has no parent descriptor. Its small metadata size is
     # excluded explicitly; every referenced manifest, config and layer is counted.
@@ -283,18 +291,7 @@ def _build() -> None:
 
             index = _digest(result["containerimage.digest"])
             _login(env=dict(os.environ), token=_pull_token(project))
-            manifest = json.loads(
-                _run(
-                    [
-                        "docker",
-                        "buildx",
-                        "imagetools",
-                        "inspect",
-                        "--raw",
-                        f"{repository}@{index}",
-                    ]
-                )
-            )
+            manifest = _read_manifest(index)
             if "manifests" in manifest:
                 children = _manifest_digests(manifest, family=family)
             elif family != "cpu":
