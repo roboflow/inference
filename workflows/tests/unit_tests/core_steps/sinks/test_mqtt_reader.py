@@ -912,27 +912,27 @@ class TestConnectionLifecycle:
         assert clients[0].disconnected is True
 
     def test_refusal_is_reported_without_waiting_for_timeout(
-        self, clients, block, monkeypatch
+        self, clients, block, monkeypatch, blocking_waits
     ):
         monkeypatch.setattr(FakeClient, "connack_reason_code", 5)
+        blocking_waits.watch_new(MQTTReaderState)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(timeout=2.0))
 
         assert result["error_status"] is True
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
 
     def test_next_run_after_refusal_repeats_it_without_a_new_connection(
-        self, clients, block, monkeypatch
+        self, clients, block, monkeypatch, blocking_waits
     ):
         monkeypatch.setattr(FakeClient, "connack_reason_code", 5)
         first = block.run(**run_kwargs(timeout=2.0))
+        blocking_waits.watch(block._state)
 
-        started = time.monotonic()
         second = block.run(**run_kwargs(timeout=2.0))
 
         assert second == first
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert len(clients) == 1
         assert [call for call in clients[0].calls if call[0] == "connect"] == [
             ("connect", "localhost", 1883)
@@ -990,17 +990,17 @@ class TestConnectionLifecycle:
         assert block._state.connected.is_set()
 
     def test_refused_subscription_does_not_wait_for_timeout(
-        self, clients, block, monkeypatch
+        self, clients, block, monkeypatch, blocking_waits
     ):
         monkeypatch.setattr(FakeClient, "granted_qos", SUBSCRIPTION_REFUSED_QOS)
         block.run(**run_kwargs(timeout=1.0))
+        blocking_waits.watch(block._state)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(timeout=1.0))
 
         assert result["error_status"] is True
         assert "refused" in result["error_message"].lower()
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
 
     def test_subscribe_error_reported_through_refused_path(
         self, clients, block, monkeypatch
@@ -1431,14 +1431,16 @@ class TestOutage:
         assert first["is_new"] is True
         return clients[0], first
 
-    def test_drop_repeats_last_message_with_error_without_waiting(self, clients, block):
+    def test_drop_repeats_last_message_with_error_without_waiting(
+        self, clients, block, blocking_waits
+    ):
         client, first = self.warm(clients, block, timeout=2.0)
         drop(client)
+        blocking_waits.watch(block._state)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(timeout=2.0))
 
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert result == {
             **first,
             "is_new": False,
@@ -1476,15 +1478,15 @@ class TestOutage:
         assert [r["error_status"] for r in results] == [False, False, True]
 
     def test_drop_before_any_message_returns_empty_failure_without_waiting(
-        self, clients, block
+        self, clients, block, blocking_waits
     ):
         block.run(**run_kwargs(timeout=2.0))
         drop(clients[0])
+        blocking_waits.watch(block._state)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(timeout=2.0))
 
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert result["payload"] == {}
         assert result["value"] is None
         assert result["error_status"] is True
