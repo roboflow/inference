@@ -947,18 +947,10 @@ def test_embedding_failing_on_the_first_image_still_counts_every_image(
 
 
 def test_fanned_out_embedding_call_is_floored_once(
-    usage_client, usage_collector, monkeypatch
+    usage_client, usage_collector, monkeypatch, stepping_clock
 ):
     monkeypatch.setattr(configuration, "GCP_SERVERLESS", True)
-    gateway = _clip_gateway()
-    slow = gateway.predictions[("clip/ViT-B-16", "embed_images")]
-
-    def _slow(image, params):
-        time.sleep(0.02)
-        return slow(image, params)
-
-    gateway.predictions[("clip/ViT-B-16", "embed_images")] = _slow
-    client = usage_client(gateway)
+    client = usage_client(_clip_gateway())
     token = apply_duration_minimum.set(True)
     try:
         response = client.post(
