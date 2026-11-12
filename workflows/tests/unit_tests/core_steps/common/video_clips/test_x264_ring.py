@@ -373,7 +373,10 @@ def test_clip_kept_on_disk_is_private_to_the_owner(ring, tmp_path, monkeypatch) 
 
 
 class _SlowX264Ring(X264Ring):
+    encoded = 0
+
     def _encode_frame(self, frame, *, pts, force_keyframe):
+        self.encoded += 1
         time.sleep(0.02)
         return super()._encode_frame(frame, pts=pts, force_keyframe=force_keyframe)
 
@@ -391,13 +394,13 @@ def test_prepare_close_drops_queue_and_finalises_eight_captures_fast() -> None:
         assert recorder.stats().queue_depth > 50
 
         # when
-        started = time.monotonic()
         recorder.prepare_close(5.0)
+        encoded_at_return = recorder.encoded
         artifacts = [capture.future.result(timeout=5) for capture in captures]
-        elapsed = time.monotonic() - started
 
-        # then
-        assert elapsed < 0.5
+        # then: the backlog is dropped, not encoded; once prepare_close returns
+        # the encoder may only finish the one frame it already held
+        assert recorder.encoded <= encoded_at_return + 1
         assert all(a.report.partial == PARTIAL_SHUTDOWN for a in artifacts)
         assert all(a.report.frames >= 10 for a in artifacts)
         stats = recorder.stats()
