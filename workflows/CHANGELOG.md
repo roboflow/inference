@@ -16,6 +16,12 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
+  generation, a bounded mask cache, and lookup-table blending. Output pixels,
+  exposure thresholds, and focus scores are unchanged.
+
 ### Added
 
 - Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an optional `reference_examples` input for `object-detection`: up to 10 labeled example images, each `{"image": ..., "annotations": [{"class", "x", "y", "width", "height"}]}` in pixels of that image, the Roboflow prediction format. The examples go before the image to label in every request, so the model sees what each class looks like and how tightly it is boxed. Gemini gets the example images with their boxes and labels drawn on them. Pillow's default font only draws ASCII, so when a label is outside printable ASCII the boxes show numbers and the request text maps them to the labels. OpenAI gets up to 3 crops per label, grouped by label (the output labels, so `output_classes` when set). Example images load one at a time, like a workflow image input with `prevent_local_images_loading` on, whatever the engine sets: the host's URL policy applies and local file paths are refused. Each image is released once rendered, so only the boxed images or crops stay in memory. Each block instance keeps the parts of its last examples, so a job or a request fetches them once. The manifest schema describes the examples and their limit. A selector can provide the whole list, but selectors inside an example are refused. Other tasks reject the input. Without it the requests are unchanged.
