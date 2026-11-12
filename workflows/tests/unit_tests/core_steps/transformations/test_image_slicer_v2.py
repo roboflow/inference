@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 import torch
@@ -5,6 +7,7 @@ from pydantic import ValidationError
 from roboflow_workflows.core_steps.transformations.image_slicer.v2 import (
     BlockManifest,
     ImageSlicerBlockV2,
+    generate_offsets,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -114,6 +117,43 @@ def test_manifest_v1_parsing_when_overlap_outside_of_range(
     # when
     with pytest.raises(ValidationError):
         _ = BlockManifest.model_validate(raw_manifest)
+
+
+@pytest.mark.parametrize(
+    ("resolution_wh", "slice_wh", "overlap_ratio_wh", "x_anchors", "y_anchors"),
+    [
+        pytest.param(
+            (256, 256), (256, 256), (0.999, 0.999), (0,), (0,), id="whole-image"
+        ),
+        pytest.param(
+            (9, 6), (6, 4), (0.9, 0.9), (0, 1, 2, 3), (0, 1, 2), id="overlapping-grid"
+        ),
+    ],
+)
+def test_generate_offsets_deduplicates_anchors_before_building_grid(
+    resolution_wh: tuple[int, int],
+    slice_wh: tuple[int, int],
+    overlap_ratio_wh: tuple[float, float],
+    x_anchors: tuple[int, ...],
+    y_anchors: tuple[int, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meshgrid = Mock(wraps=np.meshgrid)
+    monkeypatch.setattr(np, "meshgrid", meshgrid)
+
+    offsets = generate_offsets(
+        resolution_wh=resolution_wh,
+        slice_wh=slice_wh,
+        overlap_ratio_wh=overlap_ratio_wh,
+    )
+
+    meshgrid.assert_called_once()
+    actual_x, actual_y = meshgrid.call_args.args
+    np.testing.assert_array_equal(actual_x, x_anchors)
+    np.testing.assert_array_equal(actual_y, y_anchors)
+    width, height = slice_wh
+    expected = [[x, y, x + width, y + height] for y in y_anchors for x in x_anchors]
+    np.testing.assert_array_equal(offsets, expected)
 
 
 def test_running_block() -> None:

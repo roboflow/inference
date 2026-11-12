@@ -271,12 +271,16 @@ def generate_offsets(
     slice_wh: Tuple[int, int],
     overlap_ratio_wh: Tuple[float, float],
 ) -> np.ndarray:
-    """
-    This is modification of the function from block v1, which
-    makes sure that the "border" crops are pushed towards the center of
-    the image, making sure:
-        * all crops will be the same size
-        * deduplication of crops coordinates is done
+    """Generate a row-major grid of unique, equal-sized crops inside the image.
+
+    Args:
+        resolution_wh (Tuple[int, int]): Image width and height in pixels.
+        slice_wh (Tuple[int, int]): Requested crop width and height in pixels.
+        overlap_ratio_wh (Tuple[float, float]): Horizontal and vertical overlap
+            fractions in the interval [0, 1).
+
+    Returns:
+        Crop coordinates as rows of (x_min, y_min, x_max, y_max).
     """
     slice_width, slice_height = slice_wh
     image_width, image_height = resolution_wh
@@ -290,18 +294,13 @@ def generate_offsets(
     ws_left_over = np.clip(ws + slice_width - image_width, 0, slice_width)
     hs = np.arange(0, image_height, height_stride)
     hs_left_over = np.clip(hs + slice_height - image_height, 0, slice_height)
-    anchors_ws = ws - ws_left_over
-    anchors_hs = hs - hs_left_over
+
+    # Clamping only repeats the final anchor on each axis. Deduplicate before
+    # expanding the grid. Sorted unique anchors preserve the existing row order.
+    anchors_ws = np.unique(ws - ws_left_over)
+    anchors_hs = np.unique(hs - hs_left_over)
     xmin, ymin = np.meshgrid(anchors_ws, anchors_hs)
     xmax = np.clip(xmin + slice_width, 0, image_width)
     ymax = np.clip(ymin + slice_height, 0, image_height)
     results = np.stack([xmin, ymin, xmax, ymax], axis=-1).reshape(-1, 4)
-    deduplicated_results = []
-    already_seen = set()
-    for xyxy in results:
-        xyxy_tuple = tuple(xyxy)
-        if xyxy_tuple in already_seen:
-            continue
-        deduplicated_results.append(xyxy)
-        already_seen.add(xyxy_tuple)
-    return np.array(deduplicated_results)
+    return results
