@@ -52,7 +52,7 @@ RUN python -m pip install --no-cache-dir \
         -e "./inference_model_manager" \
         -e ./workflows \
         -e ./stream_vision \
-        -e "./inference_server[workflows,otel,redis,enterprise,streams]"
+        -e "./inference_server[workflows,otel,redis,enterprise,streams,databricks]"
 
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
