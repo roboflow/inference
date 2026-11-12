@@ -103,17 +103,15 @@ settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
 analyzed_until_frame is the source index of the last frame that a successful
-classification covered. It is null until the first one. Frames after it have
-no result yet, so an empty timeline there means "not analyzed", not "no
-action". A failed or skipped window does not advance it. Overlapping windows
-can still revise ranges before it.
+classification covered, or null before the first one. An empty timeline after
+it means "not analyzed", not "no action". Failed and skipped windows do not
+advance it. Overlapping windows can still revise ranges before it.
 
 On a video file that reports its frame count, the block runs one extra
-classification on the last frame. The timeline on that frame then covers the
-whole clip, including a clip shorter than one stride. The extra call needs the
-model's minimum number of sampled frames. A live stream has no last frame, and
-a file whose container reports no count or too high a count has no detectable
-one. On those sources, frames after the final scheduled call receive no result.
+classification on the last frame, so the timeline covers the whole clip, even
+one shorter than one stride. That call also needs the model's minimum number of
+sampled frames. Live streams and files without a usable frame count get no
+extra call, so frames after the final scheduled call receive no result.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
