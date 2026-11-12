@@ -529,6 +529,68 @@ exit 17
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_gpu_test_commands_consume_verified_ids_including_make_targets(self):
+        # Execute the real workflow shell and Make recipes with a recording
+        # Docker executable. This checks image handoff, not CUDA execution.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = root / "commands.jsonl"
+            docker = root / "docker"
+            docker.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                "with open(os.environ['DOCKER_COMMAND_RECORD'], 'a') as handle:\n"
+                "    handle.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+            )
+            docker.chmod(0o700)
+            env = {
+                **os.environ,
+                "PATH": f"{root}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+                "DOCKER_COMMAND_RECORD": str(record),
+                "GITHUB_WORKSPACE": str(ROOT),
+                "RUNNER_TEMP": str(root),
+                "INFERENCE_TEST_IMAGE": IMAGE_ID,
+                "INFERENCE_PARALLEL_TEST_IMAGE": INDEX,
+            }
+            for filename in [
+                "test.colab.gpu.yml",
+                "test.nvidia_t4_parallel_server.yml",
+            ]:
+                for step in _load(filename)["jobs"]["build"]["steps"]:
+                    script = step.get("run", "")
+                    if (
+                        "docker run" not in script
+                        and "make start_test_docker_gpu" not in script
+                    ):
+                        continue
+
+                    with self.subTest(workflow=filename, step=step["name"]):
+                        record.unlink(missing_ok=True)
+                        result = subprocess.run(
+                            ["bash", "-e", "-o", "pipefail", "-c", script],
+                            cwd=ROOT,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        runs = [
+                            json.loads(line)
+                            for line in record.read_text().splitlines()
+                            if json.loads(line)[0] == "run"
+                        ]
+                        self.assertTrue(runs)
+                        expected = (
+                            IMAGE_ID
+                            if filename == "test.colab.gpu.yml"
+                            or "make start_test_docker_gpu" in script
+                            else INDEX
+                        )
+                        for args in runs:
+                            self.assertIn(expected, args)
+                            self.assertNotIn("inference-parallel-tests:local", args)
+                            self.assertFalse(any(arg.endswith(":test") for arg in args))
+
     def test_gpu_builds_use_depot_and_only_tests_allocate_gpu_runners(self):
         orchestrator = _load("ci_image_reuse.yml")
         for job_id, filename, family in [
