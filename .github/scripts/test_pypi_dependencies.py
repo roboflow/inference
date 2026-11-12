@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import zipfile
 from pathlib import Path
 
@@ -369,7 +370,10 @@ def test_upstream_failure_blocks_downstream_dispatch(monkeypatch):
     with pytest.raises(ValueError, match="publisher failed"):
         dependencies._coordinate(plan, wait_seconds=20)
     assert calls == ["inference-models"]
-    assert not any("files.pythonhosted.org" in url for url in api.calls)
+    assert not any(
+        urllib.parse.urlparse(url).hostname == "files.pythonhosted.org"
+        for url in api.calls
+    )
 
 
 @pytest.mark.parametrize(
@@ -847,7 +851,7 @@ def test_nested_registry_retries_share_deadline_and_stop_before_next_request(
     def read(url, *, deadline):
         calls.append((url, deadline))
         _fake_clock[0] += 4
-        if "files.pythonhosted.org" in url:
+        if urllib.parse.urlparse(url).hostname == "files.pythonhosted.org":
             raise urllib.error.HTTPError(url, 429, "busy", None, None)
         return api.read(url)
 
