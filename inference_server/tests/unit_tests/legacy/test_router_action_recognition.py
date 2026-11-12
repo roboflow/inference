@@ -1,5 +1,4 @@
 import base64
-import os
 import tempfile
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from tests.unit_tests.legacy.test_action_recognition import (
     IMAGE_ERROR_PREFIX,
     PLANNED_WINDOWS,
     SAMPLING,
+    UNDECODABLE_CLIP,
     clip_base64,
     write_clip,
 )
@@ -181,7 +181,7 @@ def test_route_refuses_an_undecodable_clip(legacy_client, fake_stat):
             "model_id": MODEL_ID,
             "video": {
                 "type": "base64",
-                "value": base64.b64encode(os.urandom(4096)).decode("ascii"),
+                "value": base64.b64encode(UNDECODABLE_CLIP).decode("ascii"),
             },
         },
     )
@@ -319,7 +319,7 @@ def test_catch_all_fetches_the_clip_from_the_image_url(
 def test_catch_all_refuses_an_undecodable_clip(legacy_client, fake_stat):
     response = legacy_client(_gateway(fake_stat)).post(
         f"/{MODEL_ID}?api_key=k",
-        content=base64.b64encode(os.urandom(4096)),
+        content=base64.b64encode(UNDECODABLE_CLIP),
         headers=FORM_CONTENT_TYPE,
     )
 
