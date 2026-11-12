@@ -7,7 +7,7 @@ COPY requirements/requirements.torch-cpu.txt /requirements.torch-cpu.txt
 ARG PIP_CONSTRAINT=/requirements.torch-cpu.txt
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu -r /requirements.torch-cpu.txt
 RUN make create_wheels
-RUN pip install --find-links dist/ dist/roboflow_workflows*.whl dist/streamvision*.whl dist/inference_cpu*.whl
+RUN pip install --find-links dist/ "$(ls dist/roboflow_workflows*.whl)[databricks]" dist/streamvision*.whl dist/inference_cpu*.whl
 RUN pip install -r requirements/requirements.test.colab.txt
 
 ENTRYPOINT ["pytest", "tests/google_colab/"]

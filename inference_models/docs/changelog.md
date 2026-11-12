@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed
+
+- RF-DETR ONNX models with static input shapes (object detection, instance
+  segmentation, semantic segmentation and keypoints) no longer run out of GPU
+  memory at high input resolution on the CUDA execution provider. When
+  `CUDAExecutionProvider` is the first provider, the loader rewrites each unmasked
+  exported `MatMul -> Softmax -> MatMul` attention block into ONNX Runtime's
+  `com.microsoft.MultiHeadAttention` op, which runs a memory-efficient CUDA kernel
+  instead of building the full attention score tensor. The rewritten model is
+  cached in an `attention_fusion/` directory inside the model package and reused
+  on later loads. Other provider lists, models without a matching block, and a
+  fusion that fails (logged as a warning) load the original model.
+
 ## `0.39.8`
 
 ### Fixed
