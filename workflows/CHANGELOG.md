@@ -18,6 +18,14 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
+- Action Recognition Model gains an `analyzed_until_frame` output: the source
+  index of the last frame a successful classification covered, null until the
+  first one. A consumer can tell "no action" from "not analyzed yet". Failed and
+  skipped windows do not advance it.
+- Action Recognition Model runs one extra classification on the last frame of a
+  video file that reports its frame count. The timeline on that frame covers
+  the tail of the clip, and a clip shorter than one stride now gets a result.
+  Live streams and files without a usable frame count behave as before.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
