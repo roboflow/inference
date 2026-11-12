@@ -258,6 +258,31 @@ def test_run_routes_each_answer(
     assert result == [expected]
 
 
+@pytest.mark.parametrize(
+    "probabilities",
+    [
+        pytest.param([{"value": "damaged"}], id="no probability"),
+        pytest.param([{"probability": 0.99}], id="no value"),
+        pytest.param([{"value": "damaged", "probability": "high"}], id="not a number"),
+        pytest.param([{"value": "damaged", "probability": None}], id="null"),
+        pytest.param(["damaged"], id="not an entry"),
+        pytest.param({"damaged": 0.99}, id="not a list"),
+    ],
+)
+def test_run_routes_unreadable_probabilities_to_the_default_steps(
+    probabilities: Any,
+) -> None:
+    # given
+    decision = _decision("damaged", 0.99)
+    decision["answers"][0]["probabilities"] = probabilities
+
+    # when
+    result, _ = _run_block(decision, min_confidence=0.0)
+
+    # then
+    assert result == [ON_DEFAULT]
+
+
 def test_run_routes_every_image_of_a_batch_on_its_own() -> None:
     # when
     result, execute_request = _run_block(

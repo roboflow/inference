@@ -95,8 +95,8 @@ this block decides from the image itself and from what earlier steps found in it
 3. Continues to the step of the chosen case when the model gives it a probability of at least
    `min_confidence`, and terminates the other branches.
 4. Continues to `default_next_steps` when the model chooses "{NONE_OPTION}", stays below
-   `min_confidence` or refuses to answer. When `default_next_steps` is empty, the branch
-   terminates for that image.
+   `min_confidence`, refuses to answer or returns an answer the block cannot read. When
+   `default_next_steps` is empty, the branch terminates for that image.
 
 A failed request fails the workflow run, as it does in the other OpenAI blocks.
 
@@ -528,13 +528,17 @@ def route_decision(
 def read_selected_case(decision: Any, *, min_confidence: float) -> Optional[str]:
     """Read the option a Decisions API response selects.
 
+    Never raises, like the OpenAI Decisions block's decoding: a response that
+    cannot be read selects no option.
+
     Args:
         decision: Parsed Decisions API response.
         min_confidence: Probability the chosen option needs.
 
     Returns:
-        The chosen option, or ``None`` when the response holds no choice or the
-        choice's probability is below ``min_confidence``.
+        The chosen option, or ``None`` when the response holds no choice, its
+        probabilities cannot be read, or the choice's probability is below
+        ``min_confidence``.
     """
     answers = decision.get("answers") if isinstance(decision, dict) else None
     answer = answers[0] if isinstance(answers, list) and answers else None
@@ -544,10 +548,20 @@ def read_selected_case(decision: Any, *, min_confidence: float) -> Optional[str]
 
     # The API's own `confidence` rescales this probability by the number of options. The
     # probability is the number the OpenAI Decisions block reports as a class's confidence.
-    probabilities = {
-        entry["value"]: float(entry["probability"])
-        for entry in answer.get("probabilities") or []
-    }
+    try:
+        probabilities = {
+            entry["value"]: float(entry["probability"])
+            for entry in answer.get("probabilities") or []
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        logger.warning(
+            "Could not read the Decisions API probabilities for the switch. "
+            "Error type: %s. Details: %s",
+            error.__class__.__name__,
+            error,
+        )
+        return None
+
     choice = answer.get("choice")
     if probabilities.get(choice, 0.0) < min_confidence:
         return None
