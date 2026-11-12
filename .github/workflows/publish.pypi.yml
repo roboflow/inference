@@ -88,7 +88,7 @@ jobs:
         id: upload
         if: ${{ steps.prepare.outputs.upload == 'true' }}
         continue-on-error: true
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: dist/sdk-upload/
       - name: Verify the published bytes and package contents
@@ -171,6 +171,6 @@ jobs:
           if-no-files-found: error
           path: dist/sdk-receipt.json
       - name: Publish the five runtime and CLI wheels
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: dist/pypi/
