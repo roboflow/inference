@@ -1,0 +1,46 @@
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-slim-bookworm AS base
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    make git libgl1 libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+RUN python -m pip install --no-cache-dir setuptools==83.0.0 wheel==0.45.1
+WORKDIR /work
+
+# Install the SDK into a clean environment, without the CLI or test packages.
+FROM base AS sdk-install
+COPY . /work
+RUN make create_pypi_sdk_wheel \
+    && python -m pip install --no-cache-dir dist/sdk/*.whl
+WORKDIR /tmp
+
+FROM base AS sdk-tests
+COPY requirements /work/requirements
+RUN python -m pip install --no-cache-dir \
+    -r requirements/requirements.sdk.http.txt \
+    -r requirements/requirements.sdk.webrtc.txt \
+    -r requirements/requirements.test.unit.txt
+COPY . /work
+
+# Retain same-checkout server coverage for the existing E2E workflow. This is
+# validation only; SDK publication does not build or publish server packages.
+FROM sdk-tests AS sdk-e2e
+# Match the native build tools available on the previous Ubuntu runner (some
+# dependencies, including pybase64/zxing-cpp, need them on supported platforms).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+RUN python -m pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r requirements/_requirements.txt \
+    -r requirements/requirements.cpu.txt \
+    -r requirements/requirements.http.txt \
+    -r requirements/requirements.transformers.txt \
+    && python -m pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
+RUN make create_isolation_wheels \
+    && python -m pip install --find-links /work/dist \
+    "$(ls /work/dist/roboflow_workflows-*.whl)[enterprise]" \
+    "$(ls /work/dist/streamvision-*.whl)[webrtc]" \
+    /work/dist/inference_sdk-*.whl /work/dist/inference_models-*.whl \
+    && python -m pip install --force-reinstall --no-deps \
+    /work/dist/roboflow_workflows-*.whl /work/dist/streamvision-*.whl \
+    /work/dist/inference_sdk-*.whl /work/dist/inference_models-*.whl
