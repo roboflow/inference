@@ -16,8 +16,24 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- OPC UA Writer (`roboflow_enterprise/opc_writer_sink@v1`) honors its `timeout` field again. Since the block began sharing one event loop between its clients (December 2025), the field had no effect: every request to the server waited asyncua's built-in 4 seconds. `timeout` now bounds each request (every step of the connect, the node lookups and the write), as the OPC UA Reader's does, and a pooled session takes the `timeout` of the write that reuses it. With the default of 2, a request the server answers after 2 to 4 seconds now fails where it used to succeed. Raise `timeout` for a slow server; values above 4 seconds now take effect too.
+
+## `0.2.16`
+
+Bundled execution engine: `1.17.2`.
+
 ### Changed
 
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
+  releases that allow Pillow 13.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
@@ -42,6 +58,9 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 - Large inline reference images use chunked content fingerprints for cache keys,
   avoiding a full JSON copy of their image data on every warm lookup. Image
   contents, metadata, annotations, label order and provider still determine reuse.
@@ -50,14 +69,28 @@ for contributor and maintainer responsibilities.
   newer result. The cache does not cancel the original synchronous download.
   Its retained-string byte budget now includes Unicode storage and Python
   string headers.
-- Workflows' standalone image codec now reports non-ASCII base64 payloads as
-  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
-- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
-- OPC UA Writer (`roboflow_enterprise/opc_writer_sink@v1`) honors its `timeout` field again. Since the block began sharing one event loop between its clients (December 2025), the field had no effect: every request to the server waited asyncua's built-in 4 seconds. `timeout` now bounds each request (every step of the connect, the node lookups and the write), as the OPC UA Reader's does, and a pooled session takes the `timeout` of the write that reuses it. With the default of 2, a request the server answers after 2 to 4 seconds now fails where it used to succeed. Raise `timeout` for a slow server; values above 4 seconds now take effect too.
 
 ### Execution engine
 
 - A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
+
+## `0.2.15.post2`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Gemini 4 Carbon in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `xhigh` and `max` thinking levels.
+- Gemini 4 Hydrogen (`gemini-4-hydrogen`) in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `low`, `medium`, `high`, `xhigh` and `max` thinking levels.
+
+## `0.2.15.post1`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Add Claude Fable 5.2 to the Anthropic Claude v5 model options.
+- Add Muse Ember to the Meta VLM v3 model options.
 
 ## `0.2.15`
 
