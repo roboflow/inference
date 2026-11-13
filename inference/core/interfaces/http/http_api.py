@@ -275,6 +275,9 @@ from inference.core.interfaces.http.middlewares.concurrency_limit import (
     ConcurrencyLimitMiddleware,
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
+from inference.core.interfaces.http.middlewares.disconnect import (
+    RequestDisconnectMiddleware,
+)
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
@@ -1526,6 +1529,9 @@ class HttpInterface(BaseInterface):
                 )
                 return response
 
+        # Add last so raw disconnect events are observed outside every
+        # BaseHTTPMiddleware wrapper. Processing routes opt into monitoring.
+        app.add_middleware(RequestDisconnectMiddleware)
         self.app = app
         self.model_manager = model_manager
         self.stream_manager_client: Optional[StreamManagerClient] = None
