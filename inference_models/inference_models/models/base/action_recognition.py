@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from inference_models.entities import Confidence
+from inference_models.errors import ModelImplementationNotFoundError
 
 
 @dataclass(frozen=True)
@@ -98,12 +99,75 @@ class VideoSampling:
     max_sample_lateness_seconds: float = 0.0
 
 
+FrameStorageTransform = Callable[
+    [Union[np.ndarray, torch.Tensor]], Union[np.ndarray, torch.Tensor]
+]
+
+
+@dataclass(frozen=True)
+class ActionRecognitionContract:
+    """What a caller must know about a model before its first call.
+
+    A client that windows video itself and sends each window elsewhere (for
+    example a Workflows step under REMOTE execution) needs this before any
+    server answers. Read it with ``get_action_recognition_contract`` or a
+    model class's ``contract_from_package``; neither loads weights.
+
+    Attributes:
+        class_names: The model's class list, or None for open vocabulary.
+        video_sampling: How video must be windowed and sampled for the model.
+        supports_confidence: The model scores spans and takes a threshold.
+        supports_observed_duration: The model clips spans to the observed
+            window duration.
+        end_exclusive_spans: The model emits half-open spans in continuous
+            sample coordinates, so ``end_frame_idx`` is exclusive.
+        frame_storage_transform: The model's preparation of a frame before it
+            is retained, or None to keep frames as they are.
+    """
+
+    class_names: Optional[List[str]]
+    video_sampling: VideoSampling
+    supports_confidence: bool = False
+    supports_observed_duration: bool = False
+    end_exclusive_spans: bool = False
+    frame_storage_transform: Optional[FrameStorageTransform] = None
+
+
 class ActionRecognitionModel(ABC):
 
     span_semantics = "instances"
     confidence_threshold = None
     supports_confidence: bool = False
     supports_observed_duration: bool = False
+    end_exclusive_spans: bool = False
+    # Package files that contract_from_package reads; nothing else is fetched.
+    contract_files: Tuple[str, ...] = ()
+
+    @classmethod
+    def contract_from_package(cls, package_dir: str) -> ActionRecognitionContract:
+        """Read the model's contract from a package directory, without weights.
+
+        ``from_pretrained`` reads the same files with the same code, so the
+        contract matches what a loaded model reports.
+
+        Args:
+            package_dir (str): Directory holding at least ``contract_files``.
+
+        Returns:
+            ActionRecognitionContract: The model's contract.
+
+        Raises:
+            ModelImplementationNotFoundError: The model class cannot read its
+                contract without loading.
+            CorruptedModelPackageError: The package files are invalid.
+        """
+        raise ModelImplementationNotFoundError(
+            message=(
+                f"{cls.__name__} cannot describe its action recognition "
+                f"contract without loading its weights."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelimplementationnotfounderror",
+        )
 
     def estimate_candidate_count(
         self, sampled_frames: int, *, class_names: Optional[List[str]] = None
@@ -120,11 +184,7 @@ class ActionRecognitionModel(ABC):
         return None
 
     @property
-    def frame_storage_transform(
-        self,
-    ) -> Optional[
-        Callable[[Union[np.ndarray, torch.Tensor]], Union[np.ndarray, torch.Tensor]]
-    ]:
+    def frame_storage_transform(self) -> Optional[FrameStorageTransform]:
         """Get the optional model-owned transform used before retaining frames.
 
         Returns:

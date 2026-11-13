@@ -6,6 +6,7 @@ Complete API documentation for the `inference_models` package.
 
 - **[AutoModel](auto-model.md)** - Main entry point for loading models
 - **[AutoModelPipeline](auto-model-pipeline.md)** - Load and run model pipelines
+- **[Action Recognition Contract](action-recognition-contract.md)** - Read an action recognition model's contract without its weights
 
 ## Prediction Types
 

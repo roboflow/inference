@@ -134,6 +134,7 @@ nav:
       - Core Classes:
           - AutoModel: api-reference/auto-model.md
           - AutoModelPipeline: api-reference/auto-model-pipeline.md
+          - Action Recognition Contract: api-reference/action-recognition-contract.md
       - Prediction Types:
           - Detections: api-reference/detections.md
           - InstanceDetections: api-reference/instance-detections.md
