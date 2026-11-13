@@ -9,6 +9,10 @@ ARG OPENCV_SHA256=1d40ca017ea51c533cf9fd5cbde5b5fe7ae248291ddf2af99d4c17cf8e1301
 ARG OPENCV_CONTRIB_SHA256=1e0077a4fd2960a7d2f4c9e49d6ba7bb891cac2d1be36d7e8e47aa97a9d1039b
 ARG OPENCV_CUDA_ARCH_BIN=7.5;8.9
 ARG OPENCV_CUDA_ARCH_PTX=7.5
+ARG UV_VERSION=0.13.5
+ARG PYTHON_VERSION=3.12.15
+
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM ubuntu:22.04 AS ffmpeg-builder
 
@@ -145,6 +149,7 @@ ARG OPENCV_SHA256
 ARG OPENCV_CONTRIB_SHA256
 ARG OPENCV_CUDA_ARCH_BIN
 ARG OPENCV_CUDA_ARCH_PTX
+ARG PYTHON_VERSION
 ARG TARGETARCH
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-opencv-gpu-${TARGETARCH} \
@@ -152,11 +157,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-opencv-
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
         libopenblas-dev \
-        libtiff-dev \
-        python3-dev
+        libtiff-dev
 
-RUN python3 -m venv /opt/opencv-build-tools && \
-    /opt/opencv-build-tools/bin/pip install --no-cache-dir \
+COPY --from=uv /uv /usr/local/bin/uv
+
+# cv2 bindings must target the same interpreter the builder stage installs
+RUN UV_PYTHON_INSTALL_DIR=/opt/python uv python install "${PYTHON_VERSION}" && \
+    UV_PYTHON_INSTALL_DIR=/opt/python uv venv --python "${PYTHON_VERSION}" /opt/opencv-build-tools && \
+    uv pip install --no-cache --python /opt/opencv-build-tools/bin/python \
         "numpy>=2.0.0,<2.4.0"
 
 COPY docker/scripts/build_opencv.sh /usr/local/bin/build_opencv
@@ -221,13 +229,14 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS builder
 
+ARG PYTHON_VERSION
+
 WORKDIR /app
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libxext6 \
     libopencv-dev \
     uvicorn \
-    python3-pip \
     git \
     ffmpeg \
     libgdal-dev \
@@ -252,15 +261,22 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.modal.txt \
     ./
 
-RUN python3 -m pip install -U pip uv
+COPY --from=uv /uv /uvx /usr/local/bin/
+
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    PATH=/opt/venv/bin:$PATH
+
+RUN uv python install "${PYTHON_VERSION}" && \
+    uv venv --seed --python "${PYTHON_VERSION}" /opt/venv
 
 COPY inference_models/uv.lock inference_models/pyproject.toml build/inference_models/
 WORKDIR build/inference_models/
-RUN UV_PROJECT_ENVIRONMENT=/usr uv sync --locked --extra torch-cu124 --extra onnx-cu12 --extra trt10 --extra model-blob-cache
+# --inexact keeps the seeded pip that the pip steps below need
+RUN UV_PROJECT_ENVIRONMENT=/opt/venv uv sync --locked --inexact --extra torch-cu124 --extra onnx-cu12 --extra trt10 --extra model-blob-cache
 
 WORKDIR /app
 
-RUN uv pip install --system \
+RUN uv pip install --python /opt/venv/bin/python \
     -r _requirements.txt \
     -r requirements.doctr.txt \
     -r requirements.sam.txt \
@@ -284,11 +300,6 @@ RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies
 
 COPY . .
 
-# The `create_wheels_for_gpu_notebook` Makefile target invokes bare `python`;
-# the CUDA devel base only ships `python3`, so alias it here in the builder
-# stage (the runtime stage has its own symlink further down).
-RUN ln -sf /usr/bin/python3 /usr/bin/python
-
 RUN /bin/make create_wheels_for_gpu_notebook && \
     python3 -m pip install --no-cache-dir --find-links dist/ \
         "$(ls dist/roboflow_workflows*.whl)[databricks]" \
@@ -306,12 +317,11 @@ RUN mkdir -p /opt/pillow_simd && if [ "${TARGETARCH}" = "amd64" ]; then \
       python3 docker/scripts/verify_pillow_simd.py; \
     fi
 
-RUN find /usr/local/lib/python3.10 -type d \
+RUN find /opt/venv/lib/python3.12 -type d \
         \( -name cv2 -o -name 'opencv_python.libs' -o -name 'opencv_contrib_python.libs' -o -name 'opencv_python_headless.libs' -o -name 'opencv_contrib_python_headless.libs' \) \
         -prune -exec rm -rf {} + && \
-    python3 -m pip uninstall -y uv && \
     rm -f /usr/local/bin/uv /usr/local/bin/uvx \
-          /usr/local/bin/ninja /usr/local/bin/cmake /usr/local/bin/meson && \
+          /opt/venv/bin/ninja /opt/venv/bin/cmake /opt/venv/bin/meson && \
     python3 -m pip uninstall -y pip
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
@@ -344,7 +354,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-runtime
         libopenblas0 \
         libopus0 \
         libpng16-16 \
-        libpython3.10-dev \
         libsm6 \
         libsrtp2-1 \
         libssl3 \
@@ -353,7 +362,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-runtime
         libvips42 \
         libvpx7 \
         libxext6 \
-        python3 \
         zlib1g && \
     dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816
 
@@ -361,11 +369,12 @@ COPY --from=gstreamer-runtime /opt/ffmpeg /opt/ffmpeg
 COPY --from=gstreamer-runtime /opt/gstreamer /opt/gstreamer
 COPY --from=opencv-builder /opt/opencv-runtime /opt/opencv
 COPY --from=gstreamer-cuda-tensor-bridge-builder /opt/roboflow/lib /opt/roboflow/lib
-COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+# The venv's interpreter links and script shebangs need these exact paths
+COPY --from=builder /opt/python /opt/python
+COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/pillow_simd /opt/pillow_simd
-COPY --from=builder /usr/local/bin /usr/local/bin
 
-ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
+ENV PATH=/opt/venv/bin:/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
     GIO_EXTRA_MODULES=/opt/gstreamer/lib/gio/modules \
     GI_TYPELIB_PATH=/opt/gstreamer/lib/girepository-1.0 \
     LD_LIBRARY_PATH=/opt/opencv/lib:/opt/gstreamer/lib:/opt/ffmpeg/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
@@ -373,10 +382,10 @@ ENV PATH=/opt/gstreamer/bin:/opt/ffmpeg/bin:/usr/local/cuda/bin:$PATH \
     GST_PLUGIN_SYSTEM_PATH_1_0=/opt/gstreamer/lib/gstreamer-1.0 \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
-RUN ln -sf /usr/bin/python3 /usr/bin/python
+# No /usr/bin/python symlink: a symlink to a venv interpreter does not activate the venv
 
 # PYTHONPATH-injection immunity for the custom CUDA OpenCV. cv2 lives outside
-# dist-packages (/opt/opencv/python) and used to be reachable ONLY through the
+# site-packages (/opt/opencv/python) and used to be reachable ONLY through the
 # ENV PYTHONPATH above, so any orchestrator-level PYTHONPATH override silently
 # dropped cv2 from sys.path
 RUN site_dir="$(python3 -c 'import site; print(site.getsitepackages()[0])')" && \
@@ -429,7 +438,7 @@ RUN set -eu && \
     ldconfig
 
 # VERIFY_MEDIA_RUNTIME_DEVELOPMENT_TOOLS=false: this runtime intentionally
-# ships a C toolchain (gcc + libc6-dev + libpython3.10-dev) for RF-DETR's
+# ships a C toolchain (gcc + libc6-dev; Python.h comes with /opt/python) for RF-DETR's
 # Triton JIT preprocessing kernels; the hygiene scan would reject it. The
 # toolchain itself is validated by verify_triton_jit_toolchain below.
 RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_ffmpeg,ro \

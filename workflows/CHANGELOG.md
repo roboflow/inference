@@ -51,13 +51,49 @@ for contributor and maintainer responsibilities.
   Its retained-string byte budget now includes Unicode storage and Python
   string headers.
 - ONVIF Sink (`roboflow_core/onvif_sink@v1`, NumPy and tensor variants) configures a camera once on the first frame. `connect_camera_async` and the first `continuous_move_async` both configured it at the same time, and `update_xaddrs()` empties the camera's service addresses while it asks for them again. One configuration could then find no PTZ service and mark the camera with a config error, and when it was the move's own configuration, that first move was dropped. A configuration that starts while another runs now waits for it and reuses the result, so the camera also no longer gets each configuration request twice.
-- Workflows' standalone image codec now reports non-ASCII base64 payloads as
-  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
-- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 
 ### Execution engine
 
 - A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
+
+## `0.2.16`
+
+Bundled execution engine: `1.17.1`.
+
+### Changed
+
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
+  releases that allow Pillow 13.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
+
+### Fixed
+
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
+
+## `0.2.15.post2`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Gemini 4 Carbon in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `xhigh` and `max` thinking levels.
+- Gemini 4 Hydrogen (`gemini-4-hydrogen`) in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `low`, `medium`, `high`, `xhigh` and `max` thinking levels.
+
+## `0.2.15.post1`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Add Claude Fable 5.2 to the Anthropic Claude v5 model options.
+- Add Muse Ember to the Meta VLM v3 model options.
 
 ## `0.2.15`
 
