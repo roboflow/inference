@@ -40,8 +40,9 @@ the end of the clip and then backward to the start. Clicks on any other frame
 are a correction: they are applied when tracking reaches that frame, on top
 of what the tracker remembers of the object there, and the corrected frame
 then conditions the frames tracked after it. Exclude points alone are valid
-on a frame other than the anchor and mark the object absent from that frame.
-See ``_track_object``.
+on a frame other than the anchor: what they are on is taken off the mask
+the tracker has there, which is empty when that was all of it. See
+``_track_object``.
 
 Embedded clips are kept in host RAM, within ``SAM3_VIDEO_CACHE_MAX_GB``: a
 frame is held as its preprocessed pixels until it is encoded and as its
@@ -333,8 +334,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         The preview of a click: each such object gets the mask
         ``propagate_video`` would give it on this frame from the same
         prompts. On the object's anchor (its first frame with an include
-        point) that is one model call, and on a frame with exclude points
-        alone the mask is empty by rule. On any other frame the object is
+        point) that is one model call. On any other frame the object is
         tracked from its anchor to this frame, with the clicks on the frames
         in between applied on the way, so the time grows with the distance
         from the anchor (see ``_track_object``).
@@ -366,13 +366,6 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         with self._request_lock():
             for obj_id, object_prompts in per_object.items():
                 if frame_idx not in object_prompts:
-                    continue
-
-                if not _has_include_point(object_prompts[frame_idx]):
-                    # Exclude points alone mark the object absent: no tracking
-                    # is needed to know the mask is empty.
-                    absent = torch.full((1, 1, *clip.video_size), -1.0)
-                    masks[str(obj_id)] = self._clip_masks(clip, absent)[0]
                     continue
 
                 for frame, pred_masks in self._track_object(
@@ -467,11 +460,19 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
         - Clicks with an include point: the model runs the frame again with
           the object's memory and the clicks together.
-        - Exclude points alone: the object is marked absent from the frame,
-          by giving the model an empty mask as the frame's result. Applied
-          as clicks, exclude points alone did not take a mask off: in each
-          of six measured cases a single exclude click on a mask that sat
-          on the wrong thing left a smaller or a larger mask there.
+        - Exclude points alone: what each point is on is segmented on its
+          own (the frame from that point as an include point, no memory) and
+          taken off the mask tracking gave the frame, and the rest is given
+          to the model as the frame's result. A mask on the object and on
+          something else loses the other thing; a mask that moved to
+          something else after the object left the picture comes out empty.
+          Measured on MeViS clips with the masks of two objects tracked as
+          one and an exclude click on the second, the frames after the click
+          had IoU 0.90 with the first object alone and 6% of the second left.
+          Applied as clicks, with or without the tracked mask as the
+          decoder's mask prompt, exclude points alone left most of the second
+          object (73% with the mask prompt), and an empty mask for the frame
+          lost the first object on half of the frames after it.
 
         Two things are then done with the corrected frame, both measured on
         the reported failure (the object leaves the picture and the mask
@@ -496,16 +497,15 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         within the window of the anchor, because the backward pass reads the
         forward frames next to the anchor.
 
-        With ``only_frame``, tracking stops at that frame, which is the
-        anchor or a later frame: an object's clicks before its anchor are
-        exclude points alone, whose mask is empty without tracking.
+        With ``only_frame``, tracking stops at that frame. A frame before the
+        anchor is reached as in the whole clip: forward from the anchor as
+        far as a tracked frame reads back, then backward to it.
 
         Args:
             clip: The embedded clip.
             obj_id: The object's id.
             object_prompts: The object's points by frame.
-            only_frame: Frame at or after the anchor to stop at; the whole
-                clip when None.
+            only_frame: Frame to stop at; the whole clip when None.
 
         Yields:
             ``(frame_idx, pred_masks)`` for each frame, in tracking order.
@@ -523,6 +523,9 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             passes = [(False, None), (True, None)]
         elif only_frame > anchor:
             passes = [(False, only_frame - anchor)]
+        elif only_frame < anchor:
+            # The backward pass reads the forward frames next to the anchor.
+            passes = [(False, reach), (True, anchor - only_frame)]
         else:
             passes = []
 
@@ -549,8 +552,8 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
                             session, obj_id, frame_idx, points, reverse=reverse
                         )
                     else:
-                        pred_masks = self._mark_absent(
-                            session, obj_id, frame_idx, reverse=reverse
+                        pred_masks = self._apply_excludes(
+                            clip, session, obj_id, frame_idx, points, reverse=reverse
                         )
                     conditioning[frame_idx] = tracked.pop(frame_idx)
                     corrected.append(frame_idx)
@@ -611,27 +614,59 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
 
         return pred_masks
 
-    def _mark_absent(
-        self, session: Any, obj_id: int, frame_idx: int, *, reverse: bool
+    def _apply_excludes(
+        self,
+        clip: VideoClip,
+        session: Any,
+        obj_id: int,
+        frame_idx: int,
+        points: Tuple[Tuple[float, float, int], ...],
+        *,
+        reverse: bool,
     ) -> torch.Tensor:
-        """Run a frame with an empty mask as the object's input; the predicted masks.
+        """Run a tracked frame with exclude points alone; the predicted masks.
 
-        The model takes a mask input as the frame's result, and an empty one
-        as the object not being on the frame.
+        What each point is on is segmented on its own, as an include point on
+        the frame with no memory, and taken off the mask tracking gave the
+        frame. What is left is given to the model as the frame's result, the
+        way an empty mask marks an object absent.
         """
+        obj_idx = session.obj_id_to_idx(obj_id)
+        tracked = session.output_dict_per_obj[obj_idx]["non_cond_frame_outputs"][
+            frame_idx
+        ]["pred_masks"]
+        kept = self._full_size_mask(clip, tracked)
+        for x, y, _ in points:
+            kept &= ~self._clicked_thing(clip, frame_idx, x, y)
         self._processor.add_inputs_to_inference_session(
             inference_session=session,
             frame_idx=frame_idx,
             obj_ids=obj_id,
-            input_masks=np.zeros(
-                (session.video_height, session.video_width), dtype=bool
-            ),
+            input_masks=kept.cpu().numpy(),
         )
         pred_masks = self._model(
             inference_session=session, frame_idx=frame_idx, reverse=reverse
         ).pred_masks
 
         return pred_masks
+
+    def _clicked_thing(
+        self, clip: VideoClip, frame_idx: int, x: float, y: float
+    ) -> torch.Tensor:
+        """The mask of what a point is on: the frame segmented from it alone."""
+        session = self._clip_session(clip)
+        pred_masks = self._apply_points(
+            session, 0, frame_idx, ((x, y, 1),), reverse=False
+        )
+
+        return self._full_size_mask(clip, pred_masks)
+
+    def _full_size_mask(
+        self, clip: VideoClip, pred_masks: torch.Tensor
+    ) -> torch.Tensor:
+        return self._processor.post_process_masks(
+            [pred_masks], original_sizes=[list(clip.video_size)], binarize=True
+        )[0][0, 0].bool()
 
     def _clip_masks(self, clip: VideoClip, pred_masks: torch.Tensor) -> List[dict]:
         masks = self._processor.post_process_masks(

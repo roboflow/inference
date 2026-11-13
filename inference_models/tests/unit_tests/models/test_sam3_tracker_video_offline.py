@@ -6,9 +6,11 @@ points become a conditioning frame only on a frame the object has not been
 tracked on; points on a tracked frame give a frame that is not a conditioning
 frame; propagation recomputes every frame that is not a conditioning frame,
 ignoring points stored there. Masks are a box around the first include point
-of the frame that produced them, or empty when that frame had exclude points
-only, so a test can tell which points a mask came from. A tracked frame
-follows the nearest conditioning frame there is when it is tracked.
+of the frame that produced them, so a test can tell which points a mask came
+from. A tracked frame follows the nearest conditioning frame there is when it
+is tracked. A mask given as a frame's input is that frame's result, so with
+a box as what an include point is on, exclude points alone take the box
+around each of them off the tracked mask.
 """
 
 import gc
@@ -67,15 +69,17 @@ class _FakeSession:
         self.cache = clip
         self.num_frames = clip.n_frames
         self.video_height, self.video_width = H, W
-        self.mask_frames = []
+        self.inference_device = torch.device("cpu")
         self._obj_id_to_idx = {}
         self.obj_ids = []
-        self.point_inputs = {}
+        self.point_inputs_per_obj = {}
         self.output_dict_per_obj = {}
         self.frames_tracked = {}
         self.obj_with_new_inputs = []
         # Every model call: (frame, reverse, initial conditioning frame, had points).
         self.calls = []
+        # Frames given a mask as their input, and the mask.
+        self.mask_inputs = {}
         # (frame, reverse) -> the conditioning frames, and the tracked frames,
         # there were when it was tracked.
         self.conditioning_seen = {}
@@ -85,7 +89,7 @@ class _FakeSession:
         if obj_id not in self._obj_id_to_idx:
             idx = self._obj_id_to_idx[obj_id] = len(self._obj_id_to_idx)
             self.obj_ids = list(self._obj_id_to_idx)
-            self.point_inputs[idx] = {}
+            self.point_inputs_per_obj[idx] = {}
             self.output_dict_per_obj[idx] = {
                 "cond_frame_outputs": {},
                 "non_cond_frame_outputs": {},
@@ -114,18 +118,16 @@ class _FakeProcessor:
         input_masks=None,
     ):
         idx = inference_session.obj_id_to_idx(obj_ids)
-        if input_masks is not None:  # the offline path only gives empty masks
-            assert not input_masks.any()
-            inference_session.mask_frames.append(frame_idx)
-            points = []
+        if input_masks is not None:
+            assert input_masks.shape == (H, W) and input_masks.dtype == bool
+            inference_session.mask_inputs[frame_idx] = input_masks
+            points = "mask"
         else:
-            assert 1 in input_labels[0][0]
             points = [
-                p
-                for p, label in zip(input_points[0][0], input_labels[0][0])
-                if label == 1
+                (x, y, label)
+                for (x, y), label in zip(input_points[0][0], input_labels[0][0])
             ]
-        inference_session.point_inputs[idx][frame_idx] = points
+        inference_session.point_inputs_per_obj[idx][frame_idx] = points
         inference_session.obj_with_new_inputs = [obj_ids]
 
     def post_process_masks(self, masks, original_sizes, binarize):
@@ -146,21 +148,29 @@ class _FakeModel:
             cond = s.output_dict_per_obj[idx]["cond_frame_outputs"]
             non_cond = s.output_dict_per_obj[idx]["non_cond_frame_outputs"]
             if obj_id not in s.obj_with_new_inputs and frame_idx in cond:
-                out.append(cond[frame_idx])
+                out.append(cond[frame_idx]["pred_masks"])
                 continue
             points, init = None, False
             if obj_id in s.obj_with_new_inputs:
                 init = frame_idx not in s.frames_tracked[idx]
-                points = s.point_inputs[idx].get(frame_idx)
+                points = s.point_inputs_per_obj[idx].get(frame_idx)
                 if points is not None:
                     s.obj_with_new_inputs.remove(obj_id)
-            if points is not None:
-                mask = _box(*points[0]) if points else _nothing()
+            if points == "mask":
+                mask = torch.where(
+                    torch.from_numpy(s.mask_inputs[frame_idx]), 1.0, -1.0
+                )[None, None]
+            elif points is not None:
+                included = [(x, y) for x, y, label in points if label == 1]
+                assert (
+                    included
+                ), "the model's own call is never given exclude points alone"
+                mask = _box(*included[0])
             else:  # tracked: follows the nearest conditioning frame
-                mask = cond[min(cond, key=lambda f: abs(f - frame_idx))]
+                mask = cond[min(cond, key=lambda f: abs(f - frame_idx))]["pred_masks"]
                 s.conditioning_seen[(frame_idx, reverse)] = sorted(cond)
                 s.tracked_seen[(frame_idx, reverse)] = sorted(non_cond)
-            (cond if init else non_cond)[frame_idx] = mask
+            (cond if init else non_cond)[frame_idx] = {"pred_masks": mask}
             if not init:
                 s.frames_tracked[idx].add(frame_idx)
             s.calls.append((frame_idx, reverse, init, points is not None))
@@ -224,6 +234,19 @@ def _center(rle):
 def _is_empty(rle):
     mask = mask_utils.decode({"size": rle["size"], "counts": rle["counts"].encode()})
     return not mask.any()
+
+
+def _tracking_session(tracker, clicked=0):
+    """The session that tracked the object; `clicked` more segmented what an exclude point was on, one call each."""
+    session, *others = tracker.sessions
+    assert len(others) == clicked
+    assert all(o.calls == [(o.calls[0][0], False, True, True)] for o in others)
+    return session
+
+
+def _has(rle, x, y):
+    mask = mask_utils.decode({"size": rle["size"], "counts": rle["counts"].encode()})
+    return bool(mask[y, x])
 
 
 def test_embed_video_describes_the_clip_and_can_encode_every_frame(monkeypatch):
@@ -292,7 +315,9 @@ def test_segment_returns_the_objects_clicked_on_the_frame(tracker):
     ].keys() == {"1"}
 
 
-def test_exclude_points_alone_take_the_mask_off_from_their_frame_on(tracker):
+def test_exclude_points_alone_on_all_of_the_mask_take_it_off_from_their_frame_on(
+    tracker,
+):
     prompts = [_prompt(2, 1, 10, 10), _prompt(6, 1, 10, 10, label=0)]
 
     results = tracker.propagate_video("v", prompts=prompts)
@@ -304,12 +329,31 @@ def test_exclude_points_alone_take_the_mask_off_from_their_frame_on(tracker):
     assert all(_center(mask) == pytest.approx((10, 10), abs=1) for mask in masks[:6])
 
 
+def test_exclude_points_alone_trim_the_tracked_mask_and_keep_the_rest(tracker):
+    # The mask is the box around (10, 10), pixels 6 to 13; the exclude point
+    # sits on its corner.
+    prompts = [_prompt(2, 1, 10, 10), _prompt(6, 1, 13, 13, label=0)]
+
+    results = tracker.propagate_video("v", prompts=prompts)
+
+    session = _tracking_session(tracker, clicked=1)
+    masks = [r["masks"]["1"] for r in results]
+    # What the click sat on was segmented on its own and taken off the mask
+    # tracking gave the frame; the rest is the frame's result, which the
+    # frames after it follow.
+    assert list(session.mask_inputs) == [6]
+    assert not session.mask_inputs[6][13, 13] and session.mask_inputs[6][7, 7]
+    assert [_has(mask, 13, 13) for mask in masks] == [True] * 6 + [False] * 6
+    assert all(_has(mask, 7, 7) for mask in masks)
+    assert 6 in session.output_dict_per_obj[0]["non_cond_frame_outputs"]
+
+
 def test_clicks_off_the_anchor_are_applied_to_a_frame_tracking_has_reached(tracker):
     prompts = [_prompt(2, 1, 10, 10), _prompt(4, 1, 30, 30)]
 
     results = tracker.propagate_video("v", prompts=prompts)
 
-    (session,) = tracker.sessions
+    session = _tracking_session(tracker)
     forward = [call for call in session.calls if not call[1]]
     # (frame, reverse, initial conditioning frame, had points): the anchor
     # from its points alone, then frame 4 tracked, then run again with its
@@ -332,7 +376,7 @@ def test_a_correction_conditions_only_the_frames_tracked_after_it(tracker):
 
     tracker.propagate_video("v", prompts=prompts)
 
-    (session,) = tracker.sessions
+    session = _tracking_session(tracker)
     seen = session.conditioning_seen
     assert seen[(6, False)] == [5]
     assert seen[(8, False)] == seen[(11, False)] == [5, 7]
@@ -348,7 +392,7 @@ def test_frames_tracked_before_a_correction_are_not_read_after_it(tracker):
 
     tracker.propagate_video("v", prompts=prompts)
 
-    (session,) = tracker.sessions
+    session = _tracking_session(tracker, clicked=1)
     seen = session.tracked_seen
     # The stand-in reads 3 frames back. Frames 4 to 6 are set aside when
     # frame 7 is corrected, and are back for the backward pass.
@@ -363,7 +407,7 @@ def test_exclude_points_before_the_anchor_are_applied_on_the_way_back(tracker):
 
     results = tracker.propagate_video("v", prompts=prompts)
 
-    (session,) = tracker.sessions
+    session = _tracking_session(tracker, clicked=1)
     assert session.calls[0] == (8, False, True, True)
     assert (3, True, False, True) in session.calls
     assert session.calls.index((3, True, False, False)) < session.calls.index(
@@ -383,7 +427,7 @@ def test_the_anchor_is_the_first_frame_with_an_include_point(tracker):
 
     tracker.propagate_video("v", prompts=prompts)
 
-    (session,) = tracker.sessions
+    session = _tracking_session(tracker, clicked=1)
     initial = [call[0] for call in session.calls if call[2]]
     assert initial == [4]
 
@@ -418,17 +462,18 @@ def test_segment_tracks_from_the_anchor_to_the_frame_and_no_further(tracker):
 
     segmented = tracker.segment_video_frame("v", prompts=prompts, frame_idx=7)
 
+    session = _tracking_session(tracker, clicked=1)
     assert segmented["masks"]["1"] == propagated[7]["masks"]["1"]
     assert _is_empty(segmented["masks"]["1"])
-    # Exclude points alone mark the object absent: nothing is tracked.
-    assert tracker.sessions == []
+    assert sorted({call[0] for call in session.calls}) == list(range(2, 8))
+    tracker.sessions.clear()
 
     segmented = tracker.segment_video_frame("v", prompts=prompts, frame_idx=10)
 
-    (session,) = tracker.sessions
+    session = _tracking_session(tracker, clicked=1)
     assert segmented["masks"]["1"] == propagated[10]["masks"]["1"]
     assert sorted({call[0] for call in session.calls}) == list(range(2, 11))
-    assert session.mask_frames == [7]
+    assert list(session.mask_inputs) == [7]
 
 
 def test_segment_on_the_anchor_is_one_model_call(tracker):
@@ -436,23 +481,34 @@ def test_segment_on_the_anchor_is_one_model_call(tracker):
 
     segmented = tracker.segment_video_frame("v", prompts=prompts, frame_idx=2)
 
-    (session,) = tracker.sessions
+    session = _tracking_session(tracker)
     assert session.calls == [(2, False, True, True)]
     assert _center(segmented["masks"]["1"]) == pytest.approx((10, 10), abs=1)
 
 
-def test_segment_of_exclude_points_before_the_anchor_is_empty_without_tracking(
+def test_segment_before_the_anchor_tracks_back_to_it_as_the_whole_clip_does(
     tracker,
 ):
-    prompts = [_prompt(1, 1, 10, 10, label=0), _prompt(4, 1, 10, 10)]
+    prompts = [
+        _prompt(1, 1, 13, 13, label=0),
+        _prompt(4, 1, 10, 10),
+        _prompt(6, 1, 30, 30),
+    ]
     propagated = tracker.propagate_video("v", prompts=prompts)
     tracker.sessions.clear()
 
     segmented = tracker.segment_video_frame("v", prompts=prompts, frame_idx=1)
 
+    session = _tracking_session(tracker, clicked=1)
     assert segmented["masks"]["1"] == propagated[1]["masks"]["1"]
-    assert _is_empty(segmented["masks"]["1"])
-    assert tracker.sessions == []
+    assert not _has(segmented["masks"]["1"], 13, 13)
+    assert _has(segmented["masks"]["1"], 7, 7)
+    # Forward as far as a tracked frame reads back (3 frames for the
+    # stand-in), the correction on frame 6 among them, then back to frame 1.
+    forward = sorted({call[0] for call in session.calls if not call[1]})
+    backward = [call[0] for call in session.calls if call[1] and not call[3]]
+    assert forward == [4, 5, 6, 7]
+    assert backward == [3, 2, 1]
 
 
 def test_unknown_or_evicted_clips_are_refused(tracker):
