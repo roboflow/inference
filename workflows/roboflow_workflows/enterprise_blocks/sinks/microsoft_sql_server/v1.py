@@ -174,6 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="SQL Server password",
         examples=["$inputs.sql_password"],
+        json_schema_extra={"private": True},
     )
     table_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Target table name",

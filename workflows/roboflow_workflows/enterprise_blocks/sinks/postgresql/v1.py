@@ -311,7 +311,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Database user"
     )
     password: Optional[Union[Selector(kind=[SECRET_KIND]), str]] = Field(
-        default=None, description="Database password", examples=["$inputs.pg_password"]
+        default=None,
+        description="Database password",
+        examples=["$inputs.pg_password"],
+        json_schema_extra={"private": True},
     )
     port: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=5432, description="Database port"
