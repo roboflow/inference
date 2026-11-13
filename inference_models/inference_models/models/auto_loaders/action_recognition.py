@@ -33,11 +33,17 @@ def get_action_recognition_contract(
 ) -> ActionRecognitionContract:
     """Read what a caller must know before an action recognition model's first call.
 
-    Resolves the model class the auto-loader would serve the model with, then
-    downloads only the small files that class reads its contract from (for
-    example ``inference_config.json`` and ``class_names.txt``) and parses them
-    with the class's own ``contract_from_package``. Weights are never
-    downloaded, so this suits a client that runs the model elsewhere.
+    Resolves the class registered for the model's architecture under the
+    action recognition task, then downloads only the small files that class
+    reads its contract from (for example ``inference_config.json`` and
+    ``class_names.txt``) and parses them with the class's own
+    ``contract_from_package``. Weights are never downloaded, so this suits a
+    client that runs the model elsewhere.
+
+    Two cases are not covered. A model registered under another task is
+    refused, even when a server adapts it to action recognition: the Cosmos3
+    Edge base model, a VLM that a server wraps for zero-shot use, is one. And
+    the call needs the weights provider, so it fails in offline mode.
 
     Args:
         model_id (str): Model identifier, for example ``"my-project/3"``.
@@ -52,6 +58,7 @@ def get_action_recognition_contract(
             implementation serves the model's architecture.
         ModelRetrievalError: A contract file cannot be downloaded.
         CorruptedModelPackageError: The package files are invalid.
+        ValueError: A V-JEPA 2.1 package's ``inference_config.json`` is invalid.
 
     Examples:
         >>> from inference_models import get_action_recognition_contract
@@ -71,6 +78,8 @@ def get_action_recognition_contract(
                 package=package, contract_files=model_class.contract_files
             ),
             verbose=False,
+            # These files are only parsed as JSON and text, never executed, so
+            # one without a hash is safe to read.
             download_files_without_hash=True,
         )
         contract = model_class.contract_from_package(package_dir=package_dir)
@@ -82,7 +91,8 @@ def _resolve_action_recognition_package(
     metadata: ModelMetadata,
 ) -> Tuple[Type[ActionRecognitionModel], ModelPackageMetadata]:
     # Runtime negotiation is skipped on purpose: the caller does not run the
-    # model, so its own hardware must not rule packages out.
+    # model, so its own hardware must not rule packages out. Any package
+    # serves, because a model's packages share their contract files.
     for package in metadata.model_packages:
         if not model_implementation_exists(
             model_architecture=metadata.model_architecture,

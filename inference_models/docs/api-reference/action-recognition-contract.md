@@ -11,6 +11,11 @@ contract = get_action_recognition_contract("my-project/3", api_key="...")
 print(contract.class_names, contract.video_sampling)
 ```
 
+The function covers models registered under the action recognition task. It
+refuses a model registered under another task, such as the Cosmos3 Edge base
+model that a server adapts for zero-shot use. It needs the weights provider,
+so it does not work in offline mode.
+
 ::: inference_models.get_action_recognition_contract
     options:
       show_root_heading: true
