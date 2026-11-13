@@ -19,6 +19,7 @@ ENV PIP_NO_CACHE_DIR=1
 COPY requirements /ci-dependencies/requirements
 COPY .release/pypi /ci-dependencies/.release/pypi
 COPY README.md /ci-dependencies/README.md
+COPY inference_cli/README.md /ci-dependencies/inference_cli/README.md
 COPY inference/core/version.py /ci-dependencies/inference/core/version.py
 COPY workflows/pyproject.toml workflows/README.md workflows/LICENSE /ci-dependencies/workflows/
 COPY stream_vision/pyproject.toml stream_vision/README.md stream_vision/LICENSE /ci-dependencies/stream_vision/
