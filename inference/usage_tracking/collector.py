@@ -38,9 +38,13 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
     ROBOFLOW_SERVICE_SECRET,
 )
+from inference.core.exceptions import RoboflowAPINotAuthorizedError
 from inference.core.interfaces.http.api_key_resolution import header_api_key
 from inference.core.logger import logger
-from inference.core.roboflow_api import build_roboflow_api_headers
+from inference.core.roboflow_api import (
+    assume_identity_authorised_workspace_db_id,
+    build_roboflow_api_headers,
+)
 from inference.core.version import __version__ as inference_version
 
 try:
@@ -108,6 +112,31 @@ UNKNOWN_ERROR_TYPE = "unknown"
 ERROR_TYPE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 ERROR_STATUS_CODE_KEY = "error_status_code"
 ERROR_TYPE_KEY = "error_type"
+# The error type the platform's validateToken / validateApiKey give a 401 for a
+# missing, unknown, revoked or disabled API key, or an invalid OAuth token.
+REFUSED_CREDENTIAL_ERROR_TYPE = "OAuthException"
+
+
+def _platform_refused_the_credential(error: Exception) -> bool:
+    # A 401 is not always about the key. A billing-restricted workspace gets a
+    # 401 "AccessException" from validateWorkspaceAccess (for example on the
+    # workflow specification fetch) for a key the platform accepted, and
+    # /usage/inference does not run that check, so its usage is deliverable.
+    # Only a 401 whose body names the credential counts. An error without a
+    # readable body (async client, or re-raised without its cause) is recorded
+    # as before.
+    response = getattr(error.__cause__, "response", None)
+    if response is None:
+        return False
+    try:
+        body = response.json()
+    except Exception:
+        return False
+    details = body.get("error") if isinstance(body, dict) else None
+    return (
+        isinstance(details, dict)
+        and details.get("type") == REFUSED_CREDENTIAL_ERROR_TYPE
+    )
 
 
 class UsageCollector:
@@ -1058,6 +1087,20 @@ class UsageCollector:
             error_details[ERROR_STATUS_CODE_KEY] = error_status_code
         return error_details
 
+    @staticmethod
+    def _credential_was_refused(error: Exception) -> bool:
+        # The platform answered 401 for the credential this call ran under.
+        # /usage/inference authenticates with that same credential, so a usage
+        # row recorded under it could never be accepted. Under assume-identity
+        # the 401 may be about the service token instead, so it is recorded.
+        if assume_identity_authorised_workspace_db_id.get() is not None:
+            return False
+        return any(
+            isinstance(candidate, RoboflowAPINotAuthorizedError)
+            and _platform_refused_the_credential(candidate)
+            for candidate in (error, getattr(error, "inner_error", None))
+        )
+
     @classmethod
     def _response_error(cls, response: Any) -> Optional[Dict[str, Any]]:
         status_code = getattr(response, "status_code", None)
@@ -1121,6 +1164,8 @@ class UsageCollector:
                         res = func(*args, **kwargs)
                     except Exception as exc:
                         t2 = time.time()
+                        if self._credential_was_refused(exc):
+                            raise
                         try:
                             self.record_usage(
                                 **self._extract_usage_params_from_func_kwargs(
@@ -1220,6 +1265,8 @@ class UsageCollector:
                         res = await func(*args, **kwargs)
                     except Exception as exc:
                         t2 = time.time()
+                        if self._credential_was_refused(exc):
+                            raise
                         try:
                             await self.async_record_usage(
                                 **self._extract_usage_params_from_func_kwargs(

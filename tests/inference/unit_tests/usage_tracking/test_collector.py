@@ -12,8 +12,14 @@ from unittest import mock
 
 import numpy as np
 import pytest
+import requests
 
 from inference.core.env import LAMBDA
+from inference.core.exceptions import (
+    RoboflowAPIForbiddenError,
+    RoboflowAPINotAuthorizedError,
+)
+from inference.core.roboflow_api import assume_identity_authorised_workspace_db_id
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.errors import ClientCausedStepExecutionError
 from inference.usage_tracking import payload_helpers
@@ -2001,6 +2007,115 @@ def test_returned_http_error_response_records_error_outcome(
     assert details["error_status_code"] == 422
 
 
+def _platform_401(error_type, message):
+    """RoboflowAPINotAuthorizedError as wrap_roboflow_api_errors raises it: from
+    the HTTPError, whose response carries the platform's error body."""
+    response = mock.MagicMock(status_code=401)
+    response.json.return_value = {"error": {"message": message, "type": error_type}}
+    try:
+        raise requests.exceptions.HTTPError(response=response)
+    except requests.exceptions.HTTPError as http_error:
+        try:
+            raise RoboflowAPINotAuthorizedError(
+                "Unauthorized access to roboflow API"
+            ) from http_error
+        except RoboflowAPINotAuthorizedError as error:
+            return error
+
+
+def _refused_key():
+    return _platform_401(
+        "OAuthException", "This API key does not exist (or has been revoked)."
+    )
+
+
+def test_request_refused_for_its_credential_records_no_usage(
+    usage_collector_with_mocked_threads,
+):
+    """Regression: a request whose API key the platform answered 401 for was
+    recorded as error usage under that key, and the usage endpoint refuses
+    rows under that same key, so the row could never be delivered.
+    """
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="request")
+    def direct(api_key="revoked-key"):
+        raise _refused_key()
+
+    @usage_collector(category="request")
+    def wrapped_in_workflow_step(api_key="revoked-key"):
+        raise ClientCausedStepExecutionError(
+            block_id="model",
+            status_code=401,
+            public_message="model step failed",
+            context="workflow_execution | step_execution",
+            inner_error=_refused_key(),
+        )
+
+    @usage_collector(category="request")
+    async def direct_async(api_key="revoked-key"):
+        raise _refused_key()
+
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        direct()
+    with pytest.raises(ClientCausedStepExecutionError):
+        wrapped_in_workflow_step()
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        asyncio.run(direct_async())
+
+    assert not usage_collector._usage.get("revoked-key")
+
+
+def test_errors_that_do_not_refuse_the_credential_are_still_recorded(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+
+    @usage_collector(category="request")
+    def forbidden(api_key="valid-key"):
+        raise RoboflowAPIForbiddenError("missing scope")
+
+    @usage_collector(category="request")
+    def refused_under_assume_identity(api_key="valid-key"):
+        raise _refused_key()
+
+    @usage_collector(category="request")
+    def workspace_billing_restricted(api_key="valid-key"):
+        # validateWorkspaceAccess: the key is accepted, the workspace is not,
+        # and /usage/inference does not run that check.
+        raise _platform_401(
+            "AccessException", "Access to this workspace has been restricted"
+        )
+
+    @usage_collector(category="request")
+    def no_platform_body(api_key="valid-key"):
+        raise RoboflowAPINotAuthorizedError("API key does not have access to model")
+
+    with pytest.raises(RoboflowAPIForbiddenError):
+        forbidden()
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        workspace_billing_restricted()
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        no_platform_body()
+    token = assume_identity_authorised_workspace_db_id.set("workspace-db-id")
+    try:
+        with pytest.raises(RoboflowAPINotAuthorizedError):
+            refused_under_assume_identity()
+    finally:
+        assume_identity_authorised_workspace_db_id.reset(token)
+
+    recorded_error_types = [
+        json.loads(row["resource_details"])["error_type"]
+        for row in usage_collector._usage["valid-key"].values()
+    ]
+    assert sorted(recorded_error_types) == [
+        "RoboflowAPIForbiddenError",
+        "RoboflowAPINotAuthorizedError",
+    ]
+    rows = list(usage_collector._usage["valid-key"].values())
+    assert sum(row["processed_frames"] for row in rows) == 4
+
+
 def test_wrapped_remote_http_errors_are_partitioned_by_status_code(
     usage_collector_with_mocked_threads,
 ):
@@ -2584,6 +2699,118 @@ def test_send_usage_payload_retry_sends_identical_rows(post_mock):
         post_mock.call_args_list[0].kwargs["json"]
         == post_mock.call_args_list[1].kwargs["json"]
     )
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_settles_rows_whose_api_key_is_rejected(post_mock):
+    def make_payload():
+        return {
+            hash_: {
+                "model:model-1": {
+                    "api_key_hash": hash_,
+                    "resource_id": "model-1",
+                    "processed_frames": 1,
+                }
+            }
+            for hash_ in ("revoked_hash", "transient_hash")
+        }
+
+    responses = {
+        "revoked-api-key": mock.MagicMock(status_code=401),
+        "transient-api-key": mock.MagicMock(status_code=503),
+    }
+    post_mock.side_effect = lambda *args, headers, **kwargs: responses[
+        headers["Authorization"].removeprefix("Bearer ")
+    ]
+
+    failed_hashes = send_usage_payload(
+        payload=make_payload(),
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={
+            "revoked_hash": "revoked-api-key",
+            "transient_hash": "transient-api-key",
+        },
+    )
+
+    assert failed_hashes == {"transient_hash"}
+    assert post_mock.call_count == 2
+
+
+@mock.patch("inference.usage_tracking.payload_helpers.requests.post")
+def test_send_usage_payload_retries_401_when_a_service_credential_was_sent(
+    post_mock,
+):
+    payload = {
+        "fake_hash": {
+            "model:model-1": {
+                "api_key_hash": "fake_hash",
+                "resource_id": "model-1",
+                "processed_frames": 1,
+            }
+        }
+    }
+    post_mock.return_value.status_code = 401
+
+    failed_hashes = send_usage_payload(
+        payload=payload,
+        api_usage_endpoint_url="https://example.com/usage",
+        hashes_to_api_keys={"fake_hash": "fake-api-key"},
+        extra_headers={"X-External-Usage-Reporter-Access-Token": "stale-token"},
+    )
+
+    assert failed_hashes == {"fake_hash"}
+
+
+def test_flush_drops_usage_rejected_for_its_api_key_and_keeps_transient_failures(
+    usage_collector_with_mocked_threads,
+):
+    """Regression: a payload recorded under a revoked API key used to be
+    re-enqueued after every 401, so the process POSTed it to the usage endpoint
+    on every flush until it restarted. Only payloads that can still succeed may
+    go back on the queue.
+    """
+    # given
+    collector = usage_collector_with_mocked_threads
+    collector._queue = Queue()
+    for api_key in ("revoked-api-key", "transient-api-key"):
+        collector.record_usage(
+            source="test",
+            category="model",
+            frames=1,
+            api_key=api_key,
+            resource_id="model-1",
+        )
+    revoked_hash = collector._hashed_api_keys["revoked-api-key"]
+    transient_hash = collector._hashed_api_keys["transient-api-key"]
+    statuses = {"revoked-api-key": 401, "transient-api-key": 503}
+
+    def post(*args, headers, **kwargs):
+        api_key = headers["Authorization"].removeprefix("Bearer ")
+        return mock.MagicMock(status_code=statuses[api_key])
+
+    # when
+    with mock.patch(
+        "inference.usage_tracking.payload_helpers.requests.post", side_effect=post
+    ) as post_mock, mock.patch.object(
+        collector._plan_details,
+        "get_api_key_plan",
+        return_value={collector._plan_details._is_enterprise_col_name: False},
+    ):
+        collector._enqueue_usage_payload()
+        collector._flush_queue()
+        first_flush_posts = post_mock.call_count
+        collector._flush_queue()
+
+    # then
+    assert first_flush_posts == 2
+    sent_keys = [
+        call.kwargs["headers"]["Authorization"] for call in post_mock.call_args_list
+    ]
+    assert sent_keys.count("Bearer revoked-api-key") == 1
+    assert sent_keys.count("Bearer transient-api-key") == 2
+    requeued = collector._dump_usage_queue_with_lock()
+    assert [set(payload) for payload in requeued] == [{transient_hash}]
+    assert revoked_hash not in requeued[0]
 
 
 def test_record_usage_accumulates_megapixel_buckets(
