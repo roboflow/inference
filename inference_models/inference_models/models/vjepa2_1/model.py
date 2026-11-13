@@ -263,7 +263,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
         """
         config, classes = _read_contract_files(package_dir)
         contract = ActionRecognitionContract(
-            class_names=list(classes),
+            class_names=classes,
             video_sampling=_video_sampling(config),
             supports_confidence=cls.supports_confidence,
             supports_observed_duration=cls.supports_observed_duration,
