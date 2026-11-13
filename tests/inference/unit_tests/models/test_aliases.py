@@ -42,3 +42,12 @@ def test_resolve_roboflow_model_alias_for_yolo26_depth_public_models_yolov_prefi
 
         # then
         assert result == f"yolo26-pretrains/yolo26{size}-depth"
+
+
+def test_resolve_roboflow_model_alias_for_rfdetr_sem_public_models() -> None:
+    for size in ["nano", "small", "medium", "large", "xlarge", "2xlarge"]:
+        # when
+        result = resolve_roboflow_model_alias(model_id=f"rfdetr-sem-{size}")
+
+        # then
+        assert result == f"rfdetr-pretrains/rfdetr-sem-{size}-ade20k"

@@ -14,10 +14,13 @@ leaves the application working without that feature. Install
 ``inference-server[otel]`` to enable it.
 """
 
+import json
 import logging
+import traceback
 from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, Optional, Sequence
+from urllib.parse import quote, quote_plus
 
 from inference_server import configuration
 from inference_server.middlewares.headers import TRACE_ID_HEADER
@@ -83,12 +86,39 @@ def start_span(name: str, attributes: Optional[Dict[str, Any]] = None) -> Iterat
         return
 
     tracer = _get_tracer()
-    with tracer.start_as_current_span(name, attributes=attributes) as span:
-        yield span
+    with tracer.start_as_current_span(
+        name,
+        attributes=attributes,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        try:
+            yield span
+        except Exception as error:
+            record_error(error)
+            raise
+
+
+def _redact_credentials(value: str, *, credentials: Sequence[Optional[str]]) -> str:
+    variants = set()
+    for credential in credentials:
+        if credential:
+            variants.update(
+                {
+                    credential,
+                    quote(credential, safe=""),
+                    quote_plus(credential, safe=""),
+                    json.dumps(credential)[1:-1],
+                }
+            )
+    for variant in sorted(variants, key=len, reverse=True):
+        value = value.replace(variant, "[REDACTED]")
+
+    return value
 
 
 def record_error(error: Exception) -> None:
-    """Record an exception on the current span and set its status to ERROR.
+    """Record an exception with configured credentials redacted and status ERROR.
 
     Args:
         error: Exception to record; ignored without a recording span.
@@ -98,8 +128,27 @@ def record_error(error: Exception) -> None:
 
     span = trace.get_current_span()
     if span and span.is_recording():
-        span.record_exception(error)
-        span.set_status(StatusCode.ERROR, str(error))
+        credentials = (
+            configuration.PRELOAD_API_KEY,
+            configuration.ROBOFLOW_INTERNAL_SERVICE_SECRET,
+        )
+        reason = _redact_credentials(str(error), credentials=credentials)
+        stacktrace = _redact_credentials(
+            "".join(traceback.format_exception(type(error), error, error.__traceback__)),
+            credentials=credentials,
+        )
+        module = type(error).__module__
+        name = type(error).__qualname__
+        error_type = f"{module}.{name}" if module and module != "builtins" else name
+        span.record_exception(
+            Exception(reason),
+            attributes={
+                "exception.type": error_type,
+                "exception.message": reason,
+                "exception.stacktrace": stacktrace,
+            },
+        )
+        span.set_status(StatusCode.ERROR, reason)
 
 
 def trace_context_fields() -> Dict[str, str]:
