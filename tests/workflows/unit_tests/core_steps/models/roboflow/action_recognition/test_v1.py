@@ -2,6 +2,7 @@
 
 import importlib
 import math
+import threading
 from datetime import datetime
 from typing import List, Optional, Union
 from unittest.mock import MagicMock
@@ -203,6 +204,7 @@ def _run(
     min_frames=1,
     requires_regular_sampling=False,
     max_sample_lateness_seconds=0.0,
+    background_inference=False,
 ):
     # The temporal contract travels with the model.
     if block._model is not None:
@@ -218,6 +220,7 @@ def _run(
         class_filter=list(class_filter) if class_filter is not None else None,
         model_id="cosmos-3-edge",
         stride_seconds=stride_seconds,
+        background_inference=background_inference,
     )[0]
 
 
@@ -279,6 +282,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest.class_filter == ["walk", "run"]
     assert manifest.model_id == "cosmos-3-edge"
     assert manifest.stride_seconds is None
+    assert manifest.background_inference is False
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     outputs = manifest_type.describe_outputs()
     assert [output.name for output in outputs] == [
@@ -1765,3 +1769,219 @@ def test_tail_call_waits_for_the_minimum_sampled_frames():
 
     assert model.calls == []
     assert results[-1]["analyzed_until_frame"] is None
+
+
+class _GatedActionRecognitionModel(_FakeActionRecognitionModel):
+    """Holds each call until the test opens the gate, like a slow model."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.gate = threading.Event()
+        self.entered = threading.Event()
+
+    def infer(self, frames, class_names=None, fps=None, **kwargs):
+        self.entered.set()
+        assert self.gate.wait(timeout=5), "the test never opened the gate"
+        result = super().infer(frames, class_names=class_names, fps=fps, **kwargs)
+        return result
+
+
+def _make_background_block(responses=None):
+    block, _ = _make_block()
+    model = _GatedActionRecognitionModel(responses=responses)
+    block._model = model
+    return block, model
+
+
+def _finish_pending_call(block, model, video_id="stream-0"):
+    # The future is the only signal that the step thread will see the result.
+    pending = block._video_bookkeeping[video_id].pending
+    model.gate.set()
+    pending.future.exception(timeout=5)
+    model.gate.clear()
+
+
+def _run_background(block, frame_number, **run_kwargs):
+    result = _run(
+        block,
+        _make_frame(frame_number),
+        background_inference=True,
+        **run_kwargs,
+    )
+    return result
+
+
+def test_background_call_returns_at_once_and_lands_on_a_later_frame():
+    block, model = _make_background_block(
+        responses=[[_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]
+    )
+    try:
+        for number in (1, 2):
+            _run_background(block, number)
+
+        fired = _run_background(block, 3)
+        assert model.entered.wait(timeout=5)
+        # The model is still inside its call: the step did not wait for it.
+        assert fired["timeline"] == []
+        assert fired["analyzed_until_frame"] is None
+
+        _finish_pending_call(block, model)
+        landed = _run_background(block, 4)
+    finally:
+        model.gate.set()
+        block.close()
+        block.close()
+
+    # The result belongs to the window that ended on frame 3, not to the
+    # frame that picked it up.
+    assert landed["analyzed_until_frame"] == 3
+    assert [entry["class_name"] for entry in _timeline_as_dicts(landed)] == ["walk"]
+    assert landed["error_status"] == ""
+
+
+def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
+    # Scheduled calls: 3, then 5. The first one is still running on 5 and 6,
+    # so the second starts on 7 and classifies the window that ends there.
+    block, model = _make_background_block()
+    try:
+        for number in range(1, 7):
+            _run_background(block, number)
+        assert len(model.calls) == 0
+
+        _finish_pending_call(block, model)
+        late = _run_background(block, 7)
+        _finish_pending_call(block, model)
+        after = _run_background(block, 8)
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert len(model.calls) == 2
+    assert late["analyzed_until_frame"] == 3
+    assert after["analyzed_until_frame"] == 7
+    # Frames 4-7 sit inside the one-second window ending on 7: no gap.
+    assert late["error_status"] == ""
+
+
+def test_late_background_call_names_the_frames_no_window_covered():
+    # The first call ends on frame 3. It keeps running until frame 12, so
+    # the next window covers 9-12 and frames 4-8 are never classified.
+    block, model = _make_background_block()
+    try:
+        for number in range(1, 12):
+            _run_background(block, number)
+
+        _finish_pending_call(block, model)
+        late = _run_background(block, 12)
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert "source frames 4-8 have no result" in late["error_status"]
+    assert late["analyzed_until_frame"] == 3
+
+
+def test_streams_of_one_step_take_turns_on_the_background_worker():
+    block, model = _make_background_block()
+    try:
+        for number in (1, 2, 3):
+            for video_id in ("camera-a", "camera-b"):
+                _run(
+                    block,
+                    _make_frame(number, video_id=video_id),
+                    background_inference=True,
+                )
+        assert model.entered.wait(timeout=5)
+        first = block._video_bookkeeping["camera-a"].pending.future
+        second = block._video_bookkeeping["camera-b"].pending.future
+
+        # One model, one device: the second camera's call waits its turn.
+        assert first.running() and not second.running()
+
+        model.gate.set()
+        second.result(timeout=5)
+        results = [
+            _run(
+                block,
+                _make_frame(4, video_id=video_id),
+                background_inference=True,
+            )
+            for video_id in ("camera-a", "camera-b")
+        ]
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert [result["analyzed_until_frame"] for result in results] == [3, 3]
+    assert [result["error_status"] for result in results] == ["", ""]
+
+
+def test_background_model_failure_surfaces_on_the_frame_that_collects_it():
+    block, model = _make_background_block(responses=[RuntimeError("model failure"), []])
+    try:
+        for number in (1, 2, 3):
+            fired = _run_background(block, number)
+
+        _finish_pending_call(block, model)
+        failed = _run_background(block, 4)
+        _run_background(block, 5)
+        _finish_pending_call(block, model)
+        recovered = _run_background(block, 6)
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert fired["error_status"] == ""
+    assert failed["error_status"] == "model failure"
+    assert failed["analyzed_until_frame"] is None
+    assert recovered["error_status"] == ""
+    assert recovered["analyzed_until_frame"] == 5
+
+
+def test_video_file_classifies_inside_the_step_even_with_background_on():
+    block, _ = _make_block(responses=[[_model_segment("run")]])
+
+    results = _run_file(
+        block,
+        frame_numbers=range(1, 4),
+        total_frames=30,
+        background_inference=True,
+    )
+
+    # The frame that fired already carries its result.
+    assert results[-1]["analyzed_until_frame"] == 3
+    assert len(results[-1]["timeline"]) == 1
+
+
+def test_stream_restart_drops_the_result_of_the_call_it_left_behind():
+    block, model = _make_background_block(
+        responses=[[_model_segment("walk")], [_model_segment("run")]]
+    )
+    try:
+        for number in (1, 2, 3):
+            _run_background(block, number)
+        stale_call = block._video_bookkeeping["stream-0"].pending
+
+        restarted = _run_background(block, 1)
+        model.gate.set()
+        stale_call.future.result(timeout=5)
+        after = _run_background(block, 2)
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert restarted["timeline"] == []
+    assert after["timeline"] == []
+    assert after["analyzed_until_frame"] is None
+
+
+def test_switching_background_inference_resets_the_stream():
+    block, _ = _make_block(responses=[[_model_segment("walk")]])
+    for number in (1, 2, 3):
+        blocking = _run(block, _make_frame(number))
+
+    switched = _run(block, _make_frame(4), background_inference=True)
+
+    assert len(blocking["timeline"]) == 1
+    assert switched["timeline"] == []
+    assert switched["analyzed_until_frame"] is None

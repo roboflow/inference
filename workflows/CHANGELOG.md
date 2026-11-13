@@ -26,6 +26,14 @@ for contributor and maintainer responsibilities.
   video file that reports its frame count. The timeline on that frame covers
   the tail of the clip, and a clip shorter than one stride now gets a result.
   Live streams and files without a usable frame count behave as before.
+- Action Recognition Model gains `background_inference`. A live stream then
+  hands each window to a worker thread, so the step returns at once and the
+  video does not wait for the model. The result reaches the timeline on a
+  later frame. One call runs per stream at a time; a call that comes due while
+  the previous one has not finished waits and takes the newest window, and
+  `error_status` names any frames no window covered. A step has one worker, so
+  its streams take turns. Video files always classify inside the step. The
+  default is unchanged.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.

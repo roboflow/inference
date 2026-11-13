@@ -2,9 +2,12 @@
 
 import logging
 import math
+import threading
 from collections import OrderedDict
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, List, Literal, Optional, Set, Tuple, Type, Union
+from weakref import finalize
 
 import cv2
 import numpy as np
@@ -33,6 +36,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    BOOLEAN_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
@@ -113,6 +117,17 @@ one shorter than one stride. That call also needs the model's minimum number of
 sampled frames. Live streams and files without a usable frame count get no
 extra call, so frames after the final scheduled call receive no result.
 
+By default a classification runs inside the step, so the video waits for
+the model. With background_inference, a live stream hands each window to a
+worker thread and the step returns at once. The result reaches the timeline
+on a later frame, and analyzed_until_frame shows how far results go. One
+call runs per stream at a time: a call that comes due while the previous one
+has not finished waits, then takes the newest window, and error_status names
+any frames no window covered. The step has one worker, so its streams take
+turns: with several cameras on one step, each camera's results arrive less
+often. Video files always classify inside the step, so every window is
+analyzed and results are repeatable.
+
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
 temporal content, so these paths return an empty timeline.
@@ -144,6 +159,18 @@ class _SampledFrame:
 
 
 @dataclass
+class _WindowCall:
+    """One window handed to the model, with what its merge needs later."""
+
+    sampled: List[_SampledFrame]
+    frame_limit: Optional[int]
+    block_filter: Optional[List[str]]
+    id_vocabulary: Optional[List[str]]
+    sampling_stride: float
+    future: Optional[Future] = None
+
+
+@dataclass
 class _ActionRecognitionBookkeeping:
     sampled: List[_SampledFrame] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
@@ -153,10 +180,12 @@ class _ActionRecognitionBookkeeping:
     last_fire_frame_number: Optional[int] = None
     analyzed_until_frame: Optional[int] = None
     tail_flushed: bool = False
+    pending: Optional[_WindowCall] = None
+    fire_deferred: bool = False
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
-    signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
-        default_factory=lambda: ((), 0.0, 0.0, None)
+    signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence], bool] = field(
+        default_factory=lambda: ((), 0.0, 0.0, None, False)
     )
 
 
@@ -216,6 +245,16 @@ class BlockManifest(WorkflowBlockManifest):
             "more model calls."
         ),
         examples=[None, 2.0],
+    )
+    background_inference: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=False,
+        description=(
+            "Classify live-stream windows on a worker thread, so the step "
+            "returns at once and the video does not wait for the model. "
+            "Results reach the timeline on a later frame. Video files always "
+            "classify inside the step."
+        ),
+        examples=[False, "$inputs.background_inference"],
     )
 
     @model_validator(mode="after")
@@ -354,6 +393,11 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             OrderedDict()
         )
         self._warned_fps_video_ids: Set[str] = set()
+        # A file stream classifies on the step thread while a live stream's
+        # worker may be inside the same model.
+        self._model_lock = threading.Lock()
+        self._executor: Optional[ThreadPoolExecutor] = None
+        self._executor_finalizer = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -391,6 +435,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         class_filter: Optional[List[str]] = None,
         stride_seconds: Optional[float] = None,
         confidence: Optional[Confidence] = None,
+        background_inference: bool = False,
     ) -> BlockResult:
         """Process video frames using detection's confidence modes.
 
@@ -401,9 +446,12 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             stride_seconds: Time between model calls.
             confidence: Numeric override, "best" recommendations, or the
                 built-in default with "default" or None.
+            background_inference: Classify live-stream windows on a worker
+                thread instead of inside the step.
 
         Returns:
-            A timeline and error status for each input frame.
+            A timeline, error status and analyzed-frame mark for each
+            input frame.
         """
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
@@ -433,6 +481,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                     video_sampling=video_sampling,
                     stride_seconds=stride_seconds,
                     confidence=confidence,
+                    background_inference=bool(background_inference),
                 )
             )
         return results
@@ -446,6 +495,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         video_sampling: VideoSampling,
         stride_seconds: Optional[float],
         confidence: Optional[Confidence] = None,
+        background_inference: bool = False,
     ) -> dict:
         metadata = image.video_metadata
         requested_window_seconds = float(video_sampling.window_seconds)
@@ -463,6 +513,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             requested_window_seconds,
             requested_stride_seconds,
             confidence,
+            background_inference,
         )
         video_id = metadata.video_identifier
         frame_number = metadata.frame_number
@@ -592,7 +643,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             while len(bookkeeping.sampled) > video_sampling.max_frames:
                 bookkeeping.sampled.pop(0)
 
-        error_status = ""
+        error_status = self._collect_finished_call(bookkeeping=bookkeeping)
         if bookkeeping.last_fire_frame_number is None:
             # A single frame has no temporal content to classify; anchor the
             # fire cadence at stream start and wait for a full stride.
@@ -618,10 +669,19 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         should_classify = has_enough_samples and (
             frame_number >= next_fire_frame_number or flushes_tail
         )
-        if should_classify:
+        if should_classify and bookkeeping.pending is not None:
+            # One call per stream at a time. The fire waits for the worker
+            # and then takes the newest window, not the one it was due on.
+            bookkeeping.fire_deferred = True
+        elif should_classify:
+            gap_notice = self._describe_deferral_gap(
+                bookkeeping=bookkeeping,
+                cutoff_frame_number=cutoff_frame_number,
+            )
+            bookkeeping.fire_deferred = False
             bookkeeping.tail_flushed = is_last_file_frame
             bookkeeping.last_fire_frame_number = frame_number
-            error_status = self._classify_buffer(
+            call_error = self._classify_buffer(
                 model=model,
                 bookkeeping=bookkeeping,
                 block_filter=block_filter,
@@ -630,6 +690,12 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 sampling_stride=sampling_stride,
                 confidence=confidence,
                 frame_limit=frame_number + 1,
+                # A file is not paced by the clock, so a worker would fall
+                # behind it and leave most windows unclassified.
+                background=background_inference and not metadata.comes_from_video_file,
+            )
+            error_status = " ".join(
+                part for part in (error_status, gap_notice, call_error) if part
             )
 
         bookkeeping.last_frame_number = frame_number
@@ -669,6 +735,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         sampling_stride: float,
         confidence: Optional[Confidence] = None,
         frame_limit: Optional[int] = None,
+        background: bool = False,
     ) -> str:
         if not bookkeeping.sampled:
             return ""
@@ -690,27 +757,33 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 f"Missing required samples at source-frame indices {indices}{remainder} "
                 f"for window {first_frame}-{last_frame}. Inference skipped this window."
             )
-        frames = self._prepare_frames_for_model(
-            [sample.frame for sample in bookkeeping.sampled]
+
+        # The buffer keeps sliding while a worker runs, so the call owns a
+        # copy of the list. The block never writes the frames inside again.
+        call = _WindowCall(
+            sampled=list(bookkeeping.sampled),
+            frame_limit=frame_limit,
+            block_filter=block_filter,
+            id_vocabulary=id_vocabulary,
+            sampling_stride=sampling_stride,
         )
-        try:
-            infer_kwargs = (
-                {"confidence": confidence}
-                if model.supports_confidence and confidence not in (None, "default")
-                else {}
+        if background:
+            call.future = self._get_executor().submit(
+                self._infer_window,
+                model,
+                call=call,
+                effective_sample_fps=effective_sample_fps,
+                confidence=confidence,
             )
-            if model.supports_observed_duration and frame_limit is not None:
-                duration_seconds = (
-                    frame_limit - bookkeeping.sampled[0].intended_frame_number
-                ) / (sampling_stride * effective_sample_fps)
-                infer_kwargs["duration_seconds"] = min(
-                    duration_seconds, model.video_sampling.window_seconds
-                )
-            segments = model.infer(
-                frames=frames,
-                class_names=block_filter,
-                fps=effective_sample_fps,
-                **infer_kwargs,
+            bookkeeping.pending = call
+            return ""
+
+        try:
+            segments = self._infer_window(
+                model,
+                call=call,
+                effective_sample_fps=effective_sample_fps,
+                confidence=confidence,
             )
         except Exception as error:
             logger.warning(
@@ -719,36 +792,172 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 exc_info=True,
             )
             return str(error)
+
+        self._apply_call_result(bookkeeping=bookkeeping, call=call, segments=segments)
+        return ""
+
+    def _infer_window(
+        self,
+        model,
+        *,
+        call: _WindowCall,
+        effective_sample_fps: float,
+        confidence: Optional[Confidence],
+    ) -> List[ModelActionRecognitionPrediction]:
+        """Run the model on one window. Touches no per-video state."""
+        frames = self._prepare_frames_for_model(
+            [sample.frame for sample in call.sampled]
+        )
+        infer_kwargs = (
+            {"confidence": confidence}
+            if model.supports_confidence and confidence not in (None, "default")
+            else {}
+        )
+        if model.supports_observed_duration and call.frame_limit is not None:
+            duration_seconds = (
+                call.frame_limit - call.sampled[0].intended_frame_number
+            ) / (call.sampling_stride * effective_sample_fps)
+            infer_kwargs["duration_seconds"] = min(
+                duration_seconds, model.video_sampling.window_seconds
+            )
+        with self._model_lock:
+            segments = model.infer(
+                frames=frames,
+                class_names=call.block_filter,
+                fps=effective_sample_fps,
+                **infer_kwargs,
+            )
         # Separates "the model output one range" from "the block merged
         # several".
         logger.debug(
             "Action Recognition model call over sampled frames "
             "[%s, %s] returned %d pre-merge segment(s): %s",
-            bookkeeping.sampled[0].source_frame_number,
-            bookkeeping.sampled[-1].source_frame_number,
+            call.sampled[0].source_frame_number,
+            call.sampled[-1].source_frame_number,
             len(segments),
             [
                 (segment.start_frame_idx, segment.end_frame_idx, segment.class_name)
                 for segment in segments
             ],
         )
+        return segments
+
+    def _apply_call_result(
+        self,
+        bookkeeping: _ActionRecognitionBookkeeping,
+        *,
+        call: _WindowCall,
+        segments: List[ModelActionRecognitionPrediction],
+    ) -> None:
         # Same-class ranges merge only when no sampled frame lies in the
         # gap. ceil(stride) is that rule exactly: consecutive samples sit
         # floor/ceil(stride) apart; the next sampled gap is ~2x the stride.
-        self._merge_segments(
-            bookkeeping=bookkeeping,
+        merge_window_segments(
+            timeline=bookkeeping.timeline,
+            frame_numbers=[sample.source_frame_number for sample in call.sampled],
             segments=segments,
-            block_filter=block_filter,
-            id_vocabulary=id_vocabulary,
-            stride=max(1, math.ceil(sampling_stride)),
-            sample_stride=sampling_stride,
-            frame_limit=frame_limit,
+            id_vocabulary=call.id_vocabulary,
+            stride=max(1, math.ceil(call.sampling_stride)),
+            class_filter=call.block_filter,
+            sample_stride=call.sampling_stride,
+            frame_limit=call.frame_limit,
+            sample_start_frame=call.sampled[0].intended_frame_number,
         )
-        if frame_limit is not None:
+        self._evict_oldest_actions(bookkeeping=bookkeeping)
+        bookkeeping.timeline.sort(
+            key=lambda entry: (
+                entry.start_frame_idx,
+                entry.class_id,
+                entry.end_frame_idx,
+            )
+        )
+        # A fire is the only thing that changes the timeline, so the copy the
+        # output needs belongs here rather than under every frame.
+        bookkeeping.timeline_snapshot = [
+            entry.model_copy() for entry in bookkeeping.timeline
+        ]
+        if call.frame_limit is not None:
             # Only a call that returned moves the mark, so a consumer can tell
             # "no action" from "not analyzed".
-            bookkeeping.analyzed_until_frame = frame_limit - 1
+            bookkeeping.analyzed_until_frame = call.frame_limit - 1
+
+    def _collect_finished_call(self, bookkeeping: _ActionRecognitionBookkeeping) -> str:
+        """Merge a finished background call on the step thread.
+
+        The worker only runs the model. Every write to per-video state stays
+        on the thread that reads it, so the state needs no lock.
+        """
+        call = bookkeeping.pending
+        if call is None or not call.future.done():
+            return ""
+
+        bookkeeping.pending = None
+        if call.future.cancelled():
+            return "Classification was cancelled before it ran."
+
+        error = call.future.exception()
+        if error is not None:
+            logger.warning(
+                "Action Recognition Model call failed: %s",
+                error,
+                exc_info=error,
+            )
+            return str(error)
+
+        self._apply_call_result(
+            bookkeeping=bookkeeping,
+            call=call,
+            segments=call.future.result(),
+        )
         return ""
+
+    @staticmethod
+    def _describe_deferral_gap(
+        bookkeeping: _ActionRecognitionBookkeeping,
+        *,
+        cutoff_frame_number: int,
+    ) -> str:
+        """Name the frames a late call left without a result, if any."""
+        if not bookkeeping.fire_deferred:
+            return ""
+
+        first_uncovered = bookkeeping.last_fire_frame_number + 1
+        if cutoff_frame_number < first_uncovered:
+            return ""
+
+        return (
+            f"The previous classification had not finished, so source frames "
+            f"{first_uncovered}-{cutoff_frame_number} have no result."
+        )
+
+    def _get_executor(self) -> ThreadPoolExecutor:
+        if self._executor is None:
+            # One worker: calls on one model must not overlap on the device.
+            self._executor = ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="action-recognition",
+            )
+            # A block dropped without close() must not leave its thread behind.
+            self._executor_finalizer = finalize(
+                self,
+                self._executor.shutdown,
+                wait=False,
+                cancel_futures=True,
+            )
+        return self._executor
+
+    def close(self) -> None:
+        """Stop the background worker and drop calls that have not started.
+
+        A call that already runs finishes on its own; nothing reads its result.
+        """
+        if self._executor is None:
+            return
+
+        # Calling the finalizer runs the shutdown once and disarms it.
+        self._executor_finalizer()
+        self._executor = None
+        self._executor_finalizer = None
 
     @staticmethod
     def _prepare_frames_for_model(frames: List[Any]) -> List[Any]:
@@ -789,43 +998,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             (round(width * scale), round(height * scale)),
             interpolation=cv2.INTER_AREA,
         )
-
-    def _merge_segments(
-        self,
-        bookkeeping: _ActionRecognitionBookkeeping,
-        segments: List[ModelActionRecognitionPrediction],
-        block_filter: Optional[List[str]],
-        id_vocabulary: Optional[List[str]],
-        stride: float,
-        sample_stride: Optional[float] = None,
-        frame_limit: Optional[int] = None,
-    ) -> None:
-        merge_window_segments(
-            timeline=bookkeeping.timeline,
-            frame_numbers=[
-                sample.source_frame_number for sample in bookkeeping.sampled
-            ],
-            segments=segments,
-            id_vocabulary=id_vocabulary,
-            stride=stride,
-            class_filter=block_filter,
-            sample_stride=sample_stride,
-            frame_limit=frame_limit,
-            sample_start_frame=bookkeeping.sampled[0].intended_frame_number,
-        )
-        self._evict_oldest_actions(bookkeeping=bookkeeping)
-        bookkeeping.timeline.sort(
-            key=lambda entry: (
-                entry.start_frame_idx,
-                entry.class_id,
-                entry.end_frame_idx,
-            )
-        )
-        # A fire is the only thing that changes the timeline, so the copy the
-        # output needs belongs here rather than under every frame.
-        bookkeeping.timeline_snapshot = [
-            entry.model_copy() for entry in bookkeeping.timeline
-        ]
 
     @staticmethod
     def _evict_oldest_actions(bookkeeping: _ActionRecognitionBookkeeping) -> None:
