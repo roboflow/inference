@@ -5,7 +5,7 @@ import math
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Optional, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -19,6 +19,7 @@ from inference_models.entities import Confidence
 from inference_models.errors import ModelInputError
 from inference_models.models.base.action_recognition import (
     WINDOW_DURATION_ROUNDING_SECONDS,
+    ActionRecognitionContract,
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
@@ -31,6 +32,7 @@ from .architecture import VJepaEncoder
 from .head import SpanHead
 
 MAX_WINDOW_TOKENS = 81920
+CONTRACT_FILES = ("inference_config.json", "class_names.txt")
 
 
 def validate_config(config):
@@ -179,10 +181,97 @@ def validate_config(config):
         raise ValueError("Invalid V-JEPA normalization")
 
 
+def _read_contract_files(package_dir: str) -> Tuple[dict, List[str]]:
+    """Read and validate the recorded config and its class list."""
+    files = get_model_package_contents(
+        model_package_dir=package_dir, elements=list(CONTRACT_FILES)
+    )
+    config = json.loads(Path(files["inference_config.json"]).read_text())
+    validate_config(config)
+    classes = Path(files["class_names.txt"]).read_text().splitlines()
+    if (
+        not classes
+        or len(set(classes)) != len(classes)
+        or config["class_names"] != classes
+    ):
+        raise ValueError("V-JEPA class list is empty, duplicated, or inconsistent")
+
+    return config, classes
+
+
+def _video_sampling(config: dict) -> VideoSampling:
+    inputs, post = config["network_input"], config["post_processing"]
+    sampling = VideoSampling(
+        window_seconds=inputs["frames"] / inputs["fps"],
+        sample_fps=inputs["fps"],
+        min_frames=1,
+        max_frames=inputs["frames"],
+        overlap_frames=post["overlap_frames"],
+        end_aligned=True,
+        fixed_sample_fps=True,
+        requires_regular_sampling=True,
+        max_sample_lateness_seconds=0.05,
+    )
+
+    return sampling
+
+
+class _SquareFrameResize:
+    """The direct-square resize shared by inference and frame storage."""
+
+    def __init__(self, network_input: dict):
+        self.frame_size = (network_input["height"], network_input["width"])
+        self._resize = v2.Resize(self.frame_size, antialias=network_input["antialias"])
+
+    def __call__(self, frame: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
+        if isinstance(frame, torch.Tensor):
+            if frame.dtype != torch.uint8 or frame.ndim != 3 or frame.shape[0] != 3:
+                raise ModelInputError("V-JEPA expects RGB uint8 frames")
+            frame = frame.detach().cpu().permute(1, 2, 0).numpy()
+        if frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[-1] != 3:
+            raise ModelInputError("V-JEPA expects RGB uint8 frames")
+
+        if frame.shape[:2] == self.frame_size:
+            prepared = frame
+        else:
+            prepared = np.array(self._resize(Image.fromarray(frame)))
+
+        return prepared
+
+
 class VJepaActionRecognition(ActionRecognitionModel):
     span_semantics = "class_union"
     supports_confidence = True
     supports_observed_duration = True
+    end_exclusive_spans = True
+    contract_files = CONTRACT_FILES
+
+    @classmethod
+    def contract_from_package(cls, package_dir: str) -> ActionRecognitionContract:
+        """Read the validated contract that ``from_pretrained`` loads under.
+
+        Args:
+            package_dir (str): Directory holding ``inference_config.json`` and
+                ``class_names.txt``.
+
+        Returns:
+            ActionRecognitionContract: Classes, sampling and the frame resize.
+
+        Raises:
+            CorruptedModelPackageError: A contract file is missing.
+            ValueError: The package records an unsupported contract.
+        """
+        config, classes = _read_contract_files(package_dir)
+        contract = ActionRecognitionContract(
+            class_names=list(classes),
+            video_sampling=_video_sampling(config),
+            supports_confidence=cls.supports_confidence,
+            supports_observed_duration=cls.supports_observed_duration,
+            end_exclusive_spans=cls.end_exclusive_spans,
+            frame_storage_transform=_SquareFrameResize(config["network_input"]),
+        )
+
+        return contract
 
     @classmethod
     def from_pretrained(
@@ -204,19 +293,10 @@ class VJepaActionRecognition(ActionRecognitionModel):
         Returns:
             The loaded action-recognition model.
         """
+        config, classes = _read_contract_files(model_name_or_path)
         files = get_model_package_contents(
-            model_package_dir=model_name_or_path,
-            elements=["model.safetensors", "inference_config.json", "class_names.txt"],
+            model_package_dir=model_name_or_path, elements=["model.safetensors"]
         )
-        config = json.loads(Path(files["inference_config.json"]).read_text())
-        validate_config(config)
-        classes = Path(files["class_names.txt"]).read_text().splitlines()
-        if (
-            not classes
-            or len(set(classes)) != len(classes)
-            or config["class_names"] != classes
-        ):
-            raise ValueError("V-JEPA class list is empty, duplicated, or inconsistent")
         model = nn.Module()
         # RoPE positions come from the input shape, so the encoder has no
         # resolution-sized weights to configure or convert.
@@ -246,8 +326,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
         self.recommended_parameters = recommended_parameters
         inputs = config["network_input"]
         self._dtype = getattr(torch, inputs["autocast"])
-        self._frame_size = (inputs["height"], inputs["width"])
-        self._resize = v2.Resize(self._frame_size, antialias=inputs["antialias"])
+        self._prepare_frame = _SquareFrameResize(inputs)
         self._transform = v2.Compose(
             [
                 v2.ToImage(),
@@ -282,17 +361,7 @@ class VJepaActionRecognition(ActionRecognitionModel):
         Raises:
             ModelInputError: If the frame is not RGB uint8.
         """
-        if isinstance(frame, torch.Tensor):
-            if frame.dtype != torch.uint8 or frame.ndim != 3 or frame.shape[0] != 3:
-                raise ModelInputError("V-JEPA expects RGB uint8 frames")
-            frame = frame.detach().cpu().permute(1, 2, 0).numpy()
-        if frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[-1] != 3:
-            raise ModelInputError("V-JEPA expects RGB uint8 frames")
-
-        if frame.shape[:2] == self._frame_size:
-            prepared = frame
-        else:
-            prepared = np.array(self._resize(Image.fromarray(frame)))
+        prepared = self._prepare_frame(frame)
 
         return prepared
 
@@ -319,18 +388,9 @@ class VJepaActionRecognition(ActionRecognitionModel):
 
     @property
     def video_sampling(self):
-        inputs, post = self._config["network_input"], self._config["post_processing"]
-        return VideoSampling(
-            window_seconds=inputs["frames"] / inputs["fps"],
-            sample_fps=inputs["fps"],
-            min_frames=1,
-            max_frames=inputs["frames"],
-            overlap_frames=post["overlap_frames"],
-            end_aligned=True,
-            fixed_sample_fps=True,
-            requires_regular_sampling=True,
-            max_sample_lateness_seconds=0.05,
-        )
+        sampling = _video_sampling(self._config)
+
+        return sampling
 
     @torch.inference_mode()
     def infer(
@@ -458,7 +518,11 @@ class VJepaActionRecognition(ActionRecognitionModel):
         confidences = scores[rows, columns].cpu().tolist()
         return [
             ActionRecognitionPrediction(
-                left, right, self._classes[label], score, end_exclusive=True
+                left,
+                right,
+                self._classes[label],
+                score,
+                end_exclusive=self.end_exclusive_spans,
             )
             for (left, right), score, label in zip(
                 spans, confidences, columns.cpu().tolist()

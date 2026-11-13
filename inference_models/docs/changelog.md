@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- `get_action_recognition_contract(model_id, api_key=...)` returns an
+  `ActionRecognitionContract` (class names, `VideoSampling`, confidence and
+  observed-duration support, span convention and frame storage transform)
+  without downloading weights. It suits clients that window video themselves
+  and run the model elsewhere, such as the Action Recognition Model workflow
+  block under REMOTE execution.
+- `ActionRecognitionModel.contract_from_package(package_dir)` and
+  `ActionRecognitionModel.contract_files`. V-JEPA 2.1 and Cosmos3 Edge action
+  recognition implement them, and their loaders read the package through the
+  same code. Other subclasses raise `ModelImplementationNotFoundError`.
+- `ActionRecognitionModel.end_exclusive_spans` states whether predictions use
+  half-open spans. V-JEPA 2.1 sets it.
+
 ### Fixed
 
 - RF-DETR ONNX models with static input shapes (object detection, instance
