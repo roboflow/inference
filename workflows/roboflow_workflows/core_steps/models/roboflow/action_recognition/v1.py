@@ -35,6 +35,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
@@ -101,11 +102,16 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-The block does not run an extra classification when a stream ends, so frames
-after the final scheduled call do not receive a result. On a finite clip, keep
-the stride shorter than the clip: the first classification waits one full
-stride, so a longer stride never runs. Tail classification requires an
-end-of-stream signal and is planned separately.
+analyzed_until_frame is the source index of the last frame that a successful
+classification covered, or null before the first one. An empty timeline after
+it means "not analyzed", not "no action". Failed and skipped windows do not
+advance it. Overlapping windows can still revise ranges before it.
+
+On a video file that reports its frame count, the block runs one extra
+classification on the last frame, so the timeline covers the whole clip, even
+one shorter than one stride. That call also needs the model's minimum number of
+sampled frames. Live streams and files without a usable frame count get no
+extra call, so frames after the final scheduled call receive no result.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -145,6 +151,8 @@ class _ActionRecognitionBookkeeping:
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
+    analyzed_until_frame: Optional[int] = None
+    tail_flushed: bool = False
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
     signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
@@ -232,6 +240,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
+            OutputDefinition(name="analyzed_until_frame", kind=[INTEGER_KIND]),
         ]
 
     @classmethod
@@ -591,11 +600,26 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # The model declares the fewest frames worth classifying; a fire
         # waits until the buffer reaches it.
         next_fire_frame_number = bookkeeping.last_fire_frame_number + stride_frames
-        should_classify = (
-            len(bookkeeping.sampled) >= max(1, int(video_sampling.min_frames))
-            and frame_number >= next_fire_frame_number
+        is_last_file_frame = bool(
+            metadata.comes_from_video_file
+            and metadata.total_frames is not None
+            and frame_number >= metadata.total_frames
+        )
+        # A file ends between two scheduled calls, so its tail gets one call
+        # of its own. The flag holds it to one when the count is too low.
+        flushes_tail = (
+            is_last_file_frame
+            and not bookkeeping.tail_flushed
+            and frame_number > bookkeeping.last_fire_frame_number
+        )
+        has_enough_samples = len(bookkeeping.sampled) >= max(
+            1, int(video_sampling.min_frames)
+        )
+        should_classify = has_enough_samples and (
+            frame_number >= next_fire_frame_number or flushes_tail
         )
         if should_classify:
+            bookkeeping.tail_flushed = is_last_file_frame
             bookkeeping.last_fire_frame_number = frame_number
             error_status = self._classify_buffer(
                 model=model,
@@ -720,6 +744,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             sample_stride=sampling_stride,
             frame_limit=frame_limit,
         )
+        if frame_limit is not None:
+            # Only a call that returned moves the mark, so a consumer can tell
+            # "no action" from "not analyzed".
+            bookkeeping.analyzed_until_frame = frame_limit - 1
         return ""
 
     @staticmethod
@@ -834,4 +862,5 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
+            "analyzed_until_frame": bookkeeping.analyzed_until_frame,
         }
