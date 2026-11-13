@@ -9,6 +9,3 @@ class OrientedBoxMetadata(BaseModel):
     classHeading: dict[str, StrictBool] = Field(
         description="Frozen generated-version class heading policy."
     )
-    classHeadingRevision: int = Field(
-        strict=True, ge=0, description="Frozen generated-version policy revision."
-    )
