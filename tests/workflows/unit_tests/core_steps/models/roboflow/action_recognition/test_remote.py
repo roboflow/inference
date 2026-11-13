@@ -307,6 +307,42 @@ def test_server_errors_hide_the_api_key(monkeypatch):
     assert "secret123" not in str(error.value)
 
 
+def test_connection_errors_hide_the_service_secret(monkeypatch):
+    # requests quotes the request URL, query string included, in its errors.
+    def post(url, json, timeout, params=None, **kwargs):
+        raise remote.requests.ConnectionError(
+            f"Max retries exceeded with url: /infer/action_recognition?"
+            f"service_secret={params['service_secret']}&countinference=False"
+        )
+
+    _fake_platform(monkeypatch, post, class_names=None, video_sampling=PUNCH_SAMPLING)
+    model = load_remote_action_recognition_model("ws/m/1", api_key="key")
+    secret_token = outbound_service_secret.set("shared-service-secret")
+    try:
+        with pytest.raises(remote.requests.RequestException) as error:
+            model.infer(frames=_frames(8), fps=12.0)
+    finally:
+        outbound_service_secret.reset(secret_token)
+
+    assert "Max retries exceeded" in str(error.value)
+    assert "shared-service-secret" not in str(error.value)
+    # The block logs the error with its traceback; the original must not ride along.
+    assert error.value.__suppress_context__
+
+
+@pytest.mark.parametrize("fps", [30000 / 1001, 10 / 3, 7.4925])
+def test_rate_the_clip_container_rounds_still_maps_one_to_one(monkeypatch, fps):
+    # The mp4 container keeps about three decimals of the frame rate.
+    server = _FakeServer(timeline=[])
+    sampling = VideoSampling(
+        window_seconds=16.0, sample_fps=fps, min_frames=4, max_frames=32
+    )
+    _fake_platform(monkeypatch, server.post, class_names=None, video_sampling=sampling)
+    model = load_remote_action_recognition_model("ws/m/1", api_key=None)
+
+    assert model.infer(frames=_frames(8), fps=fps) == []
+
+
 def _video_frame(frame_number: int) -> WorkflowImageData:
     return WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id=f"clip:{frame_number}"),

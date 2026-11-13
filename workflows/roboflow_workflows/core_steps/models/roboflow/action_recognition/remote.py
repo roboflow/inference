@@ -48,6 +48,7 @@ ACTION_RECOGNITION_ENDPOINT = "/infer/action_recognition"
 REMOTE_REQUEST_TIMEOUT_SECONDS = 120.0
 LOSSLESS_CODEC = ("FFV1", ".mkv")
 LOSSY_CODEC = ("mp4v", ".mp4")
+CONTAINER_FPS_TOLERANCE = 1e-3
 _MICROSECONDS = 1_000_000
 
 
@@ -97,6 +98,7 @@ class RemoteActionRecognitionModel:
             ValueError: The window cannot map one to one onto a server window.
             RuntimeError: The server read a different clip than was sent.
             requests.HTTPError: The server rejected the request.
+            requests.RequestException: The request did not reach the server.
         """
         frame_count = len(frames)
         _ensure_window_maps_one_to_one(
@@ -137,13 +139,20 @@ class RemoteActionRecognitionModel:
             if WORKFLOWS_REMOTE_API_TARGET == "hosted"
             else LOCAL_INFERENCE_API_URL
         )
-        response = requests.post(
-            api_url.rstrip("/") + ACTION_RECOGNITION_ENDPOINT,
-            json=payload,
-            params=query or None,
-            headers=headers,
-            timeout=REMOTE_REQUEST_TIMEOUT_SECONDS,
-        )
+        try:
+            response = requests.post(
+                api_url.rstrip("/") + ACTION_RECOGNITION_ENDPOINT,
+                json=payload,
+                params=query or None,
+                headers=headers,
+                timeout=REMOTE_REQUEST_TIMEOUT_SECONDS,
+            )
+        except requests.RequestException as error:
+            # The error text quotes the request URL, service secret included,
+            # and it reaches the logs and the block's error_status output.
+            raise requests.RequestException(
+                deduct_api_key_from_string(value=str(error))
+            ) from None
         if response.status_code >= 400:
             # The message reaches the block's error_status output.
             detail = deduct_api_key_from_string(value=response.text[:500])
@@ -307,7 +316,8 @@ def _ensure_server_read_the_window(
     windows = result["windows_classified"]
     if (
         read_frames != frame_count
-        or not math.isclose(read_fps, fps, rel_tol=1e-6)
+        # The clip's container keeps about three decimals of the rate.
+        or not math.isclose(read_fps, fps, abs_tol=CONTAINER_FPS_TOLERANCE)
         or windows not in (0, 1)
     ):
         raise RuntimeError(
