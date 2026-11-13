@@ -54,16 +54,16 @@ stop_test_docker:
 create_workflows_wheel: download_fonts
 	which uv || pip install uv
 	cd workflows && uv lock --check
-	cd workflows && uv build --out-dir ../dist
+	cd workflows && uv build --no-create-gitignore --out-dir ../dist
 
 create_streamvision_wheel:
 	which uv || pip install uv
 	cd stream_vision && uv lock --check
-	cd stream_vision && uv build --wheel --out-dir ../dist
+	cd stream_vision && uv build --no-create-gitignore --wheel --out-dir ../dist
 
 create_models_wheel:
 	which uv || pip install uv
-	cd inference_models && uv build --wheel --out-dir ../dist
+	cd inference_models && uv build --no-create-gitignore --wheel --out-dir ../dist
 
 # Build checkout artifacts; transitive dependencies still resolve from PyPI.
 create_isolation_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
