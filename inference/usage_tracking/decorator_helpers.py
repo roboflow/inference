@@ -826,15 +826,22 @@ usage_batch_billing_context: ContextVar[Optional[str]] = ContextVar(
     "usage_batch_billing_context", default=None
 )
 
+# Raw ``billing_context`` query value of the current HTTP request. Set by the
+# HTTP middleware so handlers that do not bind ``request`` (workflow and
+# ``/infer/*`` routes) still see it; trusted only after the secret check below.
+request_billing_context_query: ContextVar[Optional[str]] = ContextVar(
+    "request_billing_context_query", default=None
+)
+
 
 def read_batch_billing_context(
     func: Callable[..., Any], args: Any, kwargs: Dict[str, Any]
 ) -> Optional[str]:
     """Read a batch rate authenticated by the internal service secret.
 
-    The context is read from the bound ``request`` query parameters, so only
-    handlers that bind ``request`` honour it, such as the legacy
-    ``/{dataset_id}/{version_id}`` model route the batch proxy calls.
+    The context is read from the bound ``request`` query parameters when the
+    handler binds ``request``, and otherwise from the raw query value the HTTP
+    middleware captured, so every usage-reported route honours it.
 
     Args:
         func: Decorated request handler.
@@ -857,8 +864,11 @@ def read_batch_billing_context(
         return None
 
     request = bound.get("request")
-    query = getattr(request, "query_params", {})
-    raw = query.get("billing_context")
+    query = getattr(request, "query_params", None)
+    if query is not None:
+        raw = query.get("billing_context")
+    else:
+        raw = request_billing_context_query.get()
     if raw is None:
         return None
 
