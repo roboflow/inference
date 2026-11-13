@@ -284,6 +284,18 @@ def wrap_roboflow_api_errors(
                     raise MalformedRoboflowAPIResponseError(
                         "Could not decode JSON response from Roboflow API."
                     ) from error
+                except (
+                    requests.exceptions.MissingSchema,
+                    requests.exceptions.InvalidSchema,
+                    requests.exceptions.InvalidURL,
+                ):
+                    # requests puts the whole URL, with api_key and
+                    # service_secret, in the text of these errors.
+                    safe_error = RoboflowAPIConnectionError(
+                        "Could not build a valid Roboflow API URL. Check API_BASE_URL."
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 finally:
                     record_api_call(function.__name__, time.perf_counter() - t_start)
 
