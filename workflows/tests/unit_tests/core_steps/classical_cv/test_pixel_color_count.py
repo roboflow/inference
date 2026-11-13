@@ -339,23 +339,88 @@ def test_tensor_pixel_color_count_invalid_color_raises(invalid_color) -> None:
     assert tensor_born._numpy_image is None, "failed run must not materialise numpy"
 
 
-def test_tensor_pixel_color_count_grayscale_matches_v1_error() -> None:
-    # given - 3-element inRange bounds against a 1-channel image raise cv2.error
+@pytest.mark.parametrize("representation", ["numpy", "numpy_hwc", "tensor"])
+@pytest.mark.parametrize(
+    ("target_color", "tolerance", "expected_count"),
+    [
+        pytest.param("#fff", 0, 2, id="white"),
+        pytest.param((0, 0, 0), 1, 1, id="black"),
+        pytest.param("#6c645c", 10, 3, id="intersecting_ranges"),
+        pytest.param("(108, 100, 92)", 7, 0, id="disjoint_ranges"),
+    ],
+)
+def test_pixel_color_count_single_channel(
+    representation: str,
+    target_color: str | tuple[int, int, int],
+    tolerance: int,
+    expected_count: int,
+) -> None:
+    """Compare one-channel pixels against all three target color ranges.
+
+    Args:
+        representation (str): The input image layout.
+        target_color (str | tuple[int, int, int]): The target RGB color.
+        tolerance (int): The tolerance per channel.
+        expected_count (int): The number of pixels in all three ranges.
+    """
+    gray = np.array([[0, 97, 98, 100], [102, 103, 255, 255]], dtype=np.uint8)
+    if representation == "tensor":
+        torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
+        _, image = _paired_images(torch, gray)
+        block = TensorPixelationCountBlockV1()
+    else:
+        if representation == "numpy_hwc":
+            gray = gray[:, :, None]
+        image = WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="parent"),
+            numpy_image=gray,
+        )
+        block = PixelationCountBlockV1()
+
+    result = block.run(image=image, target_color=target_color, tolerance=tolerance)
+
+    assert result == {"matching_pixels_count": expected_count}
+    if representation == "tensor":
+        assert image._numpy_image is None
+
+
+def test_tensor_pixel_color_count_single_channel_float_input() -> None:
+    """Keep fractional values when counting pixels in a float image."""
+    torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
+    gray = np.array([[-0.5, 0.0, 0.5]], dtype=np.float32)
+    numpy_born, tensor_born = _paired_images(torch, gray)
+
+    for block, image in (
+        (PixelationCountBlockV1(), numpy_born),
+        (TensorPixelationCountBlockV1(), tensor_born),
+    ):
+        assert block.run(image=image, target_color="#000", tolerance=0) == {
+            "matching_pixels_count": 1
+        }
+
+
+@pytest.mark.parametrize("as_tensor", [False, True], ids=["numpy", "tensor"])
+@pytest.mark.parametrize("target_color", ["(100, 100)", "(100, 100, 100, 100)"])
+def test_pixel_color_count_single_channel_rejects_invalid_target_size(
+    as_tensor: bool, target_color: str
+) -> None:
+    """Do not treat malformed RGB tuples as valid grayscale targets.
+
+    Args:
+        as_tensor (bool): Whether the image starts in tensor representation.
+        target_color (str): A tuple string with an invalid component count.
+    """
     import cv2
 
     torch, TensorPixelationCountBlockV1 = _tensor_pixel_count_imports()
-    gray = np.full((8, 9), 128, dtype=np.uint8)
-    numpy_born, tensor_born = _paired_images(torch, gray)
+    numpy_born, tensor_born = _paired_images(
+        torch, np.full((2, 4), 100, dtype=np.uint8)
+    )
+    image = tensor_born if as_tensor else numpy_born
+    block = TensorPixelationCountBlockV1() if as_tensor else PixelationCountBlockV1()
 
-    # when / then
-    with pytest.raises(cv2.error):
-        PixelationCountBlockV1().run(
-            image=numpy_born, target_color=(128, 128, 128), tolerance=10
-        )
-    with pytest.raises(cv2.error):
-        TensorPixelationCountBlockV1().run(
-            image=tensor_born, target_color=(128, 128, 128), tolerance=10
-        )
+    with pytest.raises((ValueError, cv2.error)):
+        block.run(image=image, target_color=target_color, tolerance=0)
 
 
 def test_tensor_pixel_color_count_on_mps_device(monkeypatch) -> None:
