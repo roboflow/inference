@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from inference.core.devices.utils import GLOBAL_DEVICE_ID, GLOBAL_INFERENCE_SERVER_ID
 from inference.core.env import (
     API_KEY,
+    METRICS_API_KEY,
     METRICS_ENABLED,
     METRICS_INTERVAL,
     METRICS_URL,
@@ -56,7 +57,7 @@ class PingbackInfo:
             )  # To correlate with UI container view
             self.window_start_timestamp = str(int(time.time()))
             context = {
-                "api_key": API_KEY,
+                "api_key": METRICS_API_KEY or API_KEY,
                 "timestamp": str(int(time.time())),
                 "device_id": GLOBAL_DEVICE_ID,
                 "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
@@ -146,8 +147,9 @@ class PingbackInfo:
 
         except Exception as e:
             try:
+                logged_data = {k: v for k, v in all_data.items() if k != "api_key"}
                 logger.exception(
-                    f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}. Data was: {all_data}"
+                    f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}. Data was: {logged_data}"
                 )
 
             except Exception as e2:
