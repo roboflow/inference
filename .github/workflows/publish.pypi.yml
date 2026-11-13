@@ -145,7 +145,7 @@ jobs:
             (inputs.packages == 'runtime' || inputs.publish != true) &&
             needs.publish_sdk.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 210
     permissions:
       contents: read
       actions: write
@@ -174,7 +174,7 @@ jobs:
         if: ${{ github.event_name == 'release' || inputs.publish == true }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .release/pypi/dependencies.sh coordinate --wait-seconds 9000
+        run: bash .release/pypi/dependencies.sh coordinate --wait-seconds 10800
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
@@ -199,7 +199,7 @@ jobs:
            (github.event_name == 'workflow_dispatch' && inputs.packages == 'runtime' &&
             needs.publish_sdk.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     permissions:
       contents: read
       id-token: write
@@ -231,7 +231,24 @@ jobs:
             dist/sdk-receipt.json
             dist/dependency-plan.json
             dist/dependency-receipt.json
-      - name: Publish the five runtime and CLI wheels
+      - name: Verify existing runtime files and stage missing wheels
+        id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile runtime --directory dist/pypi --upload-directory dist/runtime-upload --receipt dist/runtime-prepare.json --wait-seconds 600
+          echo "upload=$(jq -r '.upload' dist/runtime-prepare.json)" >> "$GITHUB_OUTPUT"
+      - name: Publish the missing runtime and CLI wheels
+        if: ${{ steps.prepare.outputs.upload == 'true' }}
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          packages-dir: dist/pypi/
+          packages-dir: dist/runtime-upload/
+      - name: Verify the complete published runtime inventory
+        run: bash .release/pypi/publish.sh verify --profile runtime --directory dist/pypi --upload-directory dist/runtime-upload --receipt dist/runtime-receipt.json --wait-seconds 600
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: runtime-publication-receipt-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            dist/runtime-prepare.json
+            dist/runtime-receipt.json

@@ -658,7 +658,9 @@ def test_workflow_ownership_and_credential_boundaries():
 
         assert job["permissions"]["id-token"] == "write"
         assert len(uploads) == 1
-        expected = "dist/sdk-upload/" if name == "publish_sdk" else "dist/pypi/"
+        expected = (
+            "dist/sdk-upload/" if name == "publish_sdk" else "dist/runtime-upload/"
+        )
         assert uploads[0]["with"]["packages-dir"] == expected
 
     # The real registry gate must run before the consumer upload in every mode.

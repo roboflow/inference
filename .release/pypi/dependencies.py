@@ -15,6 +15,7 @@ from http.client import HTTPException
 from pathlib import Path
 
 import click
+import publish
 import release
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
@@ -188,7 +189,14 @@ class _Registry:
         for version, files in project["releases"].items():
             if any(
                 not file.get("yanked")
-                and file["filename"].endswith("-py3-none-any.whl")
+                and (
+                    file["filename"].endswith("-py3-none-any.whl")
+                    or (
+                        name in publish.SDISTS
+                        and not any(f["filename"].endswith(".whl") for f in files)
+                        and file["filename"].endswith(".tar.gz")
+                    )
+                )
                 for file in files
             ):
                 versions.append(Version(version))
@@ -201,6 +209,26 @@ class _Registry:
         key = (name, str(version))
         if key in self.cache:
             return self.cache[key]
+
+        if name in PROJECTS:
+            files = publish._remote_inventory(
+                name, version=str(version), deadline=self.deadline
+            )
+            if files is None:
+                return None
+            file = next(
+                (file for file in files if file["filename"].endswith(".whl")),
+                files[0],
+            )
+            file = {
+                **file,
+                "complete": {file["filename"] for file in files}
+                == publish._filenames(name, file["version"]),
+                "published_files": files,
+            }
+            if file["complete"]:
+                self.cache[key] = file
+            return file
 
         published = self._json(f"{name}/{version}")
         if published is None:
@@ -331,7 +359,15 @@ def _plan(consumers, *, catalog, registry):
             if file is None:
                 continue
 
-            result = resolve({**selected, name: {**file, "action": "reuse"}})
+            if not file.get("complete", True):
+                local = catalog.get(name)
+                if not local or Version(local["version"]) != version:
+                    continue
+                candidate = {**local, "action": "publish"}
+            else:
+                candidate = {**file, "action": "reuse"}
+
+            result = resolve({**selected, name: candidate})
             if result is not None:
                 return result
 
@@ -360,7 +396,7 @@ def _plan(consumers, *, catalog, registry):
 def _verify_file(expected, *, registry):
     def read():
         actual = registry._file(expected["name"], expected["version"])
-        if actual is None:
+        if actual is None or not actual.get("complete", True):
             raise urllib.error.HTTPError(
                 "https://pypi.org", 404, "Dependency not visible", None, None
             )
@@ -389,6 +425,11 @@ def _verify_file(expected, *, registry):
             raise ValueError(
                 f"Published dependency changed since planning: {expected['name']}"
             )
+
+    if retained and actual.get("published_files") != expected.get("published_files"):
+        raise ValueError(
+            f"Published dependency inventory changed since planning: {expected['name']}"
+        )
 
     return actual
 
@@ -537,6 +578,7 @@ def _coordinate(plan, *, wait_seconds=9000, deadline=None, plan_file=None):
                 expected.update(
                     {key: actual[key] for key in ("sha256", "content_sha256")}
                 )
+                expected["published_files"] = actual["published_files"]
                 expected["publisher_run_id"] = runs[name]
                 if plan_file is not None:
                     release._write_record(plan_file, **plan)

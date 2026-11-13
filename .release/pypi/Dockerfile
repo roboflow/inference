@@ -8,4 +8,5 @@ RUN python -m pip install --no-cache-dir \
     pytest==8.3.5 pyyaml==6.0.2 black==25.1.0 isort==6.0.1
 COPY release.py /release.py
 COPY dependencies.py /dependencies.py
+COPY publish.py /publish.py
 WORKDIR /work

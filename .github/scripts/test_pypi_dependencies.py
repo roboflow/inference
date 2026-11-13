@@ -9,6 +9,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tarfile
 import urllib.error
 import urllib.parse
 import zipfile
@@ -73,15 +74,15 @@ def _wheel(file, *, code="", timestamp=(2026, 1, 1, 0, 0, 0)):
 
 
 class _PyPI:
-    def __init__(self, monkeypatch, packages=()):
+    def __init__(self, monkeypatch, packages=(), *, complete=True):
         self.responses = {}
         self.calls = []
         self.packages = {}
         for file in packages:
-            self.add(file)
+            self.add(file, complete=complete)
         monkeypatch.setattr(dependencies.release, "_read_url", self.read)
 
-    def add(self, file, **kwargs):
+    def add(self, file, *, complete=True, **kwargs):
         name, version = file["name"], file["version"]
         filename, data = _wheel(file, **kwargs)
         url = f"https://files.pythonhosted.org/{filename}"
@@ -95,7 +96,31 @@ class _PyPI:
         self.responses[f"https://pypi.org/pypi/{name}/{version}/json"] = json.dumps(
             {"info": {"name": name, "version": version}, "urls": [remote]}
         ).encode()
-        self.packages.setdefault(name, {})[version] = [remote]
+        remotes = [remote]
+        if complete and name in dependencies.publish.SDISTS:
+            stem = f"{name.replace('-', '_')}-{version}"
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                metadata = archive.read(f"{stem}.dist-info/METADATA")
+            with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+                entry = tarfile.TarInfo(f"{stem}/PKG-INFO")
+                entry.size = len(metadata)
+                archive.addfile(entry, io.BytesIO(metadata))
+            sdist = buffer.getvalue()
+            sdist_url = f"https://files.pythonhosted.org/{stem}.tar.gz"
+            self.responses[sdist_url] = sdist
+            remotes.append(
+                {
+                    "filename": f"{stem}.tar.gz",
+                    "url": sdist_url,
+                    "digests": {"sha256": hashlib.sha256(sdist).hexdigest()},
+                    "yanked": False,
+                }
+            )
+        self.responses[f"https://pypi.org/pypi/{name}/{version}/json"] = json.dumps(
+            {"info": {"name": name, "version": version}, "urls": remotes}
+        ).encode()
+        self.packages.setdefault(name, {})[version] = remotes
         self.responses[f"https://pypi.org/pypi/{name}/json"] = json.dumps(
             {"releases": self.packages[name]}
         ).encode()
@@ -619,7 +644,7 @@ def test_workflow_dependency_ownership_and_gate_boundaries():
         )
         assert guard < gate < upload
         assert "release-evidence/" in steps[gate]["run"]
-        assert steps[gate]["if"] == steps[upload]["if"]
+        assert "github.event.inputs.publish == 'true'" in steps[upload]["if"]
         assert "expected_revision" in config["on"]["workflow_dispatch"]["inputs"]
 
 
@@ -719,7 +744,7 @@ def test_children_verify_built_contents_after_upload():
             for i, step in enumerate(steps)
             if step.get("uses", "").startswith("pypa/")
         )
-        assert "dependencies.sh verify-published" in steps[upload + 1].get("run", "")
+        assert "publish.sh verify" in steps[upload + 1].get("run", "")
 
 
 @pytest.mark.parametrize(
@@ -838,7 +863,7 @@ def test_registry_transient_errors_recover_without_new_budget(
     monkeypatch.setattr(dependencies.release, "_read_url", read)
     registry = dependencies._Registry(wait_seconds=20)
     assert registry._file("inference-models", "2")["version"] == "2"
-    assert deadlines == [20, 20, 20]
+    assert deadlines == [20, 20, 20, 20]
     assert _fake_clock[0] == 10
 
 
@@ -1002,7 +1027,10 @@ def test_post_upload_verification_requires_exact_catalog_candidate(
     assert api.calls == []
 
 
-def test_published_hashes_and_run_id_are_retained_and_rechecked(monkeypatch, tmp_path):
+@pytest.mark.parametrize("changed_file", ["wheel", "sdist"])
+def test_published_hashes_and_run_id_are_retained_and_rechecked(
+    monkeypatch, tmp_path, changed_file
+):
     package = _package("inference-models", "2")
     api = _PyPI(monkeypatch)
     consumers = _runtime("inference-models==2")
@@ -1023,8 +1051,27 @@ def test_published_hashes_and_run_id_are_retained_and_rechecked(monkeypatch, tmp
     entry = retained["packages"][package["name"]]
     assert entry["publisher_run_id"] == 42
     assert entry["sha256"] and entry["content_sha256"]
+    assert len(entry["published_files"]) == 2
     dependencies._verify_plan(retained, registry=_registry(), consumers=consumers)
-    api.add(package, code="replaced = True")
+    if changed_file == "wheel":
+        api.add(package, code="replaced = True")
+    else:
+        url = "https://files.pythonhosted.org/inference_models-2.tar.gz"
+        altered = io.BytesIO()
+        with tarfile.open(
+            fileobj=io.BytesIO(api.responses[url]), mode="r:gz"
+        ) as source, tarfile.open(fileobj=altered, mode="w:gz") as target:
+            for member in source:
+                member.mode = 0o755
+                target.addfile(member, source.extractfile(member))
+        api.responses[url] = altered.getvalue()
+        api.mutate_release(
+            package["name"],
+            package["version"],
+            lambda document: document["urls"][1]["digests"].update(
+                sha256=hashlib.sha256(altered.getvalue()).hexdigest()
+            ),
+        )
     with pytest.raises(ValueError, match="changed since planning"):
         dependencies._verify_plan(retained, registry=_registry(), consumers=consumers)
 
@@ -1236,3 +1283,223 @@ def test_reuse_without_retained_sha_fails_closed(monkeypatch):
     del expected["sha256"]
     with pytest.raises(ValueError, match="Missing retained SHA-256"):
         dependencies._verify_file(expected, registry=_registry())
+
+
+def test_same_checkout_wheel_only_release_is_repaired(monkeypatch):
+    package = _package("inference-models", "2")
+    _PyPI(monkeypatch, [package], complete=False)
+    plan = dependencies._plan(
+        _runtime("inference-models==2"),
+        catalog={"inference-models": package},
+        registry=_registry(),
+    )
+    assert plan["packages"]["inference-models"]["action"] == "publish"
+
+
+@pytest.mark.parametrize("present_suffix", [".whl", ".tar.gz"])
+def test_same_version_partial_inventory_dispatches_original_child(
+    monkeypatch, present_suffix
+):
+    package = _package("inference-models", "2")
+    api = _PyPI(monkeypatch, [package])
+    api.mutate_release(
+        "inference-models",
+        "2",
+        lambda document: document.update(
+            urls=[
+                file
+                for file in document["urls"]
+                if file["filename"].endswith(present_suffix)
+            ]
+        ),
+    )
+    plan = dependencies._plan(
+        _runtime("inference-models==2"),
+        catalog={"inference-models": package},
+        registry=_registry(),
+    )
+    assert plan["packages"]["inference-models"]["action"] == "publish"
+    calls = []
+
+    def dispatch(name, *, version, deadline):
+        calls.append((name, version))
+        api.add(package)
+        return 42
+
+    monkeypatch.setattr(dependencies, "_dispatch", dispatch)
+    assert dependencies._coordinate(plan, wait_seconds=20) == {"inference-models": 42}
+    assert calls == [("inference-models", "2")]
+
+
+@pytest.mark.parametrize(
+    "catalog", [{}, {"inference-models": _package("inference-models", "3")}]
+)
+@pytest.mark.parametrize("present_suffix", [".whl", ".tar.gz"])
+def test_gate_and_older_partial_versions_cannot_authorize_repair(
+    monkeypatch, catalog, present_suffix
+):
+    api = _PyPI(monkeypatch, [_package("inference-models", "2")])
+    api.mutate_release(
+        "inference-models",
+        "2",
+        lambda document: document.update(
+            urls=[
+                file
+                for file in document["urls"]
+                if file["filename"].endswith(present_suffix)
+            ]
+        ),
+    )
+    with pytest.raises(ValueError, match="No compatible"):
+        dependencies._plan(
+            _runtime("inference-models==2"), catalog=catalog, registry=_registry()
+        )
+
+
+def test_older_partial_range_selects_genuinely_complete_alternative(monkeypatch):
+    api = _PyPI(
+        monkeypatch,
+        [_package("inference-models", "1"), _package("inference-models", "2")],
+    )
+    api.mutate_release(
+        "inference-models",
+        "2",
+        lambda document: document.update(urls=document["urls"][:1]),
+    )
+    plan = dependencies._plan(
+        _runtime("inference-models>=1"),
+        catalog={"inference-models": _package("inference-models", "3")},
+        registry=_registry(),
+    )
+    assert plan["packages"]["inference-models"]["version"] == "1"
+    assert plan["packages"]["inference-models"]["action"] == "reuse"
+
+
+def test_successful_child_with_only_wheel_still_blocks_dependents(monkeypatch):
+    api = _PyPI(monkeypatch)
+    models = _package("inference-models", "2")
+    workflows = _package("roboflow-workflows", "2", ["inference-models==2"])
+    plan = dependencies._plan(
+        _runtime("roboflow-workflows==2"),
+        catalog={p["name"]: p for p in [models, workflows]},
+        registry=_registry(),
+    )
+    calls = []
+
+    def dispatch(name, **kwargs):
+        calls.append(name)
+        api.add(models, complete=False)
+        return 42
+
+    monkeypatch.setattr(dependencies, "_dispatch", dispatch)
+    with pytest.raises(ValueError, match="timed out"):
+        dependencies._coordinate(plan, wait_seconds=20)
+    assert calls == ["inference-models"]
+
+
+def test_partial_visibility_is_refreshed_until_complete(monkeypatch):
+    package = _package("inference-models", "2")
+    api = _PyPI(monkeypatch, [package], complete=False)
+    clock = [0]
+    monkeypatch.setattr(dependencies.time, "monotonic", lambda: clock[0])
+
+    def sleep(seconds):
+        clock[0] += seconds
+        api.add(package)
+
+    monkeypatch.setattr(dependencies.time, "sleep", sleep)
+    actual = dependencies._verify_file(
+        {**package, "action": "publish"},
+        registry=dependencies._Registry(wait_seconds=20),
+    )
+    assert actual["complete"]
+    assert len(actual["published_files"]) == 2
+    assert clock[0] == 10
+
+
+def test_sdist_corruption_prevents_reusing_otherwise_valid_wheel(monkeypatch):
+    package = _package("inference-models", "2")
+    api = _PyPI(monkeypatch, [package])
+    api.mutate_release(
+        "inference-models",
+        "2",
+        lambda document: document["urls"][1]["digests"].update(sha256="0" * 64),
+    )
+    with pytest.raises(ValueError, match="SHA-256"):
+        dependencies._plan(
+            _runtime("inference-models==2"),
+            catalog={"inference-models": package},
+            registry=_registry(),
+        )
+
+
+def test_sdist_change_after_planning_blocks_consumer(monkeypatch):
+    package = _package("inference-models", "2")
+    api = _PyPI(monkeypatch, [package])
+    plan = dependencies._plan(
+        _runtime("inference-models==2"), catalog={}, registry=_registry()
+    )
+    url = "https://files.pythonhosted.org/inference_models-2.tar.gz"
+    data = api.responses[url]
+    altered = io.BytesIO()
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as source, tarfile.open(
+        fileobj=altered, mode="w:gz"
+    ) as target:
+        for entry in source:
+            entry.mode = 0o755
+            target.addfile(entry, source.extractfile(entry))
+    api.responses[url] = altered.getvalue()
+    api.mutate_release(
+        "inference-models",
+        "2",
+        lambda document: document["urls"][1]["digests"].update(
+            sha256=hashlib.sha256(altered.getvalue()).hexdigest()
+        ),
+    )
+    with pytest.raises(ValueError, match="inventory changed"):
+        dependencies._verify_file(
+            plan["packages"]["inference-models"], registry=_registry()
+        )
+
+
+def test_equivalent_published_version_spelling_can_be_reused(monkeypatch):
+    api = _PyPI(monkeypatch, [_package("inference-models", "1.0.0")])
+    api.responses["https://pypi.org/pypi/inference-models/1.0/json"] = api.responses[
+        "https://pypi.org/pypi/inference-models/1.0.0/json"
+    ]
+    plan = dependencies._plan(
+        _runtime("inference-models==1.0"), catalog={}, registry=_registry()
+    )
+    assert plan["packages"]["inference-models"]["version"] == "1.0.0"
+    assert plan["packages"]["inference-models"]["action"] == "reuse"
+
+
+def test_range_skips_fully_yanked_newest_version(monkeypatch):
+    api = _PyPI(
+        monkeypatch,
+        [_package("inference-models", "1"), _package("inference-models", "2")],
+    )
+    project = json.loads(api.responses["https://pypi.org/pypi/inference-models/json"])
+    for file in project["releases"]["2"]:
+        file["yanked"] = True
+    api.responses["https://pypi.org/pypi/inference-models/json"] = json.dumps(
+        project
+    ).encode()
+    plan = dependencies._plan(
+        _runtime("inference-models>=1"), catalog={}, registry=_registry()
+    )
+    assert plan["packages"]["inference-models"]["version"] == "1"
+
+
+def test_registry_file_order_does_not_change_retained_plan(monkeypatch):
+    package = _package("inference-models", "2")
+    api = _PyPI(monkeypatch, [package])
+    plan = dependencies._plan(
+        _runtime("inference-models==2"), catalog={}, registry=_registry()
+    )
+    api.mutate_release(
+        "inference-models", "2", lambda document: document["urls"].reverse()
+    )
+    assert dependencies._verify_file(
+        plan["packages"]["inference-models"], registry=_registry()
+    )["complete"]
