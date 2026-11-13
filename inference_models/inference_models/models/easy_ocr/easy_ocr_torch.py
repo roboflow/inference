@@ -162,7 +162,10 @@ class EasyOCRTorch(
         all_results = []
         for image in pre_processed_images:
             with self._lock:
-                image_results_raw = self._model.readtext(image)
+                # easyocr accepts only an exact np.ndarray, not a subclass such as
+                # roboflow-edge's shared-memory frames; np.asarray drops the
+                # subclass without copying the pixels.
+                image_results_raw = self._model.readtext(np.asarray(image))
             image_results_parsed = [
                 (
                     [

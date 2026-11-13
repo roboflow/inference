@@ -86,7 +86,8 @@ class EasyOCR(RoboflowCoreModel):
                 gpu=True,
                 quantize=quantize,
             )
-            results = reader.readtext(image_in)
+            # easyocr accepts only an exact np.ndarray, not a subclass
+            results = reader.readtext(np.asarray(image_in))
         # convert native EasyOCR results from numpy to standard python types
         results = [
             (
