@@ -214,6 +214,31 @@ def _redacted_exc_info(error: BaseException) -> tuple:
     return type(copy), copy, copy.__traceback__
 
 
+def redacted_exc_info(error: BaseException, values: Any = ()) -> tuple:
+    """Build an ``exc_info`` tuple whose messages carry no credentials.
+
+    The error and its chained causes are copied with redacted messages, so a
+    log call with ``exc_info`` prints no credential from any of them.
+
+    Args:
+        error: The exception to log.
+        values: Credential values to remove besides those the current request
+            scope holds, such as the API key the failed call used.
+
+    Returns:
+        The ``(type, value, traceback)`` tuple of the redacted copy.
+    """
+    held = list(REDACTION_VALUES.get() or ())
+    held.extend(value for value in values if isinstance(value, str))
+    token = REDACTION_VALUES.set(held)
+    try:
+        exc_info = _redacted_exc_info(error)
+    finally:
+        REDACTION_VALUES.reset(token)
+
+    return exc_info
+
+
 def legacy_error_response(error: BaseException) -> JSONResponse:
     if isinstance(error, LegacyHTTPError):
         return JSONResponse(

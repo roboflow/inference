@@ -330,6 +330,7 @@ from inference.core.interfaces.workflows_image_codec import bind_image_codec
 from inference.core.interfaces.workflows_step_error_handlers import (
     resolve_step_error_handler,
 )
+from inference.core.logging.access_log_redaction import install_access_log_redaction
 from inference.core.managers.base import ModelManager
 from inference.core.managers.cuda_memory_watchdog import CudaMemoryReclamationWatchdog
 from inference.core.managers.inference_models_cache_watchdog import (
@@ -708,6 +709,9 @@ class HttpInterface(BaseInterface):
             setup_memory_logging()
         except Exception:
             pass
+        # uvicorn's access line carries the query string, so keep API keys out
+        # of it whichever access log configuration is active.
+        install_access_log_redaction()
 
         app.mount(
             "/static",
