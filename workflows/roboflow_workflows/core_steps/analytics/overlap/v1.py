@@ -38,8 +38,9 @@ This block filters detections based on spatial overlap relationships with a spec
    - **Overlap class detections**: Objects matching the specified `overlap_class_name` (e.g., "bicycle", "pallet", "car")
    - **Other detections**: All remaining objects that may overlap with the overlap class
 3. For each overlap class detection, identifies other detections that spatially overlap with it using one of two overlap modes:
-   - **Center Overlap**: Checks if the center point of other detections falls within the overlap class bounding box (more precise, requires the center to be inside)
-   - **Any Overlap**: Checks if there's any spatial intersection between bounding boxes (more lenient, any overlap counts)
+   - **Center Overlap**: Checks if the center point of other detections falls within the overlap class region (more precise, requires the center to be inside)
+   - **Any Overlap**: Checks if there's any spatial intersection between detections (more lenient, any overlap counts)
+   When instance segmentation masks are available, overlap is computed at the pixel level using the actual mask shapes. For plain object detection predictions (no masks), overlap is computed using bounding boxes.
 4. Collects all detections that overlap with any overlap class instance
 5. Filters out the overlap class detections themselves from the output
 6. Returns only the overlapping detections (objects that are positioned relative to the overlap class)
@@ -93,7 +94,7 @@ class OverlapManifest(WorkflowBlockManifest):
     )
     overlap_type: Literal["Center Overlap", "Any Overlap"] = Field(
         default="Center Overlap",
-        description="Method for determining spatial overlap between detections. 'Center Overlap' checks if the center point of other detections falls within the overlap class bounding box (more precise, requires center to be inside). 'Any Overlap' checks if there's any spatial intersection between bounding boxes (more lenient, any overlap counts). Center Overlap is stricter and better for containment relationships, while Any Overlap is more inclusive and better for detecting any proximity or partial overlap.",
+        description="Method for determining spatial overlap between detections. 'Center Overlap' checks if the center point of other detections falls within the overlap class region (more precise, requires center to be inside). 'Any Overlap' checks if there's any spatial intersection between detections (more lenient, any overlap counts). Center Overlap is stricter and better for containment relationships, while Any Overlap is more inclusive and better for detecting any proximity or partial overlap. When segmentation masks are present, overlap is computed at the pixel level using the actual mask geometry; otherwise bounding boxes are used.",
         examples=["Center Overlap", "Any Overlap"],
     )
     overlap_class_name: Union[str] = Field(
@@ -162,6 +163,64 @@ class OverlapBlockV1(WorkflowBlock):
                 or other[1] > overlap[3]
             )
 
+    @classmethod
+    def masks_overlap(
+        cls,
+        overlap_mask: np.ndarray,
+        overlap_bbox: np.ndarray,
+        other_mask: np.ndarray,
+        other_bbox: np.ndarray,
+        overlap_type: Literal["Center Overlap", "Any Overlap"],
+    ) -> bool:
+        """Check if two detections overlap using their segmentation masks.
+
+        Used instead of coords_overlap when predictions have masks, so objects
+        whose boxes overlap but whose actual shapes don't are not matched.
+
+        Args:
+            overlap_mask: (H, W) boolean mask of the overlap class detection.
+            overlap_bbox: Box of the overlap class detection, a float array
+                [x1, y1, x2, y2] taken from predictions.xyxy.
+            other_mask: (H, W) boolean mask of the other detection.
+            other_bbox: Box of the other detection, a float array
+                [x1, y1, x2, y2] taken from predictions.xyxy.
+            overlap_type: "Center Overlap" checks if the center of other_bbox
+                lands on the overlap mask. "Any Overlap" checks if the two
+                masks share at least one pixel.
+
+        Returns:
+            True if the detections overlap under the given overlap_type,
+            False otherwise.
+        """
+        if overlap_type == "Center Overlap":
+            cx = int((other_bbox[0] + other_bbox[2]) / 2)
+            cy = int((other_bbox[1] + other_bbox[3]) / 2)
+            h, w = overlap_mask.shape
+            if not (0 <= cy < h and 0 <= cx < w):
+                return False
+
+            center_on_mask = bool(overlap_mask[cy, cx])
+
+            return center_on_mask
+        else:
+            # masks lie within their bboxes, so only the bbox intersection can
+            # share pixels - restrict logical_and there to skip a full (H, W) scan
+            h, w = overlap_mask.shape
+            x1 = max(int(np.floor(max(overlap_bbox[0], other_bbox[0]))), 0)
+            y1 = max(int(np.floor(max(overlap_bbox[1], other_bbox[1]))), 0)
+            x2 = min(int(np.ceil(min(overlap_bbox[2], other_bbox[2]))), w)
+            y2 = min(int(np.ceil(min(overlap_bbox[3], other_bbox[3]))), h)
+            if x1 >= x2 or y1 >= y2:
+                return False
+
+            masks_share_pixels = bool(
+                np.logical_and(
+                    overlap_mask[y1:y2, x1:x2], other_mask[y1:y2, x1:x2]
+                ).any()
+            )
+
+            return masks_share_pixels
+
     def run(
         self,
         predictions: sv.Detections,
@@ -169,29 +228,52 @@ class OverlapBlockV1(WorkflowBlock):
         overlap_class_name: str,
     ) -> BlockResult:
 
-        overlaps = []
+        mask = getattr(predictions, "mask", None)
+        has_masks = mask is not None and len(mask) == len(predictions.xyxy)
+
+        overlap_indices = []
         others = {}
         for i in range(len(predictions.xyxy)):
             data = get_data_item(predictions.data, i)
             if data["class_name"] == overlap_class_name:
-                overlaps.append(predictions.xyxy[i])
+                overlap_indices.append(i)
             else:
                 others[i] = predictions.xyxy[i]
 
         # set of indices representing the overlapped objects
         idx = set()
-        for overlap in overlaps:
+        for oi in overlap_indices:
             if not others:
                 break
-            overlapped = {
-                k
-                for k in others
-                if OverlapBlockV1.coords_overlap(overlap, others[k], overlap_type)
-            }
+
+            if has_masks:
+                overlapped = {
+                    k
+                    for k in others
+                    if OverlapBlockV1.masks_overlap(
+                        overlap_mask=predictions.mask[oi],
+                        overlap_bbox=predictions.xyxy[oi],
+                        other_mask=predictions.mask[k],
+                        other_bbox=predictions.xyxy[k],
+                        overlap_type=overlap_type,
+                    )
+                }
+            else:
+                overlapped = {
+                    k
+                    for k in others
+                    if OverlapBlockV1.coords_overlap(
+                        predictions.xyxy[oi], others[k], overlap_type
+                    )
+                }
+
             # once it's overlapped we don't need to check again
             for k in overlapped:
                 del others[k]
 
             idx = idx.union(overlapped)
 
-        return {OUTPUT_KEY: predictions[list(idx)]}
+        selected = sorted(idx)
+        overlapping_predictions = predictions[selected]
+
+        return {OUTPUT_KEY: overlapping_predictions}
