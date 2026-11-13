@@ -929,6 +929,166 @@ def test_reserved_frames_count_against_other_cache_writes():
     assert cache._reserved_frames == 0
 
 
+@pytest.mark.parametrize("use_source", [False, True], ids=["list", "source"])
+@pytest.mark.parametrize("keep_existing,n_frames", [(False, 6), (True, 5)])
+def test_replacement_preserves_unrelated_clip(
+    tracker, tmp_path, monkeypatch, use_source, keep_existing, n_frames
+):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    cache = tracker._video_clip_cache = VideoClipCache(max_frames=10)
+    frame = np.zeros((H, W, 3), dtype=np.uint8)
+    tracker.embed_video([frame] * 4, video_id="other")
+    other = cache.get("other")
+    tracker.embed_video([frame] * 6, video_id="replace")
+    old = weakref.ref(cache.get("replace"))
+    monkeypatch.setattr(sam3_tracker_video_hf, "EMBED_CHUNK_FRAMES", 2)
+    preprocess = tracker._preprocess_frames
+
+    def check_reclaimed_before_allocation(frames):
+        assert old() is None
+        assert cache.holds("other", other)
+        processed = preprocess(frames)
+        return processed
+
+    monkeypatch.setattr(
+        tracker, "_preprocess_frames", check_reclaimed_before_allocation
+    )
+    frames = [frame] * n_frames
+    if use_source:
+        frames = VideoFrameSource(
+            _offline_clip(tmp_path / "replacement.mp4", n_frames=n_frames),
+            max_frames=cache.max_frames,
+            buffer_bytes=frame.nbytes * 2,
+        )
+
+    result = tracker.embed_video(
+        frames, video_id="replace", keep_existing=keep_existing
+    )
+
+    assert result["n_frames"] == n_frames
+    assert cache.get("replace").n_frames == n_frames
+    assert cache.holds("other", other)
+    assert cache._reserved_frames == 0
+    if use_source:
+        assert frames._file.closed
+
+
+@pytest.mark.parametrize("capacity,keeps_old", [(10, False), (16, True)])
+def test_failed_replacement_preserves_other_clips_and_releases_reservation(
+    tracker, tmp_path, monkeypatch, capacity, keeps_old
+):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    cache = tracker._video_clip_cache = VideoClipCache(max_frames=capacity)
+    frame = np.zeros((H, W, 3), dtype=np.uint8)
+    tracker.embed_video([frame] * 4, video_id="other")
+    other = cache.get("other")
+    tracker.embed_video([frame] * 6, video_id="replace")
+    old = weakref.ref(cache.get("replace"))
+    source = VideoFrameSource(
+        _offline_clip(tmp_path / "replacement.mp4", n_frames=6),
+        max_frames=capacity,
+        buffer_bytes=frame.nbytes * 2,
+    )
+    preprocess = tracker._preprocess_frames
+    allocated = []
+
+    def fail_after_first_batch(frames):
+        if allocated:
+            raise RuntimeError("replacement failed")
+        processed = preprocess(frames)
+        allocated.extend(weakref.ref(tensor) for tensor in processed)
+        return processed
+
+    monkeypatch.setattr(tracker, "_preprocess_frames", fail_after_first_batch)
+
+    with pytest.raises(RuntimeError, match="replacement failed") as error:
+        tracker.embed_video(source, video_id="replace")
+
+    assert error.traceback
+    assert cache.holds("other", other)
+    assert (old() is not None) is keeps_old
+    assert cache.peek("replace") is old()
+    assert cache._reserved_frames == 0
+    assert all(tensor() is None for tensor in allocated)
+    assert source._file.closed
+
+
+def test_replacement_keeps_old_clip_until_commit_when_capacity_allows():
+    cache = VideoClipCache(max_frames=16)
+    cache.put("other", _clip_of(4))
+    cache.put("replace", _clip_of(6))
+    old = cache.get("replace")
+
+    with cache.build("replace") as reservation:
+        reservation.add(2)
+        reservation.add(4)
+        assert cache.holds("replace", old)
+        reservation.commit(_clip_of(6))
+
+    assert not cache.holds("replace", old)
+    assert cache.get("other").n_frames == 4
+    assert cache.get("replace").n_frames == 6
+    assert cache._reserved_frames == 0
+
+
+def test_replacement_uses_lru_when_reclaiming_old_clip_is_insufficient():
+    cache = VideoClipCache(max_frames=10)
+    cache.put("a", _clip_of(2))
+    cache.put("b", _clip_of(4))
+    cache.put("replace", _clip_of(4))
+    cache.get("a")  # B is now less recently used than A.
+
+    with cache.build("replace") as reservation:
+        reservation.add(2)
+        assert cache.peek("replace") is None
+        assert cache._reserved_frames == 2
+        reservation.add(3)
+        assert cache.peek("b") is None
+        assert cache._reserved_frames == 5
+        reservation.commit(_clip_of(5))
+
+    assert cache.get("a").n_frames == 2
+    assert cache.get("replace").n_frames == 5
+    assert cache._reserved_frames == 0
+
+
+def test_replacement_reclaims_old_clip_only_when_a_later_batch_needs_space():
+    cache = VideoClipCache(max_frames=10)
+    cache.put("other", _clip_of(2))
+    cache.put("replace", _clip_of(4))
+    old = cache.get("replace")
+
+    with cache.build("replace") as reservation:
+        reservation.add(2)
+        assert cache.holds("replace", old)
+        reservation.add(3)
+        assert cache.peek("replace") is None
+        reservation.commit(_clip_of(5))
+
+    assert cache.get("other").n_frames == 2
+    assert cache.get("replace").n_frames == 5
+    assert cache._reserved_frames == 0
+
+
+def test_new_clip_reservations_keep_strict_lru_eviction():
+    cache = VideoClipCache(max_frames=10)
+    cache.put("a", _clip_of(4))
+    cache.put("b", _clip_of(6))
+
+    with cache.build("c") as reservation:
+        reservation.add(2)
+        assert cache.peek("a") is None
+        assert cache.get("b").n_frames == 6
+        reservation.add(4)
+        assert cache.peek("b") is None
+        reservation.commit(_clip_of(6))
+
+    assert cache.get("c").n_frames == 6
+    assert cache._reserved_frames == 0
+
+
 def test_cancelled_embed_keeps_admission_until_worker_finishes(
     tracker, tmp_path, monkeypatch
 ):

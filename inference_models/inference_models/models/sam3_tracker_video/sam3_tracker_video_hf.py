@@ -182,11 +182,13 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         with every frame it has encoded, and nothing is preprocessed. Use it
         when an id always names the same clip, so that asking again for a clip
         the worker still has costs no encoding. A new clip is published only
-        on commit. Capacity is reserved incrementally, evicting least recently
-        used clips (possibly the previous clip under this id) before allocation. Active
-        calls may still retain an evicted clip. Original inputs are consumed in
-        byte-limited batches of at most ``EMBED_CHUNK_FRAMES``; processed frames
-        are kept as separate tensors in the model's dtype.
+        on commit. Capacity is reserved incrementally. When space is needed,
+        the previous clip under this id is reclaimed before evicting other clips
+        in LRU order. Otherwise it stays available until commit, including if
+        the build fails. Active calls may still retain an evicted clip.
+        Original inputs are consumed in byte-limited batches of at most
+        ``EMBED_CHUNK_FRAMES``; processed frames are kept as separate tensors in
+        the model's dtype.
 
         The image encoder runs on a frame the first time any session needs
         it, after which the frame's pixels are released; with

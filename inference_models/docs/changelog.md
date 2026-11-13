@@ -10,6 +10,9 @@
   than materializing whole clips. Serialize embedding admission per process,
   reserve processed cache capacity before allocation, and clean up cancelled
   or failed builds. Original coordinates and model preprocessing are preserved.
+  When replacement needs capacity, reclaim the previous clip under the same id
+  before evicting other clips in LRU order; retain it until commit when space
+  permits.
 
 - Restrict offline video decoding to the submitted file. SAM3 video tracking and
   action recognition in both server stacks reject playlists, manifests and other

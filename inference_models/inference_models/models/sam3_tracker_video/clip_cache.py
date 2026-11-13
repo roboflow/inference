@@ -539,6 +539,11 @@ class ClipReservation:
     def add(self, n_frames: int) -> None:
         """Reserve additional frames before allocating their processed tensors.
 
+        When space is needed, reclaim the previous clip under this id before
+        evicting unrelated clips in LRU order. Without that pressure, keep the
+        previous clip until commit so a failed build leaves it available.
+        Once reclaimed, the previous clip cannot be restored on failure.
+
         Args:
             n_frames: Additional frames in the next preprocessing batch.
 
@@ -561,6 +566,12 @@ class ClipReservation:
                     message="SAM3 video cache capacity is reserved by an embedding."
                 )
             held = sum(clip.n_frames for clip in cache._clips.values())
+            if held + cache._reserved_frames + n_frames > cache.max_frames:
+                replaced = cache._clips.pop(self._video_id, None)
+                if replaced is not None:
+                    held -= replaced.n_frames
+                del replaced
+
             while held + cache._reserved_frames + n_frames > cache.max_frames:
                 held -= cache._clips.popitem(last=False)[1].n_frames
             cache._reserved_frames += n_frames
