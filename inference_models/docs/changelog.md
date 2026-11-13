@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The opt-in RF-DETR `triton-fused-v1` postprocessor preserves reference integer
+  boxes near half-pixel boundaries and reference ordering for equal-score
+  detections, including after class and confidence filtering.
 - RF-DETR ONNX models with static input shapes (object detection, instance
   segmentation, semantic segmentation and keypoints) no longer run out of GPU
   memory at high input resolution on the CUDA execution provider. When
