@@ -67,7 +67,7 @@ def decode_base64_image(
     value = BASE64_DATA_TYPE_PATTERN.sub("", value)
     try:
         decoded = pybase64.b64decode(value)
-    except binascii.Error as error:
+    except (binascii.Error, ValueError) as error:
         raise WorkflowImageLoadError(
             public_message="Malformed base64 input image.",
             context="workflow_execution | image_decoding",

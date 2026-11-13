@@ -429,7 +429,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     python .release/pypi/inference.sdk.setup.py bdist_wheel && \
     python -m pip install --break-system-packages --no-deps dist/inference_gpu*.whl && \
     python -m pip install --break-system-packages --find-links dist/ \
-        dist/roboflow_workflows*.whl \
+        "$(ls dist/roboflow_workflows*.whl)[databricks]" \
         dist/streamvision*.whl \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \
@@ -459,12 +459,16 @@ RUN set -- /opt/wheels/torch-${PYTORCH_VERSION}-*.whl && \
     torchvision_wheel="$1" && \
     printf 'torch @ file://%s\n' "${torch_wheel}" > /tmp/runtime-overrides.txt && \
     printf 'torchvision @ file://%s\n' "${torchvision_wheel}" >> /tmp/runtime-overrides.txt && \
+    # The local roboflow_workflows wheel (copied to /opt/wheels above) carries the
+    # `databricks` extra; requesting it here resolves the connector together with
+    # the pinned requirements instead of duplicating its version bounds.
     uv pip install --target /opt/python-runtime \
         --index-strategy unsafe-best-match \
         --find-links /opt/wheels \
         --override /tmp/runtime-overrides.txt \
         -r /build/reqs/_requirements.txt \
         -r /build/reqs/requirements.workflows.txt \
+        "$(ls /opt/wheels/roboflow_workflows-*.whl)[databricks]" \
         -r /build/reqs/requirements.streamvision.txt \
         -r /build/reqs/requirements.cli.txt \
         -r /build/reqs/requirements.http.txt \
