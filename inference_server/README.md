@@ -201,6 +201,160 @@ A few legacy behaviours are not (yet) available here:
   `METRICS_URL` is ported for inferences served through the legacy routes and
   Workflows steps; `METRICS_ENABLED=false` turns it off.
 
+## SAM3 video tracking routes
+
+`/sam3/video/embed`, `/sam3/video/segment`, `/sam3/video/propagate` and
+`/sam3/video/propagate/stream` track
+point-prompted objects over a whole clip with the `sam3trackervideo` model
+(`SAM3TrackerVideo`), offline rather than frame by frame:
+
+1. `embed` decodes a clip (every decoded frame is a frame, numbered from 0) and
+   keeps it in the worker under the caller's `video_id`, scoped to the API key.
+   `encode_frames` starts encoding every frame in the background; it pauses
+   while a `segment` or `propagate` call is waiting or running, so a call
+   made while a clip is still being encoded is not held until the end.
+   `keep_existing` keeps the clip the worker already has under that id (same
+   number of frames and frame size) with the frames it has encoded, instead of
+   replacing it: use it when an id always names the same clip, so asking again
+   costs no encoding.
+2. `segment` returns the masks on one frame of the objects clicked there: the
+   mask `propagate` would give each on that frame from the same clicks. Use it
+   for click previews. On an object's anchor (see below) it is one model call;
+   on another frame the object is tracked from its anchor to that frame, about
+   0.063 s per frame of distance on a 24 GB GPU once the frames are encoded
+   (a frame with exclude points alone is empty and needs no tracking).
+3. `propagate` tracks every clicked object over the clip: each object on its
+   own, from its anchor forward to the end and then backward to the start, so
+   clicks of different objects on the same frame never interfere.
+   `frame_indices` limits which frames come back.
+4. `propagate/stream` tracks the same way and answers as NDJSON: an `object`
+   line with each object's masks as soon as it is tracked, a `heartbeat` line
+   after every 15 s without another, and a last line that is `done`, or `error`
+   with the status and body the call would have failed with. Use it behind a
+   proxy that ends quiet responses, often after 60 to 100 s.
+
+Clicks and what they do:
+
+- An object's **anchor** is its first frame with an include point (`label` 1).
+  It is segmented from its own clicks alone, and the object is tracked from
+  there. Every object needs one: a request with an object that has exclude
+  points only answers 400 `Objects [3] have no include point; every object
+  needs one.`
+- Clicks on any other frame are a **correction**. They are applied when
+  tracking reaches that frame, on top of what the tracker remembers of the
+  object, and the corrected frame then conditions the frames tracked after it
+  (later frames for a click after the anchor, earlier frames for a click
+  before it). The frames between the anchor and the click, and the frames on
+  the other side of the anchor, keep the masks they have without the click.
+- Exclude points alone (`label` 0) on a correction frame **trim** the mask
+  tracking gives that frame: what each point is on is segmented on its own
+  (that frame, the point as an include point, no memory) and taken off the
+  mask, the rest is kept as the frame's result, and the frames tracked after
+  it follow the trimmed mask. A mask on the object and on something else loses the other thing; a
+  mask that moved to something else after the object left the picture comes
+  out empty. A `segment` on such a frame tracks to it, like one with an
+  include point.
+- An empty mask does not say the object is gone for good: the tracker picks
+  it up when it sees it again, and may pick up something else. A client that
+  knows the object has left should drop the masks after that frame itself.
+- The tracker attends to at most four conditioning frames, the ones nearest
+  the frame it is tracking, so with more than three corrections on one side
+  of the anchor the farthest ones stop being read there.
+
+The HTTP server of the `inference` package exposes the same four routes with
+the same contract, behind `SAM3_VIDEO_ENABLED=true` (off by default there). It
+loads the tracker once per worker process on the first call and keeps it, so
+it too needs one worker process (`NUM_WORKERS=1`) and sticky routing per clip.
+
+Clips come in and decode through the same video input as
+`/infer/action_recognition`: URL or base64, the same URL policy and
+`MAX_VIDEO_DOWNLOAD_SIZE_MB`, a header probe, then one sequential decode.
+
+Every segment and propagate request carries all the clicks; the server keeps
+only the clip (preprocessed frames and per-frame encoder output). A call on a
+clip that was never embedded or was evicted answers 400 `No video embedded`.
+The clip lives in one worker's memory, so a deployment with several workers
+needs the calls of one clip routed to the same worker.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SAM3_VIDEO_MODEL_ID` | `sam3trackervideo` | Model the routes use when the request names none |
+| `SAM3_VIDEO_CACHE_MAX_GB` | `16` | Host RAM, in GB, the cached clips of a worker may hold (fractions allowed). It sets how many frames the worker keeps over all clips and so the longest clip `embed` accepts; a longer one is refused with 413 before it is decoded. The least recently used clips are evicted to make room |
+
+Cached clips live in host memory, not on the GPU, and
+`SAM3_VIDEO_CACHE_MAX_GB` is the one setting that bounds them. The tracker
+turns it into a number of frames, `floor(GB × 1e9 / bytes per cached frame)`,
+and logs the result when the model loads. A cached frame is held as its
+preprocessed pixels (6,096,384 bytes in bfloat16) until it is encoded
+(`encode_frames`, or the first call that runs on it) and as its encoder output
+(10,616,832 bytes) afterwards, never both; the larger figure is the bytes per
+cached frame. Both figures are computed from the model's shapes and dtype, and
+a unit test checks the encoder output figure against a really encoded frame.
+
+| `SAM3_VIDEO_CACHE_MAX_GB` | Frames kept (computed) | Video at 6 fps | Video at 12 fps |
+|---|---|---|---|
+| `4` | 376 | 62 s | 31 s |
+| `8` | 753 | 125 s | 62 s |
+| `16` (default) | 1507 | 251 s | 125 s |
+| `32` | 3014 | 502 s | 251 s |
+
+The limit covers the cached frames only. Size the host as cache GB, plus the
+memory an embed needs while it runs, plus the process itself:
+
+- Embedding a clip forgets the clips it replaces before it builds the new one,
+  so the cached frames stay within the limit during an embed. What an embed
+  adds is the decoded clip at its native resolution, held from decoding until
+  the embed returns (height × width × 3 bytes per frame of the clip being
+  embedded: 1.8 MB at 1024×576, 6.2 MB at 1080p, computed), plus about 0.65 GB
+  while frames are preprocessed, whatever the clip's length (16 frames at a
+  time at about 40 MB each, computed from a measured 40 MB per frame). There is
+  no separate limit on a clip's length, so the first part grows with the
+  longest clip the cache admits. Embeds running at the same time each add
+  their own.
+- The process with the model loaded and one 60-frame clip took 1.1 to 2.1 GB
+  of host RAM (measured; GPU memory peaked at 3.3 GB).
+
+Measured on a 24 GB GPU with `SAM3_VIDEO_CACHE_MAX_GB=10.2` (960 frames), as
+resident memory of the server; clips are 1024×576, encoded in the background.
+"Before" is the first version of these routes, which kept each frame's pixels
+and encoder output, limited the cache to two clips of up to 480 frames, and
+preprocessed a clip in one call:
+
+| State | Before | Now | Now, with `MALLOC_MMAP_THRESHOLD_=1048576` |
+|---|---|---|---|
+| Model loaded, one 60-frame clip not encoded | 1.8 to 2.0 GB | 2.1 GB | 1.1 GB |
+| One 480-frame clip encoded, one 60-frame clip not | 12.5 GB | 9.2 GB | 6.6 GB |
+| Cache full: two 480-frame clips | 21.4 to 22.3 GB | 14.0 to 15.1 GB | 11.4 GB |
+| Cache full: sixteen 60-frame clips | | 15.8 GB | 11.6 GB |
+| Cache full: one 960-frame clip | | 18.3 GB | 11.6 GB |
+| Peak while a third 480-frame clip is embedded | 39.1 GB | 14.8 to 16.0 GB | 12.3 GB |
+| Peak of one 270-frame embed above the level before it | 8.4 to 9.3 GB | 0.4 GB | |
+| Peak of two 270-frame embeds at once above the level before | 18.0 GB | 2.1 GB | |
+
+A full cache of 960 frames holds 10.2 GB by the computed figure (960 ×
+10,616,832 bytes). What the "Now" column shows above that and the loaded
+model is memory the C allocator keeps after decoded frames and other
+short-lived buffers are freed: with the allocator's defaults it grew with the
+embeds and encoding threads the worker had seen, up to about 6.4 GB. Setting
+`MALLOC_MMAP_THRESHOLD_=1048576` in the server's environment makes glibc
+return freed buffers of 1 MB or more to the operating system. With it the
+full cache measured 11.4 to 11.6 GB in every state, which is the 10.2 GB of
+frames, the 0.7 GB the process took with the model loaded and no clip, and
+0.5 to 0.7 GB more (up to 0.7 MB per cached frame above the computed figure).
+It cost about 1.5 s on a 480-frame embed (10.2 to 11.0 s instead of 8.7 to
+8.9 s) and about 1 s on tracking one object over 480 frames (31.4 s instead of
+30.3 s). Without it, allow about 6.4 GB on top of the cache limit, the loaded
+model and the embed's own memory.
+
+A worker that runs out of memory is killed with every model it serves, so
+leave headroom.
+
+`propagate` answers once the whole clip is tracked, which for long clips or
+many objects takes longer than the default `INFERENCE_INFER_TIMEOUT_S` of 30 s;
+raise it on servers that serve these routes. The stream makes one model call per
+object, so there the timeout bounds one object. The routes need
+`SAM3_EXEC_MODE=local`.
+
 ## Running the legacy integration suite against this image
 
 The black-box suite in `tests/inference/integration_tests/` reaches the server only through `BASE_URL` and `PORT`, so it runs unchanged against `inference_server`. In CI pick `server-image: new` when dispatching `INTEGRATION TESTS - Inference Server CPU x86` or `Code Quality & Regression Tests - NVIDIA T4`. Locally, from the repository root:

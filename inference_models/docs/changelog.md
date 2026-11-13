@@ -29,6 +29,34 @@
   on later loads. Other provider lists, models without a matching block, and a
   fusion that fails (logged as a warning) load the original model.
 
+## `0.39.9`
+
+### Added
+
+- `SAM3TrackerVideo` tracks whole clips offline: `embed_video` keeps a clip's
+  preprocessed frames under a caller id (and can encode every frame in the
+  background, pausing while a call is waiting or running); with `keep_existing` an
+  embed of a clip the worker already has under that id keeps it and what it
+  has encoded, `segment_video_frame` returns one frame's masks for click
+  previews, and `propagate_video` tracks every point-prompted object forward and
+  backward from its anchor, one session per object. An object's anchor is its
+  first frame with an include point; clicks on other frames correct the track
+  when tracking reaches them (the model runs the frame again with the object's
+  memory and the clicks) and condition the frames tracked after them. Exclude
+  points alone on such a frame trim the mask tracking gave it: what each is
+  on, segmented on its own from that point, comes off and the rest stays, so a mask that also covers something else loses it,
+  and one that moved to something else comes out empty. `segment_video_frame` returns the mask
+  `propagate_video` gives on that frame, tracking from the anchor to it when it
+  is not the anchor. Clips are kept
+  in a per-model cache in host RAM, bounded by `SAM3_VIDEO_CACHE_MAX_GB`
+  (default 16): the limit is turned into a number of frames from the bytes one
+  cached frame holds (`video_cache_limits` reports both), the least recently
+  used clips are evicted to stay within it, and a clip with more frames than it
+  holds is refused. A clip is preprocessed 16 frames at a time, and a frame's
+  preprocessed pixels are released once its encoder output is cached, so a
+  cached frame holds one or the other. Both sit on a private memory mapping
+  per frame, so they return to the operating system when released.
+
 ## `0.39.8`
 
 ### Fixed

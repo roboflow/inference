@@ -135,6 +135,15 @@ VERBOSE_LOG_LEVEL = os.getenv("VERBOSE_LOG_LEVEL", "INFO")
 DISABLE_VERBOSE_LOGGER = get_boolean_from_env(
     variable_name="DISABLE_VERBOSE_LOGGER", default=False
 )
+# Host RAM, in GB, the SAM3 video tracker's cache of embedded clips may hold.
+SAM3_VIDEO_CACHE_MAX_GB = get_float_from_env(
+    variable_name="SAM3_VIDEO_CACHE_MAX_GB", default=16.0
+)
+if not 0 < SAM3_VIDEO_CACHE_MAX_GB < float("inf"):
+    raise InvalidEnvVariable(
+        message="SAM3_VIDEO_CACHE_MAX_GB must be a positive number of GB, got "
+        f"{SAM3_VIDEO_CACHE_MAX_GB}."
+    )
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )
