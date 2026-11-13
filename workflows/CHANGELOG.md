@@ -16,6 +16,16 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Modal syntax checks of custom Python blocks are cached.** Workflows with
+  custom Python blocks skip the compilation cache, so in Modal mode every
+  compilation sent one request per block to the Modal executor to check its
+  syntax. The verdict (valid, or the syntax error) is now kept per process,
+  keyed by the block's source text, for up to 1024 sources. Failures to get a
+  verdict are not cached, and anonymous workspaces skip the cache so
+  `MODAL_ALLOW_ANONYMOUS_EXECUTION` still applies. No migration is needed.
+
 ### Changed
 
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe

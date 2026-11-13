@@ -8,18 +8,24 @@ from unittest import mock
 
 import numpy as np
 import pytest
+import requests
 import supervision as sv
 import torch
+from roboflow_workflows.errors import DynamicBlockError
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
+    modal_executor,
     representation_boundary,
 )
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import PythonCode
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
+    CODE_VALIDATION_CACHE,
     serialize_for_modal_remote_execution,
+    validate_code_in_modal,
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.representation_boundary import (
     RepresentationBoundaryError,
@@ -204,3 +210,99 @@ def test_modal_serializer_handles_batch_without_indices() -> None:
 
     assert payload["v"]["value"] == [1, 2, 3]
     assert payload["v"]["indices"] is None
+
+
+def _clear_code_validation_cache() -> None:
+    with CODE_VALIDATION_CACHE._cache_lock:
+        CODE_VALIDATION_CACHE._cache.clear()
+        CODE_VALIDATION_CACHE._keys_buffer.clear()
+
+
+@pytest.fixture
+def execute_remote():
+    executor = mock.MagicMock()
+    _clear_code_validation_cache()
+    with mock.patch.object(modal_executor, "MODAL_AVAILABLE", True), mock.patch.object(
+        modal_executor, "ModalExecutor", return_value=executor
+    ):
+        yield executor.execute_remote
+    _clear_code_validation_cache()
+
+
+def _block_code() -> PythonCode:
+    return PythonCode(
+        type="PythonCode",
+        run_function_code="def run(self, image):\n    return {'x': 1}\n",
+    )
+
+
+def test_validate_code_in_modal_reuses_valid_verdict_across_workspaces(
+    execute_remote,
+) -> None:
+    execute_remote.return_value = {"valid": True}
+
+    first = validate_code_in_modal(_block_code(), "workspace-a")
+    second = validate_code_in_modal(_block_code(), "workspace-b")
+
+    assert first is True
+    assert second is True
+    execute_remote.assert_called_once()
+
+
+def test_validate_code_in_modal_reuses_syntax_error(execute_remote) -> None:
+    execute_remote.return_value = {
+        "valid": False,
+        "error": "invalid syntax",
+        "line": 2,
+    }
+    errors = []
+
+    for _ in range(2):
+        with pytest.raises(DynamicBlockError) as error:
+            validate_code_in_modal(_block_code(), "workspace-a")
+        errors.append((error.value.public_message, error.value.context))
+
+    expected = (
+        "Code validation failed: Line 2: invalid syntax",
+        "modal_executor | code_validation",
+    )
+    assert errors == [expected, expected]
+    execute_remote.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "anonymous_workspace", [modal_executor.MODAL_ANONYMOUS_WORKSPACE_NAME, None]
+)
+def test_validate_code_in_modal_does_not_serve_cache_to_anonymous_workspace(
+    execute_remote, anonymous_workspace
+) -> None:
+    execute_remote.return_value = {"valid": True}
+    validate_code_in_modal(_block_code(), "workspace-a")
+
+    result = validate_code_in_modal(_block_code(), anonymous_workspace)
+
+    assert result is True
+    assert execute_remote.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        DynamicBlockError(
+            public_message="Modal endpoint returned status 408: timeout",
+            context="modal_executor | http_request",
+        ),
+        requests.exceptions.ReadTimeout("read timed out"),
+    ],
+)
+def test_validate_code_in_modal_does_not_cache_failure_to_reach_modal(
+    execute_remote, failure: Exception
+) -> None:
+    execute_remote.side_effect = [failure, {"valid": True}]
+
+    with pytest.raises(DynamicBlockError):
+        validate_code_in_modal(_block_code(), "workspace-a")
+    result = validate_code_in_modal(_block_code(), "workspace-a")
+
+    assert result is True
+    assert execute_remote.call_count == 2
