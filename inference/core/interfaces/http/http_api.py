@@ -170,6 +170,7 @@ from inference.core.env import (
     API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
+    CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT,
     CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
@@ -206,6 +207,7 @@ from inference.core.env import (
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
+    MAX_CONCURRENT_INFERENCE_REQUESTS,
     MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
     METRICS_ENABLED,
     MOONDREAM2_ENABLED,
@@ -280,6 +282,9 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
     schedule_execution_engine_close,
+)
+from inference.core.interfaces.http.middlewares.concurrency_limit import (
+    ConcurrencyLimitMiddleware,
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
@@ -5085,6 +5090,13 @@ class HttpInterface(BaseInterface):
 
             # Attach all routes from builder to the /build prefix
             app.include_router(builder_router, prefix="/build", tags=["builder"])
+
+        if MAX_CONCURRENT_INFERENCE_REQUESTS > 0:
+            app.add_middleware(
+                ConcurrencyLimitMiddleware,
+                max_concurrent_requests=MAX_CONCURRENT_INFERENCE_REQUESTS,
+                queue_timeout=CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT,
+            )
 
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatibility

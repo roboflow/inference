@@ -18,6 +18,7 @@ from pathlib import Path
 
 import click
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
@@ -137,7 +138,7 @@ def _inventory(directory, *, names, version):
                 if canonicalize_name(Requirement(raw).name) == "inference-sdk"
             ]
             if len(sdk_requirements) != 1 or (
-                str(sdk_requirements[0].specifier) != f"=={version}"
+                sdk_requirements[0].specifier != SpecifierSet(f"=={version}")
                 or sdk_requirements[0].marker is not None
                 or sdk_requirements[0].url is not None
             ):

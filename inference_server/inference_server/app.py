@@ -62,6 +62,9 @@ from inference_server.legacy.bridge import (  # noqa: E402
     LoopBridge,
     registry_id_for,
 )
+from inference_server.middlewares.concurrency_limit import (  # noqa: E402
+    ConcurrencyLimitMiddleware,
+)
 from inference_server.middlewares.correlation_id import (  # noqa: E402
     CorrelationIdMiddleware,
     correlation_id,
@@ -695,6 +698,12 @@ elif server_defaults.local_callers_only():
 
 app.add_middleware(ModelLoadHeadersMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
+if _cfg.MAX_CONCURRENT_INFERENCE_REQUESTS > 0:
+    app.add_middleware(
+        ConcurrencyLimitMiddleware,
+        max_concurrent_requests=_cfg.MAX_CONCURRENT_INFERENCE_REQUESTS,
+        queue_timeout=_cfg.CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT,
+    )
 setup_telemetry(app)
 install_structured_access_log(app)
 
