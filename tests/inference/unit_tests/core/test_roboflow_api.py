@@ -734,6 +734,7 @@ async def test_get_serverless_usage_check_async_when_response_is_valid(
             workspace_id=workspace_id,
             workspace_db_id="workspace-db-id",
             under_cap=True,
+            has_credit_cap=None,
         )
         registered_requests = request_mock.requests[
             (
@@ -748,6 +749,30 @@ async def test_get_serverless_usage_check_async_when_response_is_valid(
             roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: __version__,
             roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
         }
+
+
+@pytest.mark.asyncio
+async def test_get_serverless_usage_check_async_parses_has_credit_cap() -> None:
+    with aioresponses() as request_mock:
+        request_mock.get(
+            f"{API_BASE_URL}/serverless/usage-check?api_key=my_api_key&nocache=true",
+            payload={
+                "workspaceId": "workspace-db-id",
+                "workspace": "my-workspace",
+                "underCap": True,
+                "hasCreditCap": True,
+            },
+        )
+
+        result = await get_serverless_usage_check_async(api_key="my_api_key")
+
+        assert result == ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="my-workspace",
+            workspace_db_id="workspace-db-id",
+            under_cap=True,
+            has_credit_cap=True,
+        )
 
 
 @pytest.mark.asyncio
