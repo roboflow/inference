@@ -37,6 +37,28 @@ def _frame_numbers(frames) -> list:
     return [int(frame[0, 0, 2]) for frame in frames]
 
 
+@pytest.mark.parametrize("fps", [10, 60])
+def test_probe_raw_h264_preserves_frame_rate_and_recounts_frames(tmp_path, fps):
+    path = tmp_path / "clip.video"
+    with av.open(str(path), "w", format="h264") as output:
+        stream = output.add_stream("libx264", rate=fps)
+        stream.width, stream.height = 64, 48
+        stream.pix_fmt = "yuv420p"
+        for index in range(120):
+            pixels = np.full((48, 64, 3), index, dtype=np.uint8)
+            frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
+            for packet in stream.encode(frame):
+                output.mux(packet)
+        for packet in stream.encode():
+            output.mux(packet)
+
+    source_fps, frame_count = probe_video(str(path))
+
+    assert source_fps == fps
+    assert frame_count == 120
+    assert frame_count / source_fps == pytest.approx(120 / fps)
+
+
 @pytest.mark.parametrize("prepare_frames", [False, True])
 def test_each_window_gets_the_frames_it_asked_for(clip, prepare_frames) -> None:
     windows = [[0, 2, 4], [2, 4, 10, 12], [20, 25, 29]]

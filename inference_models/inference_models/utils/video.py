@@ -49,7 +49,14 @@ class VideoReader:
             raise VideoDecodeError(_DECODE_ERROR)
 
         stream = container.streams.video[0]
-        self.fps = float(stream.average_rate or stream.guessed_rate or 0)
+        rate = stream.average_rate
+        if container.format.name == "h264":
+            # Raw H.264 can report the demuxer's default 25 fps as its average
+            # even when the bitstream declares another rate. Container formats
+            # still use their average rate to preserve variable-rate sampling.
+            rate = stream.guessed_rate or rate
+
+        self.fps = float(rate or stream.guessed_rate or 0)
         self.frame_count = stream.frames
         if not self.frame_count and self.fps > 0 and math.isfinite(self.fps):
             # Match OpenCV's duration-based estimate for containers such as

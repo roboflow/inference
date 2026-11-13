@@ -65,6 +65,27 @@ class TestProbeVideo:
     def test_reports_fps_and_frame_count(self, clip):
         assert video.probe_video(str(clip)) == (_FPS, _FRAME_COUNT)
 
+    @pytest.mark.parametrize("fps", [10, 60])
+    def test_raw_h264_preserves_frame_rate_and_recounts_frames(self, tmp_path, fps):
+        path = tmp_path / "clip.video"
+        with av.open(str(path), "w", format="h264") as output:
+            stream = output.add_stream("libx264", rate=fps)
+            stream.width, stream.height = 64, 48
+            stream.pix_fmt = "yuv420p"
+            for index in range(120):
+                pixels = np.full((48, 64, 3), index, dtype=np.uint8)
+                frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
+                for packet in stream.encode(frame):
+                    output.mux(packet)
+            for packet in stream.encode():
+                output.mux(packet)
+
+        source_fps, frame_count = video.probe_video(str(path))
+
+        assert source_fps == fps
+        assert frame_count == 120
+        assert frame_count / source_fps == pytest.approx(120 / fps)
+
     def test_undecodable_bytes_are_refused(self, tmp_path):
         bad = tmp_path / "bad.video"
         bad.write_bytes(os.urandom(4096))

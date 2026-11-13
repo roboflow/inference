@@ -2,6 +2,7 @@
 
 import struct
 import threading
+from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -13,9 +14,9 @@ import pytest
 from inference_models.utils import video
 
 
-def _write_clip(path, *, container_format, codec):
+def _write_clip(path, *, container_format, codec, rate=24):
     with av.open(str(path), "w", format=container_format) as output:
-        stream = output.add_stream(codec, rate=24)
+        stream = output.add_stream(codec, rate=rate)
         stream.width, stream.height = 64, 48
         stream.pix_fmt = "yuv420p"
         for index in range(24):
@@ -86,6 +87,17 @@ def test_self_contained_formats_match_sequential_opencv(
         assert actual.dtype == np.uint8
         assert actual.flags.c_contiguous
         np.testing.assert_allclose(actual, original, atol=2)
+
+
+@pytest.mark.parametrize("fps", [10, 60, Fraction(30000, 1001)])
+def test_raw_h264_preserves_bitstream_frame_rate(tmp_path, fps):
+    path = tmp_path / "clip.video"
+    _write_clip(path, container_format="h264", codec="libx264", rate=fps)
+
+    with video.open_video(path) as reader:
+        assert reader.fps == pytest.approx(float(fps))
+
+    assert len(_read_all(path)) == 24
 
 
 @pytest.mark.parametrize("quarter_turns", [1, 2, 3])
