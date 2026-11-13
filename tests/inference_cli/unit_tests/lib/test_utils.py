@@ -1,6 +1,8 @@
 import json
 import os.path
 from pathlib import Path
+from typing import Callable, List
+from unittest import mock
 
 import pytest
 
@@ -9,6 +11,7 @@ from inference_cli.lib.utils import (
     dump_json,
     ensure_target_directory_is_empty,
     get_all_images_in_directory,
+    get_all_videos_in_directory,
     read_env_file,
     read_file_lines,
 )
@@ -131,6 +134,82 @@ def test_get_all_images_in_directory(empty_directory: str) -> None:
 
     # then
     assert len(result) == expected_files
+
+
+@pytest.mark.parametrize(
+    "list_directory,file_names",
+    [
+        (get_all_images_in_directory, ["IMG_0001.JPG", "Frame_B.png", "lower.jpg"]),
+        (get_all_videos_in_directory, ["CLIP_0001.MP4", "Take_B.mov", "lower.mp4"]),
+    ],
+)
+def test_directory_listing_preserves_path_case(
+    tmp_path: Path,
+    list_directory: Callable[[str], List[str]],
+    file_names: List[str],
+) -> None:
+    # given
+    directory = tmp_path / "Shots"
+    directory.mkdir()
+    for file_name in file_names:
+        (directory / file_name).touch()
+
+    # when
+    result = list_directory(input_directory=str(directory))
+
+    # then
+    assert sorted(result) == sorted(
+        (directory / file_name).as_posix() for file_name in file_names
+    )
+    assert all(os.path.exists(path) for path in result)
+
+
+@pytest.mark.parametrize(
+    "list_directory",
+    [get_all_images_in_directory, get_all_videos_in_directory],
+)
+def test_directory_listing_deduplicates_discovered_paths_keeping_order(
+    list_directory: Callable[[str], List[str]],
+) -> None:
+    # given
+    first_path, second_path = Path("Shots/Second.JPG"), Path("Shots/First.JPG")
+
+    # when
+    with mock.patch(
+        "inference_cli.lib.utils.sv.list_files_with_extensions",
+        return_value=[first_path, second_path, first_path],
+    ):
+        result = list_directory(input_directory="Shots")
+
+    # then
+    assert result == [first_path.as_posix(), second_path.as_posix()]
+
+
+@pytest.mark.parametrize(
+    "list_directory,upper_name,lower_name",
+    [
+        (get_all_images_in_directory, "FRAME.PNG", "frame.png"),
+        (get_all_videos_in_directory, "CLIP.MP4", "clip.mp4"),
+    ],
+)
+def test_directory_listing_keeps_case_distinct_files(
+    tmp_path: Path,
+    list_directory: Callable[[str], List[str]],
+    upper_name: str,
+    lower_name: str,
+) -> None:
+    # given
+    upper_path, lower_path = tmp_path / upper_name, tmp_path / lower_name
+    upper_path.touch()
+    if lower_path.exists():
+        pytest.skip("The filesystem does not support case-distinct file names")
+    lower_path.touch()
+
+    # when
+    result = list_directory(input_directory=str(tmp_path))
+
+    # then
+    assert sorted(result) == sorted([upper_path.as_posix(), lower_path.as_posix()])
 
 
 def _create_empty_file(directory: str, file_name: str) -> None:

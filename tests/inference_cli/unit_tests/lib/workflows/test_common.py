@@ -2,7 +2,9 @@ import base64
 import json
 import os.path
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -100,6 +102,75 @@ def test_aggregate_batch_processing_results_when_json_output_is_expected_and_res
             "object_field": {"nested": "value"},
         },
     ]
+
+
+@pytest.mark.parametrize(
+    "aggregation_format", [OutputFileType.JSONL, OutputFileType.CSV]
+)
+def test_aggregate_batch_processing_results_when_two_logged_names_resolve_to_one_results_file(
+    empty_directory: str,
+    aggregation_format: OutputFileType,
+) -> None:
+    # given
+    _prepare_dummy_results(root_dir=empty_directory, sub_dir_name="img_0001.jpg")
+    _prepare_dummy_results(root_dir=empty_directory, sub_dir_name="lower.jpg")
+    other_spelling_dir = os.path.join(empty_directory, "IMG_0001.JPG")
+    if not os.path.exists(other_spelling_dir):
+        # A case-sensitive disk keeps two folders, so link them to one file
+        os.makedirs(other_spelling_dir)
+        os.link(
+            os.path.join(empty_directory, "img_0001.jpg", "results.json"),
+            os.path.join(other_spelling_dir, "results.json"),
+        )
+
+    # when
+    file_descriptor, _ = open_progress_log(output_directory=empty_directory)
+    for image_name in ["img_0001.jpg", "lower.jpg", "IMG_0001.JPG"]:
+        denote_image_processed(log_file=file_descriptor, image_path=image_name)
+    file_descriptor.close()
+    aggregation_path = aggregate_batch_processing_results(
+        output_directory=empty_directory,
+        aggregation_format=aggregation_format,
+    )
+
+    # then
+    if aggregation_format is OutputFileType.CSV:
+        images = pd.read_csv(aggregation_path)["image"].tolist()
+    else:
+        with open(aggregation_path, "r") as f:
+            images = [json.loads(line)["image"] for line in f if line.strip()]
+    assert images == ["IMG_0001.JPG", "lower.jpg"]
+
+
+def test_aggregate_batch_processing_results_keeps_files_when_filesystem_reports_no_inode(
+    empty_directory: str,
+) -> None:
+    # given
+    _prepare_dummy_results(root_dir=empty_directory, sub_dir_name="some.jpg")
+    _prepare_dummy_results(root_dir=empty_directory, sub_dir_name="other.jpg")
+    file_descriptor, _ = open_progress_log(output_directory=empty_directory)
+    denote_image_processed(log_file=file_descriptor, image_path="some.jpg")
+    denote_image_processed(log_file=file_descriptor, image_path="other.jpg")
+    file_descriptor.close()
+    real_stat = os.stat
+
+    def stat_without_inode(path: Any, **kwargs: Any) -> SimpleNamespace:
+        stats = real_stat(path, **kwargs)
+        return SimpleNamespace(st_mode=stats.st_mode, st_dev=stats.st_dev, st_ino=0)
+
+    # when
+    with mock.patch(
+        "inference_cli.lib.workflows.common.os.stat", side_effect=stat_without_inode
+    ):
+        aggregation_path = aggregate_batch_processing_results(
+            output_directory=empty_directory,
+            aggregation_format=OutputFileType.JSONL,
+        )
+
+    # then
+    with open(aggregation_path, "r") as f:
+        images = [json.loads(line)["image"] for line in f if line.strip()]
+    assert images == ["other.jpg", "some.jpg"]
 
 
 def test_aggregate_batch_processing_results_when_json_output_is_expected_and_results_not_present(
