@@ -103,11 +103,13 @@ def _artifact(data, *, filename, version):
             raise ValueError("Uncompressed sdist exceeds the size limit")
         with tarfile.open(fileobj=io.BytesIO(expanded), mode="r:") as archive:
             for entry in archive:
-                entry_name = entry.name.rstrip("/")
+                entry_name = entry.name.rstrip("/") if entry.isdir() else entry.name
                 _safe_name(entry_name)
-                if entry_name in seen or len(seen) >= MAX_ENTRIES:
+                if entry.isfile() and entry_name.endswith("/"):
+                    raise ValueError("Regular sdist file name ends with a slash")
+                if entry_name.casefold() in seen or len(seen) >= MAX_ENTRIES:
                     raise ValueError("Duplicate or excessive sdist entries")
-                seen.add(entry_name)
+                seen.add(entry_name.casefold())
                 if PurePosixPath(entry_name).parts[0] != root:
                     raise ValueError("Unexpected sdist root")
                 if not (entry.isfile() or entry.isdir()):
@@ -185,19 +187,21 @@ def _inventory(directory, *, profile, version):
     return files
 
 
-def _retry(operation, *, wait_seconds=600, deadline=None):
-    shared_deadline = deadline is not None
-    deadline = time.monotonic() + wait_seconds if deadline is None else deadline
+def _retry(operation, *, deadline, retry_not_found=True):
     while True:
-        if shared_deadline and time.monotonic() >= deadline:
-            raise ValueError("Dependency operation timed out")
+        if time.monotonic() >= deadline:
+            raise ValueError("Publication verification timed out")
         try:
             result = operation()
-            if shared_deadline and time.monotonic() >= deadline:
-                raise ValueError("Dependency operation timed out")
+            if time.monotonic() >= deadline:
+                raise ValueError("Publication verification timed out")
             return result
         except urllib.error.HTTPError as error:
-            if error.code not in {404, 429} and error.code < 500:
+            if (
+                not (error.code == 404 and retry_not_found)
+                and error.code != 429
+                and error.code < 500
+            ):
                 raise
             reason = f"Registry HTTP {error.code}"
         except (
@@ -215,14 +219,13 @@ def _retry(operation, *, wait_seconds=600, deadline=None):
 
 
 def _remote_inventory(name, *, version, wait_seconds=600, deadline=None):
-    local_deadline = time.monotonic() + wait_seconds if deadline is None else deadline
-    request_options = {} if deadline is None else {"deadline": deadline}
+    deadline = time.monotonic() + wait_seconds if deadline is None else deadline
 
     def read():
         try:
             document = json.loads(
                 release._read_url(
-                    f"https://pypi.org/pypi/{name}/{version}/json", **request_options
+                    f"https://pypi.org/pypi/{name}/{version}/json", deadline=deadline
                 )
             )
         except urllib.error.HTTPError as error:
@@ -233,7 +236,7 @@ def _remote_inventory(name, *, version, wait_seconds=600, deadline=None):
             raise ValueError("Invalid registry document")
         return document
 
-    document = _retry(read, wait_seconds=wait_seconds, deadline=deadline)
+    document = _retry(read, deadline=deadline)
     if document is None:
         return None
     if canonicalize_name(document["info"]["name"]) != name or Version(
@@ -272,8 +275,7 @@ def _remote_inventory(name, *, version, wait_seconds=600, deadline=None):
     files = []
     for remote_file in remote:
         data = _retry(
-            lambda: release._read_url(remote_file["url"], **request_options),
-            wait_seconds=max(0, local_deadline - time.monotonic()),
+            lambda: release._read_url(remote_file["url"], deadline=deadline),
             deadline=deadline,
         )
         if hashlib.sha256(data).hexdigest() != remote_file["digests"]["sha256"]:
@@ -282,41 +284,52 @@ def _remote_inventory(name, *, version, wait_seconds=600, deadline=None):
         if file["name"] != name:
             raise ValueError("Downloaded artifact identity mismatch")
         files.append(file)
+    if time.monotonic() >= deadline:
+        raise ValueError("Publication verification timed out")
     files.sort(key=lambda file: file["filename"])
     return files
 
 
+def _matches(expected, published):
+    candidates = {file["filename"]: file for file in expected}
+    decisions = [
+        {
+            "filename": file["filename"],
+            "match": (
+                "different"
+                if file["filename"] not in candidates
+                or file["content_sha256"]
+                != candidates[file["filename"]]["content_sha256"]
+                else (
+                    "bytes"
+                    if file["sha256"] == candidates[file["filename"]]["sha256"]
+                    else "contents"
+                )
+            ),
+        }
+        for file in published
+    ]
+    return decisions
+
+
 def _reconcile(expected, *, allow_missing, wait_seconds, receipt=None):
     deadline = time.monotonic() + wait_seconds
+    missing = sorted(file["filename"] for file in expected)
     while True:
+        if time.monotonic() >= deadline:
+            raise ValueError(
+                f"Incomplete published inventory: {missing}; verification timed out"
+            )
         published = []
         for name in sorted({file["name"] for file in expected}):
             version = next(file["version"] for file in expected if file["name"] == name)
-            files = _remote_inventory(
-                name, version=version, wait_seconds=max(0, deadline - time.monotonic())
-            )
+            files = _remote_inventory(name, version=version, deadline=deadline)
             published.extend(files or [])
         candidates = {file["filename"]: file for file in expected}
         if receipt is not None:
             record = json.loads(receipt.read_text())
             record["published_files"] = published
-            record["matches"] = [
-                {
-                    "filename": file["filename"],
-                    "match": (
-                        "different"
-                        if file["filename"] not in candidates
-                        or file["content_sha256"]
-                        != candidates[file["filename"]]["content_sha256"]
-                        else (
-                            "bytes"
-                            if file["sha256"] == candidates[file["filename"]]["sha256"]
-                            else "contents"
-                        )
-                    ),
-                }
-                for file in published
-            ]
+            record["matches"] = _matches(expected, published)
             receipt.write_text(json.dumps(record, indent=2) + "\n")
         for actual in published:
             if actual["filename"] not in candidates:
@@ -402,22 +415,6 @@ def _run(operation, *, profile, directory, upload_directory, receipt, wait_secon
             upload_directory.mkdir(parents=True)
             for filename in missing:
                 shutil.copyfile(directory / filename, upload_directory / filename)
-        decisions = [
-            {
-                "filename": file["filename"],
-                "match": (
-                    "bytes"
-                    if file["sha256"]
-                    == next(
-                        candidate["sha256"]
-                        for candidate in expected
-                        if candidate["filename"] == file["filename"]
-                    )
-                    else "contents"
-                ),
-            }
-            for file in published
-        ]
         release._write_record(
             receipt,
             status="prepared" if operation == "prepare" else "verified",
@@ -425,7 +422,7 @@ def _run(operation, *, profile, directory, upload_directory, receipt, wait_secon
             profile=profile,
             candidate_files=expected,
             published_files=published,
-            matches=decisions,
+            matches=_matches(expected, published),
             missing_files=missing,
             upload=bool(missing) and operation == "prepare",
         )

@@ -58,7 +58,7 @@ jobs:
         working-directory: inference_models
         run: |
           python -m uv lock --check
-          python -m uv build
+          python -m uv build --no-create-gitignore
       - name: Verify published dependencies before upload
         if: ${{ github.event.inputs.publish == 'true' }}
         run: bash .release/pypi/dependencies.sh gate --directory inference_models/dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
@@ -75,6 +75,7 @@ jobs:
           bash .release/pypi/publish.sh prepare --profile inference-models --directory inference_models/dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-prepare.json
           echo "upload=$(jq -r '.upload' release-evidence/publication-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: 🚀 Publish to PyPI
+        continue-on-error: true
         if: ${{ github.event.inputs.publish == 'true' && steps.prepare.outputs.upload == 'true' }}
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:

@@ -31,7 +31,10 @@ import hashlib
 import importlib.util
 import io
 import json
+import shlex
+import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 import urllib.error
@@ -47,6 +50,109 @@ SPEC = importlib.util.spec_from_file_location(
 publish = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(publish)
 VERSION = "9.8.7rc2"
+
+
+@pytest.mark.parametrize("operation", ["prepare", "verify"])
+def test_publication_requests_share_absolute_deadline(
+    candidate, monkeypatch, operation
+):
+    _build(candidate, "runtime")
+    api = _Registry(monkeypatch, candidate)
+    clock = [0.0]
+    calls = []
+    monkeypatch.setattr(publish.time, "monotonic", lambda: clock[0])
+
+    def slow_read(url, **kwargs):
+        calls.append((url, kwargs.get("deadline")))
+        clock[0] += 4
+        return api.read(url)
+
+    monkeypatch.setattr(publish.release, "_read_url", slow_read)
+    with pytest.raises(ValueError, match="timed out"):
+        _run(candidate, operation=operation, wait_seconds=10)
+    assert len(calls) == 3
+    assert [deadline for _, deadline in calls] == [10, 10, 10]
+    assert clock[0] == 12
+    assert not Path("upload").exists()
+
+
+@pytest.mark.parametrize("operation", ["prepare", "verify"])
+def test_zero_publication_budget_stops_before_network(
+    candidate, monkeypatch, operation
+):
+    _build(candidate, "runtime")
+    api = _Registry(monkeypatch, candidate)
+    with pytest.raises(ValueError, match="timed out"):
+        _run(candidate, operation=operation, wait_seconds=0)
+    assert api.calls == []
+
+
+@pytest.mark.parametrize("profile", list(publish.PROJECTS))
+def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
+    tmp_path, monkeypatch, profile
+):
+    project = publish.PROJECTS[profile]
+    shutil.copytree(
+        ROOT / project,
+        tmp_path / project,
+        ignore=shutil.ignore_patterns(".venv", "dist", "build", "*.egg-info", "tests"),
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("EXPECTED_VERSION", raising=False)
+    monkeypatch.delenv("EXPECTED_REVISION", raising=False)
+    version = publish._version(profile)
+    if profile == "inference-models":
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/publish.pypi.inference_exp.yml").read_text()
+        )
+        command = next(
+            line.strip()
+            for step in workflow["jobs"]["build"]["steps"]
+            for line in step.get("run", "").splitlines()
+            if "uv build" in line
+        )
+        directory = tmp_path / project / "dist"
+    else:
+        command = next(
+            line.split("&&", 1)[1].strip()
+            for line in (ROOT / "Makefile").read_text().splitlines()
+            if line.strip().startswith(f"cd {project} && uv build ")
+        )
+        directory = tmp_path / "dist"
+
+    # Use the real publisher command and backend, with installed build tools offline.
+    result = subprocess.run(
+        [*shlex.split(command), "--offline", "--no-build-isolation"],
+        cwd=tmp_path / project,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = []
+
+    def absent(url, **kwargs):
+        calls.append(url)
+        raise urllib.error.HTTPError(url, 404, "absent", {}, None)
+
+    monkeypatch.setattr(publish.release, "_read_url", absent)
+    receipt = _run(directory, profile=profile, wait_seconds=20)
+    expected = publish._filenames(profile, version)
+    assert {path.name for path in directory.iterdir()} == expected
+    assert set(receipt["missing_files"]) == expected
+    assert {path.name for path in Path("upload").iterdir()} == expected
+
+    calls.clear()
+    for filename in expected:
+        path = directory / filename
+        data = path.read_bytes()
+        path.unlink()
+        with pytest.raises(ValueError, match="Unexpected publication inventory"):
+            _run(directory, profile=profile, wait_seconds=20)
+        path.write_bytes(data)
+    (directory / ".gitignore").write_text("*\n")
+    with pytest.raises(ValueError, match="Unexpected publication inventory"):
+        _run(directory, profile=profile, wait_seconds=20)
+    assert calls == []
 
 
 def _wheel(
@@ -113,6 +219,10 @@ def _sdist(
         entries.append((f"{stem}/a\\b", b"bad"))
     if fault == "duplicate":
         entries.append(entries[-1])
+    if fault == "case-collision":
+        entries.append((f"{stem}/SOURCE.py", b"different"))
+    if fault == "file-trailing-slash":
+        entries[-1] = (f"{stem}/source.py/", b"payload")
     if reverse:
         entries.reverse()
     buffer = io.BytesIO()
@@ -172,7 +282,7 @@ class _Registry:
             self.documents.clear()
         monkeypatch.setattr(publish.release, "_read_url", self.read)
 
-    def read(self, url):
+    def read(self, url, **kwargs):
         self.calls.append(url)
         if url.endswith("/json"):
             name = url.split("/")[-3]
@@ -191,6 +301,11 @@ class _Registry:
 
 @pytest.fixture
 def candidate(tmp_path, monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(publish.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        publish.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PUBLISH", "true")
     monkeypatch.setenv("EXPECTED_VERSION", VERSION)
@@ -219,7 +334,7 @@ def _build(directory, profile, *, version=VERSION):
             path.write_text(f'[project]\nname="{name}"\nversion="{version}"\n')
 
 
-def _run(directory, *, profile="runtime", operation="prepare", wait_seconds=0):
+def _run(directory, *, profile="runtime", operation="prepare", wait_seconds=20):
     publish._run(
         operation,
         profile=profile,
@@ -441,7 +556,7 @@ def test_registry_and_cdn_failure_never_means_absence(candidate, monkeypatch, st
     api = _Registry(monkeypatch, candidate)
     read = api.read
 
-    def fail(url):
+    def fail(url, **kwargs):
         if status == "cdn404" and url.endswith("/json"):
             return read(url)
         if status == "timeout":
@@ -468,7 +583,7 @@ def test_bounded_visibility_retry_then_full_verification(
     clock = [0]
     attempts = []
 
-    def delayed(url):
+    def delayed(url, **kwargs):
         target = (
             not url.endswith("/json") if failure == "cdn404" else url.endswith("/json")
         )
@@ -563,7 +678,7 @@ def test_rc_and_post_versions_are_preserved_and_wrong_expectations_rejected(
     monkeypatch.setattr(
         publish.release,
         "_read_url",
-        lambda url: (_ for _ in ()).throw(
+        lambda url, **kwargs: (_ for _ in ()).throw(
             urllib.error.HTTPError(url, 404, "missing", {}, None)
         ),
     )
@@ -587,6 +702,8 @@ def test_rc_and_post_versions_are_preserved_and_wrong_expectations_rejected(
         "absolute",
         "backslash",
         "duplicate",
+        "case-collision",
+        "file-trailing-slash",
         "symlink",
         "hardlink",
         "fifo",
@@ -695,7 +812,7 @@ def test_cli_emits_reviewable_receipt_and_provenance(candidate, monkeypatch):
             "--receipt",
             "evidence/prepare.json",
             "--wait-seconds",
-            "0",
+            "20",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -818,7 +935,9 @@ def test_successful_http_with_invalid_json_document_is_not_absence(
 ):
     _build(candidate, "runtime")
     monkeypatch.setattr(
-        publish.release, "_read_url", lambda url: json.dumps(document).encode()
+        publish.release,
+        "_read_url",
+        lambda url, **kwargs: json.dumps(document).encode(),
     )
     with pytest.raises(ValueError, match="Invalid registry document"):
         _run(candidate)

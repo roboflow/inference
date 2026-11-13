@@ -1,9 +1,11 @@
 """Resolve and verify first-party dependencies without installing runtime packages."""
 
+import gzip
 import hashlib
 import io
 import json
 import os
+import tarfile
 import time
 import tomllib
 import urllib.error
@@ -21,6 +23,7 @@ from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
+from publish import _retry
 
 PROJECTS = {
     "inference-models": ("inference_models", "publish.pypi.inference_exp.yml"),
@@ -123,35 +126,6 @@ def _remaining(deadline):
         raise ValueError("Dependency operation timed out")
 
     return remaining
-
-
-def _retry(operation, *, deadline, retry_not_found=True):
-    while True:
-        _remaining(deadline)
-        try:
-            result = operation()
-            _remaining(deadline)
-            return result
-        except urllib.error.HTTPError as error:
-            if (
-                not (error.code == 404 and retry_not_found)
-                and error.code != 429
-                and error.code < 500
-            ):
-                raise
-
-            reason = f"HTTP {error.code}"
-        except (
-            urllib.error.URLError,
-            TimeoutError,
-            HTTPException,
-            ConnectionError,
-        ) as error:
-            reason = f"Network unavailable: {error}"
-
-        remaining = _remaining(deadline)
-        print(f"{reason}; retrying dependency operation", flush=True)
-        time.sleep(min(10, remaining))
 
 
 class _Registry:
@@ -355,7 +329,22 @@ def _plan(consumers, *, catalog, registry):
         for version in versions:
             if version not in specifier:
                 continue
-            file = registry._file(name, str(version))
+            try:
+                file = registry._file(name, str(version))
+            except (
+                ValueError,
+                KeyError,
+                TypeError,
+                zipfile.BadZipFile,
+                tarfile.TarError,
+                gzip.BadGzipFile,
+                EOFError,
+            ) as error:
+                _remaining(registry.deadline)
+                if exact:
+                    raise
+                print(f"Skipping invalid {name}=={version}: {error}", flush=True)
+                continue
             if file is None:
                 continue
 
@@ -372,13 +361,15 @@ def _plan(consumers, *, catalog, registry):
                 return result
 
         local = catalog.get(name)
-        if (
-            local
-            and _compatible(local, requirements)
-            and registry._file(name, local["version"]) is None
-        ):
-            action = "sdk" if name == "inference-sdk" else "publish"
-            result = resolve({**selected, name: {**local, "action": action}})
+        if local and _compatible(local, requirements):
+            # The version endpoint can lead the project listing during publication.
+            file = registry._file(name, local["version"])
+            if file is not None and file.get("complete", True):
+                candidate = {**file, "action": "reuse"}
+            else:
+                action = "sdk" if name == "inference-sdk" else "publish"
+                candidate = {**local, "action": action}
+            result = resolve({**selected, name: candidate})
             if result is not None:
                 return result
         return None
@@ -588,36 +579,6 @@ def _coordinate(plan, *, wait_seconds=9000, deadline=None, plan_file=None):
     return runs
 
 
-def _verify_published(package, *, directory, plan_file, deadline):
-    files = _local_wheels(directory)
-    expected = _catalog()[package]
-    if (
-        len(files) != 1
-        or files[0]["name"] != package
-        or Version(files[0]["version"]) != Version(expected["version"])
-    ):
-        raise ValueError(
-            f"Expected exactly one built {package}=={expected['version']} wheel"
-        )
-
-    candidate = files[0]
-    actual = _verify_file(
-        {**candidate, "action": "publish", "sha256": None, "content_sha256": None},
-        registry=_Registry(deadline=deadline),
-    )
-    release._write_record(
-        plan_file.with_name("published-content-receipt.json"),
-        candidate=candidate,
-        published=actual,
-    )
-    if actual["content_sha256"] != candidate["content_sha256"]:
-        raise ValueError(
-            f"Published {package} contents differ from the built candidate; use a new version"
-        )
-
-    return actual
-
-
 def _guard(package):
     expected = os.environ.get("EXPECTED_REVISION", "")
     if expected and expected != os.environ.get("SOURCE_REVISION"):
@@ -637,9 +598,7 @@ def _guard(package):
 @click.command()
 @click.argument(
     "operation",
-    type=click.Choice(
-        ["plan", "coordinate", "verify", "gate", "guard", "verify-published"]
-    ),
+    type=click.Choice(["plan", "coordinate", "verify", "gate", "guard"]),
 )
 @click.option(
     "--directory",
@@ -673,15 +632,6 @@ def _main(operation, *, directory, plan_file, package, wait_seconds):
             return
 
         deadline = time.monotonic() + wait_seconds
-        if operation == "verify-published":
-            if not package:
-                raise ValueError("verify-published requires --package")
-
-            _verify_published(
-                package, directory=directory, plan_file=plan_file, deadline=deadline
-            )
-            return
-
         consumers = _local_wheels(directory)
         if operation in {"plan", "gate"}:
             catalog = _catalog() if operation != "gate" else {}
@@ -716,7 +666,15 @@ def _main(operation, *, directory, plan_file, package, wait_seconds):
             files=files,
             publisher_runs=runs,
         )
-    except (ValueError, KeyError, OSError, HTTPException, zipfile.BadZipFile) as error:
+    except (
+        ValueError,
+        KeyError,
+        OSError,
+        HTTPException,
+        zipfile.BadZipFile,
+        tarfile.TarError,
+        EOFError,
+    ) as error:
         runs = {
             name: entry["publisher_run_id"]
             for name, entry in locals().get("plan", {}).get("packages", {}).items()

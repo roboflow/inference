@@ -64,6 +64,7 @@ jobs:
           bash .release/pypi/publish.sh prepare --profile roboflow-workflows --directory dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-prepare.json
           echo "upload=$(jq -r '.upload' release-evidence/publication-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: 🚀 Publish roboflow-workflows to PyPI
+        continue-on-error: true
         if: ${{ github.event.inputs.publish == 'true' && steps.prepare.outputs.upload == 'true' }}
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:

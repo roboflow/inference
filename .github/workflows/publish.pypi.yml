@@ -237,6 +237,7 @@ jobs:
           bash .release/pypi/publish.sh prepare --profile runtime --directory dist/pypi --upload-directory dist/runtime-upload --receipt dist/runtime-prepare.json --wait-seconds 600
           echo "upload=$(jq -r '.upload' dist/runtime-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: Publish the missing runtime and CLI wheels
+        continue-on-error: true
         if: ${{ steps.prepare.outputs.upload == 'true' }}
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:

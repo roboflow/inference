@@ -188,7 +188,7 @@ function check(wf) {
   equal(sdk.upload.id, "upload", "record SDK upload outcome");
   equal(sdk.upload["continue-on-error"], true, "reconcile a failed SDK upload");
   equal(sdk.gate["continue-on-error"] ?? false, false, "strict verification controls SDK job result");
-  equal(runtime.upload["continue-on-error"] ?? false, false, "runtime upload errors fail");
+  equal(runtime.upload["continue-on-error"], true, "reconcile a failed runtime upload");
   equal(runtime.gate["continue-on-error"] ?? false, false, "runtime gate errors fail");
   assert.ok(jobs.publish_sdk.steps.indexOf(prepare) < jobs.publish_sdk.steps.indexOf(sdk.upload));
   assert.ok(jobs.publish_sdk.steps.indexOf(sdk.upload) < jobs.publish_sdk.steps.indexOf(sdk.gate));
@@ -204,6 +204,12 @@ function check(wf) {
   assert.ok(jobs.publish_runtime.steps.indexOf(runtime.upload) < jobs.publish_runtime.steps.indexOf(runtimeVerify));
   equal(runtime.upload.with["skip-existing"] ?? false, false, "runtime recovery requires verified preparation");
   equal(runtimeVerify["continue-on-error"] ?? false, false, "final runtime verification is mandatory");
+  for (const uploadResult of ["success", "failure"]) for (const verificationResult of ["success", "failure"]) {
+    const execution = runSteps(jobs.publish_runtime, context(), new Map([[runtime.upload, uploadResult], [runtimeVerify, verificationResult]]));
+    equal(execution.ran.includes(runtimeVerify), true, "runtime verification runs after upload failure");
+    equal(execution.result, verificationResult, "complete verified inventory controls runtime result");
+    scenarios++;
+  }
   for (const upload of ["true", "false", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
     const recovery = context();
     recovery.steps.prepare = { outputs: { upload } };
@@ -286,6 +292,15 @@ function checkChildren(children) {
     assert.ok(preparation?.run.includes(`publish.sh prepare --profile ${name} --directory ${directory} `));
     assert.ok(job.steps.indexOf(preparation) < job.steps.indexOf(upload));
     equal(upload.with, { "packages-dir": "release-upload/" }, "upload only staged distributions");
+    equal(upload["continue-on-error"], true, "child upload races reach strict verification");
+    for (const uploadResult of ["success", "failure"]) for (const verificationResult of ["success", "failure"]) {
+      const ctx = context();
+      ctx.github.event.inputs = { publish: "true" };
+      const execution = runSteps(job, ctx, new Map([[upload, uploadResult], [verification, verificationResult]]));
+      equal(execution.ran.includes(verification), true, "child verification runs after upload failure");
+      equal(execution.result, verificationResult, "complete verified inventory controls child result");
+      scenarios++;
+    }
     for (const publish of ["false", "true"]) for (const missing of ["false", "true", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
       const ctx = context();
       ctx.github.event.inputs = { publish };
@@ -316,6 +331,7 @@ check(workflow);
 checkChildren(upstreams);
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
+  ["stop on runtime duplicate upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
   ["unconditional runtime upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
   ["drop runtime final verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],
   ["tolerate runtime final mismatch", wf => { wf.jobs.publish_runtime.steps.find(step => step.run?.includes("publish.sh verify "))["continue-on-error"] = true; }],
@@ -343,6 +359,7 @@ for (const [name, mutate] of mutations) {
 console.log(`Workflow mutations: ${mutations.length}/${mutations.length} rejected`);
 
 const childMutations = [
+  ["stop on child duplicate upload", job => { delete job.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
   ["unconditional child upload", job => { delete job.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
   ["drop child preparation", job => { job.steps = job.steps.filter(step => step.id !== "prepare"); }],
   ["remove content verification", job => { job.steps = job.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],

@@ -28,6 +28,115 @@ dependencies = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(dependencies)
 
 
+@pytest.mark.parametrize("fault", ["yanked", "hash", "sdist", "gzip"])
+@pytest.mark.parametrize("exact", [False, True])
+def test_invalid_range_candidates_are_skipped_but_exact_pins_fail(
+    monkeypatch, fault, exact
+):
+    import gzip
+
+    api = _PyPI(
+        monkeypatch,
+        [_package("inference-models", "1"), _package("inference-models", "2")],
+    )
+
+    def corrupt(document):
+        if fault == "yanked":
+            document["urls"][1]["yanked"] = True
+        elif fault == "hash":
+            document["urls"][0]["digests"]["sha256"] = "0" * 64
+        else:
+            data = b"invalid gzip" if fault == "gzip" else gzip.compress(b"invalid tar")
+            url = document["urls"][1]["url"]
+            api.responses[url] = data
+            document["urls"][1]["digests"]["sha256"] = hashlib.sha256(data).hexdigest()
+
+    api.mutate_release("inference-models", "2", corrupt)
+    if exact:
+        with pytest.raises((ValueError, tarfile.TarError, gzip.BadGzipFile)):
+            dependencies._plan(
+                _runtime("inference-models==2"), catalog={}, registry=_registry()
+            )
+    else:
+        plan = dependencies._plan(
+            _runtime("inference-models>=1"), catalog={}, registry=_registry()
+        )
+        assert plan["packages"]["inference-models"]["version"] == "1"
+        assert plan["packages"]["inference-models"]["action"] == "reuse"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.HTTPError("https://pypi.org", 403, "denied", {}, None),
+        urllib.error.HTTPError("https://pypi.org", 503, "unavailable", {}, None),
+    ],
+)
+def test_range_selection_never_skips_auth_or_exhausted_network_budget(
+    monkeypatch, error
+):
+    api = _PyPI(
+        monkeypatch,
+        [_package("inference-models", "1"), _package("inference-models", "2")],
+    )
+    api.responses["https://pypi.org/pypi/inference-models/2/json"] = error
+    with pytest.raises((ValueError, urllib.error.HTTPError)):
+        dependencies._plan(
+            _runtime("inference-models>=1"), catalog={}, registry=_registry()
+        )
+    assert "https://pypi.org/pypi/inference-models/1/json" not in api.calls
+
+
+@pytest.mark.parametrize("complete", [False, True])
+@pytest.mark.parametrize("constraint", [">=2", "==2.*"])
+def test_stale_project_listing_still_probes_checkout_version(
+    monkeypatch, complete, constraint
+):
+    package = _package("inference-models", "2")
+    api = _PyPI(monkeypatch, [package], complete=complete)
+    api.responses["https://pypi.org/pypi/inference-models/json"] = b'{"releases": {}}'
+    plan = dependencies._plan(
+        _runtime(f"inference-models{constraint}"),
+        catalog={package["name"]: package},
+        registry=_registry(),
+    )
+    assert plan["packages"]["inference-models"]["action"] == (
+        "reuse" if complete else "publish"
+    )
+
+
+@pytest.mark.parametrize("fault", ["tar", "gzip-eof"])
+def test_dependency_cli_reports_sdist_parse_errors(monkeypatch, tmp_path, fault):
+    import gzip
+
+    package = _package("inference-models", "2")
+    api = _PyPI(monkeypatch, [package])
+    url = "https://files.pythonhosted.org/inference_models-2.tar.gz"
+    data = (
+        gzip.compress(b"not a tar archive")
+        if fault == "tar"
+        else api.responses[url][:-8]
+    )
+    api.responses[url] = data
+    api.mutate_release(
+        package["name"],
+        "2",
+        lambda doc: doc["urls"][1]["digests"].update(
+            sha256=hashlib.sha256(data).hexdigest()
+        ),
+    )
+    monkeypatch.setattr(
+        dependencies, "_local_wheels", lambda directory: _runtime("inference-models==2")
+    )
+    monkeypatch.setattr(dependencies, "_catalog", lambda: {})
+    result = CliRunner().invoke(
+        dependencies._main, ["plan", "--plan-file", str(tmp_path / "plan.json")]
+    )
+    assert result.exit_code == 1
+    assert result.output.startswith("Error:")
+    assert isinstance(result.exception, SystemExit)
+
+
 @pytest.fixture(autouse=True)
 def _fake_clock(monkeypatch):
     clock = [0.0]
@@ -903,128 +1012,6 @@ def test_cached_registry_read_and_resolver_respect_expired_deadline(
             _runtime("inference-models==2"), catalog={}, registry=registry
         )
     assert len(api.calls) == before
-
-
-def _built_candidate(monkeypatch, tmp_path, package, **kwargs):
-    monkeypatch.setattr(dependencies, "_catalog", lambda: {package["name"]: package})
-    directory = tmp_path / "dist"
-    directory.mkdir()
-    filename, data = _wheel(package, **kwargs)
-    (directory / filename).write_bytes(data)
-    (directory / "source.tar.gz").write_bytes(b"sdist may coexist")
-    return directory
-
-
-def test_skip_existing_content_race_fails_child_and_stops_downstream(
-    monkeypatch, tmp_path
-):
-    models = _package("inference-models", "2")
-    workflows = _package("roboflow-workflows", "2", ["inference-models==2"])
-    api = _PyPI(monkeypatch)
-    plan = dependencies._plan(
-        _runtime("roboflow-workflows==2"),
-        catalog={p["name"]: p for p in [models, workflows]},
-        registry=_registry(),
-    )
-    directory = _built_candidate(monkeypatch, tmp_path, models, code="candidate = True")
-    api.add(models, code="concurrent_upload = True")
-    calls = []
-    receipt = tmp_path / "release-evidence/dependency-plan.json"
-
-    def dispatch(name, **kwargs):
-        calls.append(name)
-        if name == "inference-models":
-            dependencies._verify_published(
-                name, directory=directory, plan_file=receipt, deadline=20
-            )
-        else:
-            api.add(workflows)
-        return 42
-
-    monkeypatch.setattr(dependencies, "_dispatch", dispatch)
-    with pytest.raises(ValueError, match="contents differ"):
-        dependencies._coordinate(plan, wait_seconds=20)
-    assert calls == ["inference-models"]
-    evidence = json.loads(
-        receipt.with_name("published-content-receipt.json").read_text()
-    )
-    assert (
-        evidence["candidate"]["requires_dist"] == evidence["published"]["requires_dist"]
-    )
-    assert (
-        evidence["candidate"]["content_sha256"]
-        != evidence["published"]["content_sha256"]
-    )
-
-
-def test_post_upload_verification_accepts_equivalent_zip_encoding(
-    monkeypatch, tmp_path
-):
-    package = _package("inference-models", "2")
-    api = _PyPI(monkeypatch)
-    directory = _built_candidate(
-        monkeypatch, tmp_path, package, timestamp=(2025, 1, 1, 0, 0, 0)
-    )
-    api.add(package, timestamp=(2026, 1, 1, 0, 0, 0))
-    path = tmp_path / "release-evidence/dependency-plan.json"
-    result = CliRunner().invoke(
-        dependencies._main,
-        [
-            "verify-published",
-            "--package",
-            package["name"],
-            "--directory",
-            str(directory),
-            "--plan-file",
-            str(path),
-            "--wait-seconds",
-            "20",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    receipt = json.loads(path.with_name("published-content-receipt.json").read_text())
-    assert receipt["candidate"]["sha256"] != receipt["published"]["sha256"]
-    assert (
-        receipt["candidate"]["content_sha256"] == receipt["published"]["content_sha256"]
-    )
-
-
-@pytest.mark.parametrize("fault", ["missing", "multiple", "name", "version"])
-def test_post_upload_verification_requires_exact_catalog_candidate(
-    monkeypatch, tmp_path, fault
-):
-    package = _package("inference-models", "2")
-    api = _PyPI(monkeypatch)
-    directory = _built_candidate(monkeypatch, tmp_path, package)
-    if fault == "missing":
-        next(directory.glob("*.whl")).unlink()
-    elif fault == "multiple":
-        filename, data = _wheel(_package("inference-models", "3"))
-        (directory / filename).write_bytes(data)
-    else:
-        monkeypatch.setattr(
-            dependencies,
-            "_catalog",
-            lambda: {
-                package["name"]: (
-                    {**package, "name": "other"}
-                    if fault == "name"
-                    else {**package, "version": "3"}
-                )
-            },
-        )
-        if fault == "name":
-            next(directory.glob("*.whl")).unlink()
-            filename, data = _wheel(_package("streamvision", "2"))
-            (directory / filename).write_bytes(data)
-    with pytest.raises(ValueError, match="wheel"):
-        dependencies._verify_published(
-            package["name"],
-            directory=directory,
-            plan_file=tmp_path / "receipt.json",
-            deadline=20,
-        )
-    assert api.calls == []
 
 
 @pytest.mark.parametrize("changed_file", ["wheel", "sdist"])
