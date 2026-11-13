@@ -76,30 +76,77 @@ class RemoteActionRecognitionModel:
         confidence: Optional[Confidence] = None,
         **kwargs,
     ) -> List[ModelActionRecognitionPrediction]:
-        """Classify one window on the server.
+        """Classify one window through ``/infer/action_recognition``.
 
         Args:
-            frames: Sampled RGB frames in temporal order.
+            frames: Sampled RGB frames in temporal order (HWC arrays or CHW
+                uint8 tensors).
             fps: Sampling rate of the frames.
-            class_names: Requested class subset.
-            confidence: Threshold override for a scoring model.
+            class_names: Requested class subset, sent as ``class_filter``.
+            confidence: Threshold override, sent only when given.
             **kwargs: Ignored. ``duration_seconds`` is not sent: the endpoint
                 derives it from the clip, and the block clamps spans to its
                 own frame limit.
 
         Returns:
-            Spans in sampled-frame coordinates.
+            Spans in sampled-frame coordinates, as a local ``infer`` returns.
+
+        Raises:
+            ValueError: The window cannot map one to one onto a server window.
+            RuntimeError: The server read a different clip than was sent.
+            requests.HTTPError: The server rejected the request.
         """
-        segments = classify_window_remotely(
-            frames,
-            model_id=self.model_id,
-            api_key=self.api_key,
-            fps=fps,
-            class_names=class_names,
-            confidence=confidence,
-            video_sampling=self.video_sampling,
-            end_exclusive_spans=self.end_exclusive_spans,
+        frame_count = len(frames)
+        _ensure_window_maps_one_to_one(
+            frame_count=frame_count, fps=fps, video_sampling=self.video_sampling
         )
+        clip = encode_window(frames, fps=fps)
+
+        payload = {
+            "model_id": self.model_id,
+            "api_key": self.api_key,
+            "video": {
+                "type": "base64",
+                "value": base64.b64encode(clip).decode("ascii"),
+            },
+        }
+        if class_names:
+            payload["class_filter"] = class_names
+        if confidence is not None:
+            payload["confidence"] = confidence
+        api_url = (
+            HOSTED_CORE_MODEL_URL
+            if WORKFLOWS_REMOTE_API_TARGET == "hosted"
+            else LOCAL_INFERENCE_API_URL
+        )
+        response = requests.post(
+            api_url.rstrip("/") + ACTION_RECOGNITION_ENDPOINT,
+            json=payload,
+            timeout=REMOTE_REQUEST_TIMEOUT_SECONDS,
+        )
+        if response.status_code >= 400:
+            # The message reaches the block's error_status output.
+            detail = deduct_api_key_from_string(value=response.text[:500])
+            raise requests.HTTPError(
+                f"Action recognition endpoint returned {response.status_code}: "
+                f"{detail}",
+                response=response,
+            )
+        result = response.json()
+
+        _ensure_server_read_the_window(result=result, frame_count=frame_count, fps=fps)
+        # The endpoint reports inclusive frames; a half-open span ends one
+        # sample later, which merge_window_segments maps back the same way.
+        segments = [
+            ModelActionRecognitionPrediction(
+                start_frame_idx=entry["start_frame_idx"],
+                end_frame_idx=entry["end_frame_idx"] + int(self.end_exclusive_spans),
+                class_name=entry["class"],
+                confidence=entry.get("confidence"),
+                end_exclusive=self.end_exclusive_spans,
+            )
+            for entry in result["timeline"]
+        ]
 
         return segments
 
@@ -142,92 +189,6 @@ def load_remote_action_recognition_model(
     )
 
     return model
-
-
-def classify_window_remotely(
-    frames: Sequence[Any],
-    *,
-    model_id: str,
-    api_key: Optional[str],
-    fps: float,
-    class_names: Optional[List[str]],
-    confidence: Optional[Confidence],
-    video_sampling: VideoSampling,
-    end_exclusive_spans: bool,
-    lossless: bool = False,
-) -> List[ModelActionRecognitionPrediction]:
-    """Classify one sampled window through ``/infer/action_recognition``.
-
-    Args:
-        frames: Sampled RGB frames (HWC arrays or CHW uint8 tensors).
-        model_id: Model the server classifies with.
-        api_key: Key sent in the request body.
-        fps: Rate the frames were sampled at.
-        class_names: Requested class subset, sent as ``class_filter``.
-        confidence: Threshold override, sent only when given.
-        video_sampling: The model's sampling contract.
-        end_exclusive_spans: The model emits half-open spans, so inclusive
-            response ranges convert back to half-open ones.
-        lossless: Encode without loss, for parity checks. See
-            ``encode_window`` for what the lossy default costs.
-
-    Returns:
-        Spans in sampled-frame coordinates, as a local ``infer`` returns.
-
-    Raises:
-        ValueError: The window cannot map one to one onto a server window.
-        RuntimeError: The server read a different clip than was sent.
-        requests.HTTPError: The server rejected the request.
-    """
-    frame_count = len(frames)
-    _ensure_window_maps_one_to_one(
-        frame_count=frame_count, fps=fps, video_sampling=video_sampling
-    )
-    clip = encode_window(frames, fps=fps, lossless=lossless)
-
-    payload = {
-        "model_id": model_id,
-        "api_key": api_key,
-        "video": {"type": "base64", "value": base64.b64encode(clip).decode("ascii")},
-    }
-    if class_names:
-        payload["class_filter"] = class_names
-    if confidence is not None:
-        payload["confidence"] = confidence
-    api_url = (
-        HOSTED_CORE_MODEL_URL
-        if WORKFLOWS_REMOTE_API_TARGET == "hosted"
-        else LOCAL_INFERENCE_API_URL
-    )
-    response = requests.post(
-        api_url.rstrip("/") + ACTION_RECOGNITION_ENDPOINT,
-        json=payload,
-        timeout=REMOTE_REQUEST_TIMEOUT_SECONDS,
-    )
-    if response.status_code >= 400:
-        # The message reaches the block's error_status output.
-        detail = deduct_api_key_from_string(value=response.text[:500])
-        raise requests.HTTPError(
-            f"Action recognition endpoint returned {response.status_code}: {detail}",
-            response=response,
-        )
-    result = response.json()
-
-    _ensure_server_read_the_window(result=result, frame_count=frame_count, fps=fps)
-    # The endpoint reports inclusive frames; a half-open span ends one sample
-    # later, which merge_window_segments maps back the same way.
-    segments = [
-        ModelActionRecognitionPrediction(
-            start_frame_idx=entry["start_frame_idx"],
-            end_frame_idx=entry["end_frame_idx"] + int(end_exclusive_spans),
-            class_name=entry["class"],
-            confidence=entry.get("confidence"),
-            end_exclusive=end_exclusive_spans,
-        )
-        for entry in result["timeline"]
-    ]
-
-    return segments
 
 
 def encode_window(
