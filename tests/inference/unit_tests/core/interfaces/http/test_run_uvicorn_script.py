@@ -144,3 +144,28 @@ def test_tls_arguments_preserve_spaces_and_literal_metacharacters(tmp_path):
         ("--ssl-cert-reqs", "2"),
     ]:
         assert args[args.index(option) + 1] == value
+
+
+def test_workers_share_one_notebook_token(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "uvicorn").write_text('#!/bin/sh\necho "token=$NOTEBOOK_PASSWORD"\n')
+    (bin_dir / "uvicorn").chmod(0o755)
+
+    def token(env):
+        result = subprocess.run(
+            ["/bin/sh", str(SCRIPT_PATH), "cpu_http:app"],
+            cwd=tmp_path,
+            env={"PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", **env},
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip().removeprefix("token=")
+
+    assert token({}) == ""
+    assert len(token({"NUM_WORKERS": "4"})) == 48
+    assert token({"NUM_WORKERS": "4", "NOTEBOOK_PASSWORD": "mine"}) == "mine"
+    # The workers read ./.env themselves.
+    (tmp_path / ".env").write_text("export NOTEBOOK_PASSWORD = from-dotenv\n")
+    assert token({"NUM_WORKERS": "4"}) == ""

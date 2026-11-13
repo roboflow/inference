@@ -73,6 +73,7 @@ def build_configuration_from_env() -> StreamsConfiguration:
         stream_manager_port=None,
         stream_manager_socket_timeout=None,
         allow_unsafe_gstreamer_pipelines=env.ALLOW_UNSAFE_GSTREAMER_PIPELINES,
+        allow_local_video_files=env.ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM,
         debug_aiortc_queues=env.DEBUG_AIORTC_QUEUES,
         debug_webrtc_processing_latency=env.DEBUG_WEBRTC_PROCESSING_LATENCY,
         offline_mode=env.OFFLINE_MODE,

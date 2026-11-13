@@ -748,7 +748,7 @@ def test_bearer_header_follows_switch_outside_v2_routes(
         assert keys == []
 
 
-@pytest.mark.parametrize("root_path", ["/static", "/_next"])
+@pytest.mark.parametrize("root_path", ["/static", "/_next/static"])
 def test_mounted_v2_unload_all_is_authorized(platform, root_path):
     from inference_server.routers import v2_models
 

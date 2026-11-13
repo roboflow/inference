@@ -15,12 +15,14 @@ Start a CPU server from the repository root, with this checkout mounted over
 the installed packages:
 
 ```bash
-docker run -p 9001:9001 \
+docker run -p 127.0.0.1:9001:9001 -e PUBLISHED_HOST=127.0.0.1 \
     -v ./inference:/app/inference \
     -v ./inference_models/inference_models:/usr/local/lib/python3.12/site-packages/inference_models/ \
     -v ./workflows/roboflow_workflows:/usr/local/lib/python3.12/site-packages/roboflow_workflows/ \
     roboflow/roboflow-inference-server-cpu
 ```
+
+Publishing on `127.0.0.1` with `PUBLISHED_HOST=127.0.0.1` lets the server run without workspace API key checks. Tests that use custom Python blocks, local files or environment secrets also need the opt-in variables that `INFERENCE_TEST_ENV` in the `Makefile` sets (`make start_test_docker_cpu` passes them).
 
 The `site-packages` paths must match the Python version of the image.
 

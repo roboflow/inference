@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 
 # Vars behind pinned settings; stripped from the child so the shell can't leak in.
 _CONTROLLED_VARIABLES = (
+    "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM",
     "ALLOW_UNSAFE_GSTREAMER_PIPELINES",
     "DEBUG_AIORTC_QUEUES",
     "DEBUG_WEBRTC_PROCESSING_LATENCY",
@@ -369,6 +370,40 @@ def test_unsafe_gstreamer_launch_strings_follow_the_policy_flag(
     assert result == {"accepted": expected}
 
 
+_LOCAL_VIDEO_FILE_SCRIPT = """
+import json
+
+from inference.core.interfaces.stream_manager.manager_app.entities import (
+    VideoConfiguration,
+)
+
+accepted = {}
+for reference in ["./video.mp4", "file:///etc/passwd", "/dev/video0"]:
+    try:
+        VideoConfiguration(type="VideoConfiguration", video_reference=reference)
+        accepted[reference] = True
+    except ValueError:
+        accepted[reference] = False
+print(json.dumps(accepted))
+"""
+
+
+@pytest.mark.parametrize("flag, expected", [("False", False), ("True", True)])
+def test_local_video_files_follow_the_server_local_filesystem_flag(
+    flag: str, expected: bool
+) -> None:
+    result = _run_child(
+        _LOCAL_VIDEO_FILE_SCRIPT, {"ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM": flag}
+    )
+
+    assert result == {
+        "./video.mp4": expected,
+        "file:///etc/passwd": expected,
+        # A local camera, not a file.
+        "/dev/video0": True,
+    }
+
+
 _OFFLINE_WEBRTC_SCRIPT = """
 import json
 
@@ -606,6 +641,7 @@ FIELDS = [
     ("STREAM_MANAGER_PORT", None),
     ("STREAM_MANAGER_SOCKET_TIMEOUT", None),
     ("ALLOW_UNSAFE_GSTREAMER_PIPELINES", "ALLOW_UNSAFE_GSTREAMER_PIPELINES"),
+    ("ALLOW_LOCAL_VIDEO_FILES", "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM"),
     ("DEBUG_AIORTC_QUEUES", "DEBUG_AIORTC_QUEUES"),
     ("DEBUG_WEBRTC_PROCESSING_LATENCY", "DEBUG_WEBRTC_PROCESSING_LATENCY"),
     ("OFFLINE_MODE", "OFFLINE_MODE"),
@@ -697,7 +733,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
     tabled = {name for name, _ in FIELDS}
 
     assert tabled == _facade_exports()
-    assert len(FIELDS) == 54
+    assert len(FIELDS) == 55
 
 
 def test_host_only_settings_are_not_package_configuration() -> None:

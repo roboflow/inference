@@ -1,3 +1,9 @@
+# Celery workers are separate processes: apply the self-hosted server defaults
+# before anything reads inference.core.env.
+from inference.server_defaults import apply_self_hosted_server_defaults  # isort: skip
+
+apply_self_hosted_server_defaults()
+
 import json
 from dataclasses import asdict
 from multiprocessing import shared_memory

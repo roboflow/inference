@@ -1,12 +1,15 @@
+import base64
 import time
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import numpy as np
 import pytest
 from pydantic import BaseModel
 from starlette.testclient import TestClient
 
 import inference.core.interfaces.http.http_api as http_api
+from inference import server_defaults
 from inference.core import roboflow_api
 from inference.core.constants import (
     PROCESSING_TIME_HEADER,
@@ -14,7 +17,12 @@ from inference.core.constants import (
     WORKSPACE_ID_HEADER,
 )
 from inference.core.env import CORRELATION_ID_HEADER
-from inference.core.exceptions import RoboflowAPINotAuthorizedError
+from inference.core.exceptions import (
+    RoboflowAPIConnectionError,
+    RoboflowAPINotAuthorizedError,
+    RoboflowAPIUnsuccessfulRequestError,
+    RoboflowAPIUsagePausedError,
+)
 from inference.core.roboflow_api import ServerlessUsageCheckResponse
 from inference.core.utils.depth_encoding import decode_png_normalized_depth
 
@@ -197,6 +205,8 @@ def _build_dedicated_deployment_interface(
     dedicated_workspace_url="dedicated-workspace",
     workspace_lookup_side_effect=None,
     local_whitelist=None,
+    require_api_key=False,
+    server_api_key=None,
 ):
     """Build an HttpInterface with the workspace-allowlist middleware enabled.
 
@@ -222,6 +232,10 @@ def _build_dedicated_deployment_interface(
         "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
         list(local_whitelist) if local_whitelist is not None else None,
     )
+    monkeypatch.setattr(
+        http_api, "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", require_api_key
+    )
+    monkeypatch.setattr(http_api, "API_KEY", server_api_key)
     if workspace_lookup_side_effect is not None:
         workspace_lookup_mock = AsyncMock(side_effect=workspace_lookup_side_effect)
     else:
@@ -2467,3 +2481,475 @@ def test_instance_segmentation_routes_forward_mask_resolution_opt_in(
     assert request.allow_reduced_mask_resolution is (opt_in is True)
     assert request.mask_decode_mode == "tradeoff"
     assert request.tradeoff_factor == 0.25
+
+
+_WORKSPACE_OF_KEY = {
+    "server-key": "server-ws",
+    "teammate-key": "server-ws",
+    "other-teammate-key": "server-ws",
+    "revoked-teammate-key": "server-ws",
+    "paused-teammate-key": "server-ws",
+    "outsider-key": "other-ws",
+}
+
+
+def _api_error(error_type, status):
+    # As raised by the Roboflow API wrappers, from the HTTP error.
+    error = error_type(f"status {status}")
+    error.__cause__ = aiohttp.ClientResponseError(
+        request_info=MagicMock(), history=(), status=status
+    )
+    return error
+
+
+def _workspace_of_key(api_key):
+    if api_key not in _WORKSPACE_OF_KEY:
+        raise RoboflowAPINotAuthorizedError("unknown key")
+    return _WORKSPACE_OF_KEY[api_key]
+
+
+def test_required_api_key_accepts_keys_of_the_server_key_workspace(monkeypatch) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        for api_key in ["teammate-key", "other-teammate-key"]:
+            response = client.post(
+                "/infer/lmm/florence-2-base",
+                params={"api_key": api_key},
+                json=_make_inference_request(),
+            )
+            assert response.status_code == 200, response.text
+
+    looked_up = [
+        call.kwargs["api_key"] for call in workspace_lookup_mock.await_args_list
+    ]
+    # The server key's workspace is resolved once and then reused.
+    assert sorted(looked_up) == ["other-teammate-key", "server-key", "teammate-key"]
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [("POST", "/infer/lmm/florence-2-base"), ("GET", "/device/stats")],
+)
+def test_required_api_key_rejects_keys_of_other_workspaces(
+    monkeypatch, method, path
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(client, method, path, api_key="outsider-key")
+
+    assert response.status_code == 401, f"{method} {path}: {response.status_code}"
+
+
+def test_required_api_key_prefers_whitelist_over_server_key_workspace(
+    monkeypatch,
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        local_whitelist=["other-ws"],
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        teammate = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="teammate-key"
+        )
+        outsider = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="outsider-key"
+        )
+
+    assert teammate.status_code == 401
+    assert outsider.status_code == 200
+
+
+def test_required_api_key_without_server_workspace_rejects_every_key(
+    monkeypatch,
+) -> None:
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key=None,
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        response = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="teammate-key"
+        )
+
+    # A valid key is refused too; the message must say why, not "bad key".
+    assert response.status_code == 401
+    assert "ROBOFLOW_API_KEY" in response.json()["message"]
+
+
+def test_required_api_key_survives_roboflow_api_outages_only_with_a_grant(
+    monkeypatch,
+) -> None:
+    api_up = True
+    revoked, paused, failing = set(), set(), set()
+
+    def lookup(api_key):
+        if not api_up:
+            raise RoboflowAPIConnectionError("down")
+        if api_key in revoked:
+            raise RoboflowAPINotAuthorizedError("revoked")
+        if api_key in paused:
+            raise _api_error(RoboflowAPIUsagePausedError, 423)
+        if api_key in failing:
+            raise _api_error(RoboflowAPIUnsuccessfulRequestError, 502)
+        return _workspace_of_key(api_key)
+
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=lookup,
+    )
+    now = time.time()
+    clock = MagicMock(return_value=now)
+    monkeypatch.setattr(http_api.time, "time", clock)
+
+    with TestClient(interface.app) as client:
+
+        def status(api_key):
+            return _send_secured_request(
+                client, "POST", "/infer/lmm/florence-2-base", api_key=api_key
+            ).status_code
+
+        assert status("teammate-key") == 200  # grant cached while the API is up
+        assert status("revoked-teammate-key") == 200
+        api_up = False
+        clock.return_value = now + http_api.AUTH_CACHE_TTL_SECONDS + 1
+        expired_grant = status("teammate-key")
+        never_granted = status("other-teammate-key")
+        outage = _send_secured_request(
+            client, "POST", "/infer/lmm/florence-2-base", api_key="other-teammate-key"
+        )
+        assert outage.headers["Retry-After"] == "30"
+        assert "Cannot reach the Roboflow API" in outage.json()["message"]
+        api_up = True
+        revoked.add("revoked-teammate-key")
+        assert status("revoked-teammate-key") == 401
+        api_up = False
+        revoked_grant = status("revoked-teammate-key")
+        # Usage paused (423) is a refusal, a 502 is an outage.
+        api_up = True
+        assert status("paused-teammate-key") == 200
+        paused.add("paused-teammate-key")
+        failing.update({"teammate-key", "other-teammate-key"})
+        clock.return_value += http_api.AUTH_CACHE_TTL_SECONDS + 1
+        assert status("paused-teammate-key") == 401
+        assert status("teammate-key") == 200  # granted earlier, API failing
+        assert status("other-teammate-key") == 503
+        clock.return_value = (
+            now
+            + http_api.AUTH_CACHE_TTL_SECONDS
+            + http_api.AUTH_OUTAGE_GRACE_SECONDS
+            + 1
+        )
+        grace_over = status("teammate-key")
+
+    assert (expired_grant, never_granted, revoked_grant, grace_over) == (
+        200,
+        503,
+        503,
+        503,
+    )
+
+
+def test_required_api_key_skips_only_next_static_assets(monkeypatch) -> None:
+    # Other /_next/ paths reach the dynamic routes, such as the model routes.
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        dynamic = client.post("/_next/1", json=_make_inference_request())
+        asset = client.get("/_next/static/missing.js")
+
+    assert dynamic.status_code == 401
+    assert asset.status_code == 404
+
+
+def test_required_api_key_checks_head_requests_and_skips_cors_preflight(
+    monkeypatch,
+) -> None:
+    interface, _, workspace_lookup_mock = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        head = client.head("/device/stats")
+        preflight = client.options(
+            "/infer/object_detection",
+            headers={
+                "Origin": "https://app.roboflow.com",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        # An OPTIONS request without the preflight headers is not a CORS
+        # preflight and must still authenticate, so a future functional OPTIONS
+        # route cannot inherit unauthenticated access.
+        plain_options = client.options("/infer/object_detection")
+
+    assert head.status_code == 401
+    assert preflight.status_code == 200
+    assert plain_options.status_code == 401
+    workspace_lookup_mock.assert_not_awaited()
+
+
+def test_required_api_key_covers_builder_page_and_api(monkeypatch) -> None:
+    # The builder page embeds the CSRF token that guards /build/api, so serving
+    # it without a key would open the builder API to anyone.
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "ENABLE_BUILDER", True)
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        responses = [
+            client.get("/build"),
+            client.get("/build/edit/some-workflow"),
+            client.get("/build/api"),
+            client.delete("/build/api/some-workflow"),
+        ]
+        page_with_key = client.get("/build", params={"api_key": "teammate-key"})
+
+    assert [response.status_code for response in responses] == [401] * 4
+    assert page_with_key.status_code != 401
+
+
+def test_session_token_round_trip_and_rejections() -> None:
+    now = 1_000_000.0
+    token = http_api.issue_session_token("ws-1", now=now)
+    # A fresh token grants its workspace; an expired one does not.
+    assert http_api.read_session_token(token, now=now + 10) == "ws-1"
+    assert (
+        http_api.read_session_token(
+            token, now=now + http_api.SESSION_COOKIE_TTL_SECONDS + 1
+        )
+        is None
+    )
+    # A tampered payload or signature, or junk, is rejected (not forgeable).
+    payload_part, _, signature_part = token.partition(".")
+    forged_payload = (
+        base64.urlsafe_b64encode(b"ws-2:9999999999").decode("ascii")
+        + "."
+        + signature_part
+    )
+    assert http_api.read_session_token(forged_payload, now=now + 10) is None
+    assert (
+        http_api.read_session_token(
+            payload_part + "." + signature_part[:-3] + "AAA", now=now + 10
+        )
+        is None
+    )
+    assert http_api.read_session_token("not-a-token", now=now) is None
+    assert http_api.read_session_token(None) is None
+
+
+def test_builder_session_authenticates_follow_up_requests(monkeypatch) -> None:
+    # Opening the builder page with a valid key starts a browser session, so the
+    # embedded builder's own /build/api requests, which carry no key, then
+    # authenticate through the cookie; a cross-site page cannot send it.
+    monkeypatch.setattr(http_api, "ENABLE_BUILDER", True)
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app) as client:
+        without_session = client.get("/build/api")
+        page = client.get("/build", params={"api_key": "teammate-key"})
+        with_session = client.get("/build/api")
+
+    assert without_session.status_code == 401
+    assert page.status_code != 401
+    set_cookie = page.headers["set-cookie"]
+    assert http_api.SESSION_COOKIE_NAME in set_cookie
+    assert "httponly" in set_cookie.lower()
+    assert "samesite=strict" in set_cookie.lower()
+    assert with_session.status_code != 401
+
+
+def test_dashboard_session_authenticates_data_requests(monkeypatch) -> None:
+    # The dashboard page is exempt so it loads without a key, but opening it with
+    # a valid key starts a browser session so its /model/registry and /logs
+    # requests, which carry no key, then authenticate.
+    monkeypatch.setattr(http_api, "ENABLE_DASHBOARD", True)
+    monkeypatch.setattr(http_api, "GET_MODEL_REGISTRY_ENABLED", True)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    interface, model_manager, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+    model_manager.describe_models.return_value = []
+
+    with TestClient(interface.app) as client:
+        without_session = client.get("/model/registry")
+        page = client.get("/dashboard.html", params={"api_key": "teammate-key"})
+        with_session = client.get("/model/registry")
+
+    assert without_session.status_code == 401
+    assert http_api.SESSION_COOKIE_NAME in page.headers.get("set-cookie", "")
+    assert with_session.status_code != 401
+
+
+def test_dashboard_without_a_key_grants_no_session(monkeypatch) -> None:
+    # Loading the exempt page without a key must not authorize data requests.
+    monkeypatch.setattr(http_api, "ENABLE_DASHBOARD", True)
+    monkeypatch.setattr(http_api, "GET_MODEL_REGISTRY_ENABLED", True)
+    monkeypatch.setattr(http_api, "LAMBDA", False)
+    interface, model_manager, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=True,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+    model_manager.describe_models.return_value = []
+
+    with TestClient(interface.app) as client:
+        page = client.get("/dashboard.html")
+        data = client.get("/model/registry")
+
+    assert "set-cookie" not in page.headers
+    assert data.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "require_api_key,loopback_only,allowed",
+    [(True, False, True), (False, True, True), (False, False, False)],
+)
+def test_notebook_token_needs_key_checks_or_a_loopback_server(
+    monkeypatch, require_api_key, loopback_only, allowed
+) -> None:
+    # OFFLINE_MODE turns the key requirement off; Jupyter must not start then
+    # unless only local callers reach the server.
+    monkeypatch.setattr(server_defaults, "LOOPBACK_ONLY", loopback_only)
+    monkeypatch.setattr(http_api, "NOTEBOOK_ENABLED", True)
+    start_notebook_mock = MagicMock()
+    monkeypatch.setattr(http_api, "start_notebook", start_notebook_mock)
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch,
+        dedicated_workspace_url=None,
+        require_api_key=require_api_key,
+        server_api_key="server-key",
+        workspace_lookup_side_effect=_workspace_of_key,
+    )
+
+    with TestClient(interface.app, base_url="http://localhost:9001") as client:
+        response = client.get(
+            "/notebook/start",
+            params={"browserless": "true", "api_key": "teammate-key"},
+        )
+
+    if allowed:
+        assert response.status_code == 200
+        start_notebook_mock.assert_called_once()
+    else:
+        assert response.status_code == 403
+        assert "token=" not in response.text
+        start_notebook_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "headers,allowed",
+    [
+        ({}, True),
+        ({"host": "[::1]:9001"}, True),
+        ({"origin": "http://localhost:9001"}, True),
+        ({"origin": "http://127.0.0.1:3000"}, True),
+        ({"origin": "https://app.example.com"}, True),  # named in ALLOW_ORIGINS
+        ({"origin": "https://builder.example.com"}, True),  # BUILDER_ORIGIN
+        ({"sec-fetch-site": "same-origin"}, True),
+        ({"host": "0.0.0.0:9001"}, True),  # the address uvicorn prints
+        ({"origin": "http://0.0.0.0:9001"}, True),
+        # A DNS name, which a hostile network's DNS could rebind.
+        ({"host": "host.docker.internal:9001"}, False),
+        ({"host": "rebound.example.com:9001"}, False),  # DNS rebinding
+        ({"host": "localhost.:9001"}, False),
+        ({"origin": "https://evil.example.com"}, False),
+        ({"origin": "http://localhost.evil.example.com"}, False),
+        ({"origin": "null"}, False),
+        # <img src=...> on another site sends no Origin.
+        ({"sec-fetch-site": "cross-site"}, False),
+        # A tunnel or reverse proxy relays callers from other machines.
+        ({"x-forwarded-for": "203.0.113.7"}, False),
+        ({"forwarded": "for=203.0.113.7"}, False),
+        ({"x-real-ip": "203.0.113.7"}, False),
+        ({"via": "1.1 proxy"}, False),
+    ],
+)
+def test_loopback_server_without_key_checks_only_serves_local_callers(
+    monkeypatch, headers, allowed
+) -> None:
+    monkeypatch.setattr(server_defaults, "LOOPBACK_ONLY", True)
+    monkeypatch.setattr(http_api, "ALLOW_ORIGINS", ["*", "https://app.example.com"])
+    monkeypatch.setattr(http_api, "ENABLE_BUILDER", True)
+    monkeypatch.setattr(http_api, "BUILDER_ORIGIN", "https://builder.example.com")
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch, dedicated_workspace_url=None
+    )
+
+    with TestClient(interface.app, base_url="http://localhost:9001") as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base",
+            json=_make_inference_request(),
+            headers=headers,
+        )
+
+    assert response.status_code == (200 if allowed else 403), response.text
+
+
+def test_exposed_server_without_key_checks_accepts_any_host_name(monkeypatch) -> None:
+    # A LAN server is reached by its own name; the Host check is loopback-only.
+    monkeypatch.setattr(server_defaults, "LOOPBACK_ONLY", False)
+    interface, _, _ = _build_dedicated_deployment_interface(
+        monkeypatch=monkeypatch, dedicated_workspace_url=None
+    )
+
+    with TestClient(interface.app, base_url="http://jetson.lan:9001") as client:
+        response = client.post(
+            "/infer/lmm/florence-2-base", json=_make_inference_request()
+        )
+
+    assert response.status_code == 200, response.text

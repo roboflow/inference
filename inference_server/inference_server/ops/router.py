@@ -5,7 +5,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
-from inference_server import configuration
+from inference_server import configuration, server_defaults
 from inference_server.ops.docker_stats import (
     CONTAINER_STATS_ERROR_MESSAGE,
     ContainerStatsError,
@@ -32,6 +32,14 @@ DEVICE_STATS_NOT_CONFIGURED = {
     "container to collect device stats "
     "(i.e. `docker run ... -v /var/run/docker.sock:/var/run/docker.sock "
     "-e DOCKER_SOCKET_PATH=/var/run/docker.sock ...`).",
+}
+
+NOTEBOOK_FORBIDDEN = {
+    "success": False,
+    "message": "The notebook needs workspace API key checks. Set ROBOFLOW_API_KEY "
+    "or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT and keep "
+    "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on (not OFFLINE_MODE), or bind the "
+    "server to 127.0.0.1.",
 }
 
 logs_router = APIRouter(tags=["legacy"])
@@ -146,6 +154,13 @@ async def notebook_start(browserless: bool = False) -> Response:
                 }
             )
         return RedirectResponse("/notebook-instructions.html")
+    if not (
+        server_defaults.workspace_auth_enabled() or server_defaults.local_callers_only()
+    ):
+        # Jupyter runs arbitrary code, so its token is only handed to callers
+        # that passed the workspace API key check, or to local callers of a
+        # loopback server.
+        return JSONResponse(status_code=403, content=NOTEBOOK_FORBIDDEN)
 
     try:
         await asyncio.to_thread(start_notebook)

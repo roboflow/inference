@@ -1,4 +1,5 @@
 import importlib
+import logging
 
 import pytest
 from fastapi.testclient import TestClient
@@ -128,6 +129,7 @@ def test_serverless_middleware_is_outermost_under_gcp_serverless(reloaded_app):
     [
         {"DEDICATED_DEPLOYMENT_WORKSPACE_URL": "ws"},
         {"WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT": ["ws"]},
+        {"REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": True},
     ],
 )
 def test_dedicated_middleware_added_by_allow_list(reloaded_app, overrides):
@@ -167,3 +169,83 @@ def test_serverless_auth_is_wired_end_to_end(reloaded_app, monkeypatch):
 
     assert response.status_code == 401
     assert response.json() == {"status": 401, "message": "Unauthorized api_key"}
+
+
+def test_required_api_key_is_ignored_by_hosted_runtimes(reloaded_app):
+    module = reloaded_app(REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=True, LAMBDA=True)
+
+    names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
+    assert "DedicatedAuthMiddleware" not in names
+
+
+@pytest.mark.parametrize(
+    "host,overrides,gated",
+    [
+        ("127.0.0.1", {}, True),
+        ("0.0.0.0", {}, False),
+        ("127.0.0.1", {"REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT": True}, False),
+        ("127.0.0.1", {"GCP_SERVERLESS": True}, False),
+    ],
+)
+def test_local_callers_gate_only_on_keyless_loopback_server(
+    reloaded_app, monkeypatch, host, overrides, gated
+):
+    monkeypatch.setenv("HOST", host)
+    monkeypatch.delenv("PUBLISHED_HOST", raising=False)
+    module = reloaded_app(**overrides)
+
+    names = [middleware.cls.__name__ for middleware in module.app.user_middleware]
+    assert ("_LocalCallersOnlyMiddleware" in names) is gated
+
+
+def test_required_api_key_without_a_workspace_answers_401_and_logs(reloaded_app):
+    # The application logger does not propagate to the root logger.
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    app_logger = logging.getLogger("inference_server.app")
+    app_logger.addHandler(handler)
+    try:
+        module = reloaded_app(
+            REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=True, DEFAULT_API_KEY=None
+        )
+    finally:
+        app_logger.removeHandler(handler)
+    from inference_server.hosted.dedicated_auth import NO_WORKSPACE_MESSAGE
+
+    client = TestClient(module.app)
+    response = client.post("/workflows/run", json={"api_key": "k"})
+
+    assert response.status_code == 401
+    assert response.json()["message"] == NO_WORKSPACE_MESSAGE
+    assert client.get("/healthz").status_code == 200
+    assert any("SECURITY" in record.getMessage() for record in records)
+
+
+def test_required_api_key_restricts_v2_to_the_server_workspace(
+    reloaded_app, monkeypatch
+):
+    from inference_server.hosted import dedicated_auth
+
+    module = reloaded_app(
+        REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=True,
+        DEFAULT_API_KEY="server-key",
+        ENABLE_CONTROL_PLANE_ROUTES=False,
+    )
+    answers = {"server-key": (True, "own"), "k": (True, "own"), "j": (True, "other")}
+
+    async def _validate(api_key, *, through_secure_gateway=False):
+        return answers.get(api_key, (False, None))
+
+    monkeypatch.setattr(dedicated_auth, "validate_api_key", _validate)
+    monkeypatch.setattr(module, "validate_api_key", _validate)
+    monkeypatch.setattr(dedicated_auth, "_server_workspace", None)
+    client = TestClient(module.app)
+
+    other = client.get("/v2/server/info", headers={"Authorization": "Bearer j"})
+    own = client.get("/v2/server/info", headers={"Authorization": "Bearer k"})
+
+    assert other.status_code == 401
+    # Past the workspace check, the control-plane switch answers.
+    assert own.status_code == 403
+    assert b"control-plane routes disabled" in own.content

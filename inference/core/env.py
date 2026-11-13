@@ -1,5 +1,6 @@
 import os
 import platform
+import secrets
 import uuid
 import warnings
 from typing import Optional
@@ -837,8 +838,9 @@ BUILDER_ORIGIN = os.getenv(
 # Enable jupyter notebook server route, default is False
 NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
 
-# Jupyter notebook password, default is "roboflow"
-NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD", "roboflow")
+# Jupyter notebook token. A well-known default would give a shell to anyone who
+# can reach the notebook port, so an unset token is random per process.
+NOTEBOOK_PASSWORD = os.getenv("NOTEBOOK_PASSWORD") or secrets.token_urlsafe(24)
 
 # Jupyter notebook port, default is 9002
 NOTEBOOK_PORT = int(os.getenv("NOTEBOOK_PORT", 9002))
@@ -1251,6 +1253,21 @@ if OFFLINE_MODE and (
     raise ValueError(
         "OFFLINE_MODE is not supported together with dedicated or "
         "workspace-whitelist authentication because API keys cannot be mapped "
+        "to workspaces without API connectivity."
+    )
+
+# Every request must carry an API key of the server's workspace. The workspace
+# comes from WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT, else from the
+# workspace of ROBOFLOW_API_KEY. Self-hosted server entry points turn this on
+# by default (inference/server_defaults.py); in-process library use is
+# unaffected.
+REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT = str2bool(
+    os.getenv("REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT", "False")
+)
+if OFFLINE_MODE and REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT:
+    raise ValueError(
+        "OFFLINE_MODE is not supported together with "
+        "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT because API keys cannot be mapped "
         "to workspaces without API connectivity."
     )
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))

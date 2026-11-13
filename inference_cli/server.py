@@ -72,7 +72,8 @@ def start(
         typer.Option(
             "--roboflow-api-key",
             "-k",
-            help="Roboflow API key (default is None).",
+            envvar="ROBOFLOW_API_KEY",
+            help="Roboflow API key. The server accepts only API keys of this key's workspace.",
         ),
     ] = None,
     tunnel: Annotated[

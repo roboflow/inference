@@ -1,8 +1,11 @@
 import base64
 import concurrent
+import hashlib
+import hmac
 import logging
 import os
 import re
+import secrets
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -12,6 +15,7 @@ from time import sleep
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from uuid import uuid4
 
+import aiohttp
 import asgi_correlation_id
 import requests
 import uvicorn
@@ -34,6 +38,7 @@ from roboflow_workflows.execution_engine.introspection.workload_entities import 
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from inference import server_defaults
 from inference.core import logger
 from inference.core.constants import (
     MODEL_COLD_START_COUNT_HEADER,
@@ -162,6 +167,7 @@ from inference.core.env import (
     ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS,
     ALLOW_ORIGINS,
     API_BASE_URL,
+    API_KEY,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT,
@@ -214,6 +220,7 @@ from inference.core.env import (
     PRELOAD_API_KEY,
     PRELOAD_MODELS,
     PROFILE,
+    REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -238,12 +245,17 @@ from inference.core.exceptions import (
     ContentTypeMissing,
     FeatureDeprecatedError,
     InputImageLoadError,
+    MalformedRoboflowAPIResponseError,
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelDeploymentNotSupportedError,
     RequestDataContradiction,
+    RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRequestError,
+    RoboflowAPITimeoutError,
+    RoboflowAPIUnsuccessfulRequestError,
     WebRTCConfigurationError,
     WorkspaceLoadError,
 )
@@ -406,6 +418,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.debug_logs impo
     register_debug_session,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.server_defaults import is_loopback_name, url_hostname
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
@@ -444,6 +457,95 @@ class LambdaMiddleware(BaseHTTPMiddleware):
 
 
 AUTH_CACHE_TTL_SECONDS = 3600
+# How long an expired workspace grant keeps working while the Roboflow API
+# cannot be reached. Keys without a grant are refused until it can.
+AUTH_OUTAGE_GRACE_SECONDS = 24 * 3600
+
+# A browser session for the server's own pages. The Workflow Builder and the
+# dashboard are opened with an API key in the URL, but their embedded, prebuilt
+# frontends send their follow-up requests (/build/api, /logs, /model/registry)
+# with no key. Opening a page with a valid key sets this signed cookie, and the
+# browser then carries it on those same-origin requests so they authenticate.
+#
+# The secret is new each process, so the cookie cannot be forged and does not
+# survive a restart. The cookie is HttpOnly (JavaScript cannot read it) and
+# SameSite=Strict (a cross-site page, including one reaching the server through
+# DNS rebinding, cannot make the browser send it), so it grants only the
+# server's own pages the access the key already carries.
+SESSION_COOKIE_NAME = "roboflow_inference_session"
+SESSION_COOKIE_TTL_SECONDS = 8 * 3600
+_SESSION_COOKIE_SECRET = secrets.token_bytes(32)
+
+
+def issue_session_token(workspace_id: str, now: Optional[float] = None) -> str:
+    """Sign a session token granting `workspace_id` until the TTL elapses."""
+    expires_at = int(
+        (now if now is not None else time.time()) + SESSION_COOKIE_TTL_SECONDS
+    )
+    payload = f"{workspace_id}:{expires_at}".encode("utf-8")
+    signature = hmac.new(_SESSION_COOKIE_SECRET, payload, hashlib.sha256).digest()
+    return (
+        base64.urlsafe_b64encode(payload).decode("ascii")
+        + "."
+        + base64.urlsafe_b64encode(signature).decode("ascii")
+    )
+
+
+def read_session_token(
+    token: Optional[str], now: Optional[float] = None
+) -> Optional[str]:
+    """Return the workspace a valid, unexpired session token grants, else None."""
+    if not token or "." not in token:
+        return None
+    payload_part, _, signature_part = token.partition(".")
+    try:
+        payload = base64.urlsafe_b64decode(payload_part.encode("ascii"))
+        signature = base64.urlsafe_b64decode(signature_part.encode("ascii"))
+    except ValueError:
+        return None
+    expected = hmac.new(_SESSION_COOKIE_SECRET, payload, hashlib.sha256).digest()
+    if not hmac.compare_digest(signature, expected):
+        return None
+    workspace_id, _, expires_at = payload.decode("utf-8", "replace").rpartition(":")
+    if not workspace_id or not expires_at.isdigit():
+        return None
+    if int(expires_at) < (now if now is not None else time.time()):
+        return None
+    return workspace_id
+
+
+def set_session_cookie(response: Response, workspace_id: str) -> None:
+    """Start a browser session for the server's own pages on `response`."""
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        issue_session_token(workspace_id),
+        max_age=SESSION_COOKIE_TTL_SECONDS,
+        httponly=True,
+        samesite="strict",
+        path="/",
+    )
+
+
+def _is_roboflow_api_outage(error: Exception) -> bool:
+    """Tell an unreachable Roboflow API apart from one that refused the key."""
+    if isinstance(
+        error,
+        (
+            RoboflowAPIConnectionError,
+            RoboflowAPITimeoutError,
+            MalformedRoboflowAPIResponseError,
+            aiohttp.ClientError,
+        ),
+    ):
+        return True
+    status = getattr(error.__cause__, "status", None)
+    return (
+        isinstance(error, RoboflowAPIUnsuccessfulRequestError)
+        and isinstance(status, int)
+        and (status >= 500 or status in (408, 429))
+    )
+
+
 SHORT_AUTH_CACHE_TTL_SECONDS = 60
 REQUEST_RECEIVED_LOG_MESSAGE = "Request received"
 # Probe/health endpoints whose access-log lines are demoted to DEBUG.
@@ -467,6 +569,7 @@ if (
     and not (
         WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
         or DEDICATED_DEPLOYMENT_WORKSPACE_URL
+        or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT
     )
 ):
     # Logged rather than raised as a warning, because INFERENCE_WARNINGS_DISABLED must not
@@ -476,7 +579,7 @@ if (
         "blocks in its own process (ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True), so any client that can "
         "reach it can execute arbitrary code on this host. This is safe only while the server is reachable "
         "from trusted clients alone. Set ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False if you do not need "
-        "custom Python, and set WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT (or put your own authentication "
+        "custom Python, and set REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT=True (or put your own authentication "
         "in front of the server) if it is reachable from other machines. See "
         "https://docs.roboflow.com/deployment/self-hosted/inference-server/configuration/security"
     )
@@ -1302,10 +1405,117 @@ class HttpInterface(BaseInterface):
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
                 return response
 
-        if (
+        workspace_auth_enabled = bool(
             DEDICATED_DEPLOYMENT_WORKSPACE_URL
             or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
-        ):
+            or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT
+        )
+        # Without workspace API key checks, a loopback server trusts every caller
+        # that reaches it, and web pages open in this machine's browser reach it
+        # too. Refuse a Host header that is not a loopback name (DNS rebinding),
+        # requests relayed by a proxy, and requests from other sites: an Origin
+        # that is not loopback, ALLOW_ORIGINS (where "*" counts for nothing) or
+        # the Workflow Builder, or no Origin on a cross-site request.
+        local_callers_only = (
+            not workspace_auth_enabled
+            and not (LAMBDA or GCP_SERVERLESS)
+            and server_defaults.LOOPBACK_ONLY
+        )
+        if local_callers_only:
+            trusted_origins = set(ALLOW_ORIGINS)
+            if ENABLE_BUILDER:
+                trusted_origins.add(BUILDER_ORIGIN)
+            proxy_headers = (
+                "forwarded",
+                "x-forwarded-for",
+                "x-forwarded-host",
+                "x-real-ip",
+                "via",
+            )
+            # uvicorn prints http://0.0.0.0:<port>, which browsers on this
+            # machine also reach. It is an address, so DNS cannot rebind it.
+            local_host_names = {"0.0.0.0"}
+
+            @app.middleware("http")
+            async def refuse_requests_from_other_sites(request: Request, call_next):
+                headers = request.headers
+                origin = headers.get("origin")
+                if origin is None:
+                    other_site = headers.get("sec-fetch-site") == "cross-site"
+                else:
+                    origin_host = url_hostname(origin)
+                    other_site = origin not in trusted_origins and not (
+                        is_loopback_name(origin_host) or origin_host in local_host_names
+                    )
+                host = url_hostname(headers.get("host", "")) or ""
+                if (
+                    other_site
+                    or not (is_loopback_name(host) or host in local_host_names)
+                    or any(name in headers for name in proxy_headers)
+                ):
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "status": 403,
+                            "message": "This server has no workspace API key checks, "
+                            "so it only serves requests from this machine "
+                            f"(Host {host or 'missing'!r}, Origin {origin!r}).",
+                        },
+                    )
+                return await call_next(request)
+
+        if workspace_auth_enabled:
+            # Without a configured workspace, the server belongs to the workspace
+            # of its own ROBOFLOW_API_KEY, resolved on the first checked request.
+            server_workspaces = set(WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT or [])
+            if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                server_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+            no_workspace_message = (
+                "This server has no workspace, so it accepts no API key. Start it "
+                "with ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT, "
+                "or make it reachable from this machine only (-p 127.0.0.1:9001:9001 "
+                "with PUBLISHED_HOST=127.0.0.1, as `inference server start` does)."
+            )
+            server_has_no_workspace = not server_workspaces and not API_KEY
+            if server_has_no_workspace:
+                logger.error(
+                    "SECURITY: REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT is on. %s Until "
+                    "then every authenticated route answers 401.",
+                    no_workspace_message,
+                )
+            # The dashboard page is a static file. The Workflow Builder is not
+            # exempt: its page embeds the CSRF token that guards /build/api.
+            public_ui_paths = set()
+            if ENABLE_DASHBOARD:
+                public_ui_paths.update({"/dashboard.html", "/favicon.ico"})
+
+            async def allowed_workspaces() -> set:
+                if not server_workspaces and API_KEY:
+                    server_workspaces.add(
+                        await get_roboflow_workspace_async(api_key=API_KEY)
+                    )
+                return server_workspaces
+
+            async def resolve_authorized_workspace(api_key) -> Optional[str]:
+                # Best-effort check used only to decide whether to start a
+                # browser session, so it never raises and never returns 503: it
+                # reuses the auth cache and otherwise makes one Roboflow API call.
+                if not api_key:
+                    return None
+                entry = cached_api_keys.get(api_key)
+                if entry and entry.expires_at >= time.time():
+                    return entry.workspace_id if entry.status_code == 200 else None
+                try:
+                    workspace_id = await get_roboflow_workspace_async(api_key=api_key)
+                    if workspace_id in await allowed_workspaces():
+                        cached_api_keys[api_key] = AuthorizationCacheEntry(
+                            expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
+                            workspace_id=workspace_id,
+                        )
+                        return workspace_id
+                except Exception:
+                    return None
+                return None
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -1314,8 +1524,19 @@ class HttpInterface(BaseInterface):
                 # Host header (e.g. `Host: x?/docs`) cannot poison request.url.path
                 # and slip an authenticated route into the allowlist.
                 scope_path = request.scope["path"]
+                # A browser sends a CORS preflight as OPTIONS carrying both of
+                # these headers and no credentials; it must pass without an API
+                # key so the actual, authenticated request can follow. An
+                # ordinary OPTIONS request is not exempt, so a future functional
+                # OPTIONS route cannot inherit unauthenticated access.
+                is_cors_preflight = (
+                    request.method == "OPTIONS"
+                    and "origin" in request.headers
+                    and "access-control-request-method" in request.headers
+                )
                 skip_check = (
-                    request.method not in ["GET", "POST"]
+                    is_cors_preflight
+                    or scope_path in public_ui_paths
                     or scope_path
                     in [
                         "/",
@@ -1329,10 +1550,36 @@ class HttpInterface(BaseInterface):
                         "/openapi.json",  # needed for /docs and /redoc
                     ]
                     or scope_path.startswith("/static/")
-                    or scope_path.startswith("/_next/")
+                    or scope_path.startswith("/_next/static/")
+                )
+                session_workspace = read_session_token(
+                    request.cookies.get(SESSION_COOKIE_NAME)
                 )
                 if skip_check:
-                    return await call_next(request)
+                    response = await call_next(request)
+                    # Opening a server page with a valid key in the URL (e.g.
+                    # /dashboard.html?api_key=...) starts a browser session, so
+                    # the page's own follow-up requests then authenticate.
+                    if session_workspace is None and scope_path in public_ui_paths:
+                        page_workspace = await resolve_authorized_workspace(
+                            request.query_params.get("api_key")
+                        )
+                        if page_workspace:
+                            set_session_cookie(response, page_workspace)
+                    return response
+
+                # A valid session cookie, set when a page was opened with a key,
+                # authenticates the page's same-origin follow-up requests
+                # (/build/api, /logs, /model/registry). The cookie is HttpOnly
+                # and SameSite=Strict, so a cross-site page cannot send or read it.
+                if session_workspace is not None:
+                    response = await _call_next_with_assume_identity_authorised_workspace_db_id(
+                        request=request,
+                        call_next=call_next,
+                        workspace_db_id=None,
+                    )
+                    response.headers[WORKSPACE_ID_HEADER] = session_workspace
+                    return response
 
                 def _unauthorized_response(msg):
                     return JSONResponse(
@@ -1361,6 +1608,8 @@ class HttpInterface(BaseInterface):
                         pass
                 api_key = json_params.get("api_key", api_key)
 
+                if server_has_no_workspace:
+                    return _unauthorized_response(no_workspace_message)
                 if api_key is None:
                     return _unauthorized_response("Unauthorized api_key")
 
@@ -1378,22 +1627,49 @@ class HttpInterface(BaseInterface):
                             workspace_id = await get_roboflow_workspace_async(
                                 api_key=api_key
                             )
-                        allowed_workspaces = set()
-                        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
-                            allowed_workspaces.add(DEDICATED_DEPLOYMENT_WORKSPACE_URL)
-                        if WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT:
-                            allowed_workspaces.update(
-                                WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT
-                            )
-                        if workspace_id not in allowed_workspaces:
+                        if workspace_id not in await allowed_workspaces():
+                            cached_api_keys.pop(api_key, None)
                             return _unauthorized_response("Unauthorized api_key")
 
                         cached_api_keys[api_key] = AuthorizationCacheEntry(
                             expires_at=time.time() + AUTH_CACHE_TTL_SECONDS,
                             workspace_id=workspace_id,
                         )
-                    except (RoboflowAPINotAuthorizedError, WorkspaceLoadError):
-                        return _unauthorized_response("Unauthorized api_key")
+                    except (
+                        RoboflowAPIRequestError,
+                        MalformedRoboflowAPIResponseError,
+                        WorkspaceLoadError,
+                        aiohttp.ClientError,
+                    ) as error:
+                        if not _is_roboflow_api_outage(error):
+                            # A refused key (401, 402, 403, 404, 423, ...) must
+                            # not come back during a later outage.
+                            cached_api_keys.pop(api_key, None)
+                            return _unauthorized_response("Unauthorized api_key")
+                        # Fail closed: only a key granted before the outage
+                        # keeps working, and only for a bounded time. Read the
+                        # cache again: another request may have revoked it.
+                        cache_entry = cached_api_keys.get(api_key)
+                        if (
+                            cache_entry is None
+                            or cache_entry.status_code != 200
+                            or cache_entry.expires_at + AUTH_OUTAGE_GRACE_SECONDS
+                            < time.time()
+                        ):
+                            logger.warning(
+                                "Cannot check an API key against the Roboflow API: %s",
+                                error,
+                            )
+                            return JSONResponse(
+                                status_code=503,
+                                headers={"Retry-After": "30"},
+                                content={
+                                    "status": 503,
+                                    "message": "Cannot reach the Roboflow API to "
+                                    "check the API key. Try again later.",
+                                },
+                            )
+                        workspace_id = cache_entry.workspace_id
 
                 response = (
                     await _call_next_with_assume_identity_authorised_workspace_db_id(
@@ -1404,6 +1680,14 @@ class HttpInterface(BaseInterface):
                 )
                 if workspace_id:
                     response.headers[WORKSPACE_ID_HEADER] = workspace_id
+                    # Opening the Workflow Builder page with a key in the URL
+                    # starts a browser session, so the embedded builder's own
+                    # requests to /build/api, which carry no key, authenticate
+                    # through the cookie, and a reload that drops the query
+                    # string still works. Only the wrapper pages start a session;
+                    # ordinary API calls that pass a key do not.
+                    if scope_path == "/build" or scope_path.startswith("/build/edit"):
+                        set_session_cookie(response, workspace_id)
                 return response
 
         @app.middleware("http")
@@ -4750,6 +5034,22 @@ class HttpInterface(BaseInterface):
                     NotebookStartResponse: The response containing the URL of the jupyter lab server.
                 """
                 logger.debug(f"Reached /notebook/start")
+                if NOTEBOOK_ENABLED and not (
+                    workspace_auth_enabled or local_callers_only
+                ):
+                    # Jupyter runs arbitrary code, so its token is only handed
+                    # to callers that passed the workspace API key check, or
+                    # to local callers of a loopback server.
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "success": False,
+                            "message": "The notebook needs workspace API key checks. "
+                            "Set ROBOFLOW_API_KEY or WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT "
+                            "and keep REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT on (not OFFLINE_MODE), "
+                            "or bind the server to 127.0.0.1.",
+                        },
+                    )
                 if NOTEBOOK_ENABLED:
                     start_notebook()
                     if browserless:

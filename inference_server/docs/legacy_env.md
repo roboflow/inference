@@ -133,7 +133,62 @@ region falls back to `us` (`regions.py:65-72`). Environment is
 
 All three are permissive legacy defaults on the input boundary. The rows exist
 because the plan requires self-hosted defaults to equal legacy defaults; hosted
-pools that want the stricter value set it in infra env.
+pools that want the stricter value set it in infra env. On the server entry
+points, `server_defaults.py` runs first and sets `ALLOW_URL_TO_NON_GLOBAL_ADDRESSES`
+and `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` to `False`, so these two rows
+reach only in-process library use (`launcher.launch_inprocess()`) and Roboflow-hosted
+runtimes; see "Server defaults".
+
+## Server defaults - `server_defaults.py`
+
+The legacy server applies secure self-hosted defaults in its server entry points
+only (`inference/server_defaults.py`). The new server does the same with the same
+names and rules: `entrypoints/cpu_http.py`, `entrypoints/gpu_http.py` (the image
+entry points) and `python -m inference_server.app` call
+`apply_server_defaults()` before `apply_legacy_env()`. Library use through
+`launcher.launch_inprocess()` keeps the defaults of the tables above. Each value
+is applied with `os.environ.setdefault` after `./.env` is loaded, so an explicit
+environment variable or `./.env` entry wins. Nothing is applied under `LAMBDA`,
+`GCP_SERVERLESS` or `DEDICATED_DEPLOYMENT_WORKSPACE_URL`.
+
+| name | library default | server default | note |
+|---|---|---|---|
+| `REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT` | `False` | `True` | Not applied under `OFFLINE_MODE` (keys cannot be mapped to workspaces offline; setting both is a startup error), nor on a loopback-only server without `ROBOFLOW_API_KEY`, `API_KEY` or `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT`. When on, `hosted/dedicated_auth.py` runs and every request except CORS preflight (`OPTIONS`) outside its skip list, `/v2` included, needs an API key of `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT`, or else of the workspace of the server's own `ROBOFLOW_API_KEY` (looked up on the first checked request; a failed lookup is retried, an unreachable Roboflow API answers 503). Without either, every checked route answers 401 with a message that names the missing setting, and startup logs a `SECURITY` error |
+| `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS` | `True` | `False` | |
+| `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM` | `True` (`LEGACY_DEFAULTS`) | `False` | |
+| `ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES` | `True` | `False` | |
+| `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE` | `True` | `False` | |
+| `ALLOW_URL_TO_NON_GLOBAL_ADDRESSES` | `True` (`LEGACY_DEFAULTS`) | `False` | |
+| `VALIDATE_IMAGE_URL_REDIRECTS` | `False` | `True` | |
+| `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES` | `True` | `False` | |
+| `PUBLISHED_HOST` | unset | unset | The host address a container port is published on. Only this machine can connect when `PUBLISHED_HOST`, or without it `HOST`, is a loopback name (`localhost`, `127.0.0.0/8`, `::1`). A `HOST` or `PUBLISHED_HOST` set in `./.env` counts as exposed, because `run_uvicorn.sh` binds before Python reads `./.env` |
+
+Rules that depend on the bind address, as in the legacy server:
+
+- **Loopback only, no key checks.** Every request whose `Host` is not a loopback
+  name, whose `Origin` is not loopback, an `ALLOW_ORIGINS` entry other than `*`
+  or `BUILDER_ORIGIN` with `ENABLE_BUILDER`, that has `Sec-Fetch-Site: cross-site`
+  without an `Origin`, or that carries `Forwarded`, `X-Forwarded-For`,
+  `X-Forwarded-Host`, `X-Real-IP` or `Via`, is answered with 403
+  (`app.py:_LocalCallersOnlyMiddleware`). This keeps web pages open in the
+  machine's browser, DNS rebinding and relaying proxies away from a server that
+  trusts its callers.
+- **Exposed, no key checks.** Startup stops with an actionable message while
+  `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS`,
+  `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`,
+  `ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES`,
+  `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE` or
+  `ALLOW_UNSAFE_GSTREAMER_PIPELINES` is on. `ALLOW_NUMPY_INPUT` has no reader
+  in the new server, see (d).
+- **Notebook.** `GET /notebook/start` hands out the JupyterLab token only when
+  workspace API keys are checked or the server serves loopback callers only;
+  otherwise it answers 403.
+
+`hosted/dedicated_auth.py` used to check `GET` and `POST` only outside `/v2`, so
+`HEAD`, `PUT`, `DELETE` and `PATCH` requests to legacy-compatible routes passed
+without a key on dedicated and whitelisted deployments; it now checks every
+method except `OPTIONS`, and answers 503 instead of an error when the Roboflow
+API cannot be reached to check a key.
 
 ### Seed entries not carried
 
@@ -194,7 +249,7 @@ definition; the last column is the new reader.
 | `ALLOW_API_KEY_FROM_HEADERS` | `env.py:229` | `configuration.py:228-230`; when off, the legacy-compatible, Workflow and builder routes ignore the Bearer header key (`legacy/common.py`); hosted authorization (`hosted/common.py`) applies the same rule outside `/v2/`; `/v2/...` routes always read the header | `True` |
 | `ALLOW_NON_HTTPS_URL_INPUT` | `env.py:50` | `configuration.py:73` (also `inference_models/configuration.py:208`); applied on legacy-compatible routes and workflow image inputs (`legacy/common.py`) and on `/v2` image URLs (`framework/input_parsers/url_fetch.py`) | `False` |
 | `ALLOW_URL_INPUT_WITHOUT_FQDN` | `env.py:51` | `configuration.py:76` (also `inference_models/configuration.py:211`); applied on legacy-compatible routes and workflow image inputs (`legacy/common.py`) and on `/v2` image URLs (`framework/input_parsers/url_fetch.py`) | `False` |
-| `VALIDATE_IMAGE_URL_REDIRECTS` | `env.py:74` | `configuration.py:79`; on legacy-compatible routes and workflow image inputs redirect targets are checked against the URL rules only when it is on (`legacy/common.py`); `/v2` checks every redirect target regardless | `False` |
+| `VALIDATE_IMAGE_URL_REDIRECTS` | `env.py:74` | `configuration.py:79`; on legacy-compatible routes and workflow image inputs redirect targets are checked against the URL rules only when it is on (`legacy/common.py`); `/v2` checks every redirect target regardless | `False`; server entry points: `True` (see "Server defaults") |
 | `ALLOW_ORIGINS` | `env.py:191` | `configuration.py:187` | `*` |
 | `API_BASE_URL` | `env.py:195-198` | `configuration.py:75` | `https://api.roboflow.com` for the us/prod case; the module derives the other cases, see note 1 |
 | `ROBOFLOW_API_EXTRA_HEADERS` | `env.py:216` | `configuration.py:268` | unset |
@@ -289,9 +344,9 @@ definition; the last column is the new reader.
 | `SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED` | `env.py:693-695` | `configuration.py:434-436`; `ops/router.py`: registers `GET /secure-gateway/health` outside `LAMBDA` / `GCP_SERVERLESS` | `False` |
 | `SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT` | `env.py:700-702` | `configuration.py:437-439`; `ops/secure_gateway.py`: timeout in seconds of the gateway probe | `5` |
 | `ROBOFLOW_API_VERIFY_SSL` | `env.py:1397` | `configuration.py:440`; `ops/secure_gateway.py`: `False` disables certificate verification for the secure gateway probe, `platform_http._platform_request` and the direct platform calls in `workflows/host.py`, and logs one warning at startup; the aiohttp workspace lookups of `auth.py`, as in legacy, and the platform calls made inside the model packages always verify | `True` |
-| `NOTEBOOK_ENABLED` | `env.py:829` | `configuration.py:441`; `ops/router.py`: `GET /notebook/start` starts JupyterLab; the server images do not include JupyterLab, so the route answers an error until it is installed in the environment | `False` |
+| `NOTEBOOK_ENABLED` | `env.py:829` | `configuration.py:441`; `ops/router.py`: `GET /notebook/start` starts JupyterLab; the server images do not include JupyterLab, so the route answers an error until it is installed in the environment. The route answers 403 instead of the token unless the server checks workspace API keys or serves loopback callers only (see "Server defaults") | `False` |
 | `NOTEBOOK_PORT` | `env.py:835` | `configuration.py:442`; `ops/notebook.py` | `9002` |
-| `NOTEBOOK_PASSWORD` | `env.py:832` | `configuration.py:443`; `ops/notebook.py`: JupyterLab token and password, passed as single arguments | legacy `roboflow`; new: unset, and then a random token is generated once per process and returned by `GET /notebook/start` (redirect URL and `browserless` answer). Limitation: with `NUM_WORKERS` above 1 and no password set every worker process has its own token, so a worker that did not start JupyterLab reports a token JupyterLab does not accept; set `NOTEBOOK_PASSWORD` explicitly in that case |
+| `NOTEBOOK_PASSWORD` | `env.py:832` | `configuration.py:443`; `ops/notebook.py`: JupyterLab token and password, passed as single arguments | legacy `roboflow`; new: unset, and then a random token is generated once per process and returned by `GET /notebook/start` (redirect URL and `browserless` answer). With `NUM_WORKERS` above 1 and no password set, `run_uvicorn.sh` (images) and `python -m inference_server.app` generate one token and export it to every worker, so all workers report the token JupyterLab accepts |
 | `ENABLE_IN_MEMORY_LOGS` | `env.py:838` | `configuration.py:444`; `ops/memory_logs.py`: keeps the last 1000 log records for `GET /logs`, with the values of key-bearing parameters (`api_key`, `token`, `password`, ...) removed before a record is stored | `False` |
 | `METRICS_ENABLED` | `env.py:784-786` | `configuration.py`; `pingback.py`: `False` stops the periodic post to `METRICS_URL` and the recording of inferences for it; forced off under `LAMBDA`, `GCP_SERVERLESS` and offline mode | `True` |
 | `METRICS_INTERVAL` | `env.py:789` | `configuration.py`; `pingback.py`: seconds between posts, and the window of inferences each post carries; recorded inferences are kept for twice this long | `60` |
@@ -322,7 +377,7 @@ definition; the last column is the new reader.
 | `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES` | `env.py` | `host.py` | `1073741824` |
 | `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` | `env.py` | `host.py` | `33554432` |
 | `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` | `env.py` | `host.py` | `25000000` |
-| `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES` | `env.py:103` | `host.py:174` | `True` |
+| `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES` | `env.py:103` | `host.py:174` | `True`; server entry points: `False` (see "Server defaults") |
 | `POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES` | `env.py:110` | `host.py:180` | unset |
 | `POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES` | `env.py:122` | `host.py:183` | unset |
 | `KAFKA_WORKFLOWS_SINKS_ALLOW_USER_PROVIDED_BOOTSTRAP_SERVERS` | `env.py:136` | `host.py:186` | `True` |
@@ -350,7 +405,7 @@ definition; the last column is the new reader.
 | `WORKFLOWS_INNER_WORKFLOW_REMOTE_DISPATCH_REQUEST_TIMEOUT` | `env.py:1106` | `host.py:264` | `300.0` |
 | `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE` | `env.py:1109` | `host.py:254` | `1` |
 | `WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS` | `env.py:1112` | `host.py:257` | `8` |
-| `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS` | `env.py:1115` | `host.py:157` | `True` |
+| `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS` | `env.py:1115` | `host.py:157` | `True`; server entry points: `False` (see "Server defaults") |
 | `WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE` | `env.py:1120-1130` | `host.py:99-113` | `local` |
 | `WEBEXEC_JPEG_QUALITY` | `env.py:1135` | `host.py:340` | `95` |
 | `WEBEXEC_TRANSPORT` | `env.py:1140` | `host.py:341` | `http` |
@@ -368,8 +423,8 @@ definition; the last column is the new reader.
 | `MODAL_ANONYMOUS_WORKSPACE_NAME` | `env.py:1216` | `host.py:333` | `anonymous` |
 | `WORKFLOWS_ENFORCE_DENSE_INSTANCE_MASKS` | `env.py:1274` | `host.py:204` | `False` |
 | `WORKFLOWS_VLM_SEGMENTATION_MAX_POLYGON_VERTICES` | `env.py:1285` | `host.py:292` | `500` |
-| `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE` | `env.py:1313` | `host.py:161` | `True` |
-| `ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES` | `env.py:1316` | `host.py:164` | `True` |
+| `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE` | `env.py:1313` | `host.py:161` | `True`; server entry points: `False` (see "Server defaults") |
+| `ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES` | `env.py:1316` | `host.py:164` | `True`; server entry points: `False` (see "Server defaults") |
 | `WORKFLOW_BLOCKS_WRITE_DIRECTORY` | `env.py:1327` | `host.py:167` | unset |
 | `ROBOFLOW_API_REQUEST_TIMEOUT` | `env.py:1415-1417` | `host.py:420-421` | `120` |
 | `WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT` | `env.py:1473` | `host.py:148` | `60.0` |
@@ -555,7 +610,7 @@ No new package reads these. They never get an alias or a default row.
 | `CELERY_LOG_LEVEL` | `env.py:989` | legacy celery; none in the new stack |
 | `CORE_MODEL_BUCKET` | `env.py:927` | legacy AWS-era setting |
 | `DEDICATED_DEPLOYMENT_ID` | `env.py:1329` | legacy dedicated-deployment auth; the new `auth.py` validates keys against `API_BASE_URL` only; `configuration.py` reads it for the `hostname` and `dedicated_deployment_id` of usage rows |
-| `DEDICATED_DEPLOYMENT_WORKSPACE_URL` | `env.py:1225` | legacy dedicated-deployment auth |
+| `DEDICATED_DEPLOYMENT_WORKSPACE_URL` | `env.py:1225` | legacy dedicated-deployment auth; `configuration.py` reads it for the allow-list of `hosted/dedicated_auth.py`, and when set the server defaults are not applied |
 | `DEVICE` | `env.py:1223` | steers four legacy HF models only (`inference/models/qwen25vl`, `easy_ocr`, `doctr`, `sam3_3d`); `inference_models` `DEFAULT_DEVICE` (`configuration.py:43`) steers every model, so an alias would change models legacy never touched |
 | `DEVICE_ID` | `env.py:472` | legacy device management; `configuration.py` reads it for the `device_id` of usage rows |
 | `DISABLE_INFERENCE_CACHE` | `env.py:480` | legacy inference-result cache; none in the new stack |
@@ -575,7 +630,7 @@ No new package reads these. They never get an alias or a default row.
 | `FIX_BATCH_SIZE` | `env.py:580` | legacy ORT batch padding |
 | `GAZE_MAX_BATCH_SIZE` | `env.py:286` | gaze was removed; legacy keeps a 410 stub |
 | `GAZE_VERSION_ID` | `env.py:253` | gaze was removed |
-| `HOST` | `env.py:583` | legacy bind host; `app.py:358` hardcodes `0.0.0.0`, which is the legacy default |
+| `HOST` | `env.py:583` | legacy bind host; the new server reads it as the bind address of `python -m inference_server.app` and `run_uvicorn.sh` (default `0.0.0.0`) and, with `PUBLISHED_HOST`, to tell whether only this machine can connect (see "Server defaults") |
 | `HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT` | `env.py:1455` | legacy model manager lock |
 | `HUGGINGFACE_TOKEN` | `env.py:1222` | legacy HF token plumbing; no new package reads it |
 | `IGNORE_MODEL_DEPENDENCIES_WARNINGS` | `env.py:35` | legacy warning filter |
@@ -671,7 +726,7 @@ No new package reads these. They never get an alias or a default row.
 | `WEBRTC_WORKSPACE_STREAM_QUOTA_ENABLED` | `env.py:1598` | legacy WebRTC |
 | `WEBRTC_WORKSPACE_STREAM_TTL_SECONDS` | `env.py:1603` | legacy WebRTC |
 | `WORKFLOWS_REMOTE_EXECUTION_TIME_FORWARDING` | `env.py:646` | not present in `roboflow_workflows` |
-| `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT` | `env.py:1228` | legacy dedicated-deployment auth |
+| `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT` | `env.py:1228` | legacy dedicated-deployment auth; `configuration.py` reads it for the allow-list of `hosted/dedicated_auth.py` (see "Server defaults") |
 
 ## New-stack-only names that change behaviour relative to legacy
 

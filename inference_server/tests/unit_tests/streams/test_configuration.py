@@ -46,6 +46,7 @@ STREAM_ENV_NAMES = (
 )
 
 EXPLICIT_VALUES = {
+    "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM": "False",
     "STREAM_MANAGER_HOST": "0.0.0.0",
     "STREAM_MANAGER_PORT": "7171",
     "STREAM_MANAGER_SOCKET_TIMEOUT": "2.5",
@@ -128,6 +129,11 @@ EXPECTED_FIELDS = [
         "ALLOW_UNSAFE_GSTREAMER_PIPELINES",
         "allow_unsafe_gstreamer_pipelines",
         True,
+    ),
+    (
+        "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM",
+        "allow_local_video_files",
+        False,
     ),
     ("DEBUG_AIORTC_QUEUES", "debug_aiortc_queues", True),
     ("DEBUG_WEBRTC_PROCESSING_LATENCY", "debug_webrtc_processing_latency", True),

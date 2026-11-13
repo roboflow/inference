@@ -28,10 +28,17 @@ Extras cascade through `inference-model-manager` to `inference-models`. The
 ## Quick start
 
 ```bash
-python -m inference_server.app
+HOST=127.0.0.1 python -m inference_server.app
 ```
 
 Models load on first request via a direct in-process `ModelManager`.
+
+The server entry points apply secure defaults (`inference_server/server_defaults.py`):
+bound to loopback without `ROBOFLOW_API_KEY` the server serves only this machine;
+on any other address it requires an API key of its own workspace (set
+`ROBOFLOW_API_KEY` or `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT`). Custom
+Python, local files, environment variables and private network addresses are
+off unless enabled explicitly. See "Server defaults" in `docs/legacy_env.md`.
 
 ## Run in Docker
 
@@ -46,8 +53,13 @@ Run:
 ```bash
 docker run --rm -it \
   -p 9001:9001 \
+  -e ROBOFLOW_API_KEY=YOUR_API_KEY \
   inference-server:cpu
 ```
+
+Requests then need an API key of the same workspace. To serve only this machine
+without a key, publish the port on loopback instead:
+`-p 127.0.0.1:9001:9001 -e PUBLISHED_HOST=127.0.0.1`.
 
 ```bash
 curl -X POST "http://localhost:9001/v2/models/infer?model_id=yolov8n-640" \
@@ -81,7 +93,9 @@ without a code change here:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HOST` | `0.0.0.0` | HTTP bind address (`__main__` dev runner) |
+| `HOST` | `0.0.0.0` | HTTP bind address (`__main__` dev runner); a loopback address makes the server serve this machine only |
+| `PUBLISHED_HOST` | | Host address a container port is published on; takes the place of `HOST` when deciding whether only this machine can connect |
+| `REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT` | `True` on the server entry points | Every route outside the health and docs paths needs an API key of the server's workspace (`ROBOFLOW_API_KEY`) or of `WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT`; not applied under `OFFLINE_MODE` or on a loopback server without a key |
 | `PORT` | `9001` | HTTP port (`__main__` dev runner) |
 | `NUM_WORKERS` | `1` | uvicorn worker processes (`__main__` dev runner) |
 | `INFERENCE_GATEWAY` | `direct` | Gateway resolved by `gateway_resolver.resolve_gateway()` |

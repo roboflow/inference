@@ -1287,16 +1287,26 @@ def test_cors_exposes_legacy_response_headers():
         (
             "DEDICATED_DEPLOYMENT_WORKSPACE_URL",
             "ws-url",
-            "OFFLINE_MODE is not supported together with dedicated or "
-            "workspace-whitelist authentication because API keys cannot be "
-            "mapped to workspaces without API connectivity.",
+            "OFFLINE_MODE is not supported together with dedicated, "
+            "workspace-whitelist or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT "
+            "authentication because API keys cannot be mapped to workspaces "
+            "without API connectivity.",
         ),
         (
             "WORKSPACES_WHITELISTED_FOR_LOCAL_DEPLOYMENT",
             ["ws-a"],
-            "OFFLINE_MODE is not supported together with dedicated or "
-            "workspace-whitelist authentication because API keys cannot be "
-            "mapped to workspaces without API connectivity.",
+            "OFFLINE_MODE is not supported together with dedicated, "
+            "workspace-whitelist or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT "
+            "authentication because API keys cannot be mapped to workspaces "
+            "without API connectivity.",
+        ),
+        (
+            "REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT",
+            True,
+            "OFFLINE_MODE is not supported together with dedicated, "
+            "workspace-whitelist or REQUIRE_API_KEY_FOR_LOCAL_DEPLOYMENT "
+            "authentication because API keys cannot be mapped to workspaces "
+            "without API connectivity.",
         ),
     ],
 )

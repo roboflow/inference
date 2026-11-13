@@ -442,7 +442,7 @@ async def test_client_unload_all_models_async_when_successful_response_expected(
     api_url = "http://some.com"
     http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
     with aioresponses() as m:
-        m.post(f"{api_url}/model/clear", payload={"models": []})
+        m.post(f"{api_url}/model/clear?api_key=my-api-key", payload={"models": []})
 
         # when
         result = await http_client.unload_all_models_async()
@@ -474,7 +474,7 @@ async def test_client_unload_all_models_async_when_error_occurs() -> None:
 
     with aioresponses() as m:
         m.post(
-            f"{api_url}/model/clear",
+            f"{api_url}/model/clear?api_key=my-api-key",
             payload={"message": "Internal error."},
             status=500,
         )
@@ -482,6 +482,84 @@ async def test_client_unload_all_models_async_when_error_occurs() -> None:
         # when
         with pytest.raises(HTTPCallErrorError):
             _ = await http_client.unload_all_models_async()
+
+
+def test_client_unload_all_models_sends_key_in_query(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(f"{api_url}/model/clear", json={"models": []})
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    _ = http_client.unload_all_models()
+
+    # then
+    assert requests_mock.last_request.qs == {"api_key": ["my-api-key"]}
+
+
+def test_client_unload_methods_send_no_key_when_client_has_none(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(f"{api_url}/model/clear", json={"models": []})
+    requests_mock.post(f"{api_url}/model/remove", json={"models": []})
+    http_client = InferenceHTTPClient(api_url=api_url)
+
+    # when
+    _ = http_client.unload_all_models()
+    _ = http_client.unload_model(model_id="some/1")
+
+    # then
+    clear_request, remove_request = requests_mock.request_history
+    assert clear_request.qs == {}
+    assert remove_request.json() == {"model_id": "some/1"}
+    assert "Authorization" not in clear_request.headers
+
+
+@pytest.mark.asyncio
+async def test_client_unload_methods_async_send_no_key_when_client_has_none() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_url=api_url)
+    with aioresponses() as m:
+        m.post(f"{api_url}/model/clear", payload={"models": []})
+        m.post(f"{api_url}/model/remove", payload={"models": []})
+
+        # when
+        _ = await http_client.unload_all_models_async()
+        _ = await http_client.unload_model_async(model_id="some/1")
+
+        # then
+        assert [str(url) for _, url in m.requests] == [
+            f"{api_url}/model/clear",
+            f"{api_url}/model/remove",
+        ]
+        remove_call = m.requests[("POST", URL(f"{api_url}/model/remove"))][0]
+        assert remove_call.kwargs["json"] == {"model_id": "some/1"}
+
+
+def test_client_unload_methods_in_header_mode_send_key_only_in_header(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    requests_mock.post(f"{api_url}/model/clear", json={"models": []})
+    requests_mock.post(f"{api_url}/model/remove", json={"models": []})
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        InferenceConfiguration(api_key_transport="header")
+    )
+
+    # when
+    _ = http_client.unload_all_models()
+    _ = http_client.unload_model(model_id="some/1")
+
+    # then
+    clear_request, remove_request = requests_mock.request_history
+    assert clear_request.qs == {}
+    assert remove_request.json() == {"model_id": "some/1"}
+    for request in (clear_request, remove_request):
+        assert request.headers["Authorization"] == "Bearer my-api-key"
 
 
 def test_client_unload_single_model_in_v0_mode() -> None:
@@ -527,6 +605,7 @@ def test_client_unload_single_model_when_successful_response_expected(
     )
     assert requests_mock.last_request.json() == {
         "model_id": "some/1",
+        "api_key": "my-api-key",
     }
 
 
@@ -551,6 +630,7 @@ def test_client_unload_single_model_when_successful_response_expected_against_al
     )
     assert requests_mock.last_request.json() == {
         "model_id": "coco/3",
+        "api_key": "my-api-key",
     }
     assert (
         http_client.selected_model is None
@@ -581,6 +661,7 @@ async def test_client_unload_single_model_async_when_successful_response_expecte
             method="POST",
             json={
                 "model_id": "some/1",
+                "api_key": "my-api-key",
             },
             headers=DEFAULT_HEADERS,
         )
@@ -611,6 +692,7 @@ async def test_client_unload_single_model_async_when_successful_response_expecte
             method="POST",
             json={
                 "model_id": "coco/3",
+                "api_key": "my-api-key",
             },
             headers=DEFAULT_HEADERS,
         )
@@ -634,6 +716,7 @@ def test_client_unload_single_model_when_error_occurs(requests_mock: Mocker) -> 
         _ = http_client.unload_model(model_id="other/1")
     assert requests_mock.last_request.json() == {
         "model_id": "other/1",
+        "api_key": "my-api-key",
     }
 
 
@@ -657,6 +740,7 @@ async def test_client_unload_single_model_async_when_error_occurs() -> None:
             method="POST",
             json={
                 "model_id": "other/1",
+                "api_key": "my-api-key",
             },
             headers=DEFAULT_HEADERS,
         )

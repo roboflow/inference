@@ -1,3 +1,8 @@
+# Apply the self-hosted server defaults before anything reads inference.core.env.
+from inference.server_defaults import apply_self_hosted_server_defaults  # isort: skip
+
+apply_self_hosted_server_defaults()
+
 from redis import ConnectionPool, Redis
 from redis.asyncio import Redis as AsyncRedis
 
