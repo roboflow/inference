@@ -19,7 +19,12 @@ from inference_models.models.rfdetr.rfdetr_oriented_object_detection_onnx import
 
 
 def metadata():
-    return {"classHeading": {"plane": True, "stone": False}, "classHeadingRevision": 3}
+    return {"classHeading": {"plane": True, "stone": False}}
+
+
+def legacy_core_metadata():
+    """Return the payload of an older Core that still sends a heading revision."""
+    return {**metadata(), "classHeadingRevision": 3}
 
 
 def inference_config(size=64):
@@ -204,15 +209,28 @@ def test_nonfinite_predictions_are_rejected(tmp_path, name):
         model(np.zeros((64, 64, 3), np.uint8))
 
 
-@pytest.mark.parametrize("field", ["classHeading", "classHeadingRevision"])
-def test_missing_frozen_core_metadata_rejects(tmp_path, field):
+def test_missing_frozen_core_metadata_rejects(tmp_path):
     package(tmp_path)
-    value = metadata()
-    del value[field]
     with pytest.raises(ValueError):
         RFDetrForOrientedObjectDetectionONNX.from_pretrained(
-            str(tmp_path), oriented_box_metadata=value
+            str(tmp_path), oriented_box_metadata={}
         )
+
+
+def test_metadata_without_heading_revision_loads(tmp_path):
+    package(tmp_path)
+    loaded = RFDetrForOrientedObjectDetectionONNX.from_pretrained(
+        str(tmp_path), oriented_box_metadata=metadata()
+    )
+    assert loaded.metadata.model_dump() == metadata()
+
+
+def test_heading_revision_from_older_core_is_ignored(tmp_path):
+    package(tmp_path)
+    loaded = RFDetrForOrientedObjectDetectionONNX.from_pretrained(
+        str(tmp_path), oriented_box_metadata=legacy_core_metadata()
+    )
+    assert loaded.metadata.model_dump() == metadata()
 
 
 def test_no_heading_policy_is_inferred_from_four_way_head(tmp_path):
@@ -445,9 +463,12 @@ def test_unused_frozen_classes_are_retained_without_output_mapping(tmp_path):
     assert result.image_metadata["class_heading"]["unused"] is True
 
 
+@pytest.mark.parametrize(
+    "core_metadata", [metadata, legacy_core_metadata], ids=["current", "legacy"]
+)
 @pytest.mark.parametrize("task", ["oriented-object-detection", "obb-detection"])
 def test_core_metadata_and_standard_train_package_survive_cache_and_offline(
-    tmp_path, monkeypatch, requests_mock, task
+    tmp_path, monkeypatch, requests_mock, task, core_metadata
 ):
     from inference_models.configuration import ROBOFLOW_API_HOST
     from inference_models.models.auto_loaders import (
@@ -487,7 +508,7 @@ def test_core_metadata_and_standard_train_package_survive_cache_and_offline(
                 "modelId": "native/1",
                 "modelArchitecture": "rfdetr",
                 "taskType": task,
-                "orientedBoxMetadata": metadata(),
+                "orientedBoxMetadata": core_metadata(),
                 "modelPackages": [
                     {
                         "type": "external-model-package-v1",
@@ -610,6 +631,7 @@ def test_core_metadata_and_standard_train_package_survive_cache_and_offline(
         / "model_config.json"
     )
     contents = json.loads(manifest.read_text())
+    assert contents["oriented_box_metadata"] == metadata()
     contents["oriented_box_metadata"]["classHeading"]["plane"] = False
     manifest.write_text(json.dumps(contents))
     from inference_models.errors import ModelPackageAlternativesExhaustedError

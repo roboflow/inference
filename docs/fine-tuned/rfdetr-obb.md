@@ -13,8 +13,8 @@ variant `rfdetr-obb-preview-2xl`. The registry also accepts the producer's
 `obb-detection` task alias; responses use `oriented-object-detection`.
 
 The model metadata response supplies `orientedBoxMetadata` with a `classHeading`
-map and nonnegative `classHeadingRevision`, taken from the model's frozen dataset
-version. This field is optional for other tasks and required by the native OBB
+map, taken from the model's frozen dataset version. Other keys in it are ignored.
+This field is optional for other tasks and required by the native OBB
 loader. It follows the model through cached and offline loads. The runtime does
 not infer class heading capability from the graph's heading head.
 
