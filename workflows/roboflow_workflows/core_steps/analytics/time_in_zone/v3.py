@@ -343,8 +343,6 @@ class TimeInZoneBlockV3(WorkflowBlock):
                 detection[TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = np.array(
                     [ts_end - ts_start], dtype=np.float64
                 )
-            elif tracker_id in tracked_ids_in_zone:
-                del tracked_ids_in_zone[tracker_id]
             result_detections.append(detection)
         return {OUTPUT_KEY: sv.Detections.merge(result_detections)}
 
