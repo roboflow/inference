@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import inspect
 import json
+import math
 import os
 import sys
 import threading
@@ -98,6 +99,196 @@ def _safe_unpackb(raw: bytes) -> Any:
         max_array_len=1_000_000,
         max_map_len=1_000_000,
     )
+
+
+_BLOCK_STATE_MAX_BYTES = 1024 * 1024
+_BLOCK_STATE_MAX_DEPTH = 32
+_BLOCK_STATE_MAX_NODES = 200_000
+_BLOCK_STATE_MAX_CHARS = 1024 * 1024
+_BLOCK_STATE_MIN_INT = -(2**63)
+_BLOCK_STATE_MAX_INT = 2**63 - 1
+_BLOCK_STATE_MAX_WARNED_NAME_LENGTH = 64
+_BLOCK_STATE_MAX_WARNINGS = 1024
+_BLOCK_STATE_WARNED: set = set()
+_EMPTY_BLOCK_STATE_JSON = "{}"
+
+
+def _decode_block_state_json(block_state_json: Any) -> Dict[str, Any]:
+    """Parse the engine's ``block_state_json``; anything unusable seeds nothing."""
+    try:
+        state = json.loads(block_state_json)
+    except Exception:
+        return {}
+
+    if not isinstance(state, dict):
+        return {}
+
+    return state
+
+
+def _block_self_state(block_self: "_BlockSelf") -> Dict[str, Any]:
+    """The attributes a ``_BlockSelf`` holds; a function so user names cannot shadow it."""
+    state = dict(vars(block_self))
+
+    return state
+
+
+class _BlockSelf:
+    """The ``self`` a remote ``run(self, ...)`` receives, seeded with carried state."""
+
+    __slots__ = ("__dict__", "__workflow_context")
+
+    def __init__(self, workflow_context: Dict[str, Any], state: Dict[str, Any]):
+        self.__dict__.update(state)
+        self.__workflow_context = workflow_context
+
+    def get_workflow_context(self) -> Dict[str, Any]:
+        """Return a copy of the workflow context of the current call.
+
+        Returns:
+            Shallow copy of the context the engine sent with the request.
+        """
+        context = dict(self.__workflow_context)
+
+        return context
+
+
+def _short_state_name(name: str) -> str:
+    if len(name) <= _BLOCK_STATE_MAX_WARNED_NAME_LENGTH:
+        return name
+
+    digest = hashlib.sha1(name.encode("utf-8", "surrogatepass")).hexdigest()[:8]
+    short_name = f"{name[:_BLOCK_STATE_MAX_WARNED_NAME_LENGTH]}…{digest}"
+
+    return short_name
+
+
+def _find_uncarried_block_state(
+    state: Dict[Any, Any],
+) -> Optional[Tuple[str, str]]:
+    """Return ``(attribute, reason)`` for the first value outside plain JSON.
+
+    Every visited value and every string or key character counts against a
+    work budget, so state that shares sub-lists many times over is refused
+    before it is expanded by an encoder.
+    """
+    if len(state) > _BLOCK_STATE_MAX_NODES:
+        return "", "state is too large"
+
+    chars = 0
+    stack = []
+    for name, value in state.items():
+        if type(name) is not str:
+            return type(name).__name__, "attribute name is not a str"
+        chars += len(name)
+        if chars > _BLOCK_STATE_MAX_CHARS:
+            return name, "state is too large"
+        stack.append((name, value, 1))
+    stack.reverse()
+
+    nodes = len(stack)
+    while stack:
+        name, value, depth = stack.pop()
+        if depth > _BLOCK_STATE_MAX_DEPTH:
+            return name, "nested deeper than 32 levels"
+
+        value_type = type(value)
+        if value is None or value_type is bool:
+            continue
+
+        if value_type is int:
+            if not _BLOCK_STATE_MIN_INT <= value <= _BLOCK_STATE_MAX_INT:
+                return name, "int outside the signed 64-bit range"
+            continue
+
+        if value_type is float:
+            if not math.isfinite(value):
+                return name, "float is not finite"
+            continue
+
+        if value_type is str:
+            chars += len(value)
+            if chars > _BLOCK_STATE_MAX_CHARS:
+                return name, "state is too large"
+            continue
+
+        if value_type is not list and value_type is not dict:
+            return name, _short_state_name(value_type.__name__)
+
+        nodes += len(value)
+        if nodes > _BLOCK_STATE_MAX_NODES:
+            return name, "state is too large"
+
+        if value_type is list:
+            stack.extend((name, item, depth + 1) for item in reversed(value))
+            continue
+
+        for key in value:
+            if type(key) is not str:
+                return name, "dict key is not a str"
+            chars += len(key)
+        if chars > _BLOCK_STATE_MAX_CHARS:
+            return name, "state is too large"
+        stack.extend((name, item, depth + 1) for item in value.values())
+
+    return None
+
+
+def _encode_block_state(
+    state: Dict[Any, Any],
+) -> Tuple[str, Optional[Tuple[str, str]]]:
+    """Encode state as compact JSON, or ``"{}"`` plus the first reason it is refused."""
+    problem = _find_uncarried_block_state(state)
+    if problem is not None:
+        return _EMPTY_BLOCK_STATE_JSON, problem
+
+    try:
+        encoded = json.dumps(state, allow_nan=False, separators=(",", ":"))
+    except Exception:
+        return _EMPTY_BLOCK_STATE_JSON, ("", "not JSON encodable")
+
+    if len(encoded.encode("utf-8")) > _BLOCK_STATE_MAX_BYTES:
+        return _EMPTY_BLOCK_STATE_JSON, ("", "state is over 1 MiB encoded")
+
+    return encoded, None
+
+
+def _echo_block_state(
+    block_self: Optional[_BlockSelf],
+    seeded_state: Dict[str, Any],
+    *,
+    code_hash: str,
+    stderr_buf: StringIO,
+) -> str:
+    """Encode the state to echo, warning on the call's stderr once per refusal."""
+    try:
+        state = (
+            _block_self_state(block_self) if block_self is not None else seeded_state
+        )
+        encoded, problem = _encode_block_state(state)
+    except Exception:
+        encoded, problem = _EMPTY_BLOCK_STATE_JSON, ("", "state could not be inspected")
+    if problem is None:
+        return encoded
+
+    name, reason = problem
+    short_name = _short_state_name(name)
+    key = (code_hash, short_name, reason)
+    if key in _BLOCK_STATE_WARNED:
+        return encoded
+
+    if len(_BLOCK_STATE_WARNED) >= _BLOCK_STATE_MAX_WARNINGS:
+        _BLOCK_STATE_WARNED.clear()
+    _BLOCK_STATE_WARNED.add(key)
+    target = f"self.{short_name}" if short_name else "self"
+    stderr_buf.write(
+        f"custom Python block state not carried: {target} ({reason}); all self "
+        "state is rebuilt on the next call. Persisted state may only hold None, "
+        "bool, int, float, str, list and dict with str keys; convert numpy "
+        "values with int(), float() or .tolist().\n"
+    )
+
+    return encoded
 
 
 class _InputsDecodeError(Exception):
@@ -686,6 +877,7 @@ from datetime import datetime
         inputs_json = request.get("inputs_json", "{}")
         client_code_hash = request.get("code_hash")
         workflow_context = request.get("workflow_context") or {}
+        block_state_json = request.get("block_state_json")
 
         # Resolve the effective code hash. Two request modes are supported:
         #   1. Full code: ``code_str`` is present -> compute hash, compile if new.
@@ -919,6 +1111,11 @@ from datetime import datetime
                 return inputs
 
             inputs = deserialize_for_modal_remote_execution(inputs_json)
+            block_state = (
+                _decode_block_state_json(block_state_json)
+                if block_state_json is not None
+                else None
+            )
 
             # Call the user function
             if run_function_name not in namespace:
@@ -939,16 +1136,12 @@ from datetime import datetime
             # and the network round trip.
             execution_time_seconds = None
             started_at = time.perf_counter()
+            block_self = None
             try:
                 with capture_output() as (stdout_buf, stderr_buf):
                     # If function expects 'self' as first param, create a simple object to pass
                     if params and params[0] == "self":
-
-                        class BlockSelf:
-                            def get_workflow_context(self) -> Dict[str, Any]:
-                                return dict(workflow_context)
-
-                        block_self = BlockSelf()
+                        block_self = _BlockSelf(workflow_context, block_state or {})
                         result = user_function(block_self, **inputs)
                     else:
                         result = user_function(**inputs)
@@ -956,13 +1149,22 @@ from datetime import datetime
 
                 json_result = serialize_for_modal_remote_execution(result)
 
-                return {
+                response = {
                     "success": True,
                     "result": json_result,
                     "stdout": stdout_buf.getvalue() or None,
-                    "stderr": stderr_buf.getvalue() or None,
                     "execution_time_seconds": execution_time_seconds,
                 }
+                if block_state is not None:
+                    response["block_state"] = _echo_block_state(
+                        block_self,
+                        block_state,
+                        code_hash=code_hash,
+                        stderr_buf=stderr_buf,
+                    )
+                response["stderr"] = stderr_buf.getvalue() or None
+
+                return response
             except Exception as e:
                 # Taken before anything else in this handler, and only when the
                 # user function did not already report: serializing its result
@@ -1020,6 +1222,7 @@ from datetime import datetime
         inputs: dict,
         client_code_hash: str = "",
         workflow_context: Optional[Dict[str, Any]] = None,
+        block_state_json: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute user code for the WebSocket transport.
 
@@ -1074,33 +1277,43 @@ from datetime import datetime
         params = list(sig.parameters.keys())
 
         _workflow_context = workflow_context or {}
+        block_state = (
+            _decode_block_state_json(block_state_json)
+            if block_state_json is not None
+            else None
+        )
 
         # Measured around the user function only: the client bills this instead
         # of its own wall clock, which also covers serialization and the
         # network round trip.
         execution_time_seconds = None
         started_at = time.perf_counter()
+        block_self = None
         try:
             with capture_output() as (stdout_buf, stderr_buf):
                 if params and params[0] == "self":
-
-                    class BlockSelf:
-                        def get_workflow_context(self) -> Dict[str, Any]:
-                            return dict(_workflow_context)
-
-                    block_self = BlockSelf()
+                    block_self = _BlockSelf(_workflow_context, block_state or {})
                     result = user_function(block_self, **inputs)
                 else:
                     result = user_function(**inputs)
                 execution_time_seconds = time.perf_counter() - started_at
 
-            return {
+            response = {
                 "success": True,
                 "result": result,
                 "stdout": stdout_buf.getvalue() or None,
-                "stderr": stderr_buf.getvalue() or None,
                 "execution_time_seconds": execution_time_seconds,
             }
+            if block_state is not None:
+                response["block_state"] = _echo_block_state(
+                    block_self,
+                    block_state,
+                    code_hash=code_hash,
+                    stderr_buf=stderr_buf,
+                )
+            response["stderr"] = stderr_buf.getvalue() or None
+
+            return response
         except Exception as e:
             # See the HTTP path: taken first, and only when the user function
             # did not already report, so both branches measure the same span.
@@ -1427,6 +1640,7 @@ from datetime import datetime
             inputs_raw = request.get("inputs", {})
             client_code_hash = request.get("code_hash", "")
             workflow_context = request.get("workflow_context") or {}
+            block_state_json = request.get("block_state_json")
 
             # ``decode_failed`` is ONE of two positive proofs that the user's
             # code did not run (the other is ``never_ran``, set for control
@@ -1468,6 +1682,12 @@ from datetime import datetime
                     decode_failed = True
                     raise _InputsDecodeError(str(error)) from error
                 started_running = True
+                # Only when carried: the hook's test stubs predate the parameter.
+                state_kwargs = (
+                    {"block_state_json": block_state_json}
+                    if block_state_json is not None
+                    else {}
+                )
                 resp = Executor._run_user_code_ws(
                     executor_self,
                     code_str,
@@ -1476,6 +1696,7 @@ from datetime import datetime
                     inputs,
                     client_code_hash,
                     workflow_context,
+                    **state_kwargs,
                 )
                 # Control responses returned BEFORE the user's function is
                 # looked up: the block provably did not run, so its executed

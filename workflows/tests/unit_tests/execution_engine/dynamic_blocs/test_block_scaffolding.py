@@ -640,10 +640,10 @@ def test_run_wrapper_modal_arm_converts_kwargs_and_remote_result(
         manifest_description=_boundary_wiring_manifest_description(),
     )
     executor_instance = mock.MagicMock()
-    executor_instance.execute_remote.return_value = {
-        "result": _legacy_sv_fixture(),
-        "was_sv": True,
-    }
+    executor_instance.execute_remote_with_state.return_value = (
+        {"result": _legacy_sv_fixture(), "was_sv": True},
+        {},
+    )
 
     # when
     with mock.patch.object(
@@ -663,7 +663,7 @@ def test_run_wrapper_modal_arm_converts_kwargs_and_remote_result(
     # territory), not native objects
     import supervision as sv
 
-    sent_inputs = executor_instance.execute_remote.call_args.kwargs["inputs"]
+    sent_inputs = executor_instance.execute_remote_with_state.call_args.kwargs["inputs"]
     assert isinstance(
         sent_inputs["predictions"], sv.Detections
     ), "Modal arm must ship converted sv inputs"
@@ -699,7 +699,7 @@ def test_run_wrapper_modal_arm_is_passthrough_when_flag_off(
     legacy_input = _legacy_sv_fixture()
     remote_result = {"result": _legacy_sv_fixture(), "was_sv": True}
     executor_instance = mock.MagicMock()
-    executor_instance.execute_remote.return_value = remote_result
+    executor_instance.execute_remote_with_state.return_value = (remote_result, {})
 
     # when
     with mock.patch.object(
@@ -714,7 +714,7 @@ def test_run_wrapper_modal_arm_is_passthrough_when_flag_off(
     assert stub.calls == [None]
 
     # then - flag-off byte-parity: both legs are is-identity
-    sent_inputs = executor_instance.execute_remote.call_args.kwargs["inputs"]
+    sent_inputs = executor_instance.execute_remote_with_state.call_args.kwargs["inputs"]
     assert sent_inputs["predictions"] is legacy_input
     assert result is remote_result
 

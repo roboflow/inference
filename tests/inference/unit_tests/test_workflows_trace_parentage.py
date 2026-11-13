@@ -65,6 +65,7 @@ PROBE_TIMEOUT_SECONDS = 300
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _PROBE_TEMPLATE = r"""
+import gzip
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -137,12 +138,20 @@ class _FakeResponse:
     status_code = 200
     text = ""
 
+    def __init__(self, block_state_json=None):
+        self._block_state_json = block_state_json
+
     def json(self):
-        return {
+        response = {
             "success": True,
             "result": json.dumps({"result": True}),
             "execution_time_seconds": 0.1,
         }
+        # The webexec server echoes the `self` state it received; a client that
+        # sent state and gets no echo refuses the response as an old server.
+        if self._block_state_json is not None:
+            response["block_state"] = self._block_state_json
+        return response
 
 
 class _FakeSession:
@@ -154,7 +163,9 @@ class _FakeSession:
 
     def post(self, url, data=None, timeout=None, headers=None):
         self.headers_sent.append(dict(headers or {}))
-        return _FakeResponse()
+        body = gzip.decompress(data) if (headers or {}).get("Content-Encoding") == "gzip" else data
+        payload = json.loads(body) if body else {}
+        return _FakeResponse(block_state_json=payload.get("block_state_json"))
 
 
 def _spans_by_run():
