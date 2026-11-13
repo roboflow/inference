@@ -546,7 +546,7 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     # pure-Python deps against --find-links dist/.
     python -m pip install --no-deps dist/inference_gpu*.whl && \
     python -m pip install --find-links dist/ \
-        dist/roboflow_workflows-*.whl \
+        "$(ls dist/roboflow_workflows-*.whl)[databricks]" \
         dist/streamvision-*.whl \
         dist/inference_core*.whl \
         dist/inference_cli*.whl \

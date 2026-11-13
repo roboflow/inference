@@ -7,6 +7,43 @@
 - The opt-in RF-DETR `triton-fused-v1` postprocessor preserves reference integer
   boxes near half-pixel boundaries and reference ordering for equal-score
   detections, including after class and confidence filtering.
+- RF-DETR ONNX models with static input shapes (object detection, instance
+  segmentation, semantic segmentation and keypoints) no longer run out of GPU
+  memory at high input resolution on the CUDA execution provider. When
+  `CUDAExecutionProvider` is the first provider, the loader rewrites each unmasked
+  exported `MatMul -> Softmax -> MatMul` attention block into ONNX Runtime's
+  `com.microsoft.MultiHeadAttention` op, which runs a memory-efficient CUDA kernel
+  instead of building the full attention score tensor. The rewritten model is
+  cached in an `attention_fusion/` directory inside the model package and reused
+  on later loads. Other provider lists, models without a matching block, and a
+  fusion that fails (logged as a warning) load the original model.
+
+## `0.39.8`
+
+### Fixed
+
+- Pre-processing casts integer images to `torch.float32` before dividing by
+  `scaling_factor` in the stretch, center-crop and fit-longer-edge paths (numpy,
+  tensor and list inputs, and the letterbox batch). Integer division returned
+  `torch.get_default_dtype()`, so a process whose default dtype had been left at
+  `torch.bfloat16` sent bfloat16 inputs to ONNX models, which failed with
+  `ModelRuntimeError: model requires the input type to be torch.float32`.
+- RF-DETR pre-processing builds its numpy-path input tensor in `torch.float32`
+  instead of `TF.to_tensor`'s default dtype. With the default left at
+  `torch.bfloat16`, RF-DETR models were fed bfloat16-rounded inputs and returned
+  lower-precision predictions without raising an error.
+- Hugging Face model loads run inside a process-wide lock
+  (`torch_default_dtype_lock()` in `inference_models.models.common.torch`).
+  transformers' `from_pretrained` sets the process-global default dtype while it
+  builds a model and restores it afterwards. That is not thread-safe, and
+  overlapping loads (for example several bfloat16 VLMs loaded at once) could leave
+  the default stuck at `torch.bfloat16` for the rest of the process.
+- `AutoModel` loads check the default dtype after each model is built. If it is not
+  `torch.float32`, they log a warning naming the model and reset it.
+  `ModelManager` does not perform an additional reset after arbitrary model loads:
+  legacy Hugging Face loaders do not acquire the shared dtype lock, so another
+  model finishing could otherwise reset their temporary dtype mid-construction.
+  Legacy loader locking and recovery remain a follow-up.
 
 ## `0.39.7`
 
