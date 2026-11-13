@@ -52,13 +52,12 @@ jobs:
       - name: 📦 Install dependencies
         working-directory: inference_models
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install uv
+          python -m pip install -r ../.release/pypi/build-requirements.txt
       - name: 🔨 Build package
         working-directory: inference_models
         run: |
           python -m uv lock --check
-          python -m uv build --no-create-gitignore
+          python -m uv build --build-constraints ../.release/pypi/build-requirements.txt --no-create-gitignore
       - name: Verify published dependencies before upload
         if: ${{ github.event.inputs.publish == 'true' }}
         run: bash .release/pypi/dependencies.sh gate --directory inference_models/dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600

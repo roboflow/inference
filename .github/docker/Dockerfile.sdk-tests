@@ -3,7 +3,8 @@ FROM python:${PYTHON_VERSION}-slim-bookworm AS base
 RUN apt-get update && apt-get install -y --no-install-recommends \
     make git libgl1 libglib2.0-0 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
-RUN python -m pip install --no-cache-dir setuptools==83.0.0 wheel==0.45.1
+COPY .release/pypi/build-requirements.txt /build-requirements.txt
+RUN python -m pip install --no-cache-dir -r /build-requirements.txt
 WORKDIR /work
 
 # Install the SDK into a clean environment, without the CLI or test packages.
