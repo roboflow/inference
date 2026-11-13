@@ -927,3 +927,77 @@ def test_classes_replacement_tensor_native_string_predictions_with_negative_fall
     assert (
         predictions.image_metadata["class_names"][sys.maxsize] == "unreadable"
     ), "class_names map expected to resolve the fallback id to fallback_class_name"
+
+
+@pytest.mark.parametrize(
+    ("labels", "old_names", "kept", "expected_names"),
+    [
+        pytest.param(
+            ["LEFT", "RIGHT"],
+            [None, None],
+            [0, 1],
+            ["LEFT", "RIGHT"],
+            id="distinct-text",
+        ),
+        pytest.param(
+            [["RIGHT"], ["LEFT"]],
+            ["old", None],
+            [0, 1],
+            ["RIGHT", "LEFT"],
+            id="list-text",
+        ),
+        pytest.param(
+            ["SAME", "SAME"], ["old", "old"], [0, 1], ["SAME", "SAME"], id="same-text"
+        ),
+        pytest.param(
+            [None, "RIGHT"], ["old", "old"], [1], ["RIGHT"], id="filtered-row"
+        ),
+    ],
+)
+def test_classes_replacement_tensor_native_serialises_each_row_label(
+    labels, old_names, kept, expected_names
+) -> None:
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("inference_models")
+    from roboflow_workflows.core_steps.common.serializers_tensor import (
+        serialise_sv_detections,
+    )
+    from roboflow_workflows.core_steps.fusion.detections_classes_replacement.v1_tensor import (
+        DetectionsClassesReplacementBlockV1 as TensorBlock,
+    )
+
+    from inference_models.models.base.object_detection import (
+        Detections as NativeDetections,
+    )
+
+    boxes = [[0.0, 0.0, 10.0, 10.0], [20.0, 0.0, 30.0, 10.0]]
+    old_ids = ["first", "second"]
+    old_rows = [{"detection_id": old_id} for old_id in old_ids]
+    for row, old_name in zip(old_rows, old_names):
+        if old_name is not None:
+            row["class"] = old_name
+    detections = NativeDetections(
+        xyxy=torch.tensor(boxes),
+        class_id=torch.tensor([7, 7]),
+        confidence=torch.tensor([0.4, 0.9]),
+        image_metadata={"class_names": {7: "region"}, "image_dimensions": [40, 60]},
+        bboxes_metadata=[dict(row) for row in old_rows],
+    )
+
+    result = TensorBlock().run(
+        object_detection_predictions=detections,
+        classification_predictions=Batch(content=labels, indices=[(0, 0), (0, 1)]),
+        fallback_class_name=None,
+        fallback_class_id=None,
+    )["predictions"]
+
+    serialized = serialise_sv_detections(result)["predictions"]
+    assert [row["class"] for row in serialized] == expected_names
+    assert [row["class_id"] for row in serialized] == [0] * len(kept)
+    assert [row["confidence"] for row in serialized] == [1.0] * len(kept)
+    assert result.xyxy.tolist() == [boxes[index] for index in kept]
+    new_ids = {row["detection_id"] for row in serialized}
+    assert len(new_ids) == len(kept)
+    assert new_ids.isdisjoint(old_ids)
+    assert detections.bboxes_metadata == old_rows
+    assert detections.image_metadata["class_names"] == {7: "region"}
