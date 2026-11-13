@@ -1,14 +1,15 @@
 ---
 description: >-
   Draft GitHub PR descriptions in Roboflow format (Linear link, testing,
-  checklist). Invoke with @pr-description — not applied automatically.
+  checklist). Apply when creating or updating PRs or drafting PR descriptions.
 alwaysApply: false
 ---
 
 # Roboflow PR description
 
-Use this rule only when the user @mentions `pr-description` or asks to draft a
-PR body in Roboflow format. Do not apply for unrelated tasks.
+Use this rule whenever creating or updating a pull request or drafting its
+description for this repository. An explicit `pr-description` mention or request
+for Roboflow format is not required. Do not apply for unrelated tasks.
 
 ## Before writing
 
