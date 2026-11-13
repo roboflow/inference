@@ -16,8 +16,20 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.16`
+
+Bundled execution engine: `1.17.2`.
+
 ### Changed
 
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
+  releases that allow Pillow 13.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
@@ -42,6 +54,9 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 - Large inline reference images use chunked content fingerprints for cache keys,
   avoiding a full JSON copy of their image data on every warm lookup. Image
   contents, metadata, annotations, label order and provider still determine reuse.
@@ -54,27 +69,6 @@ for contributor and maintainer responsibilities.
 ### Execution engine
 
 - A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
-
-## `0.2.16`
-
-Bundled execution engine: `1.17.1`.
-
-### Changed
-
-- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
-  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
-  because Pillow 13 does not support it.
-- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
-  releases that allow Pillow 13.
-- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
-  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
-  newer.
-
-### Fixed
-
-- Workflows' standalone image codec now reports non-ASCII base64 payloads as
-  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
-- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 
 ## `0.2.15.post2`
 
