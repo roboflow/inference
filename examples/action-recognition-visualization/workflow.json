@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {"type": "WorkflowImage", "name": "image"},
+    {"type": "WorkflowParameter", "name": "model_id"},
+    {"type": "WorkflowParameter", "name": "display_mode", "default_value": "live"}
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_action_recognition_model@v1",
+      "name": "actions",
+      "images": "$inputs.image",
+      "model_id": "$inputs.model_id",
+      "background_inference": true
+    },
+    {
+      "type": "roboflow_core/action_recognition_visualization@v1",
+      "name": "display",
+      "image": "$inputs.image",
+      "timeline": "$steps.actions.timeline",
+      "analyzed_until_frame": "$steps.actions.analyzed_until_frame",
+      "display_mode": "$inputs.display_mode"
+    }
+  ],
+  "outputs": [
+    {"type": "JsonField", "name": "image", "selector": "$steps.display.image"},
+    {"type": "JsonField", "name": "actions", "selector": "$steps.display.actions"},
+    {"type": "JsonField", "name": "actions_frame_number", "selector": "$steps.display.actions_frame_number"},
+    {"type": "JsonField", "name": "displayed_frame_number", "selector": "$steps.display.displayed_frame_number"},
+    {"type": "JsonField", "name": "status", "selector": "$steps.display.status"},
+    {"type": "JsonField", "name": "analyzed_until_frame", "selector": "$steps.actions.analyzed_until_frame"},
+    {"type": "JsonField", "name": "model_error", "selector": "$steps.actions.error_status"}
+  ]
+}
