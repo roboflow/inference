@@ -156,7 +156,20 @@ def test_redacting_exporter_passes_clean_spans_through(configured_credentials):
 @pytest.mark.parametrize("semconv", ["", "http/dup"], ids=["default", "http-dup"])
 def test_setup_telemetry_keeps_credentials_out_of_exported_spans(semconv):
     script = textwrap.dedent(f"""
+        import importlib.util
         import json
+        import sys
+        import types
+
+        # The test extra has no OTLP exporter package, and the export target is
+        # replaced below anyway, so stand in for the module setup_telemetry imports.
+        exporter_module = "opentelemetry.exporter.otlp.proto.grpc.trace_exporter"
+        if importlib.util.find_spec("opentelemetry.exporter") is None:
+            parts = exporter_module.split(".")
+            for depth in range(2, len(parts) + 1):
+                name = ".".join(parts[:depth])
+                sys.modules[name] = types.ModuleType(name)
+            sys.modules[exporter_module].OTLPSpanExporter = object
 
         import requests
         import requests_mock
