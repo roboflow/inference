@@ -1,12 +1,13 @@
+import asyncio
 import socket
 
 import aiohttp
-
 import pytest
 import requests
 from urllib3.connectionpool import HTTPSConnectionPool
 
 from inference_sdk import config
+from inference_sdk.http.errors import InvalidURLImageInput, URLAddressNotAllowedError
 from inference_sdk.http.utils import url_utils
 from inference_sdk.http.utils.url_utils import (
     SSRFProtectedHTTPAdapter,
@@ -15,12 +16,13 @@ from inference_sdk.http.utils.url_utils import (
     resolve_and_validate_ips,
     validate_url_destination,
 )
-from inference_sdk.http.errors import InvalidURLImageInput, URLAddressNotAllowedError
 
 
 def _fake_getaddrinfo(ip: str):
     def _inner(host, port, *args, **kwargs):
-        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip, port))]
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip, port))
+        ]
 
     return _inner
 
@@ -333,6 +335,38 @@ async def test_fetch_url_bytes_async_translates_transport_error(monkeypatch) -> 
     with aioresponses() as m:
         m.get(url, exception=aiohttp.ClientConnectionError("boom"))
         with pytest.raises(HTTPClientError):
+            await url_utils.fetch_url_bytes_async(url)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("validate_redirects", [False, True])
+@pytest.mark.parametrize("message", ["", "image request timed out api_key=abcdefgh"])
+async def test_fetch_url_bytes_async_translates_total_timeout(
+    monkeypatch, validate_redirects: bool, message: str
+) -> None:
+    from aioresponses import aioresponses
+
+    from inference_sdk.http.errors import HTTPClientError
+
+    monkeypatch.setattr(config, "VALIDATE_IMAGE_URL_REDIRECTS", validate_redirects)
+    url = "https://some.com/file.jpg"
+    with aioresponses() as mocked_responses:
+        mocked_responses.get(url, exception=asyncio.TimeoutError(message))
+        with pytest.raises(HTTPClientError, match="timed out") as raised:
+            await url_utils.fetch_url_bytes_async(url)
+
+    assert isinstance(raised.value.__cause__, asyncio.TimeoutError)
+    assert "abcdefgh" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_bytes_async_preserves_cancellation() -> None:
+    from aioresponses import aioresponses
+
+    url = "https://some.com/file.jpg"
+    with aioresponses() as mocked_responses:
+        mocked_responses.get(url, exception=asyncio.CancelledError())
+        with pytest.raises(asyncio.CancelledError):
             await url_utils.fetch_url_bytes_async(url)
 
 
