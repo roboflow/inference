@@ -11,7 +11,6 @@ To run these tests:
 """
 
 import os
-import subprocess
 import sys
 import time
 
@@ -19,6 +18,9 @@ import numpy as np
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from tests.workflows.integration_tests.execution.modal_platform_retry import (
+    run_with_modal_platform_retries,
+)
 
 # Skip all tests if Modal credentials are not present
 MODAL_TOKEN_ID = os.getenv("MODAL_TOKEN_ID")
@@ -98,7 +100,7 @@ print("RESULT_END")
         except Exception:
             pass
 
-        result = subprocess.run(
+        result = run_with_modal_platform_retries(
             [sys.executable, temp_file],
             capture_output=True,
             text=True,
