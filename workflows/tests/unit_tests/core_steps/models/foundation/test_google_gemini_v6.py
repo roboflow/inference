@@ -15,12 +15,23 @@ import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common import vlm_reference_examples
-from roboflow_workflows.core_steps.common.vlm_reference_examples import ReferenceExample
+from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    SHARED_REFERENCE_PARTS_CACHE,
+    ReferenceExample,
+)
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     DETECTION_BOX_FORMAT,
+    GEMINI_MODELS,
+    MODEL_VERSION_IDS,
+    MODEL_VERSION_METADATA,
+    MODELS_SUPPORTING_NATIVE_CODE_EXECUTION,
+    SEGMENTATION_MODEL_IDS,
     BlockManifest,
     GoogleGeminiBlockV6,
+    prepare_generation_config,
+    prepare_instance_segmentation_prompt,
     prepare_object_detection_prompt,
+    run_gemini_prompting,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -59,6 +70,14 @@ IMAGE_WIDTH = 800
 IMAGE_HEIGHT = 400
 DETECTION_OUTPUT = json.dumps([{"box_2d": [250, 100, 750, 500], "label": "cat"}])
 EXPECTED_XYXY = [80.0, 100.0, 400.0, 300.0]
+
+
+@pytest.fixture(autouse=True)
+def _empty_reference_parts_cache():
+    # Every block instance of the process shares this cache.
+    SHARED_REFERENCE_PARTS_CACHE.clear()
+    yield
+    SHARED_REFERENCE_PARTS_CACHE.clear()
 
 
 def _build_image(
@@ -318,7 +337,10 @@ def test_manifest_accepts_gemini_3_8_flash() -> None:
 
 @pytest.mark.parametrize("model", ["gemini-2.5-pro", "gemini-3.8-flash"])
 def test_segmentation_rejects_other_gemini_models(model: str) -> None:
-    with pytest.raises(ValueError, match="only for gemini-4-argon"):
+    with pytest.raises(
+        ValueError,
+        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+    ):
         BlockManifest.model_validate(
             {
                 "type": "roboflow_core/google_gemini@v6",
@@ -486,13 +508,233 @@ def test_argon_segmentation_block_and_empty_output() -> None:
 
 
 def test_segmentation_runtime_rejects_resolved_other_model() -> None:
-    with pytest.raises(ValueError, match="only for gemini-4-argon"):
+    with pytest.raises(
+        ValueError,
+        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+    ):
         _run_block(
             task_type="instance-segmentation",
             raw_output="[]",
             image=_build_image(),
             classes=["ring"],
         )
+
+
+CARBON_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"]
+
+
+def _manifest_data(model_version: str, **overrides) -> dict:
+    return {
+        "type": "roboflow_core/google_gemini@v6",
+        "name": "model",
+        "images": "$inputs.image",
+        "task_type": "unconstrained",
+        "prompt": "describe",
+        "model_version": model_version,
+        **overrides,
+    }
+
+
+def _segmentation_manifest_data(model_version: str) -> dict:
+    return {
+        "type": "roboflow_core/google_gemini@v6",
+        "name": "segment",
+        "images": "$inputs.image",
+        "task_type": "instance-segmentation",
+        "model_version": model_version,
+        "classes": ["ring"],
+    }
+
+
+def _run_segmentation(model_version: str) -> dict:
+    image = _build_image(width=2400, height=1200)
+    with patch(EXECUTE_REQUESTS_SEAM, return_value=[]) as execute:
+        run_gemini_prompting(
+            roboflow_api_key=None,
+            platform_client=None,
+            images=[image.to_inference_format()],
+            task_type="instance-segmentation",
+            prompt=None,
+            output_structure=None,
+            classes=["ring"],
+            google_api_key="key",
+            model_version=model_version,
+            max_tokens=32768,
+            temperature=0,
+            thinking_level="low",
+            google_code_execution=False,
+            max_concurrent_requests=1,
+        )
+    return execute.call_args.kwargs["gemini_prompts"][0]
+
+
+def test_carbon_is_second_listed_model() -> None:
+    assert GEMINI_MODELS[1]["id"] == "gemini-4-carbon"
+    assert MODEL_VERSION_IDS[1] == "gemini-4-carbon"
+    assert MODEL_VERSION_METADATA["gemini-4-carbon"]["name"] == "Gemini 4 Carbon"
+
+
+def test_segmentation_models_are_argon_carbon_and_hydrogen() -> None:
+    assert SEGMENTATION_MODEL_IDS == {
+        "gemini-4-argon",
+        "gemini-4-carbon",
+        "gemini-4-hydrogen",
+    }
+
+
+@pytest.mark.parametrize("level", CARBON_THINKING_LEVELS)
+def test_carbon_accepts_its_thinking_levels(level: str) -> None:
+    manifest = BlockManifest.model_validate(
+        _manifest_data("gemini-4-carbon", thinking_level=level)
+    )
+
+    assert manifest.thinking_level == level
+
+
+def test_carbon_rejects_minimal_thinking_level() -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            _manifest_data("gemini-4-carbon", thinking_level="minimal")
+        )
+
+
+@pytest.mark.parametrize("level", ["xhigh", "max"])
+def test_extended_thinking_levels_rejected_for_other_models(level: str) -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            _manifest_data("gemini-4-argon", thinking_level=level)
+        )
+
+
+@pytest.mark.parametrize("level", ["xhigh", "max"])
+def test_extended_thinking_levels_accepted_for_selector_model(level: str) -> None:
+    manifest = BlockManifest.model_validate(
+        _manifest_data("$inputs.model", thinking_level=level)
+    )
+
+    assert manifest.thinking_level == level
+
+
+@pytest.mark.parametrize("level", ["xhigh", "max"])
+def test_generation_config_carries_extended_thinking_level(level: str) -> None:
+    config = prepare_generation_config(
+        model_version="gemini-4-carbon",
+        max_tokens=None,
+        temperature=None,
+        thinking_level=level,
+    )
+
+    assert config["thinking_config"] == {"thinking_level": level}
+
+
+def test_carbon_segmentation_manifest_and_request() -> None:
+    manifest = BlockManifest.model_validate(
+        _segmentation_manifest_data("gemini-4-carbon")
+    )
+    outputs = {output.name: output.kind for output in manifest.get_actual_outputs()}
+    assert RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND in outputs["predictions"]
+
+    payload = _run_segmentation("gemini-4-carbon")
+
+    component = payload["generationConfig"]["response_schema"]["items"]["properties"][
+        "mask"
+    ]["items"]
+    assert set(component["required"]) == {"outer", "holes"}
+
+
+def test_carbon_segmentation_prompt_accepts_model() -> None:
+    payload = prepare_instance_segmentation_prompt(
+        base64_image="aW1hZ2U=",
+        classes=["ring"],
+        model_version="gemini-4-carbon",
+        temperature=0,
+        thinking_level="low",
+        max_tokens=1024,
+    )
+
+    assert "response_schema" in payload["generationConfig"]
+
+
+def test_segmentation_prompt_rejects_other_model() -> None:
+    with pytest.raises(
+        ValueError, match="gemini-4-argon, gemini-4-carbon or gemini-4-hydrogen"
+    ):
+        prepare_instance_segmentation_prompt(
+            base64_image="aW1hZ2U=",
+            classes=["ring"],
+            model_version="gemini-3.8-flash",
+            temperature=0,
+            thinking_level="low",
+            max_tokens=1024,
+        )
+
+
+def test_run_gemini_prompting_rejects_segmentation_for_other_model() -> None:
+    with pytest.raises(
+        ValueError,
+        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+    ):
+        _run_segmentation("gemini-3.8-flash")
+
+
+def test_hydrogen_is_first_listed_model() -> None:
+    assert GEMINI_MODELS[0]["id"] == "gemini-4-hydrogen"
+    assert MODEL_VERSION_IDS[0] == "gemini-4-hydrogen"
+    assert MODEL_VERSION_METADATA["gemini-4-hydrogen"]["name"] == "Gemini 4 Hydrogen"
+
+
+@pytest.mark.parametrize("level", CARBON_THINKING_LEVELS)
+def test_hydrogen_accepts_its_thinking_levels(level: str) -> None:
+    manifest = BlockManifest.model_validate(
+        _manifest_data("gemini-4-hydrogen", thinking_level=level)
+    )
+
+    assert manifest.thinking_level == level
+
+
+def test_hydrogen_rejects_minimal_thinking_level() -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            _manifest_data("gemini-4-hydrogen", thinking_level="minimal")
+        )
+
+
+def test_hydrogen_does_not_support_native_code_execution() -> None:
+    assert "gemini-4-hydrogen" not in MODELS_SUPPORTING_NATIVE_CODE_EXECUTION
+
+
+def test_hydrogen_segmentation_manifest_and_request() -> None:
+    manifest = BlockManifest.model_validate(
+        _segmentation_manifest_data("gemini-4-hydrogen")
+    )
+    outputs = {output.name: output.kind for output in manifest.get_actual_outputs()}
+    assert RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND in outputs["predictions"]
+
+    payload = _run_segmentation("gemini-4-hydrogen")
+
+    component = payload["generationConfig"]["response_schema"]["items"]["properties"][
+        "mask"
+    ]["items"]
+    assert set(component["required"]) == {"outer", "holes"}
+
+
+def test_hydrogen_segmentation_prompt_accepts_model() -> None:
+    payload = prepare_instance_segmentation_prompt(
+        base64_image="aW1hZ2U=",
+        classes=["ring"],
+        model_version="gemini-4-hydrogen",
+        temperature=0,
+        thinking_level="low",
+        max_tokens=1024,
+    )
+
+    assert "response_schema" in payload["generationConfig"]
+
+
+def test_run_gemini_prompting_accepts_segmentation_for_hydrogen() -> None:
+    payload = _run_segmentation("gemini-4-hydrogen")
+
+    assert "response_schema" in payload["generationConfig"]
 
 
 def _reference_example(box_class: str = "cat") -> dict:
@@ -633,7 +875,7 @@ def test_run_accepts_a_numpy_reference_image() -> None:
     assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
 
 
-def test_reference_images_load_once_per_block_instance() -> None:
+def test_reference_images_load_once_for_all_block_instances() -> None:
     # given
     first_block = GoogleGeminiBlockV6(api_key="rf-key")
     second_block = GoogleGeminiBlockV6(api_key="rf-key")
@@ -644,14 +886,17 @@ def test_reference_images_load_once_per_block_instance() -> None:
         "load_image",
         side_effect=vlm_reference_examples.load_image,
     ) as load_image:
+        _, first_parts = _run_detection_with_mock(
+            [_reference_example()], block=first_block
+        )
         _run_detection_with_mock([_reference_example()], block=first_block)
-        _run_detection_with_mock([_reference_example()], block=first_block)
-        loads_of_the_first_block = load_image.call_count
-        _run_detection_with_mock([_reference_example()], block=second_block)
+        _, second_parts = _run_detection_with_mock(
+            [_reference_example()], block=second_block
+        )
 
     # then
-    assert loads_of_the_first_block == 1
-    assert load_image.call_count == 2
+    assert load_image.call_count == 1
+    assert second_parts[:3] == first_parts[:3]
 
 
 def test_run_rejects_resolved_reference_examples_for_other_tasks() -> None:

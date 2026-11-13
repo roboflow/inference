@@ -251,8 +251,9 @@ def test_runtime_pins_fail_before_network(
     assert not (candidate / "dist/sdk-receipt.json").exists()
 
 
-def test_runtime_exact_pin_allows_consumer_gate(candidate, monkeypatch):
-    _runtime_wheels(candidate)
+@pytest.mark.parametrize("pin", [VERSION, "9.8.7-rc2"], ids=["normalized", "alias"])
+def test_runtime_exact_pin_allows_consumer_gate(candidate, monkeypatch, pin):
+    _runtime_wheels(candidate, requirements=[f"inference-sdk=={pin}"])
     calls = _registry(monkeypatch)
     release._run("gate-sdk", wait_seconds=0)
     assert len(calls) == 2
