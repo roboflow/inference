@@ -269,6 +269,14 @@ Clips come in and decode through the same video input as
 `/infer/action_recognition`: URL or base64, the same URL policy and
 `MAX_VIDEO_DOWNLOAD_SIZE_MB`, a header probe, then one sequential decode.
 
+In both server stacks, offline clips must be self-contained files. The shared
+PyAV decoder accepts MP4/MOV, Matroska/WebM, AVI, MPEG-TS/PS, Ogg, FLV, ASF and
+raw H.264/HEVC. It rejects HLS/DASH playlists, concat manifests, image sequences
+and external media references with HTTP 400. An allowed URL must return the
+video itself, not a playlist pointing to other files or URLs. These restrictions
+apply to SAM3 embedding and action recognition (including the generic model
+route); camera and live-stream inputs use their own decoding paths.
+
 Every segment and propagate request carries all the clicks; the server keeps
 only the clip (preprocessed frames and per-frame encoder output). A call on a
 clip that was never embedded or was evicted answers 400 `No video embedded`.

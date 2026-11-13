@@ -1,6 +1,6 @@
 import contextlib
 from types import SimpleNamespace
-from typing import List, Optional
+from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -341,14 +341,14 @@ def test_early_decode_end_clips_timeline_candidates_and_metadata(
     )
     frame = np.zeros((8, 8, 3), dtype=np.uint8)
     capture = MagicMock()
-    capture.isOpened.return_value = True
-    capture.read.side_effect = [(True, frame)] * 30 + [(False, None)]
+    capture.__enter__.return_value = capture
+    capture.read.side_effect = [frame] * 30 + [None]
     request = _request()
     request.include_candidates = include_candidates
 
     with patch(f"{MODULE}.video_source_path") as source_path, patch(
         f"{MODULE}.probe_video", return_value=(30.0, reported_count)
-    ), patch("inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture):
+    ), patch("inference.core.utils.video_utils.open_video", return_value=capture):
         source_path.return_value.__enter__.return_value = "/tmp/clip"
         response = _adapter(model).infer_from_request(request)
 
@@ -357,7 +357,7 @@ def test_early_decode_end_clips_timeline_candidates_and_metadata(
     assert response.timeline[0].end_frame_idx == 29
     if include_candidates:
         assert response.candidates[0].end_frame_idx == 29
-    capture.release.assert_called_once()
+    capture.__exit__.assert_called_once()
 
 
 def test_the_wire_shape_names_the_class_field_class() -> None:
@@ -482,23 +482,21 @@ def test_cancellation_after_one_window_closes_decoder_and_source(monkeypatch):
 
     model = CancellingModel([], ["walk"], VideoSampling(window_seconds=4, sample_fps=4))
     capture = MagicMock()
-    capture.isOpened.return_value = True
-    capture.read.return_value = (True, np.zeros((8, 8, 3), dtype=np.uint8))
+    capture.__enter__.return_value = capture
+    capture.read.return_value = np.zeros((8, 8, 3), dtype=np.uint8)
     control = VideoProcessingControl(
         timeout_seconds=60, is_disconnected=lambda: state["cancelled"]
     )
     monkeypatch.setattr(adapters, "video_source_path", source)
     monkeypatch.setattr(adapters, "probe_video", lambda **kwargs: (4.0, 128))
 
-    with patch(
-        "inference.core.utils.video_utils.cv2.VideoCapture", return_value=capture
-    ):
+    with patch("inference.core.utils.video_utils.open_video", return_value=capture):
         with pytest.raises(VideoProcessingCancelledError):
             _adapter(model).infer_from_request(_request(), processing_control=control)
 
     assert len(model.calls) == 1
     assert state["source_closed"]
-    capture.release.assert_called_once()
+    capture.__exit__.assert_called_once()
 
 
 def test_an_untrained_model_is_read_at_the_1080p_ceiling() -> None:
