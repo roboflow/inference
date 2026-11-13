@@ -74,8 +74,10 @@ from .decorator_helpers import (
     get_workflow_block_resource_details_from_kwargs,
     get_workflow_block_resource_id_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    read_batch_billing_context,
     read_source_tags_bound_to_call,
     resolve_workflow_block_execution,
+    usage_batch_billing_context,
     usage_billing_suppressed,
     usage_source_tags,
     usage_workflow_is_preview,
@@ -195,6 +197,7 @@ class UsageCollector:
                     str,
                     Optional[str],
                     Optional[int],
+                    Optional[str],
                 ],
                 Dict[str, Any],
             ],
@@ -377,6 +380,7 @@ class UsageCollector:
         str,
         Optional[str],
         Optional[int],
+        Optional[str],
     ]:
         outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
         return (
@@ -387,6 +391,7 @@ class UsageCollector:
             outcome,
             error_type,
             error_status_code,
+            (resource_details or {}).get("billing_context"),
         )
 
     @classmethod
@@ -412,6 +417,11 @@ class UsageCollector:
         ]
         if any(tag is not None for tag in source_tags):
             usage_key = f"{usage_key}:source_tags={sha256_hash(json.dumps(source_tags), length=64)}"
+        billing_context = (resource_details or {}).get("billing_context")
+        if billing_context is not None:
+            usage_key = (
+                f"{usage_key}:billing_context={sha256_hash(billing_context, length=64)}"
+            )
         if stream_session_id:
             usage_key = f"{usage_key}:{stream_session_id}"
         return usage_key
@@ -948,6 +958,10 @@ class UsageCollector:
             resource_id = "unknown"
             category = "unknown"
 
+        billing_context = usage_batch_billing_context.get()
+        if billing_context is not None:
+            resource_details["billing_context"] = billing_context
+
         source_info = get_source_info_from_kwargs(func_kwargs)
         if source_info:
             resource_details["source_info"] = source_info
@@ -1090,6 +1104,12 @@ class UsageCollector:
             ) -> T:
                 # Bound once, then held for the call and its usage recording, so
                 # nested decorators inherit the caller's billing intent.
+                batch_context = read_batch_billing_context(func, args, kwargs)
+                batch_token = (
+                    usage_batch_billing_context.set(batch_context)
+                    if batch_context is not None
+                    else None
+                )
                 authenticated_opt_out = call_carries_authenticated_non_billable_intent(
                     func, args, kwargs
                 )
@@ -1173,6 +1193,8 @@ class UsageCollector:
                         usage_workflow_is_preview.reset(preview_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
+                    if batch_token is not None:
+                        usage_batch_billing_context.reset(batch_token)
                     if source_token is not None:
                         usage_source_tags.reset(source_token)
 
@@ -1189,6 +1211,12 @@ class UsageCollector:
             ) -> T:
                 # Bound once, then held for the call and its usage recording, so
                 # nested decorators inherit the caller's billing intent.
+                batch_context = read_batch_billing_context(func, args, kwargs)
+                batch_token = (
+                    usage_batch_billing_context.set(batch_context)
+                    if batch_context is not None
+                    else None
+                )
                 authenticated_opt_out = call_carries_authenticated_non_billable_intent(
                     func, args, kwargs
                 )
@@ -1272,6 +1300,8 @@ class UsageCollector:
                         usage_workflow_is_preview.reset(preview_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
+                    if batch_token is not None:
+                        usage_batch_billing_context.reset(batch_token)
                     if source_token is not None:
                         usage_source_tags.reset(source_token)
 
