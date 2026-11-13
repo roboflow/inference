@@ -19,6 +19,7 @@ import mmap
 import sys
 import threading
 from collections import OrderedDict
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -384,6 +385,23 @@ class VideoClipCache:
         self._max_frames = max_frames
         self._clips: "OrderedDict[str, VideoClip]" = OrderedDict()
         self._lock = threading.Lock()
+        self._reserved_frames = 0
+
+    @contextmanager
+    def build(self, video_id: str):
+        """Reserve storage for a clip before allocating its processed frames.
+
+        Args:
+            video_id: Id published only after a successful build.
+
+        Yields:
+            ClipReservation: Incremental capacity reservation, released on failure.
+        """
+        reservation = ClipReservation(self, video_id)
+        try:
+            yield reservation
+        finally:
+            reservation.close()
 
     @property
     def max_frames(self) -> int:
@@ -437,8 +455,14 @@ class VideoClipCache:
             self._clips[video_id] = clip
 
     def _make_room(self, video_id: str, *, n_frames: int) -> None:
+        if self._reserved_frames + n_frames > self._max_frames:
+            raise ModelInputError(
+                message="SAM3 video cache capacity is reserved by an embedding."
+            )
         self._clips.pop(video_id, None)
-        held = sum(clip.n_frames for clip in self._clips.values())
+        held = self._reserved_frames + sum(
+            clip.n_frames for clip in self._clips.values()
+        )
         while held + n_frames > self._max_frames:
             held -= self._clips.popitem(last=False)[1].n_frames
 
@@ -496,3 +520,84 @@ class VideoClipCache:
             self._clips.move_to_end(video_id)
 
         return clip
+
+
+class ClipReservation:
+    """Account for one unpublished clip while its frames are allocated.
+
+    Args:
+        cache: Cache that owns the storage budget.
+        video_id: Id to publish after successful preprocessing.
+    """
+
+    def __init__(self, cache: VideoClipCache, video_id: str):
+        self._cache = cache
+        self._video_id = video_id
+        self._frames = 0
+        self._closed = False
+
+    def add(self, n_frames: int) -> None:
+        """Reserve additional frames before allocating their processed tensors.
+
+        When space is needed, reclaim the previous clip under this id before
+        evicting unrelated clips in LRU order. Without that pressure, keep the
+        previous clip until commit so a failed build leaves it available.
+        Once reclaimed, the previous clip cannot be restored on failure.
+
+        Args:
+            n_frames: Additional frames in the next preprocessing batch.
+
+        Raises:
+            ModelInputError: The clip or combined reservations exceed capacity.
+        """
+        cache = self._cache
+        with cache._lock:
+            if self._closed or n_frames < 0:
+                raise ModelInputError(message="Invalid video cache reservation.")
+            if self._frames + n_frames > cache.max_frames:
+                raise ModelInputError(
+                    message=(
+                        f"The video has more than {cache.max_frames} frames; "
+                        f"the clip exceeds {CACHE_LIMIT_SETTING}."
+                    )
+                )
+            if cache._reserved_frames + n_frames > cache.max_frames:
+                raise ModelInputError(
+                    message="SAM3 video cache capacity is reserved by an embedding."
+                )
+            held = sum(clip.n_frames for clip in cache._clips.values())
+            if held + cache._reserved_frames + n_frames > cache.max_frames:
+                replaced = cache._clips.pop(self._video_id, None)
+                if replaced is not None:
+                    held -= replaced.n_frames
+                del replaced
+
+            while held + cache._reserved_frames + n_frames > cache.max_frames:
+                held -= cache._clips.popitem(last=False)[1].n_frames
+            cache._reserved_frames += n_frames
+            self._frames += n_frames
+
+    def commit(self, clip: VideoClip) -> None:
+        """Publish a completed clip using its already reserved capacity.
+
+        Args:
+            clip: Clip with exactly the reserved number of frames.
+        """
+        cache = self._cache
+        with cache._lock:
+            if self._closed or clip.n_frames != self._frames:
+                raise ModelInputError(
+                    message="Video clip does not match its reservation."
+                )
+            cache._reserved_frames -= self._frames
+            self._frames = 0
+            self._closed = True
+            cache._clips.pop(self._video_id, None)
+            cache._clips[self._video_id] = clip
+
+    def close(self) -> None:
+        """Release unpublished storage reservations on every exit path."""
+        with self._cache._lock:
+            self._cache._reserved_frames -= self._frames
+            self._frames = 0
+            self._closed = True

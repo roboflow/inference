@@ -794,3 +794,439 @@ def test_re_embedding_an_id_replaces_the_clip_and_stops_its_encoding(tracker):
     assert not tracker._video_clip_cache.holds("v", old)
     tracker._encode_clip_frames("v", old)
     assert tracker._model.encoded == []
+
+
+def _offline_clip(path, *, n_frames=25, width=64, height=48):
+    import av
+
+    with av.open(str(path), "w", format="mp4") as output:
+        stream = output.add_stream("mpeg4", rate=25)
+        stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+        for index in range(n_frames):
+            frame = av.VideoFrame.from_ndarray(
+                np.full((height, width, 3), index, dtype=np.uint8), format="rgb24"
+            )
+            for packet in stream.encode(frame):
+                output.mux(packet)
+        for packet in stream.encode():
+            output.mux(packet)
+    return path
+
+
+@pytest.mark.parametrize(
+    "n_frames,width,height", [(5, 64, 48), (75, 64, 48), (6, 3840, 2160)]
+)
+def test_streaming_embed_bounds_live_original_bytes(
+    tracker, tmp_path, monkeypatch, n_frames, width, height
+):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+    from inference_models.utils.video import VideoReader
+
+    path = _offline_clip(
+        tmp_path / "clip.mp4", n_frames=n_frames, width=width, height=height
+    )
+    frame_bytes = width * height * 3
+    source = VideoFrameSource(path, max_frames=100, buffer_bytes=2 * frame_bytes)
+    alive, peaks = [], []
+    original_read = VideoReader.read
+
+    def read(self, **kwargs):
+        result = original_read(self, **kwargs)
+        if result is not None:
+            alive.append(weakref.ref(result))
+        peaks.append(sum(ref().nbytes for ref in alive if ref() is not None))
+        return result
+
+    monkeypatch.setattr(VideoReader, "read", read)
+    original_preprocess = tracker._preprocess_frames
+
+    def preprocess(frames):
+        # The batch must already be charged before processed allocation begins.
+        assert tracker._video_clip_cache._reserved_frames >= len(frames)
+        assert sum(frame.nbytes for frame in frames) <= source.buffer_bytes
+        return original_preprocess([frame[:H, :W] for frame in frames])
+
+    monkeypatch.setattr(tracker, "_preprocess_frames", preprocess)
+
+    result = tracker.embed_video(source, video_id="streamed")
+
+    assert result["n_frames"] == n_frames
+    assert (result["height"], result["width"]) == (height, width)
+    assert max(peaks) <= 2 * frame_bytes
+    assert all(ref() is None for ref in alive)
+    assert tracker._video_clip_cache._reserved_frames == 0
+    assert source._file.closed
+
+
+def test_streaming_matches_list_preprocessing_and_keep_existing(tracker, tmp_path):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+    from inference_models.utils.video import open_video
+
+    path = _offline_clip(tmp_path / "clip.mp4", n_frames=9)
+    with open_video(path) as reader:
+        frames = []
+        while (frame := reader.read(rgb=True)) is not None:
+            frames.append(frame)
+    tracker.embed_video(frames, video_id="list")
+    source = VideoFrameSource(path, max_frames=100, buffer_bytes=64 * 48 * 3 * 2)
+    tracker.embed_video(source, video_id="source")
+    expected = tracker._video_clip_cache.get("list")
+    actual = tracker._video_clip_cache.get("source")
+    assert actual.video_size == expected.video_size
+    assert actual.n_frames == expected.n_frames
+    assert all(
+        torch.equal(actual.frames[i], expected.frames[i])
+        for i in range(actual.n_frames)
+    )
+
+    source = VideoFrameSource(path, max_frames=100)
+    tracker.embed_video(source, video_id="source", keep_existing=True)
+    assert tracker._video_clip_cache.get("source") is actual
+    assert source._file.closed
+
+
+def test_failed_streaming_embed_releases_reservations_and_partial_frames(
+    tracker, tmp_path, monkeypatch
+):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    source = VideoFrameSource(
+        _offline_clip(tmp_path / "clip.mp4"),
+        max_frames=100,
+        buffer_bytes=64 * 48 * 3 * 2,
+    )
+    retained = []
+    original = tracker._preprocess_frames
+
+    def fail_after_first(frames):
+        if retained:
+            raise RuntimeError("processor failed")
+        result = original(frames)
+        retained.extend(weakref.ref(frame) for frame in result)
+        return result
+
+    monkeypatch.setattr(tracker, "_preprocess_frames", fail_after_first)
+    with pytest.raises(RuntimeError, match="processor failed"):
+        tracker.embed_video(source, video_id="failed")
+    assert source._file.closed
+    assert tracker._video_clip_cache.peek("failed") is None
+    assert tracker._video_clip_cache._reserved_frames == 0
+    assert all(ref() is None for ref in retained)
+
+
+def test_reserved_frames_count_against_other_cache_writes():
+    cache = VideoClipCache(max_frames=10)
+    cache.put("old", _clip_of(8))
+    with cache.build("new") as reservation:
+        reservation.add(4)
+        assert cache.peek("old") is None
+        cache.put("other", _clip_of(6))
+        reservation.add(3)
+        assert cache.peek("other") is None
+        assert cache._reserved_frames == 7
+        reservation.commit(_clip_of(7))
+    assert cache.get("new").n_frames == 7
+    assert cache._reserved_frames == 0
+
+
+@pytest.mark.parametrize("use_source", [False, True], ids=["list", "source"])
+@pytest.mark.parametrize("keep_existing,n_frames", [(False, 6), (True, 5)])
+def test_replacement_preserves_unrelated_clip(
+    tracker, tmp_path, monkeypatch, use_source, keep_existing, n_frames
+):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    cache = tracker._video_clip_cache = VideoClipCache(max_frames=10)
+    frame = np.zeros((H, W, 3), dtype=np.uint8)
+    tracker.embed_video([frame] * 4, video_id="other")
+    other = cache.get("other")
+    tracker.embed_video([frame] * 6, video_id="replace")
+    old = weakref.ref(cache.get("replace"))
+    monkeypatch.setattr(sam3_tracker_video_hf, "EMBED_CHUNK_FRAMES", 2)
+    preprocess = tracker._preprocess_frames
+
+    def check_reclaimed_before_allocation(frames):
+        assert old() is None
+        assert cache.holds("other", other)
+        processed = preprocess(frames)
+        return processed
+
+    monkeypatch.setattr(
+        tracker, "_preprocess_frames", check_reclaimed_before_allocation
+    )
+    frames = [frame] * n_frames
+    if use_source:
+        frames = VideoFrameSource(
+            _offline_clip(tmp_path / "replacement.mp4", n_frames=n_frames),
+            max_frames=cache.max_frames,
+            buffer_bytes=frame.nbytes * 2,
+        )
+
+    result = tracker.embed_video(
+        frames, video_id="replace", keep_existing=keep_existing
+    )
+
+    assert result["n_frames"] == n_frames
+    assert cache.get("replace").n_frames == n_frames
+    assert cache.holds("other", other)
+    assert cache._reserved_frames == 0
+    if use_source:
+        assert frames._file.closed
+
+
+@pytest.mark.parametrize("capacity,keeps_old", [(10, False), (16, True)])
+def test_failed_replacement_preserves_other_clips_and_releases_reservation(
+    tracker, tmp_path, monkeypatch, capacity, keeps_old
+):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    cache = tracker._video_clip_cache = VideoClipCache(max_frames=capacity)
+    frame = np.zeros((H, W, 3), dtype=np.uint8)
+    tracker.embed_video([frame] * 4, video_id="other")
+    other = cache.get("other")
+    tracker.embed_video([frame] * 6, video_id="replace")
+    old = weakref.ref(cache.get("replace"))
+    source = VideoFrameSource(
+        _offline_clip(tmp_path / "replacement.mp4", n_frames=6),
+        max_frames=capacity,
+        buffer_bytes=frame.nbytes * 2,
+    )
+    preprocess = tracker._preprocess_frames
+    allocated = []
+
+    def fail_after_first_batch(frames):
+        if allocated:
+            raise RuntimeError("replacement failed")
+        processed = preprocess(frames)
+        allocated.extend(weakref.ref(tensor) for tensor in processed)
+        return processed
+
+    monkeypatch.setattr(tracker, "_preprocess_frames", fail_after_first_batch)
+
+    with pytest.raises(RuntimeError, match="replacement failed") as error:
+        tracker.embed_video(source, video_id="replace")
+
+    assert error.traceback
+    assert cache.holds("other", other)
+    assert (old() is not None) is keeps_old
+    assert cache.peek("replace") is old()
+    assert cache._reserved_frames == 0
+    assert all(tensor() is None for tensor in allocated)
+    assert source._file.closed
+
+
+def test_replacement_keeps_old_clip_until_commit_when_capacity_allows():
+    cache = VideoClipCache(max_frames=16)
+    cache.put("other", _clip_of(4))
+    cache.put("replace", _clip_of(6))
+    old = cache.get("replace")
+
+    with cache.build("replace") as reservation:
+        reservation.add(2)
+        reservation.add(4)
+        assert cache.holds("replace", old)
+        reservation.commit(_clip_of(6))
+
+    assert not cache.holds("replace", old)
+    assert cache.get("other").n_frames == 4
+    assert cache.get("replace").n_frames == 6
+    assert cache._reserved_frames == 0
+
+
+def test_replacement_uses_lru_when_reclaiming_old_clip_is_insufficient():
+    cache = VideoClipCache(max_frames=10)
+    cache.put("a", _clip_of(2))
+    cache.put("b", _clip_of(4))
+    cache.put("replace", _clip_of(4))
+    cache.get("a")  # B is now less recently used than A.
+
+    with cache.build("replace") as reservation:
+        reservation.add(2)
+        assert cache.peek("replace") is None
+        assert cache._reserved_frames == 2
+        reservation.add(3)
+        assert cache.peek("b") is None
+        assert cache._reserved_frames == 5
+        reservation.commit(_clip_of(5))
+
+    assert cache.get("a").n_frames == 2
+    assert cache.get("replace").n_frames == 5
+    assert cache._reserved_frames == 0
+
+
+def test_replacement_reclaims_old_clip_only_when_a_later_batch_needs_space():
+    cache = VideoClipCache(max_frames=10)
+    cache.put("other", _clip_of(2))
+    cache.put("replace", _clip_of(4))
+    old = cache.get("replace")
+
+    with cache.build("replace") as reservation:
+        reservation.add(2)
+        assert cache.holds("replace", old)
+        reservation.add(3)
+        assert cache.peek("replace") is None
+        reservation.commit(_clip_of(5))
+
+    assert cache.get("other").n_frames == 2
+    assert cache.get("replace").n_frames == 5
+    assert cache._reserved_frames == 0
+
+
+def test_new_clip_reservations_keep_strict_lru_eviction():
+    cache = VideoClipCache(max_frames=10)
+    cache.put("a", _clip_of(4))
+    cache.put("b", _clip_of(6))
+
+    with cache.build("c") as reservation:
+        reservation.add(2)
+        assert cache.peek("a") is None
+        assert cache.get("b").n_frames == 6
+        reservation.add(4)
+        assert cache.peek("b") is None
+        reservation.commit(_clip_of(6))
+
+    assert cache.get("c").n_frames == 6
+    assert cache._reserved_frames == 0
+
+
+def test_cancelled_embed_keeps_admission_until_worker_finishes(
+    tracker, tmp_path, monkeypatch
+):
+    import concurrent.futures
+    import threading
+
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    first = VideoFrameSource(_offline_clip(tmp_path / "first.mp4"), max_frames=100)
+    second = VideoFrameSource(_offline_clip(tmp_path / "second.mp4"), max_frames=100)
+    entered, release, second_read = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    original_preprocess = tracker._preprocess_frames
+    original_batches = second.batches
+
+    def preprocess(frames):
+        entered.set()
+        assert release.wait(timeout=5)
+        return original_preprocess(frames)
+
+    def batches(**kwargs):
+        second_read.set()
+        yield from original_batches(**kwargs)
+
+    monkeypatch.setattr(tracker, "_preprocess_frames", preprocess)
+    monkeypatch.setattr(second, "batches", batches)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        a = executor.submit(tracker.embed_video, first, video_id="first")
+        try:
+            assert entered.wait(timeout=5)
+            first.cancel()
+            assert not first._file.closed
+            b = executor.submit(tracker.embed_video, second, video_id="second")
+            assert not second_read.wait(timeout=0.2)
+        finally:
+            release.set()
+        with pytest.raises(ModelInputError, match="cancelled"):
+            a.result(timeout=5)
+        assert b.result(timeout=5)["n_frames"] == 25
+    assert first._file.closed and second._file.closed
+    assert tracker._video_clip_cache.peek("first") is None
+    assert tracker._video_clip_cache._reserved_frames == 0
+
+
+def test_cancelled_waiter_never_decodes_or_closes_an_active_source(tmp_path):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    source = VideoFrameSource(_offline_clip(tmp_path / "clip.mp4"), max_frames=100)
+    source.cancel()
+    assert source._file.closed
+    with pytest.raises(ModelInputError, match="cancelled"), source.consume():
+        pytest.fail("cancelled source was consumed")
+
+
+def test_owned_source_survives_path_unlink(tmp_path):
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    path = _offline_clip(tmp_path / "clip.mp4")
+    source = VideoFrameSource(path, max_frames=100)
+    path.unlink()
+    count = 0
+    with source.consume():
+        for batch in source.batches(max_batch_frames=2):
+            count += len(batch)
+            batch.clear()
+    assert count == 25
+    assert source._file.closed
+
+
+def test_unknown_count_stops_at_limit_and_discards_partial_clip(
+    tracker, tmp_path, monkeypatch
+):
+    from inference_models.models.sam3_tracker_video.frame_source import (
+        VideoFrameSource,
+        VideoInputLimitError,
+    )
+    from inference_models.utils.video import VideoReader
+
+    original_init, original_read = VideoReader.__init__, VideoReader.read
+    observed = []
+
+    def unknown_count(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.frame_count = 0
+
+    def read(self, **kwargs):
+        result = original_read(self, **kwargs)
+        if result is not None:
+            observed.append(weakref.ref(result))
+        return result
+
+    monkeypatch.setattr(VideoReader, "__init__", unknown_count)
+    monkeypatch.setattr(VideoReader, "read", read)
+    source = VideoFrameSource(
+        _offline_clip(tmp_path / "clip.mp4", n_frames=25),
+        max_frames=5,
+        buffer_bytes=64 * 48 * 3 * 2,
+    )
+    with pytest.raises(VideoInputLimitError, match="more than 5 frames"):
+        tracker.embed_video(source, video_id="too-long")
+    assert len(observed) == 6
+    assert all(ref() is None for ref in observed)
+    assert tracker._video_clip_cache.peek("too-long") is None
+    assert tracker._video_clip_cache._reserved_frames == 0
+    assert source._file.closed
+
+
+def test_partial_tensor_allocation_is_released_even_with_exception_traceback(
+    tracker, monkeypatch
+):
+    original = sam3_tracker_video_hf.host_tensor
+    allocated = []
+
+    def allocate(shape, dtype):
+        if allocated:
+            raise RuntimeError("allocation failed")
+        tensor = original(shape, dtype)
+        allocated.append(weakref.ref(tensor))
+        return tensor
+
+    monkeypatch.setattr(sam3_tracker_video_hf, "host_tensor", allocate)
+    frames = [np.zeros((H, W, 3), dtype=np.uint8) for _ in range(3)]
+    with pytest.raises(RuntimeError, match="allocation failed") as retained_error:
+        tracker.embed_video(frames, video_id="failed")
+    assert retained_error.traceback
+    assert all(ref() is None for ref in allocated)
+    assert tracker._video_clip_cache._reserved_frames == 0
+    assert tracker._video_clip_cache.peek("failed") is None
+
+
+def test_registered_embedding_action_accepts_owned_source(tracker, tmp_path):
+    from inference_model_manager.dispatch import invoke_action
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+
+    source = VideoFrameSource(_offline_clip(tmp_path / "clip.mp4"), max_frames=100)
+    result = invoke_action(tracker, "embed_video", frames=source, video_id="registered")
+    assert result["n_frames"] == 25
+    assert source._file.closed

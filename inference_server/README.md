@@ -286,10 +286,27 @@ needs the calls of one clip routed to the same worker.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SAM3_VIDEO_MODEL_ID` | `sam3trackervideo` | Model the routes use when the request names none |
-| `SAM3_VIDEO_CACHE_MAX_GB` | `16` | Host RAM, in GB, the cached clips of a worker may hold (fractions allowed). It sets how many frames the worker keeps over all clips and so the longest clip `embed` accepts; a longer one is refused with 413 before it is decoded. The least recently used clips are evicted to make room |
+| `SAM3_VIDEO_CACHE_MAX_GB` | `16` | Host RAM in decimal GB for processed clip-cache storage, including in-progress builds. Sets the maximum frames per clip. Check declared counts early and enforce actual counts during decoding; oversize inputs return 413. LRU clips are evicted before processed allocation |
+| `SAM3_VIDEO_DECODE_BUFFER_BYTES` | `67108864` | Maximum retained original RGB bytes per preprocessing batch, additionally capped at 16 frames. Separate from processed cache storage |
+| `SAM3_VIDEO_MAX_SOURCE_PIXELS` | `16777216` | Maximum source pixels per frame during probing, decoding and RGB conversion; larger inputs are refused |
 
 Cached clips live in host memory, not on the GPU, and
-`SAM3_VIDEO_CACHE_MAX_GB` is the one setting that bounds them. The tracker
+Embedding decodes and preprocesses a byte-limited batch, releases its original
+RGB frames, then reads the next batch. A 4K UHD clip uses at most two originals
+per default batch (47.5 MiB), regardless of clip length. Original dimensions
+remain the coordinate system for points and returned masks. One embedding
+operation per process is admitted at a time; waiting operations do not decode original frames. Cancellation keeps that slot and the input handle owned until the
+consumer actually exits. A clip is published only after its complete input has
+been validated and processed. Failed builds release their cache reservations.
+
+These settings do not impose a total RSS ceiling: decoder reference frames,
+conversion scratch, processor copies and active tracking state also need host
+memory. The internal owned source supports the local/threaded gateway; the
+rf-serving subprocess transport is separate work and must not serialize it.
+See the [memory implementation plan](docs/sam3-video-memory-plan.md) and its
+dependency on [playlist protection #3417](https://github.com/roboflow/inference/pull/3417).
+
+`SAM3_VIDEO_CACHE_MAX_GB` bounds their processed cache storage. The tracker
 turns it into a number of frames, `floor(GB × 1e9 / bytes per cached frame)`,
 and logs the result when the model loads. A cached frame is held as its
 preprocessed pixels (6,096,384 bytes in bfloat16) until it is encoded
@@ -308,16 +325,12 @@ a unit test checks the encoder output figure against a really encoded frame.
 The limit covers the cached frames only. Size the host as cache GB, plus the
 memory an embed needs while it runs, plus the process itself:
 
-- Embedding a clip forgets the clips it replaces before it builds the new one,
-  so the cached frames stay within the limit during an embed. What an embed
-  adds is the decoded clip at its native resolution, held from decoding until
-  the embed returns (height × width × 3 bytes per frame of the clip being
-  embedded: 1.8 MB at 1024×576, 6.2 MB at 1080p, computed), plus about 0.65 GB
-  while frames are preprocessed, whatever the clip's length (16 frames at a
-  time at about 40 MB each, computed from a measured 40 MB per frame). There is
-  no separate limit on a clip's length, so the first part grows with the
-  longest clip the cache admits. Embeds running at the same time each add
-  their own.
+- Processed frames under construction are charged to the cache budget before
+  allocation. Original RGB input occupies at most the configured batch budget,
+  independent of clip length. Decoder reference buffers, rotation/conversion
+  scratch and the preprocessor's temporary copies require additional headroom.
+  One embedding operation is active per process. Queued request bodies and
+  downloaded inputs still have their existing ingestion limits.
 - The process with the model loaded and one 60-frame clip took 1.1 to 2.1 GB
   of host RAM (measured; GPU memory peaked at 3.3 GB).
 

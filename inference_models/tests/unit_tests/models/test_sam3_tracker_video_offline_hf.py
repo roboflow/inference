@@ -410,3 +410,39 @@ def test_a_session_cannot_add_frames_to_a_clip(tracker):
 
     with pytest.raises(TypeError, match="item assignment"):
         session.add_new_frame(torch.zeros(3, IMAGE_SIZE, IMAGE_SIZE))
+
+
+def test_owned_source_matches_real_hf_preprocessing(tracker, tmp_path):
+    import av
+
+    from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
+    from inference_models.utils.video import open_video
+
+    path = tmp_path / "input.mp4"
+    with av.open(str(path), "w", format="mp4") as output:
+        stream = output.add_stream("mpeg4", rate=25)
+        stream.width, stream.height, stream.pix_fmt = 80, 60, "yuv420p"
+        for pixels in _frames(7):
+            for packet in stream.encode(
+                av.VideoFrame.from_ndarray(pixels, format="rgb24")
+            ):
+                output.mux(packet)
+        for packet in stream.encode():
+            output.mux(packet)
+    with open_video(path) as reader:
+        frames = []
+        while (frame := reader.read(rgb=True)) is not None:
+            frames.append(frame)
+    expected = tracker._processor.video_processor(
+        videos=frames, device="cpu", return_tensors="pt"
+    ).pixel_values_videos[0]
+
+    source = VideoFrameSource(path, max_frames=100, buffer_bytes=80 * 60 * 3 * 2)
+    result = tracker.embed_video(source, video_id="source")
+    clip = tracker._video_clip_cache.get("source")
+
+    assert result["height"] == 60 and result["width"] == 80
+    assert result["n_frames"] == 7
+    assert torch.equal(torch.stack([clip.frames[i] for i in range(7)]), expected)
+    session = tracker._clip_session(clip)
+    assert (session.video_height, session.video_width) == (60, 80)

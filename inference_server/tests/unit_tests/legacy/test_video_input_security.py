@@ -69,7 +69,7 @@ def test_offline_routes_only_decode_the_submitted_asset(
         for call in gateway.calls
         if call[0] == "infer" and call[2] != "video_cache_limits"
     ]
-    assert bool(calls) is (not manifest)
+    assert bool(gateway.embedded_frames if route == "sam3" else calls) is (not manifest)
     if manifest:
         assert str(clip) not in response.text
     assert list(scratch.iterdir()) == []
