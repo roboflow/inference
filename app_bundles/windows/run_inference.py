@@ -220,12 +220,12 @@ if __name__ == "__main__":
             _remove_console_handlers(name)
         banner = (
             "\n\n\n\n\n\n\n\n\n"
-            "─────────────────────────────────────────────────────────── \n"
+            "----------------------------------------------------------- \n"
             "                                                           \n"
             "  Roboflow Inference is ready                              \n"
             f"  Dashboard: {url:<44} (since IPv6 is attempted first when making requests, please use this address instead of localhost)\n"
             "                                                           \n"
-            "───────────────────────────────────────────────────────────\n"
+            "-----------------------------------------------------------\n"
         )
         print(banner, flush=True)
         await serve_task
