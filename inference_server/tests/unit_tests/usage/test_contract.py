@@ -383,7 +383,7 @@ def test_row_carries_a_generated_execution_id_when_the_request_has_none(
 
 
 def test_verified_internal_request_is_not_floored_and_a_plain_one_is(
-    serverless_contract_client, real_collector, posts, detection_gateway
+    serverless_contract_client, real_collector, posts, detection_gateway, stepping_clock
 ):
     client = serverless_contract_client(detection_gateway)
 
@@ -489,7 +489,12 @@ def _model_and_custom_python_workflow():
 
 
 def test_custom_python_duration_is_floored_for_a_plain_caller_only(
-    serverless_contract_client, real_collector, posts, fake_stat, monkeypatch
+    serverless_contract_client,
+    real_collector,
+    posts,
+    fake_stat,
+    monkeypatch,
+    stepping_clock,
 ):
     monkeypatch.setattr(
         "inference_server.usage.observer.consume_block_duration",

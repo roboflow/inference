@@ -1,4 +1,6 @@
-from typing import Optional
+import itertools
+import time
+from typing import Any, Optional
 
 import pytest
 
@@ -11,6 +13,45 @@ SYSTEM_INFO = {
     "ip_address_hash": "ab12c",
     "is_gpu_available": False,
 }
+CLOCK_STEP_S = 0.001
+# Modules that time usage rows with ``time.perf_counter``: request_hook (the
+# request row), observer (workflow and block rows) and bridge (model rows of
+# legacy routes and workflow model steps).
+ROW_CLOCK_MODULES = (
+    "inference_server.legacy.bridge",
+    "inference_server.usage.observer",
+    "inference_server.usage.request_hook",
+)
+
+
+class SteppingClock:
+    """``time`` stand-in whose ``perf_counter`` moves ``CLOCK_STEP_S`` per read.
+
+    A duration measured with it counts the clock reads inside it, so it stays
+    a few milliseconds however slow the machine running the test is.
+    ``itertools.count`` gives every read its own tick, whichever thread reads
+    it. Other attributes are the real ``time`` module's.
+    """
+
+    def __init__(self) -> None:
+        self._ticks = itertools.count(1)
+
+    def perf_counter(self) -> float:
+        now = next(self._ticks) * CLOCK_STEP_S
+
+        return now
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(time, name)
+
+
+@pytest.fixture
+def stepping_clock(monkeypatch):
+    clock = SteppingClock()
+    for module in ROW_CLOCK_MODULES:
+        monkeypatch.setattr(f"{module}.time", clock)
+
+    return clock
 
 
 @pytest.fixture(autouse=True)
