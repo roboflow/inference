@@ -366,6 +366,7 @@ class CameraWrapper:
     _stop_preset: Optional[str] = None
     _is_zoomed: bool = False
     _has_config_error: bool = False
+    _configuration_lock: asyncio.Lock
     _x_count: int = 0
     _y_count: int = 0
     _z_count: int = 0
@@ -384,6 +385,7 @@ class CameraWrapper:
         self._max_update_rate = max_update_rate
         self._move_to_position_after_idle_seconds = move_to_position_after_idle_seconds
         self.run_loop = run_loop
+        self._configuration_lock = asyncio.Lock()
 
     @classmethod
     def create_event_loop(cls) -> asyncio.AbstractEventLoop:
@@ -488,12 +490,23 @@ class CameraWrapper:
         """
         Does initial configuration and gathers all camera info
         Doesn't currently run in init since it needs to be awaited
+        A caller that arrives while a configuration runs waits for it and reuses it
         """
         if not self.camera:
             raise ValueError(f"Tried to configure camera, but camera was not created")
-        if self._has_config_error:
-            return
 
+        # On the first frame connect_camera_async and continuous_move_async both get
+        # here. update_xaddrs() empties the camera's service addresses while it asks
+        # for them again, so a configuration that starts while another runs can
+        # leave that one without a PTZ service: it reports a config error, and when
+        # it belongs to continuous_move_async the move is dropped.
+        async with self._configuration_lock:
+            if self._has_config_error or self._media_profile_token is not None:
+                return
+
+            await self._configure_camera_async()
+
+    async def _configure_camera_async(self):
         try:
             await self.camera.update_xaddrs()
             # capabilities = await self.camera.get_capabilities() # <- could be useful in the future

@@ -65,6 +65,7 @@ Bundled execution engine: `1.17.2`.
   newer result. The cache does not cancel the original synchronous download.
   Its retained-string byte budget now includes Unicode storage and Python
   string headers.
+- ONVIF Sink (`roboflow_core/onvif_sink@v1`, NumPy and tensor variants) configures a camera once on the first frame. `connect_camera_async` and the first `continuous_move_async` both configured it at the same time, and `update_xaddrs()` empties the camera's service addresses while it asks for them again. One configuration could then find no PTZ service and mark the camera with a config error, and when it was the move's own configuration, that first move was dropped. A configuration that starts while another runs now waits for it and reuses the result, so the camera also no longer gets each configuration request twice.
 
 ### Execution engine
 
