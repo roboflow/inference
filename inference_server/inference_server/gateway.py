@@ -29,6 +29,7 @@ from inference_models.errors import (
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.middlewares.model_load import record_model_load
+from inference_server.redaction import redact_secret_parameters
 from inference_server.routing import (
     capability_load_kwargs,
     routed_instance,
@@ -55,19 +56,6 @@ _MAX_REMEMBERED_LOAD_FAILURES = 256
 # Anchored at the start of a scheme-character run so matching stays linear.
 _URL = re.compile(
     r"""(?<![a-zA-Z0-9+.-])([0-9+.-]*)([a-zA-Z][a-zA-Z0-9+.-]*)://([^\s"<>]*)"""
-)
-_AUTHORIZATION_VALUE = re.compile(
-    r"""((?<![A-Za-z0-9])authorization[ \t]*(?:=|:|%3D)[ \t]*)(?!["'])[^\r\n]+""",
-    re.IGNORECASE,
-)
-_SECRET_VALUE = re.compile(
-    r"""(?<![A-Za-z0-9])
-    (?P<name>api_key|apikey|api-key|service_secret|access_token|token|secret
-    |password|signature)
-    (?P<name_quote>["']?)
-    (?P<separator>[ \t]*(?:=|:|%3D)[ \t]*)
-    (?:(?P<quote>["'])[^"']*(?P=quote)|[^\s&,;}"']+)""",
-    re.IGNORECASE | re.VERBOSE,
 )
 
 
@@ -156,17 +144,9 @@ def _redact_url(match: re.Match) -> str:
     return redacted_url
 
 
-def _redact_secret_value(match: re.Match) -> str:
-    quote = match.group("quote") or ""
-    prefix = match.group("name") + match.group("name_quote") + match.group("separator")
-
-    return f"{prefix}{quote}***{quote}"
-
-
 def _redact_secrets(text: str) -> str:
     without_urls = _URL.sub(_redact_url, text)
-    without_authorization = _AUTHORIZATION_VALUE.sub(r"\1***", without_urls)
-    redacted = _SECRET_VALUE.sub(_redact_secret_value, without_authorization)
+    redacted = redact_secret_parameters(without_urls)
 
     return redacted
 

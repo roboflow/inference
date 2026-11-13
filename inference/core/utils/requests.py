@@ -54,7 +54,7 @@ def deduct_api_key(match: re.Match) -> str:
     return f"api_key={key_prefix}***{key_postfix}"
 
 
-def _redact_credentials(value: str, *, credentials: Iterable[Optional[str]]) -> str:
+def redact_credentials(value: str, *, credentials: Iterable[Optional[str]]) -> str:
     """Remove known credentials, including URL and JSON encodings, from text."""
     variants = set()
     for credential in credentials:

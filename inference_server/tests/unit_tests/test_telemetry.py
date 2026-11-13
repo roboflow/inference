@@ -436,9 +436,13 @@ def test_setup_telemetry_configures_tracing_from_env(fake_otel):
         resource=mocks["resource_cls"].create.return_value,
         sampler=mocks["sampling"].ParentBased.return_value,
     )
-    mocks["batch_processor_cls"].assert_called_once_with(
-        mocks["grpc_exporter_cls"].return_value, schedule_delay_millis=1234
-    )
+    mocks["batch_processor_cls"].assert_called_once()
+    exporter = mocks["batch_processor_cls"].call_args.args[0]
+    assert isinstance(exporter, telemetry.RedactingSpanExporter)
+    assert exporter._exporter is mocks["grpc_exporter_cls"].return_value
+    assert mocks["batch_processor_cls"].call_args.kwargs == {
+        "schedule_delay_millis": 1234
+    }
     provider.add_span_processor.assert_called_once_with(
         mocks["batch_processor_cls"].return_value
     )
@@ -450,8 +454,12 @@ def test_setup_telemetry_configures_tracing_from_env(fake_otel):
     mocks["set_global_textmap"].assert_called_once_with(
         mocks["composite_propagator_cls"].return_value
     )
-    mocks["fastapi_instrumentor_cls"].instrument_app.assert_called_once_with(app)
-    mocks["requests_instrumentor_cls"].return_value.instrument.assert_called_once_with()
+    mocks["fastapi_instrumentor_cls"].instrument_app.assert_called_once_with(
+        app, server_request_hook=telemetry._server_request_hook
+    )
+    mocks["requests_instrumentor_cls"].return_value.instrument.assert_called_once_with(
+        request_hook=telemetry._requests_request_hook
+    )
     assert [entry.cls for entry in app.user_middleware] == [
         telemetry.TraceIdResponseMiddleware
     ]
@@ -867,7 +875,7 @@ def test_force_trace_header_is_sampled_at_the_request_level(fake_otel):
     telemetry, mocks, patch = fake_otel
     decisions = []
 
-    def _instrument(app):
+    def _instrument(app, **hooks):
         sampler = mocks["provider_cls"].call_args.kwargs["sampler"]
         propagator = mocks["set_global_textmap"].call_args.args[0]
 
@@ -1015,7 +1023,7 @@ def test_app_adds_telemetry_middlewares_outside_every_other_middleware(fake_otel
             ModelLoadHeadersMiddleware,
         ]
         mocks["fastapi_instrumentor_cls"].instrument_app.assert_called_once_with(
-            module.app
+            module.app, server_request_hook=telemetry._server_request_hook
         )
     finally:
         patch.undo()

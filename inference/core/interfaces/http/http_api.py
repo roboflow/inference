@@ -373,9 +373,9 @@ from inference.core.utils.depth_encoding import (
 )
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.requests import (
-    _redact_credentials,
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
+    redact_credentials,
 )
 from inference.core.utils.url_utils import get_secure_gateway_base_url, wrap_url
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -3134,7 +3134,7 @@ class HttpInterface(BaseInterface):
                         )
                     except Exception as e:
                         load_time = time.perf_counter() - t_start
-                        reason = _redact_credentials(
+                        reason = redact_credentials(
                             str(e),
                             credentials=(
                                 PRELOAD_API_KEY,
@@ -3176,7 +3176,7 @@ class HttpInterface(BaseInterface):
                             )
                             future.cancel()
                         except Exception as e:
-                            reason = _redact_credentials(
+                            reason = redact_credentials(
                                 str(e),
                                 credentials=(
                                     PRELOAD_API_KEY,

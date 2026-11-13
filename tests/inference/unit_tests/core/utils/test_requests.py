@@ -180,7 +180,7 @@ def test_redact_credentials_removes_plain_url_and_json_values(credential) -> Non
     import json
     from urllib.parse import quote, quote_plus
 
-    from inference.core.utils.requests import _redact_credentials
+    from inference.core.utils.requests import redact_credentials
 
     variants = [
         credential,
@@ -189,7 +189,7 @@ def test_redact_credentials_removes_plain_url_and_json_values(credential) -> Non
         json.dumps(credential)[1:-1],
     ]
     for value in variants:
-        reason = _redact_credentials(
+        reason = redact_credentials(
             f"request failed: Authorization: Bearer {value}",
             credentials=(None, "", credential),
         )
@@ -198,9 +198,9 @@ def test_redact_credentials_removes_plain_url_and_json_values(credential) -> Non
 
 
 def test_redact_credentials_preserves_reason_without_credentials() -> None:
-    from inference.core.utils.requests import _redact_credentials
+    from inference.core.utils.requests import redact_credentials
 
     assert (
-        _redact_credentials("model not found", credentials=(None, ""))
+        redact_credentials("model not found", credentials=(None, ""))
         == "model not found"
     )
