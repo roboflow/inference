@@ -570,6 +570,36 @@ async def test_failed_preload_log_leaves_out_the_failure_description(
     assert state.preload_finished is True
 
 
+@pytest.mark.asyncio
+async def test_preload_exception_log_carries_no_credentials(caplog):
+    import logging
+    from types import SimpleNamespace
+
+    from inference_server.app import _preload_models
+
+    preload_key = "PRELOADKEY123456"
+    service_secret = "SERVICESECRET987"
+
+    class _Proxy:
+        async def load(self, mid, api_key="", timeout_s=None, pinned=True):
+            try:
+                raise ConnectionError(
+                    "https://api.roboflow.com/ds/1?api_key="
+                    f"{preload_key}&service_secret={service_secret}"
+                )
+            except ConnectionError as cause:
+                raise RuntimeError(f"load of ds/1 with key {api_key} failed") from cause
+
+    state = SimpleNamespace(preload_finished=False)
+    with caplog.at_level(logging.DEBUG, logger="inference_server.app"):
+        await _preload_models(state, _Proxy(), [("ds/1", preload_key)], [])
+
+    assert "Preload of 'ds/1' failed" in caplog.text
+    assert "ConnectionError" in caplog.text
+    assert preload_key not in caplog.text
+    assert service_secret not in caplog.text
+
+
 class _UsageCollectorSpy:
     def __init__(self):
         self.started = False
