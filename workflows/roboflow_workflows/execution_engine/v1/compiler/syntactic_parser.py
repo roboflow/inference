@@ -3,7 +3,11 @@ from typing import Dict, List, Optional, Tuple, Type, Union
 
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field, create_model
-from roboflow_workflows.errors import WorkflowBlockError, WorkflowSyntaxError
+from roboflow_workflows.errors import (
+    WorkflowBlockError,
+    WorkflowDefinitionError,
+    WorkflowSyntaxError,
+)
 from roboflow_workflows.execution_engine.entities.base import InputType, JsonField
 from roboflow_workflows.execution_engine.introspection.blocks_loader import (
     _get_env_configuration_state,
@@ -59,6 +63,9 @@ def parse_workflow_definition(
             outputs=workflow_definition.outputs,
         )
     except pydantic.ValidationError as e:
+        _raise_if_unavailable_block_referenced(
+            raw_workflow_definition=raw_workflow_definition, inner_error=e
+        )
         blocks_errors = {}
         for error in e.errors():
             loc = error["loc"]
@@ -176,3 +183,31 @@ def get_workflow_schema() -> dict:
     """
     env_state = _get_env_configuration_state()
     return _cached_workflow_schema(env_state=env_state)
+
+
+def _raise_if_unavailable_block_referenced(
+    raw_workflow_definition: dict, inner_error: Exception
+) -> None:
+    # A step whose type is a known block that this server does not offer (an
+    # optional dependency is missing, or the runtime policy disables it) gets
+    # the reason instead of a generic "unknown type" validation error.
+    from roboflow_workflows.core_steps.loader import load_unavailable_blocks
+
+    unavailable = load_unavailable_blocks()
+    if not unavailable:
+        return
+    steps = raw_workflow_definition.get("steps") or []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        reason = unavailable.get(str(step.get("type")))
+        if reason is None:
+            continue
+        raise WorkflowDefinitionError(
+            public_message=(
+                f"Block `{step.get('type')}` (step `{step.get('name')}`) is not "
+                f"available on this server: {reason}."
+            ),
+            context="workflow_compilation | workflow_definition_parsing",
+            inner_error=inner_error,
+        )

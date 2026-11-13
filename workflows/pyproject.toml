@@ -57,6 +57,9 @@ enterprise = [
   "aws-msk-iam-sasl-signer-python>=1.0.2,<2",
   "fastapi>=0.134,<0.142",
 ]
+databricks = [
+  "databricks-sql-connector==4.8.0",
+]
 test = [
   "pytest>=9.0.3,<10.0.0",
   "requests-mock~=1.12.1",
