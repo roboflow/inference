@@ -172,7 +172,7 @@ def test_live_draws_a_strip_on_a_copy_with_or_without_the_mark(mark):
     assert result["image"].numpy_image.shape == source.numpy_image.shape
 
 
-def test_synchronized_holds_the_first_frame_then_plays_from_it_without_gaps():
+def test_synchronized_holds_the_first_frame_then_plays_labelled_frames_in_order():
     block = ActionRecognitionVisualizationBlockV1()
     model = _Model(stride=20, latency=5, timeline=[_action("wave", 3, 8)])
 
@@ -192,21 +192,14 @@ def test_synchronized_holds_the_first_frame_then_plays_from_it_without_gaps():
         result["displayed_frame_number"] <= model.at(number)[0]
         for number, result in enumerate(playing, 26)
     )
-
-
-def test_synchronized_puts_each_label_on_the_frame_it_describes():
-    block = ActionRecognitionVisualizationBlockV1()
-    model = _Model(stride=20, latency=5, timeline=[_action("wave", 3, 8)])
-
-    results = _play(block, model, range(1, 60), display_mode="synchronized")
-
+    # Each label sits on the frame it describes.
     labelled = [
         result["displayed_frame_number"]
         for result in results
         if result["actions"] == ["wave"]
     ]
     assert labelled == [3, 4, 5, 6, 7, 8]
-    for result in results[25:]:
+    for result in playing:
         assert result["actions_frame_number"] == result["displayed_frame_number"]
         assert abs(_shade(result) - result["displayed_frame_number"]) <= 2
         assert (
