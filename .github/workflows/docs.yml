@@ -43,7 +43,7 @@ jobs:
         with:
           # The deploy step below pushes to gh-pages with ghp-import, which
           # needs the checkout credentials.
-          persist-credentials: true # zizmor: ignore[artipacked]
+          persist-credentials: true
           path: inference_repo
           fetch-depth: 0
 
