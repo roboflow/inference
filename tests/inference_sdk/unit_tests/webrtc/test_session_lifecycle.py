@@ -1167,7 +1167,10 @@ class TestCloseMethod:
         mock_session._source = None
         mock_session._state = SessionState.STARTED
 
-        with patch("inference_sdk.webrtc.session.logger.warning") as log_warning:
+        with (
+            patch("inference_sdk.webrtc.session.logger.warning") as log_warning,
+            pytest.raises(TimeoutError, match="event-loop thread did not stop"),
+        ):
             mock_session.close()
 
         loop.call_soon_threadsafe.assert_called_once_with(loop.stop)
