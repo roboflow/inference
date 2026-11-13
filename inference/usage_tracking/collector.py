@@ -197,7 +197,6 @@ class UsageCollector:
                     str,
                     Optional[str],
                     Optional[int],
-                    Optional[str],
                 ],
                 Dict[str, Any],
             ],
@@ -380,7 +379,6 @@ class UsageCollector:
         str,
         Optional[str],
         Optional[int],
-        Optional[str],
     ]:
         outcome, error_type, error_status_code = cls._usage_outcome(resource_details)
         return (
@@ -391,7 +389,6 @@ class UsageCollector:
             outcome,
             error_type,
             error_status_code,
-            (resource_details or {}).get("billing_context"),
         )
 
     @classmethod
@@ -451,6 +448,18 @@ class UsageCollector:
         resource_id: str = "",
         api_key: str = "",
     ):
+        """Cache resource metadata without per-call origins or batch billing.
+
+        Args:
+            category: Usage category owning the resource.
+            resource_details: Metadata to cache; the caller's mapping is unchanged.
+            resource_id: Resource identifier, derived from cacheable metadata
+                when omitted.
+            api_key: API key whose resource metadata is cached.
+
+        Raises:
+            ValueError: The usage category is empty.
+        """
         if not category:
             raise ValueError("Category is compulsory when recording resource details.")
         if not resource_details or not isinstance(resource_details, dict):
@@ -459,9 +468,11 @@ class UsageCollector:
             )
             return
         resource_details = self._normalize_error_metadata(resource_details)
-        # Origins belong to the current call, not the persistent metadata cache.
+        # Origins and batch billing belong to the current call. Caching a job's
+        # context would retain it indefinitely or attach it to another call.
         resource_details.pop("source", None)
         resource_details.pop("source_info", None)
+        resource_details.pop("billing_context", None)
 
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
@@ -580,11 +591,13 @@ class UsageCollector:
             resource_details or {}
         )
         if not resource_id and provided_resource_details:
+            # Match the cache's resource ID; a batch job does not define a new
+            # resource. Its context still partitions the usage key below.
             resource_id = UsageCollector._calculate_resource_hash(
                 resource_details={
                     key: value
                     for key, value in provided_resource_details.items()
-                    if key not in {"source", "source_info"}
+                    if key not in {"source", "source_info", "billing_context"}
                 }
             )
         resource_details_key = self._resource_details_key(

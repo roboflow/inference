@@ -107,6 +107,22 @@ def test_batch_and_regular_usage_never_merge(usage_collector_with_mocked_threads
         None,
         json.dumps({"version": "batch-v1", "media": "image", "multiplier": 0.1}),
         json.dumps({"version": "batch-v1", "media": "video", "multiplier": 0.1}),
+        json.dumps(
+            {
+                "version": "batch-v1",
+                "media": "image",
+                "multiplier": 0.5,
+                "jobId": "job-a",
+            }
+        ),
+        json.dumps(
+            {
+                "version": "batch-v1",
+                "media": "image",
+                "multiplier": 0.5,
+                "jobId": "job-b",
+            }
+        ),
     ]
     keys = []
     cache_keys = []
@@ -128,10 +144,107 @@ def test_batch_and_regular_usage_never_merge(usage_collector_with_mocked_threads
                 }
             }
         )
-    assert len(set(keys)) == 3
-    assert len(set(cache_keys)) == 3
+    assert len(set(keys)) == len(contexts)
+    # Per-call contexts partition usage, but share persistent resource metadata.
+    assert len(set(cache_keys)) == 1
     merged = zip_usage_payloads(payloads)
-    assert sum(len(payload["key"]) for payload in merged) == 3
+    assert sum(len(payload["key"]) for payload in merged) == len(contexts)
+
+
+@pytest.mark.parametrize("resource_id", ["model/1", ""])
+def test_completed_batch_jobs_do_not_accumulate_cached_metadata(
+    usage_collector_with_mocked_threads, monkeypatch, resource_id
+):
+    collector = usage_collector_with_mocked_threads
+    flushed = []
+    monkeypatch.setattr(
+        collector, "_enqueue_payload", lambda payload: flushed.append(payload)
+    )
+    collector.record_system_info()
+    api_key = "batch-cache-key"
+    expected_contexts = []
+
+    for index in range(100):
+        context = json.dumps(
+            {
+                "version": "batch-v1",
+                "media": "image",
+                "multiplier": 0.5,
+                "jobId": f"job-{index}",
+            },
+            sort_keys=True,
+        )
+        expected_contexts.append(context)
+        collector.record_usage(
+            source="",
+            category="model",
+            api_key=api_key,
+            resource_id=resource_id,
+            resource_details={
+                "billable": True,
+                "model_architecture": "yolov8",
+                "billing_context": context,
+            },
+        )
+        collector._enqueue_usage_payload()
+
+    assert not collector._usage
+    assert list(collector._resource_details[api_key].values()) == [
+        {"billable": True, "model_architecture": "yolov8"}
+    ]
+    api_key_hash = collector._calculate_api_key_hash(api_key=api_key)
+    rows = [row for payload in flushed for row in payload[api_key_hash].values()]
+    assert len(rows) == 100
+    assert len({row["resource_id"] for row in rows}) == 1
+    assert [
+        json.loads(row["resource_details"])["billing_context"] for row in rows
+    ] == expected_contexts
+    assert all(row["processed_frames"] == 1 for row in rows)
+
+
+@pytest.mark.parametrize("next_job_id", [None, "job-b"])
+def test_cached_metadata_does_not_supply_another_calls_batch_context(
+    usage_collector_with_mocked_threads, next_job_id
+):
+    collector = usage_collector_with_mocked_threads
+    collector.record_system_info()
+    api_key = "batch-cache-key"
+    context = {
+        "version": "batch-v1",
+        "media": "image",
+        "multiplier": 0.5,
+        "jobId": "job-a",
+    }
+    original_details = {
+        "billable": True,
+        "model_architecture": "yolov8",
+        "billing_context": json.dumps(context),
+    }
+    collector.record_resource_details(
+        category="model",
+        api_key=api_key,
+        resource_id="model/1",
+        resource_details=original_details,
+    )
+    # Read the cache directly without first replacing it through record_usage.
+    details = {"billable": True}
+    if next_job_id is not None:
+        details["billing_context"] = json.dumps({**context, "jobId": next_job_id})
+    collector._update_usage_payload(
+        source="",
+        category="model",
+        api_key=api_key,
+        resource_id="model/1",
+        resource_details=details,
+    )
+
+    api_key_hash = collector._calculate_api_key_hash(api_key=api_key)
+    (row,) = collector._usage[api_key_hash].values()
+    assert json.loads(row["resource_details"]) == {
+        "model_architecture": "yolov8",
+        **details,
+    }
+    assert original_details["billing_context"] == json.dumps(context)
 
 
 def test_authenticated_context_is_recorded_on_request_and_model_rows(
