@@ -46,7 +46,9 @@ def _read_requirement(path, *, name):
             continue
 
         requirement = Requirement(line)
-        if canonicalize_name(requirement.name) == canonicalize_name(name):
+        if canonicalize_name(requirement.name) == canonicalize_name(name) and (
+            requirement.marker is None or requirement.marker.evaluate()
+        ):
             matches.append(requirement)
 
     _require(len(matches) == 1, f"Expected one {name} requirement in {path}")
