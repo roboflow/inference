@@ -393,7 +393,7 @@ class Sam3ForInteractiveImageSegmentation(RoboflowCoreModel):
                 service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
-                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                    f"API key does not have access to model {self.endpoint}"
                 )
         # Already cached
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
