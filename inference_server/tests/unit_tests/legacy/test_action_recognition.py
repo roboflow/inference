@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import inspect
-import os
 import random
 import tempfile
 import threading
@@ -41,6 +40,10 @@ SAMPLING = {
 }
 PLANNED_WINDOWS = [(0, 5), (10, 15), (20, 24)]
 IMAGE_ERROR_PREFIX = "Could not load input image. Cause: "
+
+# Zero-filled, not random: OpenCV opens some random byte strings as an image
+# or a raw video stream, so they do not reliably fail to decode.
+UNDECODABLE_CLIP = bytes(4096)
 
 
 def write_clip(path: Path, frame_count: int = _FRAME_COUNT, fps: float = _FPS):
@@ -352,7 +355,7 @@ class TestClassifyVideo:
                 None,
                 bridge,
                 video_type="base64",
-                video_value=base64.b64encode(os.urandom(4096)).decode("ascii"),
+                video_value=base64.b64encode(UNDECODABLE_CLIP).decode("ascii"),
                 class_filter=None,
             )
 

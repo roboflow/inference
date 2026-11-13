@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import os
 import tempfile
 from pathlib import Path
 
@@ -18,6 +17,10 @@ _IMAGE_ERROR_PREFIX = "Could not load input image. Cause: "
 _FRAME_COUNT = 12
 _FPS = 10.0
 _WIDTH, _HEIGHT = 64, 48
+
+# Zero-filled, not random: OpenCV opens some random byte strings as an image
+# or a raw video stream, so they do not reliably fail to decode.
+_UNDECODABLE_CLIP = bytes(4096)
 
 
 def _frame_colour_bgr(index: int) -> tuple[int, int, int]:
@@ -85,7 +88,7 @@ class TestProbeVideo:
 
     def test_undecodable_bytes_are_refused(self, tmp_path):
         bad = tmp_path / "bad.video"
-        bad.write_bytes(os.urandom(4096))
+        bad.write_bytes(_UNDECODABLE_CLIP)
 
         with pytest.raises(LegacyHTTPError) as error:
             video.probe_video(str(bad))
@@ -178,7 +181,7 @@ class TestReadFrameWindows:
 
     def test_undecodable_file_is_refused(self, tmp_path):
         bad = tmp_path / "bad.video"
-        bad.write_bytes(os.urandom(4096))
+        bad.write_bytes(_UNDECODABLE_CLIP)
 
         with pytest.raises(LegacyHTTPError) as error:
             list(video.read_frame_windows(str(bad), windows=[[0]]))
