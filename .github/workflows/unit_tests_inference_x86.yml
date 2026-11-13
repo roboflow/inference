@@ -62,6 +62,9 @@ jobs:
           pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
           pip install --no-deps ./inference_model_manager
           pip install --no-deps ./inference_server
+      - name: OpenCV build script regression tests
+        timeout-minutes: 2
+        run: python -m pytest tests/docker/test_build_opencv.py -q
       - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
           make create_workflows_wheel create_streamvision_wheel
