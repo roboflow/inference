@@ -2238,7 +2238,10 @@ def post_to_roboflow_api(
         Dict[int, Callable[[Union[requests.exceptions.HTTPError]], None]]
     ] = None,
 ) -> dict:
-    """Generic function to make a POST request to the Roboflow API.
+    """Make a JSON POST request to the Roboflow API.
+
+    The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
+    waiting one and then two seconds. Other endpoints make one attempt.
 
     Args:
         endpoint: API endpoint path
@@ -2246,6 +2249,12 @@ def post_to_roboflow_api(
         payload: JSON payload
         params: Additional URL parameters
         http_errors_handlers: Optional custom HTTP error handlers by status code
+
+    Returns:
+        dict: The decoded JSON response.
+
+    Raises:
+        RoboflowAPIRequestError: If the request or response fails.
     """
 
     if OFFLINE_MODE:
@@ -2269,13 +2278,24 @@ def post_to_roboflow_api(
 
         headers = build_roboflow_api_headers()
 
-        response = requests.post(
-            url=wrapped_url,
-            json=payload,
-            headers=headers,
-            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-            verify=ROBOFLOW_API_VERIFY_SSL,
-        )
+        for attempt in range(3):
+            response = requests.post(
+                url=wrapped_url,
+                json=payload,
+                headers=headers,
+                timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+                verify=ROBOFLOW_API_VERIFY_SSL,
+            )
+            if (
+                endpoint.strip("/") != "apiproxy/google_vision_ocr"
+                or response.status_code not in (502, 503, 504)
+                or attempt == 2
+            ):
+                break
+
+            response.close()
+            time.sleep(attempt + 1)
+
         api_key_safe_raise_for_status(response=response)
         return response.json()
 

@@ -58,7 +58,7 @@ RUN pip3 install uv \
     && cd stream_vision \
     && uv build --out-dir /wheels \
     && cd - \
-    && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && pip3 install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise,databricks]" \
     && pip3 install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]" \
     && rm -rf ~/.cache/pip
 

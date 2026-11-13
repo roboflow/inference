@@ -16,7 +16,10 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common import vlm_reference_examples
-from roboflow_workflows.core_steps.common.vlm_reference_examples import ReferenceExample
+from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    SHARED_REFERENCE_PARTS_CACHE,
+    ReferenceExample,
+)
 from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     INSTANCE_SEGMENTATION_DEFAULT_MODEL,
     STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
@@ -86,6 +89,14 @@ NORMALIZED_LEGACY_OUTPUT = json.dumps(
     }
 )
 EXPECTED_XYXY = [800.0, 400.0, 1600.0, 1200.0]
+
+
+@pytest.fixture(autouse=True)
+def _empty_reference_parts_cache():
+    # Every block instance of the process shares this cache.
+    SHARED_REFERENCE_PARTS_CACHE.clear()
+    yield
+    SHARED_REFERENCE_PARTS_CACHE.clear()
 
 
 def _build_image(width: int, height: int) -> WorkflowImageData:
@@ -952,7 +963,7 @@ def test_run_accepts_a_numpy_reference_image() -> None:
     assert content[2]["image_url"].startswith("data:image/jpeg;base64,")
 
 
-def test_reference_images_load_once_per_block_instance() -> None:
+def test_reference_images_load_once_for_all_block_instances() -> None:
     # given
     first_block = OpenAIBlockV7(api_key="rf-key")
     second_block = OpenAIBlockV7(api_key="rf-key")
@@ -964,15 +975,14 @@ def test_reference_images_load_once_per_block_instance() -> None:
         "load_image",
         side_effect=vlm_reference_examples.load_image,
     ) as load_image:
-        for block in (first_block, first_block):
+        prompts = [
             _run_detection_with_mock(
                 [_reference_example()], output_classes=labels, block=block
-            )
-        loads_of_the_first_block = load_image.call_count
-        _run_detection_with_mock(
-            [_reference_example()], output_classes=labels, block=second_block
-        )
+            )[1]
+            for block in (first_block, first_block, second_block)
+        ]
 
     # then
-    assert loads_of_the_first_block == 1
-    assert load_image.call_count == 2
+    assert load_image.call_count == 1
+    first_content = prompts[0]["input"][0]["content"]
+    assert prompts[2]["input"][0]["content"][:3] == first_content[:3]
