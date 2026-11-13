@@ -31,6 +31,7 @@ import requests
 from roboflow_workflows.environment import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
 
@@ -40,6 +41,7 @@ from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
 from inference_models.models.base.action_recognition import VideoSampling
+from inference_sdk.http.entities import ApiKeyTransport, InferenceConfiguration
 from inference_sdk.http.utils.requests import deduct_api_key_from_string
 
 ACTION_RECOGNITION_ENDPOINT = "/infer/action_recognition"
@@ -102,13 +104,29 @@ class RemoteActionRecognitionModel:
         )
         clip = encode_window(frames, fps=fps)
 
+        # The SDK has no client call that takes clip bytes, so this request
+        # carries what its calls carry: usage attribution, the billing
+        # opt-out of an internal run, and the configured key transport.
+        configuration = InferenceConfiguration(
+            api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT
+        )
+        transport = configuration.api_key_transport
         payload = {
+            **configuration.to_source_parameters(),
             "model_id": self.model_id,
-            "api_key": self.api_key,
             "video": {
                 "type": "base64",
                 "value": base64.b64encode(clip).decode("ascii"),
             },
+        }
+        if transport is not ApiKeyTransport.HEADER:
+            payload["api_key"] = self.api_key
+        headers = None
+        if transport is not ApiKeyTransport.LEGACY and self.api_key is not None:
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+        query = {
+            **configuration.to_source_parameters(include_origin=True),
+            **(configuration.to_billing_query_parameters() or {}),
         }
         if class_names:
             payload["class_filter"] = class_names
@@ -122,6 +140,8 @@ class RemoteActionRecognitionModel:
         response = requests.post(
             api_url.rstrip("/") + ACTION_RECOGNITION_ENDPOINT,
             json=payload,
+            params=query or None,
+            headers=headers,
             timeout=REMOTE_REQUEST_TIMEOUT_SECONDS,
         )
         if response.status_code >= 400:

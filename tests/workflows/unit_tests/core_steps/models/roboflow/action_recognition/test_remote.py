@@ -29,6 +29,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference_models import ActionRecognitionContract, VideoSampling
 from inference_models.models.base.action_recognition import plan_windows
+from inference_sdk.config import outbound_service_secret, usage_source_tags
 
 PUNCH_SAMPLING = VideoSampling(
     window_seconds=32 / 12,
@@ -60,8 +61,10 @@ class _FakeServer:
         self.timeline = timeline
         self.requests: List[dict] = []
 
-    def post(self, url, json, timeout):
-        self.requests.append({"url": url, "json": json})
+    def post(self, url, json, timeout, params=None, headers=None):
+        self.requests.append(
+            {"url": url, "json": json, "params": params, "headers": headers}
+        )
         clip = base64.b64decode(json["video"]["value"])
         handle, path = tempfile.mkstemp(suffix=".video")
         os.close(handle)
@@ -231,7 +234,7 @@ def test_window_the_endpoint_would_pad_or_split_is_refused(
 
 
 def test_a_server_that_read_another_clip_is_an_error(monkeypatch):
-    def post(url, json, timeout):
+    def post(url, json, timeout, **kwargs):
         return _FakeResponse(
             {
                 "timeline": [],
@@ -248,8 +251,48 @@ def test_a_server_that_read_another_clip_is_an_error(monkeypatch):
         model.infer(frames=_frames(32), fps=12.0)
 
 
+@pytest.mark.parametrize(
+    "transport, key_in_body, headers",
+    [
+        ("legacy", True, None),
+        ("both", True, {"Authorization": "Bearer key"}),
+        ("header", False, {"Authorization": "Bearer key"}),
+    ],
+)
+def test_request_carries_workflow_attribution_billing_opt_out_and_key_transport(
+    monkeypatch, transport, key_in_body, headers
+):
+    # An internal workflow run that opted out of billing must not have every
+    # window billed to the customer's key, as with the other remote models.
+    server = _FakeServer(timeline=[])
+    _fake_platform(
+        monkeypatch, server.post, class_names=None, video_sampling=PUNCH_SAMPLING
+    )
+    monkeypatch.setattr(remote, "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", transport)
+    model = load_remote_action_recognition_model("ws/m/1", api_key="key")
+    tags = {"source": "workflow", "source_info": "ws/flow"}
+    tags_token = usage_source_tags.set(tags)
+    secret_token = outbound_service_secret.set("service-secret")
+    try:
+        model.infer(_frames(32), fps=12.0)
+    finally:
+        outbound_service_secret.reset(secret_token)
+        usage_source_tags.reset(tags_token)
+
+    request = server.requests[0]
+    assert {key: request["json"][key] for key in tags} == tags
+    assert ("api_key" in request["json"]) is key_in_body
+    assert request["headers"] == headers
+    assert request["params"] == {
+        **tags,
+        "source_info_origin": "context",
+        "service_secret": "service-secret",
+        "countinference": False,
+    }
+
+
 def test_server_errors_hide_the_api_key(monkeypatch):
-    def post(url, json, timeout):
+    def post(url, json, timeout, **kwargs):
         return _FakeResponse(
             {"message": "no model for api_key=secret123"}, status_code=404
         )

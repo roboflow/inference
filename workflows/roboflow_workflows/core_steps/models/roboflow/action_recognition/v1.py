@@ -52,7 +52,6 @@ from roboflow_workflows.execution_engine.entities.workload import (
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
-    ModelExecutionLocation,
     ModelRequiredAction,
     Runtime,
     Severity,
@@ -271,10 +270,11 @@ class BlockManifest(WorkflowBlockManifest):
         Under LOCAL step execution the block owns its model loading: it asks
         the model provider for the model through
         `load_action_recognition_model()`, not through the generic
-        `add_model()` registration. The declared dependency describes
-        that supported execution path, so it is LOCAL and kept away from the
-        generic preloader. The configured id is returned verbatim, selector
-        included. The tensor sibling re-exports this manifest.
+        `add_model()` registration, so the declared dependency is kept away
+        from the generic preloader. Under REMOTE step execution the model
+        runs on a server, so where it runs follows the environment. The
+        configured id is returned verbatim, selector included. The tensor
+        sibling re-exports this manifest.
 
         Returns:
             The configured action recognition model.
@@ -283,7 +283,6 @@ class BlockManifest(WorkflowBlockManifest):
             roboflow_platform_model(
                 self.model_id,
                 required_action=ModelRequiredAction.EXECUTION,
-                execution_location=ModelExecutionLocation.LOCAL,
                 preloadable=False,
             )
         ]
