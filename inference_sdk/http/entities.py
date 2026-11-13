@@ -143,6 +143,13 @@ class InferenceConfiguration:
         max_detections: The maximum number of detections for the inference.
         iou_threshold: The intersection over union threshold for the inference.
         stroke_width: The stroke width for the inference.
+        max_concurrent_requests (int): Maximum in-flight HTTP requests per
+            scheduled batch, defaulting to one. With concurrency above one,
+            completed requests free slots while earlier requests are still
+            running or retrying. A slow failure can therefore allow the SDK
+            to send the full batch before it observes the failure. Metered
+            endpoints may count those requests even if the SDK raises and
+            returns no results.
     """
 
     confidence_threshold: Optional[Confidence] = None
