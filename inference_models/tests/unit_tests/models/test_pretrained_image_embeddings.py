@@ -343,6 +343,9 @@ def synthetic_rgb_image(height, width, seed):
 # float32 rounding differs. Its PIL processors resample in two separable passes with
 # fixed-point weights and round to uint8 after each pass, where torch rounds once:
 # rare pixels land up to two 8-bit levels away, i.e. 2 / 255 / std once normalised.
+# Pillow 13 runs the vertical pass first when height shrinks far more than width,
+# which moves more pixels by one level (about 0.2 levels on average for 517x263 to
+# 224x224). A wrong resample filter is off by two or more levels on average.
 @pytest.mark.parametrize(
     "config,processor_name,pil",
     [
@@ -369,9 +372,10 @@ def test_preprocessing_matches_transformers(config, processor_name, pil, image_s
 
     assert result.shape == reference.shape
     assert result.dtype == torch.float32
-    atol = 2 / 255 / min(config["image_std"]) + 1e-5 if pil else 1e-5
+    level = 1 / 255 / min(config["image_std"])
+    atol = 2 * level + 1e-5 if pil else 1e-5
     torch.testing.assert_close(result, reference, atol=atol, rtol=0)
-    assert (result - reference).abs().mean() < 1e-3
+    assert (result - reference).abs().mean() < (0.5 * level if pil else 1e-3)
     assert torch.equal(
         pre_process_images(np.ascontiguousarray(image[:, :, ::-1]), parsed, device),
         result,
