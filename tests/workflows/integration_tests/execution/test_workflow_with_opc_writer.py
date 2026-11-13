@@ -35,6 +35,11 @@ from tests.workflows.integration_tests.execution.workflows_gallery_collector.dec
     add_to_workflows_gallery,
 )
 
+# The block under test waits this long for each answer from the test server. A busy CI
+# runner can pause the whole process for over a second; a healthy answer takes
+# milliseconds.
+BLOCK_TIMEOUT_SECONDS = 5
+
 WORKFLOW_OPC_WRITER = {
     "version": "1.0",
     "inputs": [
@@ -60,6 +65,7 @@ WORKFLOW_OPC_WRITER = {
             "value": "$inputs.opc_value",
             "value_type": "$inputs.opc_value_type",
             "fire_and_forget": False,
+            "timeout": BLOCK_TIMEOUT_SECONDS,
         }
     ],
     "outputs": [
@@ -96,6 +102,7 @@ WORKFLOW_OPC_WRITER_DIRECT_MODE = {
             "value": "$inputs.opc_value",
             "value_type": "$inputs.opc_value_type",
             "fire_and_forget": False,
+            "timeout": BLOCK_TIMEOUT_SECONDS,
             "node_lookup_mode": "direct",
         }
     ],
@@ -571,7 +578,7 @@ def test_connection_pooling_reuses_connections(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=100,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
 
@@ -591,7 +598,7 @@ def test_connection_pooling_reuses_connections(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=200,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
 
@@ -635,7 +642,7 @@ def test_connection_invalidation_creates_new_connection(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=300,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
 
@@ -663,7 +670,7 @@ def test_connection_invalidation_creates_new_connection(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=400,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
 
@@ -720,7 +727,7 @@ def test_different_servers_get_different_connections(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=500,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
 
@@ -738,7 +745,7 @@ def test_different_servers_get_different_connections(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=600,
-        timeout=1,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
         max_retries=1,
     )
@@ -766,7 +773,7 @@ def test_close_all_connections(test_opc_server, reset_connection_manager) -> Non
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=700,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
 
@@ -788,7 +795,7 @@ def test_close_all_connections(test_opc_server, reset_connection_manager) -> Non
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=800,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
 
@@ -821,7 +828,7 @@ def test_pooled_session_survives_idling_past_its_own_session_timeout(
             object_name=test_opc_server["object_name"],
             variable_name="Int32Var",
             value=900,
-            timeout=2,
+            timeout=BLOCK_TIMEOUT_SECONDS,
             value_type="Int32",
         )
         assert error_status == False
@@ -846,7 +853,7 @@ def test_pooled_session_survives_idling_past_its_own_session_timeout(
             object_name=test_opc_server["object_name"],
             variable_name="Int32Var",
             value=901,
-            timeout=2,
+            timeout=BLOCK_TIMEOUT_SECONDS,
             value_type="Int32",
         )
 
@@ -874,7 +881,7 @@ def test_pooled_session_asks_the_server_for_the_configured_timeout(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=902,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
     assert error_status == False
@@ -905,7 +912,7 @@ def test_shutdown_hands_the_session_back_to_the_server(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=1000,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
     assert error_status == False
@@ -925,7 +932,7 @@ def test_shutdown_hands_the_session_back_to_the_server(
         object_name=test_opc_server["object_name"],
         variable_name="Int32Var",
         value=1001,
-        timeout=2,
+        timeout=BLOCK_TIMEOUT_SECONDS,
         value_type="Int32",
     )
     assert error_status_after_shutdown == True
@@ -946,7 +953,7 @@ def test_real_server_rejects_password_mismatch_without_reusing_pooled_session(
         "user_name": test_opc_server["user_name"],
         "object_name": test_opc_server["object_name"],
         "variable_name": "Int32Var",
-        "timeout": 2,
+        "timeout": BLOCK_TIMEOUT_SECONDS,
     }
     password = test_opc_server["password"]
     error, message = opc_connect_and_write_value(

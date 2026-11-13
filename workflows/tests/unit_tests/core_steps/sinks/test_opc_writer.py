@@ -58,6 +58,38 @@ def test_create_client_requests_short_session_timeout(manager) -> None:
     )
 
 
+def test_create_client_bounds_each_request_with_the_block_timeout(manager) -> None:
+    # given
+    tloop = MagicMock()
+
+    # when
+    with patch(f"{V1}.Client") as client_class, patch.object(
+        manager, "_get_tloop", return_value=tloop
+    ):
+        manager._create_client(url=URL, user_name=None, password=None, timeout=7)
+
+    # then - asyncua's per-request timeout; it ignores `sync_wrapper_timeout` when the
+    # client runs on a ThreadLoop it did not create, like the shared one
+    client_class.assert_called_once_with(url=URL, timeout=7, tloop=tloop)
+
+
+def test_reused_connection_waits_the_timeout_of_the_write_reusing_it(manager) -> None:
+    # given
+    pooled_client = MagicMock()
+    with patch.object(
+        manager, "_create_client", return_value=pooled_client
+    ) as create_client, patch.object(manager, "_connect_with_retry"):
+        manager.get_connection(URL, None, None, timeout=2)
+
+        # when
+        reused_client = manager.get_connection(URL, None, None, timeout=9)
+
+    # then
+    assert reused_client is pooled_client
+    create_client.assert_called_once()
+    assert pooled_client.aio_obj.uaclient.protocol.timeout == 9
+
+
 def test_session_timeout_defaults_to_one_minute() -> None:
     # given - asserted against a cleared environment, so a deployment that legitimately
     # sets OPC_SESSION_TIMEOUT_SECONDS does not fail the suite

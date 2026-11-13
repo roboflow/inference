@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- OPC UA Writer (`roboflow_enterprise/opc_writer_sink@v1`) honors its `timeout` field again. Since the block began sharing one event loop between its clients (December 2025), the field had no effect: every request to the server waited asyncua's built-in 4 seconds. `timeout` now bounds each request (every step of the connect, the node lookups and the write), as the OPC UA Reader's does, and a pooled session takes the `timeout` of the write that reuses it. With the default of 2, a request the server answers after 2 to 4 seconds now fails where it used to succeed. Raise `timeout` for a slow server; values above 4 seconds now take effect too.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.
