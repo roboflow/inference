@@ -20,6 +20,7 @@ per-order load sequences in a fresh interpreter.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
 import os
 import pickle
@@ -243,6 +244,28 @@ def test_module_level_monkeypatch_survives_via_shared_identity(monkeypatch) -> N
     assert getattr(canonical_cfg, "_PATCH_PROBE") is sentinel
 
 
+def test_discarded_legacy_module_forwards_to_canonical() -> None:
+    # A thread that found the loader's temporary module in sys.modules keeps
+    # it after the swap, so names must still resolve through it.
+    from inference._workflows_compat import _WorkflowsCompatFinder
+
+    legacy = "inference.core.workflows.core_steps.common.deserializers"
+    importlib.import_module(legacy)
+    canonical = importlib.import_module(
+        "roboflow_workflows.core_steps.common.deserializers"
+    )
+    spec = _WorkflowsCompatFinder().find_spec(legacy)
+    discarded = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(discarded)
+
+    assert discarded is not canonical
+    assert sys.modules[legacy] is canonical
+    assert discarded.deserialize_image_kind is canonical.deserialize_image_kind
+    assert "deserialize_image_kind" in dir(discarded)
+    with pytest.raises(AttributeError):
+        getattr(discarded, "_definitely_not_a_real_name_")
+
+
 def test_server_configuration_builder_includes_enterprise_policy() -> None:
     # Phase B parity — no configuration reset required: the builder does not
     # install anything, and the memoised server object stays valid because it
@@ -420,6 +443,50 @@ def test_subprocess_legacy_first_then_canonical_shares_identity() -> None:
         env={"API_LOGGING_ENABLED": "False"},
     )
     assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+
+
+def test_subprocess_concurrent_cold_legacy_from_import_resolves() -> None:
+    # Concurrent first `from <legacy> import <name>` on a cold module.
+    # Threads that find the loader's temporary module in sys.modules used to
+    # fail with "cannot import name ... (unknown location)".
+    result = _run_subprocess(
+        """
+        import importlib, sys, threading
+        import inference.core
+        importlib.import_module("inference.core.workflows.core_steps.common")
+        legacy = "inference.core.workflows.core_steps.common.deserializers"
+        canonical = "roboflow_workflows.core_steps.common.deserializers"
+        assert legacy not in sys.modules and canonical not in sys.modules
+        threads_count = 10
+        barrier = threading.Barrier(threads_count)
+        results = []
+
+        def worker():
+            barrier.wait()
+            try:
+                from inference.core.workflows.core_steps.common.deserializers import (
+                    deserialize_image_kind,
+                )
+            except BaseException as error:
+                results.append(error)
+            else:
+                results.append(deserialize_image_kind)
+
+        threads = [threading.Thread(target=worker) for _ in range(threads_count)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert sys.modules[legacy] is sys.modules[canonical]
+        expected = sys.modules[canonical].deserialize_image_kind
+        failures = [r for r in results if r is not expected]
+        assert len(results) == threads_count and not failures, failures
+        print("ok")
+        """,
+        env={"API_LOGGING_ENABLED": "False"},
+    )
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.stdout.strip().endswith("ok")
 
 
 @pytest.mark.parametrize("order", ["canonical", "legacy"])
