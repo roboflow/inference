@@ -52,7 +52,24 @@ def test_base_dependencies_keep_gpu_and_workflow_support_optional() -> None:
         "pydantic",
         "psutil",
     } <= dependencies.keys()
-    assert dependencies["pillow"].marker is None
+    pillow = [
+        requirement
+        for value in _load_pyproject()["project"]["dependencies"]
+        if (requirement := Requirement(value)).name == "pillow"
+    ]
+
+    for python_version in ("3.10", "3.11", "3.12", "3.13"):
+        for sys_platform in ("linux", "win32", "darwin"):
+            matching = [
+                requirement
+                for requirement in pillow
+                if requirement.marker is None
+                or requirement.marker.evaluate(
+                    {"python_version": python_version, "sys_platform": sys_platform}
+                )
+            ]
+
+            assert len(matching) == 1, (python_version, sys_platform)
     assert (
         not {"torch", "roboflow-workflows", "aiortc", "av", "pynvvideocodec"}
         & dependencies.keys()
