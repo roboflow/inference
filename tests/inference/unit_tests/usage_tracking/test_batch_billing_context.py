@@ -6,6 +6,7 @@ import pytest
 
 from inference.usage_tracking.decorator_helpers import (
     read_batch_billing_context,
+    request_billing_context_query,
     usage_batch_billing_context,
 )
 from inference.usage_tracking.payload_helpers import zip_usage_payloads
@@ -253,3 +254,44 @@ def test_invalid_authenticated_context_never_runs_the_async_handler(
 
     assert calls == ["key"]
     assert collector._usage["key"]
+
+
+def _handler_without_request(countinference=True, service_secret=None):
+    pass
+
+
+def test_handler_without_request_reads_middleware_captured_context(
+    configured_service_secret,
+):
+    raw = _request().query_params["billing_context"]
+    token = request_billing_context_query.set(raw)
+    try:
+        assert read_batch_billing_context(_handler_without_request, (), {}) is None
+        context = read_batch_billing_context(
+            _handler_without_request,
+            (),
+            {"service_secret": configured_service_secret},
+        )
+    finally:
+        request_billing_context_query.reset(token)
+
+    assert json.loads(context) == {
+        "version": "batch-v1",
+        "media": "image",
+        "multiplier": 0.1,
+    }
+
+
+def test_handler_without_request_rejects_malformed_captured_context(
+    configured_service_secret,
+):
+    token = request_billing_context_query.set("{not-json")
+    try:
+        with pytest.raises(ValueError):
+            read_batch_billing_context(
+                _handler_without_request,
+                (),
+                {"service_secret": configured_service_secret},
+            )
+    finally:
+        request_billing_context_query.reset(token)

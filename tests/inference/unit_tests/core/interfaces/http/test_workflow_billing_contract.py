@@ -751,3 +751,77 @@ def test_legacy_route_preserves_direct_internal_service_identity(
     assert details["billable"] is count_inference
     assert row["roboflow_service_name"] == service_name
     assert row["roboflow_internal_secret"] == SERVICE_SECRET
+
+
+BATCH_BILLING_CONTEXT = {
+    "version": "batch-v1",
+    "media": "image",
+    "multiplier": 0.1,
+    "jobId": "job-route-contract",
+}
+
+
+def _billing_context_by_category(api_key: str) -> dict:
+    """The `billing_context` of every usage row recorded for `api_key`, by category."""
+    return {
+        key.split(":", 1)[0]: json.loads(row["resource_details"]).get("billing_context")
+        for key, row in _rows_for_api_key(api_key).items()
+    }
+
+
+def test_authenticated_batch_context_reaches_rows_on_route_without_request(
+    monkeypatch,
+):
+    # given
+    client = _build_test_client(monkeypatch)
+    api_key = "billing-contract-batch-context-key"
+    expected = json.dumps(BATCH_BILLING_CONTEXT, sort_keys=True)
+
+    # when
+    # `/workflows/run` does not bind `request`, so the context must come from
+    # the query value the HTTP middleware captured.
+    response = client.post(
+        "/workflows/run",
+        params={
+            "service_secret": SERVICE_SECRET,
+            "billing_context": json.dumps(BATCH_BILLING_CONTEXT),
+        },
+        json={
+            "api_key": api_key,
+            "specification": _specification(api_key),
+            "inputs": {"value": 1},
+        },
+    )
+
+    # then
+    assert response.status_code == 200
+    assert _billing_context_by_category(api_key) == {
+        "request": expected,
+        "workflows": expected,
+        "model": expected,
+        "workflow_block": expected,
+    }
+
+
+def test_batch_context_without_valid_secret_is_ignored_on_route(monkeypatch):
+    # given
+    client = _build_test_client(monkeypatch)
+    api_key = "billing-contract-batch-context-wrong-secret-key"
+
+    # when
+    response = client.post(
+        "/workflows/run",
+        params={
+            "service_secret": "wrong-secret",
+            "billing_context": json.dumps(BATCH_BILLING_CONTEXT),
+        },
+        json={
+            "api_key": api_key,
+            "specification": _specification(api_key),
+            "inputs": {"value": 1},
+        },
+    )
+
+    # then
+    assert response.status_code == 200
+    assert set(_billing_context_by_category(api_key).values()) == {None}
