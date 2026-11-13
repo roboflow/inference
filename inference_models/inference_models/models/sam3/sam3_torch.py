@@ -2,12 +2,14 @@ import hashlib
 import json
 import os.path
 from copy import copy, deepcopy
+from dataclasses import replace
 from threading import Lock, RLock
 from typing import Dict, Generator, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
 from PIL import Image
+from pycocotools import mask as coco_mask_utils
 from sam3 import build_sam3_image_model
 from sam3.eval.postprocessors import PostProcessImage
 from sam3.model.sam3_image_processor import Sam3Processor
@@ -24,6 +26,7 @@ from sam3.train.transforms.basic_for_api import (
     ToTensorAPI,
 )
 
+from inference_models import ColorFormat
 from inference_models.configuration import DEFAULT_DEVICE, SAM3_IMAGE_SIZE
 from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.models.common.model_packages import get_model_package_contents
@@ -195,6 +198,9 @@ class SAM3Torch:
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         use_embeddings_cache: bool = True,
         image_hashes: Optional[Union[str, List[str]]] = None,
+        *,
+        return_embeddings: bool = True,
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[SAM3ImageEmbeddings]:
         if not self._sam3_allow_client_generated_hash_ids and image_hashes is not None:
@@ -211,6 +217,8 @@ class SAM3Torch:
                 message="No images provided to embed_images()",
                 help_url="https://todo",
             )
+        if input_color_format == "bgr":
+            images_list = [_bgr_to_rgb(image) for image in images_list]
 
         if image_hashes is None:
             image_hashes = [compute_image_hash(img) for img in images_list]
@@ -273,6 +281,10 @@ class SAM3Torch:
                     key=embeddings.image_hash, embeddings=embeddings
                 )
 
+        if not return_embeddings:
+            return [
+                replace(embeddings, embeddings=None) for embeddings in result_embeddings
+            ]
         return result_embeddings
 
     @torch.inference_mode()
@@ -319,8 +331,16 @@ class SAM3Torch:
         load_from_mask_input_cache: bool = False,
         save_to_mask_input_cache: bool = False,
         use_embeddings_cache: bool = True,
+        *,
+        mask_format: str = "dense",
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
-    ) -> List[SAM3Prediction]:
+    ) -> List[Union[SAM3Prediction, Dict]]:
+        if mask_format not in ("dense", "rle"):
+            raise ModelInputError(
+                message=f"Unsupported mask_format: {mask_format}. Use 'dense' or 'rle'.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         if images is None and embeddings is None and image_hashes is None:
             raise ModelInputError(
                 message="Attempted to use SAM3 model segment_with_visual_prompts(...) method not providing valid input - "
@@ -335,6 +355,7 @@ class SAM3Torch:
                 images=images,
                 use_embeddings_cache=use_embeddings_cache,
                 image_hashes=image_hashes,
+                input_color_format=input_color_format,
                 **kwargs,
             )
         elif image_hashes is not None:
@@ -436,6 +457,8 @@ class SAM3Torch:
 
             predictions.append(prediction)
 
+        if mask_format == "rle":
+            return [_prediction_to_rle_dict(p) for p in predictions]
         return predictions
 
     @torch.inference_mode()
@@ -538,6 +561,7 @@ class SAM3Torch:
         output_prob_thresh: float = 0.5,
         max_detections: int = -1,
         mask_format: str = "dense",
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> List[Dict]:
         if mask_format not in ("dense", "rle"):
@@ -554,6 +578,8 @@ class SAM3Torch:
 
         results = []
         for image in images_list:
+            if input_color_format == "bgr":
+                image = _bgr_to_rgb(image)
             np_image = _normalize_to_hwc_uint8(image)
 
             h, w = np_image.shape[:2]
@@ -636,6 +662,35 @@ class SAM3Torch:
             results.append(image_results)
 
         return results
+
+
+def _prediction_to_rle_dict(prediction: SAM3Prediction) -> Dict:
+    masks = prediction.masks
+    if isinstance(masks, torch.Tensor):
+        masks = masks.detach().cpu().numpy()
+    masks = np.asarray(masks)
+    if masks.ndim == 4 and masks.shape[1] == 1:
+        masks = masks[:, 0, ...]
+    elif masks.ndim == 2:
+        masks = masks[None, ...]
+    rle_masks = []
+    for mask in masks:
+        binary = mask if mask.dtype == np.bool_ else mask >= 0
+        rle = coco_mask_utils.encode(np.asfortranarray(binary.astype(np.uint8)))
+        rle_masks.append(
+            {
+                "format": "rle",
+                "size": rle["size"],
+                "counts": rle["counts"].decode("utf-8"),
+            }
+        )
+    scores = prediction.scores
+    if isinstance(scores, torch.Tensor):
+        scores = scores.detach().cpu().numpy()
+    return {
+        "masks": rle_masks,
+        "scores": [float(s) for s in np.asarray(scores).reshape(-1)],
+    }
 
 
 def decode_sam_version(config_path: str) -> str:
@@ -736,6 +791,13 @@ def _normalize_to_hwc_uint8(image: Union[np.ndarray, torch.Tensor]) -> np.ndarra
     if np_image.max() <= 1:
         np_image = np_image * 255
     return np_image.astype(np.uint8)
+
+
+def _bgr_to_rgb(image: ArrayOrTensor) -> ArrayOrTensor:
+    channel_axis = 0 if image.shape[0] == 3 else -1
+    if isinstance(image, torch.Tensor):
+        return image.flip(channel_axis)
+    return np.ascontiguousarray(np.flip(image, channel_axis))
 
 
 def pad_points(args: Dict) -> Dict:

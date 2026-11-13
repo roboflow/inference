@@ -365,6 +365,24 @@ def _downstream_step_selectors(
     return result
 
 
+def close_workflow_blocks(workflow: CompiledWorkflow) -> None:
+    """Call ``close()`` on every initialised block that defines one.
+
+    A failing block is logged and does not stop the others from closing.
+
+    Args:
+        workflow: The compiled workflow whose block instances to close.
+    """
+    for step_name, step in workflow.steps.items():
+        close_fn = getattr(step.step, "close", None)
+        if not callable(close_fn):
+            continue
+        try:
+            close_fn()
+        except Exception as error:
+            logger.warning(f"Could not close workflow step `{step_name}`: {error}")
+
+
 def close_stream_pipelines(workflow: CompiledWorkflow) -> None:
     for step in workflow.steps.values():
         close_fn = getattr(step.step, "close_stream_pipeline", None)

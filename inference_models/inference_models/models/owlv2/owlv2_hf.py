@@ -29,6 +29,7 @@ from inference_models.models.base.types import PreprocessedInputs, Preprocessing
 from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 from inference_models.models.owlv2.cache import (
     OwlV2ClassEmbeddingsCache,
     OwlV2ClassEmbeddingsCacheNullObject,
@@ -165,14 +166,15 @@ class OWLv2HF(
             local_files_only=local_files_only,
             use_fast=True,
         )
-        model = (
-            Owlv2ForObjectDetection.from_pretrained(
-                model_name_or_path,
-                local_files_only=local_files_only,
+        with torch_default_dtype_lock():
+            model = (
+                Owlv2ForObjectDetection.from_pretrained(
+                    model_name_or_path,
+                    local_files_only=local_files_only,
+                )
+                .eval()
+                .to(device)
             )
-            .eval()
-            .to(device)
-        )
         instance = cls(
             model=model,
             processor=processor,
@@ -300,6 +302,10 @@ class OWLv2HF(
         iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
         max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     ) -> List[Detections]:
+        reference_examples = [
+            ReferenceExample.model_validate(r) if isinstance(r, dict) else r
+            for r in reference_examples
+        ]
         reference_embeddings = self.prepare_reference_examples_embeddings(
             reference_examples=reference_examples,
             iou_threshold=iou_threshold,

@@ -8,7 +8,6 @@ on:
     paths-ignore:
       - "docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "**.md"
   push:
@@ -16,7 +15,6 @@ on:
     paths-ignore:
       - "docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "**.md"
   workflow_dispatch:
@@ -62,11 +60,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.easyocr.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt -r requirements/requirements.transformers.txt
-          pip install --no-deps ./inference_models
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
       - name: 🏗️ Build roboflow-workflows + SDK + inference-models wheels
         run: make create_isolation_wheels
       - name: 📦 Install roboflow-workflows (test + enterprise extras) from local wheel
-        run: pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
+        run: pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise,databricks]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Server unit tests
         timeout-minutes: 30
         run: python -m pytest tests/workflows/unit_tests
@@ -100,7 +98,7 @@ jobs:
       - name: Install only standalone package dependencies
         run: |
           pip install --find-links "${{ github.workspace }}/dist" \
-            "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise]" \
+            "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise,databricks]" \
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
           pip check

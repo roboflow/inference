@@ -18,7 +18,7 @@ the package to `inference` - our main inference package, making it selectable ba
 from models.
 
 We are still making changes to add new features and models. API should be fairly stable already, but 
-the problems may still occur. If you encounter any issues, please [report them]((https://github.com/roboflow/inference/issues)).
+the problems may still occur. If you encounter any issues, please [report them](https://github.com/roboflow/inference/issues).
 
 # 💻 Installation
 

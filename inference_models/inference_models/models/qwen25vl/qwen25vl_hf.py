@@ -29,6 +29,7 @@ from inference_models.models.common.roboflow.model_packages import (
 from inference_models.models.common.roboflow.pre_processing import (
     pre_process_network_input_to_image_list,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 
 def _get_qwen25vl_attn_implementation(device: torch.device) -> str:
@@ -100,15 +101,16 @@ class Qwen25VLHF:
         if os.path.exists(adapter_config_path):
             base_model_path = os.path.join(model_name_or_path, "base")
             _patch_preprocessor_config(cache_dir=base_model_path)
-            model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                base_model_path,
-                dtype="auto",
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            )
+            with torch_default_dtype_lock():
+                model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                    base_model_path,
+                    dtype="auto",
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                )
             _patch_preprocessor_config(cache_dir=model_name_or_path)
             model = PeftModel.from_pretrained(model, model_name_or_path)
             if quantization_config is None:
@@ -122,15 +124,16 @@ class Qwen25VLHF:
             )
         else:
             _patch_preprocessor_config(cache_dir=model_name_or_path)
-            model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                model_name_or_path,
-                dtype="auto",
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                local_files_only=local_files_only,
-                quantization_config=quantization_config,
-                attn_implementation=attn_implementation,
-            ).eval()
+            with torch_default_dtype_lock():
+                model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                    model_name_or_path,
+                    dtype="auto",
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    local_files_only=local_files_only,
+                    quantization_config=quantization_config,
+                    attn_implementation=attn_implementation,
+                ).eval()
             Qwen2_5_VLProcessor.image_processor_class = "Qwen2VLImageProcessor"
             processor = Qwen2_5_VLProcessor.from_pretrained(
                 model_name_or_path,

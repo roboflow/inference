@@ -621,6 +621,29 @@ if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
         "connectivity. Unset OFFLINE_MODE for serverless runtimes."
     )
 
+# Databricks SQL Image Source block. DATABRICKS_SQL_IMAGE_SOURCE_ENABLED is the
+# rollout switch: unset, the block is enabled on self-hosted servers and
+# disabled on the Roboflow hosted platform (GCP_SERVERLESS / LAMBDA); an
+# explicit value wins everywhere. Like every variable here it is read at
+# startup, so changing it is a redeployment, not a live kill switch. The block
+# refuses warehouse hosts that resolve to non-global addresses unless an
+# operator opts in, and the byte / pixel budgets apply per block invocation.
+DATABRICKS_SQL_IMAGE_SOURCE_ENABLED = str2bool(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_ENABLED", not (GCP_SERVERLESS or LAMBDA))
+)
+ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES", False)
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES = int(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES", 1024 * 1024 * 1024)
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES = int(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES", 32 * 1024 * 1024)
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS = int(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS", 25_000_000)
+)
+
 # This variable affects extra headers passed to new weights provider created for
 # `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
 # makes the weights provider to reject request for model weights that are coming to
@@ -1433,7 +1456,12 @@ HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT = float(
 # 1440 -> ~5G
 # 1600 -> ~10G
 # 2048 -> ~22G
-RFDETR_ONNX_MAX_RESOLUTION = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+# 0 (or negative) disables the cap — mirrored by inference_models'
+# RFDETR_MAX_INPUT_RESOLUTION default so both load paths agree.
+_RFDETR_ONNX_MAX_RESOLUTION_RAW = int(os.getenv("RFDETR_ONNX_MAX_RESOLUTION", "1600"))
+RFDETR_ONNX_MAX_RESOLUTION = (
+    _RFDETR_ONNX_MAX_RESOLUTION_RAW if _RFDETR_ONNX_MAX_RESOLUTION_RAW > 0 else None
+)
 
 # Timeout in seconds for resolving asynchronous workflow / RF-DETR stream
 # pipeline futures on the main execution path.

@@ -51,6 +51,31 @@ def _require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+def _redact(text: str) -> str:
+    # Credential values never enter recorded evidence; stage.log keeps raw output.
+    for name, value in os.environ.items():
+        if len(value) >= 8 and re.search(
+            r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PROFILE", name
+        ):
+            text = text.replace(value, "[redacted]")
+    return text
+
+
+def _summarize_failure(longrepr) -> str:
+    crash = getattr(longrepr, "reprcrash", None)
+    if crash is not None:
+        text = str(crash.message)
+    elif isinstance(longrepr, tuple) and len(longrepr) == 3:
+        text = str(longrepr[2])
+    else:
+        text = str(longrepr)
+    lines = _redact(text).strip().splitlines()
+    summary = lines[0].strip() if lines else "failed"
+    if len(summary) > 200:
+        summary = summary[:200] + "…"
+    return summary
+
+
 def _validate_collection_skips(value) -> None:
     _require(
         isinstance(value, list)
@@ -204,6 +229,7 @@ class _Recorder:
         self.collection_errors = 0
         self.collection_skips: list[str] = []
         self.fixtures: dict[str, dict] = {}
+        self.failures: dict[str, dict[str, str]] = {}
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, session, config, items) -> None:
@@ -248,6 +274,16 @@ class _Recorder:
         self.collection_errors += int(report.failed)
         if report.skipped:
             self.collection_skips.append(report.nodeid)
+
+    def pytest_runtest_logreport(self, report) -> None:
+        """Keep a redacted one-line summary of the final failing attempt.
+
+        Args:
+            report: Pytest test report; pytest-retry logs only the last attempt.
+        """
+        if report.failed:
+            summary = _summarize_failure(report.longrepr)
+            self.failures.setdefault(report.nodeid, {})[report.when] = summary
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtest_setup(self, item):
@@ -309,6 +345,7 @@ class _Recorder:
                 "outcomes": {p: list(stats["outcomes"][p]) for p in _PHASES},
                 "durations": {p: list(stats["durations"][p])[1:] for p in _PHASES},
                 "elapsed_seconds": perf_counter() - started,
+                "failures": self.failures.get(item.nodeid, {}),
             }
             for phase, records in self.fixtures[item.nodeid].items():
                 self.cases[item.nodeid]["outcomes"][phase] = [r[0] for r in records]
@@ -335,6 +372,39 @@ def _pytest(suite: Path, *, recorder: _Recorder, collect: bool = False) -> int:
     return result
 
 
+def _repository_identity() -> dict:
+    # Any same-repository branch or tag may run, as before sharding. The guard
+    # output pins one dispatched commit across jobs; it is not a credential gate.
+    ref = os.environ.get("GITHUB_REF", "")
+    _require(
+        os.environ.get("GITHUB_REPOSITORY") == "roboflow/inference"
+        and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+        and ref.startswith(("refs/heads/", "refs/tags/"))
+        and ref == os.environ.get("HOSTED_E2E_APPROVED_REF")
+        and os.environ.get("HOSTED_E2E_APPROVED_SHA") == os.environ.get("GITHUB_SHA")
+        and os.environ.get("GITHUB_SHA") == os.environ["HOSTED_E2E_TEST_SHA"]
+        and os.environ["HOSTED_E2E_TEST_SHA"] == os.environ["HOSTED_E2E_RUNNER_SHA"],
+        "trusted manual repository execution required",
+    )
+    _require(
+        bool(re.fullmatch(r"[0-9a-f]{40}", os.environ["HOSTED_E2E_TEST_SHA"])),
+        "invalid test SHA",
+    )
+    projects = {
+        "staging": "roboflow-staging-serverless",
+        "production": "roboflow-platform-serverless",
+    }
+    target = os.environ["HOSTED_E2E_TARGET"]
+    _require(target in projects, "invalid target")
+    _require(
+        os.environ.get("HOSTED_PLATFORM_TESTS_PROJECT") == projects[target],
+        "target mismatch",
+    )
+    # Existing public manual tests do not verify serving revision or image.
+    # Never present this mode as deployment-bound acceptance.
+    return {"verification": "not-performed", "target": target}
+
+
 def _context(policy: Path) -> dict:
     context = {
         "run_key": os.environ["HOSTED_E2E_RUN_KEY"],
@@ -342,7 +412,11 @@ def _context(policy: Path) -> dict:
         "target": os.environ["HOSTED_E2E_TARGET"],
         "runner_sha": os.environ["HOSTED_E2E_RUNNER_SHA"],
         "policy_sha": os.environ["HOSTED_E2E_POLICY_SHA"],
-        "identity": _verify_identity(policy),
+        "identity": (
+            _repository_identity()
+            if os.environ.get("HOSTED_E2E_MODE") == "repository"
+            else _verify_identity(policy)
+        ),
         "dependencies_hash": _digest(
             sorted(
                 (dist.metadata["Name"].lower(), dist.version)
@@ -427,11 +501,13 @@ def _prepare(*, suite: Path, policy: Path, output: Path) -> None:
     # SKIP_WARMUP at import time, so pytest must not reuse its collection import.
 
 
-def _warmup(*, suite: Path, policy: Path, output: Path) -> None:
+def _warmup(
+    *, suite: Path, policy: Path, output: Path, skip_warmup: bool = False
+) -> None:
     plan = _read(output / "plan.json")
     _validate_plan(plan)
     _require(_context(policy) == plan["context"], "identity changed before warmup")
-    os.environ["SKIP_WARMUP"] = "false"
+    os.environ["SKIP_WARMUP"] = "true" if skip_warmup else "false"
     recorder = _Recorder(plan=plan, warmup=True)
     _require(_pytest(suite, recorder=recorder) == 0, "warmup failed")
     _require(recorder.collection_errors == 0, "warmup collection failed")
@@ -457,6 +533,7 @@ def _warmup(*, suite: Path, policy: Path, output: Path) -> None:
         {
             "cases": recorder.cases,
             "collection_skips": sorted(recorder.collection_skips),
+            "services_warmup_skipped": skip_warmup,
         },
     )
 
@@ -516,6 +593,7 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
     _validate_plan(plan)
     issues = []
     failures = []
+    failure_summaries = {}
     retried = []
     unexpected_skips = []
     seen = set()
@@ -581,6 +659,15 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
                 ),
                 "invalid timings",
             )
+            summaries = case.get("failures", {})
+            _require(
+                isinstance(summaries, dict)
+                and all(
+                    phase in _PHASES and isinstance(text, str) and text
+                    for phase, text in summaries.items()
+                ),
+                "invalid failure summaries",
+            )
             calls = outcomes["call"]
             if len(calls) > 1:
                 retried.append(nodeid)
@@ -610,6 +697,8 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
                 or (not skipped and (not calls or calls[-1] != "passed"))
             ):
                 failures.append(nodeid)
+                if summaries:
+                    failure_summaries[nodeid] = summaries
     if seen != set(_SHARDS):
         issues.append("missing-shards")
     accepted = not (issues or failures or unexpected_skips)
@@ -617,6 +706,9 @@ def _aggregate(plan: dict, reports: list[dict], *, readiness: dict) -> dict:
         "accepted": accepted,
         "issues": issues,
         "failures": sorted(failures),
+        "failure_summaries": {
+            n: failure_summaries[n] for n in sorted(failure_summaries)
+        },
         "unexpected_skips": sorted(unexpected_skips),
         "retried": sorted(retried),
     }
@@ -659,6 +751,10 @@ def main(
         shard (str | None): Shard identifier for the shard stage.
     """
     try:
+        _require(
+            os.environ.get("HOSTED_E2E_MODE") != "repository",
+            "repository execution requires the output-capturing entrypoint",
+        )
         if os.environ.get("GITHUB_ACTIONS") == "true":
             _require(
                 os.environ.get("HOSTED_E2E_PRIVATE") == "true",

@@ -7,7 +7,6 @@ on:
     paths-ignore:
       - "docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "**.md"
   push:
@@ -15,7 +14,6 @@ on:
     paths-ignore:
       - "docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "**.md"
   workflow_dispatch:
@@ -60,11 +58,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.sdk.http.txt
-          pip install --no-deps ./inference_models
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
       - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
           make create_workflows_wheel create_streamvision_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]"
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Unit Tests of Inference CLI
         timeout-minutes: 30

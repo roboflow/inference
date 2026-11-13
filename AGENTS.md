@@ -7,7 +7,7 @@ This guide governs the entire repository. If a subfolder provides its own
 Roboflow Inference is a set of Python packages that run computer vision models
 locally and expose them via an HTTP API and command line interface. The repo
 contains the core library, CLI, SDK, and Dockerfiles for building CPU or GPU
-images. Supported Python versions are 3.10–3.12.
+images. Supported Python versions are 3.10–3.13.
 
 ## Project Structure
 - `inference/` – core library with model loading and streaming utilities.
@@ -323,6 +323,8 @@ Before editing or reviewing Python code, read:
 - `.cursor/rules/return-values.mdc`
 
 Also read the following rule when its condition applies:
+
+- `.cursor/rules/trusted-integration-subprocesses.mdc` when adding or changing integration subprocess workers.
 
 - `.cursor/rules/cli-options.mdc` for Python command-line interfaces.
 - `.cursor/rules/pydantic-field-descriptions.mdc` for Pydantic models.

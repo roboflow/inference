@@ -1,0 +1,4 @@
+# webrtc worker
+POST /initialise_webrtc_worker
+POST /webrtc/session/heartbeat
+POST /webrtc/session/heartbeat/end

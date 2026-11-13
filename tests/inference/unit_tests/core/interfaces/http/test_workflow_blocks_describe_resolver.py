@@ -60,7 +60,7 @@ def _client(monkeypatch) -> TestClient:
 def test_describe_route_hands_the_server_resolver_to_dynamic_compilation(
     monkeypatch,
 ) -> None:
-    import inference.core.interfaces.http.handlers.workflows as handler
+    from roboflow_workflows.http_contract import describe as describe_module
 
     captured = {}
 
@@ -68,7 +68,7 @@ def test_describe_route_hands_the_server_resolver_to_dynamic_compilation(
         captured.update(kwargs)
         return []
 
-    monkeypatch.setattr(handler, "compile_dynamic_blocks", recording_compile)
+    monkeypatch.setattr(describe_module, "compile_dynamic_blocks", recording_compile)
     response = _client(monkeypatch).post(
         "/workflows/blocks/describe",
         json={

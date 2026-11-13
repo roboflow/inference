@@ -1,8 +1,11 @@
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
+from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 from inference.core.exceptions import InferenceModelNotFound
 from inference.core.managers import base as base_module
 from inference.core.managers.base import ModelManager
@@ -57,6 +60,64 @@ def test_add_model_passes_manager_owned_artifact_cache() -> None:
     assert model_class.call_count == 2
     for call in model_class.call_args_list:
         assert call.kwargs["content_addressed_artifact_cache"] is artifact_cache
+
+
+@pytest.mark.parametrize("dtype_name", ["float16", "bfloat16"])
+def test_add_model_preserves_dtype_of_concurrent_legacy_load(dtype_name: str) -> None:
+    import torch
+
+    temporary_dtype = getattr(torch, dtype_name)
+    original_dtype = torch.get_default_dtype()
+    construction_started = Event()
+    unrelated_load_finished = Event()
+    constructed_dtypes = []
+    errors = []
+
+    def construct_legacy_model(**kwargs):
+        # Legacy HF loaders change the global default while constructing the
+        # model, but do not acquire inference_models' dtype lock.
+        torch.set_default_dtype(temporary_dtype)
+        try:
+            constructed_dtypes.append(torch.nn.Linear(2, 2).weight.dtype)
+            construction_started.set()
+            assert unrelated_load_finished.wait(timeout=5)
+            constructed_dtypes.append(torch.nn.Linear(2, 2).weight.dtype)
+        finally:
+            torch.set_default_dtype(original_dtype)
+
+        model = MagicMock()
+        return model
+
+    model_registry = MagicMock()
+    model_registry.get_model.side_effect = [construct_legacy_model, MagicMock()]
+
+    with patch.object(base_module, "USE_INFERENCE_MODELS", False), patch.object(
+        base_module, "MODELS_CACHE_AUTH_ENABLED", False
+    ), patch.object(base_module, "_get_cuda_memory_allocated", return_value=None):
+        manager = ModelManager(model_registry=model_registry)
+
+        def load_legacy_model():
+            try:
+                manager.add_model(model_id="legacy/1", api_key="some_api_key")
+            except BaseException as error:
+                errors.append(error)
+
+        thread = Thread(target=load_legacy_model)
+        thread.start()
+        try:
+            assert construction_started.wait(timeout=5)
+            # This completes while the other constructor still needs its
+            # temporary dtype. It must not reset that dtype as if it leaked.
+            manager.add_model(model_id="unrelated/1", api_key="some_api_key")
+        finally:
+            unrelated_load_finished.set()
+            thread.join(timeout=5)
+            torch.set_default_dtype(original_dtype)
+
+    assert not thread.is_alive()
+    assert errors == []
+    assert constructed_dtypes == [temporary_dtype, temporary_dtype]
+    assert set(manager.models()) == {"legacy/1", "unrelated/1"}
 
 
 def test_model_manager_uses_shared_artifact_cache() -> None:
@@ -178,7 +239,7 @@ def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
     monkeypatch.setattr(
         base_module,
         "to_cachable_inference_item",
-        lambda _request, _response: cached_item,
+        lambda _request, _response, model_id: cached_item,
     )
     monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
     monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
@@ -188,6 +249,45 @@ def test_infer_from_request_sync_caches_results_in_model_monitoring_cache(
     assert any(
         call.args[0].startswith("inference:") for call in cache_mock.zadd.call_args_list
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+async def test_infer_from_request_caches_served_model_id_when_request_has_none(
+    monkeypatch: pytest.MonkeyPatch,
+    use_async: bool,
+) -> None:
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    model.infer_from_request.return_value = ObjectDetectionInferenceResponse(
+        predictions=[], image={"width": 1, "height": 1}, time=0.1
+    )
+    model_manager._models = {"yolo_world/l": model}
+    request = YOLOWorldInferenceRequest(
+        image={"type": "url", "value": "https://some/image.jpg"},
+        text=["person"],
+    )
+    cache_mock = MagicMock()
+
+    monkeypatch.setattr(
+        base_module.model_monitoring_cache_module,
+        "model_monitoring_cache",
+        cache_mock,
+    )
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(base_module, "DISABLE_INFERENCE_CACHE", False)
+
+    if use_async:
+        await model_manager.infer_from_request(model_id="yolo_world/l", request=request)
+    else:
+        model_manager.infer_from_request_sync(model_id="yolo_world/l", request=request)
+
+    cached_items = [
+        call.kwargs["value"]
+        for call in cache_mock.zadd.call_args_list
+        if call.args[0].startswith("inference:")
+    ]
+    assert [item["request"]["model_id"] for item in cached_items] == ["yolo_world/l"]
 
 
 def test_infer_from_request_sync_skips_model_monitoring_cache_when_disabled(
@@ -543,6 +643,28 @@ def test_clear() -> None:
     model_manager.clear()
 
     # then
+    assert model_manager.models() == {}
+
+
+@pytest.mark.parametrize("disk_cache_cleanup", [True, False])
+def test_clear_passes_disk_cache_cleanup_to_models(
+    disk_cache_cleanup: bool,
+) -> None:
+    # given
+    model_registry = MagicMock()
+    model_manager = ModelManager(model_registry=model_registry)
+    first_model, second_model = MagicMock(), MagicMock()
+    model_manager._models = {"some/1": first_model, "some/2": second_model}
+
+    # when
+    with patch.object(base_module, "DISK_CACHE_CLEANUP", disk_cache_cleanup):
+        model_manager.clear()
+
+    # then
+    first_model.clear_cache.assert_called_once_with(delete_from_disk=disk_cache_cleanup)
+    second_model.clear_cache.assert_called_once_with(
+        delete_from_disk=disk_cache_cleanup
+    )
     assert model_manager.models() == {}
 
 

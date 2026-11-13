@@ -1,0 +1,344 @@
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field
+from roboflow_workflows.core_steps.common.query_language.entities.introspection import (
+    OperationDescription,
+    OperatorDescription,
+)
+from roboflow_workflows.errors import WorkflowBlockError
+from roboflow_workflows.execution_engine.entities.types import Kind
+from roboflow_workflows.execution_engine.introspection.entities import BlockDescription
+from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import (
+    DynamicBlockDefinition,
+)
+
+
+class WorkflowInferenceRequest(BaseModel):
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    )
+    inputs: Dict[str, Any] = Field(
+        description="Dictionary that contains each parameter defined as an input for chosen workflow"
+    )
+    excluded_fields: Optional[List[str]] = Field(
+        default=None,
+        description="List of field that shall be excluded from the response (among those defined in workflow specification)",
+    )
+    enable_profiling: bool = Field(
+        default=False,
+        description="Flag to request Workflow run profiling. Enables Workflow profiler only when server settings "
+        "allow profiling traces to be exported to clients. Only applies for Workflows definitions saved "
+        "on Roboflow platform.",
+    )
+    debug: bool = Field(
+        default=False,
+        description="When True, captures stdout/stderr emitted by custom Python blocks executed "
+        "locally and returns them in the response under `python_blocks_output_streams`. Also activates "
+        "the workflow-scoped `debug_traces` variable in custom Python blocks; values appended during "
+        "execution are returned under `python_blocks_debug_traces`. On Modal / OCI sandbox executions "
+        "`debug_traces` is a no-op (entries appended remotely are not collected), but calls are safe "
+        "and will not raise.",
+    )
+    workflow_id: Optional[str] = Field(
+        default=None, description="Optional identifier of workflow"
+    )
+    inner_workflow_dispatch_depth: int = Field(
+        default=0,
+        ge=0,
+        strict=True,
+        description="Number of remote inner-workflow dispatch hops preceding this request.",
+    )
+    disable_sinks: bool = Field(
+        default=False,
+        description="Run the workflow with sink writes and outbound notifications/uploads disabled.",
+    )
+
+
+class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):
+    use_cache: bool = Field(
+        default=True,
+        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
+        "definition saved in Roboflow app and want to fetch the newest version for the request.",
+    )
+    workflow_version_id: Optional[str] = Field(
+        default=None,
+        description="Specific version of the workflow to fetch. If not provided, the latest version is used.",
+    )
+
+
+class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
+    specification: dict
+    is_preview: bool = Field(
+        default=False,
+        description="Reserved, used internally by Roboflow to distinguish between preview and non-preview runs",
+    )
+
+
+class DescribeBlocksRequest(BaseModel):
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    )
+    dynamic_blocks_definitions: List[DynamicBlockDefinition] = Field(
+        default_factory=list, description="Dynamic blocks to be used."
+    )
+    execution_engine_version: Optional[str] = Field(
+        default=None,
+        description="Requested Execution Engine compatibility. If given, result will only "
+        "contain blocks suitable for requested EE version, otherwise - descriptions for "
+        "all available blocks will be delivered.",
+    )
+
+
+class DescribeInterfaceRequest(BaseModel):
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval. "
+        "May alternatively be sent in the `Authorization: Bearer <api_key>` header - the route still requires "
+        "a key through one of the channels.",
+    )
+
+
+class PredefinedWorkflowDescribeInterfaceRequest(DescribeInterfaceRequest):
+    use_cache: bool = Field(
+        default=True,
+        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
+        "definition saved in Roboflow app and want to fetch the newest version for the request. "
+        "Only applies for Workflows definitions saved on Roboflow platform.",
+    )
+    workflow_version_id: Optional[str] = Field(
+        default=None,
+        description="Specific version of the workflow to fetch. If not provided, the latest version is used.",
+    )
+
+
+class WorkflowSpecificationDescribeInterfaceRequest(DescribeInterfaceRequest):
+    specification: dict
+
+
+class WorkflowInferenceResponse(BaseModel):
+    outputs: List[Dict[str, Any]] = Field(
+        description="Dictionary with keys defined in workflow output and serialised values"
+    )
+    profiler_trace: Optional[List[dict]] = Field(
+        description="Profiler events",
+        default=None,
+    )
+    python_blocks_output_streams: Optional[
+        Dict[str, List[Dict[str, Optional[str]]]]
+    ] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, stdout/stderr captured for "
+        "each local custom Python block execution, keyed by step name. Each step maps to "
+        "the list of invocations (in execution order) with `stdout` and `stderr` strings "
+        "(or null if empty). Only populated for local executions.",
+    )
+    python_blocks_debug_traces: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, structured debug entries "
+        "appended via the `debug_traces` variable in custom Python blocks, in chronological "
+        "execution order. Each entry has `step` (step name) and `value` (JSON-serialisable "
+        "payload, or string repr for non-serialisable values). When "
+        "`debug_traces.append(..., add_timestamp=True)` was used, the entry also includes "
+        "`timestamp` (ISO-8601) and `timestamp_timezone` (IANA name, default `UTC`). "
+        "Only populated for local executions.",
+    )
+
+
+class WorkflowValidationStatus(BaseModel):
+    status: str = Field(description="Represents validation status")
+
+
+class ExternalWorkflowsBlockSelectorDefinition(BaseModel):
+    manifest_type_identifier: str = Field(description="Identifier of block")
+    property_name: str = Field(description="Name of specific property")
+    property_description: str = Field(description="Description for specific property")
+    compatible_element: str = Field(
+        description="Defines to what type of object (step_output, parameter, etc) reference may be pointing"
+    )
+    is_list_element: bool = Field(
+        description="Boolean flag defining if list of references will be accepted"
+    )
+    is_dict_element: bool = Field(
+        description="Boolean flag defining if dict of references will be accepted"
+    )
+
+
+class ExternalBlockPropertyPrimitiveDefinition(BaseModel):
+    manifest_type_identifier: str = Field(description="Identifier of block")
+    property_name: str = Field(description="Name of specific property")
+    property_description: str = Field(description="Description for specific property")
+    type_annotation: str = Field(
+        description="Pythonic type annotation for property",
+        examples=["Union[str, int]"],
+    )
+
+
+class ExternalOperationDescription(BaseModel):
+    operation_type: str
+    compound: bool
+    input_kind: List[str]
+    output_kind: List[str]
+    nested_operation_input_kind: Optional[List[str]] = None
+    nested_operation_output_kind: Optional[List[str]] = None
+    description: Optional[str] = None
+
+    property_name_options: Optional[List[str]] = Field(
+        default=None,
+        description=("List of possible property names. \
+            Optional parameter for operations extracting property values from data. "),
+        examples=[
+            "size",
+            "height",
+            "width",
+            "aspect_ratio",
+        ],
+    )
+
+    @classmethod
+    def from_internal_entity(
+        cls, operation_description: OperationDescription
+    ) -> "ExternalOperationDescription":
+        nested_operation_input_kind, nested_operation_output_kind = None, None
+        if operation_description.nested_operation_input_kind:
+            nested_operation_input_kind = [
+                k.name for k in operation_description.nested_operation_input_kind
+            ]
+        if operation_description.nested_operation_output_kind:
+            nested_operation_output_kind = [
+                k.name for k in operation_description.nested_operation_output_kind
+            ]
+        return cls(
+            operation_type=operation_description.operation_type,
+            compound=operation_description.compound,
+            input_kind=[k.name for k in operation_description.input_kind],
+            output_kind=[k.name for k in operation_description.output_kind],
+            nested_operation_input_kind=nested_operation_input_kind,
+            nested_operation_output_kind=nested_operation_output_kind,
+            description=operation_description.description,
+            property_name_options=operation_description.property_name_options,
+        )
+
+
+class ExternalOperatorDescription(BaseModel):
+    operator_type: str
+    operands_number: int
+    operands_kinds: List[List[str]]
+    description: Optional[str] = None
+
+    @classmethod
+    def from_internal_entity(
+        cls, operator_description: OperatorDescription
+    ) -> "ExternalOperatorDescription":
+        operands_kinds = [
+            [k.name for k in kind] for kind in operator_description.operands_kinds
+        ]
+        return cls(
+            operator_type=operator_description.operator_type,
+            operands_number=operator_description.operands_number,
+            operands_kinds=operands_kinds,
+            description=operator_description.description,
+        )
+
+
+class UniversalQueryLanguageDescription(BaseModel):
+    operations_description: List[ExternalOperationDescription]
+    operators_descriptions: List[ExternalOperatorDescription]
+
+    @classmethod
+    def from_internal_entities(
+        cls,
+        operations_descriptions: List[OperationDescription],
+        operators_descriptions: List[OperatorDescription],
+    ) -> "UniversalQueryLanguageDescription":
+        operations_descriptions = [
+            ExternalOperationDescription.from_internal_entity(
+                operation_description=operation_description
+            )
+            for operation_description in operations_descriptions
+        ]
+        operators_descriptions = [
+            ExternalOperatorDescription.from_internal_entity(
+                operator_description=operator_description
+            )
+            for operator_description in operators_descriptions
+        ]
+        return cls(
+            operations_description=operations_descriptions,
+            operators_descriptions=operators_descriptions,
+        )
+
+
+class WorkflowsBlocksDescription(BaseModel):
+    blocks: List[BlockDescription] = Field(
+        description="List of loaded blocks descriptions"
+    )
+    declared_kinds: List[Kind] = Field(description="List of kinds defined for blocks")
+    kinds_connections: Dict[str, List[ExternalWorkflowsBlockSelectorDefinition]] = (
+        Field(
+            description="Mapping from kind name into list of blocks properties accepting references of that kind"
+        )
+    )
+    primitives_connections: List[ExternalBlockPropertyPrimitiveDefinition] = Field(
+        description="List defining all properties for all blocks that can be filled "
+        "with primitive values in workflow definition."
+    )
+    universal_query_language_description: UniversalQueryLanguageDescription = Field(
+        description="Definitions of Universal Query Language operations and operators"
+    )
+    dynamic_block_definition_schema: dict = Field(
+        description="Schema for dynamic block definition"
+    )
+
+
+class ExecutionEngineVersions(BaseModel):
+    versions: List[str]
+
+
+class WorkflowsBlocksSchemaDescription(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    schema: dict = Field(description="Schema for validating block definitions")
+
+
+class DescribeInterfaceResponse(BaseModel):
+    inputs: Dict[str, List[str]] = Field(
+        description="Dictionary mapping Workflow inputs to their kinds"
+    )
+    outputs: Dict[str, Union[List[str], Dict[str, List[str]]]] = Field(
+        description="Dictionary mapping Workflow outputs to their kinds"
+    )
+    typing_hints: Dict[str, str] = Field(
+        description="Dictionary mapping name of the kind with Python typing hint for underlying serialised object",
+    )
+    kinds_schemas: Dict[str, Union[dict, List[dict]]] = Field(
+        description="Dictionary mapping name of the kind with OpenAPI 3.0 definitions of underlying objects. "
+        "If list is given, entity should be treated as union of types."
+    )
+
+
+class WorkflowErrorResponse(BaseModel):
+    message: str
+    error_type: str
+    context: str
+    inner_error_type: Optional[str] = None
+    inner_error_message: Optional[str] = None
+    blocks_errors: Optional[List[WorkflowBlockError]] = None
+    python_blocks_output_streams: Optional[
+        Dict[str, List[Dict[str, Optional[str]]]]
+    ] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, stdout/stderr captured for "
+        "each local custom Python block execution that completed before (or caused) the "
+        "failure, keyed by step name. Same format as on `WorkflowInferenceResponse`. "
+        "Best-effort: logs from steps running in parallel with the failing step may be "
+        "missing if those steps had not finished recording when the failure propagated.",
+    )
+    python_blocks_debug_traces: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="When `debug=True` was set on the request, structured debug entries "
+        "appended via the `debug_traces` variable before (or at) the failure. Same format as on "
+        "`WorkflowInferenceResponse`. Best-effort: entries from steps running in parallel with "
+        "the failing step may be missing if those steps had not finished recording when the "
+        "failure propagated.",
+    )

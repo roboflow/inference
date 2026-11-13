@@ -1,0 +1,1548 @@
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+import logging
+import re
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from fastapi import Request, Response
+
+from inference_server.errors import ClientDisconnected
+from inference_server.framework.dispatch import (
+    decode_common_request_params,
+    handle_model_inference_request,
+)
+from inference_server.framework.entities import (
+    InputParseError,
+    ModelHandlerDescription,
+    ModelInterfaceDescription,
+)
+from inference_server.framework.input_parsers import extract_images_and_params
+from inference_server.framework.registry import _HANDLERS
+from inference_server.gateway import ModelManagerGateway
+from tests.unit_tests.legacy.conftest import EvictedModelManager
+
+_JPEG = bytes(
+    [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]
+    + [0x00] * 12
+    + [0xFF, 0xD9]
+)
+
+
+def _request(query: bytes = b"", headers=None, body: bytes = b""):
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/v2/models/infer",
+        "query_string": query,
+        "headers": headers or [(b"authorization", b"Bearer k1")],
+    }
+    state = {"sent": False}
+
+    async def recv():
+        if state["sent"]:
+            return {"type": "http.disconnect"}
+        state["sent"] = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return Request(scope, recv)
+
+
+def _mock_proxy():
+    proxy = MagicMock()
+    proxy.ensure_loaded = AsyncMock(return_value=("model_ready",))
+    proxy.infer = AsyncMock(return_value=MagicMock())
+    return proxy
+
+
+def _stat_returns(value):
+    return patch(
+        "inference_server.framework.dispatch.stat_model_while_checking_auth",
+        new=AsyncMock(return_value=value),
+    )
+
+
+def _stat_raises(exc):
+    return patch(
+        "inference_server.framework.dispatch.stat_model_while_checking_auth",
+        new=AsyncMock(side_effect=exc),
+    )
+
+
+@pytest.fixture
+def fake_handler_entry():
+    keys_before = set(_HANDLERS)
+    params: dict[str, dict] = {}
+    interface = ModelInterfaceDescription(task="t", params=params, output_schema={})
+    parser = AsyncMock(return_value={"images": [b"x"], "params": {}})
+    handler = AsyncMock(return_value=MagicMock())
+    serializer = MagicMock(return_value=Response(status_code=200, content=b"ok"))
+    desc = ModelHandlerDescription(
+        input_parser=parser,
+        handler=handler,
+        output_serializer=serializer,
+        interface_provider=lambda: interface,
+    )
+    _HANDLERS[("fake-task", "infer")] = desc
+    try:
+        yield {
+            "interface": interface,
+            "parser": parser,
+            "handler": handler,
+            "serializer": serializer,
+        }
+    finally:
+        for key in set(_HANDLERS) - keys_before:
+            del _HANDLERS[key]
+
+
+def test_decode_extracts_model_id_action_style_and_extra():
+    req = _request(
+        query=b"model_id=acme/1&action=embed_text&response_style=rich&confidence=0.5"
+    )
+    common = decode_common_request_params(req)
+    assert common.model_id == "acme/1"
+    assert common.action == "embed_text"
+    assert common.response_style == "rich"
+    assert common.api_key == "k1"
+    assert common.extra == {"confidence": "0.5"}
+
+
+def test_decode_falls_back_style_alias_to_response_style():
+    req = _request(query=b"model_id=acme/1&style=rich")
+    common = decode_common_request_params(req)
+    assert common.response_style == "rich"
+
+
+@pytest.mark.asyncio
+async def test_missing_model_id_returns_400():
+    r = await handle_model_inference_request(_request(query=b""), _mock_proxy())
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+
+
+@pytest.mark.asyncio
+async def test_bad_response_style_returns_400():
+    r = await handle_model_inference_request(
+        _request(query=b"model_id=m&response_style=bogus"), _mock_proxy()
+    )
+    assert r.status_code == 400
+    assert b"INVALID_PARAM" in r.body
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_returns_401():
+    with _stat_raises(PermissionError("bad key")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 401
+    assert b"UNAUTHORIZED" in r.body
+    # the registry's own wording stays server-side
+    assert b"bad key" not in r.body
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_returns_404():
+    with _stat_raises(LookupError("no such")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 404
+    assert b"MODEL_NOT_FOUND" in r.body
+    assert b"no such" not in r.body
+
+
+@pytest.mark.asyncio
+async def test_model_id_carrying_an_instance_returns_404_before_the_registry():
+    proxy = _mock_proxy()
+    with _stat_returns(("classification", "infer")) as stat:
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m:capabilities=image_embeddings"), proxy
+        )
+    assert r.status_code == 404
+    assert b"MODEL_NOT_FOUND" in r.body
+    stat.assert_not_awaited()
+    proxy.ensure_loaded.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "instance",
+    [
+        b"capabilities%3Dimage_embeddings",
+        b"b%3Acapabilities%3Dimage_embeddings",
+        b"capabilities%3Dimage_embeddings%3Bb",
+    ],
+)
+async def test_capability_instance_returns_400_before_the_registry(instance):
+    proxy = _mock_proxy()
+    with _stat_returns(("classification", "infer")) as stat:
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&instance=" + instance), proxy
+        )
+    assert r.status_code == 400
+    assert b"INVALID_PARAM" in r.body
+    stat.assert_not_awaited()
+    proxy.ensure_loaded.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_named_instance_model_id_reaches_the_registry():
+    proxy = _mock_proxy()
+    with _stat_raises(LookupError("no such")) as stat:
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m%3Ablue&instance=green"), proxy
+        )
+    assert r.status_code == 404
+    stat.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_registry_unreachable_returns_503():
+    with _stat_raises(RuntimeError("down")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 503
+    assert b"REGISTRY_UNAVAILABLE" in r.body
+
+
+@pytest.mark.asyncio
+async def test_unregistered_model_type_returns_none_for_router_fallthrough():
+    with _stat_returns(("not-a-registered-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r is None
+
+
+@pytest.mark.asyncio
+async def test_registered_model_type_with_bad_action_returns_400(fake_handler_entry):
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&action=bogus"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"INVALID_ACTION" in r.body
+
+
+@pytest.mark.asyncio
+async def test_param_validation_rejects_missing_required(fake_handler_entry):
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "float",
+        "required": True,
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+    assert b"confidence" in r.body
+
+
+@pytest.mark.asyncio
+async def test_param_validation_rejects_wrong_type(fake_handler_entry):
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "float",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": "notafloat"},
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&confidence=notafloat"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"INVALID_PARAM" in r.body
+
+
+@pytest.mark.asyncio
+async def test_param_coercion_converts_string_params_before_handler(fake_handler_entry):
+    """Query/multipart params arrive as strings; they must reach the handler
+    coerced to the declared type, not as raw strings."""
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "float",
+        "required": False,
+    }
+    fake_handler_entry["interface"].params["top_k"] = {
+        "type": "int",
+        "required": False,
+    }
+    fake_handler_entry["interface"].params["nms"] = {
+        "type": "bool",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": "0.5", "top_k": "3", "nms": "true"},
+    }
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["confidence"] == 0.5
+    assert passed["top_k"] == 3
+    assert passed["nms"] is True
+
+
+@pytest.mark.asyncio
+async def test_param_defaults_injected_when_absent(fake_handler_entry):
+    fake_handler_entry["interface"].params["mask_format"] = {
+        "type": "str",
+        "required": False,
+        "default": "rle",
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {},
+    }
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["mask_format"] == "rle"
+
+
+@pytest.mark.asyncio
+async def test_param_default_not_overriding_explicit_value(fake_handler_entry):
+    fake_handler_entry["interface"].params["mask_format"] = {
+        "type": "str",
+        "required": False,
+        "default": "rle",
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"mask_format": "dense"},
+    }
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["mask_format"] == "dense"
+
+
+@pytest.mark.asyncio
+async def test_content_length_over_cap_returns_413_before_body_read(fake_handler_entry):
+    req = _request(
+        query=b"model_id=m",
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-length", b"999999999999"),
+        ],
+    )
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 413
+    assert b"PAYLOAD_TOO_LARGE" in r.body
+    fake_handler_entry["parser"].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_chunked_raw_body_over_cap_returns_413(fake_handler_entry):
+    """No Content-Length header: cap must fire while streaming the body."""
+
+    async def real_parser(request, common):
+        images, params, err = await extract_images_and_params(request)
+        assert err is None
+        return {"images": images, "params": params}
+
+    fake_handler_entry["parser"].side_effect = real_parser
+    req = _request(query=b"model_id=m", body=b"x" * 100)
+    with _stat_returns(("fake-task", "infer")), patch(
+        "inference_server.framework.dispatch.configuration.MAX_BODY_BYTES", 16
+    ):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 413
+    assert b"PAYLOAD_TOO_LARGE" in r.body
+
+
+@pytest.mark.asyncio
+async def test_json_body_over_cap_returns_413_not_400(fake_handler_entry):
+    """PayloadTooLargeError must not be masked as INVALID_JSON."""
+
+    async def real_parser(request, common):
+        images, params, err = await extract_images_and_params(request)
+        if err is not None:
+            raise InputParseError(err)
+        return {"images": images, "params": params}
+
+    fake_handler_entry["parser"].side_effect = real_parser
+    req = _request(
+        query=b"model_id=m",
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-type", b"application/json"),
+        ],
+        body=b'{"inputs": {"pad": "' + b"x" * 100 + b'"}}',
+    )
+    with _stat_returns(("fake-task", "infer")), patch(
+        "inference_server.framework.dispatch.configuration.MAX_BODY_BYTES", 16
+    ):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 413
+    assert b"PAYLOAD_TOO_LARGE" in r.body
+
+
+@pytest.mark.asyncio
+async def test_param_validation_skips_non_coercible_types(fake_handler_entry):
+    fake_handler_entry["interface"].params["images"] = {
+        "type": "image",
+        "required": True,
+    }
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_param_validation_rejects_missing_required_list(fake_handler_entry):
+    fake_handler_entry["interface"].params["reference_examples"] = {
+        "type": "list",
+        "required": True,
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+    assert b"reference_examples" in r.body
+
+
+@pytest.mark.asyncio
+async def test_param_validation_accepts_required_list_from_body(fake_handler_entry):
+    fake_handler_entry["interface"].params["reference_examples"] = {
+        "type": "list",
+        "required": True,
+    }
+    examples = [{"image": "https://x/img.jpg", "boxes": []}]
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"reference_examples": examples},
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["reference_examples"] is examples
+
+
+@pytest.mark.asyncio
+async def test_few_shot_missing_reference_examples_returns_400():
+    body = json.dumps(
+        {
+            "inputs": {
+                "image": {
+                    "type": "base64",
+                    "value": base64.b64encode(_JPEG).decode(),
+                }
+            }
+        }
+    ).encode()
+    req = _request(
+        query=b"model_id=m&action=infer_with_reference_examples",
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-type", b"application/json"),
+        ],
+        body=body,
+    )
+    with _stat_returns(("open-vocabulary-object-detection", "infer")):
+        r = await handle_model_inference_request(req, _mock_proxy())
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+    assert b"reference_examples" in r.body
+
+
+@pytest.mark.asyncio
+async def test_param_validation_accepts_required_str_from_body(fake_handler_entry):
+    fake_handler_entry["interface"].params["prompt"] = {
+        "type": "str",
+        "required": True,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"prompt": "hello"},
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_param_validation_rejects_required_str_missing_everywhere(
+    fake_handler_entry,
+):
+    fake_handler_entry["interface"].params["prompt"] = {
+        "type": "str",
+        "required": True,
+    }
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"MISSING_PARAM" in r.body
+    assert b"prompt" in r.body
+
+
+@pytest.mark.asyncio
+async def test_input_parser_error_short_circuits(fake_handler_entry):
+    fake_handler_entry["parser"].side_effect = InputParseError(
+        Response(status_code=415, content=b"bad fmt")
+    )
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 415
+    proxy.ensure_loaded.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_load_timeout_returns_503(fake_handler_entry):
+    proxy = _mock_proxy()
+    proxy.ensure_loaded = AsyncMock(return_value=("load_timeout", 7))
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 503
+    assert r.headers["Retry-After"] == "7"
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_error_returns_500(fake_handler_entry):
+    proxy = _mock_proxy()
+    proxy.ensure_loaded = AsyncMock(return_value=("error", "x"))
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_handler_value_error_returns_400(fake_handler_entry):
+    """ValueError is bad input (registry validation etc.), NOT payload-too-large."""
+    fake_handler_entry["handler"].side_effect = ValueError("'prompt' param required")
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_handler_payload_too_large_returns_413(fake_handler_entry):
+    from inference_server.errors import PayloadTooLargeError
+
+    fake_handler_entry["handler"].side_effect = PayloadTooLargeError("too big")
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_cuda_oom_is_500_not_busy(fake_handler_entry):
+    """Regression: substring matching classified 'Tried to allocate' as 503."""
+    fake_handler_entry["handler"].side_effect = RuntimeError(
+        "CUDA out of memory. Tried to allocate 2.00 GiB"
+    )
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 500
+    body = r.body.decode()
+    assert "Tried to allocate" not in body  # no internal text leaked
+    assert "ref " in body  # correlation id present
+
+
+@pytest.mark.asyncio
+async def test_server_busy_error_returns_503_with_retry_after(fake_handler_entry):
+    from inference_server.errors import ServerBusyError
+
+    fake_handler_entry["handler"].side_effect = ServerBusyError("no capacity")
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 503
+    assert r.headers.get("retry-after") == "1"
+
+
+@pytest.mark.asyncio
+async def test_handler_timeout_returns_504(fake_handler_entry):
+    fake_handler_entry["handler"].side_effect = asyncio.TimeoutError()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 504
+
+
+@pytest.mark.asyncio
+async def test_plain_runtime_error_is_500_even_if_text_mentions_slots(
+    fake_handler_entry,
+):
+    """Busy classification is by ServerBusyError TYPE now — message text is
+    never inspected (substring matching misclassified CUDA OOM as busy)."""
+    fake_handler_entry["handler"].side_effect = RuntimeError("no slots available")
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_handler_client_disconnected_returns_499(fake_handler_entry):
+    fake_handler_entry["handler"].side_effect = ClientDisconnected()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 499
+
+
+@pytest.mark.asyncio
+async def test_happy_path_invokes_full_pipeline(fake_handler_entry):
+    proxy = _mock_proxy()
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 200
+    fake_handler_entry["parser"].assert_awaited_once()
+    proxy.ensure_loaded.assert_awaited_once()
+    fake_handler_entry["handler"].assert_awaited_once()
+    fake_handler_entry["serializer"].assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_records_the_model_id_before_the_load(fake_handler_entry):
+    from inference_server.middlewares.model_load import MODEL_LOAD_EVENTS
+
+    proxy = _mock_proxy()
+    events = []
+    token = MODEL_LOAD_EVENTS.set(events)
+    try:
+        with _stat_returns(("fake-task", "infer")):
+            r = await handle_model_inference_request(
+                _request(query=b"model_id=acme/1"), proxy
+            )
+    finally:
+        MODEL_LOAD_EVENTS.reset(token)
+    assert r.status_code == 200
+    assert events == [("acme/1", False, 0.0)]
+
+
+@pytest.mark.asyncio
+async def test_client_action_overrides_api_default(fake_handler_entry):
+    _HANDLERS[("fake-task", "embed_text")] = _HANDLERS[("fake-task", "infer")]
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&action=embed_text"), _mock_proxy()
+        )
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_model_input_error_maps_to_400(fake_handler_entry):
+    from inference_models.errors import ModelInputError
+
+    fake_handler_entry["handler"].side_effect = ModelInputError(
+        message="no embeddings were found in the cache"
+    )
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+    assert r.status_code == 400
+    assert b"invalid model input" in r.body
+    assert b"no embeddings were found in the cache" not in r.body
+
+
+def _pipeline_registry(calls: list):
+    from inference_models.errors import ModelNotFoundError
+
+    table = {
+        "pp-ocrv6-det/small": "object-detection",
+        "pp-ocrv6-rec/medium": "text-only-ocr",
+    }
+
+    def _metadata(model_id, api_key=None, **_):
+        calls.append((model_id, api_key))
+        if model_id not in table:
+            raise ModelNotFoundError(message=model_id, help_url="")
+        return MagicMock(task_type=table[model_id])
+
+    return patch(
+        "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+        side_effect=_metadata,
+    )
+
+
+@pytest.fixture
+def structured_ocr_handler_entry():
+    from inference_server.framework import model_stat
+
+    interface = ModelInterfaceDescription(
+        task="structured-ocr", params={}, output_schema={}
+    )
+    desc = ModelHandlerDescription(
+        input_parser=AsyncMock(return_value={"images": [b"x"], "params": {}}),
+        handler=AsyncMock(return_value=MagicMock()),
+        output_serializer=MagicMock(
+            return_value=Response(status_code=200, content=b"ok")
+        ),
+        interface_provider=lambda: interface,
+    )
+    key = ("structured-ocr", "infer")
+    previous = _HANDLERS.get(key)
+    _HANDLERS[key] = desc
+    model_stat._reset_cache_for_tests()
+    try:
+        yield desc
+    finally:
+        if previous is None:
+            _HANDLERS.pop(key, None)
+        else:
+            _HANDLERS[key] = previous
+        model_stat._reset_cache_for_tests()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_model_id_dispatches_after_stage_authorization(
+    structured_ocr_handler_entry,
+):
+    calls: list = []
+    proxy = _mock_proxy()
+    with _pipeline_registry(calls):
+        response = await handle_model_inference_request(
+            _request(query=b"model_id=pp_ocr/small-medium"), proxy
+        )
+    assert response is not None and response.status_code == 200
+    assert sorted(calls) == [
+        ("pp-ocrv6-det/small", "k1"),
+        ("pp-ocrv6-rec/medium", "k1"),
+    ]
+    assert proxy.ensure_loaded.await_args.args[0] == "pp_ocr/small-medium"
+
+
+@pytest.mark.asyncio
+async def test_failed_reload_after_eviction_answers_inference_failed(
+    fake_handler_entry, caplog
+):
+    async def _infer(action, input_data, proxy, server_hooks):
+        return await proxy.infer(model_id="acme/1", image=b"x")
+
+    fake_handler_entry["handler"].side_effect = _infer
+    manager = EvictedModelManager(reload_error=ValueError("broken"))
+
+    with _stat_returns(("fake-task", "infer")), caplog.at_level(
+        logging.ERROR, logger="inference_server.framework.dispatch"
+    ):
+        response = await handle_model_inference_request(
+            _request(query=b"model_id=acme/1"), ModelManagerGateway(manager)
+        )
+
+    body = json.loads(response.body)
+    assert response.status_code == 500
+    assert set(body) == {"error_code", "description"}
+    assert body["error_code"] == "INFERENCE_FAILED"
+    assert re.fullmatch(r"inference failed \(ref [0-9a-f]{8}\)", body["description"])
+    assert "retry-after" not in response.headers
+    assert manager.load_calls == 2 and manager.process_calls == 1
+    assert [
+        re.sub(r"ref [0-9a-f]{8}", "ref X", record.getMessage())
+        for record in caplog.records
+    ] == ["[dispatch] inference failed (ref X): reload after eviction failed"]
+
+
+class _RecordingModelManager:
+    def __init__(self):
+        self.loaded = {"acme/1"}
+        self.executor = None
+        self.calls: list = []
+
+    def __contains__(self, key):
+        return key in self.loaded
+
+    async def process_async(
+        self,
+        model_id,
+        action=None,
+        *,
+        serialize=True,
+        wire_marshalling=False,
+        timing=None,
+        **kwargs,
+    ):
+        self.calls.append((model_id, action, serialize, wire_marshalling, kwargs))
+        return MagicMock()
+
+
+@pytest.mark.asyncio
+async def test_request_params_named_like_manager_or_auth_kwargs_are_dropped(
+    fake_handler_entry,
+):
+    async def _infer(action, input_data, proxy, server_hooks):
+        return await proxy.infer(
+            model_id="acme/1", image=b"x", params=input_data["params"]
+        )
+
+    fake_handler_entry["handler"].side_effect = _infer
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {
+            "confidence": 0.5,
+            "self": "x",
+            "model_id": "other/1",
+            "action": "embed",
+            "serialize": "1",
+            "wire_marshalling": "0",
+            "timing": "x",
+            "api_key": "k1",
+            "stream_pipeline_context_id": "c",
+            "stream_pipeline_producer_id": "p",
+        },
+    }
+    manager = _RecordingModelManager()
+
+    with _stat_returns(("fake-task", "infer")):
+        response = await handle_model_inference_request(
+            _request(query=b"model_id=acme/1"), ModelManagerGateway(manager)
+        )
+
+    assert response.status_code == 200
+    assert manager.calls == [
+        ("acme/1", None, False, True, {"confidence": 0.5, "images": b"x"})
+    ]
+
+
+_COLLIDING_PARAMS = {
+    "confidence": 0.5,
+    "self": "x",
+    "model": "x",
+    "model_id": "other/1",
+    "action": "embed",
+    "raw_input": "x",
+    "validate": "x",
+    "serialize": "1",
+    "wire_marshalling": "0",
+    "timing": "x",
+    "api_key": "k1",
+    "stream_pipeline_context_id": "c",
+    "stream_pipeline_producer_id": "p",
+}
+
+
+class _DirectModel:
+    def __init__(self):
+        self.calls: list = []
+
+    def predict(self, **kwargs):
+        self.calls.append(kwargs)
+        return MagicMock()
+
+
+class _DirectBackend:
+    state = "loaded"
+    is_accepting = True
+    is_healthy = True
+
+    def __init__(self):
+        self.model = _DirectModel()
+
+    def _decode_input(self, raw):
+        return "DECODED"
+
+    def record_inference(self, t0, error=False):
+        pass
+
+
+class _RemoteBackend:
+    state = "loaded"
+    is_accepting = True
+    is_healthy = True
+
+    def __init__(self):
+        self.calls: list = []
+
+    def submit_request(self, **kwargs):
+        from concurrent.futures import Future
+
+        self.calls.append(kwargs)
+        future = Future()
+        future.set_result(MagicMock())
+        return future
+
+
+async def _dispatch_colliding_params(fake_handler_entry, backend):
+    from inference_model_manager.model_manager import ModelManager
+
+    async def _infer(action, input_data, proxy, server_hooks):
+        return await proxy.infer(
+            model_id="acme/1", image=b"x", params=input_data["params"]
+        )
+
+    fake_handler_entry["handler"].side_effect = _infer
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": dict(_COLLIDING_PARAMS),
+    }
+    manager = ModelManager()
+    manager._backends["acme/1"] = backend
+    try:
+        with _stat_returns(("fake-task", "infer")):
+            return await handle_model_inference_request(
+                _request(query=b"model_id=acme/1"), ModelManagerGateway(manager)
+            )
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_colliding_params_never_reach_a_direct_backend_call(fake_handler_entry):
+    from inference_model_manager.dispatch import _get_registry
+
+    _get_registry().register(
+        _DirectModel,
+        "predict",
+        default=True,
+        validator=lambda kwargs: kwargs,
+        serializer=lambda out, model: out,
+        response_type="test-v1",
+    )
+    backend = _DirectBackend()
+
+    response = await _dispatch_colliding_params(fake_handler_entry, backend)
+
+    assert response.status_code == 200
+    assert backend.model.calls == [{"confidence": 0.5, "images": "DECODED"}]
+
+
+@pytest.mark.asyncio
+async def test_colliding_params_never_reach_a_remote_backend_submission(
+    fake_handler_entry,
+):
+    backend = _RemoteBackend()
+
+    response = await _dispatch_colliding_params(fake_handler_entry, backend)
+
+    assert response.status_code == 200
+    assert backend.calls == [
+        {"action": None, "raw_input": b"x", "validate": None, "confidence": 0.5}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_loaded_model_is_refused_to_a_key_without_access(fake_handler_entry):
+    from inference_models.errors import UnauthorizedModelAccessError
+    from inference_server.framework import model_stat
+
+    calls: list = []
+
+    def _metadata(model_id, api_key=None, **_):
+        calls.append((model_id, api_key))
+        if api_key == "key-b":
+            raise UnauthorizedModelAccessError(message=model_id, help_url="")
+        return MagicMock(task_type="fake-task")
+
+    def _request_with_key(key):
+        return _request(
+            query=b"model_id=m", headers=[(b"authorization", f"Bearer {key}".encode())]
+        )
+
+    proxy = _mock_proxy()
+    model_stat._reset_cache_for_tests()
+    try:
+        with patch(
+            "inference_server.framework.model_stat.get_one_page_of_model_metadata",
+            side_effect=_metadata,
+        ):
+            granted = await handle_model_inference_request(
+                _request_with_key("key-a"), proxy
+            )
+            refused = await handle_model_inference_request(
+                _request_with_key("key-b"), proxy
+            )
+            refused_again = await handle_model_inference_request(
+                _request_with_key("key-b"), proxy
+            )
+    finally:
+        model_stat._reset_cache_for_tests()
+
+    assert granted.status_code == 200
+    assert refused.status_code == 401 and refused_again.status_code == 401
+    assert fake_handler_entry["handler"].await_count == 1
+    assert proxy.ensure_loaded.await_count == 1
+    assert calls == [("m", "key-a"), ("m", "key-b"), ("m", "key-b")]
+
+
+class _DecodingManager:
+    """Decodes images the way a direct backend does before running a model."""
+
+    def __init__(self):
+        from inference_model_manager.backends.decode import make_decoder
+
+        self._decode = make_decoder("imagecodecs", device="cpu")
+
+    async def process_async(self, model_id, **kwargs):
+        return [self._decode(image) for image in kwargs["images"]]
+
+
+def _jpeg_bytes() -> bytes:
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    pixels = np.random.default_rng(0).integers(0, 255, (64, 64, 3), dtype=np.uint8)
+    buffer = io.BytesIO()
+    Image.fromarray(pixels).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cut", ["in_scan", "missing_eoi"])
+async def test_truncated_jpeg_is_an_input_error(fake_handler_entry, cut):
+    data = _jpeg_bytes()
+    scan = data.index(b"\xff\xda")
+    truncated = data[: scan + 40] if cut == "in_scan" else data[:-2]
+    gateway = ModelManagerGateway(_DecodingManager())
+
+    async def handler(action, input_data, proxy, hooks):
+        return await gateway.infer(model_id="m", image=input_data["images"])
+
+    fake_handler_entry["handler"].side_effect = handler
+    fake_handler_entry["parser"].return_value = {"images": [truncated], "params": {}}
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 400
+    assert json.loads(r.body)["error_code"] == "INVALID_PARAM"
+
+    fake_handler_entry["parser"].return_value = {"images": [data], "params": {}}
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+
+
+def test_decode_keeps_repeated_query_keys_as_a_list():
+    req = _request(query=b"model_id=acme/1&texts=a&texts=b&confidence=0.5")
+
+    common = decode_common_request_params(req)
+
+    assert common.extra == {"texts": ["a", "b"], "confidence": "0.5"}
+
+
+async def _parser_merging_query_params(request, common):
+    return {"images": [b"x"], "params": dict(common.extra)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        (b"model_id=m&texts=a&texts=b", ["a", "b"]),
+        (b"model_id=m&texts=person", ["person"]),
+    ],
+)
+async def test_list_params_from_the_query_reach_the_handler_as_lists(
+    fake_handler_entry, query, expected
+):
+    fake_handler_entry["interface"].params["texts"] = {
+        "type": "list[str]",
+        "required": True,
+    }
+    fake_handler_entry["parser"].side_effect = _parser_merging_query_params
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=query), _mock_proxy())
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["texts"] == expected
+
+
+@pytest.mark.asyncio
+async def test_untyped_list_param_from_a_single_query_value_is_wrapped(
+    fake_handler_entry,
+):
+    fake_handler_entry["interface"].params["prompts"] = {
+        "type": "list",
+        "required": True,
+    }
+    fake_handler_entry["parser"].side_effect = _parser_merging_query_params
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&prompts=person"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["prompts"] == ["person"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("false", False), ("FALSE", False), ("0", False), ("True", True), ("1", True)],
+)
+async def test_bool_query_strings_are_parsed_case_insensitively(
+    fake_handler_entry, raw, expected
+):
+    fake_handler_entry["interface"].params["nms"] = {
+        "type": "bool",
+        "required": False,
+    }
+    fake_handler_entry["parser"].side_effect = _parser_merging_query_params
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m&nms=" + raw.encode()), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["nms"] is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "type_name, value",
+    [
+        ("float", [1]),
+        ("float", True),
+        ("int", 1.5),
+        ("int", "abc"),
+        ("bool", "maybe"),
+        ("bool", 1),
+        ("str", 3),
+        ("list", {"x": 1}),
+        ("list[str]", [1, 2]),
+        ("float", ["0.1", "0.2"]),
+    ],
+)
+async def test_wrongly_typed_params_return_400_naming_the_param(
+    fake_handler_entry, type_name, value
+):
+    fake_handler_entry["interface"].params["p"] = {
+        "type": type_name,
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"p": value},
+    }
+    proxy = _mock_proxy()
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+
+    assert r.status_code == 400
+    body = json.loads(r.body)
+    assert body["error_code"] == "INVALID_PARAM"
+    assert "'p'" in body["description"]
+    assert type_name in body["description"]
+    fake_handler_entry["handler"].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_correctly_typed_json_values_pass_through_unchanged(fake_handler_entry):
+    for name, type_name in [
+        ("conf", "float"),
+        ("top_k", "int"),
+        ("nms", "bool"),
+        ("classes", "list[str]"),
+        ("boxes", "list"),
+        ("label", "str"),
+        ("unset", "float"),
+    ]:
+        fake_handler_entry["interface"].params[name] = {
+            "type": type_name,
+            "required": False,
+        }
+    values = {
+        "conf": 1,
+        "top_k": 3,
+        "nms": False,
+        "classes": ["a"],
+        "boxes": [[1, 2, 3, 4]],
+        "label": "x",
+        "unset": None,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": dict(values),
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed == values
+
+
+@pytest.fixture
+def object_detection_entry():
+    from inference_server.handlers.object_detection.description import _DESCRIPTION
+
+    desc = ModelHandlerDescription(
+        input_parser=_DESCRIPTION.input_parser,
+        handler=_DESCRIPTION.handler,
+        output_serializer=MagicMock(
+            return_value=Response(status_code=200, content=b"ok")
+        ),
+        interface_provider=_DESCRIPTION.interface_provider,
+    )
+    _HANDLERS[("fake-od", "infer")] = desc
+    try:
+        yield desc
+    finally:
+        del _HANDLERS[("fake-od", "infer")]
+
+
+class _PreprocModel:
+    def __init__(self):
+        self.calls: list = []
+
+    def predict(self, **kwargs):
+        self.calls.append(kwargs)
+        return MagicMock()
+
+
+class _PreprocBackend(_DirectBackend):
+    def __init__(self):
+        self.model = _PreprocModel()
+
+
+async def _dispatch_object_detection_query(
+    query: bytes,
+    *,
+    content_type: bytes = b"image/jpeg",
+    body: bytes = _JPEG,
+) -> tuple:
+    from inference_model_manager.dispatch import _get_registry
+    from inference_model_manager.model_manager import ModelManager
+    from inference_model_manager.registry_defaults import _ACTION_CONFIGS
+
+    _get_registry().register(
+        _PreprocModel,
+        "infer",
+        method="predict",
+        default=True,
+        params=_ACTION_CONFIGS["ObjectDetectionModel"][0][3],
+        validator=lambda kwargs: kwargs,
+        serializer=lambda out, model: out,
+        response_type="test-v1",
+    )
+    backend = _PreprocBackend()
+    manager = ModelManager()
+    manager._backends["acme/1"] = backend
+    request = _request(
+        query=b"model_id=acme/1&" + query,
+        headers=[
+            (b"authorization", b"Bearer k1"),
+            (b"content-type", content_type),
+        ],
+        body=body,
+    )
+    try:
+        with _stat_returns(("fake-od", "infer")):
+            response = await handle_model_inference_request(
+                request, ModelManagerGateway(manager)
+            )
+    finally:
+        manager._backends.clear()
+        manager.shutdown()
+
+    return response, backend.model.calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw, expected", [("false", False), ("true", True)])
+async def test_preprocessing_flag_from_the_query_reaches_the_model_as_parsed(
+    object_detection_entry, raw, expected
+):
+    response, calls = await _dispatch_object_detection_query(
+        b"disable_preproc_grayscale=" + raw.encode()
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+    overrides = calls[0]["pre_processing_overrides"]
+    assert overrides.disable_grayscale is expected
+    assert overrides.disable_contrast_enhancement is False
+
+
+@pytest.mark.asyncio
+async def test_numeric_query_params_reach_the_model_as_numbers(
+    object_detection_entry,
+):
+    response, calls = await _dispatch_object_detection_query(
+        b"confidence=0.25&max_detections=7&class_agnostic_nms=false"
+    )
+
+    assert response.status_code == 200
+    assert calls[0]["confidence"] == 0.25
+    assert calls[0]["max_detections"] == 7
+    assert calls[0]["class_agnostic_nms"] is False
+
+
+@pytest.mark.asyncio
+async def test_non_numeric_query_param_is_a_400_before_the_model_runs(
+    object_detection_entry,
+):
+    response, calls = await _dispatch_object_detection_query(b"max_detections=lots")
+
+    assert response.status_code == 400
+    assert b"max_detections" in response.body
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "handler_key, manager_class, manager_action",
+    [
+        (("object-detection", "infer"), "ObjectDetectionModel", "infer"),
+        (("classification", "infer"), "ClassificationModel", "infer"),
+        (
+            ("multi-label-classification", "infer"),
+            "MultiLabelClassificationModel",
+            "infer",
+        ),
+        (("semantic-segmentation", "infer"), "SemanticSegmentationModel", "infer"),
+        (("instance-segmentation", "infer"), "InstanceSegmentationModel", "infer"),
+        (("keypoint-detection", "infer"), "KeyPointsDetectionModel", "infer"),
+        (("embedding", "embed_images"), "ImageEmbeddingModel", "embed_images"),
+        (("vlm", "detect"), "MoonDream2HF", "detect"),
+        (("vlm", "detect"), "Florence2HF", "detect"),
+    ],
+)
+def test_server_interface_declares_the_types_of_the_manager_params(
+    handler_key, manager_class, manager_action
+):
+    from inference_model_manager.dispatch import discover_actions_by_mro
+
+    manager_params = discover_actions_by_mro([manager_class])[manager_action]["params"]
+    server_params = _HANDLERS[handler_key].interface_provider().params
+
+    missing = {
+        name: spec["type"]
+        for name, spec in manager_params.items()
+        if server_params.get(name, {}).get("type") != spec["type"]
+    }
+    assert missing == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("best", "best"),
+        ("default", "default"),
+        ("0.4", 0.4),
+        (0.4, 0.4),
+        (1, 1.0),
+        (0, 0.0),
+    ],
+)
+async def test_confidence_params_accept_numbers_and_named_modes(
+    fake_handler_entry, value, expected
+):
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "confidence",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": value},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert passed["confidence"] == expected
+    assert type(passed["confidence"]) is type(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["high", "", True, [0.5], "BEST"])
+async def test_confidence_params_reject_other_values(fake_handler_entry, value):
+    fake_handler_entry["interface"].params["confidence"] = {
+        "type": "confidence",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"confidence": value},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 400
+    assert "confidence" in json.loads(r.body)["description"]
+
+
+@pytest.mark.asyncio
+async def test_json_integer_for_a_float_param_reaches_the_handler_as_float(
+    fake_handler_entry,
+):
+    fake_handler_entry["interface"].params["iou_threshold"] = {
+        "type": "float",
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"iou_threshold": 1},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 200
+    passed = fake_handler_entry["handler"].await_args.args[1]["params"]
+    assert type(passed["iou_threshold"]) is float
+
+
+@pytest.mark.parametrize(
+    "handler_key",
+    [
+        ("object-detection", "infer"),
+        ("instance-segmentation", "infer"),
+        ("keypoint-detection", "infer"),
+        ("multi-label-classification", "infer"),
+        ("semantic-segmentation", "infer"),
+    ],
+)
+def test_handlers_of_models_with_named_confidence_modes_declare_them(handler_key):
+    params = _HANDLERS[handler_key].interface_provider().params
+
+    assert params["confidence"]["type"] == "confidence"
+
+
+@pytest.mark.parametrize(
+    "handler_key",
+    [
+        ("open-vocabulary-object-detection", "infer"),
+        ("open-vocabulary-object-detection", "infer_with_reference_examples"),
+    ],
+)
+def test_float_only_confidence_stays_float(handler_key):
+    params = _HANDLERS[handler_key].interface_provider().params
+
+    assert params["confidence"]["type"] == "float"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query, body, content_type, threshold",
+    [
+        (b"confidence=best", _JPEG, b"image/jpeg", 0.3),
+        (b"confidence=0.7", _JPEG, b"image/jpeg", 0.7),
+        (
+            b"",
+            json.dumps(
+                {
+                    "inputs": {
+                        "image": {
+                            "type": "base64",
+                            "value": base64.b64encode(_JPEG).decode(),
+                        },
+                        "confidence": 1,
+                    }
+                }
+            ).encode(),
+            b"application/json",
+            1.0,
+        ),
+        (
+            b"",
+            json.dumps(
+                {
+                    "inputs": {
+                        "image": {
+                            "type": "base64",
+                            "value": base64.b64encode(_JPEG).decode(),
+                        },
+                        "confidence": 0,
+                    }
+                }
+            ).encode(),
+            b"application/json",
+            0.0,
+        ),
+    ],
+)
+async def test_requested_confidence_is_the_threshold_the_model_applies(
+    object_detection_entry, query, body, content_type, threshold
+):
+    from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
+    from inference_models.weights_providers.entities import RecommendedParameters
+
+    response, calls = await _dispatch_object_detection_query(
+        query, content_type=content_type, body=body
+    )
+
+    assert response.status_code == 200
+    confidence_filter = ConfidenceFilter(
+        confidence=calls[0]["confidence"],
+        recommended_parameters=RecommendedParameters(confidence=0.3),
+        default_confidence=0.5,
+    )
+    assert confidence_filter.get_threshold(["a"]) == threshold
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("type_name", ["float", "confidence"])
+async def test_json_integer_too_large_for_a_float_is_a_400(
+    fake_handler_entry, type_name
+):
+    fake_handler_entry["interface"].params["p"] = {
+        "type": type_name,
+        "required": False,
+    }
+    fake_handler_entry["parser"].return_value = {
+        "images": [b"x"],
+        "params": {"p": 10**400},
+    }
+
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(
+            _request(query=b"model_id=m"), _mock_proxy()
+        )
+
+    assert r.status_code == 400
+    assert json.loads(r.body)["error_code"] == "INVALID_PARAM"

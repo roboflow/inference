@@ -49,24 +49,26 @@ def load_directory_inference_input(
     directory_path: str,
     image_extensions: Optional[List[str]],
 ) -> Generator[Tuple[Union[str, int], np.ndarray], None, None]:
-    """Load an inference input from a directory.
+    """Load directory images using their original file paths.
 
     Args:
-        directory_path: The path to the directory.
-        image_extensions: The extensions of the images.
+        directory_path (str): Directory containing the input images.
+        image_extensions (Optional[List[str]]): Extensions passed to the file
+            discovery helper, or None to list all files.
 
-    Returns:
-        The generator of the inference input.
+    Yields:
+        Tuple[str, np.ndarray]: The original file path and decoded BGR image.
+            Repeated discoveries of the same path are yielded only once.
     """
     paths = {
-        path.as_posix().lower()
+        path.as_posix()
         for path in sv.list_files_with_extensions(
             directory=directory_path,
             extensions=image_extensions,
         )
     }
-    # making a set due to case-insensitive behaviour of Windows
-    # see: https://stackoverflow.com/questions/7199039/file-paths-in-windows-environment-not-case-sensitive
+    # Extension patterns can discover a path more than once on Windows. Keep
+    # its original spelling so case-sensitive filesystems can still read it.
     for path in paths:
         yield path, cv2.imread(path)
 
