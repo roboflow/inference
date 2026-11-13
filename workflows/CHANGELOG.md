@@ -88,6 +88,9 @@ Bundled execution engine: `1.17.1`.
 - Add Claude Fable 5.2 to the Anthropic Claude v5 model options.
 - Add Muse Ember to the Meta VLM v3 model options.
 
+- Per-Class Confidence Filter v1 applies the configured threshold consistently
+  in NumPy and tensor-native mode, including lower-precision confidence scores.
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.
