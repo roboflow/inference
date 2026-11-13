@@ -6,12 +6,86 @@ import pytest
 from development.profiling.nsys_stats import (
     NsysStatsError,
     build_nsys_stats_command,
+    parse_cuda_gpu_kernel_summary,
+    parse_cuda_gpu_trace_transfers,
     parse_nvtx_gpu_projection_trace,
     parse_nvtx_pushpop_trace,
     run_nsys_stats,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "nsys_2025_1"
+
+
+def test_parse_cuda_gpu_reports_from_real_nsys_output():
+    kernels = parse_cuda_gpu_kernel_summary(FIXTURES / "cuda_gpu_kern_sum.csv")
+    transfers = parse_cuda_gpu_trace_transfers(FIXTURES / "cuda_gpu_trace.csv")
+
+    assert len(kernels) == 1
+    assert kernels[0].name.startswith("void at::native::vectorized_elementwise_kernel")
+    assert kernels[0].instances == 1
+    assert kernels[0].cumulative_duration_ns == 6464
+    assert [
+        (
+            item.source_memory_kind,
+            item.destination_memory_kind,
+            item.bytes,
+            item.duration_ns,
+        )
+        for item in transfers
+    ] == [
+        ("Pinned", "Device", 1048576, 41280),
+        ("Device", "Pageable", 1048576, 44031),
+    ]
+
+
+@pytest.mark.parametrize(
+    "parser",
+    [parse_cuda_gpu_kernel_summary, parse_cuda_gpu_trace_transfers],
+)
+def test_cuda_gpu_parsers_accept_empty_report(tmp_path, parser):
+    report = tmp_path / "empty.csv"
+    report.touch()
+    assert parser(report) == []
+
+
+@pytest.mark.parametrize(
+    "parser",
+    [parse_cuda_gpu_kernel_summary, parse_cuda_gpu_trace_transfers],
+)
+def test_cuda_gpu_parsers_reject_malformed_nonempty_report(tmp_path, parser):
+    report = tmp_path / "bad.csv"
+    report.write_text("Name,Duration (ns)\noperation,10\n", encoding="utf-8")
+    with pytest.raises(NsysStatsError, match="missing required columns"):
+        parser(report)
+
+
+def test_cuda_gpu_trace_rejects_copy_without_exact_bytes(tmp_path):
+    report = tmp_path / "rounded.csv"
+    report.write_text(
+        "Duration (ns),Bytes (MB),SrcMemKd,DstMemKd,Name\n"
+        "100,1,Pinned,Device,[CUDA memcpy Host-to-Device]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(NsysStatsError, match="Bytes \\(B\\)"):
+        parse_cuda_gpu_trace_transfers(report)
+
+
+def test_cuda_gpu_trace_excludes_memsets_and_rejects_unclassified_copies(tmp_path):
+    report = tmp_path / "trace.csv"
+    report.write_text(
+        "Duration (ns),Bytes (B),SrcMemKd,DstMemKd,Name\n"
+        "100,1024,,Device,[CUDA memset]\n",
+        encoding="utf-8",
+    )
+    assert parse_cuda_gpu_trace_transfers(report) == []
+
+    report.write_text(
+        "Duration (ns),Bytes (B),SrcMemKd,DstMemKd,Name\n"
+        "100,1024,,,[CUDA memcpy Host-to-Device]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(NsysStatsError, match="missing a memory kind"):
+        parse_cuda_gpu_trace_transfers(report)
 
 
 def test_parse_nvtx_pushpop_trace_from_real_nsys_output():
@@ -112,8 +186,12 @@ def test_build_nsys_stats_command_uses_argument_list(tmp_path):
         "nvtx_pushpop_trace",
         "--report",
         "nvtx_gpu_proj_trace",
+        "--report",
+        "cuda_gpu_kern_sum",
+        "--report",
+        "cuda_gpu_trace",
         "--format",
-        "csv",
+        "csv:mem=B",
         "--output",
         str(tmp_path / "stats" / "nsys"),
         "--force-overwrite=true",
@@ -140,7 +218,12 @@ def test_run_nsys_stats_returns_expected_artifacts(tmp_path, monkeypatch):
                 stderr="",
             )
         output_base = Path(command[command.index("--output") + 1])
-        for report in ("nvtx_pushpop_trace", "nvtx_gpu_proj_trace"):
+        for report in (
+            "nvtx_pushpop_trace",
+            "nvtx_gpu_proj_trace",
+            "cuda_gpu_kern_sum",
+            "cuda_gpu_trace",
+        ):
             output_base.with_name(f"{output_base.name}_{report}.csv").touch()
         return subprocess.CompletedProcess(
             command,

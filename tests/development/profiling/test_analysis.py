@@ -8,9 +8,13 @@ import yaml
 from development.profiling.analysis import build_profile_analysis
 from development.profiling.analyze import analyze_run
 from development.profiling.nsys_stats import (
+    CUDA_GPU_KERNEL_SUMMARY_REPORT,
+    CUDA_GPU_TRACE_REPORT,
     NVTX_GPU_PROJECTION_TRACE_REPORT,
     NVTX_PUSHPOP_TRACE_REPORT,
     NsysStatsArtifacts,
+    parse_cuda_gpu_kernel_summary,
+    parse_cuda_gpu_trace_transfers,
     parse_nvtx_gpu_projection_trace,
     parse_nvtx_pushpop_trace,
 )
@@ -28,6 +32,8 @@ def test_build_profile_analysis_separates_host_and_gpu_timings(tmp_path):
         manifest=manifest,
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
+        kernel_summaries=[],
+        memory_transfers=[],
         nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
@@ -41,7 +47,7 @@ def test_build_profile_analysis_separates_host_and_gpu_timings(tmp_path):
         },
     )
 
-    assert analysis["schema_version"] == 1
+    assert analysis["schema_version"] == 2
     assert analysis["run"]["run_id"] == "jarvis-smoke"
     assert analysis["run"]["record_count"] == 2
     assert analysis["run"]["cuda"] == {"synchronize_each_iteration": False}
@@ -100,6 +106,8 @@ def test_build_profile_analysis_preserves_host_data_without_gpu_ranges(tmp_path)
         manifest=_manifest(),
         host_ranges=host_ranges,
         gpu_projected_ranges=[],
+        kernel_summaries=[],
+        memory_transfers=[],
         nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
@@ -107,6 +115,7 @@ def test_build_profile_analysis_preserves_host_data_without_gpu_ranges(tmp_path)
     )
 
     assert analysis["gpu_projected_ranges"] == []
+    assert analysis["capture_gpu_work"] == {"kernels": [], "memory_transfers": []}
     assert all(item["gpu_projection"] is None for item in analysis["iterations"])
     assert analysis["iteration_summary"]["gpu_projected_iterations"] == 0
     assert analysis["iteration_summary"]["gpu_projected"] is None
@@ -116,6 +125,62 @@ def test_build_profile_analysis_preserves_host_data_without_gpu_ranges(tmp_path)
     ]
 
 
+def test_build_profile_analysis_summarizes_capture_gpu_work(tmp_path):
+    kernel = parse_cuda_gpu_kernel_summary(FIXTURES / "cuda_gpu_kern_sum.csv")[0]
+    transfers = parse_cuda_gpu_trace_transfers(FIXTURES / "cuda_gpu_trace.csv")
+    analysis = build_profile_analysis(
+        manifest=_manifest(),
+        host_ranges=parse_nvtx_pushpop_trace(FIXTURES / "nvtx_pushpop_trace.csv"),
+        gpu_projected_ranges=parse_nvtx_gpu_projection_trace(
+            FIXTURES / "nvtx_gpu_proj_trace.csv"
+        ),
+        kernel_summaries=[
+            kernel,
+            replace(kernel, instances=2, cumulative_duration_ns=500000),
+        ],
+        memory_transfers=[
+            *transfers,
+            replace(transfers[0], bytes=100, duration_ns=100),
+        ],
+        nsys_version=VALIDATED_NSYS_VERSION,
+        run_dir=tmp_path,
+        trace_path=tmp_path / "trace.nsys-rep",
+        report_paths={},
+    )
+
+    assert analysis["capture_gpu_work"] == {
+        "kernels": [
+            {
+                "name": kernel.name,
+                "instances": 3,
+                "cumulative_duration_ns": 506464,
+            }
+        ],
+        "memory_transfers": [
+            {
+                "source_memory_kind": "Device",
+                "destination_memory_kind": "Pageable",
+                "instances": 1,
+                "total_bytes": 1048576,
+                "cumulative_duration_ns": 44031,
+            },
+            {
+                "source_memory_kind": "Pinned",
+                "destination_memory_kind": "Device",
+                "instances": 2,
+                "total_bytes": 1048676,
+                "cumulative_duration_ns": 41380,
+            },
+        ],
+    }
+    # Cumulative kernel work may exceed the elapsed projected GPU interval.
+    assert analysis["capture_gpu_work"]["kernels"][0]["cumulative_duration_ns"] > (
+        _range_by_name(analysis["gpu_projected_ranges"], "profile-target")["projected"][
+            "total_ns"
+        ]
+    )
+
+
 def test_build_profile_analysis_warns_for_unvalidated_nsys_version(tmp_path):
     analysis = build_profile_analysis(
         manifest=_manifest(),
@@ -123,6 +188,8 @@ def test_build_profile_analysis_warns_for_unvalidated_nsys_version(tmp_path):
         gpu_projected_ranges=parse_nvtx_gpu_projection_trace(
             FIXTURES / "nvtx_gpu_proj_trace.csv"
         ),
+        kernel_summaries=[],
+        memory_transfers=[],
         nsys_version="NVIDIA Nsight Systems version 2026.2.0",
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
@@ -147,6 +214,8 @@ def test_build_profile_analysis_warns_when_manifest_iteration_count_differs(
         manifest=manifest,
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
+        kernel_summaries=[],
+        memory_transfers=[],
         nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
@@ -180,6 +249,8 @@ def test_build_profile_analysis_uses_hierarchy_for_harness_iterations(tmp_path):
         manifest=_manifest(),
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
+        kernel_summaries=[],
+        memory_transfers=[],
         nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
@@ -239,6 +310,8 @@ def test_build_profile_analysis_scopes_range_names_below_iterations(tmp_path):
         manifest=_manifest(),
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
+        kernel_summaries=[],
+        memory_transfers=[],
         nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
@@ -290,6 +363,8 @@ def test_build_profile_analysis_warns_for_wrong_iteration_index_set(tmp_path):
         manifest=_manifest(),
         host_ranges=host_ranges,
         gpu_projected_ranges=gpu_ranges,
+        kernel_summaries=[],
+        memory_transfers=[],
         nsys_version=VALIDATED_NSYS_VERSION,
         run_dir=tmp_path,
         trace_path=tmp_path / "trace.nsys-rep",
@@ -316,6 +391,8 @@ def test_analyze_run_writes_stable_json(tmp_path, monkeypatch):
     report_paths = {
         NVTX_PUSHPOP_TRACE_REPORT: stats_dir / "nsys_nvtx_pushpop_trace.csv",
         NVTX_GPU_PROJECTION_TRACE_REPORT: stats_dir / "nsys_nvtx_gpu_proj_trace.csv",
+        CUDA_GPU_KERNEL_SUMMARY_REPORT: stats_dir / "nsys_cuda_gpu_kern_sum.csv",
+        CUDA_GPU_TRACE_REPORT: stats_dir / "nsys_cuda_gpu_trace.csv",
     }
     shutil.copy(
         FIXTURES / "nvtx_pushpop_trace.csv", report_paths[NVTX_PUSHPOP_TRACE_REPORT]
@@ -324,6 +401,11 @@ def test_analyze_run_writes_stable_json(tmp_path, monkeypatch):
         FIXTURES / "nvtx_gpu_proj_trace.csv",
         report_paths[NVTX_GPU_PROJECTION_TRACE_REPORT],
     )
+    shutil.copy(
+        FIXTURES / "cuda_gpu_kern_sum.csv",
+        report_paths[CUDA_GPU_KERNEL_SUMMARY_REPORT],
+    )
+    shutil.copy(FIXTURES / "cuda_gpu_trace.csv", report_paths[CUDA_GPU_TRACE_REPORT])
 
     stats_call = {}
 
@@ -350,6 +432,51 @@ def test_analyze_run_writes_stable_json(tmp_path, monkeypatch):
     assert saved["provenance"]["reports"][NVTX_PUSHPOP_TRACE_REPORT] == (
         "stats/nsys_nvtx_pushpop_trace.csv"
     )
+    assert saved["provenance"]["reports"][CUDA_GPU_TRACE_REPORT] == (
+        "stats/nsys_cuda_gpu_trace.csv"
+    )
+    assert saved["schema_version"] == 2
+    assert saved["capture_gpu_work"]["kernels"][0]["cumulative_duration_ns"] == 6464
+    assert saved["capture_gpu_work"]["memory_transfers"][0]["total_bytes"] == (1048576)
+
+
+def test_analyze_run_preserves_cpu_only_capture(tmp_path, monkeypatch):
+    run_dir = tmp_path / "cpu-run"
+    stats_dir = run_dir / "stats"
+    stats_dir.mkdir(parents=True)
+    (run_dir / "trace.nsys-rep").touch()
+    manifest = _manifest()
+    manifest["device"] = "cpu"
+    (run_dir / "manifest.yaml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    report_paths = {
+        NVTX_PUSHPOP_TRACE_REPORT: stats_dir / "nsys_nvtx_pushpop_trace.csv",
+        NVTX_GPU_PROJECTION_TRACE_REPORT: stats_dir / "nsys_nvtx_gpu_proj_trace.csv",
+        CUDA_GPU_KERNEL_SUMMARY_REPORT: stats_dir / "nsys_cuda_gpu_kern_sum.csv",
+        CUDA_GPU_TRACE_REPORT: stats_dir / "nsys_cuda_gpu_trace.csv",
+    }
+    shutil.copy(
+        FIXTURES / "nvtx_pushpop_trace.csv", report_paths[NVTX_PUSHPOP_TRACE_REPORT]
+    )
+    for report in (
+        NVTX_GPU_PROJECTION_TRACE_REPORT,
+        CUDA_GPU_KERNEL_SUMMARY_REPORT,
+        CUDA_GPU_TRACE_REPORT,
+    ):
+        report_paths[report].touch()
+    monkeypatch.setattr(
+        "development.profiling.analyze.run_nsys_stats",
+        lambda **kwargs: NsysStatsArtifacts(
+            nsys_version=VALIDATED_NSYS_VERSION,
+            report_paths=report_paths,
+        ),
+    )
+
+    saved = json.loads(analyze_run(run_dir=run_dir).read_text(encoding="utf-8"))
+
+    assert saved["capture_gpu_work"] == {"kernels": [], "memory_transfers": []}
+    assert saved["gpu_projected_ranges"] == []
+    assert all(item["gpu_projection"] is None for item in saved["iterations"])
+    assert "Missing GPU projections for iterations: [0, 1]." in saved["warnings"]
 
 
 def _manifest():
