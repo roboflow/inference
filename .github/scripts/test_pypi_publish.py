@@ -28,9 +28,11 @@ def test_runtime_upload_is_preflighted_and_stages_only_missing_files():
 
 
 import hashlib
+import importlib.metadata
 import importlib.util
 import io
 import json
+import os
 import shlex
 import shutil
 import stat
@@ -87,20 +89,16 @@ def test_zero_publication_budget_stops_before_network(
     assert api.calls == []
 
 
-@pytest.mark.parametrize("profile", list(publish.PROJECTS))
-def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
-    tmp_path, monkeypatch, profile
-):
+def _standalone_build(checkout, *, profile):
     project = publish.PROJECTS[profile]
     shutil.copytree(
         ROOT / project,
-        tmp_path / project,
+        checkout / project,
         ignore=shutil.ignore_patterns(".venv", "dist", "build", "*.egg-info", "tests"),
     )
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("EXPECTED_VERSION", raising=False)
-    monkeypatch.delenv("EXPECTED_REVISION", raising=False)
-    version = publish._version(profile)
+    constraints = checkout / ".release/pypi/build-requirements.txt"
+    constraints.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / ".release/pypi/build-requirements.txt", constraints)
     if profile == "inference-models":
         workflow = yaml.safe_load(
             (ROOT / ".github/workflows/publish.pypi.inference_exp.yml").read_text()
@@ -111,23 +109,130 @@ def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
             for line in step.get("run", "").splitlines()
             if "uv build" in line
         )
-        directory = tmp_path / project / "dist"
+        directory = checkout / project / "dist"
     else:
         command = next(
             line.split("&&", 1)[1].strip()
             for line in (ROOT / "Makefile").read_text().splitlines()
-            if line.strip().startswith(f"cd {project} && uv build ")
+            if line.strip().startswith(f"cd {project} && ") and "uv build " in line
         )
-        directory = tmp_path / "dist"
+        directory = checkout / "dist"
 
-    # Use the real publisher command and backend, with installed build tools offline.
+    argv = shlex.split(command.replace("${PYTHON}", sys.executable))
+    argv.extend(["--offline", "--no-index", "--find-links", "/build-wheels"])
+    return argv, directory, constraints
+
+
+@pytest.mark.parametrize(
+    "profile,backend",
+    [(profile, "setuptools") for profile in publish.PROJECTS]
+    + [
+        (profile, backend)
+        for profile in ("roboflow-workflows", "streamvision")
+        for backend in ("wheel", "packaging")
+    ],
+)
+def test_uv_isolated_build_rejects_unsatisfiable_backend_pin(
+    tmp_path, profile, backend
+):
+    argv, _, constraints = _standalone_build(tmp_path, profile=profile)
+    constraints.write_text(f"{backend}==0.0.0\n")
     result = subprocess.run(
-        [*shlex.split(command), "--offline", "--no-build-isolation"],
-        cwd=tmp_path / project,
+        argv, cwd=tmp_path / publish.PROJECTS[profile], capture_output=True, text=True
+    )
+    assert result.returncode != 0, "Build ignored the configured backend constraint"
+    assert f"{backend}==0.0.0" in result.stderr
+
+
+@pytest.mark.parametrize("installer", ["make", "models-workflow"])
+def test_make_installs_the_exact_shared_build_tools(tmp_path, installer):
+    environment = tmp_path / "build-environment"
+    subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True)
+    python = environment / "bin/python"
+    env = {
+        **os.environ,
+        "PATH": f"{python.parent}:{os.environ['PATH']}",
+        "PIP_NO_INDEX": "1",
+        "PIP_FIND_LINKS": "/build-wheels",
+    }
+    if installer == "make":
+        argv = ["make", "install_pypi_build_tools", f"PYTHON={python}"]
+        cwd = ROOT
+    else:
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/publish.pypi.inference_exp.yml").read_text()
+        )
+        step = next(
+            step
+            for step in workflow["jobs"]["build"]["steps"]
+            if "pip install" in step.get("run", "")
+        )
+        argv = ["sh", "-ec", step["run"]]
+        cwd = ROOT / step["working-directory"]
+    result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    pins = dict(
+        line.split("==")
+        for line in (ROOT / ".release/pypi/build-requirements.txt")
+        .read_text()
+        .splitlines()
+        if line and not line.startswith("#")
+    )
+    installed = subprocess.check_output(
+        [
+            str(python),
+            "-c",
+            "import importlib.metadata, json; print(json.dumps({name: importlib.metadata.version(name) for name in "
+            + repr(list(pins))
+            + "}))",
+        ],
+        text=True,
+    )
+    assert json.loads(installed) == pins
+    assert {name: importlib.metadata.version(name) for name in pins} == pins
+
+
+@pytest.mark.parametrize("profile", list(publish.PROJECTS))
+def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
+    tmp_path, monkeypatch, profile
+):
+    argv, directory, _ = _standalone_build(tmp_path, profile=profile)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("EXPECTED_VERSION", raising=False)
+    monkeypatch.delenv("EXPECTED_REVISION", raising=False)
+    version = publish._version(profile)
+    result = subprocess.run(
+        argv, cwd=tmp_path / publish.PROJECTS[profile], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    with zipfile.ZipFile(next(directory.glob("*.whl"))) as archive:
+        metadata = next(
+            name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")
+        )
+        assert (
+            f"Generator: setuptools ({importlib.metadata.version('setuptools')})"
+            in archive.read(metadata).decode()
+        )
+
+    retry = tmp_path / "retry"
+    retry_argv, retry_directory, _ = _standalone_build(retry, profile=profile)
+    repeated = subprocess.run(
+        retry_argv,
+        cwd=retry / publish.PROJECTS[profile],
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert repeated.returncode == 0, repeated.stdout + repeated.stderr
+    for path in directory.iterdir():
+        original = publish._artifact(
+            path.read_bytes(), filename=path.name, version=version
+        )
+        rebuilt = publish._artifact(
+            (retry_directory / path.name).read_bytes(),
+            filename=path.name,
+            version=version,
+        )
+        assert original["content_sha256"] == rebuilt["content_sha256"]
     calls = []
 
     def absent(url, **kwargs):

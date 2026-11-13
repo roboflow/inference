@@ -7,6 +7,10 @@ serve-full:
 	python -m zensical serve
 
 PYTHON=python
+.PHONY: install_pypi_build_tools
+install_pypi_build_tools:
+	${PYTHON} -m pip install -r .release/pypi/build-requirements.txt
+
 export PYTHONPATH = .
 check_dirs := inference inference_sdk workflows stream_vision
 
@@ -51,19 +55,16 @@ start_test_docker_jetson:
 stop_test_docker:
 	docker rm -f $(INFERENCE_TEST_CONTAINER)
 
-create_workflows_wheel: download_fonts
-	which uv || pip install uv
-	cd workflows && uv lock --check
-	cd workflows && uv build --no-create-gitignore --out-dir ../dist
+create_workflows_wheel: install_pypi_build_tools download_fonts
+	cd workflows && ${PYTHON} -m uv lock --check
+	cd workflows && ${PYTHON} -m uv build --build-constraints ../.release/pypi/build-requirements.txt --no-create-gitignore --out-dir ../dist
 
-create_streamvision_wheel:
-	which uv || pip install uv
-	cd stream_vision && uv lock --check
-	cd stream_vision && uv build --no-create-gitignore --wheel --out-dir ../dist
+create_streamvision_wheel: install_pypi_build_tools
+	cd stream_vision && ${PYTHON} -m uv lock --check
+	cd stream_vision && ${PYTHON} -m uv build --build-constraints ../.release/pypi/build-requirements.txt --no-create-gitignore --wheel --out-dir ../dist
 
-create_models_wheel:
-	which uv || pip install uv
-	cd inference_models && uv build --no-create-gitignore --wheel --out-dir ../dist
+create_models_wheel: install_pypi_build_tools
+	cd inference_models && ${PYTHON} -m uv build --build-constraints ../.release/pypi/build-requirements.txt --no-create-gitignore --wheel --out-dir ../dist
 
 # Build checkout artifacts; transitive dependencies still resolve from PyPI.
 create_isolation_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
@@ -76,8 +77,7 @@ create_isolation_wheels: create_workflows_wheel create_models_wheel create_strea
 # PyPI owns only these six distributions. Runtime dependencies are recorded by
 # the setup scripts, not needed to build wheels. Keep create_wheels unchanged
 # for Docker and other callers that also need the standalone package artifacts.
-create_pypi_wheels:
-	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+create_pypi_wheels: install_pypi_build_tools
 	rm -rf dist/pypi
 	set -e; for script in inference.core inference.cpu inference.gpu inference inference.sdk inference.cli; do \
 		rm -rf build/*; \
@@ -86,13 +86,11 @@ create_pypi_wheels:
 
 # Separate publication inventories. Keep create_pypi_wheels and image build
 # targets compatible with callers that need all six distributions.
-create_pypi_sdk_wheel:
-	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+create_pypi_sdk_wheel: install_pypi_build_tools
 	rm -rf dist/sdk build
 	${PYTHON} .release/pypi/inference.sdk.setup.py bdist_wheel --dist-dir dist/sdk
 
-create_pypi_runtime_wheels:
-	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+create_pypi_runtime_wheels: install_pypi_build_tools
 	rm -rf dist/pypi
 	set -e; for script in inference.core inference.cpu inference.gpu inference inference.cli; do \
 		rm -rf build/*; \

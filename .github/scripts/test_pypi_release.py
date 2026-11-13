@@ -683,6 +683,7 @@ def test_sdk_build_needs_no_runtime_cli_or_standalone_source(tmp_path, monkeypat
         "LICENSE.core",
         "inference/core/version.py",
         ".release/pypi/inference.sdk.setup.py",
+        ".release/pypi/build-requirements.txt",
         "requirements/requirements.sdk.http.txt",
         "requirements/requirements.sdk.webrtc.txt",
     ]:
