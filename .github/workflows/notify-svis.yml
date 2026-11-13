@@ -1,24 +1,4 @@
 name: Notify SVIS of a post release
-# A post release (e.g. 1.8.4-post1) is a manually dispatched CPU build, not a
-# GitHub release: a release would start ~21 workflows (every image family,
-# the PyPI publishes, docs, installers), and the PyPI uploads would collide
-# because version.py still holds the base version. Its annotated git tag is
-# what maps the version to its commit:
-#
-#   git tag -a v1.8.4-post1 <commit> -m "1.8.4-post1"
-#   git push origin v1.8.4-post1
-#
-# Pushing that tag runs this workflow, which pings
-# streaming-video-inference-services the same way notify-svis in
-# docker.cpu.yml does for GitHub releases, so its inference pin gets a bump
-# PR. Push the tag once the post release images are published. The tag can
-# point at a commit that is not on main (a base release plus a fix), but that
-# commit must contain this file, or the push starts nothing.
-#
-# Fire-and-forget: holds no permissions of its own and nothing flows back
-# from SVIS. The App key lives in the svis-dispatch environment, restricted
-# to v* tag refs; creating v* tags is restricted to release owners. The job is
-# a no-op until the App client id and key exist.
 
 on:
   push:
@@ -26,7 +6,6 @@ on:
 
 permissions: {}
 
-# One run per tag; a ping is never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -60,9 +39,7 @@ jobs:
           private-key: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY }}
           owner: roboflow
           repositories: streaming-video-inference-services
-          permission-contents: write # required by repository_dispatch
-      # GITHUB_SHA is the commit the tag points at; SVIS checks it equals
-      # the commit of tag v<version>.
+          permission-contents: write
       - name: Ping SVIS
         if: ${{ steps.app-token.outputs.token != '' }}
         env:

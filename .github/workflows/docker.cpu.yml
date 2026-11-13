@@ -216,23 +216,6 @@ jobs:
             echo "$tag amd64 manifest $published matches the tested image"
           done
 
-  # Tells streaming-video-inference-services (video preview worker) that a
-  # GitHub release is out, so its inference pin gets a bump PR within minutes.
-  #
-  # Published, non-pre-release GitHub releases only: a saved draft or a
-  # pre-release never pings. Manually dispatched builds (custom tags such as
-  # post1, or a VERSION tag from an arbitrary ref) are not announced from
-  # here. A post release is announced by pushing its annotated v<X.Y.Z>-postN
-  # tag, which notify-svis.yml picks up; SVIS finds commits by tag only.
-  #
-  # Fire-and-forget: runs only after the images are published, cannot fail
-  # this workflow (continue-on-error), holds no permissions of its own, and
-  # nothing flows back from SVIS. SVIS ignores versions not newer than its
-  # pin, so a backport release (e.g. 1.7.5 after 1.8.4) opens nothing.
-  #
-  # The App key lives in the svis-dispatch environment, restricted to v* tag
-  # refs, so it cannot be used from a branch with an edited workflow. The
-  # job is a no-op until the App client id and key exist.
   notify-svis:
     needs: docker
     if: >-
@@ -251,8 +234,6 @@ jobs:
     steps:
       - name: Only announce X.Y.Z and X.Y.Z-postN releases
         id: filter
-        # Release tags are v-prefixed (v1.8.4); rc and other pre-release
-        # tags are skipped.
         run: |
           version="${RELEASE_TAG#v}"
           if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-post[0-9]+)?$ ]]; then
@@ -269,7 +250,7 @@ jobs:
           private-key: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY }}
           owner: roboflow
           repositories: streaming-video-inference-services
-          permission-contents: write # required by repository_dispatch
+          permission-contents: write
       - name: Ping SVIS
         if: ${{ steps.app-token.outputs.token != '' }}
         env:
