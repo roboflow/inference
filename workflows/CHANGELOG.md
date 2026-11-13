@@ -33,6 +33,8 @@ Bundled execution engine: `1.17.2`.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
+- S3 Sink (`roboflow_core/s3_sink@v1`) in `append_log` mode no longer uploads the whole accumulated object on every run. It uploads on the first entry of each object, so credential and permission errors still surface on the first run; when the object reaches `max_entries_per_file`; when the block is torn down, including at normal interpreter exit; and otherwise at most every `upload_interval_seconds`, a new optional field (default `30`). Entries in between are reported as buffered and reach S3 with the next upload; if the process crashes, the entries buffered since the last upload are lost. A failed upload is retried on the next run. Set `upload_interval_seconds` to `0` to upload on every run, as before.
+- S3 Sink reuses one boto3 client per credentials and region across runs and block instances, instead of creating a client, and a new connection, on every run.
 
 ### Added
 
