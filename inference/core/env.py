@@ -627,6 +627,29 @@ if OFFLINE_MODE and (LAMBDA or GCP_SERVERLESS):
         "connectivity. Unset OFFLINE_MODE for serverless runtimes."
     )
 
+# Databricks SQL Image Source block. DATABRICKS_SQL_IMAGE_SOURCE_ENABLED is the
+# rollout switch: unset, the block is enabled on self-hosted servers and
+# disabled on the Roboflow hosted platform (GCP_SERVERLESS / LAMBDA); an
+# explicit value wins everywhere. Like every variable here it is read at
+# startup, so changing it is a redeployment, not a live kill switch. The block
+# refuses warehouse hosts that resolve to non-global addresses unless an
+# operator opts in, and the byte / pixel budgets apply per block invocation.
+DATABRICKS_SQL_IMAGE_SOURCE_ENABLED = str2bool(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_ENABLED", not (GCP_SERVERLESS or LAMBDA))
+)
+ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES = str2bool(
+    os.getenv("ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES", False)
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES = int(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES", 1024 * 1024 * 1024)
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES = int(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES", 32 * 1024 * 1024)
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS = int(
+    os.getenv("DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS", 25_000_000)
+)
+
 # This variable affects extra headers passed to new weights provider created for
 # `inference-models` - only effective when `USE_INFERENCE_MODELS` is True and
 # makes the weights provider to reject request for model weights that are coming to
@@ -1085,6 +1108,12 @@ elif (
     )
     WORKFLOWS_STEP_EXECUTION_MODE = "local"
 WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
+MAX_CONCURRENT_INFERENCE_REQUESTS = int(
+    os.getenv("MAX_CONCURRENT_INFERENCE_REQUESTS", "0")
+)
+CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT = float(
+    os.getenv("CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT", "30")
+)
 WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH = int(
     os.getenv("WORKFLOWS_MAX_INNER_WORKFLOW_DEPTH", "4")
 )
