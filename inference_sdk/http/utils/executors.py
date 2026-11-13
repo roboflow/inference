@@ -430,7 +430,11 @@ def raise_client_error(details: dict) -> None:
         details: The details of the error.
     """
     status_code = details["value"][0]
-    request_data = details["kwargs"]["request_data"]
+    request_data = (
+        details["args"][0]
+        if details.get("args")
+        else details["kwargs"].get("request_data")
+    )
     raise ClientResponseError(
         request_info=RequestInfo(
             url=request_data.url,
