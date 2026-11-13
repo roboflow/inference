@@ -9,4 +9,7 @@
     <url>
          <loc>https://inference.roboflow.com/workflows/classifier_embeddings/</loc>
     </url>
+    <url>
+         <loc>https://inference.roboflow.com/workflows/databricks_sql_image_source/</loc>
+    </url>
 </urlset>
