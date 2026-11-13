@@ -1,7 +1,7 @@
 """Read an action recognition model's contract without downloading its weights."""
 
 import tempfile
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Type
 
 from inference_models.errors import (
     ModelImplementationNotFoundError,
@@ -80,7 +80,7 @@ def get_action_recognition_contract(
 
 def _resolve_action_recognition_package(
     metadata: ModelMetadata,
-) -> Tuple[type, ModelPackageMetadata]:
+) -> Tuple[Type[ActionRecognitionModel], ModelPackageMetadata]:
     # Runtime negotiation is skipped on purpose: the caller does not run the
     # model, so its own hardware must not rule packages out.
     for package in metadata.model_packages:
@@ -95,8 +95,7 @@ def _resolve_action_recognition_package(
             task_type=ACTION_RECOGNITION_TASK,
             backend=package.backend,
         )
-        if issubclass(model_class, ActionRecognitionModel):
-            return model_class, package
+        return model_class, package
 
     raise ModelImplementationNotFoundError(
         message=(
