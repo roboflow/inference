@@ -46,7 +46,7 @@ otel = [
   "opentelemetry-instrumentation-requests",
 ]
 test = [
-  "opentelemetry-sdk~=1.41.1",
+  "opentelemetry-sdk~=1.45.2",
   "pytest>=8.0.0",
   "pytest-asyncio>=1.0.0",
   "pytest-timeout>=2.3.0",
