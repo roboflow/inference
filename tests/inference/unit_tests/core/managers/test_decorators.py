@@ -1,6 +1,8 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators import fixed_size_cache
@@ -168,3 +170,138 @@ def test_fixed_size_cache_clear_passes_disk_cache_cleanup_to_models(
     # then
     model.clear_cache.assert_called_once_with(delete_from_disk=disk_cache_cleanup)
     assert model_manager.models() == {}
+
+
+def test_fixed_size_cache_evicts_unpinned_models_when_adding_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    model_manager = ModelManager(model_registry=MagicMock())
+    model_manager._models = {
+        "pinned/1": MagicMock(),
+        "other/1": MagicMock(),
+        "other/2": MagicMock(),
+        "other/3": MagicMock(),
+        "other/4": MagicMock(),
+    }
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+    decorator.pin_model("pinned/1")
+    monkeypatch.setattr(fixed_size_cache, "MEMORY_FREE_THRESHOLD", 0.3)
+    monkeypatch.setattr(
+        decorator, "memory_pressure_detected", MagicMock(side_effect=[True, False])
+    )
+
+    # when
+    decorator.add_model(model_id="new/1", api_key="key")
+
+    # then
+    assert list(model_manager.models()) == ["pinned/1", "other/4", "new/1"]
+    assert list(decorator._key_queue) == ["pinned/1", "other/4", "new/1"]
+
+
+def test_fixed_size_cache_evicts_models_and_retries_after_cuda_out_of_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    model = MagicMock()
+    model.infer_from_request.side_effect = [
+        torch.cuda.OutOfMemoryError("CUDA out of memory."),
+        "response",
+    ]
+    model_manager = ModelManager(model_registry=MagicMock())
+    model_manager._models = {
+        "pinned/1": MagicMock(),
+        "other/1": MagicMock(),
+        "other/2": MagicMock(),
+        "other/3": MagicMock(),
+        "other/4": MagicMock(),
+        "sam3/sam3_interactive": model,
+    }
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+    decorator.pin_model("pinned/1")
+    request = SimpleNamespace(api_key="key", disable_model_monitoring=True)
+    monkeypatch.setattr(fixed_size_cache, "MEMORY_FREE_THRESHOLD", 0.3)
+    monkeypatch.setattr(
+        decorator, "memory_pressure_detected", MagicMock(side_effect=[True, False])
+    )
+
+    # when
+    response = decorator.infer_from_request_sync("sam3/sam3_interactive", request)
+
+    # then
+    assert response == "response"
+    assert model.infer_from_request.call_count == 2
+    assert list(model_manager.models()) == [
+        "pinned/1",
+        "other/4",
+        "sam3/sam3_interactive",
+    ]
+    assert list(decorator._key_queue) == [
+        "pinned/1",
+        "other/4",
+        "sam3/sam3_interactive",
+    ]
+
+
+def test_fixed_size_cache_raises_cuda_oom_when_no_model_can_be_evicted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    model = MagicMock()
+    model.infer_from_request.side_effect = torch.cuda.OutOfMemoryError(
+        "CUDA out of memory."
+    )
+    model_manager = ModelManager(model_registry=MagicMock())
+    model_manager._models = {"pinned/1": MagicMock(), "some/1": model}
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+    decorator.pin_model("pinned/1")
+    request = SimpleNamespace(api_key="key", disable_model_monitoring=True)
+    monkeypatch.setattr(fixed_size_cache, "MEMORY_FREE_THRESHOLD", 0.3)
+    monkeypatch.setattr(
+        decorator, "memory_pressure_detected", MagicMock(return_value=True)
+    )
+
+    # when
+    with pytest.raises(torch.cuda.OutOfMemoryError):
+        decorator.infer_from_request_sync("some/1", request)
+
+    # then
+    assert model.infer_from_request.call_count == 1
+    assert list(model_manager.models()) == ["pinned/1", "some/1"]
+    assert list(decorator._key_queue) == ["pinned/1", "some/1"]
+
+
+@pytest.mark.parametrize(
+    "memory_free_threshold, error",
+    [
+        (0.0, torch.cuda.OutOfMemoryError("CUDA out of memory.")),
+        (0.3, ValueError("Invalid prompt.")),
+    ],
+    ids=["threshold_unset", "not_out_of_memory"],
+)
+def test_fixed_size_cache_does_not_evict_models_after_other_inference_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    memory_free_threshold: float,
+    error: Exception,
+) -> None:
+    # given
+    model = MagicMock()
+    model.infer_from_request.side_effect = error
+    model_manager = ModelManager(model_registry=MagicMock())
+    model_manager._models = {"other/1": MagicMock(), "some/1": model}
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+    request = SimpleNamespace(api_key="key", disable_model_monitoring=True)
+    monkeypatch.setattr(
+        fixed_size_cache, "MEMORY_FREE_THRESHOLD", memory_free_threshold
+    )
+    monkeypatch.setattr(
+        decorator, "memory_pressure_detected", MagicMock(return_value=True)
+    )
+
+    # when
+    with pytest.raises(type(error)):
+        decorator.infer_from_request_sync("some/1", request)
+
+    # then
+    assert model.infer_from_request.call_count == 1
+    assert list(model_manager.models()) == ["other/1", "some/1"]

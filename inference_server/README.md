@@ -200,6 +200,10 @@ A few legacy behaviours are not (yet) available here:
   `workflows` extra and `ACTIVE_LEARNING_ENABLED=false` turns it off. The periodic pingback to
   `METRICS_URL` is ported for inferences served through the legacy routes and
   Workflows steps; `METRICS_ENABLED=false` turns it off.
+- When an inference runs out of CUDA memory, the legacy server evicts least
+  recently used models while the GPU is under `MEMORY_FREE_THRESHOLD` pressure
+  and retries the inference once. Here `INFERENCE_MEMORY_FREE_THRESHOLD` evicts
+  models only before a load.
 
 ## Running the legacy integration suite against this image
 

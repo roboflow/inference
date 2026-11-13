@@ -123,31 +123,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
                     )
                     break
                 eviction_reason = "cache_full" if cache_full else "memory_pressure"
-                evicted_count = 0
-                skipped_pinned = []
-                while evicted_count < 3 and self._key_queue:
-                    to_remove_model_id = self._key_queue.popleft()
-                    if to_remove_model_id in self._pinned_models:
-                        skipped_pinned.append(to_remove_model_id)
-                        continue
-                    super().remove(
-                        to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
-                    )  # LRU model overflow cleanup may or maynot need the weights removed from disk
-                    logger.info(
-                        "Model evicted from cache: model_id=%s, reason=%s, "
-                        "loaded_models=%d, max_active_models=%d, "
-                        "memory_free_threshold=%s, evicted_to_make_room_for=%s",
-                        to_remove_model_id,
-                        eviction_reason,
-                        len(self),
-                        self.max_size,
-                        MEMORY_FREE_THRESHOLD,
-                        queue_id,
-                    )
-                    evicted_count += 1
-                # Put pinned models back at the front of the queue
-                for mid in reversed(skipped_pinned):
-                    self._key_queue.appendleft(mid)
+                evicted_count = self._evict_least_recently_used_models(
+                    reason=eviction_reason, evicted_to_make_room_for=queue_id
+                )
                 if evicted_count == 0:
                     logger.warning(
                         "Cannot free model cache space — all remaining models are pinned (preloaded). "
@@ -232,6 +210,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
     ) -> InferenceResponse:
         """Processes a complete inference request and updates the cache.
 
+        When the inference runs out of CUDA memory and ``MEMORY_FREE_THRESHOLD``
+        is set, evicts least recently used models while the GPU is under memory
+        pressure, as adding a model does, and retries the inference once.
+
         Args:
             model_id (str): The identifier of the model.
             request (InferenceRequest): The request to process.
@@ -240,7 +222,19 @@ class WithFixedSizeCache(ModelManagerDecorator):
             InferenceResponse: The response from the inference.
         """
         self._refresh_model_position_in_a_queue(model_id=model_id)
-        return super().infer_from_request_sync(model_id, request, **kwargs)
+        try:
+            return super().infer_from_request_sync(model_id, request, **kwargs)
+        except Exception as error:
+            if not self._evict_models_after_cuda_out_of_memory(
+                error, model_id=model_id
+            ):
+                raise
+
+        # Retried outside the except block, so the failed attempt's traceback and
+        # the tensors its frames hold are released first.
+        response = super().infer_from_request_sync(model_id, request, **kwargs)
+
+        return response
 
     def run_tensor_native_inference(self, model_id: str, **kwargs) -> Any:
         self._refresh_model_position_in_a_queue(model_id=model_id)
@@ -306,6 +300,88 @@ class WithFixedSizeCache(ModelManagerDecorator):
             self._safe_remove_model_from_queue(model_id=model_id)
             self._key_queue.append(model_id)
 
+    def _evict_least_recently_used_models(
+        self, *, reason: str, evicted_to_make_room_for: str
+    ) -> int:
+        """Evicts up to 3 least recently used models that are not pinned.
+
+        The caller holds ``_queue_lock``. Returns how many models were evicted.
+        """
+        evicted_count = 0
+        skipped_pinned = []
+        while evicted_count < 3 and self._key_queue:
+            to_remove_model_id = self._key_queue.popleft()
+            if to_remove_model_id in self._pinned_models:
+                skipped_pinned.append(to_remove_model_id)
+                continue
+            super().remove(
+                to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
+            )  # LRU model overflow cleanup may or maynot need the weights removed from disk
+            logger.info(
+                "Model evicted from cache: model_id=%s, reason=%s, "
+                "loaded_models=%d, max_active_models=%d, "
+                "memory_free_threshold=%s, evicted_to_make_room_for=%s",
+                to_remove_model_id,
+                reason,
+                len(self),
+                self.max_size,
+                MEMORY_FREE_THRESHOLD,
+                evicted_to_make_room_for,
+            )
+            evicted_count += 1
+        # Put pinned models back at the front of the queue
+        for mid in reversed(skipped_pinned):
+            self._key_queue.appendleft(mid)
+
+        return evicted_count
+
+    def _evict_models_after_cuda_out_of_memory(
+        self, error: Exception, *, model_id: str
+    ) -> bool:
+        """Evicts least recently used models after ``model_id`` ran out of CUDA memory.
+
+        Adding a model is the only other place that checks memory pressure, so
+        without this a GPU that fills up while serving loaded models keeps failing
+        requests until the next model load. Returns True when it evicted a model,
+        so retrying the inference can succeed.
+        """
+        if not MEMORY_FREE_THRESHOLD or not _is_cuda_out_of_memory_error(error):
+            return False
+
+        evicted_count = 0
+        with acquire_with_timeout(
+            lock=self._queue_lock, timeout=HOT_MODELS_QUEUE_LOCK_ACQUIRE_TIMEOUT
+        ) as acquired:
+            if not acquired:
+                return False
+
+            # Kept out of the queue while evicting, so the model that needs the
+            # memory is not evicted itself.
+            self._safe_remove_model_from_queue(model_id=model_id)
+            try:
+                while self.memory_pressure_detected():
+                    evicted_in_round = self._evict_least_recently_used_models(
+                        reason="cuda_out_of_memory",
+                        evicted_to_make_room_for=model_id,
+                    )
+                    if evicted_in_round == 0:
+                        break
+
+                    evicted_count += evicted_in_round
+                    gc.collect()
+            finally:
+                self._key_queue.append(model_id)
+
+        if evicted_count:
+            logger.warning(
+                "Model %s ran out of CUDA memory - evicted %d least recently used "
+                "models, retrying the inference.",
+                model_id,
+                evicted_count,
+            )
+
+        return evicted_count > 0
+
     def _safe_remove_model_from_queue(self, model_id: str) -> None:
         try:
             while model_id in self._key_queue:
@@ -344,3 +420,12 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 f"Failed to check CUDA memory pressure: {e}, returning {return_boolean}"
             )
         return return_boolean
+
+
+def _is_cuda_out_of_memory_error(error: Exception) -> bool:
+    try:
+        import torch
+    except ImportError:
+        return False
+
+    return isinstance(error, torch.cuda.OutOfMemoryError)
