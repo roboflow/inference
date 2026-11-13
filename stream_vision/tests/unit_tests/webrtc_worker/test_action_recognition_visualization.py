@@ -114,6 +114,7 @@ def test_example_synchronized_display_puts_labels_on_their_frames(monkeypatch):
         _example_engine(monkeypatch),
         display_mode="synchronized",
         frame_numbers=[1, 1, *range(2, 172)],
+        # A slow measured rate must not cap the delay: the declared 30 FPS does.
         measured_fps=2,
     )
 

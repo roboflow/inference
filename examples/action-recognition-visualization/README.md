@@ -42,8 +42,8 @@ one model call, and a realtime source drops frames meanwhile.
 
 Video files always classify inside the step, whatever this setting says. A
 file is not paced by the clock, so a background worker would fall behind and
-leave most windows unclassified. For a file, the `timeline` on the last frame
-covers the whole clip.
+leave most windows unclassified. For a file that reports its frame count, the
+`timeline` on the last frame covers the whole clip.
 
 ## Outputs
 
