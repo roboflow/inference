@@ -23,9 +23,9 @@ are re-implemented natively:
   rebuilds a native ``Detections`` / ``InstanceDetections`` via
   ``attach_native_detection_metadata`` (class names + per-box ``detection_id``).
 
-Masks are transformed per-instance: decoded with ``instance_mask_to_numpy``, the mask
-polygon is warped, and the result is re-encoded to match the input representation
-(dense ``torch.Tensor`` in -> dense out; ``InstancesRLEMasks`` in -> RLE out).
+Masks are transformed per-instance. The mask is decoded with
+``instance_mask_to_numpy``, it is warped, and the result is encoded
+in the input representation (dense ``torch.Tensor`` or ``InstancesRLEMasks``).
 
 Keypoints: the canonical keypoint payload that the tensor serialiser reads lives in
 ``bboxes_metadata[i]["keypoints_xy"]`` (flattened by the keypoint-detection model
@@ -48,6 +48,9 @@ from pydantic import AliasChoices, ConfigDict, Field
 from roboflow_workflows.core_steps.common.tensor_native import (
     attach_native_detection_metadata,
     instance_mask_to_numpy,
+)
+from roboflow_workflows.core_steps.transformations.perspective_correction._mask_geometry import (
+    _warp_instance_mask,
 )
 from roboflow_workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
@@ -124,7 +127,7 @@ This block corrects perspective distortion by transforming coordinates from a pe
    - Handles extended dimensions when polygon extension is enabled
 5. Applies perspective transformation to detections (if provided):
    - Transforms bounding box coordinates from perspective view to top-down coordinates
-   - Transforms instance segmentation masks by converting masks to polygons, transforming polygon vertices, and converting back to masks in the new coordinate space
+   - Transforms instance segmentation masks to the destination coordinate space while preserving separate regions and holes
    - Transforms keypoint coordinates for keypoint detection predictions
    - Updates all coordinate data to reflect the corrected perspective
 6. Optionally warps images (if `warp_image` is True):
@@ -904,45 +907,6 @@ def _correct_box_xyxy(
     return np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(np.int32)
 
 
-def _correct_mask_and_xyxy(
-    mask: np.ndarray,
-    perspective_transformer: np.ndarray,
-    transformed_rect_width: float,
-    transformed_rect_height: float,
-) -> Tuple[Optional[np.ndarray], np.ndarray]:
-    """Warp a single instance mask: convert to polygon, warp the polygon, rebuild the
-    mask in the destination resolution, and derive the new axis-aligned box. Mirrors
-    the numpy block's mask branch. If the mask has no contour, returns ``(None, ...)``
-    so the caller falls back to box-only warping."""
-    polygons = sv.mask_to_polygons(mask)
-    if not polygons:
-        return None, np.zeros((4,), dtype=np.int32)
-    # ``sv.mask_to_polygons`` returns a list of contours; an instance mask with
-    # multiple disconnected components yields contours of differing point counts,
-    # so ``np.array(polygons, dtype=np.float32)`` would build a ragged
-    # (inhomogeneous) array and raise. Concatenate all contour points into a
-    # single ``(1, total_pts, 2)`` array — mirroring the single-contour shape
-    # the original ``np.array([single_poly])`` produced.
-    polygon = np.concatenate(
-        [np.asarray(p, dtype=np.float32) for p in polygons], axis=0
-    ).reshape(1, -1, 2)
-    # https://docs.opencv.org/4.9.0/d2/de8/group__core__array.html#gad327659ac03e5fd6894b90025e6900a7
-    corrected_polygon = cv.perspectiveTransform(
-        src=polygon, m=perspective_transformer
-    ).reshape(-1, 2)
-    corrected_mask = sv.polygon_to_mask(
-        polygon=np.around(corrected_polygon).astype(np.int32),
-        resolution_wh=(
-            int(round(transformed_rect_width)),
-            int(round(transformed_rect_height)),
-        ),
-    ).astype(bool)
-    corrected_xyxy = np.around(sv.polygon_to_xyxy(polygon=corrected_polygon)).astype(
-        np.int32
-    )
-    return corrected_mask, corrected_xyxy
-
-
 def _correct_keypoints_in_metadata(
     entry: dict,
     perspective_transformer: np.ndarray,
@@ -1001,6 +965,8 @@ def _correct_native_detections(
     xyxy_numpy = _native_detections_xyxy_numpy(detections)
     existing_bboxes_metadata = detections.bboxes_metadata
     device = detections.xyxy.device
+    destination_width = int(round(transformed_rect_width))
+    destination_height = int(round(transformed_rect_height))
 
     corrected_xyxy_rows: List[np.ndarray] = []
     corrected_bboxes_metadata: List[dict] = []
@@ -1020,29 +986,22 @@ def _correct_native_detections(
         corrected_box = None
         if is_instance_segmentation and detections.mask is not None:
             mask = instance_mask_to_numpy(detections, index)
-            corrected_mask, corrected_box = _correct_mask_and_xyxy(
-                mask=mask,
-                perspective_transformer=perspective_transformer,
-                transformed_rect_width=transformed_rect_width,
-                transformed_rect_height=transformed_rect_height,
+            corrected_mask, corrected_box = _warp_instance_mask(
+                mask,
+                transform=perspective_transformer,
+                resolution_wh=(destination_width, destination_height),
             )
-        if corrected_mask is None:
+        if corrected_box is None:
             corrected_box = _correct_box_xyxy(
                 box=xyxy_numpy[index],
                 perspective_transformer=perspective_transformer,
             )
-            if is_instance_segmentation:
-                # No contour to warp: emit an all-false mask at the destination
-                # resolution so the mask stack stays aligned with the boxes.
-                corrected_mask = np.zeros(
-                    (
-                        int(round(transformed_rect_height)),
-                        int(round(transformed_rect_width)),
-                    ),
-                    dtype=bool,
-                )
         corrected_xyxy_rows.append(corrected_box)
         if is_instance_segmentation:
+            if corrected_mask is None:
+                corrected_mask = np.zeros(
+                    (destination_height, destination_width), dtype=bool
+                )
             dense_masks.append(corrected_mask)
         _correct_keypoints_in_metadata(
             entry=entry, perspective_transformer=perspective_transformer
@@ -1069,8 +1028,8 @@ def _correct_native_detections(
             dense_masks=dense_masks,
             input_is_rle=input_mask_is_rle,
             device=device,
-            destination_height=int(round(transformed_rect_height)),
-            destination_width=int(round(transformed_rect_width)),
+            destination_height=destination_height,
+            destination_width=destination_width,
         )
         corrected = InstanceDetections(
             xyxy=xyxy_tensor,
@@ -1103,8 +1062,8 @@ def _correct_native_detections(
     # [height, width] (parent/root lineage intentionally left as the source frame).
     if corrected.image_metadata is not None:
         corrected.image_metadata[IMAGE_DIMENSIONS_KEY] = [
-            int(round(transformed_rect_height)),
-            int(round(transformed_rect_width)),
+            destination_height,
+            destination_width,
         ]
     return corrected
 
