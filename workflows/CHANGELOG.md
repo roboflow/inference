@@ -62,6 +62,24 @@ for contributor and maintainer responsibilities.
 
 - A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
 
+## `0.2.15.post2`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Gemini 4 Carbon in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `xhigh` and `max` thinking levels.
+- Gemini 4 Hydrogen (`gemini-4-hydrogen`) in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `low`, `medium`, `high`, `xhigh` and `max` thinking levels.
+
+## `0.2.15.post1`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Add Claude Fable 5.2 to the Anthropic Claude v5 model options.
+- Add Muse Ember to the Meta VLM v3 model options.
+
 ## `0.2.15`
 
 Bundled execution engine: `1.17.1`.
