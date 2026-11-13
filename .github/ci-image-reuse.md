@@ -49,8 +49,9 @@ one main commit. CPU builds amd64 and arm64 in one producer invocation; GPU
 builds amd64 once. The existing CPU and T4 workflows each run both
 `USE_INFERENCE_MODELS` modes against their producer's amd64 digest. T4 retains
 the complete existing selection, including runtime checks and all model stages.
-The separate models-GPU, package, parallel-server and other workflows continue
-independently.
+Colab GPU and Parallel GPU use the same coordinator and Depot transport, with
+their own Dockerfiles. Separate models-GPU, package and hosted-E2E workflows
+continue independently.
 
 Consumers pull by digest, verify architecture and the source revision label,
 then run by local image ID. Failed pulls never trigger a replacement build.
@@ -81,6 +82,38 @@ confirmed by the PR author; code review and the activation prerequisites still
 apply.
 
 ## Change record — Unreleased
+
+### Colab and Parallel GPU builds on Depot
+
+- Extend `ci_image_reuse.yml` to call the Colab GPU and Parallel GPU workflows
+  on main pushes and manual runs, and require their results in the aggregate
+  check. Remove their independent push triggers so each suite runs once.
+- Build the existing Colab GPU, Parallel GPU server and Parallel test-runner
+  Dockerfiles on Depot, coordinated by standard GitHub runners. Allocate
+  `Roboflow-GPU-VM-Runner` only after the images are saved. The original CPU/T4
+  matrices, GPU model-weight cache and all GPU runner labels remain intact.
+- Build `parallel-tests` from the produced `parallel-gpu` amd64 digest in the
+  same Depot project. Consumers verify revision, family, platform and digests;
+  the test image additionally records and verifies its server-image digest.
+  The server and test containers execute distinct immutable local image IDs.
+- Preserve direct manual dispatches of both GPU workflows, defaulting to the
+  sandbox project. The transport allows these two named manual entry points;
+  main pushes still require the central orchestrator. Forks, PR events and
+  manual writes to protected projects remain rejected.
+- Preserve Colab's GPU requirement, Parallel's CUDA/shared-memory startup
+  checks, both preprocessing regression modes and the optional allocation
+  benchmark. A failed image build or pull does not fall back to a GPU build.
+- Compare total GPU occupancy, Depot build costs and pull time before claiming
+  savings. Offline checks establish routing and identity contracts, not live
+  Depot authentication, GPU execution or a monetary saving.
+- Export Colab and both Parallel images as OCI layers compressed with Zstandard
+  level 3, including inherited layers. This changes transport compression, not
+  Dockerfile contents or the runtime environment. The first conversion incurs
+  extra builder work; subsequent exports can reuse compressed blobs in Depot.
+  CPU/T4 exports keep their existing defaults. Numeric `CI_IMAGE_METRICS` log
+  lines separate build/save, authentication and pull time without exposing
+  credentials or subprocess diagnostics. Compare cold GPU jobs and both cold
+  and warm Depot builds before attributing savings to compression.
 
 ### Depot Registry transport
 
@@ -142,12 +175,21 @@ This section records the CI change without assigning it to a package release.
 ## Configuration and activation
 
 There is no switch. Every push to main runs the orchestrator, which builds each
-family once and tests both model modes against that digest; the standalone CPU
-and T4 jobs and the push-triggered release builds skip on pushes to main.
+family once and tests both model modes against that digest, plus the distinct
+Colab and Parallel images. The standalone CPU and T4 jobs and the push-triggered
+release builds skip on pushes to main; Colab and Parallel have no independent
+push trigger.
 Same-repository release and manual entry points remain available, and a manual
 dispatch of **Main CPU and GPU image reuse** from any same-repository branch
 runs the complete path before a change reaches main. Reverting the orchestrator
 change restores the independent builds.
+
+For a focused GPU trial, dispatch **Google Colab GPU** or **Code Quality &
+Regression Tests - NVIDIA T4 (Parallel Server)** from the candidate branch.
+Each builds its images in the sandbox before starting the GPU test job. Parallel
+retains `test_name` and `run_iobinding_benchmark`; the orchestrator leaves these
+at their full-regression defaults. Its aggregate check retains the existing
+name **CPU and GPU image tests complete** and now requires both new suites too.
 
 The CPU and T4 `build` jobs and their `server-cpu` / `t4` fast-track callers
 grant `id-token: write`, as every other Depot workflow in this repository does.
@@ -162,13 +204,15 @@ matrices retain `fail-fast: true`.
 | --- | --- |
 | Producer (`ci_image_build.yml`) | `depot build --save` on Depot builders; GitHub OIDC authenticates the CLI; the saved image is addressed by digest under `registry.depot.dev/<project>`, labelled with the source revision and family, and tagged `ci-<family>-<sha>` so it is readable in the Depot Registry UI |
 | Producer manifest check | `depot pull-token` (one hour, read-only) for `docker buildx imagetools inspect` in an isolated `DOCKER_CONFIG` that is removed afterwards |
-| Consumers (CPU x86, T4) | `depot pull-token` in a temporary `DOCKER_CONFIG`, `docker pull` by digest, verification of OS, architecture, `RepoDigests`, revision and family labels, then tests by local image ID |
+| Consumers (CPU x86, T4, Colab GPU, Parallel GPU) | `depot pull-token` in a temporary `DOCKER_CONFIG`, `docker pull` by digest, verification of OS, architecture, `RepoDigests`, revision and family labels, then tests by local image ID |
+| Parallel test image | A read-only pull token authenticates the Depot build's `FROM registry.depot.dev/<project>@<server-digest>`; credentials are removed in the producer's cleanup, and the consumer also verifies the recorded server digest |
 | Retention | Depot project image retention policy |
 
 The Python transport (`depot_ci_image.py`) additionally requires
-`roboflow/inference`, a push to `refs/heads/main` or a manual dispatch of the
-orchestrator from a `refs/heads/` ref, the orchestrator as
-`GITHUB_WORKFLOW_REF`, a project ID of the form `[a-z0-9]+` that is neither the
+`roboflow/inference`, a push to `refs/heads/main` through the orchestrator or a
+manual dispatch from a `refs/heads/` ref. `GITHUB_WORKFLOW_REF` must identify the
+orchestrator, or (only for manual dispatch) one of the two specialized GPU
+workflows. It also requires a project ID of the form `[a-z0-9]+` that is neither the
 CI project nor the release project unless the event is a push, and a checkout
 equal to `GITHUB_SHA`.
 
@@ -184,7 +228,32 @@ reusable calls, fork pushes and PR/PR-target callers. GitHub issues no
 governed by each project's trust relationships in Depot, not by this
 repository.
 
-### Configuration
+### Specialized dependency layers
+
+Colab and Parallel CI builds select the Dockerfiles' `ci` target. Dependencies
+are resolved from the canonical setup scripts and project metadata before
+application source is copied. Temporary metadata-only wheels provide pip with
+the existing dependency constraints and extras; they are uninstalled in the
+same step. Real checkout wheels are built in a separate stage and mounted into
+the final installation, so wheel archives, build trees and new pip downloads
+are not retained in the exported image. Final installation still resolves
+dependencies normally. The default Dockerfile targets keep their existing
+release behavior.
+
+Source-only changes can then reuse the heavy dependency layer. Changes to
+requirements, package metadata, versions or the base image invalidate it.
+Local metadata equivalence tests and the live Colab/Parallel suites qualify
+this separation; local metadata checks alone do not establish GPU correctness
+or financial savings.
+
+Manual dispatches emit `CI_IMAGE_STORAGE` with validated immutable blob digests
+and sizes. Deduplicate shared layers across server/test images and source
+versions when calculating retained storage. Include build-cache growth and
+registry garbage-collection lag in cost comparisons; Depot's cache target is
+not a hard billing ceiling. Keep production retention in the model unless the
+actual project policy is changed and verified.
+
+### Project configuration
 
 None. Pushes to main save images in Depot project `inference-ci`
 (`9x3fbbxlnm`), whose image retention policy is 7 days; the sandbox keeps
@@ -193,6 +262,7 @@ input that defaults to `manual-inference-ci-test` (`7m01vtml7h`), the team sandb
 CI experiments, so manual runs never share a registry or cache with the main
 process. Both IDs are literals in `ci_image_reuse.yml`.
 
-Activation order: dispatch the orchestrator from the branch and confirm both
-producers and all four consumer legs pass, set the retention window, then
+Activation order: dispatch the orchestrator from the branch and confirm all
+producers, the four CPU/T4 consumer legs and both specialized GPU suites pass,
+set the retention window, then
 merge; the next push to main already reuses images.

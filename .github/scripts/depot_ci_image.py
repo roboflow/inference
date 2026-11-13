@@ -9,15 +9,47 @@ import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from ci_image import _digest, _emit, _manifest_digests
 
 _ORCHESTRATOR = "roboflow/inference/.github/workflows/ci_image_reuse.yml"
+_MANUAL_WORKFLOWS = frozenset(
+    {
+        _ORCHESTRATOR,
+        "roboflow/inference/.github/workflows/test.colab.gpu.yml",
+        "roboflow/inference/.github/workflows/test.nvidia_t4_parallel_server.yml",
+    }
+)
+_DOCKERFILES = {
+    "cpu": "Dockerfile.onnx.cpu",
+    "gpu": "Dockerfile.onnx.gpu",
+    "colab-gpu": "Dockerfile.google.colab.gpu",
+    "parallel-gpu": "Dockerfile.onnx.gpu.parallel",
+    "parallel-tests": "Dockerfile.parallel.tests",
+}
 # Only a push to main may write into the CI project; the release project is
 # never a CI target. Manual dispatches must use a sandbox project.
 _PROTECTED_PROJECTS = frozenset({"9x3fbbxlnm", "grl7ffzxd7"})
+_ZSTD_FAMILIES = frozenset({"colab-gpu", "parallel-gpu", "parallel-tests"})
+
+
+def _timing(phase: str, *, started: float) -> None:
+    # Numeric timings are safe to expose; subprocess output and credentials are not.
+    print(
+        "CI_IMAGE_METRICS "
+        + json.dumps(
+            {
+                "family": os.environ["IMAGE_FAMILY"],
+                "phase": phase,
+                "seconds": round(time.monotonic() - started, 3),
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
 
 
 def _run(args: list[str], *, env: dict | None = None, stdin: str | None = None) -> str:
@@ -37,12 +69,17 @@ def _authorize() -> None:
     sha = os.environ.get("GITHUB_SHA", "")
     event = os.environ.get("GITHUB_EVENT_NAME", "")
     main_push = event == "push" and ref == "refs/heads/main"
-    manual = event == "workflow_dispatch" and ref.startswith("refs/heads/")
+    workflow = os.environ.get("GITHUB_WORKFLOW_REF", "")
+    main_push = main_push and workflow == f"{_ORCHESTRATOR}@{ref}"
+    manual = (
+        event == "workflow_dispatch"
+        and ref.startswith("refs/heads/")
+        and workflow in {f"{name}@{ref}" for name in _MANUAL_WORKFLOWS}
+    )
     if (
         os.environ.get("GITHUB_REPOSITORY") != "roboflow/inference"
         or not re.fullmatch(r"[0-9a-f]{40}", sha)
         or not (main_push or manual)
-        or os.environ.get("GITHUB_WORKFLOW_REF") != f"{_ORCHESTRATOR}@{ref}"
     ):
         raise ValueError("Unapproved execution")
 
@@ -72,8 +109,17 @@ def _repository() -> str:
 def _validate() -> None:
     _authorize()
     _project()
-    if os.environ.get("IMAGE_FAMILY") not in {"cpu", "gpu"}:
+    family = os.environ.get("IMAGE_FAMILY")
+    if family not in _DOCKERFILES:
         raise ValueError("Invalid image family")
+
+    # The test environment must derive from the exact parallel server producer,
+    # never the mutable Docker Hub default in Dockerfile.parallel.tests.
+    parent = os.environ.get("SERVER_IMAGE_DIGEST", "")
+    if family == "parallel-tests":
+        _digest(parent)
+    elif parent:
+        raise ValueError("Unexpected parent image")
 
 
 def _pull_token(project: str) -> str:
@@ -104,6 +150,70 @@ def _login(*, env: dict, token: str) -> None:
     )
 
 
+def _read_manifest(digest: str) -> dict:
+    reference = f"{_repository()}@{_digest(digest)}"
+    for attempt in range(3):
+        try:
+            raw = _run(
+                ["docker", "buildx", "imagetools", "inspect", "--raw", reference]
+            )
+        except ValueError:
+            if attempt == 2:
+                raise
+
+            # A saved image can outlive a transient registry read failure.
+            # Retry only this read, never the build or a credential operation.
+            print(f"CI_IMAGE_MANIFEST_RETRY attempt={attempt + 1}", flush=True)
+            time.sleep(attempt + 1)
+        else:
+            return json.loads(raw)
+
+    raise ValueError("Manifest inspection failed")
+
+
+def _storage_inventory(index: str, manifest: dict) -> dict:
+    """Count referenced registry blobs once, without reading image configuration."""
+    blobs: dict[str, int] = {}
+    visited = {index}
+    pending = [manifest]
+    while pending:
+        current = pending.pop()
+        children = current.get("manifests", [])
+        descriptors = children or [current["config"], *current["layers"]]
+        for descriptor in descriptors:
+            digest = _digest(descriptor["digest"])
+            size = descriptor["size"]
+            if type(size) is not int or not 0 <= size <= 10**12:
+                raise ValueError("Invalid blob size")
+
+            if digest in blobs and blobs[digest] != size:
+                raise ValueError("Inconsistent blob size")
+
+            blobs[digest] = size
+            if len(blobs) > 4096:
+                raise ValueError("Too many registry blobs")
+
+            if children and digest not in visited:
+                visited.add(digest)
+                if len(visited) > 64:
+                    raise ValueError("Too many registry manifests")
+
+                pending.append(_read_manifest(digest))
+
+    # The root index has no parent descriptor. Its small metadata size is
+    # excluded explicitly; every referenced manifest, config and layer is counted.
+    return {
+        "schema": 1,
+        "family": os.environ["IMAGE_FAMILY"],
+        "source_sha": os.environ["GITHUB_SHA"],
+        "root_digest": index,
+        "excluded_root_manifests": 1,
+        "blobs": [
+            {"digest": digest, "size": size} for digest, size in sorted(blobs.items())
+        ],
+    }
+
+
 def _build() -> None:
     _validate()
     repository = _repository()
@@ -121,6 +231,30 @@ def _build() -> None:
             _run(["git", "archive", "--format=tar", f"--output={archive}", sha])
             _run(["tar", "-xf", str(archive), "-C", str(context)])
             metadata = root / "metadata.json"
+            parent_args = []
+            if family == "parallel-tests":
+                parent = os.environ["SERVER_IMAGE_DIGEST"]
+                _login(env=dict(os.environ), token=_pull_token(project))
+                parent_args = [
+                    "--build-arg",
+                    f"SERVER_IMAGE={repository}@{parent}",
+                    "--label",
+                    f"io.roboflow.ci.server-image-digest={parent}",
+                ]
+
+            # Recompress inherited layers too: Colab and CUDA bases dominate cold
+            # transfers. Depot retains the compressed blobs for subsequent builds.
+            # Keep the existing CPU/T4 export contract unchanged.
+            export_args = (
+                [
+                    "--output",
+                    "type=image,oci-mediatypes=true,compression=zstd,"
+                    "compression-level=3,force-compression=true",
+                ]
+                if family in _ZSTD_FAMILIES
+                else []
+            )
+            started = time.monotonic()
             _run(
                 [
                     "depot",
@@ -136,17 +270,26 @@ def _build() -> None:
                     "--platform",
                     "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
                     "--provenance=mode=min",
+                    *export_args,
+                    # Release/default Dockerfile targets retain their old behavior.
+                    *(
+                        ["--target", "ci"]
+                        if family in {"colab-gpu", "parallel-gpu"}
+                        else []
+                    ),
                     "--metadata-file",
                     str(metadata),
                     "--label",
                     f"org.opencontainers.image.revision={sha}",
                     "--label",
                     f"io.roboflow.ci.image-family={family}",
+                    *parent_args,
                     "--file",
-                    str(context / f"docker/dockerfiles/Dockerfile.onnx.{family}"),
+                    str(context / "docker/dockerfiles" / _DOCKERFILES[family]),
                     str(context),
                 ]
             )
+            _timing("build-and-save", started=started)
             result = json.loads(metadata.read_text())
             saved = result.get("depot.build", {})
             if saved.get("projectID") != project or not saved.get("buildID"):
@@ -154,24 +297,21 @@ def _build() -> None:
 
             index = _digest(result["containerimage.digest"])
             _login(env=dict(os.environ), token=_pull_token(project))
-            manifest = json.loads(
-                _run(
-                    [
-                        "docker",
-                        "buildx",
-                        "imagetools",
-                        "inspect",
-                        "--raw",
-                        f"{repository}@{index}",
-                    ]
-                )
-            )
+            manifest = _read_manifest(index)
             if "manifests" in manifest:
                 children = _manifest_digests(manifest, family=family)
-            elif family == "gpu":
+            elif family != "cpu":
                 children = {"amd64": index}
             else:
                 raise ValueError("CPU requires both architectures")
+
+            if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch":
+                # Manual cost probes expose only validated digests and byte counts.
+                # Shared parent layers can then be deduplicated across saved images.
+                print(
+                    "CI_IMAGE_STORAGE "
+                    + json.dumps(_storage_inventory(index, manifest))
+                )
 
             _emit("GITHUB_OUTPUT", "index_digest", index)
             for architecture, digest in children.items():
@@ -182,7 +322,11 @@ def _build() -> None:
 
 def _pull() -> None:
     _validate()
-    if os.environ.get("MODEL_MODE") not in {"true", "false"}:
+    family = os.environ["IMAGE_FAMILY"]
+    if family in {"cpu", "gpu"} and os.environ.get("MODEL_MODE") not in {
+        "true",
+        "false",
+    }:
         raise ValueError("Invalid model mode")
 
     digest = _digest(os.environ.get("IMAGE_DIGEST", ""))
@@ -191,8 +335,12 @@ def _pull() -> None:
     # enters GITHUB_ENV or a test-step environment.
     with TemporaryDirectory(dir=os.environ["RUNNER_TEMP"]) as directory:
         env = dict(os.environ, DOCKER_CONFIG=directory)
+        started = time.monotonic()
         _login(env=env, token=_pull_token(_project()))
+        _timing("pull-auth", started=started)
+        started = time.monotonic()
         _run(["docker", "pull", "--platform", "linux/amd64", reference], env=env)
+        _timing("pull", started=started)
         info = json.loads(_run(["docker", "image", "inspect", reference], env=env))[0]
         labels = info.get("Config", {}).get("Labels") or {}
         if (
@@ -205,9 +353,21 @@ def _pull() -> None:
         ):
             raise ValueError("Image identity mismatch")
 
+        if (
+            family == "parallel-tests"
+            and labels.get("io.roboflow.ci.server-image-digest")
+            != os.environ["SERVER_IMAGE_DIGEST"]
+        ):
+            raise ValueError("Test image parent mismatch")
+
         image_id = _digest(info["Id"])
 
-    _emit("GITHUB_ENV", "INFERENCE_TEST_IMAGE", image_id)
+    output = (
+        "INFERENCE_PARALLEL_TEST_IMAGE"
+        if family == "parallel-tests"
+        else "INFERENCE_TEST_IMAGE"
+    )
+    _emit("GITHUB_ENV", output, image_id)
 
 
 if __name__ == "__main__":

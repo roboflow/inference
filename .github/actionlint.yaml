@@ -1,4 +1,4 @@
-# Depot and Jetson runners are organization-managed labels, not GitHub-hosted
+# Depot, GPU and Jetson runners are organization-managed labels, not GitHub-hosted
 # runner labels. Allow them while retaining actionlint's runner validation for
 # every other label.
 self-hosted-runner:

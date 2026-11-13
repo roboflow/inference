@@ -38,7 +38,7 @@ jobs:
       version: ${{ steps.build.outputs.version }}
       artifact: ${{ steps.build.outputs.artifact }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
       - name: Build and inspect the SDK wheel in Docker
@@ -47,7 +47,7 @@ jobs:
           bash .release/pypi/release.sh build-sdk
           echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
           echo "artifact=sdk-wheel-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.build.outputs.artifact }}
           retention-days: 90
@@ -72,10 +72,10 @@ jobs:
       group: pypi-sdk-${{ needs.build_sdk.outputs.version }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build_sdk.outputs.artifact }}
           path: dist
@@ -93,7 +93,7 @@ jobs:
           packages-dir: dist/sdk-upload/
       - name: Verify the published bytes and package contents
         run: bash .release/pypi/release.sh verify-sdk --wait-seconds 600
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sdk-publication-receipt-${{ github.run_attempt }}
           retention-days: 90
@@ -112,7 +112,7 @@ jobs:
       version: ${{ steps.build.outputs.version }}
       artifact: ${{ steps.build.outputs.artifact }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
       - name: Build five wheels and an SDK verification reference in Docker
@@ -121,7 +121,7 @@ jobs:
           bash .release/pypi/release.sh build-runtime
           echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
           echo "artifact=runtime-wheels-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.build.outputs.artifact }}
           retention-days: 90
@@ -155,16 +155,16 @@ jobs:
       group: pypi-runtime-${{ needs.build_runtime.outputs.version }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build_runtime.outputs.artifact }}
           path: dist
       - name: Verify the published SDK before uploading any consumer
         run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: runtime-sdk-verification-${{ github.run_attempt }}
           retention-days: 90

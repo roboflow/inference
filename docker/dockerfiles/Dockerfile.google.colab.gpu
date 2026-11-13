@@ -1,4 +1,6 @@
-FROM us-docker.pkg.dev/colab-images/public/runtime:latest
+FROM us-docker.pkg.dev/colab-images/public/runtime:latest AS colab-base
+
+FROM colab-base AS runtime
 
 COPY . .
 RUN pip uninstall -y torchaudio
@@ -9,3 +11,35 @@ RUN pip install -r requirements/requirements.test.colab.txt
 ENV ENFORCE_GPU_EXECUTION="1"
 
 ENTRYPOINT ["pytest", "tests/google_colab/"]
+
+# CI keeps third-party installs independent of ordinary application source edits.
+# The default target below remains the existing Colab environment.
+FROM colab-base AS ci-dependencies
+ENV PIP_NO_CACHE_DIR=1
+COPY requirements /ci-dependencies/requirements
+COPY .release/pypi /ci-dependencies/.release/pypi
+COPY README.md /ci-dependencies/README.md
+COPY inference_cli/README.md /ci-dependencies/inference_cli/README.md
+COPY inference/core/version.py /ci-dependencies/inference/core/version.py
+COPY workflows/pyproject.toml workflows/README.md workflows/LICENSE /ci-dependencies/workflows/
+COPY stream_vision/pyproject.toml stream_vision/README.md stream_vision/LICENSE /ci-dependencies/stream_vision/
+COPY docker/scripts/prepare_ci_dependencies.sh /ci-dependencies/prepare_ci_dependencies.sh
+COPY inference_models/pyproject.toml inference_models/README.md /ci-dependencies/inference_models/
+RUN cd /ci-dependencies && bash prepare_ci_dependencies.sh colab && rm -rf /ci-dependencies
+
+FROM ci-dependencies AS ci-wheels
+WORKDIR /build
+COPY . .
+RUN make create_wheels
+
+FROM ci-dependencies AS ci
+COPY . .
+# Mount build output so wheels, build trees and package caches are not saved.
+RUN --mount=from=ci-wheels,source=/build/dist,target=/ci-wheels,ro \
+    pip install --find-links /ci-wheels/ \
+    "$(ls /ci-wheels/roboflow_workflows*.whl)[databricks]" \
+    /ci-wheels/streamvision*.whl /ci-wheels/inference_gpu*.whl
+ENV ENFORCE_GPU_EXECUTION="1"
+ENTRYPOINT ["pytest", "tests/google_colab/"]
+
+FROM runtime AS final
