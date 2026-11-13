@@ -496,27 +496,27 @@ class TestRefusedConnection:
         mock_client_cls.return_value.disconnect.assert_called_once_with()
 
     def test_refusal_is_reported_without_waiting_for_timeout(
-        self, mock_client_cls, block
+        self, mock_client_cls, block, blocking_waits
     ):
         _answer_connect_with(mock_client_cls, 5)
+        blocking_waits.watch(block._connection)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(timeout=2.0))
 
         assert result["error_status"] is True
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
 
     def test_next_run_after_refusal_repeats_it_without_a_new_connection(
-        self, mock_client_cls, block
+        self, mock_client_cls, block, blocking_waits
     ):
         _answer_connect_with(mock_client_cls, 5)
         first = block.run(**run_kwargs(timeout=2.0))
+        blocking_waits.watch(block._connection)
 
-        started = time.monotonic()
         second = block.run(**run_kwargs(timeout=2.0))
 
         assert second == first
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert mock_client_cls.call_count == 1
         mock_client_cls.return_value.connect.assert_called_once()
 
@@ -1319,7 +1319,7 @@ class TestFireAndForget:
         assert result == {"error_status": False, "message": FIRE_AND_FORGET_QUEUED}
 
     def test_unreachable_broker_on_first_run_keeps_client_retrying(
-        self, mock_client_cls, block
+        self, mock_client_cls, block, blocking_waits
     ):
         # without the kept client every later frame would pay a fresh
         # synchronous connect while the broker is down
@@ -1333,10 +1333,10 @@ class TestFireAndForget:
         assert block.mqtt_client is mock_client
         mock_client.loop_start.assert_called_once()
 
-        started = time.monotonic()
+        blocking_waits.watch(block._connection)
         second = block.run(**run_kwargs(timeout=2.0, fire_and_forget=True))
 
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert second == {"error_status": True, "message": FIRE_AND_FORGET_QOS0_DROPPED}
         mock_client_cls.assert_called_once()
         mock_client.connect.assert_called_once()
@@ -1470,13 +1470,15 @@ class TestFireAndForget:
         assert "not authorised" in result["message"]
         mock_client_cls.return_value.publish.assert_not_called()
 
-    def test_disconnected_qos0_dropped_without_waiting(self, mock_client_cls, block):
+    def test_disconnected_qos0_dropped_without_waiting(
+        self, mock_client_cls, block, blocking_waits
+    ):
         mock_client = _connect_then_drop(mock_client_cls, block, timeout=2.0)
+        blocking_waits.watch(block._connection)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(qos=0, timeout=2.0, fire_and_forget=True))
 
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert result == {"error_status": True, "message": FIRE_AND_FORGET_QOS0_DROPPED}
         mock_client.publish.assert_not_called()
         mock_client.reconnect.assert_not_called()
@@ -1486,16 +1488,18 @@ class TestFireAndForget:
         [mqtt.MQTT_ERR_NO_CONN, mqtt.MQTT_ERR_SUCCESS],
         ids=["no-socket", "socket"],
     )
-    def test_disconnected_qos1_queued_without_waiting(self, mock_client_cls, block, rc):
+    def test_disconnected_qos1_queued_without_waiting(
+        self, mock_client_cls, block, blocking_waits, rc
+    ):
         # paho returns NO_CONN without a socket and SUCCESS while the socket is
         # still open; either way the message stays queued for the reconnect
         mock_client = _connect_then_drop(mock_client_cls, block, timeout=2.0, qos=1)
         mock_client.publish.return_value.rc = rc
+        blocking_waits.watch(block._connection)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(qos=1, timeout=2.0, fire_and_forget=True))
 
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert result == {
             "error_status": True,
             "message": FIRE_AND_FORGET_QUEUED_UNTIL_RECONNECT,

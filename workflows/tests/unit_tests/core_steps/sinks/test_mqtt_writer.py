@@ -1,5 +1,4 @@
 import threading
-import time
 from typing import get_args
 from unittest.mock import MagicMock, patch
 
@@ -302,27 +301,27 @@ class TestRefusedConnection:
         mock_client_cls.return_value.disconnect.assert_called_once_with()
 
     def test_refusal_is_reported_without_waiting_for_timeout(
-        self, mock_client_cls, block
+        self, mock_client_cls, block, blocking_waits
     ):
         _answer_connect_with(mock_client_cls, 5)
+        blocking_waits.watch(block._connection)
 
-        started = time.monotonic()
         result = block.run(**run_kwargs(timeout=2.0))
 
         assert result["error_status"] is True
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
 
     def test_next_run_after_refusal_repeats_it_without_a_new_connection(
-        self, mock_client_cls, block
+        self, mock_client_cls, block, blocking_waits
     ):
         _answer_connect_with(mock_client_cls, 5)
         first = block.run(**run_kwargs(timeout=2.0))
+        blocking_waits.watch(block._connection)
 
-        started = time.monotonic()
         second = block.run(**run_kwargs(timeout=2.0))
 
         assert second == first
-        assert time.monotonic() - started < 0.5
+        assert blocking_waits.timeouts == []
         assert mock_client_cls.call_count == 1
         mock_client_cls.return_value.connect.assert_called_once()
 
