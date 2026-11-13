@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- The opt-in RF-DETR `triton-fused-v1` postprocessor preserves reference integer
+  boxes near half-pixel boundaries and reference ordering for equal-score
+  detections, including after class and confidence filtering.
+
 ## `0.39.7`
 
 ### Fixed
