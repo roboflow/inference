@@ -4355,7 +4355,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.16rc1"
+version = "0.2.16rc2"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
