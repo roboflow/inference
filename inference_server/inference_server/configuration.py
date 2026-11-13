@@ -404,6 +404,9 @@ GET_MODEL_REGISTRY_ENABLED = get_boolean_from_env(
 CORE_MODELS_ENABLED = get_boolean_from_env("CORE_MODELS_ENABLED", default=True)
 CORE_MODEL_CLIP_ENABLED = get_boolean_from_env("CORE_MODEL_CLIP_ENABLED", default=True)
 CORE_MODEL_PE_ENABLED = get_boolean_from_env("CORE_MODEL_PE_ENABLED", default=True)
+CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED = get_boolean_from_env(
+    "CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED", default=True
+)
 CORE_MODEL_SAM_ENABLED = get_boolean_from_env("CORE_MODEL_SAM_ENABLED", default=True)
 CORE_MODEL_SAM2_ENABLED = get_boolean_from_env("CORE_MODEL_SAM2_ENABLED", default=True)
 CORE_MODEL_SAM3_ENABLED = get_boolean_from_env("CORE_MODEL_SAM3_ENABLED", default=True)

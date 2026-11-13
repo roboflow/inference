@@ -8,6 +8,7 @@ from inference.core.env import (
     CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_PE_ENABLED,
     CORE_MODEL_PPOCR_ENABLED,
+    CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM3_ENABLED,
     CORE_MODEL_SAM_ENABLED,
@@ -153,6 +154,14 @@ _CORE_MODEL_PE_DEPENDENCY_WARNING = (
     "Your `inference` configuration does not support Perception Encoder."
     "Use pip install 'inference[transformers]' to install missing requirements."
     "To suppress this warning, set CORE_MODEL_PE_ENABLED to False."
+)
+
+_CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_DEPENDENCY_WARNING = (
+    "Your `inference` configuration does not support pretrained image embedding "
+    "models (DINOv2, DINOv3, SigLIP2). "
+    "Use pip install 'inference[inference-models]' to install missing requirements."
+    "To suppress this warning, set CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED "
+    "to False."
 )
 
 _QWEN_3_DEPENDENCY_WARNING = (
@@ -1526,6 +1535,23 @@ if USE_INFERENCE_MODELS:
         )
 
         ROBOFLOW_MODEL_TYPES[("vlm", "glm-ocr")] = InferenceModelsGLMOCRAdapter
+
+    # Pretrained image embedding backbones are inference_models-only (no legacy
+    # implementation), so we add entries directly.
+    if CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED:
+        _PretrainedImageEmbeddingModelClass = _LazyModelClass(
+            "inference.models.pretrained_image_embeddings."
+            "pretrained_image_embeddings_inference_models:"
+            "InferenceModelsPretrainedImageEmbeddingAdapter",
+            optional=True,
+            warning_message=_CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_DEPENDENCY_WARNING,
+            warning_category=ModelDependencyMissing,
+        )
+
+        for variant in ["dinov2", "dinov3", "siglip2"]:
+            ROBOFLOW_MODEL_TYPES[("embed", variant)] = (
+                _PretrainedImageEmbeddingModelClass
+            )
 
     # Models loaded directly from a local directory
     # (ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES).

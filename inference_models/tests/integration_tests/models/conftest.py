@@ -1,3 +1,4 @@
+import json
 import os
 import zipfile
 from pathlib import Path
@@ -241,6 +242,7 @@ YOLOV10_TRT_PACKAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/
 SAM3_PACKAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/sam3.zip"
 )
+HUGGING_FACE_FILE_URL = "https://huggingface.co/{repository}/resolve/{revision}/{file}"
 
 
 @pytest.fixture(scope="module")
@@ -293,6 +295,110 @@ def _download_if_not_exists(file_path: str, url: str, lock_timeout: int = 180) -
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
+
+
+@pytest.fixture(scope="module")
+def dinov2_small_embedding_package() -> str:
+    return _download_pretrained_image_embedding_package(
+        architecture="dinov2",
+        repository="onnx-community/dinov2-small",
+        revision="8b1f705a3a7f6f062f6bdd21986c1583d3ef105d",
+        graph_file="onnx/model.onnx",
+        embedding_config={
+            "output_name": "last_hidden_state",
+            "token_index": 0,
+            "dimension": 384,
+            "feature_definition": "dinov2-cls-token@v1",
+        },
+    )
+
+
+@pytest.fixture(scope="module")
+def dinov3_vits16_embedding_package() -> str:
+    return _download_pretrained_image_embedding_package(
+        architecture="dinov3",
+        repository="onnx-community/dinov3-vits16-pretrain-lvd1689m-ONNX",
+        revision="48988dfe73065df8d6f5ccc0edc7c8bcf307de41",
+        graph_file="onnx/model.onnx",
+        external_data_files=("onnx/model.onnx_data",),
+        embedding_config={
+            "output_name": "last_hidden_state",
+            "token_index": 0,
+            "dimension": 384,
+            "feature_definition": "dinov3-cls-token@v1",
+        },
+    )
+
+
+@pytest.fixture(scope="module")
+def siglip2_base_patch16_224_embedding_package() -> str:
+    return _download_pretrained_image_embedding_package(
+        architecture="siglip2",
+        repository="onnx-community/siglip2-base-patch16-224-ONNX",
+        revision="ba1f3b0843f24bc5417d38e19c37b287d719b2f4",
+        graph_file="onnx/vision_model.onnx",
+        embedding_config={
+            "output_name": "pooler_output",
+            "token_index": None,
+            "dimension": 768,
+            "feature_definition": "siglip2-pooler-output@v1",
+        },
+    )
+
+
+def _download_pretrained_image_embedding_package(
+    architecture: str,
+    repository: str,
+    revision: str,
+    graph_file: str,
+    embedding_config: dict,
+    external_data_files: tuple = (),
+) -> str:
+    """Lay out a package from the files of its pinned Hugging Face revision, like
+    `development/packaging/build_pretrained_image_embedding_packages.py` does. The
+    directory is named after the graph file too, so a cached package built from
+    another graph of the same revision is never reused."""
+    graph_name = os.path.splitext(os.path.basename(graph_file))[0]
+    package_dir = os.path.join(
+        MODELS_DIR,
+        "pretrained-image-embeddings",
+        f"{repository.replace('/', '--')}-{revision}-{graph_name}",
+    )
+    repository_files = {
+        "model.onnx": graph_file,
+        "preprocessor_config.json": "preprocessor_config.json",
+        **{os.path.basename(path): path for path in external_data_files},
+    }
+    for package_file, repository_file in repository_files.items():
+        _download_if_not_exists(
+            file_path=os.path.join(package_dir, package_file),
+            url=HUGGING_FACE_FILE_URL.format(
+                repository=repository, revision=revision, file=repository_file
+            ),
+        )
+    generated_files = {
+        "embedding_config.json": {
+            **embedding_config,
+            "source": {
+                "repository": repository,
+                "revision": revision,
+                "file": graph_file,
+            },
+        },
+        "model_config.json": {
+            "model_architecture": architecture,
+            "task_type": "embedding",
+            "backend_type": "onnx",
+        },
+    }
+    for package_file, content in generated_files.items():
+        file_path = os.path.join(package_dir, package_file)
+        with FileLock(lock_file=f"{file_path}.lock", timeout=180):
+            if not os.path.exists(file_path):
+                with open(file_path, "w") as f:
+                    json.dump(content, f, indent=2)
+                    f.write("\n")
+    return package_dir
 
 
 @pytest.fixture(scope="module")

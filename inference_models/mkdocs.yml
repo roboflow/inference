@@ -97,6 +97,7 @@ nav:
       - Embeddings:
           - CLIP: models/clip.md
           - Perception Encoder: models/perception-encoder.md
+          - DINOv2, DINOv3, SigLIP2: models/pretrained-image-embeddings.md
       - Semantic Segmentation:
           - YOLO26: models/yolo26-semantic-segmentation.md
           - DeepLabV3+: models/deeplabv3plus.md

@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
+from inference_models import ClassificationModel, MultiLabelClassificationModel
 from inference_models.errors import (
     ForbiddenModelAccessError,
     ModelInputError,
@@ -16,6 +17,12 @@ from inference_models.errors import (
     PaymentRequiredModelAccessError,
     UnauthorizedModelAccessError,
     UsagePausedModelAccessError,
+)
+from inference_models.models.base.embeddings import TextImageEmbeddingModel
+from inference_models.models.base.image_embeddings import (
+    ImageEmbeddingModel,
+    OnnxClassifierEmbeddings,
+    TorchClassifierEmbeddings,
 )
 
 from inference_server.framework.model_stat import ModelStat
@@ -2697,6 +2704,159 @@ def test_task_type_from_mro_prefers_the_concrete_class():
     )
     assert bridge_mod._task_type_from_mro(["Qwen35HF", "object"]) == "vlm"
     assert bridge_mod._task_type_from_mro(["L2CSNetOnnx", "object"]) == "gaze-detection"
+
+
+# Stand-ins named like the real model classes, with the same bases in the same
+# order: _TASK_TYPE_BY_MRO matches class names, and the real ONNX classes need
+# onnxruntime, which this test environment does not install.
+_EMBEDDING_MODEL_MROS = [
+    (
+        "pretrained_image_embeddings.pretrained_image_embeddings_onnx",
+        "PretrainedImageEmbeddingOnnx",
+        (ImageEmbeddingModel,),
+        "embedding",
+    ),
+    ("clip.clip_onnx", "ClipOnnx", (TextImageEmbeddingModel,), "embedding"),
+    (
+        "resnet.resnet_classification_onnx",
+        "ResNetForClassificationOnnx",
+        (OnnxClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "resnet.resnet_classification_onnx",
+        "ResNetForMultiLabelClassificationOnnx",
+        (OnnxClassifierEmbeddings, MultiLabelClassificationModel),
+        "multi-label-classification",
+    ),
+    (
+        "resnet.resnet_classification_torch",
+        "ResNetForClassificationTorch",
+        (TorchClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "vit.vit_classification_onnx",
+        "VITForClassificationOnnx",
+        (OnnxClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "dinov3.dinov3_classification_onnx",
+        "DinoV3ForClassificationOnnx",
+        (OnnxClassifierEmbeddings, ClassificationModel),
+        "classification",
+    ),
+    (
+        "dinov3.dinov3_classification_torch",
+        "DinoV3ForMultiLabelClassificationTorch",
+        (TorchClassifierEmbeddings, MultiLabelClassificationModel),
+        "multi-label-classification",
+    ),
+]
+
+
+def _stand_in_mro_names(class_name, bases):
+    return [cls.__name__ for cls in type(class_name, bases, {}).__mro__]
+
+
+@pytest.mark.parametrize(
+    "module_name,class_name,bases,task_type", _EMBEDDING_MODEL_MROS
+)
+def test_task_type_from_mro_types_embedding_models_without_retyping_classifiers(
+    module_name, class_name, bases, task_type
+):
+    mro_names = _stand_in_mro_names(class_name, bases)
+
+    assert bridge_mod._task_type_from_mro(mro_names) == task_type
+
+
+@pytest.mark.parametrize(
+    "module_name,class_name,bases,task_type", _EMBEDDING_MODEL_MROS
+)
+def test_embedding_model_stand_ins_match_the_real_class_mros(
+    module_name, class_name, bases, task_type
+):
+    pytest.importorskip("onnxruntime")
+    import importlib
+
+    module = importlib.import_module(f"inference_models.models.{module_name}")
+    real_mro_names = [cls.__name__ for cls in getattr(module, class_name).__mro__]
+
+    assert real_mro_names == _stand_in_mro_names(class_name, bases)
+
+
+@pytest.mark.parametrize(
+    "model_id", ["dinov2/small", "dinov3/vits16", "siglip2/base-patch16-224"]
+)
+@pytest.mark.asyncio
+async def test_pretrained_embedding_ids_resolve_as_requested(fake_stat, model_id):
+    fake_stat[model_id] = ("embedding", "embed_images")
+    instance = "capabilities=image_embeddings"
+    gw = FakeGateway(
+        model_info={
+            f"{model_id}:{instance}": {
+                "actions": {"embed_images": {}},
+                "model_mro_names": [
+                    "PretrainedImageEmbeddingOnnx",
+                    "ImageEmbeddingModel",
+                    "object",
+                ],
+            }
+        }
+    )
+    bridge = LegacyModelBridge(gw)
+
+    task_type = await bridge.stat_task_type(model_id, "key", instance)
+    route = await bridge.resolve(model_id, "key", instance=instance)
+
+    assert bridge_mod.registry_id_for(model_id) == model_id
+    assert bridge_mod.request_alias_for(model_id) is None
+    assert task_type == "embedding"
+    assert route.registry_id == f"{model_id}:{instance}"
+    assert route.task_type == "embedding"
+    assert ("ensure_loaded", f"{model_id}:{instance}", "key") in gw.calls
+
+
+@pytest.mark.parametrize(
+    "model_id", ["dinov2/small", "dinov3/vits16", "siglip2/base-patch16-224"]
+)
+@pytest.mark.asyncio
+async def test_disabled_pretrained_embedding_ids_answer_as_unregistered_in_legacy(
+    fake_stat, monkeypatch, model_id
+):
+    monkeypatch.setattr(
+        bridge_mod, "CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED", False
+    )
+    fake_stat[model_id] = ("embedding", "embed_images")
+    gw = FakeGateway()
+    bridge = LegacyModelBridge(gw)
+
+    for call in (
+        bridge.stat_task_type(model_id, "key"),
+        bridge.resolve(model_id, "key"),
+        bridge.load(model_id, "key"),
+    ):
+        with pytest.raises(LegacyHTTPError) as error:
+            await call
+        assert error.value.status_code == 500
+        assert error.value.message == "Service misconfiguration."
+
+    assert gw.calls == []
+
+
+@pytest.mark.asyncio
+async def test_disabled_pretrained_embeddings_leave_other_models_alone(
+    fake_stat, monkeypatch
+):
+    monkeypatch.setattr(
+        bridge_mod, "CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED", False
+    )
+    fake_stat["dinov3/2"] = ("classification", "infer")
+
+    task_type = await LegacyModelBridge(FakeGateway()).stat_task_type("dinov3/2", "key")
+
+    assert task_type == "classification"
 
 
 @pytest.mark.parametrize(

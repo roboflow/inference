@@ -147,3 +147,29 @@ logits = model.embed_images(images, output_type="logits", input_color_format="bg
 Nearest-centroid scoring, versioned reference storage, tile aggregation, and
 green/yellow/red thresholds remain downstream. The existing Identify Outliers
 block uses a rolling baseline and does not reproduce fixed known-style centroids.
+
+## Pretrained embedding models
+
+`POST /infer/embeddings` also serves pretrained backbones that have no
+classification head. Set `model_id` to one of:
+
+| Model ID | Dimension | Feature definition |
+|----------|-----------|--------------------|
+| `dinov2/small` | 384 | `dinov2-cls-token@v1` |
+| `dinov3/vits16` | 384 | `dinov3-cls-token@v1` |
+| `siglip2/base-patch16-224` | 768 | `siglip2-pooler-output@v1` |
+| `clip/<version>`, such as `clip/ViT-B-32` | 512 for ViT-B | `clip-image-embeds@v1` |
+
+They need `USE_INFERENCE_MODELS=True`; set
+`CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED=False` to turn off DINOv2, DINOv3
+and SigLIP2, and `CORE_MODEL_CLIP_ENABLED=False` for CLIP. CLIP returns its
+projected image embedding. Vectors are raw model output, not normalised:
+L2-normalise them before cosine similarity. Only `feature_vector` exists for
+these models; `logits` returns HTTP 400. Request preprocessing overrides other
+than auto-orientation do not apply, because the model's own preprocessing is
+fixed.
+
+`embedding_info.preprocessing` reports that preprocessing, and
+`embedding_info.space_id` identifies the space: it changes whenever the model,
+feature definition, dimension, normalization or preprocessing changes. Compare
+or index together only vectors with the same `space_id`.

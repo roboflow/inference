@@ -114,6 +114,7 @@ from inference_server.legacy.entities import (
     YOLOWorldInferenceRequest,
 )
 from inference_server.legacy.errors import (
+    SERVICE_MISCONFIGURATION_MESSAGE,
     LegacyHTTPError,
     MissingServiceSecretError,
     redact_text,
@@ -122,6 +123,7 @@ from inference_server.legacy.errors import (
 from inference_server.legacy.telemetry_recording import record_telemetry
 from inference_server.legacy.translation import (
     IMAGE_EMBEDDING_TASK_TYPES,
+    PRETRAINED_IMAGE_EMBEDDING_TASK_TYPE,
     build_embedding_calls,
     build_few_shot_params,
     build_image_embedding_params,
@@ -146,7 +148,10 @@ from inference_server.legacy.translation import (
     repack_text_ocr_response,
     repack_vlm_response,
     requested_open_vocabulary_classes,
+    require_feature_vector_output,
     resolve_request_action,
+    text_image_embeddings_enabled,
+    text_image_embeddings_for,
 )
 from inference_server.legacy.visualization import (
     encode_image_to_jpeg_bytes,
@@ -230,7 +235,9 @@ SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE = (
 )
 _DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
 _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE = (
-    "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+    "Image embeddings require a ResNet, ViT or DINOv3 "
+    "classifier, or a pretrained embedding model (CLIP, "
+    "DINOv2, DINOv3, SigLIP2)."
 )
 FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Fine-tuned SAM 3 models are not supported on Serverless. "
@@ -729,7 +736,9 @@ async def infer_classification(
     "/infer/embeddings",
     response_model=ImageEmbeddingResponse,
     summary="Image embeddings",
-    description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+    description="Extract raw features or logits from a ResNet, ViT or DINOv3 "
+    "classification model, or raw features from a pretrained embedding model "
+    "(CLIP, DINOv2, DINOv3, SigLIP2)",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
@@ -743,11 +752,24 @@ async def infer_embeddings(
     api_key = resolve_api_key(request, api_key, inference_request.api_key)
     inference_request.api_key = api_key
     instance = capability_instance([IMAGE_EMBEDDINGS], inference_request.output_type)
+    action = IMAGE_EMBEDDINGS_ACTION
+    text_image = text_image_embeddings_for(inference_request.model_id)
+    if text_image is not None and text_image.action is not None:
+        # AutoModel refuses CLIP the image-embeddings capability.
+        instance = ""
+        action = text_image.action
     task_type = await bridge.stat_task_type(
         inference_request.model_id, api_key, instance
     )
     if task_type is not None and task_type not in IMAGE_EMBEDDING_TASK_TYPES:
         raise LegacyHTTPError(501, _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE)
+    if text_image is not None:
+        if not text_image_embeddings_enabled(text_image):
+            raise LegacyHTTPError(500, SERVICE_MISCONFIGURATION_MESSAGE)
+        if text_image.action is None:
+            raise LegacyHTTPError(501, _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE)
+    if text_image is not None or task_type == PRETRAINED_IMAGE_EMBEDDING_TASK_TYPE:
+        require_feature_vector_output(inference_request.output_type)
 
     alias = request_alias_for(inference_request.model_id)
     row_key = registration_key(inference_request.model_id, instance)
@@ -760,10 +782,10 @@ async def infer_embeddings(
         instance=instance,
     )
     bridge.record_request(route, row_key, request.scope["path"], alias=alias)
-    if route.is_stub:
+    if route.is_stub or (text_image is not None and action not in route.actions):
         raise LegacyHTTPError(501, _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE)
 
-    response = await _embed_images(inference_request, bridge, route, api_key)
+    response = await _embed_images(inference_request, bridge, route, api_key, action)
 
     return orjson_response(response)
 
@@ -773,6 +795,7 @@ async def _embed_images(
     bridge: LegacyModelBridge,
     route: Route,
     api_key: Optional[str],
+    action: str,
 ) -> ImageEmbeddingResponse:
     images, _ = as_image_list(inference_request.image)
     started = time.perf_counter()
@@ -789,7 +812,7 @@ async def _embed_images(
     results = await bridge.infer(
         route,
         api_key,
-        IMAGE_EMBEDDINGS_ACTION,
+        action,
         payloads,
         params,
         model_monitoring=_model_monitoring_enabled(inference_request),

@@ -208,6 +208,7 @@ definition; the last column is the new reader.
 | `CORE_MODELS_ENABLED` | `env.py:307` | `configuration.py:195` | `True` |
 | `CORE_MODEL_CLIP_ENABLED` | `env.py:310` | `configuration.py:196` | `True` |
 | `CORE_MODEL_PE_ENABLED` | `env.py:313` | `configuration.py:197`; `host.py:302` | `True` |
+| `CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED` | `env.py:317-319` | `configuration.py:407-409`; when off, `dinov2/small`, `dinov3/vits16` and `siglip2/base-patch16-224` answer 500 `Service misconfiguration.` on the legacy-compatible routes and Workflow steps, as legacy answers a model type it has no class for (`legacy/bridge.py:451-461`); `PRELOAD_MODELS` is not gated | `True` |
 | `CORE_MODEL_SAM_ENABLED` | `env.py:316` | `configuration.py:198` | `True` |
 | `CORE_MODEL_SAM2_ENABLED` | `env.py:317` | `configuration.py:199`; `host.py:296` | `True` |
 | `CORE_MODEL_SAM3_ENABLED` | `env.py:318` | `configuration.py:200`; `host.py:299` | `True` |
