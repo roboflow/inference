@@ -1881,6 +1881,41 @@ def test_late_background_call_names_the_frames_no_window_covered():
     assert late["analyzed_until_frame"] == 3
 
 
+def test_streams_of_one_step_take_turns_on_the_background_worker():
+    block, model = _make_background_block()
+    try:
+        for number in (1, 2, 3):
+            for video_id in ("camera-a", "camera-b"):
+                _run(
+                    block,
+                    _make_frame(number, video_id=video_id),
+                    background_inference=True,
+                )
+        assert model.entered.wait(timeout=5)
+        first = block._video_bookkeeping["camera-a"].pending.future
+        second = block._video_bookkeeping["camera-b"].pending.future
+
+        # One model, one device: the second camera's call waits its turn.
+        assert first.running() and not second.running()
+
+        model.gate.set()
+        second.result(timeout=5)
+        results = [
+            _run(
+                block,
+                _make_frame(4, video_id=video_id),
+                background_inference=True,
+            )
+            for video_id in ("camera-a", "camera-b")
+        ]
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert [result["analyzed_until_frame"] for result in results] == [3, 3]
+    assert [result["error_status"] for result in results] == ["", ""]
+
+
 def test_background_model_failure_surfaces_on_the_frame_that_collects_it():
     block, model = _make_background_block(responses=[RuntimeError("model failure"), []])
     try:

@@ -122,9 +122,11 @@ the model. With background_inference, a live stream hands each window to a
 worker thread and the step returns at once. The result reaches the timeline
 on a later frame, and analyzed_until_frame shows how far results go. One
 call runs per stream at a time: a call that comes due while the previous one
-runs waits, then takes the newest window, and error_status names any frames
-no window covered. Video files always classify inside the step, so every
-window is analyzed and results are repeatable.
+has not finished waits, then takes the newest window, and error_status names
+any frames no window covered. The step has one worker, so its streams take
+turns: with several cameras on one step, each camera's results arrive less
+often. Video files always classify inside the step, so every window is
+analyzed and results are repeatable.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -757,7 +759,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
 
         # The buffer keeps sliding while a worker runs, so the call owns a
-        # copy of the list. The frames inside are never written again.
+        # copy of the list. The block never writes the frames inside again.
         call = _WindowCall(
             sampled=list(bookkeeping.sampled),
             frame_limit=frame_limit,
@@ -924,7 +926,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             return ""
 
         return (
-            f"The previous classification was still running, so source frames "
+            f"The previous classification had not finished, so source frames "
             f"{first_uncovered}-{cutoff_frame_number} have no result."
         )
 
@@ -945,7 +947,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return self._executor
 
     def close(self) -> None:
-        """Stop the background worker and drop calls that have not started."""
+        """Stop the background worker and drop calls that have not started.
+
+        A call that already runs finishes on its own; nothing reads its result.
+        """
         if self._executor is None:
             return
 
