@@ -470,6 +470,12 @@ ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
 COPY docker/config/gpu_http.py gpu_http.py
 COPY docker/entrypoint/run_uvicorn.sh /usr/local/bin/run_uvicorn.sh
 RUN chmod +x /usr/local/bin/run_uvicorn.sh
+# Deployments that set their own PATH drop /opt/venv/bin but keep /usr/local/bin.
+# python must stay a wrapper: a symlink outside the venv loses its site-packages.
+RUN ln -s /opt/venv/bin/uvicorn /usr/local/bin/uvicorn && \
+    printf '#!/bin/sh\nexec /opt/venv/bin/python "$@"\n' > /usr/local/bin/python && \
+    chmod +x /usr/local/bin/python && \
+    ln -s python /usr/local/bin/python3
 
 ENV VERSION_CHECK_MODE=continuous \
     PROJECT=roboflow-platform \

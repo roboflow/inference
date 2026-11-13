@@ -43,7 +43,6 @@ for contributor and maintainer responsibilities.
   the anchor kind (Expression, Frame Delay, Buffer, Dimension Collapse) is treated
   as an anchor, so an Expression that only reads an anchor's metadata cannot feed a
   remote step or a workflow output. Workflows without a recorder are unaffected.
-- A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
 
 ### Added
 
@@ -93,6 +92,36 @@ for contributor and maintainer responsibilities.
   `WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS` (scaled from 4 Mbit/s at 1080p30).
   Invalid values fall back to the default with a warning. `docs/workflows/video_clips.md`
   describes the clip contract, host support and the measured performance envelope.
+
+### Fixed
+
+- Video Clip Recorder, NVENC backend: the first frame of a GPU stream no longer stalls the pipeline thread. The process-wide NVENC start-up (the PyNvVideoCodec import, the CUDA context, the conversion kernels and a throwaway encoder session) now runs once per process on a background thread that the recorder starts when it is constructed on a CUDA host (torch already imported with CUDA image tensors or an initialised CUDA context, and PyNvVideoCodec installed); CPU hosts and hosts without PyNvVideoCodec do nothing and never import torch. Frames that arrive before it finishes are not buffered and are reported in a new `startup_dropped` loss count (clip report `loss.startup_dropped`, ring stats `startup_dropped`); the recorder never falls back to x264 while NVENC is still starting, and uses x264 only if the start-up finds NVENC unavailable or does not finish within 60 s. Until a stream's encoder session is open, its GPU frame pool may grow to 32 frames (at most 192 MiB of device memory, freed once the backlog drains), so the frames that arrive while NVENC opens the session are kept instead of dropped; frames refused in that window also count as `startup_dropped`, and a full pool afterwards still counts `queue_drops`.
+- Video Clip Recorder, NVENC backend: the pipeline thread now makes two CUDA calls per frame (one device-to-device copy of the RGB frame into a pooled slot on the caller's stream and one event record) instead of about 47 (stream waits, event creation and the 39 kernels of the NV12 conversion). The wait, the `max_width` resize, the NV12 conversion and the encode run on the recorder's own encoder thread and CUDA stream. This matters under gVisor, where every CUDA driver call goes through the sandbox. The copy still happens inside the step, so later in-place drawing never reaches the clip. A staging slot holds RGB (6.2 MB at 1080p, up from 3.1 MB for NV12).
+- Video Clip Recorder, NVENC backend: the encoder thread now feeds NVENC packed RGBA (`ABGR`) and lets the encoder convert to YUV, so it makes about four CUDA and encoder calls per frame instead of about forty (the torch NV12 conversion and a per-frame device switch). Under gVisor each of those calls released and re-took the GIL and went through the sandbox; on a 2-CPU Serverless Streaming sandbox (L4, runsc-kvm-nvproxy) two recorders raised the preview's p95 latency by about 30%, now by 8-14%, with one recorder 3% and with 4 CPUs 3%. Decoded colours are unchanged (the same BT.709 result). A CUDA graph of the conversion was tried and rejected because capturing it made the host's concurrent CUDA calls fail.
+- Video Clip Recorder, NVENC backend: once a stream's encoder session is open and the start-up backlog is encoded, the start-up frame pool's extra block (up to 192 MiB) is handed back to the driver with one `torch.cuda.empty_cache()` per stream start-up; before, torch's caching allocator kept it reserved for the life of the process. Ring stats report `startup_pool_released` and `startup_pool_release_ms`.
+- Video clips: clips are muxed one at a time per process with a short pause every 32 packets, and a clip held in memory is uploaded as one buffer (file-backed clips stream in 1 MiB reads instead of 8 KiB), so clips that finish together compete less with the pipeline.
+- The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
+
+## `0.2.16`
+
+Bundled execution engine: `1.17.2`.
+
+### Changed
+
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
+  releases that allow Pillow 13.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
+- Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
+  generation, a bounded mask cache, and lookup-table blending. Output pixels,
+  exposure thresholds, and focus scores are unchanged.
+
+### Added
+
 - Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an optional `reference_examples` input for `object-detection`: up to 10 labeled example images, each `{"image": ..., "annotations": [{"class", "x", "y", "width", "height"}]}` in pixels of that image, the Roboflow prediction format. The examples go before the image to label in every request, so the model sees what each class looks like and how tightly it is boxed. Gemini gets the example images with their boxes and labels drawn on them. Pillow's default font only draws ASCII, so when a label is outside printable ASCII the boxes show numbers and the request text maps them to the labels. OpenAI gets up to 3 crops per label, grouped by label (the output labels, so `output_classes` when set). Example images load one at a time, like a workflow image input with `prevent_local_images_loading` on, whatever the engine sets: the host's URL policy applies and local file paths are refused. Each image is released once rendered, so only the boxed images or crops stay in memory. The rendered examples are kept per process and shared by every instance of both blocks: up to 8 example sets and 32 MB, each for 15 minutes from when it is built. So a host that runs several execution engines, such as one per thread, fetches and renders an example set once instead of once per engine, and a run after those 15 minutes sees what the URLs serve then. Only identical examples and labels share an entry, examples with an in-memory image render on every call, and a request for examples that are being rendered waits for that build. The manifest schema describes the examples and their limit. A selector can provide the whole list, but selectors inside an example are refused. Other tasks reject the input. Without it the requests are unchanged.
 - OpenAI Decisions block (`roboflow_core/open_ai_decisions@v1`): asks OpenAI's Decisions API (`POST /v1/decisions`, GPT-6 Luna) typed questions about each image and returns probabilities instead of generated text.
   - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
@@ -109,20 +138,11 @@ for contributor and maintainer responsibilities.
   - Deadlines: `timeout_seconds` starts before isolated worker launch, with a server-side `STATEMENT_TIMEOUT`, bounded retries and a 35 s child cleanup allowance. Deadline interrupts wait for pending query cancellation before cursor/session teardown, within that allowance. Cancellation is best effort; parent output loading checks the deadline between bounded operations.
   - Validation tooling: local transport fixtures and a protected live-warehouse runner exercise connection, result-validation, failure and recovery scenarios. The live runner creates temporary fixture views using a separate setup credential; staging acceptance remains separate.
 
-### Changed
-
-- Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
-  generation, a bounded mask cache, and lookup-table blending. Output pixels,
-  exposure thresholds, and focus scores are unchanged.
-
 ### Fixed
 
-- Video Clip Recorder, NVENC backend: the first frame of a GPU stream no longer stalls the pipeline thread. The process-wide NVENC start-up (the PyNvVideoCodec import, the CUDA context, the conversion kernels and a throwaway encoder session) now runs once per process on a background thread that the recorder starts when it is constructed on a CUDA host (torch already imported with CUDA image tensors or an initialised CUDA context, and PyNvVideoCodec installed); CPU hosts and hosts without PyNvVideoCodec do nothing and never import torch. Frames that arrive before it finishes are not buffered and are reported in a new `startup_dropped` loss count (clip report `loss.startup_dropped`, ring stats `startup_dropped`); the recorder never falls back to x264 while NVENC is still starting, and uses x264 only if the start-up finds NVENC unavailable or does not finish within 60 s. Until a stream's encoder session is open, its GPU frame pool may grow to 32 frames (at most 192 MiB of device memory, freed once the backlog drains), so the frames that arrive while NVENC opens the session are kept instead of dropped; frames refused in that window also count as `startup_dropped`, and a full pool afterwards still counts `queue_drops`.
-- Video Clip Recorder, NVENC backend: the pipeline thread now makes two CUDA calls per frame (one device-to-device copy of the RGB frame into a pooled slot on the caller's stream and one event record) instead of about 47 (stream waits, event creation and the 39 kernels of the NV12 conversion). The wait, the `max_width` resize, the NV12 conversion and the encode run on the recorder's own encoder thread and CUDA stream. This matters under gVisor, where every CUDA driver call goes through the sandbox. The copy still happens inside the step, so later in-place drawing never reaches the clip. A staging slot holds RGB (6.2 MB at 1080p, up from 3.1 MB for NV12).
-- Video Clip Recorder, NVENC backend: the encoder thread now feeds NVENC packed RGBA (`ABGR`) and lets the encoder convert to YUV, so it makes about four CUDA and encoder calls per frame instead of about forty (the torch NV12 conversion and a per-frame device switch). Under gVisor each of those calls released and re-took the GIL and went through the sandbox; on a 2-CPU Serverless Streaming sandbox (L4, runsc-kvm-nvproxy) two recorders raised the preview's p95 latency by about 30%, now by 8-14%, with one recorder 3% and with 4 CPUs 3%. Decoded colours are unchanged (the same BT.709 result). A CUDA graph of the conversion was tried and rejected because capturing it made the host's concurrent CUDA calls fail.
-- Video Clip Recorder, NVENC backend: once a stream's encoder session is open and the start-up backlog is encoded, the start-up frame pool's extra block (up to 192 MiB) is handed back to the driver with one `torch.cuda.empty_cache()` per stream start-up; before, torch's caching allocator kept it reserved for the life of the process. Ring stats report `startup_pool_released` and `startup_pool_release_ms`.
-- Video clips: clips are muxed one at a time per process with a short pause every 32 packets, and a clip held in memory is uploaded as one buffer (file-backed clips stream in 1 MiB reads instead of 8 KiB), so clips that finish together compete less with the pipeline.
-- The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 - Large inline reference images use chunked content fingerprints for cache keys,
   avoiding a full JSON copy of their image data on every warm lookup. Image
   contents, metadata, annotations, label order and provider still determine reuse.
@@ -132,26 +152,9 @@ for contributor and maintainer responsibilities.
   Its retained-string byte budget now includes Unicode storage and Python
   string headers.
 
-## `0.2.16`
+### Execution engine
 
-Bundled execution engine: `1.17.1`.
-
-### Changed
-
-- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
-  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
-  because Pillow 13 does not support it.
-- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
-  releases that allow Pillow 13.
-- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
-  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
-  newer.
-
-### Fixed
-
-- Workflows' standalone image codec now reports non-ASCII base64 payloads as
-  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
-- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
+- A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
 
 ## `0.2.15.post2`
 
