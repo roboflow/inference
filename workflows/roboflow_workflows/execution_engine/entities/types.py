@@ -150,6 +150,50 @@ VIDEO_METADATA_KIND = Kind(
     internal_data_type="VideoMetadata",
 )
 
+VIDEO_CLIP_ANCHOR_KIND_DOCS = """
+In-process reference to the video buffered by a `roboflow_core/video_clip_recorder@v1`
+step for one specific frame. The Vision Events sink consumes it to attach a clip
+of the window around that frame to the event it posts.
+
+An anchor only refers to frames held by the recorder in the current process, so it
+never leaves the process:
+
+* serialised (a safety net: anchors are never workflow outputs), it carries
+  metadata only - never frames or encoded packets:
+
+```json
+{
+    "kind": "video_clip_anchor",
+    "recorder": "video_clip_recorder",
+    "video_identifier": "rtsp://camera-1",
+    "frame_timestamp": "2026-10-30T11:13:44.313999",
+    "frame_number": 24,
+    "availability": "ok"
+}
+```
+
+* it cannot be deserialised, and binding it into a step that executes elsewhere
+  (an inner workflow with `remote_dispatch`, Custom Python running remotely) or
+  exposing it as a workflow output is a compile-time error.
+
+`availability` is `ok` or `unavailable:<reason>` (`no_timestamp`, `no_encoder`,
+`sinks_disabled`, `unsupported_host`).
+
+Internally, `ClipAnchor` from `roboflow_workflows.core_steps.common.video_clips` is
+used.
+"""
+
+VIDEO_CLIP_ANCHOR_KIND = Kind(
+    name="video_clip_anchor",
+    description=(
+        "Reference to a recorder's buffered video for a specific frame; consumed by "
+        "the Vision Events sink"
+    ),
+    docs=VIDEO_CLIP_ANCHOR_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="ClipAnchor",
+)
+
 ACTION_RECOGNITION_PREDICTION_KIND_DOCS = """
 This kind represents classified segments in a video. The serialized value is a
 list of dictionaries. Each dictionary has these keys:

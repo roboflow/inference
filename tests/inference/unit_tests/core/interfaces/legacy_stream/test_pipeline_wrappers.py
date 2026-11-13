@@ -244,6 +244,8 @@ def test_legacy_workflow_wrapper_forwards_every_argument(
     assert on_end.keywords["cancel_thread_pool_tasks_on_exit"] is False
     assert on_end.keywords["profiling_directory"] == "/tmp/some-profiles"
     assert on_end.keywords["profiler"] is engine_kwargs["profiler"]
+    # `None`: the configured default, until the host calls `set_block_close_deadline`.
+    assert on_end.keywords["block_close_deadline_seconds"] is None
     blocks_executor.shutdown()
     engine_executor.shutdown()
 

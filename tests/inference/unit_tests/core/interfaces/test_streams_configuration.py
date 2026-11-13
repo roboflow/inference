@@ -597,6 +597,10 @@ FIELDS = [
     ("ENABLE_TENSOR_DATA_REPRESENTATION", "ENABLE_TENSOR_DATA_REPRESENTATION"),
     ("ENABLE_WORKFLOWS_PROFILING", "ENABLE_WORKFLOWS_PROFILING"),
     ("WORKFLOWS_PROFILER_BUFFER_SIZE", "WORKFLOWS_PROFILER_BUFFER_SIZE"),
+    (
+        "WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS",
+        "WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS",
+    ),
     ("PREDICTIONS_QUEUE_SIZE", "PREDICTIONS_QUEUE_SIZE"),
     ("PREDICTIONS_QUEUE_SIZE_EXPLICIT", None),
     ("STREAM_MANAGER_MAX_ACTIVE_PIPELINES", "STREAM_MANAGER_MAX_ACTIVE_PIPELINES"),
@@ -697,7 +701,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
     tabled = {name for name, _ in FIELDS}
 
     assert tabled == _facade_exports()
-    assert len(FIELDS) == 54
+    assert len(FIELDS) == 55
 
 
 def test_host_only_settings_are_not_package_configuration() -> None:

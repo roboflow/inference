@@ -16,6 +16,92 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Two-phase close for blocks.** `ExecutionEngine.prepare_close(deadline_seconds=None)`
+  calls `prepare_close(deadline_seconds)` on every block that defines one, so a block
+  can stop taking work and start finishing what it holds before `close()`; for
+  example, the Video Clip Recorder stops ingesting frames and starts muxing pending
+  clips. A failing block is logged and does not stop the others. Hosts call it
+  before shutting down their thread pools and keep calling `close()` after them.
+  The v1 engine runs each phase at most once under one lock: repeated or concurrent
+  `prepare_close()` and `close()` calls (for example two `pipeline.join()` threads)
+  close the blocks once, and a concurrent `close()` returns after the first has
+  finished. Blocks without `prepare_close` and hosts that never call it behave as
+  before; no migration is needed.
+- **`video_clip_anchor` kind.** An in-process reference to the video a
+  `roboflow_core/video_clip_recorder@v1` step buffers for one frame. Its serializer
+  emits metadata only (recorder, video identifier, frame timestamp, frame number,
+  availability), never frames or packets, and it cannot be deserialized.
+- **Compile-time checks for video clip anchors.** Compilation fails with
+  `ExecutionGraphStructureError` when an anchor is bound into a step that executes
+  outside the process (an inner workflow with remote dispatch, Custom Python running
+  remotely, a Roboflow model step running remotely) or is exposed as a workflow
+  output, and warns when a recorder runs under flow control, where it loses
+  pre-roll. Tracking is conservative: a wildcard, `list_of_values`, `dictionary` or
+  kind-less output of a step that receives an anchor through an input not declaring
+  the anchor kind (Expression, Frame Delay, Buffer, Dimension Collapse) is treated
+  as an anchor, so an Expression that only reads an anchor's metadata cannot feed a
+  remote step or a workflow output. Workflows without a recorder are unaffected.
+
+### Added
+
+- Video Clip Recorder (`roboflow_core/video_clip_recorder@v1`): keeps a rolling H.264
+  buffer of the frames a workflow processes, per `video_identifier` (up to 16
+  streams), and outputs an `anchor` per frame for the Vision Events sink. Settings:
+  `label` (1 to 256 characters, default `Evidence`), `pre_roll_seconds` and
+  `post_roll_seconds` (default 5, at most 60 unless the host raises the caps up to
+  300), `playback_speed` (0.1 to 32), `clip_fps` (1 to 120), `max_width` (even, at
+  least 64) and `max_processing_lag_seconds` (default 5). A clip covers
+  `[trigger - pre, trigger + post]` (end inclusive) of processed frames, starting on
+  the keyframe up to one output second before the window. The frame is converted or
+  copied inside the step, so in-place drawing later in the workflow never reaches a
+  raw clip. A frame-number restart or resolution change starts a new recording.
+  Two encoder backends: libx264 through PyAV after an OpenCV I420 conversion in the
+  step (the default), and NVENC through PyNvVideoCodec straight from CUDA tensor
+  frames when it imports. Anchors are `unavailable:unsupported_host` on single-image
+  requests and `unavailable:sinks_disabled` with `disable_sinks`.
+- Vision Events (`roboflow_core/roboflow_vision_events@v1`, numpy and tensor-native
+  variants) gains `video_clips` (one anchor or a list of up to 4; extras are
+  `rejected:too_many_videos`), `video_label` (fallback caption), `confirm_ingestion`
+  (poll up to 5 minutes for the platform to ingest each clip) and
+  `clip_upload_timeout_seconds` (default 55 minutes, at most 60), and a `videos`
+  output with each clip's `video_id`, `label`, immediate `video_status` (`pending`,
+  `disabled`, `throttled`, `unavailable:*`, `rejected:*`, `prepare_failed`),
+  `requested_window` and `available_from`. After the cooldown check the sink
+  captures each anchor, applies the resource caps, requests an upload slot per clip
+  (`POST /vision-events/videos/prepare-upload`), posts the event with `videos` and
+  uploads each clip on its own thread as soon as its post-roll is recorded. Signed
+  URL query strings are redacted from logs and errors. Requests without
+  `video_clips` are unchanged. Local Event Store mode reports
+  `unavailable:unsupported_sink_mode` and sends the event without video.
+- Each clip's outcome is logged once as a structured `vision_event_clip_completed`
+  record: event and video ids, label, `terminal_status` (`put_accepted`,
+  `upload_failed`, `expired`, `clip_failed`, `cancelled`, `shutdown_deadline`), the
+  clip report (requested and actual bounds, keyframe lead, frames, density, backend,
+  partial reason, missing frames by cause, encoder and pipeline-thread timings),
+  timings and, with `confirm_ingestion`, the ingestion result.
+- Video clip settings, read from the environment: `WORKFLOWS_VIDEO_CLIP_MAX_PRE_ROLL_SECONDS`
+  and `WORKFLOWS_VIDEO_CLIP_MAX_POST_ROLL_SECONDS` (default 60, clamped to 300),
+  `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` (1 GiB over buffered packets, queues, clips and
+  uploads), `WORKFLOWS_VIDEO_CLIP_MAX_PENDING_CAPTURES` (16),
+  `WORKFLOWS_VIDEO_CLIP_MAX_UPLOAD_CONCURRENCY` (2),
+  `WORKFLOWS_VIDEO_CLIP_MAX_CLIP_BYTES` (512 MiB),
+  `WORKFLOWS_VIDEO_CLIP_INMEMORY_MAX_BYTES` (64 MiB), `WORKFLOWS_VIDEO_CLIP_TEMP_DIR`
+  (system temp), `WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES` (8) and
+  `WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS` (scaled from 4 Mbit/s at 1080p30).
+  Invalid values fall back to the default with a warning. `docs/workflows/video_clips.md`
+  describes the clip contract, host support and the measured performance envelope.
+
+### Fixed
+
+- Video Clip Recorder, NVENC backend: the first frame of a GPU stream no longer stalls the pipeline thread. The process-wide NVENC start-up (the PyNvVideoCodec import, the CUDA context, the conversion kernels and a throwaway encoder session) now runs once per process on a background thread that the recorder starts when it is constructed on a CUDA host (torch already imported with CUDA image tensors or an initialised CUDA context, and PyNvVideoCodec installed); CPU hosts and hosts without PyNvVideoCodec do nothing and never import torch. Frames that arrive before it finishes are not buffered and are reported in a new `startup_dropped` loss count (clip report `loss.startup_dropped`, ring stats `startup_dropped`); the recorder never falls back to x264 while NVENC is still starting, and uses x264 only if the start-up finds NVENC unavailable or does not finish within 60 s. Until a stream's encoder session is open, its GPU frame pool may grow to 32 frames (at most 192 MiB of device memory, freed once the backlog drains), so the frames that arrive while NVENC opens the session are kept instead of dropped; frames refused in that window also count as `startup_dropped`, and a full pool afterwards still counts `queue_drops`.
+- Video Clip Recorder, NVENC backend: the pipeline thread now makes two CUDA calls per frame (one device-to-device copy of the RGB frame into a pooled slot on the caller's stream and one event record) instead of about 47 (stream waits, event creation and the 39 kernels of the NV12 conversion). The wait, the `max_width` resize, the NV12 conversion and the encode run on the recorder's own encoder thread and CUDA stream. This matters under gVisor, where every CUDA driver call goes through the sandbox. The copy still happens inside the step, so later in-place drawing never reaches the clip. A staging slot holds RGB (6.2 MB at 1080p, up from 3.1 MB for NV12).
+- Video Clip Recorder, NVENC backend: the encoder thread now feeds NVENC packed RGBA (`ABGR`) and lets the encoder convert to YUV, so it makes about four CUDA and encoder calls per frame instead of about forty (the torch NV12 conversion and a per-frame device switch). Under gVisor each of those calls released and re-took the GIL and went through the sandbox; on a 2-CPU Serverless Streaming sandbox (L4, runsc-kvm-nvproxy) two recorders raised the preview's p95 latency by about 30%, now by 8-14%, with one recorder 3% and with 4 CPUs 3%. Decoded colours are unchanged (the same BT.709 result). A CUDA graph of the conversion was tried and rejected because capturing it made the host's concurrent CUDA calls fail.
+- Video Clip Recorder, NVENC backend: once a stream's encoder session is open and the start-up backlog is encoded, the start-up frame pool's extra block (up to 192 MiB) is handed back to the driver with one `torch.cuda.empty_cache()` per stream start-up; before, torch's caching allocator kept it reserved for the life of the process. Ring stats report `startup_pool_released` and `startup_pool_release_ms`.
+- Video clips: clips are muxed one at a time per process with a short pause every 32 packets, and a clip held in memory is uploaded as one buffer (file-backed clips stream in 1 MiB reads instead of 8 KiB), so clips that finish together compete less with the pipeline.
+- The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.
