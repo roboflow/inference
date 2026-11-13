@@ -228,7 +228,32 @@ reusable calls, fork pushes and PR/PR-target callers. GitHub issues no
 governed by each project's trust relationships in Depot, not by this
 repository.
 
-### Configuration
+### Specialized dependency layers
+
+Colab and Parallel CI builds select the Dockerfiles' `ci` target. Dependencies
+are resolved from the canonical setup scripts and project metadata before
+application source is copied. Temporary metadata-only wheels provide pip with
+the existing dependency constraints and extras; they are uninstalled in the
+same step. Real checkout wheels are built in a separate stage and mounted into
+the final installation, so wheel archives, build trees and new pip downloads
+are not retained in the exported image. Final installation still resolves
+dependencies normally. The default Dockerfile targets keep their existing
+release behavior.
+
+Source-only changes can then reuse the heavy dependency layer. Changes to
+requirements, package metadata, versions or the base image invalidate it.
+Local metadata equivalence tests and the live Colab/Parallel suites qualify
+this separation; local metadata checks alone do not establish GPU correctness
+or financial savings.
+
+Manual dispatches emit `CI_IMAGE_STORAGE` with validated immutable blob digests
+and sizes. Deduplicate shared layers across server/test images and source
+versions when calculating retained storage. Include build-cache growth and
+registry garbage-collection lag in cost comparisons; Depot's cache target is
+not a hard billing ceiling. Keep production retention in the model unless the
+actual project policy is changed and verified.
+
+### Project configuration
 
 None. Pushes to main save images in Depot project `inference-ci`
 (`9x3fbbxlnm`), whose image retention policy is 7 days; the sandbox keeps

@@ -75,7 +75,9 @@ def test_cached_project_metadata_matches_real_checkout(tmp_path, project):
     shutil.copytree(
         ROOT / project,
         actual,
-        ignore=shutil.ignore_patterns(".venv", "*.egg-info", "build", "dist", "__pycache__"),
+        ignore=shutil.ignore_patterns(
+            ".venv", "*.egg-info", "build", "dist", "__pycache__"
+        ),
     )
     assert _metadata(metadata_source / project) == _metadata(actual)
 
@@ -122,4 +124,3 @@ def test_priming_rejects_a_full_source_checkout_before_installing(tmp_path, fami
     )
     assert result.returncode != 0
     assert not (tmp_path / "dist").exists()
-
