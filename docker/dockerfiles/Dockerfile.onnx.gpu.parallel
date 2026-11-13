@@ -56,8 +56,10 @@ RUN echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://
 RUN apt-get update && apt-get install -y redis
 RUN echo net.core.somaxconn=1024 > /etc/sysctl.conf
 
-FROM scratch
+FROM scratch AS dependency-base
 COPY --from=base / /
+
+FROM dependency-base AS runtime
 
 WORKDIR /build
 COPY . .
@@ -88,3 +90,57 @@ ENV ENABLE_PROMETHEUS=True
 ENV CORE_MODEL_SAM3_ENABLED=False
 
 ENTRYPOINT python3 entrypoint.py
+
+# CI builds source wheels in a disposable stage and reuses dependency layers.
+FROM dependency-base AS ci-dependencies
+ENV PIP_NO_CACHE_DIR=1
+RUN ln -s /usr/bin/python3 /usr/bin/python
+COPY requirements /ci-dependencies/requirements
+COPY .release/pypi /ci-dependencies/.release/pypi
+COPY README.md /ci-dependencies/README.md
+COPY inference/core/version.py /ci-dependencies/inference/core/version.py
+COPY workflows/pyproject.toml workflows/README.md workflows/LICENSE /ci-dependencies/workflows/
+COPY stream_vision/pyproject.toml stream_vision/README.md stream_vision/LICENSE /ci-dependencies/stream_vision/
+COPY docker/scripts/prepare_ci_dependencies.sh /ci-dependencies/prepare_ci_dependencies.sh
+RUN cd /ci-dependencies && bash prepare_ci_dependencies.sh parallel && rm -rf /ci-dependencies
+
+FROM ci-dependencies AS ci-wheels
+WORKDIR /build
+COPY . .
+RUN /bin/make create_wheels_for_gpu_notebook
+
+FROM ci-dependencies AS ci
+WORKDIR /build
+COPY . .
+RUN --mount=from=ci-wheels,source=/build/dist,target=/ci-wheels,ro \
+    pip3 install --find-links /ci-wheels/ \
+    "$(ls /ci-wheels/roboflow_workflows*.whl)[databricks]" \
+    /ci-wheels/streamvision*.whl /ci-wheels/inference_cli*.whl \
+    /ci-wheels/inference_core*.whl /ci-wheels/inference_gpu*.whl \
+    /ci-wheels/inference_sdk*.whl "setuptools~=84.2.1"
+
+WORKDIR /notebooks
+COPY examples/notebooks .
+
+WORKDIR /app/
+COPY inference inference
+ENV ALLOW_WORKFLOWS_FONTS_DOWNLOAD=False
+COPY inference/enterprise/parallel/parallel_http_config.py parallel_http.py
+COPY inference/enterprise/parallel/entrypoint.py entrypoint.py
+ENV PYTHONPATH=/app/
+# Availability checks must not initialize CUDA before Celery forks its workers.
+ENV PYTORCH_NVML_BASED_CUDA_CHECK=1
+ENV PROJECT=roboflow-platform
+ENV CORE_MODELS_ENABLED=false
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
+ENV REDIS_HOST=localhost
+ENV API_LOGGING_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_TROCR_ENABLED=false
+ENV ENABLE_PROMETHEUS=True
+ENV CORE_MODEL_SAM3_ENABLED=False
+
+ENTRYPOINT python3 entrypoint.py
+
+FROM runtime AS final

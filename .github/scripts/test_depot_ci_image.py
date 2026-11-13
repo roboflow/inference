@@ -369,6 +369,10 @@ class DepotImageTests(unittest.TestCase):
                 self.assertNotIn("--push", build)
                 self.assertNotIn("--tag", build)
                 self.assertIn("--provenance=mode=min", build)
+                if family in {"colab-gpu", "parallel-gpu"}:
+                    self.assertEqual(build[build.index("--target") + 1], "ci")
+                else:
+                    self.assertNotIn("--target", build)
                 if family in {"colab-gpu", "parallel-gpu", "parallel-tests"}:
                     self.assertEqual(
                         build[build.index("--output") + 1],

@@ -271,6 +271,12 @@ def _build() -> None:
                     "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
                     "--provenance=mode=min",
                     *export_args,
+                    # Release/default Dockerfile targets retain their old behavior.
+                    *(
+                        ["--target", "ci"]
+                        if family in {"colab-gpu", "parallel-gpu"}
+                        else []
+                    ),
                     "--metadata-file",
                     str(metadata),
                     "--label",
