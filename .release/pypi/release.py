@@ -2,6 +2,7 @@
 
 import ast
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import click
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
@@ -95,9 +97,7 @@ def _wheel(data, *, filename, version):
                     "SDK wheel must contain only inference_sdk and metadata"
                 )
 
-        # Compare every uncompressed entry, including RECORD, WHEEL, METADATA,
-        # license files and Unix permissions. ZIP timestamps/compression are not
-        # package content. Never weaken this to a version/name-only comparison.
+        # Publisher reuse compares all entry contents and permissions, excluding ZIP encoding.
         entries = [
             (
                 entry.filename,
@@ -138,7 +138,7 @@ def _inventory(directory, *, names, version):
                 if canonicalize_name(Requirement(raw).name) == "inference-sdk"
             ]
             if len(sdk_requirements) != 1 or (
-                str(sdk_requirements[0].specifier) != f"=={version}"
+                sdk_requirements[0].specifier != SpecifierSet(f"=={version}")
                 or sdk_requirements[0].marker is not None
                 or sdk_requirements[0].url is not None
             ):
@@ -161,14 +161,23 @@ def _write_record(path, **fields):
     path.write_text(json.dumps(record, indent=2) + "\n")
 
 
-def _read_url(url):
+def _read_url(url, *, deadline=None):
     allowed_hosts = {"pypi.org", "files.pythonhosted.org"}
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in allowed_hosts:
         raise ValueError("Registry returned an unexpected download URL")
 
+    timeout = 30
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError("Dependency operation timed out")
+
+        timeout = min(timeout, remaining)
+
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    # Socket timeouts bound inactivity; in-flight reads can overrun the budget.
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         final_url = urllib.parse.urlparse(response.geturl())
         if final_url.scheme != "https" or final_url.hostname not in allowed_hosts:
             raise ValueError("Unexpected registry redirect")
@@ -177,10 +186,13 @@ def _read_url(url):
         if len(data) > MAX_RESPONSE_BYTES:
             raise ValueError("Registry response exceeds the SDK size limit")
 
+    if deadline is not None and time.monotonic() >= deadline:
+        raise ValueError("Dependency operation timed out")
+
     return data
 
 
-def _published_sdk(expected):
+def _published_sdk(expected, *, compare_candidate=True):
     url = f"https://pypi.org/pypi/inference-sdk/{expected['version']}/json"
     try:
         release = json.loads(_read_url(url))
@@ -195,7 +207,6 @@ def _published_sdk(expected):
 
     files = release["urls"]
     if not files:
-        # Do not treat an existing release with an unexpected inventory as absent.
         raise ValueError("Existing SDK release has no files; inspect it manually")
 
     if len(files) != 1 or files[0]["filename"] != expected["filename"]:
@@ -210,7 +221,7 @@ def _published_sdk(expected):
         raise ValueError("Downloaded SDK does not match the registry SHA-256")
 
     actual = _wheel(data, filename=file["filename"], version=expected["version"])
-    if actual["content_sha256"] != expected["content_sha256"]:
+    if compare_candidate and actual["content_sha256"] != expected["content_sha256"]:
         raise ValueError(
             "Published SDK contents differ from this candidate; use a new version"
         )
@@ -218,23 +229,27 @@ def _published_sdk(expected):
     return actual
 
 
-def _reconcile_sdk(expected, *, allow_missing, wait_seconds):
+def _reconcile_sdk(expected, *, allow_missing, wait_seconds, compare_candidate=True):
     deadline = time.monotonic() + wait_seconds
     while True:
         try:
-            actual = _published_sdk(expected)
+            actual = _published_sdk(expected, compare_candidate=compare_candidate)
             if actual is not None or allow_missing:
                 return actual
 
             reason = "Required SDK is not published yet"
         except urllib.error.HTTPError as error:
-            # A file CDN can briefly lag the release metadata. This 404 is a
-            # download failure; only the release endpoint's 404 means absent.
+            # Only the release endpoint's 404 means absent; file CDN failures retry.
             if error.code not in {404, 429} and error.code < 500:
                 raise
 
             reason = f"Registry HTTP {error.code}"
-        except (urllib.error.URLError, TimeoutError) as error:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            http.client.HTTPException,
+            ConnectionResetError,
+        ) as error:
             reason = f"Registry unavailable: {error}"
 
         remaining = deadline - time.monotonic()
@@ -254,8 +269,7 @@ def _run(operation, *, wait_seconds):
             files = _inventory(Path("dist/pypi"), names=RUNTIME, version=version)
             _write_record(Path("dist/runtime-manifest.json"), files=files)
 
-        # The runtime publisher builds this reference only for verification.
-        # It never places SDK files in its upload directory.
+        # The runtime SDK reference stays outside its upload directory.
         subprocess.run(["make", "create_pypi_sdk_wheel"], check=True)
         files = _inventory(sdk_dir, names=SDK, version=version)
         _write_record(Path("dist/sdk-manifest.json"), files=files)
@@ -270,6 +284,7 @@ def _run(operation, *, wait_seconds):
         expected,
         allow_missing=operation == "prepare-sdk",
         wait_seconds=wait_seconds,
+        compare_candidate=operation != "gate-sdk",
     )
     if operation == "prepare-sdk":
         upload_dir = Path("dist/sdk-upload")
@@ -287,6 +302,9 @@ def _run(operation, *, wait_seconds):
         _write_record(
             Path("dist/sdk-receipt.json"),
             status="verified",
+            verification_policy=(
+                "registry-integrity" if operation == "gate-sdk" else "candidate-content"
+            ),
             candidate_file=expected,
             published_file=actual,
         )

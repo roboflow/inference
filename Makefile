@@ -138,5 +138,5 @@ create_inference_cli_whl:
 
 
 upload_wheels:
-	# The SDK is uploaded only by publish.pypi.inference_sdk.yml.
+	# The SDK is uploaded only by the publish_sdk job in publish.pypi.yml.
 	twine upload $(filter-out $(wildcard dist/inference_sdk-*.whl dist/roboflow_workflows-*.whl dist/inference_models-*.whl dist/streamvision-*.whl),$(wildcard dist/*.whl))

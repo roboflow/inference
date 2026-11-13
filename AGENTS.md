@@ -171,7 +171,7 @@ versioning and release metadata. Maintainers: at release, bump `version` in
 the hardcoded `roboflow_workflows-<version>-py3-none-any.whl` in
 `.github/workflows/*.yml`, and run `cd workflows && uv lock`. Publishing verifies
 existing files against the candidate before uploading missing files; changed
-contents require a new version. See [.github/pypi-release.md](.github/pypi-release.md).
+contents require a new version.
 
 ### Font provisioning
 
@@ -261,7 +261,6 @@ stream_vision/
 `version` in `stream_vision/pyproject.toml` and the pin, then run
 `cd stream_vision && uv lock`. Publishing verifies existing files against the
 candidate before uploading missing files; changed contents require a new version.
-See [.github/pypi-release.md](.github/pypi-release.md).
 
 ### Building the wheel
 
@@ -325,6 +324,8 @@ Before editing or reviewing Python code, read:
 - `.cursor/rules/return-values.mdc`
 
 Also read the following rule when its condition applies:
+
+- `.cursor/rules/trusted-integration-subprocesses.mdc` when adding or changing integration subprocess workers.
 
 - `.cursor/rules/cli-options.mdc` for Python command-line interfaces.
 - `.cursor/rules/pydantic-field-descriptions.mdc` for Pydantic models.

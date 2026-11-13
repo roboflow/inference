@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from email.parser import BytesParser
+from http.client import HTTPException
 from pathlib import Path
 
 import click
@@ -50,7 +51,11 @@ def _requirements(files):
 def _edges(file):
     edges = sorted(
         {
-            (canonicalize_name(req.name), str(req.specifier), tuple(sorted(req.extras)))
+            (
+                canonicalize_name(req.name),
+                str(req.specifier),
+                tuple(sorted({canonicalize_name(extra) for extra in req.extras})),
+            )
             for req in _requirements([file])
         }
     )
@@ -112,38 +117,57 @@ def _catalog():
     return catalog
 
 
-def _retry(operation, *, wait_seconds):
-    deadline = time.monotonic() + wait_seconds
+def _remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ValueError("Dependency operation timed out")
+
+    return remaining
+
+
+def _retry(operation, *, deadline, retry_not_found=True):
     while True:
+        _remaining(deadline)
         try:
             result = operation()
+            _remaining(deadline)
             return result
         except urllib.error.HTTPError as error:
-            if error.code not in {404, 429} and error.code < 500:
+            if (
+                not (error.code == 404 and retry_not_found)
+                and error.code != 429
+                and error.code < 500
+            ):
                 raise
 
-            reason = f"Registry HTTP {error.code}"
-        except (urllib.error.URLError, TimeoutError) as error:
-            reason = f"Registry unavailable: {error}"
+            reason = f"HTTP {error.code}"
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            HTTPException,
+            ConnectionError,
+        ) as error:
+            reason = f"Network unavailable: {error}"
 
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise ValueError(f"{reason}; dependency verification timed out")
-
-        print(f"{reason}; retrying dependency verification", flush=True)
+        remaining = _remaining(deadline)
+        print(f"{reason}; retrying dependency operation", flush=True)
         time.sleep(min(10, remaining))
 
 
 class _Registry:
-    def __init__(self, *, wait_seconds=600):
-        self.wait_seconds = wait_seconds
+    def __init__(self, *, wait_seconds=600, deadline=None):
+        self.deadline = (
+            time.monotonic() + wait_seconds if deadline is None else deadline
+        )
         self.cache = {}
 
     def _json(self, path):
         def read():
             try:
                 result = json.loads(
-                    release._read_url(f"https://pypi.org/pypi/{path}/json")
+                    release._read_url(
+                        f"https://pypi.org/pypi/{path}/json", deadline=self.deadline
+                    )
                 )
             except urllib.error.HTTPError as error:
                 if error.code == 404:
@@ -152,10 +176,11 @@ class _Registry:
 
             return result
 
-        result = _retry(read, wait_seconds=self.wait_seconds)
+        result = _retry(read, deadline=self.deadline)
         return result
 
     def _versions(self, name):
+        _remaining(self.deadline)
         project = self._json(name)
         if project is None:
             return []
@@ -166,7 +191,11 @@ class _Registry:
                 not file.get("yanked")
                 and (
                     file["filename"].endswith("-py3-none-any.whl")
-                    or (name in publish.SDISTS and file["filename"].endswith(".tar.gz"))
+                    or (
+                        name in publish.SDISTS
+                        and not any(f["filename"].endswith(".whl") for f in files)
+                        and file["filename"].endswith(".tar.gz")
+                    )
                 )
                 for file in files
             ):
@@ -176,13 +205,14 @@ class _Registry:
         return ordered
 
     def _file(self, name, version):
+        _remaining(self.deadline)
         key = (name, str(version))
         if key in self.cache:
             return self.cache[key]
 
         if name in PROJECTS:
             files = publish._remote_inventory(
-                name, version=str(version), wait_seconds=self.wait_seconds
+                name, version=str(version), deadline=self.deadline
             )
             if files is None:
                 return None
@@ -221,7 +251,8 @@ class _Registry:
 
         remote = wheels[0]
         data = _retry(
-            lambda: release._read_url(remote["url"]), wait_seconds=self.wait_seconds
+            lambda: release._read_url(remote["url"], deadline=self.deadline),
+            deadline=self.deadline,
         )
         if hashlib.sha256(data).hexdigest() != remote["digests"]["sha256"]:
             raise ValueError(f"Registry SHA-256 mismatch for {name}=={version}")
@@ -265,7 +296,8 @@ def _order(selected):
             dependency = canonicalize_name(requirement.name)
             if dependency not in selected:
                 raise ValueError(f"Unplanned dependency: {dependency}")
-            visit(dependency)
+            if dependency != name:
+                visit(dependency)
         visiting.remove(name)
         ordered.append(name)
 
@@ -278,6 +310,7 @@ def _plan(consumers, *, catalog, registry):
     root = _requirements(consumers)
 
     def resolve(selected):
+        _remaining(registry.deadline)
         requirements = root + _requirements(selected.values())
         if any(not _compatible(file, requirements) for file in selected.values()):
             return None
@@ -286,7 +319,11 @@ def _plan(consumers, *, catalog, registry):
             canonicalize_name(req.name) for req in requirements
         } - selected.keys()
         if not remaining:
-            _order(selected)
+            try:
+                _order(selected)
+            except ValueError:
+                return None
+
             return selected
 
         # Resolve consumers first where possible; backtracking still handles
@@ -349,7 +386,7 @@ def _plan(consumers, *, catalog, registry):
     selected = resolve({})
     if selected is None:
         raise ValueError(
-            "No compatible first-party dependency plan; prepare versions/pins/locks before releasing"
+            "No compatible first-party dependency plan (constraints or dependency cycle); prepare versions/pins/locks before releasing"
         )
 
     plan = {"consumers": consumers, "packages": selected, "order": _order(selected)}
@@ -365,23 +402,31 @@ def _verify_file(expected, *, registry):
             )
         return actual
 
-    actual = _retry(read, wait_seconds=registry.wait_seconds)
+    actual = _retry(read, deadline=registry.deadline)
 
-    if _edges(actual) != _edges(expected) or set(actual["provides_extra"]) != set(
-        expected["provides_extra"]
-    ):
+    if _edges(actual) != _edges(expected) or {
+        canonicalize_name(extra) for extra in actual["provides_extra"]
+    } != {canonicalize_name(extra) for extra in expected["provides_extra"]}:
         raise ValueError(
             f"Published dependency metadata differs from the plan: {expected['name']}"
         )
 
-    if expected["action"] == "reuse" and actual["sha256"] != expected["sha256"]:
-        raise ValueError(
-            f"Published dependency changed since planning: {expected['name']}"
-        )
+    retained = expected["action"] == "reuse" or (
+        expected["action"] == "publish" and expected.get("publisher_run_id")
+    )
+    if retained:
+        if not expected.get("sha256"):
+            raise ValueError(f"Missing retained SHA-256 for {expected['name']}")
 
-    if expected["action"] == "reuse" and actual.get("published_files") != expected.get(
-        "published_files"
-    ):
+        if actual["sha256"] != expected["sha256"] or (
+            expected.get("content_sha256")
+            and actual["content_sha256"] != expected["content_sha256"]
+        ):
+            raise ValueError(
+                f"Published dependency changed since planning: {expected['name']}"
+            )
+
+    if retained and actual.get("published_files") != expected.get("published_files"):
         raise ValueError(
             f"Published dependency inventory changed since planning: {expected['name']}"
         )
@@ -389,7 +434,7 @@ def _verify_file(expected, *, registry):
     return actual
 
 
-def _verify_plan(plan, *, registry, consumers):
+def _validate_plan(plan, *, consumers):
     if plan.get("source_revision") != os.environ.get("SOURCE_REVISION", ""):
         raise ValueError("Dependency plan belongs to a different source revision")
 
@@ -398,6 +443,16 @@ def _verify_plan(plan, *, registry, consumers):
 
     if plan["order"] != _order(plan["packages"]):
         raise ValueError("Incomplete or invalid dependency order")
+
+
+def _verify_plan(plan, *, registry, consumers):
+    _validate_plan(plan, consumers=consumers)
+    for name in plan["order"]:
+        entry = plan["packages"][name]
+        if entry["action"] == "publish" and not all(
+            entry.get(key) for key in ("sha256", "content_sha256", "publisher_run_id")
+        ):
+            raise ValueError(f"Missing retained publisher receipt for {name}")
 
     files = [
         _verify_file(plan["packages"][name], registry=registry)
@@ -413,7 +468,7 @@ def _verify_plan(plan, *, registry, consumers):
     return files
 
 
-def _github(path, *, payload=None):
+def _github(path, *, payload=None, deadline):
     token = os.environ["GH_TOKEN"]
     repository = os.environ.get("GITHUB_REPOSITORY")
     if repository != "roboflow/inference":
@@ -428,21 +483,38 @@ def _github(path, *, payload=None):
             "X-GitHub-Api-Version": "2026-03-10",
         },
     )
-    # Do not retry POST: a lost response could otherwise start a second publisher.
-    with urllib.request.urlopen(request, timeout=30) as response:
-        result = json.load(response)
+
+    def read():
+        with urllib.request.urlopen(
+            request, timeout=min(30, _remaining(deadline))
+        ) as response:
+            result = json.load(response)
+        _remaining(deadline)
+        return result
+
+    # Never retry POST: a lost response may have already started a publisher.
+    if payload is not None:
+        try:
+            result = read()
+        except (OSError, HTTPException, ValueError) as error:
+            raise ValueError(
+                "Dispatch response failed; a publisher may have started; inspect workflow runs before retrying"
+            ) from error
+    else:
+        result = _retry(read, deadline=deadline, retry_not_found=False)
     return result
 
 
-def _dispatch(name, *, version, wait_seconds):
+def _dispatch(name, *, version, wait_seconds=9000, deadline=None):
+    deadline = time.monotonic() + wait_seconds if deadline is None else deadline
+    _remaining(deadline)
     workflow = PROJECTS[name][1]
     revision = os.environ["SOURCE_REVISION"]
     ref = os.environ["GITHUB_REF"]
     if not ref.startswith(("refs/heads/", "refs/tags/")):
         raise ValueError("Publishers require a branch or tag ref")
 
-    # The child independently checks this revision before any build/upload.
-    current = _github("commits/" + urllib.parse.quote(ref, safe=""))
+    current = _github("commits/" + urllib.parse.quote(ref, safe=""), deadline=deadline)
     if current["sha"] != revision:
         raise ValueError("Candidate ref moved; freeze the ref before publishing")
 
@@ -450,55 +522,100 @@ def _dispatch(name, *, version, wait_seconds):
         f"actions/workflows/{workflow}/dispatches",
         payload={
             "ref": ref,
-            "return_run_details": True,
             "inputs": {
                 "publish": "true",
                 "expected_version": version,
                 "expected_revision": revision,
             },
         },
+        deadline=deadline,
     )
     run_id = int(dispatched["workflow_run_id"])
     print(
         f"Dispatched {name}=={version}: https://github.com/roboflow/inference/actions/runs/{run_id}",
         flush=True,
     )
-    deadline = time.monotonic() + wait_seconds
-    while True:
-        run = _github(f"actions/runs/{run_id}")
-        if (
-            run["head_sha"] != revision
-            or run["path"] != f".github/workflows/{workflow}"
-            or run["event"] != "workflow_dispatch"
-        ):
-            raise ValueError(f"Unexpected publisher identity/revision in run {run_id}")
-
-        if run["status"] == "completed":
-            if run["conclusion"] != "success":
+    try:
+        while True:
+            _remaining(deadline)
+            run = _github(f"actions/runs/{run_id}", deadline=deadline)
+            if (
+                run["head_sha"] != revision
+                or run["path"] != f".github/workflows/{workflow}"
+                or run["event"] != "workflow_dispatch"
+            ):
                 raise ValueError(
-                    f"Publisher run {run_id} ended with {run['conclusion']}"
+                    f"Unexpected publisher identity/revision in run {run_id}"
                 )
-            return run_id
 
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise ValueError(
-                f"Publisher run {run_id} timed out; inspect it before retrying"
-            )
-        time.sleep(min(15, remaining))
+            if run["status"] == "completed":
+                if run["conclusion"] != "success":
+                    raise ValueError(
+                        f"Publisher run {run_id} ended with {run['conclusion']}"
+                    )
+                return run_id
+
+            time.sleep(min(15, _remaining(deadline)))
+    except (ValueError, OSError, HTTPException) as error:
+        raise ValueError(
+            f"Publisher run {run_id}: {error}; inspect it before retrying"
+        ) from error
 
 
-def _coordinate(plan, *, wait_seconds):
+def _coordinate(plan, *, wait_seconds=9000, deadline=None, plan_file=None):
+    deadline = time.monotonic() + wait_seconds if deadline is None else deadline
     runs = {}
-    for name in plan["order"]:
-        expected = plan["packages"][name]
-        if expected["action"] == "publish":
-            runs[name] = _dispatch(
-                name, version=expected["version"], wait_seconds=wait_seconds
-            )
-        _verify_file(expected, registry=_Registry(wait_seconds=min(600, wait_seconds)))
+    try:
+        for name in plan["order"]:
+            _remaining(deadline)
+            expected = plan["packages"][name]
+            if expected["action"] == "publish":
+                runs[name] = _dispatch(
+                    name, version=expected["version"], deadline=deadline
+                )
+            actual = _verify_file(expected, registry=_Registry(deadline=deadline))
+            if name in runs:
+                expected.update(
+                    {key: actual[key] for key in ("sha256", "content_sha256")}
+                )
+                expected["published_files"] = actual["published_files"]
+                expected["publisher_run_id"] = runs[name]
+                if plan_file is not None:
+                    release._write_record(plan_file, **plan)
+    except (ValueError, OSError, HTTPException) as error:
+        raise ValueError(f"{error}; already-started publisher runs: {runs}") from error
 
     return runs
+
+
+def _verify_published(package, *, directory, plan_file, deadline):
+    files = _local_wheels(directory)
+    expected = _catalog()[package]
+    if (
+        len(files) != 1
+        or files[0]["name"] != package
+        or Version(files[0]["version"]) != Version(expected["version"])
+    ):
+        raise ValueError(
+            f"Expected exactly one built {package}=={expected['version']} wheel"
+        )
+
+    candidate = files[0]
+    actual = _verify_file(
+        {**candidate, "action": "publish", "sha256": None, "content_sha256": None},
+        registry=_Registry(deadline=deadline),
+    )
+    release._write_record(
+        plan_file.with_name("published-content-receipt.json"),
+        candidate=candidate,
+        published=actual,
+    )
+    if actual["content_sha256"] != candidate["content_sha256"]:
+        raise ValueError(
+            f"Published {package} contents differ from the built candidate; use a new version"
+        )
+
+    return actual
 
 
 def _guard(package):
@@ -519,7 +636,10 @@ def _guard(package):
 
 @click.command()
 @click.argument(
-    "operation", type=click.Choice(["plan", "coordinate", "verify", "gate", "guard"])
+    "operation",
+    type=click.Choice(
+        ["plan", "coordinate", "verify", "gate", "guard", "verify-published"]
+    ),
 )
 @click.option(
     "--directory",
@@ -537,8 +657,12 @@ def _guard(package):
 )
 @click.option(
     "--wait-seconds",
-    type=click.FloatRange(min=0, max=3600),
-    default=1800,
+    type=click.FloatRange(
+        min=0,
+        max=10800,
+    ),
+    default=600,
+    show_default=True,
 )
 def _main(operation, *, directory, plan_file, package, wait_seconds):
     try:
@@ -548,13 +672,23 @@ def _main(operation, *, directory, plan_file, package, wait_seconds):
             _guard(package)
             return
 
+        deadline = time.monotonic() + wait_seconds
+        if operation == "verify-published":
+            if not package:
+                raise ValueError("verify-published requires --package")
+
+            _verify_published(
+                package, directory=directory, plan_file=plan_file, deadline=deadline
+            )
+            return
+
         consumers = _local_wheels(directory)
-        if operation in {"plan", "gate", "coordinate"}:
+        if operation in {"plan", "gate"}:
             catalog = _catalog() if operation != "gate" else {}
             plan = _plan(
                 consumers,
                 catalog=catalog,
-                registry=_Registry(wait_seconds=min(600, wait_seconds)),
+                registry=_Registry(deadline=deadline),
             )
             release._write_record(plan_file, **plan)
             plan = json.loads(plan_file.read_text())
@@ -564,14 +698,17 @@ def _main(operation, *, directory, plan_file, package, wait_seconds):
         else:
             plan = json.loads(plan_file.read_text())
 
+        if operation == "coordinate":
+            _validate_plan(plan, consumers=consumers)
+
         runs = (
-            _coordinate(plan, wait_seconds=wait_seconds)
+            _coordinate(plan, deadline=deadline, plan_file=plan_file)
             if operation == "coordinate"
             else {}
         )
         files = _verify_plan(
             plan,
-            registry=_Registry(wait_seconds=min(600, wait_seconds)),
+            registry=_Registry(deadline=deadline),
             consumers=consumers,
         )
         release._write_record(
@@ -579,8 +716,15 @@ def _main(operation, *, directory, plan_file, package, wait_seconds):
             files=files,
             publisher_runs=runs,
         )
-    except (ValueError, KeyError, OSError, zipfile.BadZipFile) as error:
-        raise click.ClickException(str(error)) from error
+    except (ValueError, KeyError, OSError, HTTPException, zipfile.BadZipFile) as error:
+        runs = {
+            name: entry["publisher_run_id"]
+            for name, entry in locals().get("plan", {}).get("packages", {}).items()
+            if entry.get("publisher_run_id")
+        }
+        raise click.ClickException(
+            f"{error}; already-started publisher runs: {runs}"
+        ) from error
 
 
 if __name__ == "__main__":

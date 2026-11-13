@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import zipfile
 from email.parser import BytesParser
+from http.client import HTTPException
 from pathlib import Path, PurePosixPath
 
 import click
@@ -184,17 +185,27 @@ def _inventory(directory, *, profile, version):
     return files
 
 
-def _retry(operation, *, wait_seconds):
-    deadline = time.monotonic() + wait_seconds
+def _retry(operation, *, wait_seconds=600, deadline=None):
+    shared_deadline = deadline is not None
+    deadline = time.monotonic() + wait_seconds if deadline is None else deadline
     while True:
+        if shared_deadline and time.monotonic() >= deadline:
+            raise ValueError("Dependency operation timed out")
         try:
             result = operation()
+            if shared_deadline and time.monotonic() >= deadline:
+                raise ValueError("Dependency operation timed out")
             return result
         except urllib.error.HTTPError as error:
             if error.code not in {404, 429} and error.code < 500:
                 raise
             reason = f"Registry HTTP {error.code}"
-        except (urllib.error.URLError, TimeoutError) as error:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            HTTPException,
+            ConnectionError,
+        ) as error:
             reason = f"Registry unavailable: {error}"
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -203,13 +214,16 @@ def _retry(operation, *, wait_seconds):
         time.sleep(min(10, remaining))
 
 
-def _remote_inventory(name, *, version, wait_seconds):
-    deadline = time.monotonic() + wait_seconds
+def _remote_inventory(name, *, version, wait_seconds=600, deadline=None):
+    local_deadline = time.monotonic() + wait_seconds if deadline is None else deadline
+    request_options = {} if deadline is None else {"deadline": deadline}
 
     def read():
         try:
             document = json.loads(
-                release._read_url(f"https://pypi.org/pypi/{name}/{version}/json")
+                release._read_url(
+                    f"https://pypi.org/pypi/{name}/{version}/json", **request_options
+                )
             )
         except urllib.error.HTTPError as error:
             if error.code == 404:
@@ -219,7 +233,7 @@ def _remote_inventory(name, *, version, wait_seconds):
             raise ValueError("Invalid registry document")
         return document
 
-    document = _retry(read, wait_seconds=wait_seconds)
+    document = _retry(read, wait_seconds=wait_seconds, deadline=deadline)
     if document is None:
         return None
     if canonicalize_name(document["info"]["name"]) != name or Version(
@@ -258,8 +272,9 @@ def _remote_inventory(name, *, version, wait_seconds):
     files = []
     for remote_file in remote:
         data = _retry(
-            lambda: release._read_url(remote_file["url"]),
-            wait_seconds=max(0, deadline - time.monotonic()),
+            lambda: release._read_url(remote_file["url"], **request_options),
+            wait_seconds=max(0, local_deadline - time.monotonic()),
+            deadline=deadline,
         )
         if hashlib.sha256(data).hexdigest() != remote_file["digests"]["sha256"]:
             raise ValueError(f"Registry SHA-256 mismatch for {name}=={version}")

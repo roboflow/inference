@@ -31,7 +31,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 30
+    timeout-minutes: 50
     concurrency:
       group: pypi-streamvision-${{ github.event.inputs.publish == 'true' && 'publish' || github.run_id }}
       cancel-in-progress: false
@@ -62,7 +62,7 @@ jobs:
           path: dist/streamvision-*.whl
       - name: Verify published dependencies before upload
         if: ${{ github.event.inputs.publish == 'true' }}
-        run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json
+        run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
       - name: Verify existing files and stage missing distributions
         if: ${{ github.event.inputs.publish == 'true' }}
         id: prepare
@@ -71,7 +71,7 @@ jobs:
           echo "upload=$(jq -r '.upload' release-evidence/publication-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: 🚀 Publish streamvision to PyPI
         if: ${{ github.event.inputs.publish == 'true' && steps.prepare.outputs.upload == 'true' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           packages-dir: release-upload/
       - name: Verify the complete published inventory

@@ -784,8 +784,15 @@ def test_runtime_modes_and_dependency_gates_precede_recovery():
         for step in steps
     )
     coordinator = config["jobs"]["prepare_dependencies"]["steps"]
-    coordinate = next(step for step in coordinator if step.get("id") == "plan")
-    assert 'if [ "$PUBLISH" = "true" ]' in coordinate["run"]
+    coordinate = next(
+        step
+        for step in coordinator
+        if "dependencies.sh coordinate" in step.get("run", "")
+    )
+    assert (
+        coordinate["if"]
+        == "${{ github.event_name == 'release' || inputs.publish == true }}"
+    )
 
 
 def test_contract_workflow_covers_new_helper_and_tests():
@@ -795,7 +802,11 @@ def test_contract_workflow_covers_new_helper_and_tests():
     )
     for trigger in ("pull_request", "push"):
         assert ".github/scripts/test_pypi_publish.py" in config["on"][trigger]["paths"]
-    run = config["jobs"]["contracts"]["steps"][1]["run"]
+    run = next(
+        step["run"]
+        for step in config["jobs"]["contracts"]["steps"]
+        if "python -m pytest" in step.get("run", "")
+    )
     assert "docker run" in run
     assert run.count(".release/pypi/publish.py") == 2
     assert run.count(".github/scripts/test_pypi_publish.py") == 3
