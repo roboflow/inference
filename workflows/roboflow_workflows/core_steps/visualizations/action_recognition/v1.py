@@ -196,9 +196,12 @@ class BlockManifest(WorkflowBlockManifest):
             The validated manifest.
 
         Raises:
-            ValueError: If synchronized display has no analyzed_until_frame.
+            ValueError: If a display that can be synchronized has no
+                analyzed_until_frame.
         """
-        if self.display_mode == "synchronized" and self.analyzed_until_frame is None:
+        # A selector can resolve to "synchronized" at run time, where a
+        # missing mark looks the same as a model with no result yet.
+        if self.display_mode != "live" and self.analyzed_until_frame is None:
             raise ValueError(
                 "synchronized display needs analyzed_until_frame from the "
                 "Action Recognition Model."
@@ -514,19 +517,24 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
     def _enforce_budget(self, state: _Stream, *, max_buffer_mb: int) -> None:
         budget = max_buffer_mb * 1024**2
         used = sum(stream.buffered_bytes for stream in self._streams.values())
-        while used > budget and len(state.frames) > 1:
-            dropped = len(state.frames.popleft().jpeg)
-            state.buffered_bytes -= dropped
-            used -= dropped
-            if not state.budget_trimmed:
-                state.budget_trimmed = True
-                logger.warning(
-                    "Action Recognition Visualization dropped delayed frames to "
-                    "stay within max_buffer_mb=%s. The playback delay is shorter "
-                    "than the model needs; lower max_frame_side or raise the "
-                    "budget.",
-                    max_buffer_mb,
-                )
+        # Least recently used first, so a stream that stopped gives its frames
+        # back before a running one loses delay. The current stream is last
+        # and keeps the frame it shows.
+        for stream in self._streams.values():
+            kept = 1 if stream is state else 0
+            while used > budget and len(stream.frames) > kept:
+                dropped = len(stream.frames.popleft().jpeg)
+                stream.buffered_bytes -= dropped
+                used -= dropped
+                if not stream.budget_trimmed:
+                    stream.budget_trimmed = True
+                    logger.warning(
+                        "Action Recognition Visualization dropped delayed frames "
+                        "to stay within max_buffer_mb=%s. The playback delay is "
+                        "shorter than the model needs; lower max_frame_side or "
+                        "raise the budget.",
+                        max_buffer_mb,
+                    )
 
 
 def _playback_delay(

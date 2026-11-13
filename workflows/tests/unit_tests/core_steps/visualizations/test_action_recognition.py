@@ -276,6 +276,30 @@ def test_memory_budget_is_shared_and_shortens_the_delay_instead_of_failing():
     assert 0 <= delay_shared < delay_alone <= 6
 
 
+def test_stopped_stream_gives_its_frames_back_to_a_running_stream():
+    block = ActionRecognitionVisualizationBlockV1()
+    noisy = {"size": (360, 640), "noise": True}
+    model = _Model(stride=10, latency=1)
+
+    # A camera fills the budget while it waits for a first result, then stops.
+    for number in range(1, 40):
+        _synchronized(
+            block, number, image={**noisy, "video": "stopped"}, max_buffer_mb=2
+        )
+    for number in range(1, 40):
+        mark, _ = model.at(number)
+        last = _synchronized(
+            block,
+            number,
+            image={**noisy, "video": "running"},
+            analyzed_until_frame=mark,
+            max_buffer_mb=2,
+        )
+
+    assert last["status"] == "synchronized"
+    assert last["displayed_frame_number"] < 39
+
+
 @pytest.mark.parametrize("tensor", [False, True])
 def test_synchronized_frames_are_downscaled_before_they_are_kept(tensor):
     block = ActionRecognitionVisualizationBlockV1()
@@ -382,6 +406,7 @@ def test_run_rejects_an_unknown_display_mode_and_a_non_bgr_image():
         name="display",
         image="$inputs.image",
         timeline="$steps.model.timeline",
+        analyzed_until_frame="$steps.model.analyzed_until_frame",
         display_mode="$inputs.display_mode",
     )
     block = ActionRecognitionVisualizationBlockV1()
@@ -398,14 +423,15 @@ def test_run_rejects_an_unknown_display_mode_and_a_non_bgr_image():
         block.run(gray, [])
 
 
-def test_manifest_requires_the_analyzed_mark_for_synchronized_display():
+@pytest.mark.parametrize("display_mode", ["synchronized", "$inputs.display_mode"])
+def test_manifest_requires_the_analyzed_mark_unless_display_is_live(display_mode):
     with pytest.raises(ValidationError, match="analyzed_until_frame"):
         BlockManifest(
             type=TYPE,
             name="display",
             image="$inputs.image",
             timeline="$steps.model.timeline",
-            display_mode="synchronized",
+            display_mode=display_mode,
         )
 
 
