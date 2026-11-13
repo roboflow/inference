@@ -6,7 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -27,6 +27,11 @@ from roboflow_workflows.core_steps.common.workload_presets import (
     COOLDOWN_ACTUAL_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_message
+from roboflow_workflows.core_steps.sinks.roboflow.event_store_transport import (
+    PreparedImage,
+    post_local_event,
+    prepare_local_images,
+)
 from roboflow_workflows.environment import API_BASE_URL
 from roboflow_workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
@@ -169,6 +174,12 @@ The event store URL defaults to `http://localhost:8001` and can be overridden. N
 Roboflow API key is required in this mode; if the local service requires
 authentication, set the `EVENT_INGESTION_API_KEY` environment variable on the
 inference server.
+
+When the Event Ingestion Service runs in the same IPC namespace (e.g. Docker
+`ipc_mode: host`), images are handed over through shared memory (`/dev/shm`)
+instead of base64 in the request; the block detects this automatically and falls
+back to base64 otherwise. Set `EVENT_STORE_SHARED_MEMORY=false` to always send
+base64.
 
 ## Event Types
 
@@ -921,23 +932,21 @@ def _execute_local_event(
 ) -> Tuple[bool, str, str]:
     """Send an event to a local Event Ingestion Service (v2 API).
 
-    Unlike the cloud path, images are embedded directly in the request as base64
-    rather than uploaded first. The use case (`solution`) is forwarded so events are
-    namespaced consistently with the cloud path; the service requires it when cloud
-    upload is enabled.
+    Unlike the cloud path, images are embedded directly in the request (as base64,
+    or as shared-memory references when the service shares this process's shared
+    memory) rather than uploaded first. The use case (`solution`) is forwarded so
+    events are namespaced consistently with the cloud path; the service requires it
+    when cloud upload is enabled.
     """
     try:
         # Convert predictions to vision events annotation format
         annotations = _convert_predictions_to_annotations(prediction)
 
-        # Build a single image entry with base64-embedded images
-        # base64Image = output/display image, inputBase64Image = original input image
+        prepared_images = prepare_local_images(
+            output_image=output_image, input_image=input_image
+        )
         image_entry: Dict[str, Any] = {}
-        if output_image is not None:
-            image_entry["base64Image"] = output_image.base64_image
-        if input_image is not None:
-            image_entry["inputBase64Image"] = input_image.base64_image
-        if image_entry:
+        if prepared_images:
             image_entry["label"] = "workflow"
             image_entry.update(annotations)
 
@@ -958,7 +967,7 @@ def _execute_local_event(
             payload["displayImagePosition"] = 0
 
         url = f"{event_store_url.rstrip('/')}/v2/events"
-        return _send_local_event(url, payload)
+        return _send_local_event(url, payload, prepared_images=prepared_images)
     except Exception as error:
         logger.warning("Failed to write event to local event store: %s", error)
         return (
@@ -971,6 +980,7 @@ def _execute_local_event(
 def _send_local_event(
     url: str,
     payload: dict,
+    prepared_images: Sequence[PreparedImage] = (),
 ) -> Tuple[bool, str, str]:
     """Send an event to the local Event Ingestion Service.
 
@@ -988,7 +998,13 @@ def _send_local_event(
         api_key = os.environ.get("EVENT_INGESTION_API_KEY")
         if api_key:
             headers["X-API-Key"] = api_key
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response = post_local_event(
+            url,
+            payload=payload,
+            prepared_images=prepared_images,
+            headers=headers,
+            timeout=30,
+        )
 
         if response.status_code == 201:
             event_id = str(response.json().get("id", ""))
