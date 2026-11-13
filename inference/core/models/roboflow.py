@@ -14,6 +14,7 @@ import numpy as np
 import onnxruntime
 from filelock import FileLock
 from PIL import Image
+from requests.exceptions import ChunkedEncodingError
 
 from inference.core.env import (
     API_KEY,
@@ -61,6 +62,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.exceptions import (
     ModelArtefactError,
     OnnxProviderNotAvailable,
+    RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
 )
 from inference.core.models.base import Model
@@ -707,6 +709,31 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         self.download_model_from_roboflow_api()
 
     def download_model_from_roboflow_api(self) -> None:
+        """Download core model artifacts, refreshing rejected download URLs once.
+
+        Raises:
+            ModelArtefactError: The metadata response has no weights mapping.
+            RoboflowAPIForbiddenError: An artifact remains forbidden after
+                refreshing its URL, or the metadata request is forbidden.
+            ChunkedEncodingError: A download remains interrupted after retries.
+        """
+
+        def _get_weights(*, use_cache: bool = True) -> dict:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.CORE_MODEL,
+                device_id=self.device_id,
+                countinference=self.countinference,
+                service_secret=self.service_secret,
+                use_cache=use_cache,
+            )
+            if "weights" not in api_data:
+                raise ModelArtefactError(
+                    "`weights` key not available in Roboflow API response while downloading model weights."
+                )
+
+            return api_data["weights"]
 
         # Use the same lock file pattern as in clear_cache
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
@@ -715,24 +742,25 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         try:
             lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
             with lock:
-                api_data = get_roboflow_model_data(
-                    api_key=self.api_key,
-                    model_id=self.endpoint,
-                    endpoint_type=ModelEndpointType.CORE_MODEL,
-                    device_id=self.device_id,
-                    countinference=self.countinference,
-                    service_secret=self.service_secret,
-                )
-                if "weights" not in api_data:
-                    raise ModelArtefactError(
-                        f"`weights` key not available in Roboflow API response while downloading model weights."
-                    )
-                for weights_url_key in api_data["weights"]:
-                    weights_url = api_data["weights"][weights_url_key]
+                weights = _get_weights()
+                for weights_url_key in weights:
+                    weights_url = weights[weights_url_key]
                     t1 = perf_counter()
-                    model_weights_response = get_from_url(
-                        weights_url, json_response=False
-                    )
+                    try:
+                        model_weights_response = get_from_url(
+                            weights_url, json_response=False
+                        )
+                    except (RoboflowAPIForbiddenError, ChunkedEncodingError):
+                        # A large download can outlive its signed URL. Retrying
+                        # that URL alone cannot recover once storage rejects it.
+                        logger.debug(
+                            "Refreshing model artifact URLs after download failure"
+                        )
+                        weights = _get_weights(use_cache=False)
+                        weights_url = weights[weights_url_key]
+                        model_weights_response = get_from_url(
+                            weights_url, json_response=False
+                        )
                     filename = weights_url.split("?")[0].split("/")[-1]
                     save_bytes_in_cache(
                         content=model_weights_response.content,
@@ -743,12 +771,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                         logger.debug(
                             "Weights download took longer than 120 seconds, refreshing API request"
                         )
-                        api_data = get_roboflow_model_data(
-                            api_key=self.api_key,
-                            model_id=self.endpoint,
-                            endpoint_type=ModelEndpointType.CORE_MODEL,
-                            device_id=self.device_id,
-                        )
+                        weights = _get_weights(use_cache=False)
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
             raise

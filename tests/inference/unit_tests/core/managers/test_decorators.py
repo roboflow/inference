@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators import fixed_size_cache
 from inference.core.managers.decorators.base import ModelManagerDecorator
@@ -147,3 +149,22 @@ def test_nested_decorators_record_request_metadata_for_warm_model() -> None:
     assert description.request_aliases == []
     assert description.request_paths == ["/infer/object_detection"]
     assert ids.get_ids() == {"some/1"}
+
+
+@pytest.mark.parametrize("disk_cache_cleanup", [True, False])
+def test_fixed_size_cache_clear_passes_disk_cache_cleanup_to_models(
+    disk_cache_cleanup: bool,
+) -> None:
+    # given
+    model_manager = ModelManager(model_registry=MagicMock())
+    model = MagicMock()
+    model_manager._models = {"some/1": model}
+    decorator = WithFixedSizeCache(model_manager, max_size=8)
+
+    # when
+    with patch.object(fixed_size_cache, "DISK_CACHE_CLEANUP", disk_cache_cleanup):
+        decorator.clear()
+
+    # then
+    model.clear_cache.assert_called_once_with(delete_from_disk=disk_cache_cleanup)
+    assert model_manager.models() == {}

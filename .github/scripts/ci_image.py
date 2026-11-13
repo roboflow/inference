@@ -1,7 +1,8 @@
-"""Private CI image transport. All configuration is supplied through environment.
+"""Public prebuilt-image consumption and shared helpers for CI image transport.
 
-Never print subprocess output: registry errors and build logs can contain private
-locations. GitHub outputs contain only digests; detailed metadata stays private.
+Saved CI images (private_image) are produced and pulled by depot_ci_image.py;
+this module validates consumer inputs, pulls public release images by tag or
+digest, and allocates the test port. Never print subprocess output.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 
 def _run(args: list[str]) -> str:
@@ -38,13 +38,16 @@ def _emit(path_variable: str, name: str, value: str) -> None:
 
 
 def _trusted() -> None:
-    if (
-        os.environ.get("GITHUB_REPOSITORY") != "roboflow/inference"
-        or os.environ.get("GITHUB_REF") != "refs/heads/main"
-        or os.environ.get("GITHUB_EVENT_NAME") not in {"push", "workflow_dispatch"}
-        or os.environ.get("CI_IMAGE_REUSE_ENABLED") != "true"
+    # Pushes to main consume saved images; a manual dispatch from any
+    # same-repository branch may exercise the path before a change reaches main.
+    ref = os.environ.get("GITHUB_REF", "")
+    event = os.environ.get("GITHUB_EVENT_NAME", "")
+    main_push = event == "push" and ref == "refs/heads/main"
+    manual = event == "workflow_dispatch" and ref.startswith("refs/heads/")
+    if os.environ.get("GITHUB_REPOSITORY") != "roboflow/inference" or not (
+        main_push or manual
     ):
-        raise ValueError("Private image transport requires enabled, trusted main")
+        raise ValueError("Saved CI images require trusted same-repository execution")
 
     sha = os.environ.get("GITHUB_SHA", "")
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
@@ -52,21 +55,6 @@ def _trusted() -> None:
 
     if _run(["git", "rev-parse", "HEAD"]).strip() != sha:
         raise ValueError("Checkout differs from candidate SHA")
-
-
-def _repository() -> str:
-    prefix = os.environ.get("CI_REGISTRY_PREFIX", "")
-    # An approved Artifact Registry namespace, supplied as a secret. No public
-    # release registry or caller-controlled repository fallback is permitted.
-    if not re.fullmatch(r"[a-z0-9-]+-docker\.pkg\.dev/[a-z0-9-]+/[a-z0-9_-]+", prefix):
-        raise ValueError("Configure an approved private registry namespace")
-
-    family = os.environ.get("IMAGE_FAMILY", "")
-    if family not in {"cpu", "gpu"}:
-        raise ValueError("Invalid image family")
-
-    repository = f"{prefix}/inference-ci-{family}"
-    return repository
 
 
 def _validate() -> None:
@@ -87,7 +75,6 @@ def _validate() -> None:
 
     if private:
         _trusted()
-        _repository()
         if not digest:
             raise ValueError("Private consumption requires a producer digest")
 
@@ -113,89 +100,16 @@ def _manifest_digests(manifest: dict, *, family: str) -> dict[str, str]:
     return result
 
 
-def _preflight() -> None:
-    _trusted()
-    _repository()
-
-
-def _build() -> None:
-    _trusted()
-    repository = _repository()
-    family = os.environ["IMAGE_FAMILY"]
-    sha = os.environ["GITHUB_SHA"]
-    run_id = os.environ["GITHUB_RUN_ID"]
-    attempt = os.environ["GITHUB_RUN_ATTEMPT"]
-    if not run_id.isdigit() or not attempt.isdigit():
-        raise ValueError("Invalid producer identity")
-
-    if not os.environ.get("DEPOT_PROJECT_ID"):
-        raise ValueError("Configure the private builder project")
-
-    # Export tracked source only; checkout tokens, auth files, local logs and
-    # runner state must never enter COPY . . or a remote builder cache.
-    with TemporaryDirectory(dir=os.environ["RUNNER_TEMP"]) as directory:
-        root = Path(directory)
-        context = root / "source"
-        context.mkdir()
-        archive = root / "source.tar"
-        _run(["git", "archive", "--format=tar", f"--output={archive}", sha])
-        _run(["tar", "-xf", str(archive), "-C", str(context)])
-        metadata = root / "metadata.json"
-        _run(
-            [
-                "depot",
-                "build",
-                "--push",
-                "--progress=plain",
-                "--platform",
-                "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
-                "--provenance=mode=min",
-                "--metadata-file",
-                str(metadata),
-                "--label",
-                f"org.opencontainers.image.revision={sha}",
-                "--tag",
-                f"{repository}:ci-{sha}-{run_id}-{attempt}",
-                "--file",
-                str(context / f"docker/dockerfiles/Dockerfile.onnx.{family}"),
-                str(context),
-            ]
-        )
-        index = _digest(json.loads(metadata.read_text())["containerimage.digest"])
-        manifest = json.loads(
-            _run(
-                [
-                    "docker",
-                    "buildx",
-                    "imagetools",
-                    "inspect",
-                    "--raw",
-                    f"{repository}@{index}",
-                ]
-            )
-        )
-        if "manifests" in manifest:
-            children = _manifest_digests(manifest, family=family)
-        elif family == "gpu":
-            children = {"amd64": index}
-        else:
-            raise ValueError("CPU build must include both architectures")
-
-        _emit("GITHUB_OUTPUT", "index_digest", index)
-        for architecture, digest in children.items():
-            _emit("GITHUB_OUTPUT", f"{architecture}_digest", digest)
-
-
 def _pull() -> None:
     _validate()
     family = os.environ["IMAGE_FAMILY"]
     if family not in {"cpu", "gpu"}:
         raise ValueError("Invalid image family")
 
-    private = os.environ.get("PRIVATE_IMAGE") == "true"
-    repository = (
-        _repository() if private else f"roboflow/roboflow-inference-server-{family}"
-    )
+    if os.environ.get("PRIVATE_IMAGE") == "true":
+        raise ValueError("Saved CI images are pulled by the Depot transport")
+
+    repository = f"roboflow/roboflow-inference-server-{family}"
     digest = os.environ.get("IMAGE_DIGEST", "")
     tag = os.environ.get("IMAGE_TAG", "")
     if not digest and not tag:
@@ -208,14 +122,6 @@ def _pull() -> None:
         raise ValueError("Image architecture mismatch")
     if digest and reference not in info.get("RepoDigests", []):
         raise ValueError("Pulled image digest mismatch")
-    if (
-        private
-        and (info.get("Config", {}).get("Labels") or {}).get(
-            "org.opencontainers.image.revision"
-        )
-        != os.environ["GITHUB_SHA"]
-    ):
-        raise ValueError("Image source differs from candidate SHA")
 
     # Run by immutable local image ID, never a shared mutable :test alias.
     image_id = _digest(info["Id"])
@@ -234,9 +140,7 @@ def _port() -> None:
 if __name__ == "__main__":
     try:
         {
-            "preflight": _preflight,
             "validate": _validate,
-            "build": _build,
             "pull": _pull,
             "port": _port,
         }[os.environ["CI_IMAGE_ACTION"]]()

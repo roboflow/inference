@@ -462,6 +462,15 @@ def maybe_wrap_in_list(value: Optional[Union[T, List[T]]]) -> Optional[List[T]]:
     return [value]
 
 
+def coerce_list_prompts_to_arrays(
+    value: Optional[List[Union[list, ArrayOrTensor]]],
+    dtype: Optional[np.dtype] = None,
+) -> Optional[List[ArrayOrTensor]]:
+    if value is None:
+        return None
+    return [np.asarray(e, dtype=dtype) if isinstance(e, list) else e for e in value]
+
+
 def equalize_batch_size(
     embeddings_batch_size: int,
     point_coordinates: Optional[List[ArrayOrTensor]],
@@ -474,6 +483,10 @@ def equalize_batch_size(
     Optional[List[ArrayOrTensor]],
     Optional[List[ArrayOrTensor]],
 ]:
+    point_coordinates = coerce_list_prompts_to_arrays(value=point_coordinates)
+    point_labels = coerce_list_prompts_to_arrays(value=point_labels)
+    boxes = coerce_list_prompts_to_arrays(value=boxes)
+    mask_input = coerce_list_prompts_to_arrays(value=mask_input, dtype=np.float32)
     if (
         point_coordinates is not None
         and len(point_coordinates) != embeddings_batch_size

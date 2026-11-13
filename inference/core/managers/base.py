@@ -17,6 +17,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
+    DISK_CACHE_CLEANUP,
     INTERNAL_WEIGHTS_URL_SUFFIX,
     METRICS_ENABLED,
     METRICS_INTERVAL,
@@ -222,6 +223,9 @@ class ModelManager:
                         service_secret=service_secret,
                         **extra_init_kwargs,
                     )
+                    # Legacy HF loaders do not hold the shared dtype lock. A
+                    # manager-wide reset could overwrite another load's active
+                    # dtype; keep the reset in the AutoModel loading path.
                     bind_usage_model_descriptor(
                         model, model_id, resolved_identifier, model_id_alias
                     )
@@ -386,7 +390,9 @@ class ModelManager:
                                 request.image.value = str(request.image.value)
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                                value=to_cachable_inference_item(request, rtn_val),
+                                value=to_cachable_inference_item(
+                                    request, rtn_val, model_id=model_id
+                                ),
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )
@@ -492,7 +498,9 @@ class ModelManager:
                                 request.image.value = str(request.image.value)
                             model_monitoring_cache_module.model_monitoring_cache.zadd(
                                 f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
-                                value=to_cachable_inference_item(request, rtn_val),
+                                value=to_cachable_inference_item(
+                                    request, rtn_val, model_id=model_id
+                                ),
                                 score=finish_time,
                                 expire=METRICS_INTERVAL * 2,
                             )
@@ -797,10 +805,14 @@ class ModelManager:
             )
 
     def clear(self) -> None:
-        """Removes all models from the manager."""
+        """Removes all models from the manager.
+
+        Cached weights are deleted from disk only when ``DISK_CACHE_CLEANUP``
+        is enabled, so a persistent model cache survives ``/model/clear``.
+        """
         model_ids = list(self.keys())
         for model_id in model_ids:
-            self.remove(model_id)
+            self.remove(model_id, delete_from_disk=DISK_CACHE_CLEANUP)
 
     def _get_model_reference(self, model_id: str) -> Model:
         try:

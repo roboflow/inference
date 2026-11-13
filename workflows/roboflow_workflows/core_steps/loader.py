@@ -1,4 +1,4 @@
-from typing import List, Type
+from typing import Dict, List, Type
 
 from roboflow_workflows._compat_names import to_historic_plugin_module, to_legacy_module
 from roboflow_workflows.configuration import get_configuration
@@ -629,6 +629,9 @@ from roboflow_workflows.core_steps.models.foundation.openai.v7 import OpenAIBloc
 from roboflow_workflows.core_steps.models.foundation.openai_compatible.v1 import (
     OpenAICompatibleBlockV1,
 )
+from roboflow_workflows.core_steps.models.foundation.openai_decisions.v1 import (
+    OpenAIDecisionsBlockV1,
+)
 from roboflow_workflows.core_steps.models.foundation.openrouter.v1 import (
     OpenRouterBlockV1,
 )
@@ -892,6 +895,14 @@ else:
         RoboflowClassificationModelBlockV3,
     )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.roboflow.anomaly_detection.v1_tensor import (
+        AnomalyDetectionModelBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.roboflow.anomaly_detection.v1 import (
+        AnomalyDetectionModelBlockV1,
+    )
+if ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.multi_label_classification.v1_tensor import (
         RoboflowMultiLabelClassificationModelBlockV1,
     )
@@ -1065,6 +1076,13 @@ else:
         VisionEventBundleSinkBlockV1,
     )
 
+from roboflow_workflows.core_steps.integrations.databricks.availability import (
+    DATABRICKS_SQL_IMAGE_SOURCE_TYPE,
+    databricks_unavailability_reason,
+)
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.v1 import (
+    DatabricksSQLImageSourceBlockV1,
+)
 from roboflow_workflows.core_steps.sinks.s3.v1 import S3SinkBlockV1
 from roboflow_workflows.core_steps.sinks.slack.notification.v1 import (
     SlackNotificationBlockV1,
@@ -1285,6 +1303,14 @@ else:
     )
 
 # Visualizers
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.visualizations.anomaly_heatmap.v1 import (
+        AnomalyHeatmapVisualizationBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.visualizations.anomaly_heatmap.v1_tensor import (
+        AnomalyHeatmapVisualizationBlockV1,
+    )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.visualizations.background_color.v1 import (
         BackgroundColorVisualizationBlockV1,
@@ -1796,6 +1822,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SpaceXAIBlockV2,
         SpaceXAIBlockV3,
         CosineSimilarityBlockV1,
+        AnomalyHeatmapVisualizationBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
         BlurVisualizationBlockV1,
@@ -1870,6 +1897,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV5,
         OpenAIBlockV6,
         OpenAIBlockV7,
+        OpenAIDecisionsBlockV1,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
@@ -1942,6 +1970,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowKeypointDetectionModelBlockV3,
         RoboflowClassificationModelBlockV2,
         RoboflowClassificationModelBlockV3,
+        AnomalyDetectionModelBlockV1,
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
         ActionRecognitionModelBlockV1,
@@ -2005,6 +2034,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
     ]
     if SAM3_3D_OBJECTS_ENABLED:
         blocks.append(SegmentAnything3_3D_ObjectsBlockV1)
+    # Databricks is offered only where it can run: connector installed and the
+    # runtime policy allows it. `load_unavailable_blocks()` explains the rest.
+    if databricks_unavailability_reason() is None:
+        blocks.append(DatabricksSQLImageSourceBlockV1)
 
     # Filter blocks if any disable configuration is set
     if WORKFLOW_DISABLED_BLOCK_TYPES or WORKFLOW_DISABLED_BLOCK_PATTERNS:
@@ -2012,6 +2045,21 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         return filtered_blocks
 
     return blocks
+
+
+def load_unavailable_blocks() -> Dict[str, str]:
+    """Map block types that exist in this release but are not offered here to the reason.
+
+    Returns:
+        Block type identifiers that ``load_blocks()`` left out on this server,
+        each with a human-readable explanation (missing optional dependency or
+        runtime policy).
+    """
+    unavailable: Dict[str, str] = {}
+    databricks_reason = databricks_unavailability_reason()
+    if databricks_reason is not None:
+        unavailable[DATABRICKS_SQL_IMAGE_SOURCE_TYPE] = databricks_reason
+    return unavailable
 
 
 def load_kinds() -> List[Kind]:

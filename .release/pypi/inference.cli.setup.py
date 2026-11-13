@@ -68,6 +68,10 @@ setuptools.setup(
             "roboflow_workflows.*",
             "workflows",
             "workflows.*",
+            "inference_model_manager",
+            "inference_model_manager.*",
+            "inference_server",
+            "inference_server.*"
         ),
     ),
     entry_points={

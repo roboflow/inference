@@ -121,6 +121,68 @@ def test_runtime_component_discovery_centralizes_package_import_checks(
     }
 
 
+def test_runtime_component_tensorrt_available_with_lean_runtime_only(
+    monkeypatch,
+) -> None:
+    def runtime_component_is_available(module_name: str) -> bool:
+        return module_name == "tensorrt_lean"
+
+    get_runtime_components.cache_clear()
+    monkeypatch.setattr(
+        runtime_components_module,
+        "_runtime_component_is_available",
+        runtime_component_is_available,
+    )
+    try:
+        components = get_runtime_components()
+    finally:
+        get_runtime_components.cache_clear()
+
+    assert components["TensorRT"] is True
+
+
+def test_runtime_component_tensorrt_unavailable_without_any_module(
+    monkeypatch,
+) -> None:
+    def runtime_component_is_available(module_name: str) -> bool:
+        return module_name not in {"tensorrt", "tensorrt_lean"}
+
+    get_runtime_components.cache_clear()
+    monkeypatch.setattr(
+        runtime_components_module,
+        "_runtime_component_is_available",
+        runtime_component_is_available,
+    )
+    try:
+        components = get_runtime_components()
+    finally:
+        get_runtime_components.cache_clear()
+
+    assert components["TensorRT"] is False
+
+
+def test_runtime_component_tensorrt_probes_full_module_first(monkeypatch) -> None:
+    probed = []
+
+    def runtime_component_is_available(module_name: str) -> bool:
+        probed.append(module_name)
+        return True
+
+    get_runtime_components.cache_clear()
+    monkeypatch.setattr(
+        runtime_components_module,
+        "_runtime_component_is_available",
+        runtime_component_is_available,
+    )
+    try:
+        get_runtime_components()
+    finally:
+        get_runtime_components.cache_clear()
+
+    assert "tensorrt" in probed
+    assert "tensorrt_lean" not in probed
+
+
 def test_validation_record_is_serialized_as_informational_metadata() -> None:
     validation = ValidationRecord(
         device_kind="gpu",

@@ -36,3 +36,12 @@ class BaseExecutionEngine(ABC):
         resolve_output_futures: bool = True,
     ) -> List[Dict[str, Any]]:
         pass
+
+    def close(self) -> None:
+        """Release resources the workflow's blocks hold between runs.
+
+        Called once the engine will not run again, for example when an
+        InferencePipeline ends. Engines without such resources keep this default,
+        which does nothing.
+        """
+        return None

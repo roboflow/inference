@@ -9,6 +9,7 @@ from roboflow_workflows.execution_engine.v1.compiler.entities import BlockSpecif
 from roboflow_workflows.execution_engine.v1.compiler.steps_initialiser import (
     call_if_callable,
     initialise_step,
+    initialise_steps,
     retrieve_init_parameter_values,
     retrieve_init_parameters_values,
 )
@@ -420,3 +421,93 @@ def test_retrieve_init_parameter_values_allows_local_behind_secure_gateway(
     )
 
     assert result is StepExecutionMode.LOCAL
+
+
+class ClosableBlockWithInit(ExampleBlockWithInit):
+    """Stands in for a block whose ``__init__`` already holds resources."""
+
+    instances = []
+
+    def __init__(self, a: int, b: str, fail_on_close: bool = False):
+        super().__init__(a=a, b=b)
+        self.close_calls = 0
+        self.fail_on_close = fail_on_close
+        ClosableBlockWithInit.instances.append(self)
+
+    def close(self) -> None:
+        self.close_calls += 1
+        if self.fail_on_close:
+            raise RuntimeError("cannot close")
+
+
+def _closable_then_faulty_steps():
+    closable = BlockSpecification(
+        block_source="test_plugin",
+        identifier="test_plugin.ClosableBlockWithInit",
+        block_class=ClosableBlockWithInit,
+        manifest_class=ExampleBlockWithInitManifest,
+    )
+    faulty = BlockSpecification(
+        block_source="test_plugin",
+        identifier="test_plugin.ExampleBlockWithFaultyInit",
+        block_class=ExampleBlockWithFaultyInit,
+        manifest_class=ExampleBlockWithFaultyInitManifest,
+    )
+    manifests = [
+        ExampleBlockWithInitManifest(
+            type="ExampleBlockWithInit",
+            name="first",
+            predictions=["$steps.a.predictions"],
+        ),
+        ExampleBlockWithFaultyInitManifest(
+            type="ExampleBlockWithFaultyInit",
+            name="second",
+            predictions=["$steps.a.predictions"],
+        ),
+    ]
+    return manifests, [closable, faulty]
+
+
+def test_initialise_steps_closes_blocks_initialised_before_a_failure() -> None:
+    # given
+    ClosableBlockWithInit.instances = []
+    manifests, available_blocks = _closable_then_faulty_steps()
+
+    # when
+    with pytest.raises(BlockInterfaceError):
+        initialise_steps(
+            steps_manifest=manifests,
+            available_blocks=available_blocks,
+            explicit_init_parameters={"a": 9, "b": 30},
+            initializers={},
+        )
+
+    # then
+    [first] = ClosableBlockWithInit.instances
+    assert first.close_calls == 1
+
+
+def test_initialise_steps_reraises_the_original_error_when_a_close_fails() -> None:
+    # given
+    ClosableBlockWithInit.instances = []
+    manifests, available_blocks = _closable_then_faulty_steps()
+    original_init = ClosableBlockWithInit.__init__
+
+    def init_failing_on_close(self, a, b):
+        original_init(self, a=a, b=b, fail_on_close=True)
+
+    ClosableBlockWithInit.__init__ = init_failing_on_close
+    try:
+        # when / then: the failed close is logged; the init error still surfaces
+        with pytest.raises(BlockInterfaceError):
+            initialise_steps(
+                steps_manifest=manifests,
+                available_blocks=available_blocks,
+                explicit_init_parameters={"a": 9, "b": 30},
+                initializers={},
+            )
+    finally:
+        ClosableBlockWithInit.__init__ = original_init
+
+    [first] = ClosableBlockWithInit.instances
+    assert first.close_calls == 1

@@ -7,7 +7,6 @@ on:
     paths-ignore:
       - "docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "**.md"
   push:
@@ -15,7 +14,6 @@ on:
     paths-ignore:
       - "docs/**"
       - "theme/**"
-      - "theme_build/**"
       - "mkdocs.yml"
       - "**.md"
   workflow_dispatch:
@@ -105,7 +103,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements/_requirements.txt -r requirements/requirements.sam.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.doctr.txt -r requirements/requirements.yolo_world.txt -r requirements/requirements.transformers.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.easyocr.txt
-          pip install --no-deps ./inference_models
+          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
       - name: 🔤 Cache Workflows font assets
         uses: actions/cache@v5
         with:
@@ -114,7 +112,7 @@ jobs:
       - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
           make create_workflows_wheel create_streamvision_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Integration Tests of Workflows
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"

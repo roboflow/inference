@@ -151,6 +151,8 @@ MODELS_TO_BE_USED = {
         "yolov8n-pose-640": "yolov8n-pose-640",
         "rfdetr-od": "rfdetr-nano",
         "rfdetr-is": "rfdetr-seg-nano",
+        "anomaly-foundad": "paul-guerrie-tang1/anomaly-det-algbq-1-foundad-t1",
+        "anomaly-patchcore": "paul-guerrie-tang1/anomaly-det-algbq-1-patchcore-t2",
     },
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: {
         "object-detection": "eye-detection/35",
@@ -161,6 +163,8 @@ MODELS_TO_BE_USED = {
         "yolov8n-pose-640": "microsoft-coco-pose/1",
         "rfdetr-od": "rfdetr-nano",
         "rfdetr-is": "asl-instance-seg/160",
+        "anomaly-foundad": "paul-guerrie/anomaly-det-1-foundad-t1",
+        "anomaly-patchcore": "paul-guerrie/anomaly-det-1-patchcore-t2",
     },
 }
 MODELS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS] = MODELS_TO_BE_USED[
@@ -259,6 +263,13 @@ def multi_class_classification_model_id(
     platform_environment: PlatformEnvironment,
 ) -> str:
     return MODELS_TO_BE_USED[platform_environment]["multi_class_classification"]
+
+
+@pytest.fixture(scope="session", params=["anomaly-foundad", "anomaly-patchcore"])
+def anomaly_detection_model_id(
+    platform_environment: PlatformEnvironment, request: pytest.FixtureRequest
+) -> str:
+    return MODELS_TO_BE_USED[platform_environment][request.param]
 
 
 @pytest.fixture(scope="session")

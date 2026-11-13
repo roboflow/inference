@@ -274,8 +274,8 @@ def remove_distortions(
         dst = cv.remap(
             img, map_x.astype(np.float32), map_y.astype(np.float32), cv.INTER_LINEAR
         )
-        return WorkflowImageData(
-            parent_metadata=image.parent_metadata,
+        return WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=dst,
         )
 
@@ -298,7 +298,7 @@ def remove_distortions(
         dst=None,
         newCameraMatrix=newcameramtx,
     )
-    return WorkflowImageData(
-        parent_metadata=image.parent_metadata,
+    return WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
         numpy_image=dst,
     )

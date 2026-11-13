@@ -25,6 +25,7 @@ from inference_models.weights_providers.entities import (
     BackendType,
     FileDownloadSpecs,
     JetsonEnvironmentRequirements,
+    MemoryProfile,
     ModelPackageMetadata,
     ONNXPackageDetails,
     Quantization,
@@ -2642,3 +2643,152 @@ def test_parse_coreml_model_package_when_invalid_manifest_provided(
 
     # then
     assert result is None
+
+
+@pytest.mark.parametrize(
+    "raw_latency, expected",
+    [
+        (12.5, 12.5),
+        (7, 7.0),
+        (None, None),
+        (True, None),
+        ("fast", None),
+        ({}, None),
+        pytest.param(10**400, None, id="int-too-large-for-float"),
+    ],
+)
+def test_roboflow_model_metadata_parses_model_latency_ms(
+    raw_latency: object, expected: object
+) -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolo-nas",
+            "modelPackages": [],
+            "modelLatencyMs": raw_latency,
+        }
+    )
+
+    # then
+    assert result.model_latency_ms == expected
+
+
+def test_roboflow_model_metadata_leaves_model_latency_ms_unset_when_absent() -> None:
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [],
+        }
+    )
+
+    # then
+    assert result.model_latency_ms is None
+
+
+def _metadata_with_memory_profile(memory_profile: object) -> RoboflowModelMetadata:
+    return RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [
+                {
+                    "type": "external-model-package-v1",
+                    "packageId": "my-package-id",
+                    "packageManifest": {
+                        "type": "onnx-model-package-v1",
+                        "backendType": "onnx",
+                        "quantization": "fp32",
+                        "dynamicBatchSize": True,
+                        "opset": 19,
+                    },
+                    "packageFiles": [
+                        {
+                            "fileHandle": "some",
+                            "downloadUrl": "https://dummy.com",
+                            "md5Hash": "some",
+                        }
+                    ],
+                    "memoryProfile": memory_profile,
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_memory_profile",
+    [
+        None,
+        "bad",
+        [],
+        5,
+        {"peakVramMb": None},
+        {"peakVramMb": "bad"},
+        {"peakVramMb": [1, 2]},
+        {"peakVramMb": {"bad": 1024}},
+        {"peakVramMb": {"1": "lots"}},
+        {"peakVramMb": {"1": float("inf")}},
+        {"peakVramMb": {"1": {"nested": [1]}}},
+    ],
+)
+def test_roboflow_model_metadata_keeps_package_typed_when_memory_profile_is_malformed(
+    raw_memory_profile: object,
+) -> None:
+    # when
+    result = _metadata_with_memory_profile(memory_profile=raw_memory_profile)
+    parsed_package = parse_model_package_metadata(metadata=result.model_packages[0])
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert result.model_packages[0].memory_profile == MemoryProfile()
+    assert parsed_package is not None
+    assert parsed_package.backend is BackendType.ONNX
+    assert parsed_package.memory_profile == MemoryProfile()
+    assert parsed_package.memory_profile.vram_for_batch(1) is None
+
+
+def test_roboflow_model_metadata_keeps_valid_memory_profile_with_string_keys() -> None:
+    # when
+    result = _metadata_with_memory_profile(
+        memory_profile=json.loads('{"peakVramMb": {"1": 1024, "8": 4096}}')
+    )
+    parsed_package = parse_model_package_metadata(metadata=result.model_packages[0])
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert parsed_package is not None
+    assert parsed_package.memory_profile == MemoryProfile(
+        peak_vram_mb={1: 1024, 8: 4096}
+    )
+    assert parsed_package.memory_profile.vram_for_batch(4) == 4096
+
+
+def test_roboflow_model_metadata_keeps_package_typed_when_memory_profile_is_absent() -> (
+    None
+):
+    # when
+    result = RoboflowModelMetadata.model_validate(
+        {
+            "type": "external-model-metadata-v1",
+            "modelId": "my-model",
+            "modelArchitecture": "yolov8",
+            "modelPackages": [
+                {
+                    "type": "external-model-package-v1",
+                    "packageId": "my-package-id",
+                    "packageManifest": {"type": "onnx-model-package-v1"},
+                    "packageFiles": [],
+                }
+            ],
+        }
+    )
+
+    # then
+    assert isinstance(result.model_packages[0], RoboflowModelPackageV1)
+    assert result.model_packages[0].memory_profile == MemoryProfile()

@@ -1,8 +1,9 @@
-from typing import List, Union
+from typing import List, Optional, Union
 
 from fastapi.encoders import jsonable_encoder
 
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
+from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -20,32 +21,51 @@ from inference.core.version import __version__
 def to_cachable_inference_item(
     infer_request: InferenceRequest,
     infer_response: Union[InferenceResponse, List[InferenceResponse]],
+    model_id: Optional[str] = None,
 ) -> dict:
-    if not TINY_CACHE:
-        return {
-            "inference_id": infer_request.id,
-            "inference_server_version": __version__,
-            "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
-            "request": jsonable_encoder(infer_request),
-            "response": jsonable_encoder(infer_response),
-        }
+    """Build the model monitoring cache entry that the pingback reports.
 
-    included_request_fields = {
-        "api_key",
-        "confidence",
-        "model_id",
-        "model_type",
-        "source",
-        "source_info",
-    }
-    request = infer_request.dict(include=included_request_fields)
-    response = build_condensed_response(infer_response)
+    Grounding DINO requests have no ``confidence`` and threshold boxes with
+    ``box_threshold``, so the entry reports that threshold as the request's
+    ``confidence``, which Roboflow requires as the requested confidence.
+
+    Args:
+        infer_request: Request the model served.
+        infer_response: Response or responses the model returned.
+        model_id: Id of the model that served the request. It fills the cached
+            request's ``model_id`` when the request leaves it empty, as core model
+            requests such as YOLO-World and Grounding DINO do.
+
+    Returns:
+        Dict with the inference id, the server identity, the request and the
+        response.
+    """
+    if not TINY_CACHE:
+        request = jsonable_encoder(infer_request)
+        response = jsonable_encoder(infer_response)
+    else:
+        included_request_fields = {
+            "api_key",
+            "confidence",
+            "model_id",
+            "model_type",
+            "source",
+            "source_info",
+        }
+        request = jsonable_encoder(infer_request.dict(include=included_request_fields))
+        response = jsonable_encoder(build_condensed_response(infer_response))
+
+    if request.get("model_id") is None:
+        request["model_id"] = model_id
+    if isinstance(infer_request, GroundingDINOInferenceRequest):
+        request["confidence"] = infer_request.box_threshold
+
     return {
         "inference_id": infer_request.id,
         "inference_server_version": __version__,
         "inference_server_id": GLOBAL_INFERENCE_SERVER_ID,
-        "request": jsonable_encoder(request),
-        "response": jsonable_encoder(response),
+        "request": request,
+        "response": response,
     }
 
 

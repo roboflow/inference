@@ -47,7 +47,10 @@ from inference_models.models.rfdetr.semantic_segmentation_common import (
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
-    import tensorrt as trt
+    try:
+        import tensorrt as trt
+    except ImportError:
+        import tensorrt_lean as trt
 except ImportError as import_error:
     raise MissingDependencyError(
         message="Running RFDetr Semantic Segmentation model with TRT backend requires `tensorrt` installation, which "

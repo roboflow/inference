@@ -5,14 +5,9 @@ on:
       family:
         type: string
         required: true
-    secrets:
-      CI_REGISTRY_PREFIX:
-        required: true
-      CI_WIF_PROVIDER:
-        required: true
-      CI_REGISTRY_WRITER:
-        required: true
-      CI_DEPOT_PROJECT:
+      depot_project:
+        description: "Depot project that builds and stores the CI image"
+        type: string
         required: true
     outputs:
       index_digest:
@@ -25,9 +20,12 @@ on:
 permissions:
   contents: read
 
+# Saves the image in Depot Registry (project-scoped, digest-addressed). GitHub
+# OIDC through the org-level Depot connection authenticates the CLI, as in every
+# other Depot workflow here; no registry credential or Depot token is stored.
 jobs:
   build:
-    if: ${{ vars.CI_IMAGE_REUSE_ENABLED == 'true' && github.repository == 'roboflow/inference' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.repository == 'roboflow/inference' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -35,9 +33,7 @@ jobs:
       id-token: write
     env:
       IMAGE_FAMILY: ${{ inputs.family }}
-      CI_REGISTRY_PREFIX: ${{ secrets.CI_REGISTRY_PREFIX }}
-      CI_IMAGE_REUSE_ENABLED: ${{ vars.CI_IMAGE_REUSE_ENABLED }}
-      DEPOT_PROJECT_ID: ${{ secrets.CI_DEPOT_PROJECT }}
+      DEPOT_PROJECT_ID: ${{ inputs.depot_project }}
       DOCKER_BUILD_SUMMARY: false
       DOCKER_BUILD_RECORD_UPLOAD: false
     outputs:
@@ -56,34 +52,19 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Validate trusted source and transport configuration
+      - name: Validate trusted source and destination before authentication
         env:
-          CI_IMAGE_ACTION: preflight
-        run: python3 .github/scripts/ci_image.py
-      - name: Set up Depot
+          CI_DEPOT_ACTION: validate
+        run: python3 .github/scripts/depot_ci_image.py
+      - name: Set up Depot CLI
         uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
       - name: Set up Buildx for manifest inspection
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - name: Authenticate registry writer
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        id: auth
-        with:
-          workload_identity_provider: ${{ secrets.CI_WIF_PROVIDER }}
-          service_account: ${{ secrets.CI_REGISTRY_WRITER }}
-          token_format: access_token
-          create_credentials_file: false
-          export_environment_variables: false
-      - name: Login to private registry
-        env:
-          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
-        run: |
-          mkdir -p "$DOCKER_CONFIG"
-          printf '%s' "$ACCESS_TOKEN" | docker login "${CI_REGISTRY_PREFIX%%/*}" --username oauth2accesstoken --password-stdin > /dev/null 2>&1
-      - name: Build once and record platform digests
+      - name: Save image once and record platform digests
         id: build
         env:
-          CI_IMAGE_ACTION: build
-        run: python3 .github/scripts/ci_image.py
+          CI_DEPOT_ACTION: build
+        run: python3 .github/scripts/depot_ci_image.py
       # Keep Buildx state until setup-buildx completes its post-job cleanup.
       - name: Remove registry credentials
         if: ${{ always() && steps.ci_docker_config.outcome == 'success' }}

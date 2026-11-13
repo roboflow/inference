@@ -4,8 +4,8 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
-from httpx import URL
-from openai import DefaultHttpxClient, OpenAI
+from httpx2 import URL
+from openai import DefaultHttpx2Client, OpenAI
 from pydantic import ConfigDict, Field
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.query_language.entities.operations import (
@@ -301,7 +301,7 @@ class OpenAICompatibleBlockV1(WorkflowBlock):
                 base_url=base_url,
                 api_key=api_key,
                 timeout=120.0,
-                http_client=DefaultHttpxClient(follow_redirects=False),
+                http_client=DefaultHttpx2Client(follow_redirects=False),
             )
             self._client_cache[cache_key] = client
         return client

@@ -1,4 +1,4 @@
-"""Offline checks for immutable image transport and main workflow wiring."""
+"""Offline checks for prebuilt-image consumption and main workflow wiring."""
 
 import ast
 import contextlib
@@ -25,11 +25,11 @@ DIGEST = "sha256:" + "a" * 64
 ARM_DIGEST = "sha256:" + "b" * 64
 IMAGE_ID = "sha256:" + "c" * 64
 SHA = "d" * 40
-PREFIX = "test-docker.pkg.dev/example/private-ci"
+PUBLIC = "roboflow/roboflow-inference-server-cpu"
 
 
 class ImageTransportTests(unittest.TestCase):
-    """Exercise validation and exact Docker/Depot command construction offline."""
+    """Exercise validation and exact Docker command construction offline."""
 
     def setUp(self):
         """Create a private temporary output directory and synthetic configuration."""
@@ -41,16 +41,11 @@ class ImageTransportTests(unittest.TestCase):
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_EVENT_NAME": "push",
             "GITHUB_SHA": SHA,
-            "GITHUB_RUN_ID": "123",
-            "GITHUB_RUN_ATTEMPT": "1",
-            "CI_IMAGE_REUSE_ENABLED": "true",
-            "CI_REGISTRY_PREFIX": PREFIX,
             "IMAGE_FAMILY": "cpu",
             "MODEL_MODE": "true",
-            "PRIVATE_IMAGE": "true",
+            "PRIVATE_IMAGE": "false",
             "IMAGE_DIGEST": DIGEST,
             "IMAGE_TAG": "",
-            "DEPOT_PROJECT_ID": "example-builder",
             "RUNNER_TEMP": str(self.root),
             "GITHUB_ENV": str(self.root / "env"),
             "GITHUB_OUTPUT": str(self.root / "output"),
@@ -63,8 +58,8 @@ class ImageTransportTests(unittest.TestCase):
             "Id": IMAGE_ID,
             "Os": "linux",
             "Architecture": "amd64",
-            "RepoDigests": [f"{PREFIX}/inference-ci-cpu@{DIGEST}"],
-            "Config": {"Labels": {"org.opencontainers.image.revision": SHA}},
+            "RepoDigests": [f"{PUBLIC}@{DIGEST}"],
+            "Config": {"Labels": {}},
         }
 
     def _run(self, args, **kwargs):
@@ -76,14 +71,14 @@ class ImageTransportTests(unittest.TestCase):
 
         return ""
 
-    def test_private_pull_uses_exact_digest_and_immutable_local_id(self):
+    def test_public_pull_uses_exact_digest_and_immutable_local_id(self):
         """Both families consume a verified digest without build/tag/push commands."""
         for family in ("cpu", "gpu"):
             with self.subTest(family=family), patch.object(
                 IMAGE, "_run", side_effect=self._run
             ):
                 os.environ["IMAGE_FAMILY"] = family
-                reference = f"{PREFIX}/inference-ci-{family}@{DIGEST}"
+                reference = f"roboflow/roboflow-inference-server-{family}@{DIGEST}"
                 self.info["RepoDigests"] = [reference]
                 IMAGE._pull()
                 self.assertIn(
@@ -99,20 +94,16 @@ class ImageTransportTests(unittest.TestCase):
                     )
                 )
 
-    def test_invalid_input_never_reaches_docker(self):
-        """Malformed and conflicting references fail before pull or build."""
+    def test_invalid_input_and_private_images_never_reach_docker(self):
+        """Malformed references fail first; saved CI images use the Depot transport."""
         cases = [
             {"IMAGE_DIGEST": "sha256:bad"},
             {"MODEL_MODE": "unexpected"},
             {"IMAGE_TAG": "release", "IMAGE_DIGEST": DIGEST},
             {"IMAGE_DIGEST": ""},
-            {"IMAGE_DIGEST": "", "IMAGE_TAG": "release"},
-            {
-                "IMAGE_DIGEST": "",
-                "PRIVATE_IMAGE": "false",
-                "IMAGE_TAG": "x\nINJECT=value",
-            },
-            {"CI_REGISTRY_PREFIX": "docker.io/public"},
+            {"IMAGE_DIGEST": "", "IMAGE_TAG": "x\nINJECT=value"},
+            {"PRIVATE_IMAGE": "true"},
+            {"PRIVATE_IMAGE": "true", "IMAGE_DIGEST": ""},
         ]
         for values in cases:
             with self.subTest(values=values), patch.dict(
@@ -123,36 +114,44 @@ class ImageTransportTests(unittest.TestCase):
                     IMAGE._pull()
                 self.assertFalse(any(command[0] == "docker" for command in self.calls))
 
-    def test_untrusted_contexts_are_rejected(self):
-        """Forks, PR events, non-main refs and disabled rollout cannot use transport."""
+    def test_untrusted_private_contexts_are_rejected(self):
+        """Forks, PR events and feature pushes cannot consume saved images."""
+        os.environ["PRIVATE_IMAGE"] = "true"
         for key, value in [
             ("GITHUB_REPOSITORY", "external/inference"),
             ("GITHUB_REF", "refs/heads/feature"),
             ("GITHUB_EVENT_NAME", "pull_request_target"),
             ("GITHUB_EVENT_NAME", "pull_request"),
-            ("CI_IMAGE_REUSE_ENABLED", "false"),
         ]:
             with self.subTest(key=key, value=value), patch.dict(
                 os.environ, {key: value}
             ), patch.object(IMAGE, "_run") as run:
-                for validate in (IMAGE._preflight, IMAGE._validate):
-                    with self.assertRaises(ValueError):
-                        validate()
+                with self.assertRaises(ValueError):
+                    IMAGE._validate()
                 run.assert_not_called()
+        # A manual dispatch from a same-repository branch may try the path early.
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_EVENT_NAME": "workflow_dispatch",
+                "GITHUB_REF": "refs/heads/feature",
+            },
+        ), patch.object(IMAGE, "_run", side_effect=self._run):
+            IMAGE._validate()
 
     def test_wrong_checkout_fails(self):
         """Source checkout must match the frozen workflow SHA."""
+        os.environ["PRIVATE_IMAGE"] = "true"
         with patch.object(IMAGE, "_run", return_value="e" * 40):
             with self.assertRaises(ValueError):
-                IMAGE._preflight()
+                IMAGE._validate()
 
     def test_wrong_image_identity_fails(self):
-        """Reject mismatched architecture, digest, config ID or source label."""
+        """Reject mismatched architecture, digest or config ID."""
         for changes in [
             {"Architecture": "arm64"},
             {"Os": "windows"},
             {"RepoDigests": []},
-            {"Config": {"Labels": {}}},
             {"Id": "not-an-image-id"},
         ]:
             with self.subTest(changes=changes), patch.dict(
@@ -167,7 +166,7 @@ class ImageTransportTests(unittest.TestCase):
 
         def fail_pull(args, **kwargs):
             if args[:2] == ["docker", "pull"]:
-                raise ValueError("private registry details")
+                raise ValueError("registry details")
 
             return self._run(args, **kwargs)
 
@@ -178,26 +177,20 @@ class ImageTransportTests(unittest.TestCase):
         self.assertFalse(any(command[1] == "build" for command in self.calls))
 
     def test_legacy_tag_and_empty_defaults(self):
-        """Legacy manual and fast-track inputs retain their non-private behavior."""
-        with patch.dict(
-            os.environ, {"PRIVATE_IMAGE": "false", "IMAGE_DIGEST": ""}
-        ), patch.object(IMAGE, "_run", side_effect=self._run):
+        """Legacy manual and fast-track inputs retain their public behavior."""
+        with patch.dict(os.environ, {"IMAGE_DIGEST": ""}), patch.object(
+            IMAGE, "_run", side_effect=self._run
+        ):
             IMAGE._validate()
             os.environ["IMAGE_TAG"] = "1.2.3-rc1"
             IMAGE._pull()
         self.assertIn(
-            [
-                "docker",
-                "pull",
-                "--platform",
-                "linux/amd64",
-                "roboflow/roboflow-inference-server-cpu:1.2.3-rc1",
-            ],
+            ["docker", "pull", "--platform", "linux/amd64", f"{PUBLIC}:1.2.3-rc1"],
             self.calls,
         )
 
     def test_private_command_failures_do_not_print_output(self):
-        """Subprocess exceptions do not expose credentials, command arguments or logs."""
+        """Subprocess exceptions never expose credentials, arguments or logs."""
         result = subprocess.CompletedProcess(
             [], 1, "sensitive stdout", "sensitive stderr"
         )
@@ -229,96 +222,6 @@ class ImageTransportTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 IMAGE._manifest_digests({"manifests": entries}, family="cpu")
 
-    def test_build_once_from_tracked_source_and_extract_children(self):
-        """Verify CPU/GPU platforms, revision identity and every digest output."""
-        amd = {"digest": DIGEST, "platform": {"os": "linux", "architecture": "amd64"}}
-        arm = {
-            "digest": ARM_DIGEST,
-            "platform": {"os": "linux", "architecture": "arm64"},
-        }
-        cases = [
-            ("cpu", {"manifests": [amd, arm]}, DIGEST),
-            ("gpu", {"manifests": [amd]}, DIGEST),
-            ("gpu", {"schemaVersion": 2, "config": {"digest": IMAGE_ID}}, IMAGE_ID),
-        ]
-        for family, manifest, amd64_digest in cases:
-            with self.subTest(family=family, indexed="manifests" in manifest):
-                self.calls.clear()
-                (self.root / "output").unlink(missing_ok=True)
-                os.environ["IMAGE_FAMILY"] = family
-
-                def producer(args, **kwargs):
-                    if args[:2] == ["depot", "build"]:
-                        Path(args[args.index("--metadata-file") + 1]).write_text(
-                            json.dumps({"containerimage.digest": IMAGE_ID})
-                        )
-                    if args[:4] == ["docker", "buildx", "imagetools", "inspect"]:
-                        self.calls.append(args)
-                        return json.dumps(manifest)
-
-                    return self._run(args, **kwargs)
-
-                with patch.object(IMAGE, "_run", side_effect=producer):
-                    IMAGE._build()
-                builds = [args for args in self.calls if args[:2] == ["depot", "build"]]
-                self.assertEqual(len(builds), 1)
-                command = builds[0]
-                self.assertEqual(
-                    command[command.index("--platform") + 1],
-                    "linux/amd64,linux/arm64" if family == "cpu" else "linux/amd64",
-                )
-                self.assertEqual(
-                    command[command.index("--label") + 1],
-                    f"org.opencontainers.image.revision={SHA}",
-                )
-                self.assertEqual(
-                    command[command.index("--tag") + 1],
-                    f"{PREFIX}/inference-ci-{family}:ci-{SHA}-123-1",
-                )
-                self.assertTrue(
-                    command[command.index("--file") + 1].endswith(
-                        f"/docker/dockerfiles/Dockerfile.onnx.{family}"
-                    )
-                )
-                self.assertNotEqual(command[-1], ".")
-                self.assertTrue(
-                    any(args[:2] == ["git", "archive"] for args in self.calls)
-                )
-                outputs = dict(
-                    line.split("=", 1)
-                    for line in (self.root / "output").read_text().splitlines()
-                )
-                expected = {"index_digest": IMAGE_ID, "amd64_digest": amd64_digest}
-                if family == "cpu":
-                    expected["arm64_digest"] = ARM_DIGEST
-                self.assertEqual(outputs, expected)
-
-    def test_invalid_producer_identity_never_builds(self):
-        """Reject invalid run metadata, source identities and missing builder config."""
-        for values in [
-            {"GITHUB_RUN_ID": ""},
-            {"GITHUB_RUN_ID": "123/other"},
-            {"GITHUB_RUN_ATTEMPT": "-1"},
-            {"DEPOT_PROJECT_ID": ""},
-            {"GITHUB_SHA": "d" * 39},
-            {"GITHUB_SHA": "d" * 41},
-            {"GITHUB_SHA": "D" * 40},
-            {"GITHUB_SHA": "z" * 40},
-        ]:
-            with self.subTest(values=values), patch.dict(
-                os.environ, values
-            ), patch.object(IMAGE, "_run", side_effect=self._run):
-                self.calls.clear()
-                with self.assertRaises(ValueError):
-                    IMAGE._build()
-                self.assertFalse(
-                    any(
-                        command[0] != "git" or command[1] != "rev-parse"
-                        for command in self.calls
-                    )
-                )
-                self.assertFalse((self.root / "output").exists())
-
     def test_dynamic_port_is_loopback_only(self):
         """Do not expose test servers on a public runner interface."""
         os.environ["INFERENCE_TEST_CONTAINER"] = "test-container"
@@ -333,102 +236,105 @@ class ImageTransportTests(unittest.TestCase):
 class WorkflowContractTests(unittest.TestCase):
     """Check the security boundary, coverage and completion gate as a whole."""
 
-    def test_legacy_docker_configuration_survives_private_only_steps(self):
-        """Do not replace or erase runner credentials on legacy or failed-init paths."""
-        for name in (
-            "integration_tests_inference_server_x86.yml",
-            "test.nvidia_t4.yml",
-        ):
-            steps = self._workflow(name)["jobs"]["build"]["steps"]
-            config_steps = [
+    CONSUMERS = ("integration_tests_inference_server_x86.yml", "test.nvidia_t4.yml")
+
+    def test_consumers_pull_saved_images_through_depot_without_credentials(self):
+        """Saved images arrive by OIDC pull token; no registry secret or config edit."""
+        for name in self.CONSUMERS:
+            workflow = self._workflow(name)
+            text = (ROOT / ".github/workflows" / name).read_text()
+            self.assertNotRegex(text, r"CI_REGISTRY|CI_WIF|DEPOT_[A-Z_]*TOKEN")
+            self.assertNotIn("google-github-actions/auth", text)
+            job = workflow["jobs"]["build"]
+            self.assertEqual(
+                job["env"]["DEPOT_PROJECT_ID"], "${{ inputs.depot_project }}"
+            )
+            self.assertNotIn("CI_DEPOT", json.dumps(job["env"]))
+            self.assertEqual(
+                job["permissions"], {"contents": "read", "id-token": "write"}
+            )
+            steps = job["steps"]
+            self.assertFalse(
+                any("DOCKER_CONFIG" in step.get("run", "") for step in steps)
+            )
+            setup = next(
+                index
+                for index, step in enumerate(steps)
+                if "depot/setup-action" in step.get("uses", "")
+            )
+            self.assertIn("inputs.private_image", steps[setup]["if"])
+            private = next(
+                index
+                for index, step in enumerate(steps)
+                if step.get("env", {}).get("CI_DEPOT_ACTION") == "pull"
+            )
+            self.assertLess(setup, private)
+            self.assertIn("inputs.private_image", steps[private]["if"])
+            self.assertNotIn("!inputs.private_image", steps[private]["if"])
+            self.assertEqual(
+                steps[private]["run"], "python3 .github/scripts/depot_ci_image.py"
+            )
+            public = next(
                 step
                 for step in steps
-                if "DOCKER_CONFIG" in step.get("run", "")
-                and "docker login" not in step.get("run", "")
-            ]
-            self.assertEqual(len(config_steps), 3)
-            for private, outcome in ((False, "skipped"), (True, "failure")):
-                with self.subTest(
-                    name=name, private=private, outcome=outcome
-                ), TemporaryDirectory() as directory:
-                    root = Path(directory)
-                    config = root / "runner-docker"
-                    config.mkdir()
-                    credentials = config / "config.json"
-                    credentials.write_text("runner-owned credentials")
-                    context = {
-                        "inputs.private_image": private,
-                        "steps.ci_docker_config.outcome": outcome,
-                    }
-                    for step in config_steps:
-                        if step.get("id") == "ci_docker_config" and private:
-                            # Simulate mktemp failing before GITHUB_ENV is written.
-                            continue
-                        if self._condition_is_true(
-                            step.get("if", "${{ True }}"), context=context
-                        ):
-                            subprocess.run(
-                                ["bash", "-e", "-c", step["run"]],
-                                env={
-                                    **os.environ,
-                                    "DOCKER_CONFIG": str(config),
-                                    "RUNNER_TEMP": directory,
-                                    "GITHUB_ENV": str(root / "env"),
-                                },
-                                check=True,
-                                capture_output=True,
-                            )
-                    self.assertEqual(
-                        credentials.read_text(), "runner-owned credentials"
-                    )
-                    self.assertFalse((root / "env").exists())
+                if step.get("env", {}).get("CI_IMAGE_ACTION") == "pull"
+            )
+            self.assertIn("!inputs.private_image", public["if"])
+            self.assertEqual(public["run"], "python3 .github/scripts/ci_image.py")
+
+    def test_producer_saves_once_in_depot_with_oidc(self):
+        """The main producer uses the Depot transport in main mode without secrets."""
+        workflow = self._workflow("ci_image_build.yml")
+        text = (ROOT / ".github/workflows/ci_image_build.yml").read_text()
+        self.assertNotRegex(text, r"CI_REGISTRY|CI_WIF|DEPOT_[A-Z_]*TOKEN|secrets\.")
+        job = workflow["jobs"]["build"]
+        self.assertEqual(job["env"]["DEPOT_PROJECT_ID"], "${{ inputs.depot_project }}")
+        self.assertEqual(job["permissions"], {"contents": "read", "id-token": "write"})
+        actions = [step.get("env", {}).get("CI_DEPOT_ACTION") for step in job["steps"]]
+        self.assertEqual(
+            [action for action in actions if action], ["validate", "build"]
+        )
+        self.assertTrue(
+            any("depot/setup-action" in step.get("uses", "") for step in job["steps"])
+        )
+        orchestrator = self._workflow("ci_image_reuse.yml")
+        for family in ("cpu", "gpu"):
+            job = orchestrator["jobs"][f"{family}-image"]
+            self.assertNotIn("secrets", job)
+            self.assertEqual(
+                job["permissions"], {"contents": "read", "id-token": "write"}
+            )
 
     def test_credential_cleanup_preserves_buildx_post_job_state(self):
         """Execute cleanup steps: credentials vanish but builder records survive."""
-        for name in (
-            "ci_image_build.yml",
-            "integration_tests_inference_server_x86.yml",
-            "test.nvidia_t4.yml",
-        ):
-            workflow = self._workflow(name)
-            steps = workflow["jobs"]["build"]["steps"]
-            cleanup_steps = [
-                step
-                for step in steps
-                if 'rm -f -- "$DOCKER_CONFIG/config.json"' in step.get("run", "")
-            ]
-            self.assertTrue(cleanup_steps)
-            for step in cleanup_steps:
-                with self.subTest(workflow=name, step=step["name"]):
-                    with TemporaryDirectory() as directory:
-                        root = Path(directory)
-                        config = root / "docker-config"
-                        state = config / "buildx/instances/test-builder"
-                        state.parent.mkdir(parents=True)
-                        state.write_text("builder cleanup requires this record")
-                        credentials = config / "config.json"
-                        credentials.write_text('{"auths":{"example":"test-only"}}')
-                        binary = root / "bin"
-                        binary.mkdir()
-                        docker = binary / "docker"
-                        docker.write_text("#!/bin/sh\nexit 0\n")
-                        docker.chmod(0o755)
-                        result = subprocess.run(
-                            ["bash", "-e", "-c", step["run"]],
-                            env={
-                                **os.environ,
-                                "PATH": f"{binary}:{os.environ['PATH']}",
-                                "DOCKER_CONFIG": str(config),
-                                "INFERENCE_TEST_CONTAINER": "test-container",
-                            },
-                            capture_output=True,
-                        )
-                        self.assertEqual(result.returncode, 0)
-                        self.assertFalse(credentials.exists())
-                        self.assertTrue(state.exists())
-                        self.assertEqual(
-                            state.read_text(), "builder cleanup requires this record"
-                        )
+        workflow = self._workflow("ci_image_build.yml")
+        steps = workflow["jobs"]["build"]["steps"]
+        cleanup_steps = [
+            step
+            for step in steps
+            if 'rm -f -- "$DOCKER_CONFIG/config.json"' in step.get("run", "")
+        ]
+        self.assertTrue(cleanup_steps)
+        for step in cleanup_steps:
+            with self.subTest(step=step["name"]):
+                with TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = root / "docker-config"
+                    state = config / "buildx/instances/test-builder"
+                    state.parent.mkdir(parents=True)
+                    state.write_text("builder cleanup requires this record")
+                    credentials = config / "config.json"
+                    credentials.write_text('{"auths":{"example":"test-only"}}')
+                    result = subprocess.run(
+                        ["bash", "-e", "-c", step["run"]],
+                        env={**os.environ, "DOCKER_CONFIG": str(config)},
+                        capture_output=True,
+                    )
+                    self.assertEqual(result.returncode, 0)
+                    self.assertFalse(credentials.exists())
+                    self.assertEqual(
+                        state.read_text(), "builder cleanup requires this record"
+                    )
 
     def test_ci_runs_the_image_reuse_regression_suite(self):
         """Keep these checks in PR CI when other script suites are split out."""
@@ -453,8 +359,7 @@ class WorkflowContractTests(unittest.TestCase):
             "docker.cpu.yml",
             "docker.gpu.yml",
             "fast_track_integration_tests.yml",
-            "integration_tests_inference_server_x86.yml",
-            "test.nvidia_t4.yml",
+            *self.CONSUMERS,
         ):
             workflow = self._workflow(name)
             for job in workflow["jobs"].values():
@@ -475,7 +380,6 @@ class WorkflowContractTests(unittest.TestCase):
             "github.ref": "refs/heads/main",
             "github.event_name": "push",
             "github.event.act": False,
-            "vars.CI_IMAGE_REUSE_ENABLED": "false",
             "inputs.private_image": False,
         }
         context.update(overrides)
@@ -534,23 +438,19 @@ class WorkflowContractTests(unittest.TestCase):
         ]
         for name, job in jobs:
             for private in (False, True):
-                for flag in ("false", "true"):
-                    for event in ("push", "workflow_dispatch", "pull_request_target"):
-                        with self.subTest(
-                            name=name, private=private, flag=flag, event=event
-                        ):
-                            self.assertFalse(
-                                self._job_is_allowed(
-                                    name,
-                                    job,
-                                    **{
-                                        "github.repository": "external/inference",
-                                        "github.event_name": event,
-                                        "inputs.private_image": private,
-                                        "vars.CI_IMAGE_REUSE_ENABLED": flag,
-                                    },
-                                )
+                for event in ("push", "workflow_dispatch", "pull_request_target"):
+                    with self.subTest(name=name, private=private, event=event):
+                        self.assertFalse(
+                            self._job_is_allowed(
+                                name,
+                                job,
+                                **{
+                                    "github.repository": "external/inference",
+                                    "github.event_name": event,
+                                    "inputs.private_image": private,
+                                },
                             )
+                        )
             for event in ("pull_request", "pull_request_target"):
                 with self.subTest(name=name, event=event):
                     self.assertFalse(
@@ -560,41 +460,30 @@ class WorkflowContractTests(unittest.TestCase):
                             **{
                                 "github.event_name": event,
                                 "inputs.private_image": True,
-                                "vars.CI_IMAGE_REUSE_ENABLED": "true",
                             },
                         )
                     )
 
     def test_expected_image_entry_points_remain_available(self):
-        """Preserve legacy/manual runs and trusted main reuse without PR access."""
-        for name in (
-            "test.nvidia_t4.yml",
-            "integration_tests_inference_server_x86.yml",
-        ):
-            for event, ref in (
-                ("push", "refs/heads/main"),
-                ("workflow_dispatch", "refs/heads/fast-track/example"),
-            ):
-                self.assertTrue(
-                    self._job_is_allowed(
-                        name,
-                        "build",
-                        **{
-                            "github.event_name": event,
-                            "github.ref": ref,
-                        },
-                    )
-                )
+        """Preserve manual runs and main reuse without PR access."""
+        for name in self.CONSUMERS:
+            # A push to main runs only through the orchestrator (private_image).
+            self.assertFalse(self._job_is_allowed(name, "build"))
+            self.assertTrue(
+                self._job_is_allowed(name, "build", **{"inputs.private_image": True})
+            )
             self.assertTrue(
                 self._job_is_allowed(
                     name,
                     "build",
                     **{
-                        "inputs.private_image": True,
-                        "vars.CI_IMAGE_REUSE_ENABLED": "true",
+                        "github.event_name": "workflow_dispatch",
+                        "github.ref": "refs/heads/fast-track/example",
                     },
                 )
             )
+            # Pushes to other branches never consume saved images; a manual
+            # dispatch of the orchestrator from a branch may.
             self.assertFalse(
                 self._job_is_allowed(
                     name,
@@ -605,14 +494,38 @@ class WorkflowContractTests(unittest.TestCase):
                     },
                 )
             )
+            self.assertTrue(
+                self._job_is_allowed(
+                    name,
+                    "build",
+                    **{
+                        "inputs.private_image": True,
+                        "github.ref": "refs/heads/feature",
+                        "github.event_name": "workflow_dispatch",
+                    },
+                )
+            )
             self.assertIs(
                 self._workflow(name)["jobs"]["build"]["strategy"]["fail-fast"], True
             )
         for name in ("docker.cpu.yml", "docker.gpu.yml"):
-            for event in ("push", "workflow_dispatch", "release"):
+            self.assertFalse(self._job_is_allowed(name, "docker"))
+            for event in ("workflow_dispatch", "release"):
                 self.assertTrue(
                     self._job_is_allowed(name, "docker", **{"github.event_name": event})
                 )
+        for job in ("cpu-image", "gpu-image", "image-tests-complete"):
+            self.assertTrue(self._job_is_allowed("ci_image_reuse.yml", job))
+            self.assertTrue(
+                self._job_is_allowed(
+                    "ci_image_reuse.yml",
+                    job,
+                    **{
+                        "github.event_name": "workflow_dispatch",
+                        "github.ref": "refs/heads/feature",
+                    },
+                )
+            )
         for repository, expected in (
             ("roboflow/inference", True),
             ("external/inference", False),
@@ -638,11 +551,20 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertTrue(job["with"]["private_image"])
             self.assertEqual(job["needs"], f"{family}-image")
             self.assertIn("amd64_digest", job["with"]["image_digest"])
-            self.assertNotIn("CI_REGISTRY_WRITER", job["secrets"])
             self.assertNotIn("DOCKERHUB_TOKEN", job["secrets"])
+            self.assertFalse(any(key.startswith("CI_") for key in job["secrets"]))
         self.assertEqual(main["jobs"]["gpu-tests"]["with"]["test_name"], "")
         gpu = self._workflow("test.nvidia_t4.yml")["jobs"]["build"]
-        ids = {step.get("id") for step in gpu["steps"]}
+        call = next(
+            step
+            for step in gpu["steps"]
+            if step.get("uses") == "./.github/actions/server-tests-gpu"
+        )
+        self.assertEqual(call["with"]["test_name"], "${{ inputs.test_name }}")
+        action = yaml.safe_load(
+            (ROOT / ".github/actions/server-tests-gpu/action.yml").read_text()
+        )
+        ids = {step.get("id") for step in action["runs"]["steps"]}
         self.assertTrue(
             {
                 "regression_tests_without_torch",
@@ -657,20 +579,21 @@ class WorkflowContractTests(unittest.TestCase):
         )
         self.assertTrue(gpu["strategy"]["fail-fast"])
 
-    def test_rollout_switch_disables_old_build_paths_together(self):
-        """All four independent main jobs share the same rollout switch."""
-        for name, job in [
-            ("docker.cpu.yml", "docker"),
-            ("docker.gpu.yml", "docker"),
-            ("test.nvidia_t4.yml", "build"),
-            ("integration_tests_inference_server_x86.yml", "build"),
-        ]:
-            condition = self._workflow(name)["jobs"][job]["if"]
-            self.assertIn("vars.CI_IMAGE_REUSE_ENABLED != 'true'", condition)
+    def test_main_pushes_build_only_through_the_orchestrator(self):
+        """No standalone main-push build remains, and no rollout switch exists."""
         for name in (
-            "test.nvidia_t4.yml",
-            "integration_tests_inference_server_x86.yml",
+            "docker.cpu.yml",
+            "docker.gpu.yml",
+            "ci_image_build.yml",
+            "ci_image_reuse.yml",
+            *self.CONSUMERS,
         ):
+            self.assertNotIn(
+                "CI_IMAGE_REUSE_ENABLED",
+                (ROOT / ".github/workflows" / name).read_text(),
+                name,
+            )
+        for name in self.CONSUMERS:
             workflow = self._workflow(name)
             for step in workflow["jobs"]["build"]["steps"]:
                 if "docker build " in step.get("run", ""):
@@ -679,13 +602,9 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_no_public_artifacts_or_raw_secret_shell_interpolation(self):
         """The transport never uploads private records or embeds secrets in scripts."""
-        for name in (
-            "ci_image_build.yml",
-            "ci_image_reuse.yml",
-            "test.nvidia_t4.yml",
-            "integration_tests_inference_server_x86.yml",
-        ):
+        for name in ("ci_image_build.yml", "ci_image_reuse.yml", *self.CONSUMERS):
             workflow = self._workflow(name)
+            self.assertNotIn("secrets.CI_", json.dumps(workflow))
             for job in workflow["jobs"].values():
                 for step in job.get("steps", []):
                     self.assertNotIn("upload-artifact", step.get("uses", ""))

@@ -60,7 +60,10 @@ Follow this ordered loop. Every step operates under the Zero-Trust Stance.
    changed code — not as an exhaustive checklist.
 6. Trace changed behavior through runtime entry points, callers, configuration,
    and public contracts. For every candidate issue, identify the concrete
-   runtime path that makes the changed behavior reachable.
+   runtime path that makes the changed behavior reachable. A change under the
+   legacy `inference/` tree has a second runtime: the `inference_server` /
+   `inference_model_manager` re-implementation — trace its counterpart and
+   report the parity line as `review-topic-legacy-new-stack-parity` specifies.
 7. Verify each candidate issue against implementation evidence.
 8. Report only high-confidence medium+ findings with a concrete failure mode
    (see Finding Policy).
