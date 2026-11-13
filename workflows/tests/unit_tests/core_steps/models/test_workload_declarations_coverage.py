@@ -394,7 +394,7 @@ def test_the_audited_unknown_set_covers_four_model_families() -> None:
     assert len(families) == 4
 
 
-def test_the_audited_non_preloadable_blocks_declare_a_local_model(
+def test_the_audited_non_preloadable_blocks_declare_where_their_model_runs(
     model_block_manifests: List[Type[WorkflowBlockManifest]],
 ) -> None:
     by_module = {
@@ -417,8 +417,15 @@ def test_the_audited_non_preloadable_blocks_declare_a_local_model(
         assert resources is not None, f"{module} returned unknown"
         assert len(resources) == 1, f"{module} claims {resources}"
         metadata = resources[0].metadata
+        # Action recognition also runs its model on a server under REMOTE
+        # step execution; the video blocks support LOCAL only.
+        expected_location = (
+            ModelExecutionLocation.ENVIRONMENT_DEFINED
+            if ".action_recognition." in module
+            else ModelExecutionLocation.LOCAL
+        )
         assert metadata.required_action is ModelRequiredAction.EXECUTION
-        assert metadata.execution_location is ModelExecutionLocation.LOCAL
+        assert metadata.execution_location is expected_location
         assert metadata.preloadable is False
 
 

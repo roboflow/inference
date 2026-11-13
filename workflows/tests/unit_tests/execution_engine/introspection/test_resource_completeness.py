@@ -183,14 +183,19 @@ def test_streaming_video_models_are_visible_and_preloadable_stays_internal() -> 
     # when
     introspection = describe_workflow_workload(definition)
 
-    # then - each step fully knows its one LOCAL model ...
-    for node_id in ("$steps.sam2", "$steps.sam3", "$steps.actions"):
+    # then - each step fully knows its one model and where it runs ...
+    locations = {
+        "$steps.sam2": "local",
+        "$steps.sam3": "local",
+        # Action recognition also runs on a server under REMOTE execution.
+        "$steps.actions": "environment_defined",
+    }
+    for node_id, location in locations.items():
         step = _step(introspection, node_id)
         assert step.resources.complete is True, node_id
         assert len(step.resources.items) == 1
-        assert step.resources.items[0].to_dict()["metadata"]["execution_location"] == (
-            "local"
-        )
+        metadata = step.resources.items[0].to_dict()["metadata"]
+        assert metadata["execution_location"] == location
     assert {
         (m.model_id, tuple(m.used_by_steps)) for m in introspection.summary.models.items
     } == {
