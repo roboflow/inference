@@ -2344,3 +2344,19 @@ def test_get_model_metadata_from_inference_models_cache_when_backend_disabled() 
 )
 def test_cached_latency_backwards_compatibility(cached, expected):
     assert roboflow._normalize_cached_model_metadata(cached)[3] == expected
+
+
+def test_registry_access_denial_does_not_disclose_api_key(monkeypatch) -> None:
+    key = "sentinel-private-key"
+    monkeypatch.setattr(roboflow, "MODELS_CACHE_AUTH_ENABLED", True)
+    monkeypatch.setattr(roboflow, "OFFLINE_MODE", False)
+    monkeypatch.setattr(roboflow, "_get_local_model_type", lambda **kwargs: None)
+    monkeypatch.setattr(
+        roboflow, "_check_if_api_key_has_access_to_model", MagicMock(return_value=False)
+    )
+
+    with pytest.raises(RoboflowAPINotAuthorizedError) as error:
+        get_model_type(model_id="example/1", api_key=key)
+
+    assert key not in str(error.value)
+    assert "does not have access to model example/1" in str(error.value)

@@ -19,10 +19,16 @@ Usage::
 
 import contextvars
 import logging
+import traceback
 from contextlib import contextmanager
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
-from inference.core.env import OFFLINE_MODE
+from inference.core.env import (
+    OFFLINE_MODE,
+    PRELOAD_API_KEY,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+)
+from inference.core.utils.requests import deduct_api_key_from_string, redact_credentials
 
 logger = logging.getLogger("inference")
 
@@ -77,8 +83,18 @@ def start_span(name: str, attributes: Optional[Dict[str, Any]] = None):
         yield None
         return
     tracer = _get_tracer()
-    with tracer.start_as_current_span(name, attributes=attributes) as span:
-        yield span
+    # Record errors through the same credential filter as explicit error events.
+    with tracer.start_as_current_span(
+        name,
+        attributes=attributes,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        try:
+            yield span
+        except Exception as error:
+            record_error(error)
+            raise
 
 
 def record_error(error: Exception) -> None:
@@ -90,8 +106,26 @@ def record_error(error: Exception) -> None:
         return
     span = trace.get_current_span()
     if span and span.is_recording():
-        span.record_exception(error)
-        span.set_status(StatusCode.ERROR, str(error))
+        credentials = (PRELOAD_API_KEY, ROBOFLOW_INTERNAL_SERVICE_SECRET)
+        reason = redact_credentials(str(error), credentials=credentials)
+        stacktrace = redact_credentials(
+            "".join(
+                traceback.format_exception(type(error), error, error.__traceback__)
+            ),
+            credentials=credentials,
+        )
+        module = type(error).__module__
+        name = type(error).__qualname__
+        error_type = f"{module}.{name}" if module and module != "builtins" else name
+        span.record_exception(
+            Exception(reason),
+            attributes={
+                "exception.type": error_type,
+                "exception.message": reason,
+                "exception.stacktrace": stacktrace,
+            },
+        )
+        span.set_status(StatusCode.ERROR, reason)
 
 
 def get_trace_id() -> Optional[str]:
@@ -335,6 +369,172 @@ class _ForceTraceRootSampler:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Credential redaction for exported spans
+# ---------------------------------------------------------------------------
+
+# Span attributes the HTTP instrumentations fill with a URL or its query string.
+URL_SPAN_ATTRIBUTES = ("url.full", "http.url", "http.target", "url.query")
+
+
+def redact_trace_text(value: str) -> str:
+    """Remove Roboflow credentials from text bound for a trace backend.
+
+    Masks ``api_key=`` and ``service_secret=`` parameters, then the configured
+    preload API key and internal service secret wherever they occur.
+
+    Args:
+        value: Text such as a request URL or an attribute value.
+
+    Returns:
+        The text with credentials masked.
+    """
+    without_parameters = deduct_api_key_from_string(value)
+    redacted = redact_credentials(
+        without_parameters,
+        credentials=(PRELOAD_API_KEY, ROBOFLOW_INTERNAL_SERVICE_SECRET),
+    )
+
+    return redacted
+
+
+def _redact_url_attributes(span: Any) -> None:
+    if not span.is_recording():
+        return
+
+    attributes = getattr(span, "attributes", None) or {}
+    for key in URL_SPAN_ATTRIBUTES:
+        value = attributes.get(key)
+        if isinstance(value, str):
+            redacted = redact_trace_text(value)
+            if redacted != value:
+                span.set_attribute(key, redacted)
+
+
+def _requests_request_hook(span: Any, request: Any) -> None:
+    """Mask credentials in the URL attributes of an outbound ``requests`` span."""
+    _redact_url_attributes(span)
+
+
+def _server_request_hook(span: Any, scope: Dict[str, Any]) -> None:
+    """Mask credentials in the URL attributes of an inbound server span."""
+    _redact_url_attributes(span)
+
+
+def _redact_attribute_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_trace_text(value)
+    if isinstance(value, (list, tuple)):
+        return tuple(_redact_attribute_value(item) for item in value)
+
+    return value
+
+
+def _redact_attributes(attributes: Any) -> Tuple[Dict[str, Any], bool]:
+    original = dict(attributes or {})
+    redacted = {key: _redact_attribute_value(value) for key, value in original.items()}
+
+    return redacted, redacted != original
+
+
+def _redact_span(span: Any) -> Any:
+    from opentelemetry.sdk.trace import Event, ReadableSpan
+    from opentelemetry.trace import Link, Status
+
+    name = redact_trace_text(span.name)
+    changed = name != span.name
+    attributes, attributes_changed = _redact_attributes(span.attributes)
+    changed = changed or attributes_changed
+
+    events = []
+    for event in span.events:
+        event_attributes, event_changed = _redact_attributes(event.attributes)
+        changed = changed or event_changed
+        events.append(
+            Event(event.name, attributes=event_attributes, timestamp=event.timestamp)
+        )
+
+    links = []
+    for link in span.links:
+        link_attributes, link_changed = _redact_attributes(link.attributes)
+        changed = changed or link_changed
+        links.append(Link(link.context, attributes=link_attributes))
+
+    status = span.status
+    if status.description:
+        description = redact_trace_text(status.description)
+        if description != status.description:
+            changed = True
+            status = Status(status.status_code, description)
+
+    if not changed:
+        return span
+
+    redacted_span = ReadableSpan(
+        name=name,
+        context=span.context,
+        parent=span.parent,
+        resource=span.resource,
+        attributes=attributes,
+        events=events,
+        links=links,
+        kind=span.kind,
+        status=status,
+        start_time=span.start_time,
+        end_time=span.end_time,
+        instrumentation_scope=span.instrumentation_scope,
+    )
+
+    return redacted_span
+
+
+class RedactingSpanExporter:
+    """Span exporter wrapper that masks credentials before spans leave the process.
+
+    Backstop for attributes set outside the instrumentation hooks: every string
+    attribute, event attribute, link attribute, span name and status
+    description goes through :func:`redact_trace_text`. Spans without
+    credentials are passed through unchanged.
+
+    Args:
+        exporter: The exporter that sends spans to the collector.
+    """
+
+    def __init__(self, exporter: Any) -> None:
+        self._exporter = exporter
+
+    def export(self, spans: Sequence[Any]) -> Any:
+        """Export the spans with credentials masked.
+
+        Args:
+            spans: Finished spans handed over by the span processor.
+
+        Returns:
+            The wrapped exporter's result.
+        """
+        redacted_spans = [_redact_span(span) for span in spans]
+        result = self._exporter.export(redacted_spans)
+
+        return result
+
+    def shutdown(self) -> None:
+        """Shut the wrapped exporter down."""
+        self._exporter.shutdown()
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        """Flush the wrapped exporter.
+
+        Args:
+            timeout_millis: Longest wait for the flush.
+
+        Returns:
+            Whether the flush finished in time.
+        """
+        flushed = self._exporter.force_flush(timeout_millis)
+
+        return flushed
+
+
 def setup_telemetry(app: Any) -> None:
     """Initialize OTel TracerProvider, MeterProvider, and instrument the FastAPI app.
 
@@ -412,7 +612,8 @@ def setup_telemetry(app: Any) -> None:
     _provider = TracerProvider(resource=resource, sampler=sampler)
     _provider.add_span_processor(
         BatchSpanProcessor(
-            exporter, schedule_delay_millis=OTEL_TRACE_EXPORT_INTERVAL_MS
+            RedactingSpanExporter(exporter),
+            schedule_delay_millis=OTEL_TRACE_EXPORT_INTERVAL_MS,
         )
     )
     trace.set_tracer_provider(_provider)
@@ -498,12 +699,12 @@ def setup_telemetry(app: Any) -> None:
     app.add_middleware(_TraceIdResponseMiddleware)
 
     # Auto-instrument FastAPI: creates server spans, extracts traceparent
-    FastAPIInstrumentor.instrument_app(app)
+    FastAPIInstrumentor.instrument_app(app, server_request_hook=_server_request_hook)
 
     # Auto-instrument outgoing requests: creates http.client spans, injects traceparent
     from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
-    RequestsInstrumentor().instrument()
+    RequestsInstrumentor().instrument(request_hook=_requests_request_hook)
 
     # Add force-trace middleware AFTER the instrumentor so it wraps outermost.
     # Starlette builds middleware last-added = outermost, so this runs BEFORE
