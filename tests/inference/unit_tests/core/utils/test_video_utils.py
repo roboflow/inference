@@ -2,8 +2,10 @@
 
 import base64
 import os
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
+import av
 import cv2
 import numpy as np
 import pytest
@@ -65,13 +67,13 @@ def test_the_clip_is_walked_once_for_every_window(clip, monkeypatch) -> None:
     # Reading each window on its own capture re-decodes the frames before it,
     # so the cost grows with the square of the clip length.
     opened = []
-    real_video_capture = cv2.VideoCapture
+    real_video_capture = av.open
 
     def _counting_capture(*args, **kwargs):
         opened.append(args[0] if args else None)
         return real_video_capture(*args, **kwargs)
 
-    monkeypatch.setattr(cv2, "VideoCapture", _counting_capture)
+    monkeypatch.setattr(av, "open", _counting_capture)
 
     list(read_frame_windows(path=clip, windows=[[0], [10], [20], [29]]))
 
@@ -229,34 +231,18 @@ def test_an_uncapped_deployment_reads_any_size(monkeypatch) -> None:
     assert video_utils._max_download_bytes() is None
 
 
-class _CaptureClaiming:
-    """Delegates to a real capture but reports a chosen frame count.
-
-    A wrapper rather than a subclass: subclassing cv2.VideoCapture segfaults,
-    and its instances reject attribute assignment.
-    """
-
-    def __init__(self, capture, frame_count: float):
-        self._capture = capture
-        self._frame_count = frame_count
-
-    def get(self, prop):
-        if prop == cv2.CAP_PROP_FRAME_COUNT:
-            return self._frame_count
-        return self._capture.get(prop)
-
-    def __getattr__(self, name):
-        return getattr(self._capture, name)
-
-
 def _capture_claiming(frame_count: float, monkeypatch):
-    """Make every capture report ``frame_count`` frames, as a header would."""
-    real_capture = cv2.VideoCapture
-    monkeypatch.setattr(
-        cv2,
-        "VideoCapture",
-        lambda *a, **k: _CaptureClaiming(real_capture(*a, **k), frame_count),
-    )
+    from inference.core.utils import video_utils
+
+    real_open = video_utils.open_video
+
+    @contextmanager
+    def claiming(path):
+        with real_open(path) as reader:
+            reader.frame_count = int(frame_count)
+            yield reader
+
+    monkeypatch.setattr(video_utils, "open_video", claiming)
 
 
 def test_probe_video_trusts_a_frame_count_the_file_could_hold(clip, monkeypatch):
@@ -295,7 +281,7 @@ def test_probe_video_rejects_a_still_image(tmp_path):
     still = str(tmp_path / "still.jpg")
     cv2.imwrite(still, np.zeros((16, 16, 3), dtype=np.uint8))
 
-    with pytest.raises(InputImageLoadError, match="still image"):
+    with pytest.raises(InputImageLoadError, match="could not be decoded"):
         probe_video(path=still)
 
 
@@ -338,3 +324,22 @@ def test_a_negative_timeout_setting_removes_the_timeout(monkeypatch):
         pass
 
     assert captured["request_timeout"] is None
+
+
+@pytest.mark.parametrize("operation", ["probe", "recount", "windows"])
+def test_every_decoder_entry_point_refuses_external_references(
+    clip, tmp_path, operation
+):
+    from inference.core.utils import video_utils
+
+    playlist = tmp_path / "upload.m3u8"
+    playlist.write_text(
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXTINF:3.0,\n{clip}\n#EXT-X-ENDLIST\n"
+    )
+    with pytest.raises(InputImageLoadError):
+        if operation == "probe":
+            video_utils.probe_video(str(playlist))
+        elif operation == "recount":
+            video_utils._count_frames(str(playlist))
+        else:
+            list(video_utils.read_frame_windows(str(playlist), windows=[[0, 1]]))

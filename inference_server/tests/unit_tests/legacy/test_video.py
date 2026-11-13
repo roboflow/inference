@@ -2,8 +2,10 @@ import asyncio
 import base64
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
+import av
 import cv2
 import numpy as np
 import pytest
@@ -59,26 +61,6 @@ def _channel_mean(frame: np.ndarray) -> np.ndarray:
     return frame.reshape(-1, 3).mean(axis=0)
 
 
-class _DelegatingCapture:
-    def __init__(self, inner):
-        self._inner = inner
-
-    def isOpened(self):
-        return self._inner.isOpened()
-
-    def get(self, prop):
-        return self._inner.get(prop)
-
-    def set(self, prop, value):
-        return self._inner.set(prop, value)
-
-    def read(self):
-        return self._inner.read()
-
-    def release(self):
-        self._inner.release()
-
-
 class TestProbeVideo:
     def test_reports_fps_and_frame_count(self, clip):
         assert video.probe_video(str(clip)) == (_FPS, _FRAME_COUNT)
@@ -101,25 +83,19 @@ class TestProbeVideo:
 
         _assert_image_error(
             error.value,
-            "Video holds 1 frame(s). A clip needs at least two frames to hold an "
-            "action. Send a video, not a still image.",
+            "Video could not be decoded.",
         )
 
     def test_unusable_frame_rate_is_refused(self, clip, monkeypatch):
-        class _Capture:
-            def __init__(self, path):
-                pass
+        real_open = video.open_video
 
-            def isOpened(self):
-                return True
+        @contextmanager
+        def no_fps(path):
+            with real_open(path) as reader:
+                reader.fps = 0.0
+                yield reader
 
-            def get(self, prop):
-                return 0.0 if prop == cv2.CAP_PROP_FPS else 12.0
-
-            def release(self):
-                pass
-
-        monkeypatch.setattr(video.cv2, "VideoCapture", _Capture)
+        monkeypatch.setattr(video, "open_video", no_fps)
 
         with pytest.raises(LegacyHTTPError) as error:
             video.probe_video(str(clip))
@@ -127,17 +103,15 @@ class TestProbeVideo:
         _assert_image_error(error.value, "Video declares no usable frame rate.")
 
     def test_header_claim_over_file_size_is_recounted(self, clip, monkeypatch):
-        real_capture = cv2.VideoCapture
+        real_open = video.open_video
 
-        class _Capture(_DelegatingCapture):
-            def get(self, prop):
-                if prop == cv2.CAP_PROP_FRAME_COUNT:
-                    return float(clip.stat().st_size + 1)
-                return self._inner.get(prop)
+        @contextmanager
+        def inflated_count(path):
+            with real_open(path) as reader:
+                reader.frame_count = clip.stat().st_size + 1
+                yield reader
 
-        monkeypatch.setattr(
-            video.cv2, "VideoCapture", lambda path: _Capture(real_capture(path))
-        )
+        monkeypatch.setattr(video, "open_video", inflated_count)
 
         assert video.probe_video(str(clip)) == (_FPS, _FRAME_COUNT)
 
@@ -186,22 +160,23 @@ class TestReadFrameWindows:
         _assert_image_error(error.value, "Video could not be decoded.")
 
     def test_reads_sequentially_without_seeking(self, clip, monkeypatch):
-        real_capture = cv2.VideoCapture
-        sets = []
+        real_open = av.open
+        containers = []
 
-        class _Capture(_DelegatingCapture):
-            def set(self, prop, value):
-                sets.append((prop, value))
-                return self._inner.set(prop, value)
+        def recording_open(*args, **kwargs):
+            container = real_open(*args, **kwargs)
+            containers.append(container)
+            return container
 
-        monkeypatch.setattr(
-            video.cv2, "VideoCapture", lambda path: _Capture(real_capture(path))
-        )
-
+        monkeypatch.setattr(av, "open", recording_open)
         read = list(video.read_frame_windows(str(clip), windows=[[8, 9], [10, 11]]))
 
-        assert sets == []
+        assert len(containers) == 1
         assert [len(frames) for frames in read] == [2, 2]
+        for frame, index in zip(read[0] + read[1], [8, 9, 10, 11]):
+            assert np.allclose(
+                _channel_mean(frame), _frame_colour_bgr(index)[::-1], atol=12
+            )
 
 
 class TestDurationCap:
@@ -548,3 +523,21 @@ class TestVideoSourcePathUrl:
 
         assert error.value.status_code == 418
         assert error.value.message == "the teapot said no"
+
+
+@pytest.mark.parametrize("operation", ["probe", "recount", "windows"])
+def test_every_decoder_entry_point_refuses_external_references(
+    clip, tmp_path, operation
+):
+    playlist = tmp_path / "upload.m3u8"
+    playlist.write_text(
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXTINF:3.0,\n{clip}\n#EXT-X-ENDLIST\n"
+    )
+    with pytest.raises(LegacyHTTPError) as error:
+        if operation == "probe":
+            video.probe_video(str(playlist))
+        elif operation == "recount":
+            video._count_frames(str(playlist))
+        else:
+            list(video.read_frame_windows(str(playlist), windows=[[0, 1]]))
+    assert error.value.status_code == 400

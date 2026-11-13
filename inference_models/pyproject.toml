@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
   "numpy",
+  "av==14.2.0", # keep aligned with inference and SDK WebRTC requirements
   "torch>=2.0.0,<3.0.0",
   "torchvision",
   "opencv-python>=4.8.1.78",

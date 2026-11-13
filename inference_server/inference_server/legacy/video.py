@@ -1,9 +1,9 @@
 """Video input of the legacy action-recognition route.
 
-A clip arrives as a URL or base64 and lands in a temporary file, because
-OpenCV reads containers from a path. The file is probed for its frame rate
+A clip arrives as a URL or base64 and lands in a temporary file for the
+restricted decoder. The file is probed for its frame rate
 and frame count, checked against the duration cap, and read window by window
-in one sequential pass. Every OpenCV call here blocks; callers run the
+in one sequential pass. Video decoding blocks; callers run the
 decoding functions off the event loop.
 """
 
@@ -21,6 +21,7 @@ import cv2
 import numpy as np
 from fastapi import Response
 
+from inference_models.utils.video import VideoDecodeError, open_video
 from inference_server import configuration
 from inference_server.configuration import ALLOW_URL_INPUT, LEGACY_OFFLINE_MODE
 from inference_server.framework.input_parsers.url_fetch import (
@@ -41,7 +42,6 @@ _VIDEO_FETCH_ERROR = "Video could not be fetched from the URL."
 _URL_CONTENT_TOO_LARGE_ERROR = "Content is larger than this server accepts."
 _VIDEO_TOO_LARGE_ERROR = "Video is larger than this server accepts."
 _BASE64_DECODE_ERROR = "Video could not be decoded from base64."
-_VIDEO_DECODE_ERROR = "Video could not be decoded."
 _NO_FRAME_RATE_ERROR = "Video declares no usable frame rate."
 _URL_REFUSED_CODE = "URL_REFUSED"
 _URL_FETCH_FAILED_CODES = frozenset({"URL_FETCH_FAILED", "URL_FETCH_TIMEOUT"})
@@ -188,7 +188,7 @@ def ensure_clip_fits_the_duration_cap(frame_count: int, fps: float) -> None:
 
 
 def probe_video(path: str) -> Tuple[float, int]:
-    """Report the clip's frame rate and frame count without decoding it.
+    """Report the clip's frame rate and count, recounting invalid headers.
 
     The frame count comes from the container header, which nothing verifies.
     A frame cannot occupy less than one byte, so a header claiming more
@@ -204,14 +204,9 @@ def probe_video(path: str) -> Tuple[float, int]:
         LegacyHTTPError: 400 when the file does not decode, declares no
             usable frame rate, or holds fewer than two frames.
     """
-    capture = cv2.VideoCapture(path)
-    try:
-        if not capture.isOpened():
-            raise image_load_error(_VIDEO_DECODE_ERROR)
-        source_fps = float(capture.get(cv2.CAP_PROP_FPS))
-        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    finally:
-        capture.release()
+    with _open_video(path) as capture:
+        source_fps = capture.fps
+        frame_count = capture.frame_count
     if source_fps <= 0 or not np.isfinite(source_fps):
         raise image_load_error(_NO_FRAME_RATE_ERROR)
     if frame_count <= 0 or frame_count > Path(path).stat().st_size:
@@ -260,15 +255,12 @@ def read_frame_windows(
     def _window_frames(index: int) -> List[np.ndarray]:
         return [by_index[i] for i in windows[index] if i in by_index]
 
-    capture = cv2.VideoCapture(path)
-    try:
-        if not capture.isOpened():
-            raise image_load_error(_VIDEO_DECODE_ERROR)
+    with _open_video(path) as capture:
         position = 0
         stop = max(needed) if needed else -1
         while emitted < len(windows) and position <= stop:
-            read_succeeded, frame = capture.read()
-            if not read_succeeded:
+            frame = capture.read()
+            if frame is None:
                 break
             if position in needed:
                 by_index[position] = _to_rgb(frame=frame, max_side=max_frame_side)
@@ -278,8 +270,6 @@ def read_frame_windows(
                 still_wanted = {int(i) for window in windows[emitted:] for i in window}
                 by_index = {i: f for i, f in by_index.items() if i in still_wanted}
             position += 1
-    finally:
-        capture.release()
     while emitted < len(windows):
         yield _window_frames(emitted)
         emitted += 1
@@ -298,11 +288,17 @@ def _to_rgb(frame: np.ndarray, max_side: Optional[int]) -> np.ndarray:
 
 
 def _count_frames(path: str) -> int:
-    capture = cv2.VideoCapture(path)
-    try:
+    with _open_video(path) as capture:
         count = 0
-        while capture.read()[0]:
+        while capture.read() is not None:
             count += 1
-    finally:
-        capture.release()
     return count
+
+
+@contextlib.contextmanager
+def _open_video(path):
+    try:
+        with open_video(path) as reader:
+            yield reader
+    except VideoDecodeError as error:
+        raise image_load_error(str(error)) from error

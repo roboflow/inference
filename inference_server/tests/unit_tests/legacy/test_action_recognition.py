@@ -396,27 +396,31 @@ class TestClassifyVideo:
         assert list(temp_dir.iterdir()) == []
 
 
-_REAL_CAPTURE = cv2.VideoCapture
+_REAL_OPEN = video.open_video
 
 
-class _DelegatingCapture:
+class _DelegatingReader:
     released = []
     block = None
 
     def __init__(self, path):
-        self._capture = _REAL_CAPTURE(path)
+        self._context = _REAL_OPEN(path)
+        self._capture = self._context.__enter__()
 
     def read(self):
-        block = _DelegatingCapture.block
+        block = _DelegatingReader.block
         if block is not None:
             started, release = block
             started.set()
             release.wait(10)
         return self._capture.read()
 
-    def release(self):
-        _DelegatingCapture.released.append(self)
-        self._capture.release()
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        _DelegatingReader.released.append(self)
+        return self._context.__exit__(*args)
 
     def __getattr__(self, name):
         return getattr(self._capture, name)
@@ -427,8 +431,8 @@ class TestCancellation:
     async def test_cancel_during_a_read_closes_the_generator_and_releases_the_capture(
         self, clip, temp_dir, monkeypatch
     ):
-        monkeypatch.setattr(video.cv2, "VideoCapture", _DelegatingCapture)
-        _DelegatingCapture.released = []
+        monkeypatch.setattr(video, "open_video", _DelegatingReader)
+        _DelegatingReader.released = []
         started, release = threading.Event(), threading.Event()
         opened = []
         real_read_frame_windows = video.read_frame_windows
@@ -436,7 +440,7 @@ class TestCancellation:
         def _tracked(*args, **kwargs):
             generator = real_read_frame_windows(*args, **kwargs)
             opened.append(generator)
-            _DelegatingCapture.block = (started, release)
+            _DelegatingReader.block = (started, release)
             return generator
 
         monkeypatch.setattr(action_recognition, "read_frame_windows", _tracked)
@@ -454,23 +458,23 @@ class TestCancellation:
         try:
             while not started.is_set() and not task.done():
                 await asyncio.sleep(0.01)
-            released_before = len(_DelegatingCapture.released)
+            released_before = len(_DelegatingReader.released)
             task.cancel()
             await asyncio.sleep(0.05)
             assert not task.done()
-            assert len(_DelegatingCapture.released) == released_before
-            _DelegatingCapture.block = None
+            assert len(_DelegatingReader.released) == released_before
+            _DelegatingReader.block = None
             release.set()
             with pytest.raises(asyncio.CancelledError) as cancelled:
                 await task
         finally:
-            _DelegatingCapture.block = None
+            _DelegatingReader.block = None
             release.set()
 
         assert cancelled.value is not None
         assert len(opened) == 1
         assert inspect.getgeneratorstate(opened[0]) == inspect.GEN_CLOSED
-        assert len(_DelegatingCapture.released) > released_before
+        assert len(_DelegatingReader.released) > released_before
         assert list(temp_dir.iterdir()) == []
 
 
