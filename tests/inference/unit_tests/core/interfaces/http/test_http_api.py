@@ -260,6 +260,196 @@ def test_serverless_registers_sam3_routes_when_model_flags_are_enabled(
     assert "/sam3_3d/infer" in paths
 
 
+def _make_embedding_request() -> dict:
+    return {
+        "model_id": "resnet18",
+        "image": {"type": "url", "value": "https://example.com/test.jpg"},
+    }
+
+
+def test_serverless_opens_the_embeddings_route_but_no_other_gated_infer_route(
+    monkeypatch,
+) -> None:
+    interface, _, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    paths = _route_paths(interface)
+    assert "/infer/embeddings" in paths
+    assert (
+        not {
+            "/infer/object_detection",
+            "/infer/instance_segmentation",
+            "/infer/semantic_segmentation",
+            "/infer/classification",
+            "/infer/keypoints_detection",
+        }
+        & paths
+    )
+
+
+def test_lambda_does_not_register_the_embeddings_route(monkeypatch) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(http_api, "LAMBDA", True)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    model_manager = MagicMock()
+    model_manager.pingback = None
+    model_manager.num_errors = 0
+
+    interface = http_api.HttpInterface(model_manager=model_manager)
+
+    assert "/infer/embeddings" not in _route_paths(interface)
+
+
+def test_serverless_embeddings_route_beats_the_legacy_model_route(monkeypatch) -> None:
+    interface, model_manager, usage_check_mock, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+    assert "/{dataset_id}/{version_id:str}" in _route_paths(interface)
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/embeddings",
+            params={"api_key": "query-api-key"},
+            json=_make_embedding_request(),
+        )
+
+    assert response.status_code == 200, response.text
+    usage_check_mock.assert_awaited_once()
+    model_manager.add_model.assert_called_once()
+    assert model_manager.add_model.call_args.kwargs["required_capabilities"] == [
+        "image_embeddings"
+    ]
+    assert (
+        model_manager.infer_from_request_sync.call_args.args[0]
+        == "resnet18:capabilities=image_embeddings"
+    )
+
+
+def test_serverless_embeddings_route_rejects_an_empty_image_list(monkeypatch) -> None:
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/embeddings",
+            params={"api_key": "query-api-key"},
+            json={"model_id": "resnet18", "image": []},
+        )
+
+    assert response.status_code == 422
+    assert "At least one image is required" in response.text
+    model_manager.add_model.assert_not_called()
+
+
+def test_serverless_embeddings_route_refuses_a_list_above_the_limit(
+    monkeypatch,
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+    monkeypatch.setattr(http_api, "SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE", 2)
+    image = _make_embedding_request()["image"]
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/embeddings",
+            params={"api_key": "query-api-key"},
+            json={"model_id": "resnet18", "image": [image] * 3},
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "message": "The maximum number of images that can be embedded at once is 2"
+    }
+    model_manager.add_model.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "gcp_serverless, image_count",
+    [(True, 2), (False, 3)],
+    ids=["at_the_limit", "above_the_limit_off_serverless"],
+)
+def test_embeddings_route_runs_a_list_within_the_limit_or_off_serverless(
+    monkeypatch, gcp_serverless, image_count
+) -> None:
+    import inference.core.interfaces.http.http_api as http_api
+
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(
+            status_code=200,
+            workspace_id="rf-inference-benchmark",
+            under_cap=True,
+        ),
+    )
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", gcp_serverless)
+    monkeypatch.setattr(http_api, "SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE", 2)
+    image = _make_embedding_request()["image"]
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/embeddings",
+            params={"api_key": "query-api-key"},
+            json={"model_id": "resnet18", "image": [image] * image_count},
+        )
+
+    assert response.status_code == 200, response.text
+    model_manager.infer_from_request_sync.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "request_kwargs",
+    [
+        {},
+        {"params": {"api_key": "query-api-key"}},
+        {"headers": {"Authorization": "Bearer header-api-key"}},
+    ],
+    ids=["no_key", "query_key", "header_key"],
+)
+def test_serverless_embeddings_route_refuses_a_key_without_serverless_access(
+    monkeypatch, request_kwargs
+) -> None:
+    interface, model_manager, _, _ = _build_serverless_interface(
+        monkeypatch=monkeypatch,
+        usage_check_result=ServerlessUsageCheckResponse(status_code=401),
+    )
+
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/infer/embeddings", json=_make_embedding_request(), **request_kwargs
+        )
+
+    assert response.status_code == 401
+    model_manager.add_model.assert_not_called()
+    model_manager.infer_from_request_sync.assert_not_called()
+
+
 def test_serverless_sam3_3d_route_only_depends_on_sam3_3d_flag(
     monkeypatch,
 ) -> None:

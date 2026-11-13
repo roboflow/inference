@@ -223,6 +223,7 @@ from inference.core.env import (
     SAM3_FINE_TUNED_MODELS_ENABLED,
     SECURE_GATEWAY_HEALTH_CHECK_TIMEOUT,
     SECURE_GATEWAY_HEALTH_ENDPOINT_ENABLED,
+    SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE,
     STRUCTURED_API_LOGGING,
     USE_INFERENCE_MODELS,
     WEBRTC_WORKER_ENABLED,
@@ -241,6 +242,7 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     MissingServiceSecretError,
     ModelDeploymentNotSupportedError,
+    PayloadTooLargeError,
     RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
@@ -2211,29 +2213,6 @@ class HttpInterface(BaseInterface):
                 )
 
             @app.post(
-                "/infer/embeddings",
-                response_model=ImageEmbeddingResponse,
-                summary="Image embeddings",
-                description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
-            )
-            @with_route_exceptions
-            @usage_collector("request")
-            def infer_embeddings(
-                inference_request: ImageEmbeddingRequest,
-                api_key: Optional[str] = Query(
-                    default=None, description="Roboflow API key"
-                ),
-                countinference: Optional[bool] = None,
-                service_secret: Optional[str] = None,
-            ):
-                return process_inference_request(
-                    inference_request,
-                    api_key=api_key,
-                    countinference=countinference,
-                    service_secret=service_secret,
-                )
-
-            @app.post(
                 "/infer/keypoints_detection",
                 response_model=Union[KeypointsDetectionInferenceResponse, StubResponse],
                 summary="Keypoints detection infer",
@@ -2257,6 +2236,43 @@ class HttpInterface(BaseInterface):
                 logger.debug(f"Reached /infer/keypoints_detection")
                 return process_inference_request(
                     inference_request,
+                    countinference=countinference,
+                    service_secret=service_secret,
+                )
+
+        if not LAMBDA:
+
+            @app.post(
+                "/infer/embeddings",
+                response_model=ImageEmbeddingResponse,
+                summary="Image embeddings",
+                description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+            )
+            @with_route_exceptions
+            @usage_collector("request")
+            def infer_embeddings(
+                inference_request: ImageEmbeddingRequest,
+                api_key: Optional[str] = Query(
+                    default=None, description="Roboflow API key"
+                ),
+                countinference: Optional[bool] = None,
+                service_secret: Optional[str] = None,
+            ):
+                if (
+                    GCP_SERVERLESS
+                    and isinstance(inference_request.image, list)
+                    and len(inference_request.image)
+                    > SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE
+                ):
+                    message = (
+                        "The maximum number of images that can be embedded at once "
+                        f"is {SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE}"
+                    )
+                    raise PayloadTooLargeError(message=message, public_message=message)
+
+                return process_inference_request(
+                    inference_request,
+                    api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )

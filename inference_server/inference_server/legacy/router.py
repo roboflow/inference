@@ -166,6 +166,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["legacy"])
 infer_router = APIRouter(tags=["legacy"])
+embeddings_router = APIRouter(tags=["legacy"])
 control_plane_router = APIRouter(tags=["legacy"])
 registry_router = APIRouter(tags=["legacy"])
 catch_all_router = APIRouter(tags=["legacy"])
@@ -262,6 +263,8 @@ def include_legacy_routers(app: FastAPI) -> None:
     app.include_router(router)
     if not hosted:
         app.include_router(infer_router)
+    if not configuration.LAMBDA:
+        app.include_router(embeddings_router)
     if not configuration.LAMBDA and (
         configuration.LMM_ENABLED or configuration.MOONDREAM2_ENABLED
     ):
@@ -725,7 +728,7 @@ async def infer_classification(
     )
 
 
-@infer_router.post(
+@embeddings_router.post(
     "/infer/embeddings",
     response_model=ImageEmbeddingResponse,
     summary="Image embeddings",
@@ -740,6 +743,18 @@ async def infer_embeddings(
     api_key: Optional[str] = Query(default=None, description="Roboflow API key"),
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Response:
+    if (
+        configuration.GCP_SERVERLESS
+        and isinstance(inference_request.image, list)
+        and len(inference_request.image)
+        > configuration.SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE
+    ):
+        raise LegacyHTTPError(
+            413,
+            "The maximum number of images that can be embedded at once is "
+            f"{configuration.SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE}",
+        )
+
     api_key = resolve_api_key(request, api_key, inference_request.api_key)
     inference_request.api_key = api_key
     instance = capability_instance([IMAGE_EMBEDDINGS], inference_request.output_type)

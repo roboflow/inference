@@ -204,6 +204,7 @@ definition; the last column is the new reader.
 | `PERCEPTION_ENCODER_VERSION_ID` | `env.py:245` | `configuration.py:175` | `PE-Core-L14-336` |
 | `OWLV2_VERSION_ID` | `env.py:259` | `configuration.py:184` | `owlv2-large-patch14-ensemble` |
 | `CLIP_MAX_BATCH_SIZE` | `env.py:292` | `configuration.py:173` | `8` |
+| `SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE` | `env.py:296` | `configuration.py:382` | `8` |
 | `CLASS_AGNOSTIC_NMS` | `env.py:295-299` | `configuration.py:185`; `streamvision/stream/configuration.py:29,34` | `False` |
 | `CORE_MODELS_ENABLED` | `env.py:307` | `configuration.py:195` | `True` |
 | `CORE_MODEL_CLIP_ENABLED` | `env.py:310` | `configuration.py:196` | `True` |
