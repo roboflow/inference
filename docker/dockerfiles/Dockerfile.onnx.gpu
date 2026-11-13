@@ -302,7 +302,7 @@ COPY . .
 
 RUN /bin/make create_wheels_for_gpu_notebook && \
     python3 -m pip install --no-cache-dir --find-links dist/ \
-        dist/roboflow_workflows*.whl \
+        "$(ls dist/roboflow_workflows*.whl)[databricks]" \
         dist/streamvision*.whl \
         dist/inference_cli*.whl \
         dist/inference_core*.whl \
