@@ -18,6 +18,7 @@ from pathlib import Path
 
 import click
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
@@ -137,7 +138,7 @@ def _inventory(directory, *, names, version):
                 if canonicalize_name(Requirement(raw).name) == "inference-sdk"
             ]
             if len(sdk_requirements) != 1 or (
-                str(sdk_requirements[0].specifier) != f"=={version}"
+                sdk_requirements[0].specifier != SpecifierSet(f"=={version}")
                 or sdk_requirements[0].marker is not None
                 or sdk_requirements[0].url is not None
             ):
@@ -160,14 +161,23 @@ def _write_record(path, **fields):
     path.write_text(json.dumps(record, indent=2) + "\n")
 
 
-def _read_url(url):
+def _read_url(url, *, deadline=None):
     allowed_hosts = {"pypi.org", "files.pythonhosted.org"}
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in allowed_hosts:
         raise ValueError("Registry returned an unexpected download URL")
 
+    timeout = 30
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError("Dependency operation timed out")
+
+        timeout = min(timeout, remaining)
+
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    # Socket timeouts bound inactivity; in-flight reads can overrun the budget.
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         final_url = urllib.parse.urlparse(response.geturl())
         if final_url.scheme != "https" or final_url.hostname not in allowed_hosts:
             raise ValueError("Unexpected registry redirect")
@@ -175,6 +185,9 @@ def _read_url(url):
         data = response.read(MAX_RESPONSE_BYTES + 1)
         if len(data) > MAX_RESPONSE_BYTES:
             raise ValueError("Registry response exceeds the SDK size limit")
+
+    if deadline is not None and time.monotonic() >= deadline:
+        raise ValueError("Dependency operation timed out")
 
     return data
 

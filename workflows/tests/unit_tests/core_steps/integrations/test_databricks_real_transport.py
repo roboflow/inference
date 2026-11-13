@@ -1,0 +1,575 @@
+"""Network behaviour of the block with the real connector and pinned transport.
+
+These tests run ``roboflow_core/databricks_sql_image_source@v1`` unchanged,
+with the real ``databricks-sql-connector``, against the local HTTPS Thrift
+warehouse in ``databricks_thrift_harness.py``. Destination validation is the
+only thing patched (the test host resolves to 127.0.0.1 on the harness port),
+and a socket-level guard records every connection attempt the process makes
+and refuses anything that is not the harness, so a forbidden destination is
+asserted from the attempt, never from a request that may already have left.
+
+Covered: successful import across several fetch chunks, SNI / ``Host`` /
+single-destination invariants, no telemetry or feature-flag traffic, DNS
+changing after validation, retryable errors and forced reconnects, redirects
+to forbidden destinations, warehouse-supplied result links, invalid
+certificates, proxies, slow-query cancellation with bounded cleanup, and
+recovery after failures.
+"""
+
+import os
+import socket
+import threading
+import time
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List
+from unittest import mock
+
+import cv2
+import numpy as np
+import pytest
+import urllib3.util.connection
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source import (
+    transport,
+    v1,
+)
+
+pytest.importorskip("databricks.sql", reason="databricks extra not installed")
+pytest.importorskip("thrift", reason="databricks extra not installed")
+
+from tests.unit_tests.core_steps.integrations import (  # noqa: E402
+    databricks_thrift_harness as harness,
+)
+
+HOST = harness.HOST
+HTTP_PATH = harness.HTTP_PATH
+METADATA_HOST = "169.254.169.254"
+LINK_HOST = "result-links.example.invalid"
+POISONED_ANSWER = "10.0.0.5"
+
+
+def block_threads() -> List[str]:
+    """Names of live threads other than the harness server's own."""
+    return sorted(
+        thread.name
+        for thread in threading.enumerate()
+        if "serve_forever" not in thread.name
+        and "process_request_thread" not in thread.name
+    )
+
+
+def jpeg(value: int = 200) -> bytes:
+    encoded, buffer = cv2.imencode(".jpg", np.full((32, 48, 3), value, np.uint8))
+    assert encoded
+    return buffer.tobytes()
+
+
+def image_rows(count: int) -> List[Dict[str, Any]]:
+    return [{"id": i, "bytes": jpeg((i * 7) % 255)} for i in range(count)]
+
+
+@contextmanager
+def network_guard(allowed_port: int) -> Iterator[Dict[str, List[Any]]]:
+    """Record every connection attempt and DNS lookup; allow only the harness."""
+    seen: Dict[str, List[Any]] = {"connections": [], "lookups": []}
+    real_create_connection = urllib3.util.connection.create_connection
+    real_socket_create_connection = socket.create_connection
+    real_getaddrinfo = socket.getaddrinfo
+
+    def guard(address, *args, **kwargs):
+        seen["connections"].append(tuple(address))
+        if address[0] != "127.0.0.1" or int(address[1]) != allowed_port:
+            raise OSError(f"connection to {address} refused by the test guard")
+        return real_create_connection(address, *args, **kwargs)
+
+    def socket_guard(address, *args, **kwargs):
+        seen["connections"].append(tuple(address))
+        if address[0] != "127.0.0.1" or int(address[1]) != allowed_port:
+            raise OSError(f"connection to {address} refused by the test guard")
+        return real_socket_create_connection(address, *args, **kwargs)
+
+    def getaddrinfo(host, port, *args, **kwargs):
+        seen["lookups"].append(host)
+        if host == HOST:
+            # DNS "changed" after validation: the name now answers a private
+            # address. The pinned transport must never ask.
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", (POISONED_ANSWER, port))
+            ]
+        return real_getaddrinfo(host, port, *args, **kwargs)
+
+    with mock.patch.object(
+        urllib3.util.connection, "create_connection", side_effect=guard
+    ), mock.patch.object(
+        socket, "create_connection", side_effect=socket_guard
+    ), mock.patch.object(
+        socket, "getaddrinfo", side_effect=getaddrinfo
+    ):
+        yield seen
+
+
+@contextmanager
+def warehouse(
+    behaviour: harness.Behaviour, *, certificate_host: str = HOST
+) -> Iterator[harness.FakeWarehouse]:
+    """Serve a temporary TLS warehouse and redirect block DNS to its address.
+
+    Args:
+        behaviour (harness.Behaviour): Scripted rows, HTTP responses and operation states.
+        certificate_host (str): Hostname placed in the fixture certificate.
+
+    Yields:
+        harness.FakeWarehouse: Running localhost server with captured observations.
+    """
+    with harness.FakeWarehouse(
+        behaviour, certificate_host=certificate_host
+    ) as server, mock.patch.object(
+        v1, "resolve_and_validate_ips", return_value=["127.0.0.1"]
+    ), mock.patch.object(
+        v1, "ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES", True
+    ), mock.patch.object(
+        v1, "DATABRICKS_HTTPS_PORT", server.port
+    ), mock.patch.object(
+        v1, "TLS_TRUSTED_CA_FILE", server.ca_file
+    ), mock.patch.object(
+        v1, "block_enabled", return_value=True
+    ):
+        yield server
+
+
+def run_block(
+    timeout_seconds: int = 30, *, isolated: bool = False, **overrides: Any
+) -> list:
+    """Execute the block through the real connector with fixture input overrides.
+
+    Args:
+        timeout_seconds (int): Invocation deadline in seconds.
+        isolated (bool): Use the production subprocess rather than the in-process helper.
+        **overrides (Any): Block inputs replacing the fixture defaults.
+
+    Returns:
+        list: Image, name and metadata rows emitted by the block.
+    """
+    parameters = {
+        "server_hostname": HOST,
+        "http_path": HTTP_PATH,
+        "access_token": "dapi-test-token",
+        "catalog": "main",
+        "schema_name": "vision",
+        "table": "images",
+        "metadata_columns": ["id"],
+        "image_column": "bytes",
+        "image_name_column": "id",
+        "max_rows": 100,
+        "timeout_seconds": timeout_seconds,
+        "skip_undecodable": True,
+    }
+    parameters.update(overrides)
+    block = v1.DatabricksSQLImageSourceBlockV1()
+    run = block.run if isolated else block._run_in_process
+    rows = run(**parameters)
+
+    return rows
+
+
+def assert_only_the_pinned_warehouse_was_contacted(
+    server: harness.FakeWarehouse, seen: Dict[str, List[Any]]
+) -> None:
+    assert seen["connections"], "the connector made no connection at all"
+    assert all(
+        address == ("127.0.0.1", server.port) for address in seen["connections"]
+    ), seen["connections"]
+    assert HOST not in seen["lookups"], "the pinned transport resolved the name"
+    assert all(
+        connection["sni"] == HOST and connection["peer"] == "127.0.0.1"
+        for connection in server.observations.connections
+    ), server.observations.connections
+    assert {r["host_header"] for r in server.observations.requests} <= {HOST}
+    assert {r["path"] for r in server.observations.requests} <= {
+        HTTP_PATH
+    }, "a request left the warehouse path (telemetry / feature flags / staging)"
+    assert transport.current_pin() is None, "pin leaked out of the run"
+
+
+# --------------------------------------------------------------- happy path
+
+
+def test_imports_rows_across_fetch_chunks_over_the_pinned_tls_connection() -> None:
+    behaviour = harness.Behaviour(rows=image_rows(20), chunk_rows=8)
+    with warehouse(behaviour) as server, network_guard(server.port) as seen:
+        result = run_block()
+    assert [element["image_names"] for element in result] == [str(i) for i in range(20)]
+    assert all(element["images"].numpy_image.shape == (32, 48, 3) for element in result)
+    assert [element["metadata"] for element in result][:2] == [{"id": 0}, {"id": 1}]
+    methods = server.observations.thrift_methods
+    assert methods.count("FetchResults") == 3, methods
+    assert methods[-2:] == ["CloseOperation", "CloseSession"], "cleanup on success"
+    assert_only_the_pinned_warehouse_was_contacted(server, seen)
+
+
+def test_runs_through_the_execution_engine_with_the_real_connector() -> None:
+    """Verify runs through the execution engine with the real connector."""
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+
+    workflow = {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowParameter", "name": "token"}],
+        "steps": [
+            {
+                "type": "roboflow_core/databricks_sql_image_source@v1",
+                "name": "db",
+                "server_hostname": HOST,
+                "http_path": HTTP_PATH,
+                "access_token": "$inputs.token",
+                "catalog": "main",
+                "schema_name": "vision",
+                "table": "images",
+                "metadata_columns": ["id"],
+                "image_name_column": "id",
+                "max_rows": 3,
+            }
+        ],
+        "outputs": [
+            {"type": "JsonField", "name": "names", "selector": "$steps.db.image_names"}
+        ],
+    }
+    engine = ExecutionEngine.init(
+        workflow_definition=workflow,
+        init_parameters={"workflows_core.step_execution_mode": StepExecutionMode.LOCAL},
+        max_concurrent_steps=1,
+    )
+    behaviour = harness.Behaviour(rows=image_rows(5), chunk_rows=2)
+    with warehouse(behaviour) as server, network_guard(
+        server.port
+    ) as seen, mock.patch.object(
+        v1.DatabricksSQLImageSourceBlockV1,
+        "run",
+        v1.DatabricksSQLImageSourceBlockV1._run_in_process,
+    ):
+        result = engine.run(runtime_parameters={"token": "dapi-test-token"})
+    assert result[0]["names"] == ["0", "1", "2"]
+    assert_only_the_pinned_warehouse_was_contacted(server, seen)
+
+
+# ---------------------------------------------------- destination invariants
+
+
+def test_dns_changing_after_validation_cannot_steer_the_connection() -> None:
+    # `network_guard` answers the hostname with a private address; the run
+    # still lands on the validated address and never asks the resolver.
+    behaviour = harness.Behaviour(rows=image_rows(2))
+    with warehouse(behaviour) as server, network_guard(server.port) as seen:
+        result = run_block()
+    assert len(result) == 2
+    assert HOST not in seen["lookups"]
+    assert_only_the_pinned_warehouse_was_contacted(server, seen)
+
+
+def test_retryable_error_and_forced_reconnect_stay_on_the_pinned_address() -> None:
+    behaviour = harness.Behaviour(
+        rows=image_rows(3),
+        http_script=[
+            harness.HttpAction(status=503, headers={"Retry-After": "1"}),
+            harness.HttpAction(close_connection=True),
+        ],
+    )
+    with warehouse(behaviour) as server, network_guard(server.port) as seen:
+        result = run_block()
+    assert len(result) == 3
+    assert len(seen["connections"]) >= 2, "the connector reconnected"
+    assert_only_the_pinned_warehouse_was_contacted(server, seen)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        f"http://{METADATA_HOST}/latest/meta-data/",
+        f"https://{METADATA_HOST}/latest/meta-data/",
+        f"https://{LINK_HOST}{HTTP_PATH}",
+        f"http://{HOST}{HTTP_PATH}",
+        "/redirected",
+        HTTP_PATH,
+    ],
+)
+def test_redirects_are_not_followed_to_any_destination(location: str) -> None:
+    """Verify redirects are not followed to any destination.
+
+    Args:
+        location (str): Untrusted redirect target returned by the fixture warehouse.
+    """
+    behaviour = harness.Behaviour(
+        rows=image_rows(1),
+        http_script=[harness.HttpAction(status=302, headers={"Location": location})],
+    )
+    with warehouse(behaviour) as server, network_guard(server.port) as seen:
+        with pytest.raises(Exception) as info:
+            run_block(timeout_seconds=10)
+    assert "dapi-test-token" not in str(info.value)
+    assert all(
+        address == ("127.0.0.1", server.port) for address in seen["connections"]
+    ), seen["connections"]
+    assert {r["path"] for r in server.observations.requests} <= {HTTP_PATH}
+    assert METADATA_HOST not in seen["lookups"] and LINK_HOST not in seen["lookups"]
+    assert HOST not in seen["lookups"], "a redirect back to the name re-resolves"
+
+
+def test_result_links_supplied_by_the_warehouse_are_never_downloaded() -> None:
+    behaviour = harness.Behaviour(
+        rows=image_rows(1), result_links=[f"https://{LINK_HOST}/chunk-0.arrow"]
+    )
+    with warehouse(behaviour) as server, network_guard(server.port) as seen:
+        with pytest.raises(Exception) as info:
+            run_block(timeout_seconds=10)
+    assert "dapi-test-token" not in str(info.value)
+    assert "result links" in str(info.value)
+    assert LINK_HOST not in seen["lookups"]
+    assert all(
+        address == ("127.0.0.1", server.port) for address in seen["connections"]
+    ), seen["connections"]
+    assert transport.current_pin() is None
+    assert not transport.pin_active_anywhere()
+
+
+def test_invalid_certificate_is_refused_before_any_request_is_sent() -> None:
+    behaviour = harness.Behaviour(rows=image_rows(1))
+    with warehouse(behaviour, certificate_host=harness.OTHER_HOST) as server:
+        with network_guard(server.port) as seen:
+            with pytest.raises(Exception) as info:
+                run_block(timeout_seconds=10)
+    assert "dapi-test-token" not in str(info.value)
+    assert server.observations.requests == [], "no request may follow a bad cert"
+    assert seen["connections"], "the handshake was attempted against the pin"
+
+
+def test_proxy_settings_are_refused_while_pinned_without_any_connection() -> None:
+    behaviour = harness.Behaviour(rows=image_rows(1))
+    with warehouse(behaviour) as server, network_guard(server.port) as seen:
+        with mock.patch.dict(os.environ, {"HTTPS_PROXY": "http://127.0.0.1:1"}):
+            with pytest.raises(RuntimeError, match="proxy"):
+                run_block(timeout_seconds=10)
+    assert seen["connections"] == []
+    assert server.observations.requests == []
+
+
+# ------------------------------------------------- deadline and recovery
+
+
+def test_slow_query_is_cancelled_at_the_deadline_and_the_slot_is_released() -> None:
+    behaviour = harness.Behaviour(rows=image_rows(2), hold_running=True)
+    threads_before = block_threads()
+    with warehouse(behaviour) as server, network_guard(server.port) as seen:
+        started = time.monotonic()
+        with pytest.raises(TimeoutError, match="timeout_seconds"):
+            run_block(timeout_seconds=5)
+        elapsed = time.monotonic() - started
+        assert server.observations.cancelled.wait(timeout=v1.CLEANUP_GRACE_SECONDS)
+        assert server.observations.session_closed.wait(timeout=v1.CLEANUP_GRACE_SECONDS)
+        assert "CANCELED" in server.observations.operation_states
+        assert elapsed < 5 + v1.CLEANUP_GRACE_SECONDS, elapsed
+        assert_only_the_pinned_warehouse_was_contacted(server, seen)
+        # Recovery on the same warehouse: the next run is unaffected.
+        behaviour.hold_running = False
+        result = run_block(timeout_seconds=10)
+        assert len(result) == 2
+    time.sleep(0.1)
+    assert block_threads() == threads_before, "watchdog / connector threads"
+
+
+def test_repeated_failures_do_not_accumulate_queries_sessions_or_threads() -> None:
+    threads_before = block_threads()
+    behaviour = harness.Behaviour(rows=[{"id": 1, "bytes": b"not an image"}])
+    with warehouse(behaviour) as server, network_guard(server.port):
+        for _ in range(4):
+            with pytest.raises(ValueError, match="skipped"):
+                run_block(timeout_seconds=10)
+        methods = server.observations.thrift_methods
+        assert methods.count("CloseSession") == 4
+        assert methods.count("CloseOperation") == 4
+        behaviour.rows[:] = image_rows(1)
+        assert len(run_block(timeout_seconds=10)) == 1
+    time.sleep(0.1)
+    assert block_threads() == threads_before
+
+
+def _configure_child_fixture(server, *, tmp_path, monkeypatch):
+    attempts = tmp_path / "child-connections.jsonl"
+    # The fixture is installed only in the fresh test interpreter. Production
+    # has no test override for destination validation, ports or CA bundles.
+    (tmp_path / "sitecustomize.py").write_text(
+        f"""
+import json
+import socket
+from pathlib import Path
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source import v1
+v1.DATABRICKS_HTTPS_PORT = {server.port!r}
+v1.TLS_TRUSTED_CA_FILE = {server.ca_file!r}
+_original_lookup = socket.getaddrinfo
+_original_connect = socket.socket.connect
+
+def lookup(host, port, *args, **kwargs):
+    if host == {HOST!r}:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', port))]
+    return _original_lookup(host, port, *args, **kwargs)
+
+def connect(sock, address):
+    with Path({str(attempts)!r}).open('a') as output:
+        output.write(json.dumps(list(address)) + '\\n')
+    if address != ('127.0.0.1', {server.port!r}):
+        raise OSError('test refuses non-harness connection')
+    return _original_connect(sock, address)
+
+socket.getaddrinfo = lookup
+socket.socket.connect = connect
+""",
+        encoding="utf-8",
+    )
+    compile((tmp_path / "sitecustomize.py").read_text(), "sitecustomize.py", "exec")
+    monkeypatch.setenv(
+        "PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ".")
+    )
+
+    return attempts
+
+
+def test_production_subprocess_uses_real_connector_without_parent_hooks(
+    tmp_path, monkeypatch
+) -> None:
+    """Verify production subprocess uses real connector without parent hooks.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
+    import json
+
+    import thrift.transport.THttpClient  # noqa: F401 - connector import prerequisite
+    from databricks.sql.auth import thrift_http_client
+    from databricks.sql.common.unified_http_client import UnifiedHttpClient
+
+    behaviour = harness.Behaviour(rows=image_rows(12), chunk_rows=8)
+    parent_transport = thrift_http_client.THttpClient
+    parent_secondary = UnifiedHttpClient.request_context
+    with warehouse(behaviour) as server:
+        attempts = _configure_child_fixture(
+            server, tmp_path=tmp_path, monkeypatch=monkeypatch
+        )
+        result = run_block(isolated=True)
+        connections = [json.loads(line) for line in attempts.read_text().splitlines()]
+        assert connections
+        assert all(address == ["127.0.0.1", server.port] for address in connections)
+        assert server.observations.thrift_methods.count("FetchResults") == 2
+        assert {r["host_header"] for r in server.observations.requests} == {HOST}
+        assert all(c["sni"] == HOST for c in server.observations.connections)
+
+    assert [r["image_names"] for r in result] == [str(i) for i in range(12)]
+    assert all(r["images"].numpy_image.shape == (32, 48, 3) for r in result)
+    assert thrift_http_client.THttpClient is parent_transport
+    assert UnifiedHttpClient.request_context is parent_secondary
+    assert transport.current_pin() is None
+
+
+def test_production_subprocess_cancels_a_slow_real_query(tmp_path, monkeypatch) -> None:
+    """Verify production subprocess cancels a slow real query.
+
+    Args:
+        tmp_path (Path): Isolated temporary directory supplied by pytest.
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
+    behaviour = harness.Behaviour(rows=image_rows(1), hold_running=True)
+    with warehouse(behaviour) as server:
+        _configure_child_fixture(server, tmp_path=tmp_path, monkeypatch=monkeypatch)
+        started = time.monotonic()
+        with pytest.raises(TimeoutError, match="timeout_seconds"):
+            run_block(timeout_seconds=5, isolated=True)
+        elapsed = time.monotonic() - started
+        assert elapsed < 5 + v1.CLEANUP_GRACE_SECONDS, elapsed
+        assert server.observations.cancelled.wait(timeout=1)
+        assert server.observations.session_closed.wait(timeout=1)
+        assert "CANCELED" in server.observations.operation_states
+        assert {r["path"] for r in server.observations.requests} == {HTTP_PATH}
+        behaviour.hold_running = False
+        assert len(run_block(isolated=True)) == 1
+
+
+def test_native_parameters_cross_the_connector_boundary_without_interpolation():
+    """Verify native parameters cross the connector boundary without interpolation."""
+    attack = "images`; DROP TABLE other; --"
+    with warehouse(harness.Behaviour(rows=image_rows(1))) as server:
+        run_block(table=attack, max_rows=1)
+    request = server.observations.statements[0]
+    assert attack not in request.statement
+    assert "FROM IDENTIFIER(:source) LIMIT :row_limit" in request.statement
+    parameters = {
+        parameter.name: parameter.value.stringValue for parameter in request.parameters
+    }
+    assert parameters["source"] == "`main`.`vision`.`images``; DROP TABLE other; --`"
+    assert parameters["row_limit"] == "1"
+    assert request.canDecompressLZ4Result is False
+
+
+@pytest.mark.parametrize("chunked", [False, True])
+def test_response_budget_rejects_oversized_metadata_before_row_conversion(chunked):
+    """Verify response budget rejects oversized metadata before row conversion.
+
+    Args:
+        chunked (bool): Whether the oversized response uses chunked HTTP framing.
+    """
+    rows = [dict(image_rows(1)[0], note="x" * (2 * 1024 * 1024))]
+    behaviour = harness.Behaviour(
+        rows=rows,
+        columns=(("id", "bigint"), ("bytes", "binary"), ("note", "string")),
+        chunked=chunked,
+    )
+    with warehouse(behaviour), mock.patch.object(
+        v1, "MAX_IMAGE_PAYLOAD_BYTES", 1024
+    ), mock.patch.object(
+        v1, "build_metadata", side_effect=AssertionError("materialized")
+    ) as converted:
+        with pytest.raises(RuntimeError, match="(byte limit|Length exceeded)"):
+            run_block(metadata_columns=["note"])
+    converted.assert_not_called()
+
+
+def test_http_compression_is_rejected_before_thrift_parsing():
+    """Verify http compression is rejected before thrift parsing."""
+    with warehouse(harness.Behaviour(response_encoding="gzip")):
+        with pytest.raises(RuntimeError, match="compressed warehouse"):
+            run_block()
+
+
+def test_retryable_error_body_is_discarded_without_reading_or_decompression(
+    monkeypatch,
+):
+    """Verify retryable error body is discarded without reading or decompression.
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): Scoped replacements restored after this test.
+    """
+    from urllib3.response import HTTPResponse
+
+    original = HTTPResponse.read
+    rejected_body_reads = []
+
+    def _guarded_read(self, *args, **kwargs):
+        if self.status == 503:
+            rejected_body_reads.append(self.status)
+            pytest.fail("urllib3 drained an untrusted retry body before the byte check")
+        result = original(self, *args, **kwargs)
+
+        return result
+
+    monkeypatch.setattr(HTTPResponse, "read", _guarded_read)
+    behaviour = harness.Behaviour(
+        rows=image_rows(1),
+        http_script=[
+            harness.HttpAction(
+                status=503,
+                headers={"Content-Encoding": "gzip", "Retry-After": "0"},
+                body=b"untrusted retry body" * 100,
+            )
+        ],
+    )
+    with warehouse(behaviour) as server:
+        assert len(run_block()) == 1
+    assert rejected_body_reads == []
+    assert server.observations.thrift_methods.count("OpenSession") == 2
