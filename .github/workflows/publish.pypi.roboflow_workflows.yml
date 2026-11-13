@@ -1,9 +1,15 @@
 name: Publish roboflow-workflows to PyPI
 on:
-  release:
-    types: [created]
   workflow_dispatch:
     inputs:
+      expected_version:
+        description: Expected package version (set by the release coordinator)
+        type: string
+        default: ""
+      expected_revision:
+        description: Expected commit SHA (set by the release coordinator)
+        type: string
+        default: ""
       publish:
         description: "Publish the built wheel to PyPI (false = build-only smoke test)"
         type: choice
@@ -18,13 +24,24 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.repository == 'roboflow/inference' }}
+    env:
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 10
+    timeout-minutes: 50
+    concurrency:
+      group: pypi-roboflow-workflows-${{ github.event.inputs.publish == 'true' && 'publish' || github.run_id }}
+      cancel-in-progress: false
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify the requested candidate revision and version
+        run: bash .release/pypi/dependencies.sh guard --package roboflow-workflows
       - name: 🐍 Set up Python 3.12
         uses: actions/setup-python@v6
         with:
@@ -35,13 +52,29 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: roboflow-workflows-wheel
-          path: dist/roboflow_workflows-*.whl
+          path: dist/
+          if-no-files-found: error
+      - name: Verify published dependencies before upload
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
+      - name: Verify existing files and stage missing distributions
+        if: ${{ github.event.inputs.publish == 'true' }}
+        id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile roboflow-workflows --directory dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-prepare.json
+          echo "upload=$(jq -r '.upload' release-evidence/publication-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: 🚀 Publish roboflow-workflows to PyPI
-        # Release-triggered runs always publish. Manual dispatches publish
-        # only when the operator explicitly opts in — default is build-only
-        # so smoke-testing the packaging never accidentally re-tags PyPI.
-        if: ${{ github.event_name == 'release' || github.event.inputs.publish == 'true' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
+        if: ${{ github.event.inputs.publish == 'true' && steps.prepare.outputs.upload == 'true' }}
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          packages-dir: dist/
-          skip-existing: true
+          packages-dir: release-upload/
+      - name: Verify the complete published inventory
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/publish.sh verify --profile roboflow-workflows --directory dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-receipt.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && github.event.inputs.publish == 'true' }}
+        with:
+          name: roboflow-workflows-dependencies-${{ github.run_attempt }}
+          path: release-evidence/
+          if-no-files-found: error
