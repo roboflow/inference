@@ -4,8 +4,53 @@ import supervision as sv
 from roboflow_workflows.core_steps.classical_cv.size_measurement.v1 import (
     OUTPUT_KEY,
     SizeMeasurementBlockV1,
+    get_polygon_dimensions,
 )
-from roboflow_workflows.execution_engine.entities.base import Batch
+
+
+@pytest.mark.parametrize("backend", ["numpy", "tensor"])
+@pytest.mark.parametrize(
+    ("polygon", "expected"),
+    [
+        pytest.param(
+            [[1.25, 2.25], [11.75, 2.25], [11.75, 7.75], [1.25, 7.75]],
+            (10.5, 5.5),
+            id="fractional",
+        ),
+        pytest.param(
+            [[1, 2], [11, 2], [11, 7], [1, 7]],
+            (10.0, 5.0),
+            id="integer",
+        ),
+        pytest.param(
+            [[1.25, 1.25], [2.25, 2.25], [3.25, 3.25]],
+            (None, None),
+            id="collinear",
+        ),
+    ],
+)
+def test_size_measurement_polygon_dimensions(
+    backend: str,
+    polygon: list,
+    expected: tuple[float | None, float | None],
+) -> None:
+    """Measure polygon sides without losing fractional coordinates.
+
+    Args:
+        backend (str): The block implementation under test.
+        polygon (list): Polygon vertices in pixel coordinates.
+        expected (tuple): Expected width and height in pixels.
+    """
+    measure = get_polygon_dimensions
+    if backend == "tensor":
+        pytest.importorskip("inference_models")
+        from roboflow_workflows.core_steps.classical_cv.size_measurement.v1_tensor import (
+            get_polygon_dimensions as get_tensor_polygon_dimensions,
+        )
+
+        measure = get_tensor_polygon_dimensions
+
+    assert measure(polygon) == expected
 
 
 def test_size_measurement_block():

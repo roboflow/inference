@@ -109,8 +109,11 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             ]
         ),
     ] = Field(
-        description="Reference object used to calculate the dimensions of the specified objects. If multiple objects are provided, the highest confidence prediction will be used.",
-        examples=["$segmentation.reference_predictions"],
+        description="Reference detections or a polygon given as [x, y] vertices in pixel coordinates. If multiple detections are provided, the highest confidence detection is used.",
+        examples=[
+            "$segmentation.reference_predictions",
+            [[1.25, 2.25], [11.75, 2.25], [11.75, 7.75], [1.25, 7.75]],
+        ],
     )
     reference_dimensions: Union[
         str,
@@ -247,9 +250,30 @@ def get_detection_dimensions(
 
 
 def get_polygon_dimensions(polygon: list) -> Tuple[Optional[float], Optional[float]]:
+    """Measure the sides of the reference polygon's bounding rectangle.
+
+    Args:
+        polygon (list): Reference vertices as `[x, y]` pixel coordinates.
+
+    Returns:
+        Tuple[Optional[float], Optional[float]]: Pixel width and height,
+            or `(None, None)` for a degenerate polygon.
+    """
     polygon = np.array(polygon)
-    if len(polygon) >= 3 and cv.contourArea(polygon) > 0:
-        return compute_aligned_dimensions(polygon)
+    if len(polygon) < 3:
+        return None, None
+
+    # OpenCV requires float32 for floating-point contours.
+    if np.issubdtype(polygon.dtype, np.floating) and np.all(
+        np.abs(polygon) <= np.finfo(np.float32).max
+    ):
+        polygon = polygon.astype(np.float32, copy=False)
+
+    if cv.contourArea(polygon) > 0:
+        dimensions = compute_aligned_dimensions(polygon)
+        if np.isfinite(dimensions).all():
+            return dimensions
+
     return None, None
 
 
