@@ -1237,16 +1237,6 @@ def test_video_identifier_can_be_reused_after_rollback_reset():
     assert [entry.class_name for entry in result["timeline"]] == ["run"]
 
 
-def test_remote_mode_raises():
-    block = ActionRecognitionModelBlockV1(
-        api_key=None,
-        step_execution_mode=StepExecutionMode.REMOTE,
-    )
-
-    with pytest.raises(NotImplementedError, match="only supports LOCAL"):
-        _run(block, _make_frame(0))
-
-
 def test_tensor_sibling_forwards_tensor_materialised_frames():
     block, model = _make_block(tensor=True)
 

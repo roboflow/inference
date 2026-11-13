@@ -21,6 +21,10 @@ for contributor and maintainer responsibilities.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
+- Action Recognition Model v1 runs under REMOTE step execution. The block
+  keeps its per-video state and sends each window's model call to
+  `/infer/action_recognition` as a short MPEG-4 clip. It reads the model's
+  sampling contract from the package metadata instead of loading the model.
 
 ### Added
 
