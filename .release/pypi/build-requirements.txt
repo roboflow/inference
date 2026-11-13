@@ -1,5 +1,5 @@
 # Shared frontend/backend versions for release builds and isolated uv backends.
-uv==0.12.21
+uv==0.13.4
 setuptools==84.1.0
 wheel==0.46.3
 packaging==25.0
