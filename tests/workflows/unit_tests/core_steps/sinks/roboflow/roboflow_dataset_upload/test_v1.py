@@ -1,10 +1,13 @@
 import hashlib
 import json
+import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Optional
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, Optional
 from unittest import mock
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -13,6 +16,10 @@ import supervision as sv
 from fastapi import BackgroundTasks
 from requests_mock import Mocker
 from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload import v1, v1_tensor
+from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.active_learning import (
+    StrategyLimitType,
+    get_current_strategy_limit_usage,
+)
 from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     BatchCreationFrequency,
     RoboflowDatasetUploadBlockV1,
@@ -1282,20 +1289,45 @@ def test_run_sink_when_registration_should_happen_in_thread_pool() -> None:
         ), "Expected async execution status to be presented"
 
 
-@mock.patch.object(v1, "execute_registration")
+def _cache_with_workspace(api_key: str) -> MemoryCache:
+    cache = MemoryCache()
+    # codeql[py/weak-sensitive-data-hashing]: MD5 cache fingerprint; not crypto storage.
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    cache.set(
+        key=f"workflows:api_key_to_workspace:{api_key_hash}", value="my_workspace"
+    )
+    return cache
+
+
+def _daily_usage(cache: MemoryCache) -> Optional[int]:
+    return get_current_strategy_limit_usage(
+        cache=cache,
+        workspace="my_workspace",
+        project="my_project",
+        strategy_name="my_quota",
+        limit_type=StrategyLimitType.DAILY,
+    )
+
+
 def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
-    execute_registration_mock: MagicMock,
+    requests_mock: Mocker,
 ) -> None:
     # given
+    upload_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/upload"),
+        json={"success": True, "id": "roboflow_id"},
+    )
+    annotate_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/annotate/roboflow_id"),
+        json={"success": True},
+    )
     background_tasks = BackgroundTasks()
-    cache = MemoryCache()
-    platform_client = MagicMock()
     data_collector_block = RoboflowDatasetUploadBlockV1(
-        cache=cache,
+        cache=_cache_with_workspace(api_key="my_api_key"),
         api_key="my_api_key",
         background_tasks=background_tasks,
         thread_pool_executor=None,
-        platform_client=platform_client,
+        platform_client=SERVER_PLATFORM_CLIENT,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -1308,7 +1340,6 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
             {"class": "truck", "confidence": 0.3},
         ],
     }
-    execute_registration_mock.return_value = False, "OK"
     indices = [(0,), (1,), (2,)]
 
     # when
@@ -1338,37 +1369,191 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
         == [
             {
                 "error_status": False,
-                "message": "OK",
+                "message": "Successfully registered image and annotation",
             }
         ]
         * 3
     ), "Expected sync execution status to be presented"
-    execute_registration_mock.assert_has_calls(
-        [
-            call(
-                image=image,
-                prediction=prediction,
-                target_project="my_project",
-                usage_quota_name="my_quota",
-                persist_predictions=True,
-                minutely_usage_limit=10,
-                hourly_usage_limit=100,
-                daily_usage_limit=1000,
-                max_image_size=(128, 128),
-                compression_level=75,
-                registration_tags=["some"],
-                labeling_batch_prefix="my_batch",
-                new_labeling_batch_frequency="never",
-                cache=cache,
-                api_key="my_api_key",
-                platform_client=platform_client,
-                image_name=None,
-                metadata=None,
-            )
-        ]
-        * 3
+    assert upload_mock.call_count == 3
+    assert all(
+        request.qs
+        == {"api_key": ["my_api_key"], "batch": ["my_batch"], "tag": ["some"]}
+        for request in upload_mock.request_history
     )
+    assert [request.text for request in annotate_mock.request_history] == ["car"] * 3
     assert len(background_tasks.tasks) == 0, "Async tasks not to be added"
+
+
+@pytest.mark.parametrize(
+    "block_class",
+    [
+        pytest.param(RoboflowDatasetUploadBlockV1, id="numpy"),
+        pytest.param(
+            TensorRoboflowDatasetUploadBlockV1, marks=_TENSOR_ONLY, id="tensor"
+        ),
+    ],
+)
+def test_run_sink_registers_batch_concurrently_and_keeps_results_in_order(
+    block_class: type,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    all_uploads_in_flight = threading.Barrier(3, timeout=5)
+    last_upload_answered = threading.Event()
+    responses = {
+        b"first.jpg": {"success": True, "id": "first_id"},
+        b"second.jpg": {"duplicate": True, "id": "second_id"},
+        b"third.jpg": {"success": False},
+    }
+
+    class UploadHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self) -> None:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            image_name = re.search(rb'name="name"\r\n\r\n(.+?)\r\n', body).group(1)
+            all_uploads_in_flight.wait()
+            if image_name == b"first.jpg":
+                last_upload_answered.wait(timeout=5)
+            payload = json.dumps(responses[image_name]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            if image_name == b"third.jpg":
+                last_upload_answered.set()
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), UploadHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    session = roboflow_api._create_dataset_upload_session()
+    monkeypatch.setattr(
+        roboflow_api, "API_BASE_URL", f"http://127.0.0.1:{server.server_port}"
+    )
+    monkeypatch.setattr(roboflow_api, "_dataset_upload_session", session)
+    cache = _cache_with_workspace(api_key="my_api_key")
+    data_collector_block = block_class(
+        cache=cache,
+        api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
+        platform_client=SERVER_PLATFORM_CLIENT,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 128, 3), dtype=np.uint8),
+    )
+    indices = [(0,), (1,), (2,)]
+
+    # when
+    try:
+        result = data_collector_block.run(
+            images=Batch(content=[image, image, image], indices=indices),
+            predictions=None,
+            target_project="my_project",
+            usage_quota_name="my_quota",
+            persist_predictions=True,
+            minutely_usage_limit=10,
+            hourly_usage_limit=100,
+            daily_usage_limit=1000,
+            max_image_size=(128, 128),
+            compression_level=75,
+            registration_tags=[],
+            disable_sink=False,
+            fire_and_forget=True,
+            labeling_batch_prefix="my_batch",
+            labeling_batches_recreation_frequency="never",
+            image_name=Batch(content=["first", "second", "third"], indices=indices),
+        )
+    finally:
+        session.close()
+        server.shutdown()
+        server.server_close()
+
+    # then
+    assert result[:2] == [
+        {"error_status": False, "message": "Successfully registered image"},
+        {"error_status": False, "message": "Duplicated image"},
+    ], "Expected results in batch order, although the third upload finished first"
+    assert result[2]["error_status"] is True
+    assert "Server rejected image" in result[2]["message"]
+    assert _daily_usage(cache) == 1, "Expected credits of failed uploads returned"
+
+
+@pytest.mark.parametrize(
+    "block_class",
+    [
+        pytest.param(RoboflowDatasetUploadBlockV1, id="numpy"),
+        pytest.param(
+            TensorRoboflowDatasetUploadBlockV1, marks=_TENSOR_ONLY, id="tensor"
+        ),
+    ],
+)
+def test_run_sink_registers_first_datapoints_of_batch_within_usage_limit(
+    block_class: type,
+    requests_mock: Mocker,
+) -> None:
+    # given
+    upload_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/upload"),
+        json={"success": True, "id": "roboflow_id"},
+    )
+    cache = _cache_with_workspace(api_key="my_api_key")
+    data_collector_block = block_class(
+        cache=cache,
+        api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
+        platform_client=SERVER_PLATFORM_CLIENT,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((128, 128, 3), dtype=np.uint8),
+    )
+    indices = [(0,), (1,), (2,), (3,)]
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=[image] * 4, indices=indices),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=2,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=[],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+        image_name=Batch(
+            content=["first", "second", "third", "fourth"], indices=indices
+        ),
+    )
+
+    # then
+    assert result == [
+        {"error_status": False, "message": "Successfully registered image"},
+        {"error_status": False, "message": "Successfully registered image"},
+        {
+            "error_status": False,
+            "message": "Registration skipped due to usage quota exceeded",
+        },
+        {
+            "error_status": False,
+            "message": "Registration skipped due to usage quota exceeded",
+        },
+    ]
+    assert sorted(
+        request.text.fields["name"] for request in upload_mock.request_history
+    ) == ["first.jpg", "second.jpg"]
+    assert _daily_usage(cache) == 2
 
 
 @pytest.mark.parametrize(
@@ -1457,26 +1642,26 @@ def test_run_sink_when_upload_retry_reports_duplicate(
     return_strategy_credit_mock.assert_called_once()
 
 
-@mock.patch.object(v1, "execute_registration")
 def test_run_sink_when_predictions_not_provided(
-    execute_registration_mock: MagicMock,
+    requests_mock: Mocker,
 ) -> None:
     # given
+    upload_mock = requests_mock.post(
+        url=wrap_url(f"{API_BASE_URL}/dataset/my_project/upload"),
+        json={"success": True, "id": "roboflow_id"},
+    )
     background_tasks = BackgroundTasks()
-    cache = MemoryCache()
-    platform_client = MagicMock()
     data_collector_block = RoboflowDatasetUploadBlockV1(
-        cache=cache,
+        cache=_cache_with_workspace(api_key="my_api_key"),
         api_key="my_api_key",
         background_tasks=background_tasks,
         thread_pool_executor=None,
-        platform_client=platform_client,
+        platform_client=SERVER_PLATFORM_CLIENT,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
     )
-    execute_registration_mock.return_value = False, "OK"
     indices = [(0,), (1,), (2,)]
 
     # when
@@ -1504,36 +1689,12 @@ def test_run_sink_when_predictions_not_provided(
         == [
             {
                 "error_status": False,
-                "message": "OK",
+                "message": "Successfully registered image",
             }
         ]
         * 3
     ), "Expected sync execution status to be presented"
-    execute_registration_mock.assert_has_calls(
-        [
-            call(
-                image=image,
-                prediction=None,
-                target_project="my_project",
-                usage_quota_name="my_quota",
-                persist_predictions=True,
-                minutely_usage_limit=10,
-                hourly_usage_limit=100,
-                daily_usage_limit=1000,
-                max_image_size=(128, 128),
-                compression_level=75,
-                registration_tags=["some"],
-                labeling_batch_prefix="my_batch",
-                new_labeling_batch_frequency="never",
-                cache=cache,
-                api_key="my_api_key",
-                platform_client=platform_client,
-                image_name=None,
-                metadata=None,
-            )
-        ]
-        * 3
-    )
+    assert upload_mock.call_count == 3
     assert len(background_tasks.tasks) == 0, "Async tasks not to be added"
 
 
