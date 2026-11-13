@@ -207,9 +207,26 @@ def _build_merged_image_metadata(
     return image_metadata
 
 
-def _empty_detections(class_name: str) -> Detections:
+def _empty_detections(
+    class_name: str, *, source_metadata: Optional[dict]
+) -> Detections:
     """Empty merged result — built on WORKFLOWS_IMAGE_TENSOR_DEVICE because there
     is no source row whose device we could inherit."""
+    image_metadata = _build_merged_image_metadata(
+        source_metadata=source_metadata, class_id=0, class_name=class_name
+    )
+    for key in (
+        IMAGE_DIMENSIONS_KEY,
+        PARENT_COORDINATES_KEY,
+        PARENT_DIMENSIONS_KEY,
+        ROOT_PARENT_COORDINATES_KEY,
+        ROOT_PARENT_DIMENSIONS_KEY,
+    ):
+        values = image_metadata[key]
+        if values is not None:
+            values = list(values)
+            image_metadata[key] = None if None in values else values
+
     return Detections(
         xyxy=torch.zeros(
             (0, 4), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
@@ -220,9 +237,7 @@ def _empty_detections(class_name: str) -> Detections:
         confidence=torch.zeros(
             (0,), dtype=torch.float32, device=WORKFLOWS_IMAGE_TENSOR_DEVICE
         ),
-        image_metadata=_build_merged_image_metadata(
-            source_metadata=None, class_id=0, class_name=class_name
-        ),
+        image_metadata=image_metadata,
         bboxes_metadata=None,
     )
 
@@ -243,7 +258,17 @@ class DetectionsMergeBlockV1(WorkflowBlock):
             or detections.xyxy is None
             or int(detections.xyxy.shape[0]) == 0
         ):
-            return {OUTPUT_KEY: _empty_detections(class_name=class_name)}
+            source_metadata = (
+                detections.image_metadata if detections is not None else None
+            )
+            if not source_metadata and isinstance(predictions, tuple):
+                source_metadata = predictions[0].image_metadata
+
+            return {
+                OUTPUT_KEY: _empty_detections(
+                    class_name=class_name, source_metadata=source_metadata
+                )
+            }
 
         # Single device policy for the merged output: pin to
         # WORKFLOWS_IMAGE_TENSOR_DEVICE so the non-empty path matches

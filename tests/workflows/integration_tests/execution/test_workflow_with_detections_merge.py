@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 
 from inference.core.env import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
@@ -264,3 +265,100 @@ def test_detections_merge_workflow_with_tensor_input(
     assert merged_bbox[3] > merged_bbox[1], "y2 should be greater than y1"
     assert merged_bbox[2] - merged_bbox[0] > 100, "Merged box should be reasonably wide"
     assert merged_bbox[3] - merged_bbox[1] > 100, "Merged box should be reasonably tall"
+
+
+@pytest.mark.parametrize("origin", [(40, 30), (0, 0)])
+@pytest.mark.parametrize(
+    ("box_dtype", "empty"),
+    [
+        pytest.param(np.float32, False, id="float"),
+        pytest.param(np.uint8, False, id="uint8"),
+        pytest.param(np.float32, True, id="empty"),
+    ],
+)
+def test_detections_merge_preserves_image_frame(
+    origin: tuple[int, int], box_dtype: type, empty: bool
+) -> None:
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowBatchInput",
+                "name": "detections",
+                "kind": ["object_detection_prediction"],
+                "dimensionality": 1,
+            }
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/detections_merge@v1",
+                "name": "merge",
+                "predictions": "$inputs.detections",
+                "class_name": "union",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": frame,
+                "selector": "$steps.merge.predictions",
+                "coordinates_system": frame,
+            }
+            for frame in ("own", "parent")
+        ],
+    }
+    frame_metadata = {
+        "image_dimensions": [60, 80],
+        "parent_id": "crop",
+        "parent_coordinates": list(origin),
+        "parent_dimensions": [120, 160],
+        "root_parent_id": "image",
+        "root_parent_coordinates": list(origin),
+        "root_parent_dimensions": [120, 160],
+    }
+    boxes = [] if empty else [[10, 12, 20, 22], [16, 18, 30, 28]]
+    confidences = [] if empty else [0.85, 0.95]
+    classes = [0] * len(boxes)
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        detections = NativeDetections(
+            xyxy=torch.tensor(boxes, dtype=torch.float32).reshape(-1, 4),
+            confidence=torch.tensor(confidences, dtype=torch.float32),
+            class_id=torch.tensor(classes, dtype=torch.long),
+            image_metadata={**frame_metadata, CLASS_NAMES_KEY: {0: "object"}},
+        )
+    else:
+        detections = sv.Detections(
+            xyxy=np.array(boxes, dtype=box_dtype).reshape(-1, 4),
+            confidence=np.array(confidences, dtype=np.float32),
+            class_id=np.array(classes, dtype=int),
+            data={
+                key: np.array([value] * len(boxes))
+                for key, value in frame_metadata.items()
+            },
+            metadata=frame_metadata if empty else {},
+        )
+
+    engine = ExecutionEngine.init(workflow_definition=definition, init_parameters={})
+    try:
+        (result,) = engine.run(
+            runtime_parameters={"detections": [detections]}, serialize_results=True
+        )
+    finally:
+        engine.close()
+
+    assert result["own"]["image"] == {"width": 80, "height": 60}
+    assert result["parent"]["image"] == {"width": 160, "height": 120}
+    if empty:
+        assert result["own"]["predictions"] == []
+        assert result["parent"]["predictions"] == []
+    else:
+        (own,) = result["own"]["predictions"]
+        (parent,) = result["parent"]["predictions"]
+        assert (own["x"], own["y"]) == (20.0, 20.0)
+        assert (parent["x"], parent["y"]) == (20.0 + origin[0], 20.0 + origin[1])
+        for row in (own, parent):
+            assert (row["width"], row["height"]) == (20.0, 16.0)
+            assert row["class"] == "union"
+            assert row["confidence"] == pytest.approx(0.85)
+        assert own["parent_id"] == "crop"
+        assert parent["parent_id"] == "image"
