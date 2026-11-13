@@ -32,17 +32,75 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
-- Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an optional `reference_examples` input for `object-detection`: up to 10 labeled example images, each `{"image": ..., "annotations": [{"class", "x", "y", "width", "height"}]}` in pixels of that image, the Roboflow prediction format. The examples go before the image to label in every request, so the model sees what each class looks like and how tightly it is boxed. Gemini gets the example images with their boxes and labels drawn on them. Pillow's default font only draws ASCII, so when a label is outside printable ASCII the boxes show numbers and the request text maps them to the labels. OpenAI gets up to 3 crops per label, grouped by label (the output labels, so `output_classes` when set). Example images load one at a time, like a workflow image input with `prevent_local_images_loading` on, whatever the engine sets: the host's URL policy applies and local file paths are refused. Each image is released once rendered, so only the boxed images or crops stay in memory. Each block instance keeps the parts of its last examples, so a job or a request fetches them once. The manifest schema describes the examples and their limit. A selector can provide the whole list, but selectors inside an example are refused. Other tasks reject the input. Without it the requests are unchanged.
+- Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an optional `reference_examples` input for `object-detection`: up to 10 labeled example images, each `{"image": ..., "annotations": [{"class", "x", "y", "width", "height"}]}` in pixels of that image, the Roboflow prediction format. The examples go before the image to label in every request, so the model sees what each class looks like and how tightly it is boxed. Gemini gets the example images with their boxes and labels drawn on them. Pillow's default font only draws ASCII, so when a label is outside printable ASCII the boxes show numbers and the request text maps them to the labels. OpenAI gets up to 3 crops per label, grouped by label (the output labels, so `output_classes` when set). Example images load one at a time, like a workflow image input with `prevent_local_images_loading` on, whatever the engine sets: the host's URL policy applies and local file paths are refused. Each image is released once rendered, so only the boxed images or crops stay in memory. The rendered examples are kept per process and shared by every instance of both blocks: up to 8 example sets and 32 MB, each for 15 minutes from when it is built. So a host that runs several execution engines, such as one per thread, fetches and renders an example set once instead of once per engine, and a run after those 15 minutes sees what the URLs serve then. Only identical examples and labels share an entry, examples with an in-memory image render on every call, and a request for examples that are being rendered waits for that build. The manifest schema describes the examples and their limit. A selector can provide the whole list, but selectors inside an example are refused. Other tasks reject the input. Without it the requests are unchanged.
 - OpenAI Decisions block (`roboflow_core/open_ai_decisions@v1`): asks OpenAI's Decisions API (`POST /v1/decisions`, GPT-6 Luna) typed questions about each image and returns probabilities instead of generated text.
   - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
   - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
   - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
+- Databricks SQL Image Source block (`roboflow_core/databricks_sql_image_source@v1`): reads selected columns from a Databricks SQL table or view and emits Workflow images (`images`), optional column-based `image_names`, explicitly selected non-binary `metadata`, and bounded per-row `errors`. The block has no image input and produces batch outputs for downstream blocks such as Roboflow Dataset Upload. Operator guide: `docs/workflows/databricks_sql_image_source.md`.
+  - Query interface: `catalog`, `schema_name`, `table`, image/name columns and explicit metadata columns feed a fixed SELECT with native identifier and LIMIT parameters. Arbitrary SQL is not accepted; customers can define filters and joins in Databricks views. Credentials are `server_hostname`, `http_path` and `access_token` (reference a Workflow input or secret); `max_rows`, `timeout_seconds` and `skip_undecodable` control the run.
+  - Metadata validation: rows exceeding string, nesting, collection or row-byte limits are skipped and reported through bounded `errors` diagnostics, including when every row is rejected. Accepted metadata is preserved without truncation or deep-container stringification. Success and error outputs use aligned null positions so image consumers skip rejected rows and a separate branch can report errors.
+  - Optional dependency: `roboflow-workflows[databricks]` (`databricks-sql-connector==4.8.0`). Every Roboflow inference server image (`docker/` and `inference_server/docker/`) installs the extra; the block is registered only when the supported connector is installed.
+  - Rollout switch `DATABRICKS_SQL_IMAGE_SOURCE_ENABLED` (engine configuration `databricks_sql_image_source_enabled`): unset, the host resolves it to false on the hosted platform (`GCP_SERVERLESS` / `LAMBDA`) and true elsewhere; an explicit value wins. Disabled or connector unavailable: the block is not listed, a Workflow referencing it is rejected at compile time with the reason, and no connection is attempted. Read at startup (redeploy to change).
+  - Destination policy: only Databricks workspace hosts (`*.cloud.databricks.com`, `*.gcp.databricks.com`, `*.azuredatabricks.net`, whole-string validation) and SQL warehouse paths (cluster paths self-hosted only); the host must resolve to global addresses unless `ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES=true` on a self-hosted server. The connector's Thrift transport retains the validated address for its lifetime, with the hostname kept for TLS verification and `Host`. Redirects (including relative redirects), proxies, HTTP, disabled verification, CloudFetch result links and secondary connector clients are refused.
+  - Process isolation: each invocation uses a disposable subprocess so connector hooks cannot affect unrelated clients. A reusable trusted-worker supervisor checks JSON size before serialization, manages deadlines and bounded cleanup, and allows integration-specific validation of temporary outputs before loading. This is not an OS sandbox or a hard process-memory limit.
+  - Bounds, per invocation and configurable: `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES` (1 GiB covering encoded bytes, decoded pixels, names, metadata and row diagnostics), `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` (32 MiB) and `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` (25 MP). JPEG and PNG are the only accepted formats; other formats, including WebP, are rejected before decoder construction. Image budgets are reserved before decoding, and decoded shapes are checked again. HTTP/Thrift byte and structure limits bound response parsing; compressed HTTP and Arrow/LZ4 results are refused. Inline result chunks are requested at 8 rows / twice the image byte limit, with a server-side row limit.
+  - Deadlines: `timeout_seconds` starts before isolated worker launch, with a server-side `STATEMENT_TIMEOUT`, bounded retries and a 35 s child cleanup allowance. Deadline interrupts wait for pending query cancellation before cursor/session teardown, within that allowance. Cancellation is best effort; parent output loading checks the deadline between bounded operations.
+  - Validation tooling: local transport fixtures and a protected live-warehouse runner exercise connection, result-validation, failure and recovery scenarios. The live runner creates temporary fixture views using a separate setup credential; staging acceptance remains separate.
+
+### Fixed
+
+- Large inline reference images use chunked content fingerprints for cache keys,
+  avoiding a full JSON copy of their image data on every warm lookup. Image
+  contents, metadata, annotations, label order and provider still determine reuse.
+- Reference-example cache waits expire 60 seconds after a build starts, allowing
+  later calls to retry a stalled download. Expired builds cannot overwrite a
+  newer result. The cache does not cancel the original synchronous download.
+  Its retained-string byte budget now includes Unicode storage and Python
+  string headers.
+
+### Execution engine
+
+- A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
+
+## `0.2.16`
+
+Bundled execution engine: `1.17.1`.
+
+### Changed
+
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
+  releases that allow Pillow 13.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
 
 ### Fixed
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as
   `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
 - `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
+
+## `0.2.15.post2`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Gemini 4 Carbon in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `xhigh` and `max` thinking levels.
+- Gemini 4 Hydrogen (`gemini-4-hydrogen`) in the Google Gemini v6 block (`roboflow_core/google_gemini@v6`), including instance segmentation and the `low`, `medium`, `high`, `xhigh` and `max` thinking levels.
+
+## `0.2.15.post1`
+
+Bundled execution engine: `1.17.1`.
+
+### Added
+
+- Add Claude Fable 5.2 to the Anthropic Claude v5 model options.
+- Add Muse Ember to the Meta VLM v3 model options.
 
 ## `0.2.15`
 
