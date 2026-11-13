@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterator, Optional, Union
 
 import av
+import cv2
 import numpy as np
 
 # FFmpeg checks this before calling the selected demuxer's read_header. Do not
@@ -90,8 +91,12 @@ class VideoReader:
             pixels = frame.to_ndarray(format="bgr24")
             # OpenCV's default auto-orientation supports quarter turns too.
             rotation = frame.rotation
-            if rotation in (-270, -180, -90, 90, 180, 270):
-                pixels = np.rot90(pixels, k=round(rotation / 90))
+            if rotation in (90, -270):
+                pixels = cv2.rotate(pixels, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            elif rotation in (180, -180):
+                pixels = cv2.rotate(pixels, cv2.ROTATE_180)
+            elif rotation in (270, -90):
+                pixels = cv2.rotate(pixels, cv2.ROTATE_90_CLOCKWISE)
             pixels = np.ascontiguousarray(pixels)
         except av.FFmpegError as error:
             raise VideoDecodeError(_DECODE_ERROR) from error

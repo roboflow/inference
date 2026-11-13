@@ -116,13 +116,22 @@ def test_display_rotation_matches_opencv(tmp_path, quarter_turns):
     path.write_bytes(data)
     capture = cv2.VideoCapture(str(path))
     try:
-        ok, expected = capture.read()
-        assert ok
+        expected = []
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            expected.append(frame)
     finally:
         capture.release()
-    actual = _read_all(path)[0]
-    assert actual.shape == expected.shape
-    np.testing.assert_allclose(actual, expected, atol=2)
+
+    actual = _read_all(path)
+    assert len(actual) == len(expected) == 24
+    for rotated, original in zip(actual, expected):
+        assert rotated.shape == original.shape
+        assert rotated.dtype == np.uint8
+        assert rotated.flags.c_contiguous
+        np.testing.assert_allclose(rotated, original, atol=2)
 
 
 @pytest.mark.parametrize("suffix", [".m3u8", ".mp4", ".video"])

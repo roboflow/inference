@@ -8,6 +8,8 @@
   action recognition in both server stacks reject playlists, manifests and other
   external media references before model inference. Preserve raw H.264 bitstream
   frame rates instead of using the demuxer's default rate for duration and sampling.
+  Use OpenCV's optimized rotation for display orientation to avoid the cost of
+  copying a rotated NumPy view.
 
 - RF-DETR ONNX models with static input shapes (object detection, instance
   segmentation, semantic segmentation and keypoints) no longer run out of GPU
