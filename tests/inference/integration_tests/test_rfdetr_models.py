@@ -160,6 +160,10 @@ def test_rfdetr_segmentation_via_legacy_endpoint(
     assert_instances_detected(response)
 
 
+@pytest.mark.skipif(
+    os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true",
+    reason="RF-DETR semantic segmentation requires USE_INFERENCE_MODELS=true",
+)
 @pytest.mark.parametrize("alias", list(RFDETR_SEMANTIC_ALIASES))
 def test_rfdetr_semantic_segmentation_via_v1_endpoint(
     alias: str, auth_mode: str, clean_loaded_models_every_test_fixture
@@ -179,6 +183,10 @@ def test_rfdetr_semantic_segmentation_via_v1_endpoint(
     assert_ade20k_semantic_map(response)
 
 
+@pytest.mark.skipif(
+    os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true",
+    reason="RF-DETR semantic segmentation requires USE_INFERENCE_MODELS=true",
+)
 @pytest.mark.parametrize(
     "model_id",
     list(RFDETR_SEMANTIC_ALIASES.values()),
