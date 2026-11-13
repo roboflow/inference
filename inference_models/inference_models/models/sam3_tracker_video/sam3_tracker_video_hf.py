@@ -52,12 +52,16 @@ stay within it, and it is also the longest clip that can be embedded.
 
 import threading
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference_models.configuration import SAM3_VIDEO_CACHE_MAX_GB
+from inference_models.configuration import (
+    SAM3_VIDEO_CACHE_MAX_GB,
+    SAM3_VIDEO_DECODE_BUFFER_BYTES,
+    SAM3_VIDEO_MAX_SOURCE_PIXELS,
+)
 from inference_models.errors import MissingDependencyError, ModelInputError
 from inference_models.logger import LOGGER
 from inference_models.models.common.hf_streaming_video import HFStreamingVideoBase
@@ -70,6 +74,11 @@ from inference_models.models.sam3_tracker_video.clip_cache import (
     cache_frame_limit,
     cached_frame_bytes,
     host_tensor,
+)
+from inference_models.models.sam3_tracker_video.frame_source import (
+    VideoFrameSource,
+    VideoInputLimitError,
+    embedding_admission,
 )
 
 #: One object's point prompts: frame index -> ((x, y, label), ...) in click order.
@@ -159,7 +168,7 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
     @torch.inference_mode()
     def embed_video(
         self,
-        frames: List[np.ndarray],
+        frames: Union[List[np.ndarray], VideoFrameSource],
         *,
         video_id: str,
         encode_frames: bool = False,
@@ -172,13 +181,12 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         same number of frames and frame size: that clip is then kept as it is,
         with every frame it has encoded, and nothing is preprocessed. Use it
         when an id always names the same clip, so that asking again for a clip
-        the worker still has costs no encoding. The clip under
-        that id and the least recently used clips that have to go for this
-        one to fit are forgotten before it is preprocessed, so their memory
-        is free while it is built; a call already running on one of them
-        keeps it and finishes. Frames are preprocessed ``EMBED_CHUNK_FRAMES``
-        at a time and each is kept as its own tensor in the model's dtype, so
-        the extra memory of an embed is one chunk in full precision.
+        the worker still has costs no encoding. A new clip is published only
+        on commit. Capacity is reserved incrementally, evicting least recently
+        used clips (possibly the previous clip under this id) before allocation. Active
+        calls may still retain an evicted clip. Original inputs are consumed in
+        byte-limited batches of at most ``EMBED_CHUNK_FRAMES``; processed frames
+        are kept as separate tensors in the model's dtype.
 
         The image encoder runs on a frame the first time any session needs
         it, after which the frame's pixels are released; with
@@ -187,8 +195,9 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         once the clip is replaced or evicted.
 
         Args:
-            frames: The clip's frames in order, RGB ``(H, W, 3)`` uint8, all
-                the same size.
+            frames: RGB ``(H, W, 3)`` uint8 frames of one size, or the internal
+                owned VideoFrameSource used by local/threaded HTTP servers.
+                Sources decode only a byte-limited batch at a time.
             video_id: Caller-chosen id the clip is kept under.
             encode_frames: Start encoding every frame in the background.
             keep_existing: Keep the clip already under ``video_id`` when it
@@ -201,41 +210,136 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
             ModelInputError: If there are no frames, they differ in size, or
                 there are more than the cache holds.
         """
-        if not frames:
-            raise ModelInputError(message="A video needs at least one frame.")
+        check = frames.check_cancelled if isinstance(frames, VideoFrameSource) else None
+        with embedding_admission(check):
+            if isinstance(frames, VideoFrameSource):
+                with frames.consume():
+                    clip = self._embed_source(
+                        frames, video_id, keep_existing=keep_existing
+                    )
+            else:
+                clip = self._embed_list(frames, video_id, keep_existing=keep_existing)
 
-        sizes = {frame.shape[:2] for frame in frames}
+            if encode_frames:
+                self._start_encoding(video_id, clip)
+
+            description = {
+                "video_id": video_id,
+                "n_frames": clip.n_frames,
+                "height": clip.video_size[0],
+                "width": clip.video_size[1],
+            }
+
+        return description
+
+    def _embed_source(self, source, video_id, *, keep_existing):
+        # Reuse retains the existing count/size contract. A bounded first pass
+        # checks the actual count; a mismatch is rewound and built normally.
+        existing = self._video_clip_cache.peek(video_id) if keep_existing else None
+        if existing is not None:
+            count, size = 0, None
+            for batch in source.batches(max_batch_frames=EMBED_CHUNK_FRAMES):
+                count += len(batch)
+                size = tuple(batch[0].shape[:2])
+                batch.clear()
+            source.check_cancelled()
+            if (count, size) == (existing.n_frames, existing.video_size):
+                return existing
+            del existing
+
+        batches = source.batches(max_batch_frames=EMBED_CHUNK_FRAMES)
+        clip = self._build_clip(
+            batches, video_id, check_cancelled=source.check_cancelled
+        )
+        return clip
+
+    def _embed_list(self, frames, video_id, *, keep_existing):
+        # Existing Python callers own their input allocation. HTTP callers use
+        # VideoFrameSource, so no whole-clip RGB list exists on that path.
+        if not isinstance(frames, list) or not frames:
+            raise ModelInputError(message="A video needs at least one frame.")
+        sizes = set()
+        for frame in frames:
+            if (
+                not isinstance(frame, np.ndarray)
+                or frame.ndim != 3
+                or frame.shape[2] != 3
+                or frame.dtype != np.uint8
+            ):
+                raise ModelInputError(
+                    message="Video frames must be RGB HWC uint8 arrays."
+                )
+            sizes.add(tuple(frame.shape[:2]))
         if len(sizes) != 1:
             raise ModelInputError(
                 message=f"All frames of a video must have one size, got {sorted(sizes)}."
             )
-
-        video_size = tuple(int(v) for v in sizes.pop())
-        clip = self._video_clip_cache.peek(video_id) if keep_existing else None
-        if clip is None or (clip.n_frames, clip.video_size) != (
-            len(frames),
-            video_size,
-        ):
-            self._video_clip_cache.make_room(video_id, n_frames=len(frames))
-            clip = VideoClip(
-                self._preprocess_frames(frames),
-                video_size=video_size,
-                inference_device=self._device,
-                position_embeddings=self._position_embeddings,
+        size = sizes.pop()
+        if min(size) <= 0 or size[0] * size[1] > SAM3_VIDEO_MAX_SOURCE_PIXELS:
+            raise VideoInputLimitError(
+                message="Video frame exceeds the source pixel limit."
             )
-            self._video_clip_cache.put(video_id, clip)
+        batch_count = min(
+            EMBED_CHUNK_FRAMES, SAM3_VIDEO_DECODE_BUFFER_BYTES // frames[0].nbytes
+        )
+        if batch_count < 1:
+            raise VideoInputLimitError(
+                message="Video frame exceeds the original-frame byte budget."
+            )
+        if len(frames) > self._video_clip_cache.max_frames:
+            raise ModelInputError(
+                message=(
+                    f"The video has {len(frames)} frames; the most a clip may have is "
+                    f"{self._video_clip_cache.max_frames}, which is what {CACHE_LIMIT_SETTING} holds."
+                )
+            )
+        existing = self._video_clip_cache.peek(video_id) if keep_existing else None
+        if existing is not None and (existing.n_frames, existing.video_size) == (
+            len(frames),
+            size,
+        ):
+            return existing
+        del existing
+        batches = (
+            frames[start : start + batch_count]
+            for start in range(0, len(frames), batch_count)
+        )
+        clip = self._build_clip(batches, video_id)
+        return clip
 
-        if encode_frames:
-            self._start_encoding(video_id, clip)
-
-        description = {
-            "video_id": video_id,
-            "n_frames": clip.n_frames,
-            "height": clip.video_size[0],
-            "width": clip.video_size[1],
-        }
-
-        return description
+    def _build_clip(self, batches, video_id, *, check_cancelled=None):
+        processed = []
+        batch = []
+        try:
+            with self._video_clip_cache.build(video_id) as reservation:
+                size = None
+                for batch in batches:
+                    if check_cancelled is not None:
+                        check_cancelled()
+                    size = tuple(int(v) for v in batch[0].shape[:2])
+                    reservation.add(len(batch))
+                    processed.extend(self._preprocess_frames(batch))
+                    # Drop originals before advancing the decoder. In a for-loop
+                    # the previous loop variable otherwise survives next().
+                    batch.clear()
+                if not processed:
+                    raise ModelInputError(message="A video needs at least one frame.")
+                if check_cancelled is not None:
+                    check_cancelled()
+                clip = VideoClip(
+                    processed,
+                    video_size=size,
+                    inference_device=self._device,
+                    position_embeddings=self._position_embeddings,
+                )
+                reservation.commit(clip)
+            return clip
+        finally:
+            batch.clear()
+            processed.clear()
+            close = getattr(batches, "close", None)
+            if close is not None:
+                close()
 
     def _preprocess_frames(self, frames: List[np.ndarray]) -> List[torch.Tensor]:
         """The model input of each frame, as one tensor per frame in the model's dtype.
@@ -245,20 +349,28 @@ class SAM3TrackerVideo(HFStreamingVideoBase):
         preprocessing the whole clip.
         """
         preprocessed: List[torch.Tensor] = []
-        for start in range(0, len(frames), EMBED_CHUNK_FRAMES):
-            chunk = self._processor.video_processor(
-                videos=[
-                    np.asarray(frame)
-                    for frame in frames[start : start + EMBED_CHUNK_FRAMES]
-                ],
-                device="cpu",
-                return_tensors="pt",
-            ).pixel_values_videos[0]
-            # A copy per frame on memory of its own, so that a frame can be
-            # released alone and none keeps the full-precision chunk alive.
-            for frame in chunk:
-                preprocessed.append(host_tensor(tuple(frame.shape), self._dtype))
-                preprocessed[-1].copy_(frame)
+        chunk = frame = None
+        try:
+            for start in range(0, len(frames), EMBED_CHUNK_FRAMES):
+                chunk = self._processor.video_processor(
+                    videos=[
+                        np.asarray(frame)
+                        for frame in frames[start : start + EMBED_CHUNK_FRAMES]
+                    ],
+                    device="cpu",
+                    return_tensors="pt",
+                ).pixel_values_videos[0]
+                # A copy per frame on memory of its own, so that a frame can be
+                # released alone and none keeps the full-precision chunk alive.
+                for frame in chunk:
+                    preprocessed.append(host_tensor(tuple(frame.shape), self._dtype))
+                    preprocessed[-1].copy_(frame)
+                chunk = frame = None
+
+        except BaseException:
+            preprocessed.clear()
+            raise
+        finally:
             del chunk, frame
 
         return preprocessed

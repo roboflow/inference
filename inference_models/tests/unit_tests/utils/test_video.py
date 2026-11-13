@@ -87,6 +87,10 @@ def test_self_contained_formats_match_sequential_opencv(
         assert actual.dtype == np.uint8
         assert actual.flags.c_contiguous
         np.testing.assert_allclose(actual, original, atol=2)
+    with video.open_video(path, max_pixels=16 * 1024 * 1024) as reader:
+        for bgr in frames:
+            np.testing.assert_array_equal(reader.read(rgb=True), bgr[:, :, ::-1])
+        assert reader.read(rgb=True) is None
 
 
 @pytest.mark.parametrize("fps", [10, 60, Fraction(30000, 1001)])
@@ -261,3 +265,51 @@ def test_variable_frame_rate_keeps_decode_order_and_average_rate(tmp_path):
             assert reader.read() is None
     finally:
         capture.release()
+
+
+def test_source_pixel_limit_and_rgb_byte_limit(tmp_path):
+    path = tmp_path / "clip.mp4"
+    _write_clip(path, container_format="mp4", codec="mpeg4")
+    with pytest.raises(video.VideoSizeError), video.open_video(path, max_pixels=1000):
+        pytest.fail("oversized input was opened")
+    with video.open_video(path, max_pixels=1_000_000) as reader:
+        with pytest.raises(video.VideoSizeError, match="byte budget"):
+            reader.read(rgb=True, max_bytes=64 * 48 * 3 - 1)
+    with video.open_video(path, max_pixels=1_000_000) as reader:
+        assert reader.read(rgb=True).shape == (48, 64, 3)
+
+
+def test_changed_dimensions_are_rejected_before_rgb_allocation(monkeypatch):
+    class Frame:
+        width, height, rotation = 64, 48, 0
+
+        def to_ndarray(self, **kwargs):
+            pytest.fail("conversion must not allocate on shape mismatch")
+
+    reader = object.__new__(video.VideoReader)
+    reader._secondary_io = video._SecondaryIO()
+    reader._max_pixels = 1_000_000
+    reader._frames = iter([Frame()])
+    with pytest.raises(video.VideoDecodeError, match="one size"):
+        reader.read(expected_size=(96, 128))
+
+
+def test_pixel_guard_is_configured_for_probe_and_decode(tmp_path, monkeypatch):
+    path = tmp_path / "clip.mp4"
+    _write_clip(path, container_format="mp4", codec="mpeg4")
+    real_open = video.av.open
+    opened = []
+
+    def capture(*args, **kwargs):
+        assert kwargs["options"]["max_pixels"] == "1000000"
+        assert kwargs["options"]["threads"] == "1"
+        container = real_open(*args, **kwargs)
+        opened.append(container)
+        return container
+
+    monkeypatch.setattr(video.av, "open", capture)
+    with video.open_video(path, max_pixels=1_000_000) as reader:
+        context = opened[0].streams.video[0].codec_context
+        assert context.options["max_pixels"] == "1000000"
+        assert context.thread_count == 1
+        assert reader.read() is not None

@@ -8,19 +8,22 @@ it, so the tracker holds no per-object state between calls: only the clip
 That state lives in one worker, so the routes need the requests of one clip to
 reach the same worker.
 
-Clips arrive and decode through the video input of the action recognition
-route (``legacy.video``): the same URL policy, size cap, probing and
-sequential decoding.
+Clips use action recognition's guarded download/base64 ingestion. The local
+tracker consumes an owned source through the shared restricted decoder and
+preprocesses bounded batches without retaining the clip's original frames.
 """
 
 import asyncio
 import time
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-import numpy as np
 import orjson
 
 from inference_model_manager.hash_namespacing import namespace_client_hash_id
+from inference_models.models.sam3_tracker_video.frame_source import (
+    VideoFrameSource,
+    VideoInputLimitError,
+)
 from inference_server.legacy.bridge import Route
 from inference_server.legacy.entities import (
     Sam3VideoEmbedRequest,
@@ -33,11 +36,7 @@ from inference_server.legacy.entities import (
 )
 from inference_server.legacy.errors import LegacyHTTPError, legacy_error_response
 from inference_server.legacy.telemetry_recording import record_route_error
-from inference_server.legacy.video import (
-    probe_video,
-    read_frame_windows,
-    video_source_path,
-)
+from inference_server.legacy.video import video_source_path
 
 SAM3_VIDEO_MODEL_CLASS = "SAM3TrackerVideo"
 # A proxy in front of the server may end a response that sends nothing for a
@@ -63,43 +62,6 @@ def ensure_sam3_video_route(model_id: str, route: Route) -> None:
         f"Model {model_id!r} loads as {route.model_class_name}; the SAM3 video "
         f"routes need a {SAM3_VIDEO_MODEL_CLASS} model.",
     )
-
-
-def read_clip_frames(path: str, *, max_frames: int) -> List[np.ndarray]:
-    """Decode every frame of a clip, in order.
-
-    Args:
-        path: File holding the clip.
-        max_frames: Most frames a clip may have: the frames the tracker's
-            clip cache holds.
-
-    Returns:
-        The RGB ``HWC`` ``uint8`` frames.
-
-    Raises:
-        LegacyHTTPError: 400 when the clip does not decode or has fewer than
-            two frames, 413 when it has more than ``max_frames`` (from the
-            header's frame count, before anything is decoded).
-    """
-    limit = (
-        f"the most a clip may have is {max_frames}, which is what "
-        "SAM3_VIDEO_CACHE_MAX_GB holds."
-    )
-    frame_count = probe_video(path)[1]
-    if frame_count > max_frames:
-        raise LegacyHTTPError(413, f"The video has {frame_count} frames; {limit}")
-
-    # The header's count is unverified: decode one window one frame longer
-    # than the cap, so decoding stops there either way.
-    frames = next(read_frame_windows(path, windows=[range(max_frames + 1)]), [])
-    if not frames:
-        raise LegacyHTTPError(400, "The video has no frames.")
-    if len(frames) > max_frames:
-        raise LegacyHTTPError(
-            413, f"The video has more than {max_frames} frames; {limit}"
-        )
-
-    return frames
 
 
 async def embed_video(
@@ -130,21 +92,26 @@ async def embed_video(
     )
     video = inference_request.video
     async with video_source_path(video.type, video.value) as path:
-        frames = await asyncio.to_thread(
-            read_clip_frames, path, max_frames=limits["max_frames"]
-        )
+        source = VideoFrameSource(path, max_frames=limits["max_frames"])
+        try:
+            described = await bridge.infer_params_only(
+                route,
+                api_key,
+                "embed_video",
+                {
+                    "frames": source,
+                    "video_id": namespace_client_hash_id(
+                        inference_request.video_id, api_key
+                    ),
+                    "encode_frames": inference_request.encode_frames,
+                    "keep_existing": inference_request.keep_existing,
+                },
+            )
+        except VideoInputLimitError as error:
+            raise LegacyHTTPError(413, str(error)) from error
+        finally:
+            source.cancel()
 
-    described = await bridge.infer_params_only(
-        route,
-        api_key,
-        "embed_video",
-        {
-            "frames": frames,
-            "video_id": namespace_client_hash_id(inference_request.video_id, api_key),
-            "encode_frames": inference_request.encode_frames,
-            "keep_existing": inference_request.keep_existing,
-        },
-    )
     response = Sam3VideoEmbedResponse(
         video_id=inference_request.video_id,
         n_frames=described["n_frames"],

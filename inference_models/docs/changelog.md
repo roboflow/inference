@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Bound SAM3 offline embedding's original RGB input to byte-limited batches
+  (64 MiB by default), with a configurable source pixel ceiling. Both HTTP
+  stacks retain an owned file source through local/threaded execution rather
+  than materializing whole clips. Serialize embedding admission per process,
+  reserve processed cache capacity before allocation, and clean up cancelled
+  or failed builds. Original coordinates and model preprocessing are preserved.
+
 - Restrict offline video decoding to the submitted file. SAM3 video tracking and
   action recognition in both server stacks reject playlists, manifests and other
   external media references before model inference. Preserve raw H.264 bitstream

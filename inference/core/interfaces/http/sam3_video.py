@@ -12,9 +12,9 @@ to reach the same worker process: a deployment that enables these routes runs
 one worker process per replica and sends every request of a clip to the same
 replica.
 
-Clips arrive and decode through the video input of action recognition
-(``inference.core.utils.video_utils``): the same URL policy, size cap,
-probing and sequential decoding.
+Clips use action recognition's guarded download/base64 ingestion. The tracker
+consumes an owned source through the shared restricted decoder and preprocesses
+bounded batches without retaining the clip's original frames.
 
 The routes and their request, response and stream contract are the same as
 the ``/sam3/video/*`` routes of the ``inference_server`` package.
@@ -26,7 +26,6 @@ import threading
 import time
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-import numpy as np
 import orjson
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
@@ -49,7 +48,6 @@ from inference.core.env import (
     OFFLINE_MODE,
 )
 from inference.core.exceptions import (
-    InputImageLoadError,
     PayloadTooLargeError,
     RequestDataContradiction,
     RoboflowAPINotAuthorizedError,
@@ -60,10 +58,10 @@ from inference.core.roboflow_api import (
     ModelEndpointType,
     get_extra_weights_provider_headers,
 )
-from inference.core.utils.video_utils import (
-    probe_video,
-    read_frame_windows,
-    video_source_path,
+from inference.core.utils.video_utils import video_source_path
+from inference_models.models.sam3_tracker_video.frame_source import (
+    VideoFrameSource,
+    VideoInputLimitError,
 )
 
 SAM3_VIDEO_MODEL_CLASS = "SAM3TrackerVideo"
@@ -206,45 +204,6 @@ def scoped_video_id(video_id: str, api_key: Optional[str]) -> str:
     return scoped
 
 
-def read_clip_frames(path: str, *, max_frames: int) -> List[np.ndarray]:
-    """Decode every frame of a clip, in order.
-
-    Args:
-        path: File holding the clip.
-        max_frames: Most frames a clip may have: the frames the tracker's
-            clip cache holds.
-
-    Returns:
-        The RGB ``HWC`` ``uint8`` frames.
-
-    Raises:
-        InputImageLoadError: 400 when the clip does not decode or has fewer
-            than two frames.
-        PayloadTooLargeError: 413 when it has more than ``max_frames``, from
-            the header's frame count before anything is decoded.
-    """
-    limit = (
-        f"the most a clip may have is {max_frames}, which is what "
-        "SAM3_VIDEO_CACHE_MAX_GB holds."
-    )
-    frame_count = probe_video(path)[1]
-    if frame_count > max_frames:
-        too_many = f"The video has {frame_count} frames; {limit}"
-        raise PayloadTooLargeError(message=too_many, public_message=too_many)
-
-    # The header's count is unverified: decode one window one frame longer
-    # than the cap, so decoding stops there either way.
-    frames = next(read_frame_windows(path, windows=[range(max_frames + 1)]), [])
-    if not frames:
-        message = "The video has no frames."
-        raise InputImageLoadError(message=message, public_message=message)
-    if len(frames) > max_frames:
-        too_many = f"The video has more than {max_frames} frames; {limit}"
-        raise PayloadTooLargeError(message=too_many, public_message=too_many)
-
-    return frames
-
-
 def embed_video(
     model: Any, *, inference_request: Sam3VideoEmbedRequest
 ) -> Sam3VideoEmbedResponse:
@@ -260,16 +219,25 @@ def embed_video(
     started = time.perf_counter()
     video = inference_request.video
     with video_source_path(video.type, video.value) as path:
-        frames = read_clip_frames(
+        source = VideoFrameSource(
             path, max_frames=model.video_cache_limits()["max_frames"]
         )
+        try:
+            described = model.embed_video(
+                source,
+                video_id=scoped_video_id(
+                    inference_request.video_id, inference_request.api_key
+                ),
+                encode_frames=inference_request.encode_frames,
+                keep_existing=inference_request.keep_existing,
+            )
+        except VideoInputLimitError as error:
+            raise PayloadTooLargeError(
+                message=str(error), public_message=str(error)
+            ) from error
+        finally:
+            source.cancel()
 
-    described = model.embed_video(
-        frames,
-        video_id=scoped_video_id(inference_request.video_id, inference_request.api_key),
-        encode_frames=inference_request.encode_frames,
-        keep_existing=inference_request.keep_existing,
-    )
     response = Sam3VideoEmbedResponse(
         video_id=inference_request.video_id,
         n_frames=described["n_frames"],

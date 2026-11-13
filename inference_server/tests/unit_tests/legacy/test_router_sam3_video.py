@@ -7,6 +7,7 @@ import pytest
 
 from inference_model_manager.hash_namespacing import namespace_client_hash_id
 from inference_models.errors import ModelInputError
+from inference_models.models.sam3_tracker_video.frame_source import VideoFrameSource
 from inference_models.models.sam3_tracker_video.sam3_tracker_video_hf import (
     _prompts_by_object,
 )
@@ -50,10 +51,17 @@ def _gateway(fake_stat, model_class_name="SAM3TrackerVideo", max_frames=1507):
         }
 
     def _embed(image, params):
-        frame = params["frames"][0]
+        source = params["frames"]
+        assert isinstance(source, VideoFrameSource)
+        with source.consume():
+            frames = []
+            for batch in source.batches(max_batch_frames=16):
+                frames.extend(batch)
+        gateway.embedded_frames.append(frames)
+        frame = frames[0]
         return {
             "video_id": params["video_id"],
-            "n_frames": len(params["frames"]),
+            "n_frames": len(frames),
             "height": frame.shape[0],
             "width": frame.shape[1],
         }
@@ -89,6 +97,7 @@ def _gateway(fake_stat, model_class_name="SAM3TrackerVideo", max_frames=1507):
         },
     )
 
+    gateway.embedded_frames = []
     return gateway
 
 
@@ -128,8 +137,9 @@ def test_embed_decodes_every_frame_and_scopes_the_id_to_the_key(
     assert params["video_id"] == namespace_client_hash_id("clip-1", API_KEY)
     assert params["encode_frames"] is True
     assert params["keep_existing"] is True
-    assert len(params["frames"]) == 25
-    assert params["frames"][0].shape == (48, 64, 3)
+    assert isinstance(params["frames"], VideoFrameSource)
+    assert len(gateway.embedded_frames[0]) == 25
+    assert gateway.embedded_frames[0][0].shape == (48, 64, 3)
 
 
 def test_embed_refuses_a_clip_longer_than_the_cache_holds(
@@ -149,7 +159,7 @@ def test_embed_refuses_a_clip_longer_than_the_cache_holds(
     assert response.status_code == 413, response.text
     assert "The video has 25 frames; the most a clip may have is 10" in response.text
     assert "SAM3_VIDEO_CACHE_MAX_GB" in response.text
-    assert _infer_calls(gateway) == []
+    assert gateway.embedded_frames == []
 
 
 def test_segment_passes_every_click_and_the_frame(legacy_client, fake_stat):
@@ -210,7 +220,7 @@ def test_a_click_label_other_than_0_or_1_is_refused(legacy_client, fake_stat):
     )
 
     assert response.status_code == 422, response.text
-    assert _infer_calls(gateway) == []
+    assert gateway.embedded_frames == []
 
 
 def test_routes_refuse_a_model_that_is_not_the_video_tracker(legacy_client, fake_stat):
@@ -223,7 +233,7 @@ def test_routes_refuse_a_model_that_is_not_the_video_tracker(legacy_client, fake
 
     assert response.status_code == 400, response.text
     assert "SAM3TrackerVideo" in response.json()["message"]
-    assert _infer_calls(gateway) == []
+    assert gateway.embedded_frames == []
 
 
 def _stream_lines(response):
@@ -299,7 +309,7 @@ def test_propagate_stream_refuses_an_object_without_an_include_point(
 
     assert response.status_code == 400, response.text
     assert "[3]" in response.json()["message"]
-    assert _infer_calls(gateway) == []
+    assert gateway.embedded_frames == []
 
 
 CORRECTED = [
@@ -420,3 +430,90 @@ async def test_closing_the_propagate_stream_stops_the_tracking(monkeypatch):
     await asyncio.sleep(0)
 
     assert calls == [1]
+
+
+@pytest.mark.asyncio
+async def test_gateway_timeout_keeps_source_owned_until_consumer_exits(clip):
+    import threading
+    from types import SimpleNamespace
+
+    from inference_models.models.sam3_tracker_video.frame_source import (
+        embedding_admission,
+    )
+    from inference_server.gateway import ModelManagerGateway
+    from inference_server.legacy.entities import Sam3VideoEmbedRequest
+
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    sources = []
+
+    class Manager:
+        async def process_async(self, model_id, **kwargs):
+            source = kwargs["frames"]
+            sources.append(source)
+
+            def consume():
+                try:
+                    with embedding_admission(source.check_cancelled), source.consume():
+                        batches = source.batches(max_batch_frames=2)
+                        batch = next(batches)
+                        entered.set()
+                        try:
+                            assert release.wait(timeout=5)
+                            source.check_cancelled()
+                        finally:
+                            batch.clear()
+                            batches.close()
+                finally:
+                    finished.set()
+
+            return await asyncio.to_thread(consume)
+
+    gateway = ModelManagerGateway(manager=Manager(), infer_timeout_s=0.2)
+
+    class Bridge:
+        async def infer_params_only(self, route, api_key, action, params, **kwargs):
+            if action == "video_cache_limits":
+                return {"max_frames": 100}
+            return await gateway.infer(model_id=MODEL_ID, action=action, params=params)
+
+    request = Sam3VideoEmbedRequest(
+        video_id="timeout",
+        api_key="k",
+        video={"type": "base64", "value": clip_base64(clip)},
+    )
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await sam3_video.embed_video(
+                SimpleNamespace(), "k", Bridge(), inference_request=request
+            )
+        assert entered.is_set()
+        [source] = sources
+        assert source._cancelled.is_set()
+        assert not source._file.closed
+        assert not Path(source._file.name).exists()
+    finally:
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 5)
+    assert source._file.closed
+
+
+@pytest.mark.parametrize("limits", [{"max_pixels": 1000}, {"buffer_bytes": 1000}])
+def test_embed_input_limits_return_413_without_processing(
+    legacy_client, fake_stat, clip, monkeypatch, limits
+):
+    from functools import partial
+
+    monkeypatch.setattr(
+        sam3_video, "VideoFrameSource", partial(VideoFrameSource, **limits)
+    )
+    gateway = _gateway(fake_stat)
+    response = legacy_client(gateway).post(
+        "/sam3/video/embed",
+        json={
+            "api_key": API_KEY,
+            "video_id": "too-large",
+            "video": {"type": "base64", "value": clip_base64(clip)},
+        },
+    )
+    assert response.status_code == 413, response.text
+    assert gateway.embedded_frames == []

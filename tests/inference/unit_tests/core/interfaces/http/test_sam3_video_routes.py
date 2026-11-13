@@ -14,6 +14,10 @@ from starlette.testclient import TestClient
 from inference.core.entities.requests.sam3_video import Sam3VideoPropagateRequest
 from inference.core.interfaces.http import sam3_video
 from inference_models.errors import ModelInputError
+from inference_models.models.sam3_tracker_video.frame_source import (
+    VideoFrameSource,
+    VideoInputLimitError,
+)
 from inference_models.models.sam3_tracker_video.sam3_tracker_video_hf import (
     _prompts_by_object,
 )
@@ -56,6 +60,12 @@ class SAM3TrackerVideo:
     def embed_video(
         self, frames, *, video_id, encode_frames=False, keep_existing=False
     ):
+        if isinstance(frames, VideoFrameSource):
+            with frames.consume():
+                decoded = []
+                for batch in frames.batches(max_batch_frames=16):
+                    decoded.extend(batch)
+                frames = decoded
         self.calls.append(
             (
                 "embed_video",
@@ -231,10 +241,21 @@ def test_embed_refuses_a_clip_longer_than_the_cache_holds(client, loads, clip):
 
 
 def test_a_clip_whose_header_understates_its_frames_is_refused(clip, monkeypatch):
-    monkeypatch.setattr(sam3_video, "probe_video", lambda path: (25.0, 5))
+    from inference_models.utils import video
 
-    with pytest.raises(sam3_video.PayloadTooLargeError, match="more than 10 frames"):
-        sam3_video.read_clip_frames(str(clip), max_frames=10)
+    original = video.VideoReader.__init__
+
+    def understated(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        self.frame_count = 5
+
+    monkeypatch.setattr(video.VideoReader, "__init__", understated)
+    source = VideoFrameSource(str(clip), max_frames=10)
+    with source.consume(), pytest.raises(
+        VideoInputLimitError, match="more than 10 frames"
+    ):
+        for batch in source.batches(max_batch_frames=3):
+            batch.clear()
 
 
 def test_segment_passes_every_click_and_the_frame(client, loads):
@@ -571,3 +592,24 @@ async def test_closing_the_propagate_stream_stops_the_tracking(monkeypatch):
     await asyncio.sleep(0.1)
 
     assert model.calls == [1]
+
+
+@pytest.mark.parametrize("limits", [{"max_pixels": 1000}, {"buffer_bytes": 1000}])
+def test_embed_input_limits_return_413_without_processing(
+    client, loads, clip, monkeypatch, limits
+):
+    from functools import partial
+
+    monkeypatch.setattr(
+        sam3_video, "VideoFrameSource", partial(VideoFrameSource, **limits)
+    )
+    response = client.post(
+        "/sam3/video/embed",
+        json={
+            "api_key": API_KEY,
+            "video_id": "too-large",
+            "video": {"type": "base64", "value": clip_base64(clip)},
+        },
+    )
+    assert response.status_code == 413, response.text
+    assert loads.model.calls == []

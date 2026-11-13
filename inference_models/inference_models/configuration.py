@@ -144,6 +144,20 @@ if not 0 < SAM3_VIDEO_CACHE_MAX_GB < float("inf"):
         message="SAM3_VIDEO_CACHE_MAX_GB must be a positive number of GB, got "
         f"{SAM3_VIDEO_CACHE_MAX_GB}."
     )
+# Temporary original RGB input, separate from processed clip-cache storage.
+SAM3_VIDEO_DECODE_BUFFER_BYTES = get_integer_from_env(
+    variable_name="SAM3_VIDEO_DECODE_BUFFER_BYTES", default=64 * 1024 * 1024
+)
+SAM3_VIDEO_MAX_SOURCE_PIXELS = get_integer_from_env(
+    variable_name="SAM3_VIDEO_MAX_SOURCE_PIXELS", default=16 * 1024 * 1024
+)
+for _setting, _value in (
+    ("SAM3_VIDEO_DECODE_BUFFER_BYTES", SAM3_VIDEO_DECODE_BUFFER_BYTES),
+    ("SAM3_VIDEO_MAX_SOURCE_PIXELS", SAM3_VIDEO_MAX_SOURCE_PIXELS),
+):
+    if _value <= 0:
+        raise InvalidEnvVariable(message=f"{_setting} must be positive, got {_value}.")
+
 AUTO_LOADER_CACHE_EXPIRATION_MINUTES = get_integer_from_env(
     variable_name="AUTO_LOADER_CACHE_EXPIRATION_MINUTES", default=1440
 )

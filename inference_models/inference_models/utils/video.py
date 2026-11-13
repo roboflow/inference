@@ -3,7 +3,7 @@
 import math
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Iterator, Optional, Union
+from typing import BinaryIO, Iterator, Optional, Tuple, Union
 
 import av
 import numpy as np
@@ -16,6 +16,10 @@ _DECODE_ERROR = "Video could not be decoded."
 
 class VideoDecodeError(ValueError):
     """An offline clip is invalid or requires access to another resource."""
+
+
+class VideoSizeError(VideoDecodeError):
+    """An offline frame exceeds the configured decoded-input limits."""
 
 
 class _SecondaryIO:
@@ -44,11 +48,23 @@ class VideoReader:
         frame_count (int): Declared count or duration-based estimate; zero if unknown.
     """
 
-    def __init__(self, container, *, secondary_io: _SecondaryIO):
+    def __init__(self, container, *, secondary_io: _SecondaryIO, max_pixels=None):
         if not container.streams.video:
             raise VideoDecodeError(_DECODE_ERROR)
 
         stream = container.streams.video[0]
+        if stream.codec_context is None:
+            raise VideoDecodeError(_DECODE_ERROR)
+        self._max_pixels = max_pixels
+        if max_pixels is not None:
+            self._check_size(stream.codec_context.width, stream.codec_context.height)
+            # av.open options cover probing, but PyAV creates a fresh codec
+            # context for subsequent decoding. Configure that context as well.
+            stream.codec_context.options = {
+                **stream.codec_context.options,
+                "max_pixels": str(max_pixels),
+            }
+            stream.codec_context.thread_count = 1
         rate = stream.average_rate
         if container.format.name == "h264":
             # Raw H.264 can report the demuxer's default 25 fps as its average
@@ -71,14 +87,36 @@ class VideoReader:
         self._frames = container.decode(stream)
         self._secondary_io = secondary_io
 
-    def read(self) -> Optional[np.ndarray]:
+    def _check_size(self, width, height):
+        # FFmpeg can clear dimensions when max_pixels rejects the probe.
+        # Under an active limit, unusable dimensions also fail the size policy.
+        if self._max_pixels is not None and (
+            width <= 0 or height <= 0 or width * height > self._max_pixels
+        ):
+            raise VideoSizeError(
+                "Video frame exceeds the source pixel limit or has unusable dimensions."
+            )
+
+    def read(
+        self,
+        *,
+        rgb: bool = False,
+        max_bytes: Optional[int] = None,
+        expected_size: Optional[Tuple[int, int]] = None,
+    ) -> Optional[np.ndarray]:
         """Decode the next frame without seeking.
 
+        Args:
+            rgb: Return RGB instead of BGR pixels.
+            max_bytes: Maximum bytes for the returned RGB/BGR allocation.
+            expected_size: Required display height and width, if already known.
+
         Returns:
-            Contiguous BGR uint8 pixels, or None at the end of the stream.
+            Contiguous BGR (or RGB) uint8 pixels, or None at the end of the stream.
 
         Raises:
             VideoDecodeError: If decoding fails or attempts secondary I/O.
+            VideoSizeError: If a frame exceeds the pixel or output byte limit.
         """
         self._secondary_io.check()
         try:
@@ -87,7 +125,17 @@ class VideoReader:
             if frame is None:
                 return None
 
-            pixels = frame.to_ndarray(format="bgr24")
+            self._check_size(frame.width, frame.height)
+            if max_bytes is not None and frame.width * frame.height * 3 > max_bytes:
+                raise VideoSizeError(
+                    "Video frame exceeds the original-frame byte budget."
+                )
+            size = (frame.height, frame.width)
+            if frame.rotation in (-270, -90, 90, 270):
+                size = size[::-1]
+            if expected_size is not None and size != expected_size:
+                raise VideoDecodeError("All frames of a video must have one size.")
+            pixels = frame.to_ndarray(format="rgb24" if rgb else "bgr24")
             # OpenCV's default auto-orientation supports quarter turns too.
             rotation = frame.rotation
             if rotation in (-270, -180, -90, 90, 180, 270):
@@ -100,7 +148,9 @@ class VideoReader:
 
 
 @contextmanager
-def open_video(path: Union[str, Path]) -> Iterator[VideoReader]:
+def open_video(
+    path: Union[str, Path, BinaryIO], *, max_pixels: Optional[int] = None
+) -> Iterator[VideoReader]:
     """Open only the bytes of a server-owned offline video file.
 
     The primary file uses Python I/O. FFmpeg's built-in protocols are disabled,
@@ -110,7 +160,9 @@ def open_video(path: Union[str, Path]) -> Iterator[VideoReader]:
 
     Args:
         path (str or Path): Temporary file produced by the caller's guarded
-            download or base64 ingestion. Never a user-supplied filesystem path.
+            download or base64 ingestion, or its already-open binary handle.
+            Caller-provided handles remain owned by the caller.
+        max_pixels: Optional source-pixel limit for probing and frame decoding.
 
     Yields:
         VideoReader: A sequential reader, valid only inside this context.
@@ -119,16 +171,27 @@ def open_video(path: Union[str, Path]) -> Iterator[VideoReader]:
         VideoDecodeError: If opening fails or the input is not a supported,
             self-contained video. Error messages omit paths and URLs.
     """
+    if max_pixels is not None and max_pixels <= 0:
+        raise ValueError("max_pixels must be positive")
+
     secondary_io = _SecondaryIO()
     with ExitStack() as stack:
         try:
-            source = stack.enter_context(Path(path).open("rb"))
+            source = (
+                stack.enter_context(Path(path).open("rb"))
+                if isinstance(path, (str, Path))
+                else path
+            )
+            codec_options = {}
+            if max_pixels is not None:
+                codec_options = {"max_pixels": str(max_pixels), "threads": "1"}
             container = stack.enter_context(
                 av.open(
                     source,
                     mode="r",
                     io_open=secondary_io,
                     options={
+                        **codec_options,
                         "protocol_whitelist": "",
                         "format_whitelist": _VIDEO_DEMUXERS,
                         "enable_drefs": "0",
@@ -137,7 +200,9 @@ def open_video(path: Union[str, Path]) -> Iterator[VideoReader]:
                 )
             )
             secondary_io.check()
-            reader = VideoReader(container, secondary_io=secondary_io)
+            reader = VideoReader(
+                container, secondary_io=secondary_io, max_pixels=max_pixels
+            )
         except VideoDecodeError:
             raise
         except (OSError, ValueError) as error:
