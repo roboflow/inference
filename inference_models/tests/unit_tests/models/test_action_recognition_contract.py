@@ -227,7 +227,7 @@ def test_an_architecture_without_an_action_recognition_class_is_refused(
         get_action_recognition_contract("ws/actions/1")
 
 
-def test_a_contract_file_that_cannot_be_downloaded_is_an_error(monkeypatch) -> None:
+def test_a_contract_file_held_only_locally_is_an_error(monkeypatch) -> None:
     # Reading defaults instead would serve a contract the package overrides.
     metadata = _metadata(
         "cosmos3-edge",
