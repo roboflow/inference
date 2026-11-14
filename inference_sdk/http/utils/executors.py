@@ -494,7 +494,7 @@ async def make_request_async(
     ) as response:
         try:
             response_data = await response.json()
-        except:
+        except Exception:
             response_data = await response.read()
         if response_is_not_retryable_error(response=response):
             response.raise_for_status()
