@@ -150,9 +150,11 @@ class RemoteActionRecognitionModel:
         except requests.RequestException as error:
             # The error text quotes the request URL, service secret included,
             # and it reaches the logs and the block's error_status output.
-            raise requests.RequestException(
-                deduct_api_key_from_string(value=str(error))
-            ) from None
+            detail = deduct_api_key_from_string(value=str(error))
+            if self.api_key and self.api_key.strip():
+                # requests also quotes a header it rejects, key included.
+                detail = detail.replace(self.api_key.strip(), "***")
+            raise requests.RequestException(detail) from None
         if response.status_code >= 400:
             # The message reaches the block's error_status output.
             detail = deduct_api_key_from_string(value=response.text[:500])

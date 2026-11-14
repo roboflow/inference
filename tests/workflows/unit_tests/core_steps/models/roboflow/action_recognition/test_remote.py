@@ -330,6 +330,23 @@ def test_connection_errors_hide_the_service_secret(monkeypatch):
     assert error.value.__suppress_context__
 
 
+def test_rejected_header_error_hides_the_api_key(monkeypatch):
+    # requests quotes a header it rejects, such as one with a trailing newline.
+    def post(url, json, timeout, headers=None, **kwargs):
+        raise remote.requests.exceptions.InvalidHeader(
+            f"Invalid return character in header value: {headers['Authorization']!r}"
+        )
+
+    _fake_platform(monkeypatch, post, class_names=None, video_sampling=PUNCH_SAMPLING)
+    model = load_remote_action_recognition_model("ws/m/1", api_key="secret-key-123\n")
+
+    with pytest.raises(remote.requests.RequestException) as error:
+        model.infer(frames=_frames(8), fps=12.0)
+
+    assert "header value" in str(error.value)
+    assert "secret-key-123" not in str(error.value)
+
+
 @pytest.mark.parametrize("fps", [30000 / 1001, 10 / 3, 7.4925])
 def test_rate_the_clip_container_rounds_still_maps_one_to_one(monkeypatch, fps):
     # The mp4 container keeps about three decimals of the frame rate.
