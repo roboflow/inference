@@ -1,4 +1,5 @@
 import math
+from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -7,6 +8,10 @@ from roboflow_workflows.core_steps.classical_cv.distance_measurement.v1 import (
     OUTPUT_KEY_CENTIMETER,
     OUTPUT_KEY_PIXEL,
     DistanceMeasurementBlockV1,
+    measure_distance_pixels,
+)
+from roboflow_workflows.core_steps.classical_cv.distance_measurement.v1_tensor import (
+    measure_distance_pixels as measure_distance_pixels_tensor,
 )
 from roboflow_workflows.execution_engine.entities.base import Batch
 
@@ -526,3 +531,29 @@ def test_distance_measurement_block_with_vertical_overlapping_target_objects():
     # then
     expected_result = {OUTPUT_KEY_CENTIMETER: 0, OUTPUT_KEY_PIXEL: 0}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
+
+
+@pytest.mark.parametrize(
+    "measure",
+    [measure_distance_pixels, measure_distance_pixels_tensor],
+    ids=["numpy", "tensor"],
+)
+@pytest.mark.parametrize(
+    "axis, second_box, expected",
+    [
+        ("horizontal", (10, 30, 20, 40), 0),
+        ("horizontal", (15, 30, 25, 40), 5),
+        ("vertical", (30, 10, 40, 20), 0),
+        ("vertical", (30, 15, 40, 25), 5),
+    ],
+)
+def test_measure_distance_pixels_at_projected_edge(
+    measure: Callable[[str, tuple[int, int, int, int], tuple[int, int, int, int]], int],
+    axis: str,
+    second_box: tuple[int, int, int, int],
+    expected: int,
+) -> None:
+    first_box = (0, 0, 10, 10)
+
+    assert measure(axis, first_box, second_box) == expected
+    assert measure(axis, second_box, first_box) == expected
