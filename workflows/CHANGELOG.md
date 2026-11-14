@@ -16,6 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- Tensor-native Detections Difference v1 uses per-detection labels for class
+  matching when they are present, including labels that share a class ID.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.
