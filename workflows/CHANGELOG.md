@@ -25,7 +25,9 @@ for contributor and maintainer responsibilities.
 - Action Recognition Model runs one extra classification on the last frame of a
   video file that reports its frame count. The timeline on that frame covers
   the tail of the clip, and a clip shorter than one stride now gets a result.
-  Live streams and files without a usable frame count behave as before.
+  Live streams and files without a usable frame count behave as before, and
+  so does a file whose last frame the source drops (for example with
+  `max_fps`).
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.

@@ -110,8 +110,10 @@ advance it. Overlapping windows can still revise ranges before it.
 On a video file that reports its frame count, the block runs one extra
 classification on the last frame, so the timeline covers the whole clip, even
 one shorter than one stride. That call also needs the model's minimum number of
-sampled frames. Live streams and files without a usable frame count get no
-extra call, so frames after the final scheduled call receive no result.
+sampled frames, and the file's last frame must reach the block: a source that
+drops frames to hold a lower rate, such as InferencePipeline with max_fps, can
+skip it. Live streams and files without a usable frame count get no extra
+call, so frames after the final scheduled call receive no result.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -403,7 +405,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 built-in default with "default" or None.
 
         Returns:
-            A timeline and error status for each input frame.
+            A timeline, error status and analyzed-frame mark for each
+            input frame.
         """
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
