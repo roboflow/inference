@@ -114,8 +114,10 @@ advance it. Overlapping windows can still revise ranges before it.
 On a video file that reports its frame count, the block runs one extra
 classification on the last frame, so the timeline covers the whole clip, even
 one shorter than one stride. That call also needs the model's minimum number of
-sampled frames. Live streams and files without a usable frame count get no
-extra call, so frames after the final scheduled call receive no result.
+sampled frames, and the file's last frame must reach the block: a source that
+drops frames to hold a lower rate, such as InferencePipeline with max_fps, can
+skip it. Live streams and files without a usable frame count get no extra
+call, so frames after the final scheduled call receive no result.
 
 By default a classification runs inside the step, so the video waits for
 the model. With background_inference, a live stream hands each window to a
