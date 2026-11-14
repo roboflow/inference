@@ -10,8 +10,22 @@
   raises `ModelInputError` when given a prompt. `ActionRecognitionModel` gains
   `supports_prompt` (default `False`).
 
+## `0.39.9`
+
+### Changed
+
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
+
 ### Fixed
 
+- RF-DETR pre-processing keeps Pillow's horizontal-first resize order. Pillow 13
+  runs the vertical pass first when height shrinks far more than width, which
+  changed 8-bit rounding and shifted predicted boxes.
 - RF-DETR ONNX models with static input shapes (object detection, instance
   segmentation, semantic segmentation and keypoints) no longer run out of GPU
   memory at high input resolution on the CUDA execution provider. When

@@ -12,6 +12,11 @@ on:
       - .github/scripts/test_pypi_workflow_conditions.mjs
       - .github/pypi-workflow-tests/**
       - .github/docker/Dockerfile.pypi-workflow-tests
+      - .github/scripts/test_pypi_dependencies.py
+      - .github/scripts/test_pypi_publish.py
+      - inference_models/pyproject.toml
+      - workflows/pyproject.toml
+      - stream_vision/pyproject.toml
       - Makefile
       - requirements/**
       - inference/core/version.py
@@ -29,6 +34,11 @@ on:
       - .github/scripts/test_pypi_workflow_conditions.mjs
       - .github/pypi-workflow-tests/**
       - .github/docker/Dockerfile.pypi-workflow-tests
+      - .github/scripts/test_pypi_dependencies.py
+      - .github/scripts/test_pypi_publish.py
+      - inference_models/pyproject.toml
+      - workflows/pyproject.toml
+      - stream_vision/pyproject.toml
       - Makefile
       - requirements/**
       - inference/core/version.py
@@ -63,6 +73,6 @@ jobs:
           echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
           docker run --rm -e SOURCE_REVISION="$GITHUB_SHA" \
             -v "$GITHUB_WORKSPACE:/work" -w /work "$image_id" \
-            sh -c 'python -m black --check .release/pypi/release.py .github/scripts/test_pypi_release.py &&
-              python -m isort --check-only .release/pypi/release.py .github/scripts/test_pypi_release.py &&
-              python -m pytest .github/scripts/test_pypi_release.py -v'
+            sh -c 'python -m black --check .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py &&
+              python -m isort --check-only .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py &&
+              python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py -v'

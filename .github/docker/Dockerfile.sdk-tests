@@ -38,7 +38,7 @@ RUN python -m pip install --no-cache-dir \
     && python -m pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
 RUN make create_isolation_wheels \
     && python -m pip install --find-links /work/dist \
-    "$(ls /work/dist/roboflow_workflows-*.whl)[enterprise]" \
+    "$(ls /work/dist/roboflow_workflows-*.whl)[enterprise,databricks]" \
     "$(ls /work/dist/streamvision-*.whl)[webrtc]" \
     /work/dist/inference_sdk-*.whl /work/dist/inference_models-*.whl \
     && python -m pip install --force-reinstall --no-deps \
