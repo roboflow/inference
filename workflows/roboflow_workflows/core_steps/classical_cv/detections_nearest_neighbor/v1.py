@@ -351,6 +351,21 @@ def resolve_keypoint_anchor_points(
     detections: sv.Detections,
     keypoint_name: str,
 ) -> np.ndarray:
+    """Resolve the named keypoint for each detection.
+
+    Args:
+        detections (sv.Detections): Predictions to extract anchors from.
+        keypoint_name (str): Class name of the keypoint to use as an anchor.
+
+    Returns:
+        An `(N, 2)` array of anchors, with NaNs for missing keypoints.
+
+    Raises:
+        ValueError: Nonempty predictions are missing a required keypoint column.
+    """
+    if len(detections) == 0:
+        return np.empty((0, 2), dtype=np.float64)
+
     keypoints_xy = detections.data.get(KEYPOINTS_XY_KEY_IN_SV_DETECTIONS)
     keypoints_class_name = detections.data.get(
         KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS

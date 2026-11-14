@@ -339,3 +339,105 @@ def test_detections_nearest_neighbor_workflow_when_target_set_is_empty_tensor_na
             "With an empty target set every query detection must be unmatched "
             "(nearest_target_distance=None)."
         )
+
+
+@pytest.mark.parametrize(
+    ("query_point", "target_point", "expected_distances", "expected_matches"),
+    [
+        ("CENTER", "KEYPOINT", [None], 0),
+        ("KEYPOINT", "CENTER", [], 0),
+        ("KEYPOINT", "KEYPOINT", [], 0),
+        ("CENTER", "CENTER", [5.0], 1),
+    ],
+    ids=["empty-target", "empty-query", "both-empty", "both-populated"],
+)
+def test_keypoint_nearest_neighbor_workflow_with_serialized_predictions(
+    query_point: str,
+    target_point: str,
+    expected_distances: list[float | None],
+    expected_matches: int,
+) -> None:
+    """Check empty keypoint inputs and a populated bbox control on the wire."""
+    anchors = {"query": query_point, "target": target_point}
+    outputs = (
+        "query_predictions",
+        "matched_query_detections",
+        "matched_target_detections",
+    )
+    workflow_definition = {
+        "version": "1.0",
+        "inputs": [
+            {
+                "type": "WorkflowBatchInput",
+                "name": side,
+                "kind": [
+                    (
+                        "keypoint_detection_prediction"
+                        if point == "KEYPOINT"
+                        else "object_detection_prediction"
+                    )
+                ],
+            }
+            for side, point in anchors.items()
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/detections_nearest_neighbor@v1",
+                "name": "nearest_neighbor",
+                "query_predictions": "$inputs.query",
+                "target_predictions": "$inputs.target",
+                "query_point": query_point,
+                "target_point": target_point,
+                "query_keypoint_name": "nose",
+                "target_keypoint_name": "nose",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": name,
+                "selector": f"$steps.nearest_neighbor.{name}",
+                "coordinates_system": "own",
+            }
+            for name in outputs
+        ],
+    }
+    runtime_parameters = {}
+    for side, x, y in (("query", 8, 9), ("target", 11, 13)):
+        prediction = {
+            "x": x,
+            "y": y,
+            "width": 12,
+            "height": 12,
+            "class": "person",
+            "class_id": 0,
+            "confidence": 0.9,
+            "detection_id": side,
+        }
+        runtime_parameters[side] = [
+            {
+                "image": {"width": 64, "height": 48},
+                "predictions": [] if anchors[side] == "KEYPOINT" else [prediction],
+            }
+        ]
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters={},
+    )
+    try:
+        (result,) = execution_engine.run(
+            runtime_parameters=runtime_parameters,
+            serialize_results=True,
+        )
+    finally:
+        execution_engine.close()
+
+    assert [
+        prediction[NEAREST_TARGET_DISTANCE_KEY]
+        for prediction in result["query_predictions"]["predictions"]
+    ] == expected_distances
+    for side in ("query", "target"):
+        assert [
+            prediction["detection_id"]
+            for prediction in result[f"matched_{side}_detections"]["predictions"]
+        ] == [side] * expected_matches
