@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Added an opt-in RF-DETR ONNX attention rewrite for the CoreML MLProgram GPU
+  memory growth reported in #3302. Set
+  `INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND=true` to try the temporary
+  workaround on affected Apple Silicon deployments.
+
 ## `0.39.9`
 
 ### Changed
