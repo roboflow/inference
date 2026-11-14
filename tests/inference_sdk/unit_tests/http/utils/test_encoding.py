@@ -65,11 +65,12 @@ def test_pillow_image_to_base64_jpeg_when_mode_not_supported_by_jpeg(
     assert image.size == recovered_image.size
 
 
-def test_pillow_image_to_base64_jpeg_scales_unsigned_16_bit_images() -> None:
+@pytest.mark.parametrize("mode", ["I;16", "I;16L", "I;16B"])
+def test_pillow_image_to_base64_jpeg_scales_unsigned_16_bit_images(mode: str) -> None:
     # given
-    array = np.full((16, 16), 40000, dtype=np.uint16)
-    image = Image.fromarray(array)
-    assert image.mode == "I;16"
+    dtype = ">u2" if mode == "I;16B" else "<u2"
+    array = np.full((16, 16), 40000, dtype=dtype)
+    image = Image.frombytes(mode, (16, 16), array.tobytes())
 
     # when
     encoded_image = pillow_image_to_base64_jpeg(image=image)
