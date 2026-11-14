@@ -1881,6 +1881,24 @@ def test_late_background_call_names_the_frames_no_window_covered():
     assert late["analyzed_until_frame"] == 3
 
 
+def test_late_background_call_does_not_blame_frames_the_stride_skips():
+    # The window is 4 frames and the stride 8, so calls are due on 9 and 17
+    # and frames 10-13 have no window by design. The first call runs until
+    # frame 20, so only 14-16 are lost to the wait.
+    block, model = _make_background_block()
+    try:
+        for number in range(1, 20):
+            _run_background(block, number, stride_seconds=2.0)
+
+        _finish_pending_call(block, model)
+        late = _run_background(block, 20, stride_seconds=2.0)
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert "source frames 14-16 have no result" in late["error_status"]
+
+
 def test_streams_of_one_step_take_turns_on_the_background_worker():
     block, model = _make_background_block()
     try:
