@@ -56,7 +56,9 @@ def get_action_recognition_contract(
     Raises:
         ModelImplementationNotFoundError: No registered action recognition
             implementation serves the model's architecture.
-        ModelRetrievalError: A contract file cannot be downloaded.
+        ModelRetrievalError: The package holds a contract file only as a
+            local file. A failed download raises the downloader's own error
+            (``RetryError``, ``requests.HTTPError`` or ``FileHashSumMissmatch``).
         CorruptedModelPackageError: The package files are invalid.
         ValueError: A V-JEPA 2.1 package's ``inference_config.json`` is invalid.
 
