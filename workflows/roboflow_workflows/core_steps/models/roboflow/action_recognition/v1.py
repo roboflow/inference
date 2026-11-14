@@ -114,19 +114,22 @@ advance it. Overlapping windows can still revise ranges before it.
 On a video file that reports its frame count, the block runs one extra
 classification on the last frame, so the timeline covers the whole clip, even
 one shorter than one stride. That call also needs the model's minimum number of
-sampled frames. Live streams and files without a usable frame count get no
-extra call, so frames after the final scheduled call receive no result.
+sampled frames, and the file's last frame must reach the block: a source that
+drops frames to hold a lower rate, such as InferencePipeline with max_fps, can
+skip it. Live streams and files without a usable frame count get no extra
+call, so frames after the final scheduled call receive no result.
 
 By default a classification runs inside the step, so the video waits for
 the model. With background_inference, a live stream hands each window to a
 worker thread and the step returns at once. The result reaches the timeline
-on a later frame, and analyzed_until_frame shows how far results go. One
-call runs per stream at a time: a call that comes due while the previous one
-has not finished waits, then takes the newest window, and error_status names
-any frames no window covered. The step has one worker, so its streams take
-turns: with several cameras on one step, each camera's results arrive less
-often. Video files always classify inside the step, so every window is
-analyzed and results are repeatable.
+on the stream's next frame after the call ends, and analyzed_until_frame
+shows how far results go. The last call of a stream that stops is therefore
+not reported. One call runs per stream at a time: a call that comes due
+while the previous one has not finished waits, then takes the newest window,
+and error_status names the frames that the wait left without a result. The
+step has one worker, so its streams take turns: with several cameras on one
+step, each camera's results arrive less often. Video files always classify
+inside the step, so every window is analyzed and results are repeatable.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -677,6 +680,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             gap_notice = self._describe_deferral_gap(
                 bookkeeping=bookkeeping,
                 cutoff_frame_number=cutoff_frame_number,
+                on_time_cutoff_frame_number=next_fire_frame_number - window_frames,
             )
             bookkeeping.fire_deferred = False
             bookkeeping.tail_flushed = is_last_file_frame
@@ -916,12 +920,17 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         bookkeeping: _ActionRecognitionBookkeeping,
         *,
         cutoff_frame_number: int,
+        on_time_cutoff_frame_number: int,
     ) -> str:
         """Name the frames a late call left without a result, if any."""
         if not bookkeeping.fire_deferred:
             return ""
 
-        first_uncovered = bookkeeping.last_fire_frame_number + 1
+        # A stride longer than the window skips frames by design. The call
+        # that was due would not have covered those either.
+        first_uncovered = (
+            max(bookkeeping.last_fire_frame_number, on_time_cutoff_frame_number) + 1
+        )
         if cutoff_frame_number < first_uncovered:
             return ""
 
