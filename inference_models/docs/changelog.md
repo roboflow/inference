@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `Cosmos3EdgeActionRecognition.infer(..., prompt=...)` replaces the zero-shot
+  instruction ("List all action segments in the video."). The answer format block
+  is always appended, so the output still parses into spans. A fine-tuned model
+  raises `ModelInputError` when given a prompt. `ActionRecognitionModel` gains
+  `supports_prompt` (default `False`).
+
 ## `0.39.9`
 
 ### Changed

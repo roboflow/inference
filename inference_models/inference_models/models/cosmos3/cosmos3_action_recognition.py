@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from inference_models.entities import Confidence
-from inference_models.errors import CorruptedModelPackageError
+from inference_models.errors import CorruptedModelPackageError, ModelInputError
 from inference_models.logger import LOGGER
 from inference_models.models.base.action_recognition import (
     SLIDING_WINDOW_MODE,
@@ -42,9 +42,10 @@ FINE_TUNE_MAX_NEW_TOKENS = 256
 # to one whole-clip segment, and the reasoning pass is what keeps it dense:
 # with thinking off, every trained temporal format lands on round numbers
 # that do not follow the content.
-ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT = """List all action segments in the video.
-
-Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
+ZERO_SHOT_TEMPORAL_LOCALIZATION_INSTRUCTION = "List all action segments in the video."
+# A caller's prompt replaces the instruction above and never this block: it is
+# the answer format _parse_cookbook_segments reads.
+ZERO_SHOT_TEMPORAL_LOCALIZATION_FORMAT = """Provide the result in json format with 'seconds' for time depiction for each event. Use keywords 'start', 'end' and 'caption' in the json output. Please list multiple events if applicable.
 
 ```json
 [
@@ -61,6 +62,10 @@ Provide the result in json format with 'seconds' for time depiction for each eve
 ...
 ]
 ```"""
+ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT = (
+    f"{ZERO_SHOT_TEMPORAL_LOCALIZATION_INSTRUCTION}\n\n"
+    f"{ZERO_SHOT_TEMPORAL_LOCALIZATION_FORMAT}"
+)
 FINE_TUNE_SYSTEM_PROMPT = (
     "You are Cosmos 3 Edge, a physical AI reasoning model. Watch the video "
     "carefully and answer with only what is asked."
@@ -193,6 +198,37 @@ def _normalize_frames(
             frame = frame.float()
         normalized_frames[index] = frame.numpy()
     return normalized_frames
+
+
+def _zero_shot_prompt(prompt: Optional[str]) -> str:
+    """Build the zero-shot prompt, with the caller's instruction when given.
+
+    Args:
+        prompt (Optional[str]): Instruction replacing the trained one, or
+            ``None`` to keep the trained one.
+
+    Returns:
+        str: The instruction followed by the answer format block.
+
+    Raises:
+        ModelInputError: The prompt is blank or carries the system prompt
+            sentinel, which would move the format block out of the user turn.
+    """
+    if prompt is None:
+        return ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT
+    instruction = prompt.strip()
+    if not instruction:
+        raise ModelInputError(
+            message="The action recognition prompt must not be blank.",
+        )
+    if SYSTEM_PROMPT_SENTINEL in instruction:
+        raise ModelInputError(
+            message=(
+                f"The action recognition prompt must not contain "
+                f"{SYSTEM_PROMPT_SENTINEL!r}."
+            ),
+        )
+    return f"{instruction}\n\n{ZERO_SHOT_TEMPORAL_LOCALIZATION_FORMAT}"
 
 
 def _answer_text(response: Any) -> str:
@@ -346,6 +382,14 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
     def video_sampling(self) -> VideoSampling:
         return self._video_sampling
 
+    @property
+    def supports_prompt(self) -> bool:
+        """Only the zero-shot model takes a caller's prompt.
+
+        A fine-tune answers as trained only under the prompt it trained on.
+        """
+        return self._fine_tune_prefix_allowed_tokens_fn is None
+
     @classmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
@@ -413,6 +457,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         confidence: Optional[Confidence] = None,
         duration_seconds: Optional[float] = None,
         check_cancelled: Optional[Callable[[], None]] = None,
+        prompt: Optional[str] = None,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         """Classify sampled RGB frames using the Cosmos generation path.
@@ -425,6 +470,10 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
             duration_seconds (Optional[float]): Ignored. Spans use the supplied
                 sample count and FPS for their bounds.
             check_cancelled (Optional[Callable]): Request control between model calls.
+            prompt (Optional[str]): Zero-shot only. Replaces the trained
+                instruction ("List all action segments in the video."). The
+                answer format block is always appended, so the output still
+                parses into spans.
             **kwargs: Additional text-generation options.
 
         Returns:
@@ -432,9 +481,19 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
 
         Raises:
             ValueError: The caller does not supply a sampling rate.
+            ModelInputError: A prompt is sent to a fine-tuned model, or the
+                prompt is blank.
         """
         if fps is None:
             raise ValueError("fps is required for action recognition")
+        if prompt is not None and not self.supports_prompt:
+            raise ModelInputError(
+                message=(
+                    "A fine-tuned Cosmos 3 action recognition model answers as "
+                    "trained only under its training prompt, so it does not "
+                    "take a prompt. Send a prompt to the zero-shot model only."
+                ),
+            )
         if check_cancelled is not None:
             check_cancelled()
 
@@ -453,6 +512,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
                 frames=normalized_frames,
                 class_names=class_names,
                 fps=fps,
+                prompt=_zero_shot_prompt(prompt),
                 **kwargs,
             )
         if check_cancelled is not None:
@@ -526,6 +586,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         frames: List[np.ndarray],
         class_names: Optional[List[str]],
         fps: float,
+        prompt: str,
         **kwargs,
     ) -> List[ActionRecognitionPrediction]:
         if class_names:
@@ -551,7 +612,7 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         )
         response = self._reasoner.prompt_video(
             frames=frames,
-            prompt=ZERO_SHOT_TEMPORAL_LOCALIZATION_PROMPT,
+            prompt=prompt,
             input_color_format="rgb",
             video_fps=fps,
             **generation_kwargs,
