@@ -171,8 +171,8 @@ def required_gstreamer_cuda_elements(
     """List the GStreamer elements required for the CUDA producer.
 
     Args:
-        video: Source URI or file path. A camera index or no source requests
-            the generic element probe.
+        video (str | int | None): Source URI or file path. A camera index or no
+            source requests the generic element probe.
 
     Returns:
         Element factory names. RTSP probes cover every implemented RTSP chain.
@@ -196,8 +196,8 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
     """Build a pipeline that outputs planar RGB in CUDA memory.
 
     Args:
-        video: Source URI or file path.
-        device_id: CUDA device for the output conversion.
+        video (str): Source URI or file path.
+        device_id (int): CUDA device for the output conversion.
 
     Returns:
         The GStreamer pipeline description.
