@@ -31,14 +31,15 @@ _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
 _APPSINK_SYNC_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_APPSINK_SYNC"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
-_RTSP_VIDEO_CODECS = ("h264", "h265")
 _BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
-_RTSP_ELEMENTS = (
-    "h264parse",
-    "h265parse",
-    "rtph264depay",
-    "rtph265depay",
-    "rtspsrc",
+_RTSP_CODEC_ELEMENTS = {
+    "h264": ("rtph264depay", "h264parse"),
+    "h265": ("rtph265depay", "h265parse"),
+    "vp8": ("rtpvp8depay",),
+}
+RTSP_CUDA_VIDEO_CODECS = tuple(_RTSP_CODEC_ELEMENTS)
+_RTSP_ELEMENTS = ("rtspsrc",) + tuple(
+    element for chain in _RTSP_CODEC_ELEMENTS.values() for element in chain
 )
 _FILE_DEMUXERS = {
     ".avi": "avidemux",
@@ -172,11 +173,8 @@ def required_gstreamer_cuda_elements(
     if not isinstance(video, str):
         return tuple(elements)
     if _is_rtsp_source(video):
-        # RTSP uses an explicit rtspsrc ! depay ! parse ! decodebin chain
-        # (no uridecodebin autoplugging), so uridecodebin is not required.
-        return tuple(
-            ["appsink", "cudaconvertscale", "queue", "decodebin"] + list(_RTSP_ELEMENTS)
-        )
+        # RTSP links its depayloader and any parser before decodebin.
+        return ("appsink", "cudaconvertscale", "queue", "decodebin", *_RTSP_ELEMENTS)
     demuxer = _file_demuxer(video)
     if demuxer is not None:
         # Container files use an explicit filesrc+demux chain, not uridecodebin.
@@ -222,13 +220,13 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
         # a software decoder cannot satisfy the caps, so selection fails loudly
         # instead of silently falling back — and _validate_pipeline re-checks
         # the instantiated factories after the first frame either way.
-        codec = _rtsp_video_codec()
+        codec_chain = " ! ".join(_RTSP_CODEC_ELEMENTS[_rtsp_video_codec()])
         return (
             f'rtspsrc location="{_quote_gstreamer_value(video)}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
             "application/x-rtp,media=video ! "
             "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
+            f"{codec_chain} ! "
             'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
             f"{tail}"
         )
@@ -478,11 +476,11 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
 
 
 def _rtsp_video_codec() -> str:
-    codec = os.getenv(_RTSP_CODEC_ENV_VAR, _RTSP_VIDEO_CODECS[0]).strip().lower()
-    if codec not in _RTSP_VIDEO_CODECS:
+    codec = os.getenv(_RTSP_CODEC_ENV_VAR, "h264").strip().lower()
+    if codec not in _RTSP_CODEC_ELEMENTS:
         raise ValueError(
             f"Unsupported RTSP video codec {codec!r} in {_RTSP_CODEC_ENV_VAR} "
-            f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
+            f"(supported: {', '.join(RTSP_CUDA_VIDEO_CODECS)})"
         )
     return codec
 

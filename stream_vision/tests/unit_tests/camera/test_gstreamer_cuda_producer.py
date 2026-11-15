@@ -193,23 +193,6 @@ def test_grab_cadence_stats_count_short_and_long_gaps(monkeypatch) -> None:
     }
 
 
-def test_rtsps_element_contract_includes_tls_capable_rtsp_source() -> None:
-    elements = set(required_gstreamer_cuda_elements("rtsps://camera.example.test/live"))
-
-    assert {
-        "cudaconvertscale",
-        "decodebin",
-        "h264parse",
-        "h265parse",
-        "rtph264depay",
-        "rtph265depay",
-        "rtspsrc",
-    }.issubset(elements)
-    # The explicit rtspsrc chain does not autoplug the source, so the
-    # uridecodebin stack is no longer part of the RTSP requirements.
-    assert "uridecodebin" not in elements
-
-
 def test_rtsp_source_uses_explicit_video_only_pipeline() -> None:
     pipeline = build_gstreamer_cuda_pipeline(
         "rtsps://camera.example.test:7441/live?token=secret", device_id=1
@@ -238,12 +221,27 @@ def test_rtspt_source_is_recognised_as_rtsp() -> None:
     assert pipeline.startswith('rtspsrc location="rtspt://camera.example.test/live"')
 
 
-def test_rtsp_codec_env_selects_h265_chain(monkeypatch) -> None:
-    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", "h265")
+@pytest.mark.parametrize(
+    "codec,codec_elements",
+    [
+        ("h264", ("rtph264depay", "h264parse")),
+        ("h265", ("rtph265depay", "h265parse")),
+        ("vp8", ("rtpvp8depay",)),
+    ],
+)
+def test_rtsp_codec_selects_pipeline_and_required_elements(
+    monkeypatch, codec, codec_elements
+) -> None:
+    monkeypatch.setenv("ROBOFLOW_RTSP_VIDEO_CODEC", codec)
+    source = "rtsps://camera.example.test/live"
 
-    pipeline = build_gstreamer_cuda_pipeline("rtsp://camera.example.test/live")
+    pipeline = build_gstreamer_cuda_pipeline(source)
+    elements = set(required_gstreamer_cuda_elements(source))
 
-    assert "rtph265depay ! h265parse ! " in pipeline
+    chain = " ! ".join(codec_elements)
+    assert f'{chain} ! decodebin caps="video/x-raw(memory:CUDAMemory)"' in pipeline
+    assert {"rtspsrc", *codec_elements}.issubset(elements)
+    assert "uridecodebin" not in elements
 
 
 def test_rtsp_codec_env_rejects_unsupported_codec(monkeypatch) -> None:
