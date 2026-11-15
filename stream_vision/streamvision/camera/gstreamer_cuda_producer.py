@@ -37,6 +37,7 @@ _RTSP_CODEC_ELEMENTS = {
     "h265": ("rtph265depay", "h265parse"),
     "vp8": ("rtpvp8depay",),
 }
+# Implemented RTSP chains. Decoder availability depends on the GPU and driver.
 RTSP_CUDA_VIDEO_CODECS = tuple(_RTSP_CODEC_ELEMENTS)
 _RTSP_ELEMENTS = ("rtspsrc",) + tuple(
     element for chain in _RTSP_CODEC_ELEMENTS.values() for element in chain
@@ -167,6 +168,15 @@ def probe_gstreamer_cuda_elements(
 def required_gstreamer_cuda_elements(
     video: Optional[Union[str, int]] = None,
 ) -> Sequence[str]:
+    """List the GStreamer elements required for the CUDA producer.
+
+    Args:
+        video: Source URI or file path. A camera index or no source requests
+            the generic element probe.
+
+    Returns:
+        Element factory names. RTSP probes cover every implemented RTSP chain.
+    """
     elements = list(_BASE_ELEMENTS)
     if video is None:
         return tuple(elements)
@@ -183,6 +193,19 @@ def required_gstreamer_cuda_elements(
 
 
 def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
+    """Build a pipeline that outputs planar RGB in CUDA memory.
+
+    Args:
+        video: Source URI or file path.
+        device_id: CUDA device for the output conversion.
+
+    Returns:
+        The GStreamer pipeline description.
+
+    Raises:
+        ValueError: The RTSP source uses an unsupported codec setting in
+            `ROBOFLOW_RTSP_VIDEO_CODEC`.
+    """
     is_live = _local_file_path(video) is None
     queue_options = (
         "max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream"
