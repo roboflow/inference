@@ -123,6 +123,10 @@ class RemoteActionRecognitionModel:
         }
         if transport is not ApiKeyTransport.HEADER:
             payload["api_key"] = self.api_key
+        if class_names:
+            payload["class_filter"] = class_names
+        if confidence is not None:
+            payload["confidence"] = confidence
         headers = None
         if transport is not ApiKeyTransport.LEGACY and self.api_key is not None:
             headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -130,10 +134,6 @@ class RemoteActionRecognitionModel:
             **configuration.to_source_parameters(include_origin=True),
             **(configuration.to_billing_query_parameters() or {}),
         }
-        if class_names:
-            payload["class_filter"] = class_names
-        if confidence is not None:
-            payload["confidence"] = confidence
         api_url = (
             HOSTED_CORE_MODEL_URL
             if WORKFLOWS_REMOTE_API_TARGET == "hosted"
@@ -147,13 +147,16 @@ class RemoteActionRecognitionModel:
                 headers=headers,
                 timeout=REMOTE_REQUEST_TIMEOUT_SECONDS,
             )
+        except requests.exceptions.InvalidHeader:
+            # requests quotes the rejected value, and the only header set here
+            # is Authorization, so the text would carry the API key.
+            raise requests.RequestException(
+                "requests rejected the API key as an Authorization header value."
+            ) from None
         except requests.RequestException as error:
             # The error text quotes the request URL, service secret included,
             # and it reaches the logs and the block's error_status output.
             detail = deduct_api_key_from_string(value=str(error))
-            if self.api_key and self.api_key.strip():
-                # requests also quotes a header it rejects, key included.
-                detail = detail.replace(self.api_key.strip(), "***")
             raise requests.RequestException(detail) from None
         if response.status_code >= 400:
             # The message reaches the block's error_status output.
