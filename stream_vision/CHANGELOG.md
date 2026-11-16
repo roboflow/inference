@@ -4,6 +4,11 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Added
+
+- The GStreamer CUDA producer supports VP8 over RTSP with
+  `ROBOFLOW_RTSP_VIDEO_CODEC=vp8` on GPUs with a VP8 decoder.
+
 ## `0.1.6`
 
 ### Changed
@@ -11,7 +16,7 @@ This is the canonical changelog for the `streamvision` package.
 - Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
   installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
   because Pillow 13 does not support it.
-- The `workflows` extra requires `roboflow-workflows>=0.2.16rc2` instead of
+- The `workflows` extra requires `roboflow-workflows>=0.2.16` instead of
   `>=0.2.15`.
 - Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
   on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
