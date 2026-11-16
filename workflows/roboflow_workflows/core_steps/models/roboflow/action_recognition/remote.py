@@ -13,8 +13,8 @@ Two bounded differences from a local call remain:
 * The endpoint rounds a window's duration to whole microseconds, so a model
   that turns seconds back into frames can place a boundary one sample apart.
 
-The encoding is lossy by default, for speed. ``encode_window`` states what
-that costs against a lossless clip.
+The encoding is lossy, for speed. ``encode_window`` states what that costs
+against a lossless clip.
 """
 
 import base64
@@ -46,8 +46,7 @@ from inference_sdk.http.utils.requests import deduct_api_key_from_string
 
 ACTION_RECOGNITION_ENDPOINT = "/infer/action_recognition"
 REMOTE_REQUEST_TIMEOUT_SECONDS = 120.0
-LOSSLESS_CODEC = ("FFV1", ".mkv")
-LOSSY_CODEC = ("mp4v", ".mp4")
+CLIP_CODEC = ("mp4v", ".mp4")
 CONTAINER_FPS_TOLERANCE = 1e-3
 _MICROSECONDS = 1_000_000
 
@@ -225,26 +224,23 @@ def load_remote_action_recognition_model(
     return model
 
 
-def encode_window(
-    frames: Sequence[Any], *, fps: float, lossless: bool = False
-) -> bytes:
+def encode_window(frames: Sequence[Any], *, fps: float) -> bytes:
     """Encode RGB frames as a clip whose container states ``fps``.
 
-    The default is OpenCV's MPEG-4 Part 2 (``mp4v``) at its default bitrate.
-    Measured on 48 Cosmos windows, it is 14 times smaller than FFV1 (138 KB
-    against 1.9 MB for 32 frames at 360 px) and matches the lossless answer
-    in 28 of them. Elsewhere a boundary moves by at most three samples, and
-    two short ranges at a window's trailing edge drop out. Higher-fidelity
+    The codec is OpenCV's MPEG-4 Part 2 (``mp4v``) at its default bitrate.
+    Measured on 48 Cosmos windows, it is 14 times smaller than lossless FFV1
+    (138 KB against 1.9 MB for 32 frames at 360 px) and matches the lossless
+    answer in 28 of them. Elsewhere a boundary moves by at most three samples,
+    and two short ranges at a window's trailing edge drop out. Higher-fidelity
     MJPEG and VP9 moved as many boundaries for more bytes, and the Linux
     OpenCV wheels cannot write H.264.
 
-    OpenCV's FFmpeg writer crops an odd width or height to even, in both
-    codecs, so an odd-sized frame loses its last row or column.
+    OpenCV's FFmpeg writer crops an odd width or height to even, so an
+    odd-sized frame loses its last row or column.
 
     Args:
         frames: RGB frames of one size, HWC arrays or CHW uint8 tensors.
         fps: Frame rate the container declares.
-        lossless: Use FFV1, which decodes to the same pixels (even sizes).
 
     Returns:
         The encoded clip.
@@ -257,7 +253,7 @@ def encode_window(
     if any(frame.shape[:2] != (height, width) for frame in bgr_frames):
         raise ValueError("A remote window needs frames of one size.")
 
-    codec, suffix = LOSSLESS_CODEC if lossless else LOSSY_CODEC
+    codec, suffix = CLIP_CODEC
     handle, path = tempfile.mkstemp(suffix=suffix)
     os.close(handle)
     try:

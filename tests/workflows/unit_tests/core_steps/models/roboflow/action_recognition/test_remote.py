@@ -135,33 +135,8 @@ def _read_back_through_the_endpoint_clip_path(clip: bytes):
 
 
 @pytest.mark.parametrize("frame_count", [4, 9, 31, 32])
-def test_lossless_window_reads_back_exactly_through_the_endpoint_clip_path(
-    frame_count,
-):
+def test_window_clip_maps_one_to_one_through_the_endpoint_clip_path(frame_count):
     frames = _frames(frame_count)
-
-    source_fps, probed_count, windows, decoded = (
-        _read_back_through_the_endpoint_clip_path(
-            encode_window(frames, fps=12.0, lossless=True)
-        )
-    )
-
-    assert (source_fps, probed_count) == (12.0, frame_count)
-    assert [list(window.frame_indices) for window in windows] == [
-        list(range(frame_count))
-    ]
-    assert all(np.array_equal(sent, read) for sent, read in zip(frames, decoded[0]))
-
-
-@pytest.mark.parametrize("frame_count", [4, 31, 32])
-def test_default_window_is_a_smaller_lossy_clip_that_still_maps_one_to_one(
-    frame_count,
-):
-    # A moving gradient compresses like video, unlike random noise.
-    ramp = np.tile(np.arange(64, dtype=np.uint8) * 4, (48, 1))
-    frames = [
-        np.dstack([np.roll(ramp, shift, axis=1)] * 3) for shift in range(frame_count)
-    ]
 
     clip = encode_window(frames, fps=12.0)
     source_fps, probed_count, windows, decoded = (
@@ -169,7 +144,6 @@ def test_default_window_is_a_smaller_lossy_clip_that_still_maps_one_to_one(
     )
 
     assert clip[4:8] == b"ftyp"
-    assert len(clip) < len(encode_window(frames, fps=12.0, lossless=True))
     assert (source_fps, probed_count) == (12.0, frame_count)
     assert [list(window.frame_indices) for window in windows] == [
         list(range(frame_count))
