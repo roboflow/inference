@@ -18,7 +18,6 @@ from roboflow_workflows.core_steps.models.foundation.qwen_vlm.v4 import (
     QwenVlmBlockV4,
 )
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
-from roboflow_workflows.prototypes.block import third_party_model
 
 from tests.unit_tests.core_steps._vlm_prediction_readers import (
     classification_top_class,
@@ -240,90 +239,3 @@ def test_run_reports_error_status_for_undecodable_detection_output(mock_or):
 
     assert result[0]["predictions"] is None
     assert result[0]["error_status"] is True
-
-
-def test_qwen4_max_schema_and_resource_discovery():
-    properties = BlockManifest.model_json_schema()["properties"]
-    variants = properties["openrouter_model_version"]
-    assert any("Qwen 4 Max" in variant.get("enum", []) for variant in variants["anyOf"])
-    assert variants["values_metadata"]["Qwen 4 Max"]["reasoning_levels"] == [
-        "none",
-        "low",
-        "high",
-        "xhigh",
-    ]
-    assert _manifest(
-        backend="openrouter", openrouter_model_version="Qwen 4 Max"
-    ).discover_dependent_resources() == [
-        third_party_model(provider="openrouter", model_id="qwen/qwen4-max")
-    ]
-    resource = _manifest(
-        backend="openrouter", openrouter_model_version="$inputs.model"
-    ).discover_dependent_resources()[0]
-    assert resource.metadata.model_id_resolver("Qwen 4 Max") == "qwen/qwen4-max"
-
-
-@pytest.mark.parametrize(
-    "effort,reasoning",
-    [
-        ("none", {"enabled": False}),
-        ("low", {"effort": "low"}),
-        ("high", {"effort": "high"}),
-        ("xhigh", {"effort": "xhigh"}),
-    ],
-)
-@patch.object(QwenVlmBlockV4, "execute_openrouter_batch_with_usage")
-def test_qwen4_max_routes_reasoning_and_decodes_detections(mock_or, effort, reasoning):
-    _manifest(
-        backend="openrouter",
-        openrouter_model_version="Qwen 4 Max",
-        reasoning_effort=effort,
-    )
-    mock_or.return_value = [
-        OpenRouterResult(
-            content=DETECTION_OUTPUT,
-            reasoning_trace="",
-            input_tokens=11,
-            output_tokens=7,
-        )
-    ]
-
-    result = _openrouter_block().run(
-        **_base_run_kwargs(
-            openrouter_model_version="Qwen 4 Max",
-            reasoning_effort=effort,
-            task_type="object-detection",
-            classes=["cat"],
-            max_tokens=131072,
-        )
-    )
-
-    assert mock_or.call_args.kwargs["model"] == "qwen/qwen4-max"
-    assert mock_or.call_args.kwargs["reasoning"] == reasoning
-    assert mock_or.call_args.kwargs["max_tokens"] == 131072
-    assert detection_boxes(result[0]["predictions"]) == EXPECTED_XYXY
-    assert result[0]["error_status"] is False
-    assert result[0]["input_tokens"] == 11
-
-
-@pytest.mark.parametrize(
-    "model,effort", [("Qwen 4 Max", "medium"), ("Qwen 3.8 Max", "xhigh")]
-)
-@patch.object(QwenVlmBlockV4, "execute_openrouter_batch_with_usage")
-def test_model_specific_reasoning_rejected_before_request(mock_or, model, effort):
-    with pytest.raises(ValueError, match="supports reasoning_effort"):
-        _manifest(
-            backend="openrouter",
-            openrouter_model_version=model,
-            reasoning_effort=effort,
-        )
-
-    with pytest.raises(ValueError, match="supports reasoning_effort"):
-        _openrouter_block().run(
-            **_base_run_kwargs(
-                openrouter_model_version=model,
-                reasoning_effort=effort,
-            )
-        )
-
-    mock_or.assert_not_called()

@@ -793,9 +793,6 @@ The block uses Qwen-tuned inference plumbing validated by benchmarks:
   field to bypass Roboflow billing. Recommended for structured tasks that benefit
   from larger models (classification, object-detection, structured-answering).
 
-Qwen 4 Max is available through OpenRouter with reasoning disabled or set to
-Low, High, or Extra High. Medium is not supported for this model.
-
 The `model_version` dropdown lists every supported variant; each is bound to one backend.
 A validator catches mismatches between your selected backend and model.
 
