@@ -186,19 +186,6 @@ def required_gstreamer_cuda_elements(
 
 
 def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
-    """Build a pipeline that outputs planar RGB in CUDA memory.
-
-    Args:
-        video (str): Source URI or file path.
-        device_id (int): CUDA device for the output conversion.
-
-    Returns:
-        The GStreamer pipeline description.
-
-    Raises:
-        ValueError: The RTSP source uses an unsupported codec setting in
-            `ROBOFLOW_RTSP_VIDEO_CODEC`.
-    """
     is_live = _local_file_path(video) is None
     queue_options = (
         "max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream"
