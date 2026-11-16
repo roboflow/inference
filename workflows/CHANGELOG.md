@@ -37,6 +37,11 @@ for contributor and maintainer responsibilities.
   - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
   - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
 
+- Action Recognition Model v1 and v2 support REMOTE step execution. Both
+  keep per-video state in the workflow, read the sampling contract from model
+  package metadata, and send each window to `/infer/action_recognition` as a
+  short MPEG-4 clip.
+
 - **Action Recognition Model v2** (`roboflow_core/roboflow_action_recognition_model@v2`)
   exposes one `predictions` output of kind `action_recognition_result`. It
   contains the cumulative `timeline`, the current `error_status`, and
@@ -171,10 +176,6 @@ Bundled execution engine: `1.17.2`.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
-- Action Recognition Model v1 runs under REMOTE step execution. The block
-  keeps its per-video state and sends each window's model call to
-  `/infer/action_recognition` as a short MPEG-4 clip. It reads the model's
-  sampling contract from the package metadata instead of loading the model.
 
 ### Added
 
