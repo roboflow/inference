@@ -1,4 +1,4 @@
-.PHONY: style check_code_quality download_fonts create_workflows_wheel create_streamvision_wheel create_models_wheel create_isolation_wheels create_pypi_wheels
+.PHONY: style check_code_quality download_fonts create_workflows_wheel create_streamvision_wheel create_models_wheel create_isolation_wheels create_pypi_wheels create_pypi_sdk_wheel create_pypi_runtime_wheels
 
 serve:
 	SKIP_CODEGEN=1 python -m zensical serve
@@ -54,16 +54,16 @@ stop_test_docker:
 create_workflows_wheel: download_fonts
 	which uv || pip install uv
 	cd workflows && uv lock --check
-	cd workflows && uv build --out-dir ../dist
+	cd workflows && uv build --no-create-gitignore --out-dir ../dist
 
 create_streamvision_wheel:
 	which uv || pip install uv
 	cd stream_vision && uv lock --check
-	cd stream_vision && uv build --wheel --out-dir ../dist
+	cd stream_vision && uv build --no-create-gitignore --wheel --out-dir ../dist
 
 create_models_wheel:
 	which uv || pip install uv
-	cd inference_models && uv build --wheel --out-dir ../dist
+	cd inference_models && uv build --no-create-gitignore --wheel --out-dir ../dist
 
 # Build checkout artifacts; transitive dependencies still resolve from PyPI.
 create_isolation_wheels: create_workflows_wheel create_models_wheel create_streamvision_wheel
@@ -80,6 +80,21 @@ create_pypi_wheels:
 	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
 	rm -rf dist/pypi
 	set -e; for script in inference.core inference.cpu inference.gpu inference inference.sdk inference.cli; do \
+		rm -rf build/*; \
+		${PYTHON} .release/pypi/$$script.setup.py bdist_wheel --dist-dir dist/pypi; \
+	done
+
+# Separate publication inventories. Keep create_pypi_wheels and image build
+# targets compatible with callers that need all six distributions.
+create_pypi_sdk_wheel:
+	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+	rm -rf dist/sdk build
+	${PYTHON} .release/pypi/inference.sdk.setup.py bdist_wheel --dist-dir dist/sdk
+
+create_pypi_runtime_wheels:
+	${PYTHON} -m pip install "setuptools>=83.0.0" "wheel>=0.38.1,<=0.45.1"
+	rm -rf dist/pypi
+	set -e; for script in inference.core inference.cpu inference.gpu inference inference.cli; do \
 		rm -rf build/*; \
 		${PYTHON} .release/pypi/$$script.setup.py bdist_wheel --dist-dir dist/pypi; \
 	done
@@ -123,4 +138,5 @@ create_inference_cli_whl:
 
 
 upload_wheels:
-	twine upload $(filter-out $(wildcard dist/roboflow_workflows-*.whl dist/inference_models-*.whl dist/streamvision-*.whl),$(wildcard dist/*.whl))
+	# The SDK is uploaded only by the publish_sdk job in publish.pypi.yml.
+	twine upload $(filter-out $(wildcard dist/inference_sdk-*.whl dist/roboflow_workflows-*.whl dist/inference_models-*.whl dist/streamvision-*.whl),$(wildcard dist/*.whl))

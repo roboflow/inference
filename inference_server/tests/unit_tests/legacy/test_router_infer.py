@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 from types import SimpleNamespace
@@ -77,6 +78,39 @@ def test_infer_object_detection_single(legacy_client, fake_stat):
     assert "time" in body and "inference_id" in body
     infer_call = next(c for c in gw.calls if c[0] == "infer")
     assert infer_call[3]["confidence"] == 0.3
+
+
+def test_repack_prediction_runs_off_the_event_loop(
+    legacy_client, fake_stat, monkeypatch
+):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gw = FakeGateway(
+        predictions={("ds/1", "infer"): _det()},
+        model_info={"ds/1": {"class_names": ["cat"], "actions": {"infer": {}}}},
+    )
+    on_event_loop = []
+
+    def recording_repack(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            on_event_loop.append(True)
+        except RuntimeError:
+            on_event_loop.append(False)
+        return repack_prediction(*args, **kwargs)
+
+    monkeypatch.setattr(router_module, "repack_prediction", recording_repack)
+
+    response = legacy_client(gw).post(
+        "/infer/object_detection",
+        json={
+            "model_id": "ds/1",
+            "api_key": "k",
+            "image": {"type": "base64", "value": _jpeg_b64()},
+        },
+    )
+
+    assert response.status_code == 200
+    assert on_event_loop == [False]
 
 
 def test_infer_object_detection_batch_shapes(legacy_client, fake_stat):

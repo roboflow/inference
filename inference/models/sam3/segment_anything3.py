@@ -446,7 +446,7 @@ class SegmentAnything3(RoboflowCoreModel):
                 service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
-                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                    f"API key does not have access to model {self.endpoint}"
                 )
 
         # Already cached
