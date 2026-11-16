@@ -4,6 +4,8 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.6.post1`
+
 ### Added
 
 - The GStreamer CUDA producer supports VP8 over RTSP with
