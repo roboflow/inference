@@ -1830,6 +1830,7 @@ def test_background_call_returns_at_once_and_lands_on_a_later_frame():
     finally:
         model.gate.set()
         block.close()
+        # A second close() must be a no-op.
         block.close()
 
     # The result belongs to the window that ended on frame 3, not to the
@@ -1989,13 +1990,17 @@ def test_stream_restart_drops_the_result_of_the_call_it_left_behind():
     assert after["analyzed_until_frame"] is None
 
 
-def test_switching_background_inference_resets_the_stream():
-    block, _ = _make_block(responses=[[_model_segment("walk")]])
-    for number in (1, 2, 3):
-        blocking = _run(block, _make_frame(number))
+def test_switching_background_inference_off_still_collects_the_running_call():
+    block, model = _make_background_block(responses=[[_model_segment("walk")]])
+    try:
+        for number in (1, 2, 3):
+            _run_background(block, number)
 
-    switched = _run(block, _make_frame(4), background_inference=True)
+        _finish_pending_call(block, model)
+        switched = _run(block, _make_frame(4))
+    finally:
+        model.gate.set()
+        block.close()
 
-    assert len(blocking["timeline"]) == 1
-    assert switched["timeline"] == []
-    assert switched["analyzed_until_frame"] is None
+    assert switched["analyzed_until_frame"] == 3
+    assert [entry["class_name"] for entry in _timeline_as_dicts(switched)] == ["walk"]
