@@ -24,6 +24,13 @@
   with `size mismatch for query_feat.weight`, now load; packages without the key
   keep the variant default. A malformed value (not an integer, a bool, or less
   than 1) raises `CorruptedModelPackageError`.
+- An `executorch` backend runs RF-DETR object detection from local ExecuTorch packages
+  (`weights.pte`, plus `weights.ptd` when the program keeps data outside it). The program takes the
+  same normalized input as the ONNX export, and the backend reuses the ONNX path's pre- and
+  post-processing. Programs lowered to TensorRT, alone or with ExecuTorch's CUDA backend, run on
+  NVIDIA GPUs, and XNNPACK programs run on the CPU. A program exported for one batch size runs larger
+  batches in chunks. ExecuTorch is not a dependency of any extra: install `torch_tensorrt[executorch]`
+  for TensorRT programs or `executorch>=1.6` for XNNPACK programs (Python 3.11+, `torch==2.15.0`).
 
 ### Changed
 

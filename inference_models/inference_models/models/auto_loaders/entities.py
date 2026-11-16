@@ -36,6 +36,7 @@ class BackendType(str, Enum):
     CUSTOM = "custom"
     VLLM = "vllm"
     COREML = "coreml"
+    EXECUTORCH = "executorch"
 
 
 AnyModel = Union[
