@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 import torch
 from PIL import ImageFont
-from pydantic import ValidationError
 from roboflow_workflows.core_steps.visualizations.action_recognition import (
     v1 as visualization_module,
 )
@@ -427,21 +426,9 @@ def test_run_rejects_an_unknown_display_mode_and_a_non_bgr_image():
     # A selector defers the display_mode check to run time.
     assert manifest.display_mode == "$inputs.display_mode"
     with pytest.raises(ValueError, match="display_mode"):
-        block.run(_image(1), [], display_mode="delayed")
+        block.run(_image(1), [], None, display_mode="delayed")
     with pytest.raises(ValueError, match="uint8 BGR"):
-        block.run(gray, [])
-
-
-@pytest.mark.parametrize("display_mode", ["synchronized", "$inputs.display_mode"])
-def test_manifest_requires_the_analyzed_mark_unless_display_is_live(display_mode):
-    with pytest.raises(ValidationError, match="analyzed_until_frame"):
-        BlockManifest(
-            type=TYPE,
-            name="display",
-            image="$inputs.image",
-            timeline="$steps.model.timeline",
-            display_mode=display_mode,
-        )
+        block.run(gray, [], None)
 
 
 @pytest.mark.parametrize("display_mode", [None, "synchronized"])

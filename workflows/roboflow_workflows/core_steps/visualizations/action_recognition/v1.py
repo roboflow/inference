@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import supervision as sv
 from PIL import Image, ImageDraw, ImageFont
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.workload_presets import (
     STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
@@ -130,11 +130,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Timeline output of the same stream's Action Recognition Model.",
         examples=["$steps.actions.timeline"],
     )
-    analyzed_until_frame: Optional[Selector(kind=[INTEGER_KIND])] = Field(
-        default=None,
+    analyzed_until_frame: Selector(kind=[INTEGER_KIND]) = Field(
         description=(
             "The model's analyzed_until_frame output. It marks which frames "
-            "have a result. Required for synchronized display."
+            "have a result."
         ),
         examples=["$steps.actions.analyzed_until_frame"],
     )
@@ -187,27 +186,6 @@ class BlockManifest(WorkflowBlockManifest):
         ),
         examples=[256, 512],
     )
-
-    @model_validator(mode="after")
-    def validate_synchronized_inputs(self) -> "BlockManifest":
-        """Require the analyzed-frame mark when playback must follow it.
-
-        Returns:
-            The validated manifest.
-
-        Raises:
-            ValueError: If a display that can be synchronized has no
-                analyzed_until_frame.
-        """
-        # A selector can resolve to "synchronized" at run time, where a
-        # missing mark looks the same as a model with no result yet.
-        if self.display_mode != "live" and self.analyzed_until_frame is None:
-            raise ValueError(
-                "synchronized display needs analyzed_until_frame from the "
-                "Action Recognition Model."
-            )
-
-        return self
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -339,7 +317,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         timeline: Optional[List[ActionRecognitionPrediction]],
-        analyzed_until_frame: Optional[int] = None,
+        analyzed_until_frame: Optional[int],
         display_mode: str = "live",
         history_seconds: float = 30.0,
         max_delay_seconds: float = 60.0,
@@ -351,7 +329,8 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         Args:
             image: Original frame carrying source video metadata.
             timeline: Current ranges from the same video's model output.
-            analyzed_until_frame: Last frame the model has a result for.
+            analyzed_until_frame: Last frame the model has a result for, or
+                None before its first result.
             display_mode: "live" or "synchronized".
             history_seconds: Video time the strip covers.
             max_delay_seconds: Upper limit of the synchronized delay.
