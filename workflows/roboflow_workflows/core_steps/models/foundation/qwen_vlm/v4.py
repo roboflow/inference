@@ -319,18 +319,26 @@ REASONING_EFFORT_METADATA = {
         ),
     },
     "xhigh": {
-        "name": "Extra High",
-        "description": "Extra-high reasoning effort for Qwen 4 Max. Increase max_tokens for longer answers.",
+        "name": "Extra high",
+        "description": (
+            "Largest reasoning budget. Only Qwen 4 Max supports it; raise "
+            "`max_tokens` so reasoning does not crowd out the answer."
+        ),
     },
 }
 
-# OpenRouter variants use the shared set (OpenRouter normalizes). Native
-# variants have no effort knob. Override a row with `reasoning_levels` if
-# a future model diverges.
+OPENROUTER_DEFAULT_REASONING_LEVELS = ["none", "low", "medium", "high"]
+
+# OpenRouter variants default to the set above; native variants have no effort
+# knob. A row overrides with `reasoning_levels`.
 MODEL_REASONING_LEVELS = {
     label: variant.get(
         "reasoning_levels",
-        ["none", "low", "medium", "high"] if variant["backend"] == "openrouter" else [],
+        (
+            OPENROUTER_DEFAULT_REASONING_LEVELS
+            if variant["backend"] == "openrouter"
+            else []
+        ),
     )
     for label, variant in MODEL_VARIANTS.items()
 }
@@ -777,6 +785,7 @@ The block uses Qwen-tuned inference plumbing validated by benchmarks:
   which bloats latency and can consume the whole token budget. v2 disables it by
   default and exposes a `reasoning_effort` knob. Qwen 3.8 Max and the Qwen 3 VL
   Thinking variants require reasoning and fall back to low effort when disabled.
+  Qwen 4 Max adds an `xhigh` effort and does not offer `medium`.
 * Uploads are downscaled automatically when they would exceed the Qwen provider
   payload limit. `max_tokens` defaults to 2048 on both backends; raise it
   explicitly (e.g. 8192) when you need a longer answer.
@@ -996,6 +1005,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "which bloats latency and can consume the whole token budget "
             "before a visible answer is produced. Models that require "
             "reasoning (Qwen 3.8 Max) fall back to low effort when disabled. "
+            "Qwen 4 Max supports none, low, high and xhigh. "
             "Only used when backend=openrouter."
         ),
         json_schema_extra={
