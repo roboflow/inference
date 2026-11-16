@@ -39,7 +39,7 @@ from inference_models.models.rfdetr.class_remapping import (
     ClassesReMapping,
     prepare_class_remapping,
 )
-from inference_models.models.rfdetr.common import parse_model_type
+from inference_models.models.rfdetr.common import parse_model_type, parse_num_queries
 from inference_models.models.rfdetr.default_labels import resolve_labels
 from inference_models.models.rfdetr.optimization.backend_path import (
     RFDetrBackendPath,
@@ -201,6 +201,14 @@ class RFDetrForObjectDetectionTorch(
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
+        num_queries = parse_num_queries(
+            config_path=model_package_content["model_type.json"]
+        )
+        if num_queries is not None:
+            # The query embeddings in the weights are sized by the trained count;
+            # one prediction per query, as the ONNX and TRT packages decode.
+            model_config.num_queries = num_queries
+            model_config.num_select = num_queries
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
         model_config.num_classes = checkpoint_num_classes - 1
         model_config.resolution = (
