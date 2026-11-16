@@ -4,6 +4,11 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Added
+
+- The GStreamer CUDA producer supports VP8 over RTSP with
+  `ROBOFLOW_RTSP_VIDEO_CODEC=vp8` on GPUs with a VP8 decoder.
+
 ## `0.1.6`
 
 ### Changed
