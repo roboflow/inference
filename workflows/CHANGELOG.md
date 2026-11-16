@@ -41,6 +41,7 @@ for contributor and maintainer responsibilities.
 
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
+- `filelock` 4 is allowed (`filelock>=3.20.3,<5.0.0`), matching `inference-models`.
 
 ### Fixed
 

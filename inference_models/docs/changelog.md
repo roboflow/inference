@@ -40,6 +40,10 @@
   up to 3 × `VLLM_REQUEST_TIMEOUT_S` (6 minutes at the default 120 s) where the
   former `500` failed after one attempt. Lower `VLLM_REQUEST_TIMEOUT_S` where
   that wait is too long.
+- `filelock` 4 is allowed (`filelock>=3.20.3,<5.0.0`), so `inference-models` can be
+  installed next to packages that need it, such as Torch-TensorRT 2.15
+  (`filelock>=4.2.1`). filelock 4.0 changed only `SoftReadWriteLock`;
+  `inference-models` uses `FileLock`.
 
 ## `0.39.9`
 
