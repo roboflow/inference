@@ -322,6 +322,9 @@ from roboflow_workflows.core_steps.flow_control.delta_filter.v1 import (
 from roboflow_workflows.core_steps.flow_control.inner_workflow.v1 import (
     InnerWorkflowBlockV1,
 )
+from roboflow_workflows.core_steps.flow_control.openai_decisions_switch.v1 import (
+    OpenAIDecisionsSwitchBlockV1,
+)
 from roboflow_workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
@@ -1797,6 +1800,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         InnerWorkflowBlockV1,
         RateLimiterBlockV1,
         SwitchCaseBlockV1,
+        OpenAIDecisionsSwitchBlockV1,
         PerspectiveCorrectionBlockV1,
         DeltaFilterBlockV1,
         CameraCalibrationBlockV1,
