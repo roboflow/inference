@@ -18,6 +18,7 @@ from inference_server.framework.input_parsers.json_base64 import extract_json_ba
 from inference_server.framework.input_parsers.url_fetch import fetch_images_from_urls
 from inference_server.legacy.common import (
     ImagePayload,
+    _decode_base64,
     decode_inline_image,
     load_request_images,
 )
@@ -1246,3 +1247,75 @@ async def test_image_load_errors_carry_the_legacy_error_class(
         400,
         f"{PREFIX}{public_message}",
     )
+
+
+def _stdlib_decode_base64(value):
+    import re
+
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        encoded = bytes(value)
+        try:
+            encoded.decode("utf-8")
+        except UnicodeDecodeError:
+            return ("error", RAW_BYTES)
+    elif isinstance(value, str):
+        encoded = value.encode("utf-8")
+    else:
+        return ("error", MALFORMED_BASE64)
+    encoded = re.sub(rb"^data:image/[a-zA-Z]+;base64,", b"", encoded)
+    try:
+        data = base64.b64decode(encoded, validate=False)
+    except Exception:
+        return ("error", MALFORMED_BASE64)
+    if not data:
+        return ("error", EMPTY_PAYLOAD)
+    return ("ok", data)
+
+
+_B64_PAYLOAD = base64.b64encode(bytes(range(256)) * 3).decode()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        _B64_PAYLOAD,
+        _B64_PAYLOAD.encode(),
+        bytearray(_B64_PAYLOAD.encode()),
+        memoryview(_B64_PAYLOAD.encode()),
+        f"data:image/png;base64,{_B64_PAYLOAD}",
+        f"data:image/jpeg;base64,{_B64_PAYLOAD}".encode(),
+        f"DATA:image/png;base64,{_B64_PAYLOAD}",
+        f"data:image/png;base64,data:image/png;base64,{_B64_PAYLOAD}",
+        f" data:image/png;base64,{_B64_PAYLOAD}",
+        f"data:image/png;base64,{_B64_PAYLOAD}"[:-1],
+        _B64_PAYLOAD[:-2],
+        _B64_PAYLOAD[:-3],
+        "\n".join(_B64_PAYLOAD[i : i + 76] for i in range(0, len(_B64_PAYLOAD), 76)),
+        _B64_PAYLOAD[:40] + " \r\n\t" + _B64_PAYLOAD[40:],
+        _B64_PAYLOAD[:40] + "!*" + _B64_PAYLOAD[40:],
+        _B64_PAYLOAD[:40] + "\u00e9" + _B64_PAYLOAD[40:],
+        _B64_PAYLOAD.replace("+", "-").replace("/", "_"),
+        "abc",
+        "abcd=",
+        "====",
+        "!!!",
+        "",
+        b"",
+        "data:image/png;base64,",
+        b"\xff\xd8\xff\xe0",
+        b"ab\xc3\xa9cd",
+        b"ab\xc3",
+        123,
+        None,
+        ["abcd"],
+    ],
+)
+def test_decode_base64_matches_stdlib_behavior(value):
+    expected = _stdlib_decode_base64(value)
+
+    try:
+        actual = ("ok", _decode_base64(value))
+    except LegacyHTTPError as error:
+        actual = ("error", error.message.removeprefix(PREFIX))
+
+    assert actual == expected

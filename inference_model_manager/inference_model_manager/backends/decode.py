@@ -17,6 +17,7 @@ import threading
 import zlib
 from typing import Any, Callable, Iterator
 
+import cv2
 import imagecodecs
 import numpy as np
 from packaging.version import InvalidVersion, Version
@@ -1150,7 +1151,17 @@ def _imagecodecs_factory(device: str) -> Callable[[bytes], Any]:
         # Before the BGR copy: a headerless oversized image must not be
         # allocated twice on its way to being rejected.
         _guard_decoded(decoded, max_decoded_pixels())
-        return decoded[..., ::-1].copy()
+        if (
+            decoded.ndim == 3
+            and decoded.shape[2] == 3
+            and decoded.dtype == np.uint8
+            and decoded.size > 0
+        ):
+            bgr = cv2.cvtColor(decoded, cv2.COLOR_RGB2BGR)
+        else:
+            bgr = decoded[..., ::-1].copy()
+
+        return bgr
 
     return _decode_imagecodecs
 

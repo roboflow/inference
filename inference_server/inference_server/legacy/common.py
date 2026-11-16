@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import cv2
 import numpy as np
 import orjson
+import pybase64
 import requests
 import tldextract
 from fastapi import Request, Response
@@ -511,9 +512,11 @@ def _decode_base64(value: Any) -> bytes:
         encoded = value.encode("utf-8")
     else:
         raise image_load_error(_MALFORMED_BASE64_ERROR)
-    encoded = _BASE64_DATA_TYPE_PATTERN.sub(b"", encoded)
+    prefix = _BASE64_DATA_TYPE_PATTERN.match(encoded)
+    if prefix is not None:
+        encoded = memoryview(encoded)[prefix.end() :]
     try:
-        data = base64.b64decode(encoded, validate=False)
+        data = pybase64.b64decode(encoded, validate=False)
     except Exception as error:
         raise image_load_error(_MALFORMED_BASE64_ERROR) from error
     if not data:
