@@ -76,8 +76,15 @@ def _shade(result):
     return int(result["image"].numpy_image[1, -2, 0])
 
 
-def _strip_changed(result, number):
-    return not np.all(result["image"].numpy_image[-12:] == number % 256)
+def _draws_the_timeline(result, number, *, analyzed_until_frame):
+    # The strip darkens the frame even with no actions; compare with none.
+    empty = ActionRecognitionVisualizationBlockV1().run(
+        _image(number), [], analyzed_until_frame=analyzed_until_frame
+    )
+    drawn, blank = result["image"].numpy_image, empty["image"].numpy_image
+    lower_half = slice(drawn.shape[0] // 2, None)
+    differs = not np.array_equal(drawn[lower_half], blank[lower_half])
+    return differs
 
 
 def _synchronized(block, number, *, image=None, analyzed_until_frame=None, **kwargs):
@@ -167,7 +174,7 @@ def test_live_draws_a_strip_on_a_copy_with_or_without_the_mark(mark):
 
     assert result["status"] == ("analyzing" if mark is None else "live")
     assert result["displayed_frame_number"] == 50
-    assert _strip_changed(result, 50)
+    assert _draws_the_timeline(result, 50, analyzed_until_frame=mark)
     assert np.all(source.numpy_image == 50)
     assert result["image"].numpy_image.shape == source.numpy_image.shape
 
@@ -368,6 +375,8 @@ def test_class_names_outside_ascii_draw_with_and_without_the_font(monkeypatch):
     fallback = ActionRecognitionVisualizationBlockV1().run(
         _image(50), timeline, analyzed_until_frame=45
     )
+    # Compare before the font patch, so both renders use the fallback font.
+    fallback_drawn = _draws_the_timeline(fallback, 50, analyzed_until_frame=45)
     monkeypatch.setattr(
         visualization_module, "resolve_font_path", lambda font_family: "font.ttf"
     )
@@ -383,8 +392,8 @@ def test_class_names_outside_ascii_draw_with_and_without_the_font(monkeypatch):
     )
 
     assert fallback["actions"] == ["Saída 走る"]
-    assert _strip_changed(fallback, 50)
-    assert _strip_changed(with_font, 50)
+    assert fallback_drawn
+    assert _draws_the_timeline(with_font, 50, analyzed_until_frame=45)
 
 
 def test_frame_too_small_for_a_strip_is_returned_with_its_outputs():
