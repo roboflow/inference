@@ -1830,6 +1830,7 @@ def test_background_call_returns_at_once_and_lands_on_a_later_frame():
     finally:
         model.gate.set()
         block.close()
+        # A second close() must be a no-op.
         block.close()
 
     # The result belongs to the window that ended on frame 3, not to the
@@ -1856,7 +1857,9 @@ def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
         model.gate.set()
         block.close()
 
-    assert len(model.calls) == 2
+    # A frame's blue channel holds its number: the late call saw frames 5 and 7.
+    classified = [[frame[0, 0, 2] for frame in call["frames"]] for call in model.calls]
+    assert classified == [[1, 3], [5, 7]]
     assert late["analyzed_until_frame"] == 3
     assert after["analyzed_until_frame"] == 7
     # Frames 4-7 sit inside the one-second window ending on 7: no gap.
@@ -1987,13 +1990,17 @@ def test_stream_restart_drops_the_result_of_the_call_it_left_behind():
     assert after["analyzed_until_frame"] is None
 
 
-def test_switching_background_inference_resets_the_stream():
-    block, _ = _make_block(responses=[[_model_segment("walk")]])
-    for number in (1, 2, 3):
-        blocking = _run(block, _make_frame(number))
+def test_switching_background_inference_off_still_collects_the_running_call():
+    block, model = _make_background_block(responses=[[_model_segment("walk")]])
+    try:
+        for number in (1, 2, 3):
+            _run_background(block, number)
 
-    switched = _run(block, _make_frame(4), background_inference=True)
+        _finish_pending_call(block, model)
+        switched = _run(block, _make_frame(4))
+    finally:
+        model.gate.set()
+        block.close()
 
-    assert len(blocking["timeline"]) == 1
-    assert switched["timeline"] == []
-    assert switched["analyzed_until_frame"] is None
+    assert switched["analyzed_until_frame"] == 3
+    assert [entry["class_name"] for entry in _timeline_as_dicts(switched)] == ["walk"]

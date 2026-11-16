@@ -188,8 +188,8 @@ class _ActionRecognitionBookkeeping:
     fire_deferred: bool = False
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
-    signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence], bool] = field(
-        default_factory=lambda: ((), 0.0, 0.0, None, False)
+    signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
+        default_factory=lambda: ((), 0.0, 0.0, None)
     )
 
 
@@ -517,7 +517,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             requested_window_seconds,
             requested_stride_seconds,
             confidence,
-            background_inference,
         )
         video_id = metadata.video_identifier
         frame_number = metadata.frame_number
