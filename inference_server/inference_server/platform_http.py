@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 API_REQUEST_TIMEOUT_S = get_float_from_env(
     "ROBOFLOW_API_REQUEST_TIMEOUT", default=120.0
 )
+# A POST to the API proxy waits on a third-party model's answer; a deployment
+# that runs batch jobs on large models can wait longer for it than for the rest
+# of the platform.
+API_PROXY_REQUEST_TIMEOUT_S = get_float_from_env(
+    "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", default=API_REQUEST_TIMEOUT_S
+)
 
 
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:

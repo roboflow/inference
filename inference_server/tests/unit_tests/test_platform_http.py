@@ -1,4 +1,9 @@
 import json
+import os
+import subprocess
+import sys
+
+import pytest
 
 from inference_server import configuration, platform_http
 
@@ -70,3 +75,43 @@ def test_build_api_headers_ignores_undecodable_extras(monkeypatch):
         "X-Allow-Chunked": "true",
         "x-a": "1",
     }
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, "120.0"),
+        ({"ROBOFLOW_API_REQUEST_TIMEOUT": "90"}, "90.0"),
+        ({"ROBOFLOW_API_PROXY_REQUEST_TIMEOUT": "330"}, "330.0"),
+        (
+            {
+                "ROBOFLOW_API_REQUEST_TIMEOUT": "90",
+                "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT": "330",
+            },
+            "330.0",
+        ),
+    ],
+)
+def test_api_proxy_request_timeout_is_the_api_request_timeout_unless_set(
+    overrides, expected
+):
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in ("ROBOFLOW_API_REQUEST_TIMEOUT", "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT")
+    }
+    env.update(overrides)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from inference_server import platform_http;"
+            "print(platform_http.API_PROXY_REQUEST_TIMEOUT_S)",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == expected

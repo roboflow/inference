@@ -12,7 +12,7 @@ import requests.exceptions
 from aioresponses import aioresponses
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
-from requests_mock import Mocker
+from requests_mock import ANY, Mocker
 from yarl import URL
 
 from inference.core import roboflow_api
@@ -5359,6 +5359,31 @@ def test_post_to_roboflow_api_does_not_use_api_proxy_base_url_for_other_endpoint
 
     assert result == {"status": "ok"}
     assert requests_mock.last_request.url == expected_url
+
+
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_REQUEST_TIMEOUT", 120)
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 330)
+@pytest.mark.parametrize(
+    "endpoint, expected_timeout",
+    [
+        ("apiproxy/gemini/gemini-4-carbon", 330),
+        ("/api-proxy/openai/", 330),
+        ("apiproxy", 330),
+        ("some/endpoint", 120),
+        ("apiproxyfoo", 120),
+        ("x/apiproxy/y", 120),
+    ],
+)
+def test_post_to_roboflow_api_waits_the_api_proxy_timeout_for_api_proxy_endpoints(
+    requests_mock: Mocker,
+    endpoint: str,
+    expected_timeout: int,
+) -> None:
+    requests_mock.post(ANY, json={"status": "ok"})
+
+    post_to_roboflow_api(endpoint=endpoint, api_key="my_api_key")
+
+    assert requests_mock.last_request.timeout == expected_timeout
 
 
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)

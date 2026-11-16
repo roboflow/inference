@@ -54,6 +54,7 @@ from inference.core.env import (
     OFFLINE_MODE,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
+    ROBOFLOW_API_PROXY_REQUEST_TIMEOUT,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
@@ -2157,12 +2158,17 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     return f"{url}?{parameters_string}"
 
 
-def _api_base_url_for_endpoint(endpoint: str) -> str:
+def _is_api_proxy_endpoint(endpoint: str) -> bool:
     endpoint_path = endpoint.strip("/")
-    if any(
+    is_api_proxy_endpoint = any(
         endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
         for prefix in API_PROXY_ENDPOINT_PREFIXES
-    ):
+    )
+    return is_api_proxy_endpoint
+
+
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    if _is_api_proxy_endpoint(endpoint=endpoint):
         return API_PROXY_BASE_URL
     return API_BASE_URL
 
@@ -2242,6 +2248,9 @@ def post_to_roboflow_api(
 
     The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
     waiting one and then two seconds. Other endpoints make one attempt.
+    An attempt on an API proxy endpoint (``apiproxy/...``, ``api-proxy/...``)
+    waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds, any other one
+    ``ROBOFLOW_API_REQUEST_TIMEOUT``.
 
     Args:
         endpoint: API endpoint path
@@ -2277,13 +2286,18 @@ def post_to_roboflow_api(
         wrapped_url = wrap_url(full_url)
 
         headers = build_roboflow_api_headers()
+        timeout = (
+            ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
+            if _is_api_proxy_endpoint(endpoint=endpoint)
+            else ROBOFLOW_API_REQUEST_TIMEOUT
+        )
 
         for attempt in range(3):
             response = requests.post(
                 url=wrapped_url,
                 json=payload,
                 headers=headers,
-                timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+                timeout=timeout,
                 verify=ROBOFLOW_API_VERIFY_SSL,
             )
             if (

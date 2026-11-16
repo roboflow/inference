@@ -528,6 +528,7 @@ from inference_server.legacy.errors import (  # noqa: E402
 )
 from inference_server.legacy.telemetry_recording import record_telemetry  # noqa: E402
 from inference_server.platform_http import (  # noqa: E402
+    API_PROXY_REQUEST_TIMEOUT_S,
     API_REQUEST_TIMEOUT_S,
     _add_params_to_url,
     _platform_request,
@@ -750,14 +751,19 @@ def _records_api_call(function_name: str) -> Callable:
     return decorator
 
 
+def _is_api_proxy_endpoint(endpoint: str) -> bool:
+    normalized_endpoint = endpoint.strip("/")
+    is_api_proxy_endpoint = any(
+        normalized_endpoint == prefix or normalized_endpoint.startswith(f"{prefix}/")
+        for prefix in _API_PROXY_ENDPOINT_PREFIXES
+    )
+    return is_api_proxy_endpoint
+
+
 def _api_base_url_for_endpoint(endpoint: str) -> str:
     """Return the platform base URL serving ``endpoint``, proxy prefixes included."""
-    normalized_endpoint = endpoint.strip("/")
-    for prefix in _API_PROXY_ENDPOINT_PREFIXES:
-        if normalized_endpoint == prefix or normalized_endpoint.startswith(
-            f"{prefix}/"
-        ):
-            return configuration.API_PROXY_BASE_URL
+    if _is_api_proxy_endpoint(endpoint):
+        return configuration.API_PROXY_BASE_URL
 
     return configuration.API_BASE_URL
 
@@ -800,6 +806,9 @@ class ServerRoboflowPlatformClient:
 
         The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
         waiting one and then two seconds. Other endpoints make one attempt.
+        An attempt on an API proxy endpoint (``apiproxy/...``, ``api-proxy/...``)
+        waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds, any other one
+        ``ROBOFLOW_API_REQUEST_TIMEOUT``.
 
         Args:
             endpoint: API endpoint path.
@@ -827,6 +836,11 @@ class ServerRoboflowPlatformClient:
         )
         wrapped_url = self.wrap_url(url)
         headers = self.build_api_headers()
+        timeout = (
+            API_PROXY_REQUEST_TIMEOUT_S
+            if _is_api_proxy_endpoint(endpoint)
+            else API_REQUEST_TIMEOUT_S
+        )
         try:
             for attempt in range(3):
                 response = _platform_request(
@@ -834,7 +848,7 @@ class ServerRoboflowPlatformClient:
                     wrapped_url,
                     json=payload,
                     headers=headers,
-                    timeout=API_REQUEST_TIMEOUT_S,
+                    timeout=timeout,
                 )
                 if (
                     endpoint.strip("/") != "apiproxy/google_vision_ocr"

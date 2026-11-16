@@ -891,6 +891,30 @@ def test_platform_client_post_keeps_other_endpoints_on_the_api_base_url(
         assert m.last_request.url.startswith(f"https://api.example.com/{endpoint}?")
 
 
+@pytest.mark.parametrize(
+    "endpoint, expected_timeout",
+    [
+        ("apiproxy/gemini", 330.0),
+        ("/api-proxy/x", 330.0),
+        ("apiproxy", 330.0),
+        ("dataset/abc/upload", 120.0),
+        ("apiproxyfoo", 120.0),
+        ("x/apiproxy/y", 120.0),
+    ],
+)
+def test_platform_client_post_waits_the_proxy_timeout_for_proxy_endpoints(
+    monkeypatch, endpoint, expected_timeout
+):
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr(host, "API_REQUEST_TIMEOUT_S", 120.0)
+    monkeypatch.setattr(host, "API_PROXY_REQUEST_TIMEOUT_S", 330.0)
+    with rm.Mocker() as m:
+        m.post(rm.ANY, json={})
+        host.PLATFORM_CLIENT.post(endpoint, api_key="k")
+        assert m.last_request.timeout == expected_timeout
+
+
 def test_api_proxy_base_url_defaults_to_the_api_base_url():
     env = {
         key: value for key, value in os.environ.items() if key != "API_PROXY_BASE_URL"
