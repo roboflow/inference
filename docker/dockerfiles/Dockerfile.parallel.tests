@@ -1,0 +1,12 @@
+# Keep test dependencies separate from the running server's environment.
+ARG SERVER_IMAGE=roboflow/roboflow-inference-server-gpu-parallel:test
+FROM ${SERVER_IMAGE}
+
+COPY requirements/requirements.test.integration.txt requirements/requirements.test.unit.txt /test-requirements/
+RUN python3 -m pip install --no-cache-dir \
+    -r /test-requirements/requirements.test.integration.txt \
+    -r /test-requirements/requirements.test.unit.txt
+
+# Mount the checkout here when running the tests.
+WORKDIR /app
+ENTRYPOINT ["python3", "-m", "pytest"]

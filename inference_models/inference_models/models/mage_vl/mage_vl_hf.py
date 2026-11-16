@@ -24,6 +24,7 @@ from inference_models.errors import (
     ModelRuntimeError,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 VideoInput = Union[str, "os.PathLike[str]"]
 ImageInput = Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
@@ -179,16 +180,17 @@ class MageVLHF:
         )
         _register_config_class(config)
         attn_implementation = _get_mage_vl_attn_implementation(device)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            config=config,
-            trust_remote_code=True,
-            local_files_only=local_files_only,
-            device_map=device,
-            quantization_config=quantization_config,
-            attn_implementation=attn_implementation,
-            dtype=cls.default_dtype,
-        ).eval()
+        with torch_default_dtype_lock():
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name_or_path,
+                config=config,
+                trust_remote_code=True,
+                local_files_only=local_files_only,
+                device_map=device,
+                quantization_config=quantization_config,
+                attn_implementation=attn_implementation,
+                dtype=cls.default_dtype,
+            ).eval()
         processor = AutoProcessor.from_pretrained(
             model_name_or_path,
             trust_remote_code=True,

@@ -260,7 +260,7 @@ class RoboflowInferenceModel(Model):
                 service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
-                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                    f"API key does not have access to model {self.endpoint}"
                 )
         self.cache_model_artefacts(
             countinference=countinference,
@@ -692,7 +692,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                 service_secret=self.service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
-                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                    f"API key does not have access to model {self.endpoint}"
                 )
         infer_bucket_files = self.get_infer_bucket_file_list()
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):

@@ -11,6 +11,7 @@ from transformers import AutoBackbone
 
 from inference_models.configuration import HF_HUB_CACHE, OFFLINE_MODE
 from inference_models.logger import LOGGER
+from inference_models.models.common.torch import torch_default_dtype_lock
 from inference_models.models.rfdetr.dinov2_with_windowed_attn import (
     WindowedDinov2WithRegistersBackbone,
     WindowedDinov2WithRegistersConfig,
@@ -83,13 +84,14 @@ class DinoV2(nn.Module):
             assert (
                 load_dinov2_weights
             ), "Using non-windowed attention requires loading dinov2 weights from hub"
-            self.encoder = AutoBackbone.from_pretrained(
-                name,
-                cache_dir=HF_HUB_CACHE,
-                out_features=[f"stage{i}" for i in out_feature_indexes],
-                return_dict=False,
-                local_files_only=OFFLINE_MODE,
-            )
+            with torch_default_dtype_lock():
+                self.encoder = AutoBackbone.from_pretrained(
+                    name,
+                    cache_dir=HF_HUB_CACHE,
+                    out_features=[f"stage{i}" for i in out_feature_indexes],
+                    return_dict=False,
+                    local_files_only=OFFLINE_MODE,
+                )
         else:
             window_block_indexes = set(range(out_feature_indexes[-1] + 1))
             window_block_indexes.difference_update(out_feature_indexes)
@@ -130,16 +132,17 @@ class DinoV2(nn.Module):
                     num_register_tokens=0,
                     gradient_checkpointing=gradient_checkpointing,
                 )
-            self.encoder = (
-                WindowedDinov2WithRegistersBackbone.from_pretrained(
-                    name,
-                    cache_dir=HF_HUB_CACHE,
-                    config=windowed_dino_config,
-                    local_files_only=OFFLINE_MODE,
+            with torch_default_dtype_lock():
+                self.encoder = (
+                    WindowedDinov2WithRegistersBackbone.from_pretrained(
+                        name,
+                        cache_dir=HF_HUB_CACHE,
+                        config=windowed_dino_config,
+                        local_files_only=OFFLINE_MODE,
+                    )
+                    if load_dinov2_weights
+                    else WindowedDinov2WithRegistersBackbone(windowed_dino_config)
                 )
-                if load_dinov2_weights
-                else WindowedDinov2WithRegistersBackbone(windowed_dino_config)
-            )
 
         self._out_feature_channels = [size_to_width[size]] * len(out_feature_indexes)
         self._export = False

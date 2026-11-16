@@ -17,8 +17,8 @@ the installed packages:
 ```bash
 docker run -p 9001:9001 \
     -v ./inference:/app/inference \
-    -v ./inference_models/inference_models:/usr/local/lib/python3.11/site-packages/inference_models/ \
-    -v ./workflows/roboflow_workflows:/usr/local/lib/python3.11/site-packages/roboflow_workflows/ \
+    -v ./inference_models/inference_models:/usr/local/lib/python3.12/site-packages/inference_models/ \
+    -v ./workflows/roboflow_workflows:/usr/local/lib/python3.12/site-packages/roboflow_workflows/ \
     roboflow/roboflow-inference-server-cpu
 ```
 

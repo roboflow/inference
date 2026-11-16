@@ -4,6 +4,7 @@ import pytest
 import supervision as sv
 import torch
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.classical_cv.camera_focus import v2 as camera_focus
 from roboflow_workflows.core_steps.classical_cv.camera_focus.v2 import (
     CameraFocusBlockV2,
     CameraFocusManifest,
@@ -20,6 +21,169 @@ from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+
+
+def _reference_zebra_overlay(
+    image: np.ndarray,
+    gray: np.ndarray,
+    under_thresh: int = 16,
+    over_thresh: int = 239,
+    opacity: float = 0.5,
+) -> np.ndarray:
+    """The original overlay arithmetic, kept as a pixel-parity reference."""
+    output = image.copy()
+    y, x = np.ogrid[: gray.shape[0], : gray.shape[1]]
+    zebra = ((x + y) // 8) % 2 == 0
+    for mask, color in (
+        ((gray < under_thresh) & zebra, (255, 0, 0)),
+        ((gray > over_thresh) & zebra, (0, 0, 255)),
+    ):
+        output[mask] = (
+            output[mask] * (1 - opacity) + np.array(color, dtype=np.uint8) * opacity
+        ).astype(np.uint8)
+    return output
+
+
+@pytest.mark.parametrize("opacity", [0, 0.3, 0.5, 0.6, 1])
+@pytest.mark.parametrize("thresholds", [(16, 239), (200, 100), (256, -1), (0, 255)])
+@pytest.mark.parametrize("strided", [False, True])
+def test_zebra_overlay_preserves_pixels_and_inputs(
+    opacity: float, thresholds: tuple, strided: bool
+) -> None:
+    values = np.tile(np.arange(256, dtype=np.uint8), (17, 1))
+    image = np.stack([values, np.roll(values, 1), np.roll(values, 2)], axis=-1)
+    gray = values.copy()
+    if strided:
+        image, gray = image[::2, ::-1], gray[::2, ::-1]
+    before_image, before_gray = image.copy(), gray.copy()
+    image.flags.writeable = False
+    gray.flags.writeable = False
+    under_thresh, over_thresh = thresholds
+
+    actual = camera_focus._apply_zebra_warnings(
+        image,
+        gray=gray,
+        under_thresh=under_thresh,
+        over_thresh=over_thresh,
+        opacity=opacity,
+    )
+    expected = _reference_zebra_overlay(
+        image,
+        gray=gray,
+        under_thresh=under_thresh,
+        over_thresh=over_thresh,
+        opacity=opacity,
+    )
+
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(image, before_image)
+    np.testing.assert_array_equal(gray, before_gray)
+    assert actual.dtype == image.dtype
+    assert not np.shares_memory(actual, image)
+
+
+@pytest.mark.parametrize(
+    "dtype, opacity, shape",
+    [
+        (np.float32, 0.3, (17, 29, 3)),
+        (np.uint16, 0.5, (17, 29, 3)),
+        (np.uint8, np.float32(0.3), (17, 29, 3)),
+        (np.uint8, -0.5, (17, 29, 3)),
+        (np.uint8, 1.5, (17, 29, 3)),
+        (np.uint8, 0.5, (0, 3, 3)),
+    ],
+)
+def test_zebra_overlay_preserves_other_input_arithmetic(
+    dtype: type, opacity: float, shape: tuple
+) -> None:
+    rng = np.random.default_rng(7)
+    image = rng.integers(0, 256, shape, dtype=np.uint8).astype(dtype)
+    gray = rng.integers(0, 256, shape[:2], dtype=np.uint8)
+
+    actual = camera_focus._apply_zebra_warnings(image, gray=gray, opacity=opacity)
+    expected = _reference_zebra_overlay(image, gray=gray, opacity=opacity)
+
+    np.testing.assert_array_equal(actual, expected)
+    assert actual.dtype == image.dtype
+
+
+@pytest.mark.parametrize("spacing", [1, 3, 8, 16])
+def test_zebra_mask_preserves_phase_beyond_byte_range(spacing: int) -> None:
+    shape = (517, 1027)
+    y, x = np.ogrid[: shape[0], : shape[1]]
+
+    actual = camera_focus._create_zebra_mask(shape, spacing=spacing)
+
+    np.testing.assert_array_equal(actual, ((x + y) // spacing) % 2 == 0)
+
+
+@pytest.fixture
+def isolated_zebra_caches():
+    camera_focus._cached_zebra_mask.cache_clear()
+    camera_focus._zebra_blend_tables.cache_clear()
+    yield
+    camera_focus._cached_zebra_mask.cache_clear()
+    camera_focus._zebra_blend_tables.cache_clear()
+
+
+def test_zebra_caches_are_bounded_and_read_only(isolated_zebra_caches) -> None:
+    mask = camera_focus._cached_zebra_mask((17, 29))
+    assert camera_focus._cached_zebra_mask((17, 29)) is mask
+    assert not mask.flags.writeable
+    camera_focus._cached_zebra_mask((29, 17))
+    assert camera_focus._cached_zebra_mask.cache_info().currsize == 1
+
+    for opacity in np.linspace(0, 1, 10):
+        for table in camera_focus._zebra_blend_tables(float(opacity)):
+            assert not table.flags.writeable
+    assert camera_focus._zebra_blend_tables.cache_info().currsize == 8
+
+
+def test_zebra_overlay_does_not_cache_oversized_masks(
+    isolated_zebra_caches, monkeypatch
+) -> None:
+    monkeypatch.setattr(camera_focus, "_MAX_CACHED_ZEBRA_MASK_BYTES", 100)
+    image = np.zeros((11, 10, 3), dtype=np.uint8)
+    gray = np.zeros((11, 10), dtype=np.uint8)
+
+    actual = camera_focus._apply_zebra_warnings(image, gray=gray)
+
+    np.testing.assert_array_equal(actual, _reference_zebra_overlay(image, gray=gray))
+    assert camera_focus._cached_zebra_mask.cache_info().currsize == 0
+
+
+@pytest.mark.parametrize("grayscale", [False, True])
+def test_camera_focus_v2_visualization_matches_original_overlay(
+    grayscale: bool, monkeypatch
+) -> None:
+    rng = np.random.default_rng(7)
+    shape = (53, 71) if grayscale else (53, 71, 3)
+    pixels = rng.integers(0, 256, shape, dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        numpy_image=pixels.copy(),
+    )
+    detections = sv.Detections(xyxy=np.array([[3, 4, 30, 40]]))
+    parameters = {
+        **_ALL_VISUALIZATIONS,
+        "underexposed_threshold_percent": 80.0,
+        "overexposed_threshold_percent": 20.0,
+    }
+
+    actual = CameraFocusBlockV2().run(image=image, detections=detections, **parameters)
+    monkeypatch.setattr(camera_focus, "_apply_zebra_warnings", _reference_zebra_overlay)
+    expected = CameraFocusBlockV2().run(
+        image=image, detections=detections, **parameters
+    )
+
+    assert actual.keys() == expected.keys()
+    np.testing.assert_array_equal(
+        actual["image"].numpy_image, expected["image"].numpy_image
+    )
+    np.testing.assert_array_equal(image.numpy_image, pixels)
+    assert actual["focus_measure"] == expected["focus_measure"]
+    assert actual["bbox_focus_measures"] == expected["bbox_focus_measures"]
+    assert actual["image"].parent_metadata == expected["image"].parent_metadata
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])

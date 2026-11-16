@@ -8,6 +8,7 @@ remotely.
 """
 
 import json
+import time
 from contextlib import contextmanager
 from unittest import mock
 
@@ -639,10 +640,12 @@ def _recorded_rows(run_block, frozen_clock=(100.0, 100.25)):
     from inference.usage_tracking import collector as collector_module
 
     recorded = usage_collector.empty_usage_dict(exec_session_id="test-session")
+    clock = mock.Mock(wraps=collector_module.time)
+    clock.time.side_effect = list(frozen_clock)
     with mock.patch.object(
         collector_module, "GCP_SERVERLESS", False
     ), mock.patch.object(
-        collector_module.time, "time", side_effect=list(frozen_clock)
+        collector_module, "time", clock
     ), mock.patch.object(
         usage_collector, "_usage", recorded
     ):
@@ -716,6 +719,7 @@ def test_remote_block_emits_a_row_from_the_executors_own_publication(
 
     # when
     def run_block():
+        time.time()  # Other code may read the shared system clock.
         with _real_modal_executor_with_faked_transport(response):
             assert block.run(a=3, b=5) == {"result": 8}
 

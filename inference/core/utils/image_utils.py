@@ -302,7 +302,7 @@ def load_image_base64(
     value = BASE64_DATA_TYPE_PATTERN.sub("", value)
     try:
         value = pybase64.b64decode(value)
-    except binascii.Error as error:
+    except (binascii.Error, ValueError) as error:
         raise InputImageLoadError(
             message="Could not load valid image from base64 string.",
             public_message="Malformed base64 input image.",
@@ -366,7 +366,13 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
         if isinstance(value, str):
             value = pybase64.b64decode(value)
         data = pickle.loads(value)
-    except (EOFError, TypeError, pickle.UnpicklingError, binascii.Error) as error:
+    except (
+        EOFError,
+        TypeError,
+        ValueError,
+        pickle.UnpicklingError,
+        binascii.Error,
+    ) as error:
         raise InvalidNumpyInput(
             message=f"Could not unpickle image data. Cause: {error}",
             public_message="Could not deserialize pickle payload.",

@@ -37,7 +37,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | [YOLO-NAS](yolonas-object-detection.md) | `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
 | [Grounding DINO](grounding-dino.md)     | `torch` | Apache 2.0 | N/A | 🔑 | ❌ |
 | [OWLv2](owlv2.md)                       | `hugging-face` | Apache 2.0 | N/A | 🔑 | ❌ |
-| [Roboflow Instant](rroboflow-instant-object-detection)           | `hugging-face` | Roboflow   | Enterprise add-on | ❌ | ✅ |
+| [Roboflow Instant](roboflow-instant-object-detection.md)           | `hugging-face` | Roboflow   | Enterprise add-on | ❌ | ✅ |
 
 ### Instance Segmentation
 
