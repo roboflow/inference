@@ -125,11 +125,12 @@ worker thread and the step returns at once. The result reaches the timeline
 on the stream's next frame after the call ends, and analyzed_until_frame
 shows how far results go. The last call of a stream that stops is therefore
 not reported. One call runs per stream at a time: a call that comes due
-while the previous one has not finished waits, then takes the newest window,
-and error_status names the frames that the wait left without a result. The
-step has one worker, so its streams take turns: with several cameras on one
-step, each camera's results arrive less often. Video files always classify
-inside the step, so every window is analyzed and results are repeatable.
+while the previous one has not finished waits, then takes the newest window.
+When a call starts late, error_status names the frames no window covers
+between it and the previous call. The step has one worker, so its streams
+take turns: with several cameras on one step, each camera's results arrive
+less often. Video files always classify inside the step, so every window is
+analyzed and results are repeatable.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -680,7 +681,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             gap_notice = self._describe_deferral_gap(
                 bookkeeping=bookkeeping,
                 cutoff_frame_number=cutoff_frame_number,
-                on_time_cutoff_frame_number=next_fire_frame_number - window_frames,
             )
             bookkeeping.fire_deferred = False
             bookkeeping.tail_flushed = is_last_file_frame
@@ -920,23 +920,21 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         bookkeeping: _ActionRecognitionBookkeeping,
         *,
         cutoff_frame_number: int,
-        on_time_cutoff_frame_number: int,
     ) -> str:
-        """Name the frames a late call left without a result, if any."""
+        """Name the frames between a late call and the one before it, if any."""
         if not bookkeeping.fire_deferred:
             return ""
 
-        # A stride longer than the window skips frames by design. The call
-        # that was due would not have covered those either.
-        first_uncovered = (
-            max(bookkeeping.last_fire_frame_number, on_time_cutoff_frame_number) + 1
-        )
+        first_uncovered = bookkeeping.last_fire_frame_number + 1
         if cutoff_frame_number < first_uncovered:
             return ""
 
+        # The whole gap, not only the part lost to the wait: with a stride
+        # longer than the window, some of these frames have no window anyway.
         return (
-            f"The previous classification had not finished, so source frames "
-            f"{first_uncovered}-{cutoff_frame_number} have no result."
+            f"The previous classification had not finished, so this one started "
+            f"late. No window covers source frames "
+            f"{first_uncovered}-{cutoff_frame_number}."
         )
 
     def _get_executor(self) -> ThreadPoolExecutor:

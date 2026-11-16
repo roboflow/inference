@@ -34,9 +34,10 @@ for contributor and maintainer responsibilities.
   stream's next frame after the call ends, so the last call of a stream that
   stops is not reported. One call runs per stream at a time; a call that comes
   due while the previous one has not finished waits and takes the newest
-  window, and `error_status` names the frames that the wait left without a
-  result. A step has one worker, so its streams take turns. Video files always
-  classify inside the step. The default is unchanged.
+  window. When a call starts late, `error_status` names the frames no window
+  covers between it and the previous call. A step has one worker, so its
+  streams take turns. Video files always classify inside the step. The default
+  is unchanged.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.

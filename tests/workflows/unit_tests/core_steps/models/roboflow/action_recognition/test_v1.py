@@ -1863,40 +1863,34 @@ def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
     assert late["error_status"] == ""
 
 
-def test_late_background_call_names_the_frames_no_window_covered():
-    # The first call ends on frame 3. It keeps running until frame 12, so
-    # the next window covers 9-12 and frames 4-8 are never classified.
+@pytest.mark.parametrize(
+    "stride_seconds, late_frame, uncovered, analyzed_until",
+    [
+        # The first call ends on frame 3 and runs until frame 12, so the next
+        # window covers 9-12.
+        (0.5, 12, "4-8", 3),
+        # The stride is twice the window: the first call ends on frame 9 and
+        # runs until frame 20, so the next window covers 17-20. The stride
+        # skips 10-13 anyway; the notice names the whole gap.
+        (2.0, 20, "10-16", 9),
+    ],
+)
+def test_late_background_call_names_the_frames_no_window_covers(
+    stride_seconds, late_frame, uncovered, analyzed_until
+):
     block, model = _make_background_block()
     try:
-        for number in range(1, 12):
-            _run_background(block, number)
+        for number in range(1, late_frame):
+            _run_background(block, number, stride_seconds=stride_seconds)
 
         _finish_pending_call(block, model)
-        late = _run_background(block, 12)
+        late = _run_background(block, late_frame, stride_seconds=stride_seconds)
     finally:
         model.gate.set()
         block.close()
 
-    assert "source frames 4-8 have no result" in late["error_status"]
-    assert late["analyzed_until_frame"] == 3
-
-
-def test_late_background_call_does_not_blame_frames_the_stride_skips():
-    # The window is 4 frames and the stride 8, so calls are due on 9 and 17
-    # and frames 10-13 have no window by design. The first call runs until
-    # frame 20, so only 14-16 are lost to the wait.
-    block, model = _make_background_block()
-    try:
-        for number in range(1, 20):
-            _run_background(block, number, stride_seconds=2.0)
-
-        _finish_pending_call(block, model)
-        late = _run_background(block, 20, stride_seconds=2.0)
-    finally:
-        model.gate.set()
-        block.close()
-
-    assert "source frames 14-16 have no result" in late["error_status"]
+    assert f"No window covers source frames {uncovered}." in late["error_status"]
+    assert late["analyzed_until_frame"] == analyzed_until
 
 
 def test_streams_of_one_step_take_turns_on_the_background_worker():
