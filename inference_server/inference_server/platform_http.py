@@ -26,6 +26,10 @@ API_REQUEST_TIMEOUT_S = get_float_from_env(
 API_PROXY_REQUEST_TIMEOUT_S = get_float_from_env(
     "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", default=API_REQUEST_TIMEOUT_S
 )
+# Seconds this client waits for an API proxy call. The proxy keeps waiting on the
+# model provider for up to a little less than that, so a deployment that waits
+# longer (ROBOFLOW_API_PROXY_REQUEST_TIMEOUT) gets answers that take longer.
+CLIENT_TIMEOUT_HEADER = "X-Roboflow-Client-Timeout"
 
 
 def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:

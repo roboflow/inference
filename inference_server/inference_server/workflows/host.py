@@ -530,6 +530,7 @@ from inference_server.legacy.telemetry_recording import record_telemetry  # noqa
 from inference_server.platform_http import (  # noqa: E402
     API_PROXY_REQUEST_TIMEOUT_S,
     API_REQUEST_TIMEOUT_S,
+    CLIENT_TIMEOUT_HEADER,
     _add_params_to_url,
     _platform_request,
 )
@@ -807,7 +808,8 @@ class ServerRoboflowPlatformClient:
         The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
         waiting one and then two seconds. Other endpoints make one attempt.
         An attempt on an API proxy endpoint (``apiproxy/...``, ``api-proxy/...``)
-        waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds, any other one
+        waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds and sends that wait
+        in ``X-Roboflow-Client-Timeout``; any other one waits
         ``ROBOFLOW_API_REQUEST_TIMEOUT``.
 
         Args:
@@ -835,11 +837,18 @@ class ServerRoboflowPlatformClient:
             params=url_params,
         )
         wrapped_url = self.wrap_url(url)
-        headers = self.build_api_headers()
+        is_api_proxy_endpoint = _is_api_proxy_endpoint(endpoint)
         timeout = (
             API_PROXY_REQUEST_TIMEOUT_S
-            if _is_api_proxy_endpoint(endpoint)
+            if is_api_proxy_endpoint
             else API_REQUEST_TIMEOUT_S
+        )
+        headers = self.build_api_headers(
+            explicit_headers=(
+                {CLIENT_TIMEOUT_HEADER: f"{timeout:g}"}
+                if is_api_proxy_endpoint
+                else None
+            )
         )
         try:
             for attempt in range(3):

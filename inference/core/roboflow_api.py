@@ -184,6 +184,10 @@ NOT_FOUND_ERROR_MESSAGE = (
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
+# Seconds this client waits for an API proxy call. The proxy keeps waiting on the
+# model provider for up to a little less than that, so a deployment that waits
+# longer (ROBOFLOW_API_PROXY_REQUEST_TIMEOUT) gets answers that take longer.
+ROBOFLOW_CLIENT_TIMEOUT_HEADER = "X-Roboflow-Client-Timeout"
 API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 
 
@@ -2249,7 +2253,8 @@ def post_to_roboflow_api(
     The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
     waiting one and then two seconds. Other endpoints make one attempt.
     An attempt on an API proxy endpoint (``apiproxy/...``, ``api-proxy/...``)
-    waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds, any other one
+    waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds and sends that wait
+    in ``X-Roboflow-Client-Timeout``; any other one waits
     ``ROBOFLOW_API_REQUEST_TIMEOUT``.
 
     Args:
@@ -2285,11 +2290,18 @@ def post_to_roboflow_api(
         )
         wrapped_url = wrap_url(full_url)
 
-        headers = build_roboflow_api_headers()
+        is_api_proxy_endpoint = _is_api_proxy_endpoint(endpoint=endpoint)
         timeout = (
             ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
-            if _is_api_proxy_endpoint(endpoint=endpoint)
+            if is_api_proxy_endpoint
             else ROBOFLOW_API_REQUEST_TIMEOUT
+        )
+        headers = build_roboflow_api_headers(
+            explicit_headers=(
+                {ROBOFLOW_CLIENT_TIMEOUT_HEADER: str(timeout)}
+                if is_api_proxy_endpoint
+                else None
+            )
         )
 
         for attempt in range(3):

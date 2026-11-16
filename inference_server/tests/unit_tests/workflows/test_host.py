@@ -892,18 +892,18 @@ def test_platform_client_post_keeps_other_endpoints_on_the_api_base_url(
 
 
 @pytest.mark.parametrize(
-    "endpoint, expected_timeout",
+    "endpoint, expected_timeout, expected_client_timeout_header",
     [
-        ("apiproxy/gemini", 330.0),
-        ("/api-proxy/x", 330.0),
-        ("apiproxy", 330.0),
-        ("dataset/abc/upload", 120.0),
-        ("apiproxyfoo", 120.0),
-        ("x/apiproxy/y", 120.0),
+        ("apiproxy/gemini", 330.0, "330"),
+        ("/api-proxy/x", 330.0, "330"),
+        ("apiproxy", 330.0, "330"),
+        ("dataset/abc/upload", 120.0, None),
+        ("apiproxyfoo", 120.0, None),
+        ("x/apiproxy/y", 120.0, None),
     ],
 )
-def test_platform_client_post_waits_the_proxy_timeout_for_proxy_endpoints(
-    monkeypatch, endpoint, expected_timeout
+def test_platform_client_post_waits_and_declares_the_proxy_timeout(
+    monkeypatch, endpoint, expected_timeout, expected_client_timeout_header
 ):
     import inference_server.workflows.host as host
 
@@ -913,6 +913,10 @@ def test_platform_client_post_waits_the_proxy_timeout_for_proxy_endpoints(
         m.post(rm.ANY, json={})
         host.PLATFORM_CLIENT.post(endpoint, api_key="k")
         assert m.last_request.timeout == expected_timeout
+        assert (
+            m.last_request.headers.get("X-Roboflow-Client-Timeout")
+            == expected_client_timeout_header
+        )
 
 
 def test_api_proxy_base_url_defaults_to_the_api_base_url():
