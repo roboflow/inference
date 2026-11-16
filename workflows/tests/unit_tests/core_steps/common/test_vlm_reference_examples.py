@@ -1,7 +1,13 @@
 import base64
+import copy
+import hashlib
+import sys
+import threading
+import tracemalloc
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, Iterator, List, Optional, Tuple
 from unittest.mock import patch
 
 import cv2
@@ -77,6 +83,28 @@ def server_like_codec():
     set_image_codec(codec)
     yield codec
     reset_image_codec()
+
+
+@pytest.fixture
+def waiting_callers() -> Iterator[threading.Semaphore]:
+    """Released once by every caller that starts waiting for a build in progress."""
+    waiting = threading.Semaphore(0)
+    wait = vlm_reference_examples._PendingBuild.wait
+
+    def counted_wait(pending: Any, **kwargs: Any) -> List[dict]:
+        waiting.release()
+        return wait(pending, **kwargs)
+
+    with patch.object(vlm_reference_examples._PendingBuild, "wait", new=counted_wait):
+        yield waiting
+
+
+def _recording_build(text: str, builds: List[str]) -> Callable[[], List[dict]]:
+    def build() -> List[dict]:
+        builds.append(text)
+        return [{"text": text}]
+
+    return build
 
 
 def _image_base64(
@@ -668,6 +696,178 @@ def test_reference_parts_load_on_every_call_without_a_cache() -> None:
     assert load_image.call_count == 2
 
 
+@pytest.mark.parametrize(
+    "parts_for", [gemini_reference_parts_for, openai_reference_parts_for]
+)
+@pytest.mark.parametrize("as_dict", [False, True])
+def test_large_inline_cache_reuses_equal_content_and_observes_mutation(
+    parts_for, as_dict
+):
+    rng = np.random.default_rng(3363)
+    pixels = rng.integers(0, 256, (300, 400, 3), dtype=np.uint8)
+    payloads = []
+    for image in [pixels, 255 - pixels]:
+        ok, encoded = cv2.imencode(".png", image)
+        assert ok
+        payloads.append(base64.b64encode(encoded).decode())
+    assert all(len(payload) > 64 * 1024 for payload in payloads)
+    example = _example()
+    example["image"] = (
+        {"type": "base64", "value": payloads[0]} if as_dict else payloads[0]
+    )
+    original = copy.deepcopy(example)
+    cache = ReferencePartsCache()
+
+    with patch.object(
+        vlm_reference_examples, "load_reference_example", wraps=load_reference_example
+    ) as load:
+        first = parts_for([example], labels=["cat"], cache=cache)
+        assert example == original
+        equal_payload = payloads[0].encode().decode()
+        assert equal_payload is not payloads[0]
+        example["image"] = (
+            {"value": equal_payload, "type": "base64"} if as_dict else equal_payload
+        )
+        assert parts_for([example], labels=["cat"], cache=cache) is first
+        assert load.call_count == 1
+        if as_dict:
+            example["image"]["value"] = payloads[1]
+        else:
+            example["image"] = payloads[1]
+        second = parts_for([example], labels=["cat"], cache=cache)
+        assert second != first
+        assert load.call_count == 2
+
+
+@pytest.mark.parametrize("length", [65535, 65536, 65537, 131073])
+@pytest.mark.parametrize("character", ["A", "é", "😀", "\ud800", '"', "\\"])
+def test_inline_cache_key_checks_every_chunk_and_unicode_character(length, character):
+    payload = character * length
+    example = {**_example(), "image": {"type": "base64", "value": payload}}
+    key = vlm_reference_examples._cache_key(
+        [example], labels=["cat"], rendering="gemini"
+    )
+    for position in {0, min(65535, length - 1), min(65536, length - 1), length - 1}:
+        example["image"]["value"] = payload[:position] + "B" + payload[position + 1 :]
+        changed = vlm_reference_examples._cache_key(
+            [example], labels=["cat"], rendering="gemini"
+        )
+        assert changed != key
+
+
+def test_large_inline_cache_key_preserves_metadata_order_and_provider():
+    examples = [
+        {**_example(), "image": {"type": "base64", "value": "A" * 131073}},
+        _example(),
+    ]
+    labels = ["cat", "dog"]
+
+    def key(value=examples, names=labels, provider="gemini"):
+        return vlm_reference_examples._cache_key(
+            value, labels=names, rendering=provider
+        )
+
+    original = copy.deepcopy(examples)
+    expected = key()
+    assert examples == original
+    assert key(list(reversed(examples))) != expected
+    assert key(names=list(reversed(labels))) != expected
+    assert key(provider="openai") != expected
+    for field, replacement in [
+        ("x", 51),
+        ("y", 51),
+        ("width", 41),
+        ("height", 21),
+        ("class", "dog"),
+    ]:
+        changed = copy.deepcopy(examples)
+        changed[0]["annotations"][0][field] = replacement
+        assert key(changed) != expected
+    for field, replacement in [("type", "url"), ("extra", "retained metadata")]:
+        changed = copy.deepcopy(examples)
+        changed[0]["image"][field] = replacement
+        assert key(changed) != expected
+    changed = copy.deepcopy(examples)
+    changed[0]["extra"] = "caller metadata"
+    assert key(changed) != expected
+    changed[0]["annotations"].append({**changed[0]["annotations"][0], "class": "dog"})
+    before_reorder = key(changed)
+    changed[0]["annotations"].reverse()
+    assert key(changed) != before_reorder
+    reordered = [{name: item[name] for name in reversed(item)} for item in examples]
+    assert key(reordered) == expected
+    model = vlm_reference_examples.ReferenceExample.model_validate(examples[0])
+    assert key([model]) == key([model.model_dump(by_alias=True)])
+
+
+@pytest.mark.parametrize("as_dict", [False, True])
+def test_large_inline_cache_key_cannot_be_forged_with_a_digest_or_placeholder(as_dict):
+    payload = "A" * 131073
+    fingerprint = hashlib.sha256(payload.encode()).hexdigest()
+    image = {"type": "base64", "value": payload} if as_dict else payload
+    example = {**_example(), "image": image}
+    key = vlm_reference_examples._cache_key(
+        [example], labels=["cat"], rendering="gemini"
+    )
+    cache = ReferencePartsCache()
+    cache.get_or_build(key, build=lambda: [{"text": "valid cached result"}])
+    for placeholder in [None, fingerprint, [fingerprint], {"sha256": fingerprint}]:
+        forged = {"type": "base64", "value": placeholder} if as_dict else placeholder
+        candidate = vlm_reference_examples._cache_key(
+            [{**example, "image": forged}], labels=["cat"], rendering="gemini"
+        )
+        assert candidate != key
+        assert cache.get_or_build(
+            candidate, build=lambda: [{"text": "cache miss"}]
+        ) == [{"text": "cache miss"}]
+
+
+def test_large_inline_cache_key_still_bypasses_mutable_in_memory_images():
+    examples = [
+        {**_example(), "image": "A" * 131073},
+        {
+            **_example(),
+            "image": {"type": "numpy", "value": np.zeros((20, 20, 3), dtype=np.uint8)},
+        },
+    ]
+    assert (
+        vlm_reference_examples._cache_key(examples, labels=["cat"], rendering="gemini")
+        is None
+    )
+
+
+@pytest.mark.parametrize("count", [1, 10])
+def test_large_inline_warm_lookup_has_bounded_temporary_memory(count):
+    # Isolate key construction from image decoding. Inputs and retained parts
+    # exist before tracing; the baseline allocates 8-80 MiB for this lookup.
+    examples = [
+        {**_example(), "image": {"type": "base64", "value": "A" * (4 * 1024 * 1024)}}
+        for _ in range(count)
+    ]
+    cache = ReferencePartsCache()
+    builds = []
+
+    def render(parsed):
+        builds.append(len(parsed))
+        return [{"text": "rendered"}]
+
+    def run():
+        return vlm_reference_examples._reference_parts(
+            examples, labels=["cat"], rendering="gemini", cache=cache, render=render
+        )
+
+    first = run()
+    tracemalloc.start()
+    try:
+        second = run()
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert second is first
+    assert builds == [count]
+    assert peak < 1024 * 1024
+
+
 def test_reference_parts_cache_keeps_nothing_from_a_failed_build(
     server_like_codec: _ServerLikeCodec,
 ) -> None:
@@ -690,7 +890,7 @@ def test_reference_parts_cache_keeps_nothing_from_a_failed_build(
     assert server_like_codec.fetched_urls == [url["value"]]
 
 
-def test_reference_parts_of_a_new_cache_see_the_image_a_url_serves_now(
+def test_reference_parts_see_the_image_a_url_serves_once_they_expire(
     server_like_codec: _ServerLikeCodec,
 ) -> None:
     # given
@@ -700,19 +900,337 @@ def test_reference_parts_of_a_new_cache_see_the_image_a_url_serves_now(
         np.full((100, 200, 3), 30, dtype=np.uint8),
         np.full((100, 200, 3), 220, dtype=np.uint8),
     ]
-    first_job, second_job = ReferencePartsCache(), ReferencePartsCache()
+    now = [0.0]
+    cache = ReferencePartsCache(ttl_seconds=60, clock=lambda: now[0])
 
     # when
-    first = gemini_reference_parts_for(examples, labels=["cat"], cache=first_job)
-    repeated = gemini_reference_parts_for(examples, labels=["cat"], cache=first_job)
-    second = gemini_reference_parts_for(examples, labels=["cat"], cache=second_job)
+    first = gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+    now[0] = 59.0
+    before_expiry = gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+    now[0] = 60.0
+    after_expiry = gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
 
     # then
-    assert repeated == first
+    assert before_expiry == first
     assert len(server_like_codec.fetched_urls) == 2
     corner = (2, 2)
     assert abs(int(_decode(first[2]["inline_data"]["data"])[corner][0]) - 30) < 8
-    assert abs(int(_decode(second[2]["inline_data"]["data"])[corner][0]) - 220) < 8
+    assert (
+        abs(int(_decode(after_expiry[2]["inline_data"]["data"])[corner][0]) - 220) < 8
+    )
+
+
+def test_reference_parts_stay_cached_for_several_example_sets() -> None:
+    # given
+    cache = ReferencePartsCache()
+    first_set, second_set = [_example()], [_example(width=300)]
+
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
+    ) as load_image:
+        for examples in (first_set, second_set, first_set, second_set):
+            gemini_reference_parts_for(examples, labels=["cat"], cache=cache)
+
+    # then
+    assert load_image.call_count == 2
+
+
+def test_gemini_and_openai_parts_of_the_same_examples_are_cached_apart() -> None:
+    # given
+    cache = ReferencePartsCache()
+
+    # when
+    gemini = gemini_reference_parts_for([_example()], labels=["cat"], cache=cache)
+    openai = openai_reference_parts_for([_example()], labels=["cat"], cache=cache)
+
+    # then
+    assert gemini[0] == {"text": REFERENCE_BOXED_INTRO}
+    assert openai[0] == {"type": "input_text", "text": REFERENCE_CROPS_INTRO}
+
+
+def test_reference_parts_cache_drops_the_least_recently_used_entry_first() -> None:
+    # given
+    cache = ReferencePartsCache(max_entries=2)
+    builds: List[str] = []
+
+    # when
+    for key in ["a", "b", "a", "c", "a", "b"]:
+        cache.get_or_build(key, build=_recording_build(key, builds))
+
+    # then
+    assert builds == ["a", "b", "c", "b"]
+
+
+def test_reference_parts_cache_keeps_its_parts_within_max_bytes() -> None:
+    # given
+    cache = ReferencePartsCache(max_bytes=2 * sys.getsizeof("aaaa"))
+    builds: List[str] = []
+    too_large = "x" * 200
+
+    # when
+    for key in ["aaaa", "bbbb", "cccc", too_large, too_large, "bbbb", "aaaa"]:
+        cache.get_or_build(key, build=_recording_build(key, builds))
+
+    # then
+    assert builds == ["aaaa", "bbbb", "cccc", too_large, too_large, "aaaa"]
+
+
+@pytest.mark.parametrize("text", ["a" * 100, "é" * 100, "漢" * 100, "😀" * 100])
+def test_reference_parts_cache_accounts_for_unicode_storage(text: str) -> None:
+    cache = ReferencePartsCache(max_bytes=sys.getsizeof(text) - 1)
+    builds: List[str] = []
+    for _ in range(2):
+        assert cache.get_or_build("key", build=_recording_build(text, builds)) == [
+            {"text": text}
+        ]
+    assert builds == [text, text]
+    assert not cache._entries
+    assert cache._size == 0
+
+
+@pytest.mark.parametrize(
+    "parts_for", [gemini_reference_parts_for, openai_reference_parts_for]
+)
+def test_rendered_unicode_labels_cannot_exceed_cache_byte_budget(parts_for) -> None:
+    label = "😀" * 2000
+    cache = ReferencePartsCache(max_bytes=6000)
+    example = _example(
+        width=120,
+        height=80,
+        annotations=[{"class": label, "x": 60, "y": 40, "width": 40, "height": 20}],
+    )
+    with patch.object(
+        vlm_reference_examples,
+        "load_reference_example",
+        wraps=load_reference_example,
+    ) as load:
+        first = parts_for([example], labels=[label], cache=cache)
+        second = parts_for([example], labels=[label], cache=cache)
+    assert first == second
+    assert load.call_count == 2
+    assert not cache._entries
+    assert cache._size == 0
+
+
+def test_reference_parts_cache_evicts_by_unicode_bytes_and_releases_on_clear() -> None:
+    text = "😀" * 100
+    cache = ReferencePartsCache(max_bytes=sys.getsizeof(text))
+    builds: List[str] = []
+    for key in ["a", "b", "a"]:
+        cache.get_or_build(key, build=_recording_build(text, builds))
+        assert cache._size == sys.getsizeof(text)
+        assert len(cache._entries) == 1
+        cache.get_or_build(key, build=lambda: pytest.fail("newest entry was evicted"))
+    assert len(builds) == 3
+    cache.clear()
+    assert cache._size == 0
+    assert not cache._entries
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_reference_parts_cache_requires_a_finite_positive_pending_timeout(
+    timeout,
+) -> None:
+    with pytest.raises(ValueError, match="finite and positive"):
+        ReferencePartsCache(pending_timeout_seconds=timeout)
+
+
+def test_waiter_times_out_and_retry_succeeds_before_original_build_finishes() -> None:
+    # A fixed clock keeps the pending lease alive until the real Event wait times out.
+    cache = ReferencePartsCache(pending_timeout_seconds=0.05, clock=lambda: 0.0)
+    started, release = threading.Event(), threading.Event()
+
+    def stalled_build() -> List[dict]:
+        started.set()
+        assert release.wait(timeout=10)
+        return [{"text": "stale"}]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(cache.get_or_build, "key", build=stalled_build)
+        try:
+            assert started.wait(timeout=5)
+            waiter = pool.submit(
+                cache.get_or_build, "key", build=lambda: pytest.fail("duplicate build")
+            )
+            with pytest.raises(TimeoutError, match="Timed out waiting"):
+                waiter.result(timeout=5)
+            fresh = cache.get_or_build("key", build=lambda: [{"text": "fresh"}])
+            assert not first.done()
+        finally:
+            release.set()
+        assert first.result(timeout=5) == [{"text": "stale"}]
+
+    assert (
+        cache.get_or_build("key", build=lambda: pytest.fail("lost replacement"))
+        is fresh
+    )
+    assert cache._size == sys.getsizeof("fresh")
+
+
+@pytest.mark.parametrize("old_fails", [False, True])
+def test_expired_build_cannot_remove_or_overwrite_replacement(
+    old_fails: bool, waiting_callers: threading.Semaphore
+) -> None:
+    now = [0.0]
+    cache = ReferencePartsCache(clock=lambda: now[0])
+    old_started, new_started = threading.Event(), threading.Event()
+    release_old, release_new = threading.Event(), threading.Event()
+
+    def old_build() -> List[dict]:
+        old_started.set()
+        assert release_old.wait(timeout=10)
+        if old_fails:
+            raise OSError("old failure")
+        return [{"text": "old"}]
+
+    def new_build() -> List[dict]:
+        new_started.set()
+        assert release_new.wait(timeout=10)
+        return [{"text": "new"}]
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        old = pool.submit(cache.get_or_build, "key", build=old_build)
+        try:
+            assert old_started.wait(timeout=5)
+            old_waiter = pool.submit(cache.get_or_build, "key", build=new_build)
+            assert waiting_callers.acquire(timeout=5)
+            now[0] = 61.0
+            new = pool.submit(cache.get_or_build, "key", build=new_build)
+            assert new_started.wait(timeout=5)
+            with pytest.raises(TimeoutError, match="Timed out waiting"):
+                old_waiter.result(timeout=5)
+            new_waiter = pool.submit(
+                cache.get_or_build, "key", build=lambda: pytest.fail("duplicate retry")
+            )
+            assert waiting_callers.acquire(timeout=5)
+            release_old.set()
+            if old_fails:
+                with pytest.raises(OSError, match="old failure"):
+                    old.result(timeout=5)
+            else:
+                assert old.result(timeout=5) == [{"text": "old"}]
+            assert not new_waiter.done()
+            release_new.set()
+            assert new.result(timeout=5) == [{"text": "new"}]
+            assert new_waiter.result(timeout=5) is new.result()
+        finally:
+            release_old.set()
+            release_new.set()
+    assert (
+        cache.get_or_build("key", build=lambda: pytest.fail("lost retry"))
+        is new.result()
+    )
+
+
+def test_other_keys_expire_abandoned_pending_builds(
+    waiting_callers: threading.Semaphore,
+) -> None:
+    now = [0.0]
+    cache = ReferencePartsCache(clock=lambda: now[0])
+    started, release = threading.Event(), threading.Event()
+
+    def stalled_build() -> List[dict]:
+        started.set()
+        assert release.wait(timeout=10)
+        return [{"text": "expired"}]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(cache.get_or_build, "stalled", build=stalled_build)
+        try:
+            assert started.wait(timeout=5)
+            waiter = pool.submit(cache.get_or_build, "stalled", build=stalled_build)
+            assert waiting_callers.acquire(timeout=5)
+            now[0] = 61.0
+            cache.get_or_build("unrelated", build=lambda: [{"text": "healthy"}])
+            with pytest.raises(TimeoutError, match="Timed out waiting"):
+                waiter.result(timeout=5)
+            assert not cache._pending
+        finally:
+            release.set()
+        first.result(timeout=5)
+    assert len(cache._entries) == 1
+    assert cache.get_or_build(
+        "unrelated", build=lambda: pytest.fail("healthy entry was evicted")
+    ) == [{"text": "healthy"}]
+
+
+def test_reference_parts_cache_builds_a_key_once_for_concurrent_callers(
+    waiting_callers: threading.Semaphore,
+) -> None:
+    # given
+    cache = ReferencePartsCache()
+    builds: List[str] = []
+
+    def build() -> List[dict]:
+        builds.append("parts")
+        # Finish only once the three other callers wait for this build.
+        for _ in range(3):
+            assert waiting_callers.acquire(timeout=10)
+        return [{"text": "parts"}]
+
+    # when
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        calls = [pool.submit(cache.get_or_build, "key", build=build) for _ in range(4)]
+        results = [call.result(timeout=20) for call in calls]
+
+    # then
+    assert builds == ["parts"]
+    assert all(result is results[0] for result in results)
+
+
+def test_reference_parts_cache_builds_other_keys_while_one_is_building() -> None:
+    # given
+    cache = ReferencePartsCache()
+    building, release = threading.Event(), threading.Event()
+
+    def slow_build() -> List[dict]:
+        building.set()
+        release.wait(timeout=10)
+        return [{"text": "slow"}]
+
+    # when
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        slow = pool.submit(cache.get_or_build, "slow", build=slow_build)
+        assert building.wait(timeout=10)
+        fast = cache.get_or_build("fast", build=lambda: [{"text": "fast"}])
+        slow_was_building = not slow.done()
+        release.set()
+        slow_parts = slow.result(timeout=10)
+
+    # then
+    assert fast == [{"text": "fast"}]
+    assert slow_was_building
+    assert slow_parts == [{"text": "slow"}]
+
+
+def test_reference_parts_cache_gives_waiting_callers_the_error_and_keeps_nothing(
+    waiting_callers: threading.Semaphore,
+) -> None:
+    # given
+    cache = ReferencePartsCache()
+    builds: List[str] = []
+
+    def failing_build() -> List[dict]:
+        builds.append("failed")
+        assert waiting_callers.acquire(timeout=10)
+        raise OSError("connection reset")
+
+    # when
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        calls = [
+            pool.submit(cache.get_or_build, "key", build=failing_build)
+            for _ in range(2)
+        ]
+        errors = [call.exception(timeout=20) for call in calls]
+    parts = cache.get_or_build("key", build=_recording_build("parts", builds))
+
+    # then
+    assert [str(error) for error in errors] == ["connection reset"] * 2
+    assert builds == ["failed", "parts"]
+    assert parts == [{"text": "parts"}]
 
 
 @pytest.mark.parametrize(

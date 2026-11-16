@@ -67,6 +67,17 @@ class EngineConfiguration:
     allow_postgresql_sink_to_non_global_addresses: bool = True
     postgresql_sink_blacklisted_addresses: Optional[Tuple[str, ...]] = None
     postgresql_sink_whitelisted_addresses: Optional[Tuple[str, ...]] = None
+    # Databricks SQL Image Source policy. `databricks_sql_image_source_enabled`
+    # is the rollout switch (DATABRICKS_SQL_IMAGE_SOURCE_ENABLED): the host
+    # resolves it and defaults it to False on the hosted platform, True
+    # elsewhere; the standalone default is the self-hosted one. Non-global
+    # warehouse addresses are denied unless an operator opts in. The byte and
+    # pixel budgets apply per block invocation.
+    databricks_sql_image_source_enabled: bool = True
+    allow_databricks_source_to_non_global_addresses: bool = False
+    databricks_sql_image_source_max_run_bytes: int = 1024 * 1024 * 1024
+    databricks_sql_image_source_max_image_bytes: int = 32 * 1024 * 1024
+    databricks_sql_image_source_max_image_pixels: int = 25_000_000
     # Kafka sinks bootstrap-server policy. Optional[Tuple] mirrors env.py's
     # None-vs-list distinction; the facade rebuilds the ORDERED list.
     allow_kafka_sinks_user_provided_bootstrap_servers: bool = True

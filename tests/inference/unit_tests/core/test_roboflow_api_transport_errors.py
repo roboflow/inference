@@ -28,6 +28,7 @@ SENSITIVE_URL = (
 )
 TIMEOUT_MESSAGE = "Timeout when attempting to connect to Roboflow API."
 CONNECTION_MESSAGE = "Could not connect to Roboflow API."
+INVALID_URL_MESSAGE = "Could not build a valid Roboflow API URL. Check API_BASE_URL."
 LOGGER = logging.getLogger(__name__)
 
 
@@ -118,6 +119,36 @@ def test_sync_transport_errors_keep_credentials_out_of_diagnostics(
 
     _assert_safe_failure(
         caught.value, message=message, caplog=caplog, exporter=span_exporter
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # No scheme: requests raises MissingSchema with the whole URL in its text.
+        f"api.example.invalid/endpoint?api_key={API_KEY}&service_secret={SERVICE_SECRET}",
+        f"ftp://api.example.invalid/endpoint?api_key={API_KEY}&service_secret={SERVICE_SECRET}",
+    ],
+)
+def test_invalid_url_keeps_credentials_out_of_diagnostics(
+    url, monkeypatch, span_exporter, caplog
+) -> None:
+    monkeypatch.setattr(roboflow_api, "OFFLINE_MODE", False)
+
+    with pytest.raises(RoboflowAPIConnectionError) as caught:
+        try:
+            roboflow_api.get_from_url(url)
+        except RoboflowAPIConnectionError:
+            LOGGER.exception("Platform request failed")
+            raise
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
+    _assert_safe_failure(
+        caught.value,
+        message=INVALID_URL_MESSAGE,
+        caplog=caplog,
+        exporter=span_exporter,
     )
 
 

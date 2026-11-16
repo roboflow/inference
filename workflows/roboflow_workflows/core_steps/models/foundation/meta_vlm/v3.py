@@ -76,6 +76,10 @@ from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes
 # Wonder probed live on 2026-10-13: `none` rejected ("Reasoning is
 # mandatory for this endpoint"), `minimal` through `xhigh` accepted.
 MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
+    "Muse Ember": {
+        "model_id": "meta/muse-ember",
+        "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
+    },
     "Muse Spark Open": {
         "model_id": "meta/muse-spark-open",
         "reasoning_levels": ["minimal", "low", "medium", "high", "xhigh"],
