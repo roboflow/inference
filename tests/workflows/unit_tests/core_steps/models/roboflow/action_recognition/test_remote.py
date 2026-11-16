@@ -330,21 +330,25 @@ def test_connection_errors_hide_the_service_secret(monkeypatch):
     assert error.value.__suppress_context__
 
 
-def test_rejected_header_error_hides_the_api_key(monkeypatch):
-    # requests quotes a header it rejects, such as one with a trailing newline.
+@pytest.mark.parametrize(
+    "api_key", ["secret-key-123\n", "secret\nkey-123", "secret\r\nkey-123"]
+)
+def test_rejected_header_error_hides_the_api_key(monkeypatch, api_key):
+    # requests quotes a header value it rejects, with repr escaping line breaks.
     def post(url, json, timeout, headers=None, **kwargs):
-        raise remote.requests.exceptions.InvalidHeader(
-            f"Invalid return character in header value: {headers['Authorization']!r}"
-        )
+        remote.requests.Request("POST", url, headers=headers).prepare()
 
     _fake_platform(monkeypatch, post, class_names=None, video_sampling=PUNCH_SAMPLING)
-    model = load_remote_action_recognition_model("ws/m/1", api_key="secret-key-123\n")
+    monkeypatch.setattr(remote, "WORKFLOWS_REMOTE_API_KEY_TRANSPORT", "header")
+    model = load_remote_action_recognition_model("ws/m/1", api_key=api_key)
 
     with pytest.raises(remote.requests.RequestException) as error:
         model.infer(frames=_frames(8), fps=12.0)
 
-    assert "header value" in str(error.value)
-    assert "secret-key-123" not in str(error.value)
+    assert "Authorization header" in str(error.value)
+    assert "secret" not in str(error.value)
+    assert "key-123" not in str(error.value)
+    assert error.value.__suppress_context__
 
 
 @pytest.mark.parametrize("fps", [30000 / 1001, 10 / 3, 7.4925])
