@@ -31,7 +31,7 @@ _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
 _APPSINK_SYNC_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_APPSINK_SYNC"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
-_RTSP_VIDEO_CODECS = ("h264", "h265", "vp8")
+RTSP_CUDA_VIDEO_CODECS = ("h264", "h265", "vp8")
 _BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
 _RTSP_ELEMENTS = (
     "h264parse",
@@ -480,11 +480,11 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
 
 
 def _rtsp_video_codec() -> str:
-    codec = os.getenv(_RTSP_CODEC_ENV_VAR, _RTSP_VIDEO_CODECS[0]).strip().lower()
-    if codec not in _RTSP_VIDEO_CODECS:
+    codec = os.getenv(_RTSP_CODEC_ENV_VAR, RTSP_CUDA_VIDEO_CODECS[0]).strip().lower()
+    if codec not in RTSP_CUDA_VIDEO_CODECS:
         raise ValueError(
             f"Unsupported RTSP video codec {codec!r} in {_RTSP_CODEC_ENV_VAR} "
-            f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
+            f"(supported: {', '.join(RTSP_CUDA_VIDEO_CODECS)})"
         )
     return codec
 

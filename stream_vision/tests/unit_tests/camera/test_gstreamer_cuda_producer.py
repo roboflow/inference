@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import torch
 from streamvision.camera.gstreamer_cuda_producer import (
+    RTSP_CUDA_VIDEO_CODECS,
     GstreamerCudaVideoFrameProducer,
     _quote_gstreamer_value,
     build_gstreamer_cuda_pipeline,
@@ -253,6 +254,7 @@ def test_rtsp_codec_env_selects_vp8_chain(monkeypatch) -> None:
     pipeline = build_gstreamer_cuda_pipeline("rtsp://camera.example.test/live")
 
     assert 'rtpvp8depay ! decodebin caps="video/x-raw(memory:CUDAMemory)"' in pipeline
+    assert "vp8" in RTSP_CUDA_VIDEO_CODECS
 
 
 def test_rtsp_codec_env_rejects_unsupported_codec(monkeypatch) -> None:
