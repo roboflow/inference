@@ -31,13 +31,14 @@ _RTSP_LATENCY_ENV_VAR = "ROBOFLOW_RTSP_LATENCY_MS"
 _APPSINK_SYNC_ENV_VAR = "ROBOFLOW_GSTREAMER_CUDA_APPSINK_SYNC"
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
-_RTSP_VIDEO_CODECS = ("h264", "h265")
+_RTSP_VIDEO_CODECS = ("h264", "h265", "vp8")
 _BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
 _RTSP_ELEMENTS = (
     "h264parse",
     "h265parse",
     "rtph264depay",
     "rtph265depay",
+    "rtpvp8depay",
     "rtspsrc",
 )
 _FILE_DEMUXERS = {
@@ -172,7 +173,7 @@ def required_gstreamer_cuda_elements(
     if not isinstance(video, str):
         return tuple(elements)
     if _is_rtsp_source(video):
-        # RTSP uses an explicit rtspsrc ! depay ! parse ! decodebin chain
+        # RTSP uses an explicit rtspsrc ! depay ! [parse] ! decodebin chain
         # (no uridecodebin autoplugging), so uridecodebin is not required.
         return tuple(
             ["appsink", "cudaconvertscale", "queue", "decodebin"] + list(_RTSP_ELEMENTS)
@@ -185,6 +186,19 @@ def required_gstreamer_cuda_elements(
 
 
 def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
+    """Build a pipeline that outputs planar RGB in CUDA memory.
+
+    Args:
+        video (str): Source URI or file path.
+        device_id (int): CUDA device for the output conversion.
+
+    Returns:
+        The GStreamer pipeline description.
+
+    Raises:
+        ValueError: The RTSP source uses an unsupported codec setting in
+            `ROBOFLOW_RTSP_VIDEO_CODEC`.
+    """
     is_live = _local_file_path(video) is None
     queue_options = (
         "max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream"
@@ -223,12 +237,13 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
         # instead of silently falling back — and _validate_pipeline re-checks
         # the instantiated factories after the first frame either way.
         codec = _rtsp_video_codec()
+        parser = "" if codec == "vp8" else f"{codec}parse ! "
         return (
             f'rtspsrc location="{_quote_gstreamer_value(video)}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
             "application/x-rtp,media=video ! "
             "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
+            f"rtp{codec}depay ! {parser}"
             'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
             f"{tail}"
         )
