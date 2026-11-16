@@ -1856,7 +1856,9 @@ def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
         model.gate.set()
         block.close()
 
-    assert len(model.calls) == 2
+    # A frame's blue channel holds its number: the late call saw frames 5 and 7.
+    classified = [[frame[0, 0, 2] for frame in call["frames"]] for call in model.calls]
+    assert classified == [[1, 3], [5, 7]]
     assert late["analyzed_until_frame"] == 3
     assert after["analyzed_until_frame"] == 7
     # Frames 4-7 sit inside the one-second window ending on 7: no gap.
