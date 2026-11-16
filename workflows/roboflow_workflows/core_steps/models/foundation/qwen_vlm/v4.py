@@ -139,6 +139,11 @@ MODEL_VARIANTS: Dict[str, Dict[str, Any]] = {
         "model_id": "qwen3_8-27b",
     },
     # OpenRouter — image-capable hosted Qwen chat models.
+    "Qwen 4 Max": {
+        "backend": "openrouter",
+        "model_id": "qwen/qwen4-max",
+        "reasoning_levels": ["none", "low", "high", "xhigh"],
+    },
     "Qwen 3.8 Max": {
         "backend": "openrouter",
         "model_id": "qwen/qwen3.8-max",
@@ -284,7 +289,7 @@ NATIVE_THINKING_MODEL_VERSIONS = [
 # OpenRouter reasoning control
 # ---------------------------------------------------------------------------
 
-REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high"]
+REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh"]
 ReasoningEffort = Literal[tuple(REASONING_EFFORT_OPTIONS)]
 
 REASONING_EFFORT_METADATA = {
@@ -313,6 +318,10 @@ REASONING_EFFORT_METADATA = {
             "raising `max_tokens` so reasoning does not crowd out the answer."
         ),
     },
+    "xhigh": {
+        "name": "Extra High",
+        "description": "Extra-high reasoning effort for Qwen 4 Max. Increase max_tokens for longer answers.",
+    },
 }
 
 # OpenRouter variants use the shared set (OpenRouter normalizes). Native
@@ -321,7 +330,7 @@ REASONING_EFFORT_METADATA = {
 MODEL_REASONING_LEVELS = {
     label: variant.get(
         "reasoning_levels",
-        REASONING_EFFORT_OPTIONS if variant["backend"] == "openrouter" else [],
+        ["none", "low", "medium", "high"] if variant["backend"] == "openrouter" else [],
     )
     for label, variant in MODEL_VARIANTS.items()
 }
@@ -784,6 +793,9 @@ The block uses Qwen-tuned inference plumbing validated by benchmarks:
   field to bypass Roboflow billing. Recommended for structured tasks that benefit
   from larger models (classification, object-detection, structured-answering).
 
+Qwen 4 Max is available through OpenRouter with reasoning disabled or set to
+Low, High, or Extra High. Medium is not supported for this model.
+
 The `model_version` dropdown lists every supported variant; each is bound to one backend.
 A validator catches mismatches between your selected backend and model.
 
@@ -828,6 +840,7 @@ class BlockManifest(OpenRouterBlockManifestMixin):
                 "qwen3.5",
                 "qwen3.7",
                 "qwen3.8",
+                "qwen4",
                 "VLM",
                 "Alibaba",
                 "OpenRouter",

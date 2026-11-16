@@ -16,6 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Qwen 4 Max via OpenRouter in Qwen v4 (`roboflow_core/qwen_vlm@v4`), with
+  Disabled, Low, High, and Extra High reasoning options.
+
 ## `0.2.16.post1`
 
 Bundled execution engine: `1.17.2`.
