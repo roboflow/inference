@@ -48,6 +48,21 @@ ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = (
 ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES = (
     _CONFIGURATION.engine.allow_postgresql_sink_to_non_global_addresses
 )
+DATABRICKS_SQL_IMAGE_SOURCE_ENABLED = (
+    _CONFIGURATION.engine.databricks_sql_image_source_enabled
+)
+ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES = (
+    _CONFIGURATION.engine.allow_databricks_source_to_non_global_addresses
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES = (
+    _CONFIGURATION.engine.databricks_sql_image_source_max_run_bytes
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES = (
+    _CONFIGURATION.engine.databricks_sql_image_source_max_image_bytes
+)
+DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS = (
+    _CONFIGURATION.engine.databricks_sql_image_source_max_image_pixels
+)
 # Preserve env.py's `None` when unset vs `set` when configured. The sink
 # does containment (`host in blacklist`) so `set` is the canonical type.
 POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES = (

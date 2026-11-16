@@ -81,6 +81,39 @@ def test_standard_version_policy_comes_from_requirements(installation):
         verifier._verify(installation.root)
 
 
+def test_standard_version_policy_follows_environment_markers(installation):
+    """Apply only the Pillow requirement whose marker matches this interpreter.
+
+    Args:
+        installation (SimpleNamespace): Isolated module fixture.
+    """
+    installation.policy.write_text(
+        'Pillow>=12.3.0,<13.0.0; python_version < "3.11"\n'
+        'Pillow>=13.0.0,<14.0.0; python_version >= "3.11"\n'
+    )
+    matching, other = ("13.0.0", "12.3.0")
+    if sys.version_info < (3, 11):
+        matching, other = other, matching
+
+    installation.package.__version__ = matching
+    verifier._verify(installation.root)
+
+    installation.package.__version__ = other
+    with pytest.raises(RuntimeError, match="does not satisfy"):
+        verifier._verify(installation.root)
+
+
+def test_rejects_duplicate_unmarked_requirements(installation):
+    """Reject a policy that lists Pillow twice without environment markers.
+
+    Args:
+        installation (SimpleNamespace): Isolated module fixture.
+    """
+    installation.policy.write_text("Pillow>=12.3.0,<13.0.0\nPillow>=13.0.0,<14.0.0\n")
+    with pytest.raises(RuntimeError, match="Expected one Pillow requirement"):
+        verifier._verify(installation.root)
+
+
 @pytest.mark.parametrize("target", ["standard", "simd"])
 @pytest.mark.parametrize("component", ["package", "image", "core"])
 def test_rejects_wrong_module_location(installation, target, component):

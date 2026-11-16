@@ -1,0 +1,8 @@
+{
+  "name": "pypi-workflow-tests",
+  "private": true,
+  "dependencies": {
+    "@actions/expressions": "0.3.61",
+    "yaml": "2.8.1"
+  }
+}

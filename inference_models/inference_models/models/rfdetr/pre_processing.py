@@ -259,8 +259,11 @@ def _pre_process_numpy(
 
     # Resize channels independently before swapping on the smaller image (#2988).
     # Call the image directly: PILSIMD images are not torchvision PIL instances.
+    # Chained to keep horizontal-first order; Pillow 13 may run vertical first.
     resized = np.array(
-        pil.resize((target_size.width, target_size.height), resize_image.BILINEAR)
+        pil.resize((target_size.width, pil.height), resize_image.BILINEAR).resize(
+            (target_size.width, target_size.height), resize_image.BILINEAR
+        )
     )
     if swap_channels:
         resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)

@@ -186,6 +186,25 @@ def build_workflows_configuration() -> WorkflowsConfiguration:
             allow_postgresql_sink_to_non_global_addresses=get_boolean_from_env(
                 "ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", default=True
             ),
+            # Rollout switch for the Databricks block: explicit value wins,
+            # otherwise off on the hosted platform and on elsewhere.
+            databricks_sql_image_source_enabled=get_boolean_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_ENABLED",
+                default=not (configuration.GCP_SERVERLESS or configuration.LAMBDA),
+            ),
+            allow_databricks_source_to_non_global_addresses=get_boolean_from_env(
+                "ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES",
+                default=False,
+            ),
+            databricks_sql_image_source_max_run_bytes=get_integer_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES", default=1024 * 1024 * 1024
+            ),
+            databricks_sql_image_source_max_image_bytes=get_integer_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES", default=32 * 1024 * 1024
+            ),
+            databricks_sql_image_source_max_image_pixels=get_integer_from_env(
+                "DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS", default=25_000_000
+            ),
             postgresql_sink_blacklisted_addresses=_optional_address_set(
                 os.environ.get("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES")
             ),
@@ -480,6 +499,7 @@ from roboflow_workflows.utils.image_encoding import (  # noqa: E402
     convert_gray_image_to_bgr,
     decode_encoded_image_bytes,
 )
+
 from inference_model_manager.pipelines import InvalidPipelineIdError  # noqa: E402
 from inference_models.errors import (  # noqa: E402
     ModelNotFoundError,
@@ -776,6 +796,24 @@ class ServerRoboflowPlatformClient:
         params: Optional[List[Tuple[str, str]]] = None,
         http_errors_handlers: Optional[HttpErrorHandlers] = None,
     ) -> dict:
+        """Make a JSON POST request to the Roboflow API.
+
+        The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
+        waiting one and then two seconds. Other endpoints make one attempt.
+
+        Args:
+            endpoint: API endpoint path.
+            api_key: Roboflow API key.
+            payload: JSON payload.
+            params: Additional URL parameters.
+            http_errors_handlers: Optional custom HTTP error handlers by status code.
+
+        Returns:
+            dict: The decoded JSON response.
+
+        Raises:
+            RoboflowAPIRequestError: If the request fails.
+        """
         _refuse_when_offline(operation="make API requests")
         url_params: List[Tuple[str, str]] = []
         if api_key and api_key != "local":
@@ -787,14 +825,26 @@ class ServerRoboflowPlatformClient:
             url=f"{base_url.rstrip('/')}/{endpoint.strip('/')}",
             params=url_params,
         )
+        wrapped_url = self.wrap_url(url)
+        headers = self.build_api_headers()
         try:
-            response = _platform_request(
-                "post",
-                self.wrap_url(url),
-                json=payload,
-                headers=self.build_api_headers(),
-                timeout=API_REQUEST_TIMEOUT_S,
-            )
+            for attempt in range(3):
+                response = _platform_request(
+                    "post",
+                    wrapped_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=API_REQUEST_TIMEOUT_S,
+                )
+                if (
+                    endpoint.strip("/") != "apiproxy/google_vision_ocr"
+                    or response.status_code not in (502, 503, 504)
+                    or attempt == 2
+                ):
+                    break
+
+                response.close()
+                time.sleep(attempt + 1)
         except LegacyHTTPError as error:
             if error.status_code == 504:
                 raise RoboflowAPITimeoutError(

@@ -173,3 +173,34 @@ def test_deduct_api_key_from_string_leaves_keyless_text_untouched() -> None:
 
     # then
     assert result == "connection refused to host x"
+
+
+@pytest.mark.parametrize("credential", ["sentinel-private-key", 'key/+ "value'])
+def test_redact_credentials_removes_plain_url_and_json_values(credential) -> None:
+    import json
+    from urllib.parse import quote, quote_plus
+
+    from inference.core.utils.requests import _redact_credentials
+
+    variants = [
+        credential,
+        quote(credential, safe=""),
+        quote_plus(credential, safe=""),
+        json.dumps(credential)[1:-1],
+    ]
+    for value in variants:
+        reason = _redact_credentials(
+            f"request failed: Authorization: Bearer {value}",
+            credentials=(None, "", credential),
+        )
+        assert value not in reason
+        assert reason == "request failed: Authorization: Bearer [REDACTED]"
+
+
+def test_redact_credentials_preserves_reason_without_credentials() -> None:
+    from inference.core.utils.requests import _redact_credentials
+
+    assert (
+        _redact_credentials("model not found", credentials=(None, ""))
+        == "model not found"
+    )

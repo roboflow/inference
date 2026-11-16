@@ -215,3 +215,50 @@ jobs:
             fi
             echo "$tag amd64 manifest $published matches the tested image"
           done
+
+  notify-svis:
+    needs: docker
+    if: >-
+      ${{ github.repository == 'roboflow/inference'
+          && github.event_name == 'release'
+          && github.event.release.draft == false
+          && github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    environment: svis-dispatch
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions: {}
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      HAS_APP: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY != '' && vars.SVIS_DISPATCH_APP_CLIENT_ID != '' }}
+    steps:
+      - name: Only announce X.Y.Z and X.Y.Z-postN releases
+        id: filter
+        run: |
+          version="${RELEASE_TAG#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-post[0-9]+)?$ ]]; then
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not a release version ($RELEASE_TAG); nothing to announce."
+          fi
+      - name: Mint a token scoped to the SVIS repository
+        id: app-token
+        if: ${{ steps.filter.outputs.version != '' && env.HAS_APP == 'true' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SVIS_DISPATCH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY }}
+          owner: roboflow
+          repositories: streaming-video-inference-services
+          permission-contents: write
+      - name: Ping SVIS
+        if: ${{ steps.app-token.outputs.token != '' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.filter.outputs.version }}
+        run: |
+          gh api repos/roboflow/streaming-video-inference-services/dispatches \
+            -f event_type=inference-release \
+            -f "client_payload[version]=$VERSION" \
+            -f "client_payload[sha]=$GITHUB_SHA"
+          echo "Announced $VERSION ($GITHUB_SHA) to streaming-video-inference-services"

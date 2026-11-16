@@ -236,8 +236,7 @@ class InferenceModelsClipAdapter(Model):
                 raise ValueError(
                     f"The maximum number of images that can be embedded at once is {CLIP_MAX_BATCH_SIZE}"
                 )
-            imgs = [self.preproc_image(i) for i in image]
-            img_in = np.concatenate(imgs, axis=0)
+            img_in = [self.preproc_image(i) for i in image]
         else:
             img_in = self.preproc_image(image)
         embeddings = self._model.embed_images(images=img_in)
