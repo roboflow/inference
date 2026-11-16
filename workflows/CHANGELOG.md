@@ -38,6 +38,21 @@ for contributor and maintainer responsibilities.
   covers between it and the previous call. A step has one worker, so its
   streams take turns. Video files always classify inside the step. The default
   is unchanged.
+
+## `0.2.16`
+
+Bundled execution engine: `1.17.2`.
+
+### Changed
+
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
+  releases that allow Pillow 13.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
 - Camera Focus v2 reduces CPU zebra-overlay allocations with byte-sized stripe
   generation, a bounded mask cache, and lookup-table blending. Output pixels,
   exposure thresholds, and focus scores are unchanged.
@@ -49,7 +64,10 @@ for contributor and maintainer responsibilities.
   - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
   - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
   - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
-- Action Recognition Visualization (`roboflow_core/action_recognition_visualization@v1`) draws an Action Recognition Model's results on its video. `live` display shows the current frame with a strip of the last `history_seconds`: one lane per class, a bar per action range and a hatched zone for frames not analyzed yet. It keeps no frames. `synchronized` display plays the video late so each label sits on its frame; the delay follows the model's `analyzed_until_frame` instead of a fixed setting, capped by `max_delay_seconds`. Delayed frames are stored compressed within `max_buffer_mb`; a budget that is too small shortens the delay and reports the status `behind` instead of raising. Outputs the image, the displayed frame number, the actions and their frame number, and a status. Needs persistent video state; `synchronized` does not show the delayed tail of a video file.
+- OpenAI Decisions Switch block (`roboflow_core/open_ai_decisions_switch@v1`): routes each image to a branch by asking OpenAI's Decisions API one `choice` question over `cases`.
+  - The model always has a "none of these" option. That answer, a probability below `min_confidence` (0.9 by default), a non-finite probability or one outside [0, 1], a refusal or an answer the block cannot read runs `default_next_steps`, or terminates the branch for that image when there are none.
+  - `case_descriptions` tells the model what a case means, and `context` sends values from earlier steps with each image as JSON, per image for batch-oriented values. Nested NumPy arrays and scalars are converted to JSON-compatible lists and values.
+  - Like every flow control block it has no outputs; use the OpenAI Decisions block with Switch Case to keep the probabilities.
 - Databricks SQL Image Source block (`roboflow_core/databricks_sql_image_source@v1`): reads selected columns from a Databricks SQL table or view and emits Workflow images (`images`), optional column-based `image_names`, explicitly selected non-binary `metadata`, and bounded per-row `errors`. The block has no image input and produces batch outputs for downstream blocks such as Roboflow Dataset Upload. Operator guide: `docs/workflows/databricks_sql_image_source.md`.
   - Query interface: `catalog`, `schema_name`, `table`, image/name columns and explicit metadata columns feed a fixed SELECT with native identifier and LIMIT parameters. Arbitrary SQL is not accepted; customers can define filters and joins in Databricks views. Credentials are `server_hostname`, `http_path` and `access_token` (reference a Workflow input or secret); `max_rows`, `timeout_seconds` and `skip_undecodable` control the run.
   - Metadata validation: rows exceeding string, nesting, collection or row-byte limits are skipped and reported through bounded `errors` diagnostics, including when every row is rejected. Accepted metadata is preserved without truncation or deep-container stringification. Success and error outputs use aligned null positions so image consumers skip rejected rows and a separate branch can report errors.
@@ -63,6 +81,9 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Workflows' standalone image codec now reports non-ASCII base64 payloads as
+  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
+- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 - Large inline reference images use chunked content fingerprints for cache keys,
   avoiding a full JSON copy of their image data on every warm lookup. Image
   contents, metadata, annotations, label order and provider still determine reuse.
@@ -75,27 +96,6 @@ for contributor and maintainer responsibilities.
 ### Execution engine
 
 - A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
-
-## `0.2.16`
-
-Bundled execution engine: `1.17.1`.
-
-### Changed
-
-- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
-  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
-  because Pillow 13 does not support it.
-- Requires `inference-models>=0.39.9rc1` and `inference-sdk>=1.8.5rc1`, the first
-  releases that allow Pillow 13.
-- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
-  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
-  newer.
-
-### Fixed
-
-- Workflows' standalone image codec now reports non-ASCII base64 payloads as
-  `WorkflowImageLoadError` instead of allowing a raw `ValueError` to escape.
-- `roboflow_core/embedding_model@v1` no longer crashes in remote step execution. The block passed `api_key_transport` to the `InferenceHTTPClient` constructor, which does not accept it, so every remote run raised `TypeError` before sending a request. The transport now goes through `InferenceConfiguration`, and the request reaches `POST /infer/embeddings` with `WORKFLOWS_REMOTE_API_KEY_TRANSPORT` applied. Hosted serverless does not expose that route, so remote runs against it still fail, now on the HTTP call.
 
 ## `0.2.15.post2`
 
