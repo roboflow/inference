@@ -22,6 +22,9 @@ def load_pillow_simd_image() -> ModuleType:
     Only Linux x86-64 SSE4.1 builds are supported. Import is lazy so CPU-only,
     ARM and reference-only installations never need this optional dependency.
 
+    Use it only on decoded arrays (fromarray and resize): the fork lacks Pillow 13
+    security fixes, so never open or decode files with it.
+
     Returns:
         Isolated Pillow-SIMD Image module, leaving standard Pillow untouched.
 

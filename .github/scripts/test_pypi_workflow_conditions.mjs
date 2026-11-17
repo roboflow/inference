@@ -4,8 +4,13 @@ import { Evaluator, Lexer, Parser, data } from "@actions/expressions";
 import { parse } from "yaml";
 
 const workflow = parse(fs.readFileSync("/work/.github/workflows/publish.pypi.yml", "utf8"));
+const upstreams = Object.fromEntries([
+  ["inference-models", "inference_exp", "inference_models/dist"],
+  ["roboflow-workflows", "roboflow_workflows", "dist"],
+  ["streamvision", "streamvision", "dist"],
+].map(([name, suffix, directory]) => [name, { directory, workflow: parse(fs.readFileSync(`/work/.github/workflows/publish.pypi.${suffix}.yml`, "utf8")) }]));
 const results = ["success", "failure", "cancelled", "skipped"];
-const modes = ["sdk", "runtime", "all"];
+const modes = ["sdk", "runtime", "all", "dependencies"];
 let checks = 0;
 let scenarios = 0;
 function equal(actual, expected, label) {
@@ -84,7 +89,37 @@ function check(wf) {
   equal(wf.on.workflow_dispatch.inputs.publish.default, false, "build-only by default");
   equal(jobs.publish_sdk["timeout-minutes"], 30, "SDK preparation and verification budget");
   equal(jobs.publish_sdk.needs, "build_sdk", "SDK build ownership");
-  equal(jobs.publish_runtime.needs, ["build_runtime", "publish_sdk"], "runtime dependency ownership");
+  equal(jobs.prepare_dependencies["timeout-minutes"], 210, "SDK gate, coordinator, planning and infrastructure budget");
+  equal(jobs.publish_runtime["timeout-minutes"], 50, "SDK gate, dependency verification and upload budget");
+  equal(jobs.build_runtime["timeout-minutes"], 20, "runtime build keeps its existing budget");
+  function networkBudget(job) {
+    return job.steps.flatMap(step => [...(step.run || "").matchAll(/--wait-seconds (\d+)/g)]).reduce((sum, match) => sum + Number(match[1]), 0);
+  }
+  equal(networkBudget(jobs.prepare_dependencies), 600 + 600 + 10800, "SDK gate plus planning plus coordination total network budget");
+  equal(jobs.prepare_dependencies["timeout-minutes"] * 60 - networkBudget(jobs.prepare_dependencies), 600, "ten-minute coordinator infrastructure and in-flight allowance");
+  equal(networkBudget(jobs.publish_runtime), 4 * 600, "runtime gates, preparation and final verification budgets");
+  equal(jobs.publish_runtime["timeout-minutes"] * 60 - networkBudget(jobs.publish_runtime), 600, "runtime upload and infrastructure allowance");
+
+  equal(jobs.prepare_dependencies.permissions, { contents: "read", actions: "write" }, "coordinator has no OIDC permission");
+  equal(jobs.prepare_dependencies.concurrency["cancel-in-progress"], false, "never cancel publishing coordinators");
+  assert.ok(jobs.prepare_dependencies.concurrency.group.includes("needs.build_runtime.outputs.version"));
+  assert.ok(jobs.prepare_dependencies.concurrency.group.includes("inputs.publish"));
+  const plan = jobs.prepare_dependencies.steps.find(step => step.id === "plan");
+  const coordinate = jobs.prepare_dependencies.steps.find(step => step.run?.includes("dependencies.sh coordinate "));
+  assert.ok(plan.run.includes("dependencies.sh plan --wait-seconds 600"), "planning has a bounded independent operation");
+  equal(plan.env?.GH_TOKEN, undefined, "planning does not receive a dispatch token");
+  equal(coordinate.env.GH_TOKEN, "${{ github.token }}", "only coordination receives a dispatch token");
+  assert.ok(coordinate.run.includes("--wait-seconds 10800"), "one budget covers all publishers and final verification");
+  assert.ok(jobs.prepare_dependencies.steps.indexOf(plan) < jobs.prepare_dependencies.steps.indexOf(coordinate));
+  for (const publish of [false, true]) for (const event of ["release", "workflow_dispatch"]) for (const previous of results) for (const cancelled of [false, true]) {
+    equal(stepEnabled(coordinate, context("all", publish, event), previous, cancelled),
+      (publish || event === "release") && !["failure", "cancelled"].includes(previous) && !cancelled,
+      "only publishing runs coordinate after successful prior steps");
+    scenarios++;
+  }
+
+  equal(jobs.prepare_dependencies.needs, ["build_runtime", "publish_sdk"], "coordinator dependency ownership");
+  equal(jobs.publish_runtime.needs, ["build_runtime", "publish_sdk", "prepare_dependencies"], "runtime dependency ownership");
 
   for (const packages of modes) for (const publish of [false, true]) {
     for (const event of ["workflow_dispatch", "release"]) for (const repository of ["roboflow/inference", "fork/inference"]) {
@@ -93,8 +128,14 @@ function check(wf) {
       const sdk = release || packages !== "runtime";
       const runtime = release || packages !== "sdk";
       const publishing = repository === "roboflow/inference" && (release || publish);
-      const expected = { build_sdk: sdk, publish_sdk: sdk && publishing, build_runtime: runtime, publish_runtime: runtime && publishing };
-      for (const name of ["build_sdk", "publish_sdk", "build_runtime", "publish_runtime"]) {
+      const expected = {
+        build_sdk: sdk,
+        publish_sdk: sdk && publishing,
+        build_runtime: runtime,
+        prepare_dependencies: runtime && repository === "roboflow/inference",
+        publish_runtime: runtime && publishing && (release || packages !== "dependencies"),
+      };
+      for (const name of ["build_sdk", "publish_sdk", "build_runtime", "prepare_dependencies", "publish_runtime"]) {
         const enabled = jobEnabled(jobs[name], ctx);
         equal(enabled, expected[name], `${packages}/${publish}/${event}/${repository}: ${name}`);
         ctx.needs[name] = { result: enabled ? "success" : "skipped" };
@@ -105,10 +146,18 @@ function check(wf) {
 
       for (const sdkResult of results) for (const runtimeResult of results) for (const cancelled of [false, true]) {
         ctx.needs = { build_runtime: { result: runtimeResult }, publish_sdk: { result: sdkResult } };
+        const coordinatorSdkReady = sdkResult === "success" || (!release && (packages === "runtime" || !publish) && sdkResult === "skipped");
+        equal(jobEnabled(jobs.prepare_dependencies, ctx, cancelled),
+          !cancelled && repository === "roboflow/inference" && runtimeResult === "success" && coordinatorSdkReady,
+          `coordinator dependencies: ${JSON.stringify({ packages, publish, event, repository, sdkResult, runtimeResult, cancelled })}`);
         const sdkReady = sdkResult === "success" || (!release && packages === "runtime" && sdkResult === "skipped");
-        equal(jobEnabled(jobs.publish_runtime, ctx, cancelled),
-          !cancelled && publishing && runtimeResult === "success" && sdkReady,
-          `runtime dependencies: ${JSON.stringify({ packages, publish, event, repository, sdkResult, runtimeResult, cancelled })}`);
+        for (const dependencyResult of results) {
+          ctx.needs.prepare_dependencies = { result: dependencyResult };
+          equal(jobEnabled(jobs.publish_runtime, ctx, cancelled),
+            !cancelled && publishing && (release || packages !== "dependencies") && runtimeResult === "success" && dependencyResult === "success" && sdkReady,
+            `runtime dependencies: ${JSON.stringify({ packages, publish, event, repository, sdkResult, runtimeResult, dependencyResult, cancelled })}`);
+          scenarios++;
+        }
         scenarios++;
       }
       for (const result of results) for (const cancelled of [false, true]) {
@@ -125,25 +174,56 @@ function check(wf) {
   const sdk = publicationSteps(jobs.publish_sdk, "verify-sdk");
   const runtime = publicationSteps(jobs.publish_runtime, "gate-sdk");
   const prepare = jobs.publish_sdk.steps.find(step => step.id === "prepare");
+  const dependencyGate = jobs.publish_runtime.steps.find(step => step.run?.includes("dependencies.sh verify "));
+  assert.ok(dependencyGate?.run.includes("--wait-seconds 600"), "all runtime dependency verification shares ten minutes");
+  equal(dependencyGate["continue-on-error"] ?? false, false, "retained dependency verification is strict");
+  assert.ok(jobs.publish_runtime.steps.indexOf(dependencyGate) < jobs.publish_runtime.steps.indexOf(runtime.upload));
+  for (const verificationResult of ["failure", "cancelled"]) {
+    const execution = runSteps(jobs.publish_runtime, context(), new Map([[dependencyGate, verificationResult]]));
+    equal(execution.ran.includes(runtime.upload), false, "dependency verification failure blocks runtime upload");
+    scenarios++;
+  }
+
   assert.ok(prepare?.run.includes("release.sh prepare-sdk --wait-seconds 600"), "SDK preparation remains bounded");
   equal(sdk.upload.id, "upload", "record SDK upload outcome");
   equal(sdk.upload["continue-on-error"], true, "reconcile a failed SDK upload");
   equal(sdk.gate["continue-on-error"] ?? false, false, "strict verification controls SDK job result");
-  equal(runtime.upload["continue-on-error"] ?? false, false, "runtime upload errors fail");
+  equal(runtime.upload["continue-on-error"], true, "reconcile a failed runtime upload");
   equal(runtime.gate["continue-on-error"] ?? false, false, "runtime gate errors fail");
   assert.ok(jobs.publish_sdk.steps.indexOf(prepare) < jobs.publish_sdk.steps.indexOf(sdk.upload));
   assert.ok(jobs.publish_sdk.steps.indexOf(sdk.upload) < jobs.publish_sdk.steps.indexOf(sdk.gate));
   assert.ok(jobs.publish_runtime.steps.indexOf(runtime.gate) < jobs.publish_runtime.steps.indexOf(runtime.upload));
   equal(sdk.upload.with["packages-dir"], "dist/sdk-upload/", "SDK upload ownership");
-  equal(runtime.upload.with["packages-dir"], "dist/pypi/", "runtime upload ownership");
+  equal(runtime.upload.with["packages-dir"], "dist/runtime-upload/", "runtime upload ownership");
   equal(sdk.upload.with["skip-existing"] ?? false, false, "SDK recovery uses verification, not skip-existing");
+  const runtimePrepare = jobs.publish_runtime.steps.find(step => step.id === "prepare");
+  const runtimeVerify = jobs.publish_runtime.steps.find(step => step.run?.includes("publish.sh verify "));
+  assert.ok(runtimePrepare?.run.includes("publish.sh prepare --profile runtime"));
+  assert.ok(runtimeVerify?.run.includes("--profile runtime"));
+  assert.ok(jobs.publish_runtime.steps.indexOf(runtimePrepare) < jobs.publish_runtime.steps.indexOf(runtime.upload));
+  assert.ok(jobs.publish_runtime.steps.indexOf(runtime.upload) < jobs.publish_runtime.steps.indexOf(runtimeVerify));
+  equal(runtime.upload.with["skip-existing"] ?? false, false, "runtime recovery requires verified preparation");
+  equal(runtimeVerify["continue-on-error"] ?? false, false, "final runtime verification is mandatory");
+  for (const uploadResult of ["success", "failure"]) for (const verificationResult of ["success", "failure"]) {
+    const execution = runSteps(jobs.publish_runtime, context(), new Map([[runtime.upload, uploadResult], [runtimeVerify, verificationResult]]));
+    equal(execution.ran.includes(runtimeVerify), true, "runtime verification runs after upload failure");
+    equal(execution.result, verificationResult, "complete verified inventory controls runtime result");
+    scenarios++;
+  }
+  for (const upload of ["true", "false", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
+    const recovery = context();
+    recovery.steps.prepare = { outputs: { upload } };
+    equal(stepEnabled(runtimeVerify, recovery, previous, cancelled), !["failure", "cancelled"].includes(previous) && !cancelled, "runtime final verification also runs after no-op uploads");
+    scenarios++;
+  }
+
 
   for (const upload of ["true", "false", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
     ctx.steps = { prepare: { outputs: { upload }, outcome: previous, conclusion: previous } };
     equal(stepEnabled(sdk.upload, ctx, previous, cancelled), upload === "true" && previous !== "failure" && previous !== "cancelled" && !cancelled, "SDK upload output and prior status");
     equal(stepEnabled(sdk.gate, ctx, previous, cancelled), previous !== "failure" && previous !== "cancelled" && !cancelled, "verification cannot be bypassed after successful preparation");
     equal(stepEnabled(runtime.gate, ctx, previous, cancelled), previous !== "failure" && previous !== "cancelled" && !cancelled, "runtime gate honors prior failures");
-    equal(stepEnabled(runtime.upload, ctx, previous, cancelled), previous !== "failure" && previous !== "cancelled" && !cancelled, "runtime upload honors failed gate");
+    equal(stepEnabled(runtime.upload, ctx, previous, cancelled), upload === "true" && previous !== "failure" && previous !== "cancelled" && !cancelled, "runtime upload honors failed gate");
     scenarios++;
   }
 
@@ -153,7 +233,8 @@ function check(wf) {
     equal(ctx.steps.upload.outcome, uploadResult, "upload outcome preserved");
     equal(ctx.steps.upload.conclusion, "success", "tolerated upload conclusion permits reconciliation");
     equal(execution.result, verificationResult, "strict verification determines SDK job result");
-    ctx.needs = { build_runtime: { result: "success" }, publish_sdk: { result: execution.result } };
+    ctx.needs = { build_runtime: { result: "success" }, publish_sdk: { result: execution.result }, prepare_dependencies: { result: "success" } };
+    equal(jobEnabled(jobs.prepare_dependencies, ctx), verificationResult === "success", "final SDK verification controls dependency coordination");
     equal(jobEnabled(jobs.publish_runtime, ctx), verificationResult === "success", "final SDK verification controls runtime publication");
     scenarios++;
   }
@@ -191,9 +272,73 @@ function check(wf) {
   }
 }
 
+function checkChildren(children) {
+  for (const [name, { directory, workflow: wf }] of Object.entries(children)) {
+    const job = wf.jobs.build;
+    equal(job["timeout-minutes"], 50, "child includes dependency gate, content verification and build/upload margin");
+    const budget = job.steps.flatMap(step => [...(step.run || "").matchAll(/--wait-seconds (\d+)/g)]).reduce((sum, match) => sum + Number(match[1]), 0);
+    equal(budget, 3 * 600, "child dependency, preparation and final verification budgets");
+    equal(job["timeout-minutes"] * 60 - budget, 1200, "twenty-minute child build and upload allowance");
+
+    const upload = job.steps.find(step => step.uses?.startsWith("pypa/"));
+    equal(upload.uses, "pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086", "verified PyPA action pin");
+    const verification = job.steps[job.steps.indexOf(upload) + 1];
+    assert.ok(verification.run?.includes(`publish.sh verify --profile ${name} --directory ${directory} `), "verify built candidate immediately after original upload");
+    assert.ok(verification.run.includes("--receipt release-evidence/publication-receipt.json") && verification.run.includes("--wait-seconds 600"), "retain content evidence within ten-minute budget");
+    equal(verification["continue-on-error"] ?? false, false, "child content verification is strict");
+    assert.ok(verification.if.includes("github.event.inputs.publish == 'true'"), "every publishing child verifies contents");
+    assert.ok(!verification.if.includes("steps.prepare"), "no-op publication still verifies");
+    const preparation = job.steps.find(step => step.id === "prepare");
+    assert.ok(preparation?.run.includes(`publish.sh prepare --profile ${name} --directory ${directory} `));
+    assert.ok(job.steps.indexOf(preparation) < job.steps.indexOf(upload));
+    equal(upload.with, { "packages-dir": "release-upload/" }, "upload only staged distributions");
+    equal(upload["continue-on-error"], true, "child upload races reach strict verification");
+    for (const uploadResult of ["success", "failure"]) for (const verificationResult of ["success", "failure"]) {
+      const ctx = context();
+      ctx.github.event.inputs = { publish: "true" };
+      const execution = runSteps(job, ctx, new Map([[upload, uploadResult], [verification, verificationResult]]));
+      equal(execution.ran.includes(verification), true, "child verification runs after upload failure");
+      equal(execution.result, verificationResult, "complete verified inventory controls child result");
+      scenarios++;
+    }
+    for (const publish of ["false", "true"]) for (const missing of ["false", "true", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
+      const ctx = context();
+      ctx.github.event.inputs = { publish };
+      ctx.steps.prepare = { outputs: { upload: missing } };
+      const ready = publish === "true" && !["failure", "cancelled"].includes(previous) && !cancelled;
+      equal(stepEnabled(preparation, ctx, previous, cancelled), ready, "only publishing children prepare");
+      equal(stepEnabled(upload, ctx, previous, cancelled), ready && missing === "true", "only missing verified distributions upload");
+      equal(stepEnabled(verification, ctx, previous, cancelled), ready, "complete inventory is verified for uploads and no-ops");
+      scenarios++;
+    }
+
+    for (const publish of ["false", "true"]) for (const previous of results) for (const cancelled of [false, true]) {
+      const ctx = context();
+      ctx.github.event.inputs = { publish };
+      equal(stepEnabled(verification, ctx, previous, cancelled), publish === "true" && !["failure", "cancelled"].includes(previous) && !cancelled, "child verification respects publication, prior failures and cancellation");
+      scenarios++;
+    }
+    const ctx = context();
+    ctx.github.event.inputs = { publish: "true" };
+    const execution = runSteps(job, ctx, new Map([[verification, "failure"]]));
+    equal(execution.result, "failure", "content mismatch makes exact publisher run unsuccessful");
+    assert.ok(execution.ran.includes(verification), "published content check runs");
+    scenarios++;
+  }
+}
+
 check(workflow);
+checkChildren(upstreams);
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
+  ["stop on runtime duplicate upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
+  ["unconditional runtime upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
+  ["drop runtime final verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],
+  ["tolerate runtime final mismatch", wf => { wf.jobs.publish_runtime.steps.find(step => step.run?.includes("publish.sh verify "))["continue-on-error"] = true; }],
+  ["drop runtime dependency verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("dependencies.sh verify ")); }],
+  ["tolerate runtime dependency mismatch", wf => { wf.jobs.publish_runtime.steps.find(step => step.run?.includes("dependencies.sh verify "))["continue-on-error"] = true; }],
+  ["coordinate build-only runs", wf => { delete wf.jobs.prepare_dependencies.steps.find(step => step.run?.includes("dependencies.sh coordinate ")).if; }],
+  ["give planning a dispatch token", wf => { wf.jobs.prepare_dependencies.steps.find(step => step.id === "plan").env = { GH_TOKEN: "${{ github.token }}" }; }],
   ["ignore SDK failure", wf => { wf.jobs.publish_runtime.if = wf.jobs.publish_runtime.if.replace("needs.publish_sdk.result == 'success'", "true"); }],
   ["always after cancellation", wf => { wf.jobs.publish_runtime.if = wf.jobs.publish_runtime.if.replace("!cancelled()", "always()"); }],
   ["build any mode", wf => { wf.jobs.build_runtime.if = "${{ true }}"; }],
@@ -212,3 +357,20 @@ for (const [name, mutate] of mutations) {
   console.log(`Mutation rejected: ${name}`);
 }
 console.log(`Workflow mutations: ${mutations.length}/${mutations.length} rejected`);
+
+const childMutations = [
+  ["stop on child duplicate upload", job => { delete job.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
+  ["unconditional child upload", job => { delete job.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
+  ["drop child preparation", job => { job.steps = job.steps.filter(step => step.id !== "prepare"); }],
+  ["remove content verification", job => { job.steps = job.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],
+  ["tolerate content mismatch", job => { job.steps.find(step => step.run?.includes("publish.sh verify "))["continue-on-error"] = true; }],
+  ["skip content verification", job => { job.steps.find(step => step.run?.includes("publish.sh verify ")).if = "${{ false }}"; }],
+];
+for (const [name, mutate] of childMutations) {
+  const faulty = structuredClone(upstreams);
+  mutate(faulty["inference-models"].workflow.jobs.build);
+  assert.notDeepEqual(faulty, upstreams, `${name}: mutation applied`);
+  assert.throws(() => checkChildren(faulty), assert.AssertionError, `${name}: rejected`);
+  console.log(`Child mutation rejected: ${name}`);
+}
+console.log(`Child workflow mutations: ${childMutations.length}/${childMutations.length} rejected`);
