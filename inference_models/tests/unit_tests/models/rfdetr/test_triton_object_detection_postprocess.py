@@ -274,3 +274,98 @@ def test_fused_postprocessor_matches_reference(
             rtol=0,
             atol=0,
         )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or not TRITON_AVAILABLE,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("extent", [0.0, 0.125, 0.317, 0.7])
+@pytest.mark.parametrize("with_padding_and_crop", [False, True])
+def test_fused_postprocessor_preserves_reference_half_pixel_rounding(
+    extent: float,
+    with_padding_and_crop: bool,
+) -> None:
+    device = torch.device("cuda:0")
+    num_queries = 300
+    half_pixels = torch.arange(num_queries, dtype=torch.float32) + 100.5
+    bboxes = torch.full((1, num_queries, 4), extent)
+    bboxes[0, :, 0] = half_pixels / 1920
+    bboxes[0, :, 1] = half_pixels / 1080
+    bboxes = bboxes.to(device=device)
+    logits = torch.full((1, num_queries, 91), -20.0)
+    logits[0, :, 1] = torch.linspace(-0.2, 3.0, num_queries)
+    logits = logits.to(device=device)
+    image_meta = _metadata(source_width=1920, source_height=1080)
+    if with_padding_and_crop:
+        image_meta = PreProcessingMetadata(
+            pad_left=13,
+            pad_top=11,
+            pad_right=13,
+            pad_bottom=11,
+            original_size=ImageDimensions(width=1984, height=1144),
+            size_after_pre_processing=ImageDimensions(width=1920, height=1080),
+            inference_size=ImageDimensions(width=512, height=512),
+            scale_width=486 / 1920,
+            scale_height=490 / 1080,
+            static_crop_offset=StaticCropOffset(
+                offset_x=32,
+                offset_y=32,
+                crop_width=1920,
+                crop_height=1080,
+            ),
+        )
+    arguments = {
+        "bboxes": bboxes,
+        "logits": logits,
+        "pre_processing_meta": [image_meta],
+        "threshold": 0.4,
+        "num_classes": 91,
+        "classes_re_mapping": None,
+    }
+    stream = torch.cuda.current_stream(device=device)
+
+    expected = post_process_object_detection_results(**arguments, device=device)[0]
+    actual = FusedObjectDetectionPostprocessor(device=device).postprocess(
+        **arguments, stream=stream
+    )[0]
+    stream.synchronize()
+
+    torch.testing.assert_close(actual.xyxy, expected.xyxy, rtol=0, atol=0)
+    torch.testing.assert_close(actual.class_id, expected.class_id, rtol=0, atol=0)
+    torch.testing.assert_close(actual.confidence, expected.confidence, rtol=0, atol=0)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or not TRITON_AVAILABLE,
+    reason="CUDA and Triton are required",
+)
+@pytest.mark.parametrize("survivor_count", [17, 33, 128])
+def test_fused_postprocessor_preserves_reference_filtered_tie_order(
+    survivor_count: int,
+) -> None:
+    device = torch.device("cuda:0")
+    generator = torch.Generator().manual_seed(12345)
+    bboxes = torch.rand((1, 300, 4), generator=generator).to(device=device)
+    logits = torch.full((1, 300, 91), -20.0, device=device)
+    logits[0, :survivor_count, 1] = 2.0
+    arguments = {
+        "bboxes": bboxes,
+        "logits": logits,
+        "pre_processing_meta": [_metadata(source_width=1920, source_height=1080)],
+        "threshold": 0.4,
+        "num_classes": 91,
+        "classes_re_mapping": None,
+    }
+    stream = torch.cuda.current_stream(device=device)
+
+    expected = post_process_object_detection_results(**arguments, device=device)[0]
+    actual = FusedObjectDetectionPostprocessor(device=device).postprocess(
+        **arguments, stream=stream
+    )[0]
+    stream.synchronize()
+
+    assert len(actual.confidence) == survivor_count
+    torch.testing.assert_close(actual.xyxy, expected.xyxy, rtol=0, atol=0)
+    torch.testing.assert_close(actual.class_id, expected.class_id, rtol=0, atol=0)
+    torch.testing.assert_close(actual.confidence, expected.confidence, rtol=0, atol=0)
