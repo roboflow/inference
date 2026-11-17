@@ -61,6 +61,8 @@ COPY . .
 RUN make create_wheels
 RUN pip3 install --find-links dist/ "$(ls dist/roboflow_workflows*.whl)[databricks]" dist/streamvision*.whl dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools~=84.2.1"
 RUN pip3 install "inference-models[model-blob-cache]"
+# STAGING TEST ONLY: ship this checkout's inference_models instead of the PyPI release.
+RUN pip3 install --no-cache-dir --no-deps --force-reinstall ./inference_models
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
 
