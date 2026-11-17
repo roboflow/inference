@@ -195,6 +195,7 @@ class ModelManager:
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
         self._pinned: set[str] = set()
+        self._registered_last_used_ts: Dict[str, Optional[float]] = {}
         self._stream_pipelines: Dict[str, "StreamPipelinedModel"] = {}
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
@@ -296,6 +297,9 @@ class ModelManager:
                 lazy_register_by_names(b._model_mro_names)
             with self._lifecycle_lock:
                 self._backends[model_id] = b
+                self._registered_last_used_ts[model_id] = getattr(
+                    b, "last_used_ts", None
+                )
                 if pinned:
                     self._pinned.add(model_id)
         finally:
@@ -385,6 +389,7 @@ class ModelManager:
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
             self._pinned.discard(model_id)
+            self._registered_last_used_ts.pop(model_id, None)
             pipeline = self._stream_pipelines.pop(model_id, None)
 
         if drain:
@@ -459,10 +464,20 @@ class ModelManager:
             over_capacity = max_active > 0 and total_reserved > max_active
             if not over_capacity and not pressure:
                 return None
-            candidates = sorted(
-                (getattr(b, "last_used_ts", None) or 0.0, mid)
+            eligible = [
+                (b, mid)
                 for mid, b in self._backends.items()
                 if mid != incoming and mid not in self._pinned
+            ]
+            served = [
+                (b, mid)
+                for b, mid in eligible
+                if getattr(b, "last_used_ts", None)
+                != self._registered_last_used_ts.get(mid)
+            ]
+            candidates = sorted(
+                (getattr(b, "last_used_ts", None) or 0.0, mid)
+                for b, mid in (served or eligible)
             )
             popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
@@ -470,6 +485,7 @@ class ModelManager:
                 if backend is None:
                     continue
                 self._pinned.discard(mid)
+                self._registered_last_used_ts.pop(mid, None)
                 popped.append((mid, backend, self._stream_pipelines.pop(mid, None)))
             return popped
 

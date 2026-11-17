@@ -1177,6 +1177,77 @@ class TestCapacityEviction:
         assert len(mm) == 12
 
 
+class TestUnservedModelProtection:
+    def _mm(self, monkeypatch, cap):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        return mm, backends
+
+    def _load_with_ts(self, mm, backends, model_id, ts):
+        mm.load(model_id, api_key="")
+        backends[model_id].last_used_ts = ts
+
+    def test_served_model_evicted_instead_of_fresh_unserved(self, monkeypatch):
+        mm, backends = self._mm(monkeypatch, 3)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        backends["a"].last_used_ts = 5.0
+        backends["b"].last_used_ts = 6.0
+        original = mm._create_backend
+
+        def create_fresh(model_id, api_key, backend, **kwargs):
+            fb = original(model_id, api_key, backend, **kwargs)
+            fb.last_used_ts = 1.0
+            return fb
+
+        mm._create_backend = create_fresh
+        mm.load("c", api_key="")
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        popped = mm._select_and_pop_victims(incoming="d", pressure=False, count=1)
+        assert [victim for victim, _, _ in popped] == ["a"]
+
+    def test_all_unserved_falls_back_to_oldest(self, monkeypatch):
+        mm, backends = self._mm(monkeypatch, 2)
+        original = mm._create_backend
+        timestamps = {"x": 3.0, "y": 2.0}
+
+        def create_with_ts(model_id, api_key, backend, **kwargs):
+            fb = original(model_id, api_key, backend, **kwargs)
+            fb.last_used_ts = timestamps.get(model_id)
+            return fb
+
+        mm._create_backend = create_with_ts
+        mm.load("x", api_key="")
+        mm.load("y", api_key="")
+        mm.load("z", api_key="")
+        assert set(mm.loaded_models) == {"x", "z"}
+        assert backends["y"]._unloaded is True
+
+    def test_none_timestamps_keep_model_id_order(self, monkeypatch):
+        mm, _ = self._mm(monkeypatch, 2)
+        mm.load("b", api_key="")
+        mm.load("a", api_key="")
+        mm.load("c", api_key="")
+        assert set(mm.loaded_models) == {"b", "c"}
+
+    def test_remembered_value_dropped_on_eviction_and_unload(self, monkeypatch):
+        mm, backends = self._mm(monkeypatch, 2)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        backends["a"].last_used_ts = 1.0
+        backends["b"].last_used_ts = 2.0
+        mm.load("c", api_key="")
+        assert set(mm._registered_last_used_ts) == {"b", "c"}
+        mm.unload("b")
+        assert set(mm._registered_last_used_ts) == {"c"}
+
+
 class TestEvictionFailureSafety:
     def test_eviction_failure_does_not_leak_loading_id(self):
         mm = ModelManager()
@@ -1250,6 +1321,7 @@ class TestEvictionConcurrencySafety:
 
         pin_result: list = []
         pin_thread_holder: list = []
+        armed: list = []
 
         def try_pin():
             try:
@@ -1260,8 +1332,7 @@ class TestEvictionConcurrencySafety:
 
         def rigged_getter(self):
             value = self.__dict__.get("_last_used_ts_raw")
-            if not self.__dict__.get("_hook_fired"):
-                self.__dict__["_hook_fired"] = True
+            if armed and not pin_thread_holder:
                 t = threading.Thread(target=try_pin, daemon=True)
                 pin_thread_holder.append(t)
                 t.start()
@@ -1284,6 +1355,7 @@ class TestEvictionConcurrencySafety:
         mm.load("old", api_key="")
         backends["old"].last_used_ts = 1.0
 
+        armed.append(True)
         mm.load("new", api_key="")
         pin_thread_holder[0].join(timeout=5)
 
