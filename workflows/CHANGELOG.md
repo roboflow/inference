@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- GPT-6.2 Astra and GPT-6.2 Sol in the OpenAI v7 block (`roboflow_core/open_ai@v7`), with `low`, `medium`, `high`, `xhigh`, and `max` reasoning levels and the existing structured absolute-pixel detection format.
+
 ## `0.2.16.post1`
 
 Bundled execution engine: `1.17.2`.
