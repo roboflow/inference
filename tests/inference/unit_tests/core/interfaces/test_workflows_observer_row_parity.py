@@ -38,7 +38,12 @@ def _deterministic_collector():
 def _record_once(call) -> dict:
     """Run `call` with a frozen clock and return the kwargs the collector got."""
     with mock.patch.object(
-        collector_module.time, "time", side_effect=list(FROZEN_CLOCK)
+        collector_module,
+        "time",
+        mock.Mock(
+            wraps=collector_module.time,
+            time=mock.Mock(side_effect=list(FROZEN_CLOCK)),
+        ),
     ), mock.patch.object(usage_collector, "record_usage") as record_usage:
         call()
     return record_usage.call_args.kwargs
