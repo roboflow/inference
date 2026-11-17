@@ -583,24 +583,30 @@ async def _infer_and_repack(
         model_monitoring=_model_monitoring_enabled(inference_request),
     )
     elapsed = time.perf_counter() - started
-    responses = []
-    for prediction, payload in zip(predictions, payloads):
-        response = repack_prediction(
-            route.task_type,
-            route.action,
-            prediction,
-            (payload.width, payload.height),
-            route,
-            inference_request,
-        )
-        response.time = elapsed
-        response.inference_id = inference_request.id
-        response.resolved_model = resolved_model_for(route)
-        if visualize:
-            response.visualization = render_visualization(
-                route, inference_request, response, payload
+
+    def _repack_all():
+        repacked = []
+        for prediction, payload in zip(predictions, payloads):
+            response = repack_prediction(
+                route.task_type,
+                route.action,
+                prediction,
+                (payload.width, payload.height),
+                route,
+                inference_request,
             )
-        responses.append(response)
+            response.time = elapsed
+            response.inference_id = inference_request.id
+            response.resolved_model = resolved_model_for(route)
+            if visualize:
+                response.visualization = render_visualization(
+                    route, inference_request, response, payload
+                )
+            repacked.append(response)
+
+        return repacked
+
+    responses = await asyncio.to_thread(_repack_all)
     pingback.record_inference(route.registry_id, inference_request, responses)
     if image_format == "image":
         http_response = Response(

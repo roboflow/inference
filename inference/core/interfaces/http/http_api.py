@@ -410,6 +410,7 @@ from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
+    request_billing_context_query,
 )
 
 if LAMBDA and not OFFLINE_MODE:
@@ -733,9 +734,15 @@ class HttpInterface(BaseInterface):
             # metadata (_model_request_paths in ModelManagerBase), so a
             # Host-poisoned path would surface in model-info responses.
             token = current_request_path.set(request.scope["path"])
+            # Usage tracking reads the batch rate from here on handlers that
+            # do not bind `request`; it is trusted only with a valid secret.
+            billing_token = request_billing_context_query.set(
+                request.query_params.get("billing_context")
+            )
             try:
                 return await call_next(request)
             finally:
+                request_billing_context_query.reset(billing_token)
                 current_request_path.reset(token)
 
         @app.on_event("shutdown")
