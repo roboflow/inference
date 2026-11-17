@@ -1177,6 +1177,41 @@ class TestCapacityEviction:
         assert len(mm) == 12
 
 
+class TestFreshLoadEvictionRank:
+    def _mm_at_cap(self, monkeypatch, cap):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        return mm, backends
+
+    def test_never_used_models_evicted_in_load_order(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("z", api_key="")
+        mm.load("y", api_key="")
+        mm.load("x", api_key="")
+        assert set(mm.loaded_models) == {"y", "x"}
+
+    def test_just_loaded_model_outranks_older_use(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("b", api_key="")
+        backends["b"].last_used_ts = 1.0
+        mm.load("a", api_key="")
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["b"]
+
+    def test_recorded_load_time_dropped_on_eviction_and_unload(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        mm.load("c", api_key="")
+        assert set(mm._loaded_ts) == {"b", "c"}
+        mm.unload("b")
+        assert set(mm._loaded_ts) == {"c"}
+
+
 class TestEvictionFailureSafety:
     def test_eviction_failure_does_not_leak_loading_id(self):
         mm = ModelManager()

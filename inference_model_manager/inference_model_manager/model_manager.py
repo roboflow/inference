@@ -190,6 +190,7 @@ class ModelManager:
 
     def __init__(self) -> None:
         self._backends: Dict[str, Backend] = {}
+        self._loaded_ts: Dict[str, float] = {}
         self._lifecycle_lock = threading.Lock()
         self.torchscript_state_global_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
@@ -296,6 +297,7 @@ class ModelManager:
                 lazy_register_by_names(b._model_mro_names)
             with self._lifecycle_lock:
                 self._backends[model_id] = b
+                self._loaded_ts[model_id] = time.monotonic()
                 if pinned:
                     self._pinned.add(model_id)
         finally:
@@ -384,6 +386,7 @@ class ModelManager:
             backend = self._backends.pop(model_id, None)
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
+            self._loaded_ts.pop(model_id, None)
             self._pinned.discard(model_id)
             pipeline = self._stream_pipelines.pop(model_id, None)
 
@@ -460,7 +463,13 @@ class ModelManager:
             if not over_capacity and not pressure:
                 return None
             candidates = sorted(
-                (getattr(b, "last_used_ts", None) or 0.0, mid)
+                (
+                    max(
+                        getattr(b, "last_used_ts", None) or 0.0,
+                        self._loaded_ts.get(mid, 0.0),
+                    ),
+                    mid,
+                )
                 for mid, b in self._backends.items()
                 if mid != incoming and mid not in self._pinned
             )
@@ -470,6 +479,7 @@ class ModelManager:
                 if backend is None:
                     continue
                 self._pinned.discard(mid)
+                self._loaded_ts.pop(mid, None)
                 popped.append((mid, backend, self._stream_pipelines.pop(mid, None)))
             return popped
 
