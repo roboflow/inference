@@ -34,6 +34,7 @@ DISABLE_GSTREAMER_VIDEO_SOURCES = _CONFIGURATION.disable_gstreamer_video_sources
 DISABLE_NATIVE_STDERR_CAPTURE = _CONFIGURATION.disable_native_stderr_capture
 RESTART_ATTEMPT_DELAY = _CONFIGURATION.restart_attempt_delay
 RUNS_ON_JETSON = _CONFIGURATION.runs_on_jetson
+VIDEO_SOURCE_ALLOW_CPU_FALLBACK = _CONFIGURATION.video_source_allow_cpu_fallback
 
 # --- runtime / manager ---
 ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = (

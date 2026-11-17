@@ -590,6 +590,7 @@ FIELDS = [
     ("DISABLE_NATIVE_STDERR_CAPTURE", "DISABLE_NATIVE_STDERR_CAPTURE"),
     ("RESTART_ATTEMPT_DELAY", "RESTART_ATTEMPT_DELAY"),
     ("RUNS_ON_JETSON", "RUNS_ON_JETSON"),
+    ("VIDEO_SOURCE_ALLOW_CPU_FALLBACK", "VIDEO_SOURCE_ALLOW_CPU_FALLBACK"),
     (
         "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING",
         "ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING",
@@ -697,7 +698,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
     tabled = {name for name, _ in FIELDS}
 
     assert tabled == _facade_exports()
-    assert len(FIELDS) == 54
+    assert len(FIELDS) == 55
 
 
 def test_host_only_settings_are_not_package_configuration() -> None:
