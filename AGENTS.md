@@ -169,8 +169,9 @@ Read `.cursor/rules/execution-engine-version-changelog.mdc` for engine compatibi
 versioning and release metadata. Maintainers: at release, bump `version` in
 `workflows/pyproject.toml`, the pin in `requirements/requirements.workflows.txt`,
 the hardcoded `roboflow_workflows-<version>-py3-none-any.whl` in
-`.github/workflows/*.yml`, and run `cd workflows && uv lock`. Publishing uses
-`skip-existing`, so an unbumped version is silently not re-published.
+`.github/workflows/*.yml`, and run `cd workflows && uv lock`. Publishing verifies
+existing files against the candidate before uploading missing files; changed
+contents require a new version.
 
 ### Font provisioning
 
@@ -258,8 +259,8 @@ stream_vision/
 `streamvision` is published to PyPI separately from `inference` and pinned by
 `requirements/requirements.streamvision.txt`. Maintainers: at release, bump
 `version` in `stream_vision/pyproject.toml` and the pin, then run
-`cd stream_vision && uv lock`. Publishing uses `skip-existing`, so an unbumped
-version is silently not re-published.
+`cd stream_vision && uv lock`. Publishing verifies existing files against the
+candidate before uploading missing files; changed contents require a new version.
 
 ### Building the wheel
 

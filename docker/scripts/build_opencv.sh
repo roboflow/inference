@@ -28,6 +28,24 @@ OPENCV_NUMPY_INCLUDE_DIR="$(
     "${OPENCV_PYTHON_EXECUTABLE}" -c \
         'import numpy; print(numpy.get_include())'
 )"
+OPENCV_PYTHON_LIBRARY=""
+if [ "${OPENCV_BUILD_PYTHON3}" = "ON" ]; then
+    # CMake's legacy FindPythonLibs does not search uv-managed installations.
+    # Query the selected interpreter, including when it is inside a virtualenv.
+    OPENCV_PYTHON_LIBRARY="$("${OPENCV_PYTHON_EXECUTABLE}" - <<'PY'
+import sys
+import sysconfig
+from pathlib import Path
+
+libdir = sysconfig.get_config_var("LIBDIR")
+library = sysconfig.get_config_var("LDLIBRARY")
+if not libdir or not library or not (Path(libdir) / library).is_file():
+    sys.exit(f"Python library not found for {sys.executable}: {libdir}/{library}")
+
+print(Path(libdir) / library)
+PY
+    )"
+fi
 OPENCV_C_FLAGS="${CFLAGS:-}"
 OPENCV_CXX_FLAGS="${CXXFLAGS:-}"
 
@@ -120,6 +138,7 @@ cmake \
     -D PYTHON3_EXECUTABLE="${OPENCV_PYTHON_EXECUTABLE}" \
     -D Python3_EXECUTABLE="${OPENCV_PYTHON_EXECUTABLE}" \
     -D PYTHON3_INCLUDE_DIR="${OPENCV_PYTHON_INCLUDE_DIR}" \
+    -D PYTHON3_LIBRARY="${OPENCV_PYTHON_LIBRARY}" \
     -D PYTHON3_NUMPY_INCLUDE_DIRS="${OPENCV_NUMPY_INCLUDE_DIR}" \
     -D CMAKE_C_FLAGS="${OPENCV_C_FLAGS}" \
     -D CMAKE_CXX_FLAGS="${OPENCV_CXX_FLAGS}" \
@@ -153,6 +172,12 @@ cmake \
     -D BUILD_PERF_TESTS=OFF \
     -D BUILD_EXAMPLES=OFF \
     -D BUILD_DOCS=OFF
+
+if [ "${OPENCV_BUILD_PYTHON3}" = "ON" ] && \
+    ! grep -q '^HAVE_opencv_python3:INTERNAL=ON$' "${OPENCV_BUILD_DIR}/CMakeCache.txt"; then
+    echo "OpenCV Python 3 bindings were requested but CMake disabled them" >&2
+    exit 2
+fi
 
 cmake --build "${OPENCV_BUILD_DIR}" --parallel "$(nproc)"
 cmake --install "${OPENCV_BUILD_DIR}"
