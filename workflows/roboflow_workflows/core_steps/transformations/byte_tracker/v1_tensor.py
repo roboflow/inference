@@ -10,6 +10,9 @@ from roboflow_workflows.core_steps.common.tensor_native import (
 from roboflow_workflows.core_steps.common.workload_presets import (
     STATEFUL_VIDEO_TEMPORAL_RESTRICTIONS,
 )
+from roboflow_workflows.core_steps.transformations.byte_tracker._fps import (
+    resolve_byte_track_fps,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
@@ -161,7 +164,7 @@ This block receives detection predictions and video metadata, and produces track
 
 ## Requirements
 
-This block requires detection predictions (object detection or instance segmentation) and video metadata with frame rate (fps) information. The video metadata must include a valid fps value for ByteTrack initialization. The block maintains tracking state across frames for each video, so it should be used in video workflows where frames are processed sequentially. For optimal tracking performance, detections should be provided consistently across frames. The algorithm works best with stable detection performance and handles temporary detection gaps through the lost_track_buffer mechanism.
+This block requires detection predictions (object detection or instance segmentation) and video metadata with frame rate (fps) information. The video metadata should include a valid fps value; if it is missing or invalid, the block assumes 30 fps and logs one warning per video. The block maintains tracking state across frames for each video, so it should be used in video workflows where frames are processed sequentially. For optimal tracking performance, detections should be provided consistently across frames. The algorithm works best with stable detection performance and handles temporary detection gaps through the lost_track_buffer mechanism.
 
 Tensor-native note: the underlying `sv.ByteTrack` is numpy-based, so this block materialises only the bounding boxes / class ids / confidences to numpy at the boundary (tagged with a positional index) and runs the tracker. ByteTrack only filters and reorders detections — it never mutates coordinates — so the surviving rows are recovered by index and the ORIGINAL device tensors are sliced with `take_prediction_by_indices` (no GPU re-upload). Instance-segmentation masks follow the same index selection and are preserved (matching the numpy block, which keeps masks via `sv.Detections`). The assigned `tracker_id` is written into `bboxes_metadata` per surviving detection.
 """
@@ -187,7 +190,7 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/byte_tracker@v1"]
     metadata: Selector(kind=[VIDEO_METADATA_KIND]) = Field(
-        description="Video metadata containing frame rate (fps) and video identifier information required for ByteTrack initialization and tracking state management. The fps value is used to configure the tracker, and the video_identifier is used to maintain separate tracking state for different videos. The metadata must include valid fps information - ByteTrack requires frame rate to initialize. If processing multiple videos, each video's metadata should have a unique video_identifier to maintain separate tracking states. The block maintains persistent trackers across frames for each video using the video_identifier.",
+        description="Video metadata containing frame rate (fps) and video identifier information required for ByteTrack initialization and tracking state management. The fps value is used to configure the tracker, and the video_identifier is used to maintain separate tracking state for different videos. ByteTrack requires a frame rate to initialize; if fps is missing or invalid, the block assumes 30 fps and logs one warning per video. If processing multiple videos, each video's metadata should have a unique video_identifier to maintain separate tracking states. The block maintains persistent trackers across frames for each video using the video_identifier.",
     )
     detections: Selector(
         kind=[
@@ -274,17 +277,14 @@ class ByteTrackerBlockV1(WorkflowBlock):
         minimum_matching_threshold: float = 0.8,
         minimum_consecutive_frames: int = 1,
     ) -> BlockResult:
-        if not metadata.fps:
-            raise ValueError(
-                f"Malformed fps in VideoMetadata, {self.__class__.__name__} requires fps in order to initialize ByteTrack"
-            )
         if metadata.video_identifier not in self._trackers:
+            fps = resolve_byte_track_fps(metadata, self.__class__.__name__)
             self._trackers[metadata.video_identifier] = sv.ByteTrack(
                 track_activation_threshold=track_activation_threshold,
                 lost_track_buffer=lost_track_buffer,
                 minimum_matching_threshold=minimum_matching_threshold,
                 minimum_consecutive_frames=minimum_consecutive_frames,
-                frame_rate=metadata.fps,
+                frame_rate=fps,
             )
         tracker = self._trackers[metadata.video_identifier]
 
