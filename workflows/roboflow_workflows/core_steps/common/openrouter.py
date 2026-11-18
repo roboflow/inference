@@ -393,15 +393,63 @@ class OpenRouterWorkflowBlockBase(WorkflowBlock):
 # ---------------------------------------------------------------------------
 
 
+def _openrouter_error_message(data: Any, *, fallback: str, depth: int = 0) -> str:
+    """Keep provider messages from OpenRouter envelopes, including metadata.raw."""
+    if depth > 8:
+        return fallback
+
+    if isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+        except (ValueError, TypeError):
+            return data or fallback
+        if isinstance(parsed, (dict, str)) and parsed != data:
+            message = _openrouter_error_message(
+                parsed, fallback=fallback, depth=depth + 1
+            )
+            return message
+        return data or fallback
+
+    if not isinstance(data, dict):
+        return fallback
+
+    parts = []
+    for key in ("message", "details", "error"):
+        value = data.get(key)
+        if isinstance(value, (str, dict)):
+            message = _openrouter_error_message(value, fallback="", depth=depth + 1)
+            if message and message not in parts:
+                parts.append(message)
+    metadata = data.get("metadata")
+    if isinstance(metadata, dict):
+        raw = metadata.get("raw")
+        if isinstance(raw, (str, dict)):
+            message = _openrouter_error_message(raw, fallback="", depth=depth + 1)
+            if message and message not in parts:
+                parts.append(message)
+    message = ": ".join(parts) or fallback
+    return message
+
+
+def _enrich_openrouter_sdk_error(error: Exception) -> None:
+    """Preserve the SDK exception type and status while exposing provider details."""
+    if not isinstance(error, APIStatusError):
+        return
+
+    details = _openrouter_error_message(error.body, fallback="")
+    if details and details not in str(error):
+        message = f"{error}: {details}"
+        error.message = message
+        error.args = (message,)
+
+
 def _build_proxy_error_handler(
     status_code: int,
 ) -> Callable[[Exception], None]:
     def _handler(http_error: Exception) -> None:
         try:
             error_data = http_error.response.json()
-            api_msg = (
-                error_data.get("details") or error_data.get("error") or str(http_error)
-            )
+            api_msg = _openrouter_error_message(error_data, fallback=str(http_error))
         except Exception:
             api_msg = str(http_error)
         if status_code == 403:
@@ -528,11 +576,9 @@ def _execute_proxied_openrouter_request(
         )
     choices = response_data.get("choices") or []
     if not choices:
-        err_msg = (
-            (response_data.get("error") or {}).get("message")
-            if isinstance(response_data.get("error"), dict)
-            else None
-        ) or "no choices returned"
+        err_msg = _openrouter_error_message(
+            response_data.get("error"), fallback="no choices returned"
+        )
         raise RuntimeError(
             "OpenRouter returned no completion via Roboflow proxy. "
             f"Details: {err_msg}"
@@ -599,6 +645,7 @@ def _execute_direct_openrouter_request(
         )
     except Exception as error:
         if reasoning is None or not _is_unsupported_reasoning_error(error):
+            _enrich_openrouter_sdk_error(error)
             raise
         logger.warning(
             "OpenRouter rejected the reasoning config %s for model %s "
@@ -609,14 +656,18 @@ def _execute_direct_openrouter_request(
             error,
         )
         retry_extra_body = {k: v for k, v in extra_body.items() if k != "reasoning"}
-        response = client.chat.completions.create(
-            **request_kwargs,
-            extra_body=retry_extra_body,
-        )
+        try:
+            response = client.chat.completions.create(
+                **request_kwargs,
+                extra_body=retry_extra_body,
+            )
+        except Exception as retry_error:
+            _enrich_openrouter_sdk_error(retry_error)
+            raise
     if not response.choices:
-        error_detail = getattr(response, "error", {}) or {}
-        if isinstance(error_detail, dict):
-            error_detail = error_detail.get("message", "N/A")
+        error_detail = _openrouter_error_message(
+            getattr(response, "error", None), fallback="N/A"
+        )
         raise RuntimeError(
             "OpenRouter provider failed in delivering response. This issue "
             "happens from time to time - raise issue to OpenRouter if that's "
