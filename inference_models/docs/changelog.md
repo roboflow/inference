@@ -4,9 +4,9 @@
 
 ### Added
 
-- ConvNeXt classifiers trained by Roboflow (architecture `convnext`, single-label and
-  multi-label) load with the ResNet classification classes on the ONNX, Torch and TRT
-  backends, and serve the `image_embeddings` capability on ONNX and Torch.
+- [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
+  platform, single-label and multi-label. See the
+  [model page](models/convnext-classification.md).
 
 ## `0.39.9`
 
