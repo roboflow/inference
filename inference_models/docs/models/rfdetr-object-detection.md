@@ -35,6 +35,19 @@ All pre-trained RF-DETR object detection models are trained on the COCO dataset 
 | Medium | `rfdetr-medium` | ~75M |
 | Large | `rfdetr-large` | 129M |
 
+### Atto, Femto and Pico
+
+`rfdetr-atto`, `rfdetr-femto` and `rfdetr-pico` are smaller sizes built on the PE-Core-T backbone,
+released under the [Platform Model License 1.0](https://github.com/roboflow/rf-detr/blob/develop/rfdetr/platform/LICENSE.platform).
+They are available for models fine-tuned on the Roboflow platform and have no COCO pre-trained model IDs.
+Their `torch` backend needs `timm>=1.0.18`.
+
+| Model Size | Model type | Input size |
+|------------|------------|------------|
+| Atto | `rfdetr-atto` | 380 |
+| Femto | `rfdetr-femto` | 384 |
+| Pico | `rfdetr-pico` | 560 |
+
 ## Supported Backends
 
 For the composable five-stage Torch, ONNX and TensorRT execution-plan architecture, see
@@ -207,7 +220,7 @@ cv2.imwrite("annotated.jpg", annotated_image)
 
 **Important parameters:**
 
-- **`model_type`** (required) - Specifies the RF-DETR architecture variant. Must be one of: `rfdetr-nano`, `rfdetr-small`, `rfdetr-base`, `rfdetr-medium`, `rfdetr-large`
+- **`model_type`** (required) - Specifies the RF-DETR architecture variant. Must be one of: `rfdetr-nano`, `rfdetr-small`, `rfdetr-base`, `rfdetr-medium`, `rfdetr-large`, `rfdetr-atto`, `rfdetr-femto`, `rfdetr-pico`
 - **`labels`** (optional) - Class names for your model. Can be:
     - A list of class names: `["person", "car", "dog"]`
     - A registered label set name: `"coco"` (for COCO dataset classes)

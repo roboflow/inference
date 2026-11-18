@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
+  `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
+  packages previously failed with `CorruptedModelPackageError`. The new encoder is a timm
+  `vit_pe_core_tiny_patch16_384` trunk with windowed rotary attention; it needs `timm>=1.0.18`
+  and raises `MissingDependencyError` with an older timm. Inputs other than the trained size
+  work as for the DINOv2 sizes.
+
 ## `0.39.9`
 
 ### Changed
