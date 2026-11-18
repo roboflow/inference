@@ -53,10 +53,13 @@ from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETR2XLargeConfig,
+    RFDETRAttoConfig,
     RFDETRBaseConfig,
+    RFDETRFemtoConfig,
     RFDETRLargeConfig,
     RFDETRMediumConfig,
     RFDETRNanoConfig,
+    RFDETRPicoConfig,
     RFDETRSmallConfig,
     RFDETRXLargeConfig,
     build_model,
@@ -76,6 +79,9 @@ CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-large": RFDETRLargeConfig,
     "rfdetr-xlarge": RFDETRXLargeConfig,
     "rfdetr-2xlarge": RFDETR2XLargeConfig,
+    "rfdetr-atto": RFDETRAttoConfig,
+    "rfdetr-femto": RFDETRFemtoConfig,
+    "rfdetr-pico": RFDETRPicoConfig,
 }
 
 RESIZE_MODES_TO_REVERT_PADDING = {
