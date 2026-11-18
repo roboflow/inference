@@ -44,8 +44,8 @@ def _timm_reference(
 
 @pytest.mark.parametrize(
     ("trained_size", "input_size"),
-    [((380, 380), (380, 380)), ((380, 380), (400, 360))],
-    ids=["trained-size", "other-size"],
+    [((380, 380), (380, 380)), ((380, 380), (400, 360)), ((440, 440), (440, 440))],
+    ids=["trained-size", "other-size", "trained-at-non-default-resolution"],
 )
 def test_unwindowed_encoder_matches_timm_forward_intermediates(
     trained_size, input_size
@@ -56,6 +56,7 @@ def test_unwindowed_encoder_matches_timm_forward_intermediates(
         out_feature_indexes=OUT_FEATURE_INDEXES,
         patch_size=20,
         num_windows=1,
+        positional_encoding_size=380 // 20,
     ).eval()
     reference = _timm_reference(encoder, patch_size=20, shape=input_size)
     x = torch.randn(2, 3, *input_size)
@@ -82,6 +83,7 @@ def test_other_input_size_leaves_trained_size_output_unchanged() -> None:
         out_feature_indexes=OUT_FEATURE_INDEXES,
         patch_size=16,
         num_windows=2,
+        positional_encoding_size=384 // 16,
     ).eval()
     x = torch.randn(1, 3, 384, 384)
 
@@ -177,4 +179,30 @@ def test_old_timm_without_pe_core_t_raises_missing_dependency(monkeypatch) -> No
             out_feature_indexes=OUT_FEATURE_INDEXES,
             patch_size=16,
             num_windows=2,
+            positional_encoding_size=384 // 16,
         )
+
+
+@pytest.mark.parametrize(
+    ("config_class", "resolution"),
+    [(RFDETRAttoConfig, 440), (RFDETRFemtoConfig, 448), (RFDETRPicoConfig, 640)],
+    ids=["atto", "femto", "pico"],
+)
+def test_model_trained_at_non_default_resolution_loads_default_sized_position_embedding(
+    config_class, resolution: int
+) -> None:
+    # Training stores the position embedding at positional_encoding_size patches per side
+    # whatever the training resolution, and timm resamples it to the input grid.
+    torch.manual_seed(0)
+    default_model = build_model(config=config_class(device=torch.device("cpu")))
+    config = config_class(device=torch.device("cpu"))
+    config.resolution = resolution
+    model = build_model(config=config).eval()
+
+    model.load_state_dict(default_model.state_dict())
+    with torch.no_grad():
+        outputs = model(torch.randn(1, 3, resolution, resolution))
+
+    pos_embed = model.state_dict()["backbone.0.encoder.model.pos_embed"]
+    assert pos_embed.shape[1] == config.positional_encoding_size**2 + 1
+    assert outputs["pred_boxes"].shape == (1, config.num_queries, 4)

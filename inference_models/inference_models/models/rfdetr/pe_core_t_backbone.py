@@ -92,16 +92,20 @@ class PECoreTEncoder(nn.Module):
         out_feature_indexes: List[int],
         patch_size: int,
         num_windows: int,
+        positional_encoding_size: int,
     ):
         """Build the encoder for a trained input size.
 
         Args:
-            shape (tuple[int, int]): Input height and width the model was trained at; sizes the
-                absolute position embedding to match the checkpoint.
+            shape (tuple[int, int]): Input height and width the model was trained at; RoPE is
+                cached for this grid.
             out_feature_indexes (list[int]): Blocks whose outputs feed the projector; these
                 blocks attend over the whole image instead of within windows.
             patch_size (int): Patch size of the trained model (16 or 20).
             num_windows (int): Windows per side; 1 disables windowing.
+            positional_encoding_size (int): Side length, in patches, of the stored absolute
+                position embedding. Checkpoints keep this size at any training resolution, and
+                timm resamples it to the input grid on every call.
 
         Raises:
             MissingDependencyError: If the installed timm predates PE-Core-T (added in 1.0.18).
@@ -124,13 +128,16 @@ class PECoreTEncoder(nn.Module):
             PE_CORE_T_ARCHITECTURE,
             pretrained=False,
             patch_size=patch_size,
-            img_size=shape[0],
+            img_size=positional_encoding_size * patch_size,
         )
         self.model.dynamic_img_size = True
         self.model.patch_embed.strict_img_size = False
         self.model.patch_embed.output_fmt = "NHWC"
         self.model.patch_embed.flatten = False
-        self.model.set_input_size(img_size=shape)
+        # Cache RoPE for the trained grid; other grids are rebuilt per call in _rope_for_grid.
+        self.model.rope.update_feat_shape(
+            [shape[0] // patch_size, shape[1] // patch_size]
+        )
         # The class token gets an identity rotary embedding instead (see forward).
         for block in self.model.blocks:
             block.attn.num_prefix_tokens = 0
