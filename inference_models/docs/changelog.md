@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `ONNXRUNTIME_INTRA_OP_NUM_THREADS` and `ONNXRUNTIME_ALLOW_SPINNING` set the
+  intra-op thread count and busy-waiting of every ONNX model session. By default
+  each session starts one thread per physical core and those threads spin, so
+  several models running on the CPU in one process oversubscribe it. Unset, both
+  keep onnxruntime's defaults. All ONNX model loaders now create their sessions
+  through `create_onnx_inference_session`, which applies them.
+
 ## `0.39.9`
 
 ### Changed

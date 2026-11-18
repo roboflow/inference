@@ -231,7 +231,48 @@ def test_session_without_coreml_provider_is_created_directly(
     )
 
     assert session == "session"
-    assert factory.calls == [("/models/weights.onnx", ["CPUExecutionProvider"], None)]
+    assert len(factory.calls) == 1
+    path, providers, session_options = factory.calls[0]
+    assert (path, providers) == ("/models/weights.onnx", ["CPUExecutionProvider"])
+    assert isinstance(session_options, onnx.onnxruntime.SessionOptions)
+
+
+def test_session_applies_thread_settings_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = _SessionFactory()
+    monkeypatch.setattr(onnx.onnxruntime, "InferenceSession", factory)
+    monkeypatch.setattr(onnx, "ONNXRUNTIME_INTRA_OP_NUM_THREADS", 4)
+    monkeypatch.setattr(onnx, "ONNXRUNTIME_ALLOW_SPINNING", False)
+
+    onnx.create_onnx_inference_session(
+        model_path="/models/weights.onnx", providers=["CPUExecutionProvider"]
+    )
+
+    session_options = factory.calls[0][2]
+    assert session_options.intra_op_num_threads == 4
+    assert (
+        session_options.get_session_config_entry("session.intra_op.allow_spinning")
+        == "0"
+    )
+
+
+def test_session_keeps_caller_session_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = _SessionFactory()
+    monkeypatch.setattr(onnx.onnxruntime, "InferenceSession", factory)
+    monkeypatch.setattr(onnx, "ONNXRUNTIME_INTRA_OP_NUM_THREADS", 4)
+    session_options = onnx.onnxruntime.SessionOptions()
+
+    onnx.create_onnx_inference_session(
+        model_path="/models/weights.onnx",
+        providers=["CPUExecutionProvider"],
+        sess_options=session_options,
+    )
+
+    assert factory.calls[0][2] is session_options
+    assert session_options.intra_op_num_threads == 0
 
 
 def test_session_keys_coreml_cache_by_model_file(
@@ -427,7 +468,7 @@ def test_caller_configured_coreml_cache_directory_is_passed_through(
 
     onnx.create_onnx_inference_session(model_path=model_path, providers=providers)
 
-    assert factory.calls == [(model_path, providers, None)]
+    assert [call[:2] for call in factory.calls] == [(model_path, providers)]
     assert (tmp_path / "my-cache-other").exists()
     assert not (tmp_path / ".coreml_cache.lock").exists()
 

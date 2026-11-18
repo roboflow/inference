@@ -20,6 +20,7 @@ from inference_models.errors import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
+    create_onnx_inference_session,
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
@@ -121,8 +122,8 @@ class YOLOv5ForObjectDetectionOnnx(
                 )
             },
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
+        session = create_onnx_inference_session(
+            model_path=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
         device = align_device_with_onnx_session(session=session, device=device)

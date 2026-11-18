@@ -258,6 +258,24 @@ Default: `CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvide
 export ONNXRUNTIME_EXECUTION_PROVIDERS="CPUExecutionProvider"
 ```
 
+Every ONNX model session starts its own intra-op thread pool, one thread per physical core by
+default, and those threads busy-wait for work. Several models in one process on the CPU can then
+run many more threads than there are cores and keep the CPU at 100% even between frames. The two
+settings below apply to each session.
+
+**`ONNXRUNTIME_INTRA_OP_NUM_THREADS`**
+Threads in each session's intra-op pool. `0` keeps onnxruntime's default.
+Default: `0`
+
+**`ONNXRUNTIME_ALLOW_SPINNING`**
+Whether idle intra-op threads busy-wait for work. `false` makes them sleep instead.
+Default: `true`
+
+```bash
+export ONNXRUNTIME_INTRA_OP_NUM_THREADS=4
+export ONNXRUNTIME_ALLOW_SPINNING=false
+```
+
 ### CoreML (Apple Silicon)
 
 These apply to models that configure the `CoreMLExecutionProvider` themselves (currently RF-DETR),
