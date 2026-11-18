@@ -9,18 +9,27 @@ from starlette.testclient import TestClient
 
 from inference.core.interfaces.http import http_api
 
+API_BASE_URL = "https://api.example.test"
 IMAGE = {"type": "base64", "value": "image"}
 RLE_MASK = {"size": [8, 8], "counts": "52000N`0"}
 POLYGON_MASK = [[[1, 1], [3, 1], [3, 5]]]
 
 
 class _RecordingPost:
+    """Answers every POST with ``body`` and records the ones sent to the proxy.
+
+    It replaces ``requests.post`` for the whole process, so the usage
+    collector's background flush can call it too; those calls are not recorded.
+    """
+
     def __init__(self, body: dict) -> None:
         self.body = body
         self.calls = []
 
     def __call__(self, url, **kwargs):
-        self.calls.append({"url": url, **kwargs})
+        if url.startswith(f"{API_BASE_URL}/"):
+            self.calls.append({"url": url, **kwargs})
+
         return SimpleNamespace(status_code=200, url=url, json=lambda: self.body)
 
 
@@ -29,7 +38,7 @@ def remote_client(monkeypatch):
     for name in ("CORE_MODELS_ENABLED", "CORE_MODEL_SAM3_ENABLED"):
         monkeypatch.setattr(http_api, name, True)
     monkeypatch.setattr(http_api, "SAM3_EXEC_MODE", "remote")
-    monkeypatch.setattr(http_api, "API_BASE_URL", "https://api.example.test")
+    monkeypatch.setattr(http_api, "API_BASE_URL", API_BASE_URL)
     monkeypatch.setattr(http_api, "ROBOFLOW_INTERNAL_SERVICE_NAME", None)
     monkeypatch.setattr(http_api, "ROBOFLOW_INTERNAL_SERVICE_SECRET", None)
     monkeypatch.setattr(http_api, "LAMBDA", False)
@@ -84,7 +93,7 @@ def test_visual_segment_forwards_the_rle_format(remote_client) -> None:
     assert response.status_code == 200, response.text
     assert response.json()["predictions"][0]["masks"] == RLE_MASK
     (call,) = proxy.calls
-    assert call["url"].startswith("https://api.example.test/inferenceproxy/sam3-pvs")
+    assert call["url"].startswith(f"{API_BASE_URL}/inferenceproxy/sam3-pvs")
     assert call["json"]["format"] == "rle"
 
 
@@ -143,7 +152,7 @@ def test_concept_segment_forwards_the_rle_format_and_nms_threshold(
     prediction = response.json()["prompt_results"][0]["predictions"][0]
     assert prediction["masks"] == RLE_MASK
     (call,) = proxy.calls
-    assert call["url"].startswith("https://api.example.test/inferenceproxy/seg-preview")
+    assert call["url"].startswith(f"{API_BASE_URL}/inferenceproxy/seg-preview")
     assert call["json"]["format"] == "rle"
     assert call["json"]["nms_iou_threshold"] == 0.5
 

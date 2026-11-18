@@ -24,10 +24,16 @@ def test_managed_transport_errors_redact_workflow_diagnostics(
     block_type, failure, monkeypatch, caplog
 ) -> None:
     monkeypatch.setattr(roboflow_api, "OFFLINE_MODE", False)
+    proxy_url = f"{roboflow_api.API_PROXY_BASE_URL}/apiproxy/"
     calls = []
 
     def fail_request(url, **kwargs):
-        calls.append(url)
+        # requests.post is patched for the whole process, so the usage
+        # collector's background flush can land here too. Count only the
+        # requests the workflow sends to the API proxy.
+        if url.startswith(proxy_url):
+            calls.append(url)
+
         raise failure("Request failed for " + url)
 
     monkeypatch.setattr(roboflow_api.requests, "post", fail_request)

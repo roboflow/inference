@@ -312,7 +312,12 @@ def test_legacy_route_failure_records_one_error(legacy_client, fake_stat, otel):
     assert otel.named(ERRORS) == [(ERRORS, 1, {"error.type": "ModelNotFoundError"})]
     assert otel.span.record_exception.call_count == 1
     recorded = otel.span.record_exception.call_args.args[0]
-    assert isinstance(recorded, LookupError)
+    attributes = otel.span.record_exception.call_args.kwargs["attributes"]
+    assert attributes["exception.type"] == "LookupError"
+    assert attributes["exception.message"] == str(recorded)
+    assert "inference_models.errors.ModelNotFoundError" in attributes[
+        "exception.stacktrace"
+    ]
     otel.span.set_status.assert_called_once_with("ERROR", str(recorded))
     assert otel.named(INFER_COUNT) == []
     assert otel.named(INFER_DURATION) == []
@@ -362,7 +367,9 @@ def test_workflow_route_failure_records_one_error(legacy_client, otel):
     assert otel.named(ERRORS) == [(ERRORS, 1, {"error.type": "WorkflowSyntaxError"})]
     assert otel.span.record_exception.call_count == 1
     recorded = otel.span.record_exception.call_args.args[0]
-    assert type(recorded).__name__ == "WorkflowSyntaxError"
+    attributes = otel.span.record_exception.call_args.kwargs["attributes"]
+    assert attributes["exception.type"] == "roboflow_workflows.errors.WorkflowSyntaxError"
+    assert attributes["exception.message"] == str(recorded)
     otel.span.set_status.assert_called_once_with("ERROR", str(recorded))
 
 
@@ -407,11 +414,19 @@ def test_route_wrappers_record_an_http_exception_and_reraise_it(otel, decorator)
     async def route():
         raise error
 
-    with pytest.raises(HTTPException):
+    with pytest.raises(HTTPException) as caught:
         asyncio.run(route())
 
+    assert caught.value is error
     assert otel.named(ERRORS) == [(ERRORS, 1, {"error.type": "HTTPException"})]
-    otel.span.record_exception.assert_called_once_with(error)
+    otel.span.record_exception.assert_called_once()
+    assert str(otel.span.record_exception.call_args.args[0]) == "418: teapot"
+    attributes = otel.span.record_exception.call_args.kwargs["attributes"]
+    assert attributes["exception.type"] == "fastapi.exceptions.HTTPException"
+    assert attributes["exception.message"] == "418: teapot"
+    assert "fastapi.exceptions.HTTPException: 418: teapot" in attributes[
+        "exception.stacktrace"
+    ]
 
 
 @pytest.mark.parametrize("decorator", [with_legacy_errors, with_workflow_errors])

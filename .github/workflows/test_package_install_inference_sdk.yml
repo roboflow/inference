@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 concurrency:
@@ -21,38 +20,23 @@ jobs:
   call_is_mergeable:
     uses: ./.github/workflows/check_if_branch_is_mergeable.yml
     secrets: inherit
+
   build:
     needs: call_is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
-      labels: depot-ubuntu-22.04-small
+      labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 10
+    timeout-minutes: 25
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v6
-      - name: 🐍 Set up Python 3.10 to create wheels
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v6
         with:
-          python-version: "3.10"
-      - name: 🛞 Create Wheels
-        run: |
-          make create_inference_cli_whl
-      - name: 🐍 Set up Python ${{ matrix.python-version }} to test package install process
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-package-install-inference-sdk-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-      - name: 📦 Installing `inference` package...
-        run: pip install ./dist/inference_sdk-*-py3-none-any.whl
-      - name: 🧪 Testing package installation
-        working-directory: "/"
-        run: |
-          python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference_sdk import InferenceHTTPClient"
+          persist-credentials: false
+      - name: Run SDK install validation in Docker
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: bash .github/scripts/run_sdk_tests.sh install "$PYTHON_VERSION"
