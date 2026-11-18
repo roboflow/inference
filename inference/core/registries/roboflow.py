@@ -363,7 +363,7 @@ def _check_if_api_key_has_access_to_model(
     if ON_PREMISE_APPLIANCE and is_generic_core_model_id(model_id=model_id):
         # On an appliance a core model has no owning workspace. The request
         # key was already checked by the appliance middleware, and preload
-        # has no key at all (DF-118).
+        # has no key at all.
         return True
     # Workflow blocks pass the plain string `core_model`
     # (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE); coerce BEFORE the

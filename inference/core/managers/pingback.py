@@ -126,7 +126,7 @@ class PingbackInfo:
             all_data["api_key"] = self.fallback_api_key
         if ON_PREMISE_APPLIANCE and not all_data.get("api_key"):
             # A borrowed request key files every workspace's results under one
-            # tenant (DF-41); without a configured key, send nothing.
+            # tenant; without a configured key, send nothing.
             if not self._missing_appliance_key_reported:
                 logger.warning(
                     "ON_PREMISE_APPLIANCE: device-stats pingback is not sent because "

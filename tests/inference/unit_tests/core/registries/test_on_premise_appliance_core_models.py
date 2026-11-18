@@ -78,7 +78,7 @@ def test_workspace_and_alias_model_ids_are_not_generic(model_id) -> None:
 def test_appliance_preload_of_core_models_needs_no_key(
     monkeypatch, platform_calls, model_id
 ) -> None:
-    # DF-118: with MODELS_CACHE_AUTH_ENABLED the keyless preload of the pinned
+    # With MODELS_CACHE_AUTH_ENABLED the keyless preload of the pinned
     # core models failed, so /model/registry stayed empty.
     monkeypatch.setattr(registry_module, "ON_PREMISE_APPLIANCE", True)
     model_manager = ModelManager(model_registry=MagicMock())
