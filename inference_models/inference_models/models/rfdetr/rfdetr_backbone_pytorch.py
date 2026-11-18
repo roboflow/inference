@@ -259,6 +259,7 @@ class Backbone(BackboneBase):
                 out_feature_indexes=out_feature_indexes,
                 patch_size=patch_size,
                 num_windows=num_windows,
+                positional_encoding_size=positional_encoding_size,
             )
         else:
             # an example name here would be "dinov2_base" or "dinov2_registers_windowed_base"
