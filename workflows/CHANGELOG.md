@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.16.post3`
+
+Bundled execution engine: `1.17.2`.
+
 ### Fixed
 
 - Mistral Large 4 now defaults to low reasoning and supports medium and high; saved workflows using none send low instead of disabling unsupported reasoning. OpenRouter errors retain upstream messages from metadata.raw on direct and managed-key paths.
