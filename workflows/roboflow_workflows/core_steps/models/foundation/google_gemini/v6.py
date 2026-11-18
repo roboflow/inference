@@ -272,12 +272,6 @@ RELEVANT_TASKS_METADATA["instance-segmentation"] = {
     "name": "Instance Segmentation",
     "description": "Gemini 4 Argon, Gemini 4 Carbon and Gemini 4 Hydrogen only: predict masks with detached components and holes, decoded to RLE predictions.",
 }
-RELEVANT_TASKS_METADATA[KEYPOINT_DETECTION_TASK] = {
-    "name": "Keypoint Detection",
-    "description": "Model finds every instance of the provided classes and locates the "
-    "keypoints of its skeleton (from `keypoint_schema`), decoded into keypoint "
-    "predictions by the block.",
-}
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
     for k, v in RELEVANT_TASKS_METADATA.items()

@@ -6,14 +6,16 @@ asserts the same output with the numpy representation and with
 """
 
 import json
-from typing import Any, List
+from typing import Any, List, Optional
 
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
+    ABSOLUTE_XY,
     OCCLUDED_KEYPOINT_CONFIDENCE,
     VISIBLE_KEYPOINT_CONFIDENCE,
     KeypointSkeleton,
+    build_absolute_keypoint_json_schema,
     build_keypoint_detection_prompt,
     build_keypoint_response_schema,
     decode_keypoint_detections,
@@ -402,3 +404,144 @@ def test_decode_returns_the_native_keypoint_tuple() -> None:
         [VISIBLE_KEYPOINT_CONFIDENCE, OCCLUDED_KEYPOINT_CONFIDENCE, 0.0, 1.0]
     ]
     assert key_points.class_id.cpu().tolist() == [0]
+
+
+# The plate of PLATE_INSTANCE in absolute pixels of a 400x200 upload of the
+# 800x400 image, so every coordinate doubles on the original.
+ABSOLUTE_UPLOAD_WIDTH = 400
+ABSOLUTE_UPLOAD_HEIGHT = 200
+ABSOLUTE_PLATE_INSTANCE = {
+    "box_2d": [40, 50, 200, 150],
+    "keypoints": {
+        "TL": {"x": 40, "y": 50, "occluded": False},
+        "TR": {"x": 200, "y": 50, "occluded": True},
+        "BR": None,
+        "BL": {"x": 40, "y": 150, "occluded": False},
+    },
+}
+
+
+def _decode_absolute(
+    answer: Any,
+    upload_width: Optional[int] = ABSOLUTE_UPLOAD_WIDTH,
+    upload_height: Optional[int] = ABSOLUTE_UPLOAD_HEIGHT,
+):
+    return decode_keypoint_detections(
+        json.dumps(answer),
+        image=_build_image(),
+        skeletons=resolve_keypoint_skeletons(SCHEMA, classes=["plate"]),
+        classes=["plate"],
+        inference_id="inference",
+        coordinates=ABSOLUTE_XY,
+        upload_width=upload_width,
+        upload_height=upload_height,
+    )
+
+
+def test_absolute_prompt_asks_for_pixels_of_the_uploaded_image() -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(SCHEMA, classes=["plate", "car"])
+
+    # when
+    prompt = build_keypoint_detection_prompt(
+        skeletons, coordinates=ABSOLUTE_XY, upload_width=640, upload_height=480
+    )
+
+    # then
+    assert (
+        '"box_2d": the bounding box as [x_min, y_min, x_max, y_max]: the top-left '
+        "and bottom-right corners in absolute pixel coordinates of the 640x480 "
+        "pixel image."
+    ) in prompt
+    assert (
+        'Each value is {"x": int, "y": int, "occluded": bool} in the same absolute '
+        "pixel coordinates, or null"
+    ) in prompt
+    skeleton_part = prompt[prompt.index("\n\nSkeleton of a plate:") :]
+    assert build_keypoint_detection_prompt(skeletons).endswith(skeleton_part)
+
+
+def test_absolute_prompt_needs_the_upload_size() -> None:
+    with pytest.raises(ValueError, match="size of the uploaded image"):
+        build_keypoint_detection_prompt(
+            resolve_keypoint_skeletons(SCHEMA, classes=["plate"]),
+            coordinates=ABSOLUTE_XY,
+        )
+
+
+def test_absolute_json_schema_is_strict_and_requires_every_class_and_keypoint() -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(SCHEMA, classes=["plate", "car"])
+
+    # when
+    schema = build_absolute_keypoint_json_schema(skeletons)
+
+    # then
+    assert schema["required"] == list(schema["properties"]) == ["plate", "car"]
+    assert schema["additionalProperties"] is False
+    instance = schema["properties"]["car"]["items"]
+    assert instance["required"] == ["box_2d", "keypoints"]
+    assert instance["additionalProperties"] is False
+    keypoints = instance["properties"]["keypoints"]
+    assert keypoints["required"] == ["wheel", "wheel (2)"]
+    assert keypoints["additionalProperties"] is False
+    assert keypoints["properties"]["wheel"] == {
+        "anyOf": [{"$ref": "#/$defs/keypoint"}, {"type": "null"}]
+    }
+    assert schema["$defs"]["keypoint"] == {
+        "type": "object",
+        "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+            "occluded": {"type": "boolean"},
+        },
+        "required": ["x", "y", "occluded"],
+        "additionalProperties": False,
+    }
+
+
+def test_decode_absolute_answer_scales_the_upload_onto_the_original_image() -> None:
+    # when
+    error, predictions = _decode_absolute({"plate": [ABSOLUTE_PLATE_INSTANCE]})
+
+    # then
+    assert error is False
+    serialized = _serialize(predictions)
+    assert len(serialized) == 1
+    assert _box(serialized[0]) == PLATE_XYXY
+    assert serialized[0]["keypoints"] == PLATE_KEYPOINTS
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"x": 401, "y": 50, "occluded": False},
+        {"x": -1, "y": 50, "occluded": False},
+        {"x": 40, "y": 201, "occluded": False},
+        {"x": 40, "occluded": False},
+        {"x": True, "y": 50, "occluded": False},
+        {"x": "40", "y": 50, "occluded": False},
+        {"point": [50, 40], "occluded": False},
+    ],
+)
+def test_decode_absolute_answer_leaves_out_an_unusable_keypoint(value: Any) -> None:
+    # given
+    answer = {"plate": [{**ABSOLUTE_PLATE_INSTANCE, "keypoints": {"TL": value}}]}
+
+    # when
+    error, predictions = _decode_absolute(answer)
+
+    # then
+    assert error is False
+    assert _serialize(predictions)[0]["keypoints"] == []
+
+
+def test_decode_absolute_answer_needs_the_upload_size() -> None:
+    # when
+    error, predictions = _decode_absolute(
+        {"plate": [ABSOLUTE_PLATE_INSTANCE]}, upload_width=None, upload_height=None
+    )
+
+    # then
+    assert error is True
+    assert predictions is None

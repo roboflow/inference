@@ -3,10 +3,15 @@
 The request names the skeleton of every class: its keypoint names, the edges between
 them and, optionally, where each keypoint sits on a reference instance (a template).
 A response schema constrains the answer to one list of instances per class. Each
-instance has a Gemini-native ``box_2d`` (``[y_min, x_min, y_max, x_max]`` normalized to
-0-1000) and one property per keypoint, holding ``{"point": [y, x], "occluded": bool}``
-(normalized to 0-1000) or ``null`` when the keypoint is outside the image or cannot be
-placed.
+instance has a ``box_2d`` and one property per keypoint, holding the keypoint's point
+and whether it is occluded, or ``null`` when the keypoint is outside the image or cannot
+be placed. The coordinates follow one of two contracts:
+
+* ``NORMALIZED_YX``, Gemini's: ``box_2d`` is ``[y_min, x_min, y_max, x_max]`` and a
+  keypoint is ``{"point": [y, x], "occluded": bool}``, normalized to 0-1000.
+* ``ABSOLUTE_XY``, OpenAI's: ``box_2d`` is ``[x_min, y_min, x_max, y_max]`` and a
+  keypoint is ``{"x": int, "y": int, "occluded": bool}``, in pixels of the uploaded
+  image.
 
 The decoded prediction carries its keypoints the way keypoint models do (the
 ``keypoints_*`` fields of ``sv.Detections.data``), so keypoint consumers need no
@@ -18,7 +23,7 @@ left out of its instance.
 
 import copy
 import math
-from typing import Annotated, Any, Dict, List, Optional, Sequence, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Optional, Sequence, Tuple
 from uuid import uuid4
 
 import numpy as np
@@ -60,7 +65,10 @@ KEYPOINT_DETECTION_TASK = "keypoint-detection"
 VISIBLE_KEYPOINT_CONFIDENCE = 1.0
 OCCLUDED_KEYPOINT_CONFIDENCE = 0.5
 NORMALIZED_SCALE = 1000.0
-BOX_FORMAT = "yxyx_0_1000"
+NORMALIZED_YX = "normalized_yx"
+ABSOLUTE_XY = "absolute_xy"
+KeypointCoordinates = Literal["normalized_yx", "absolute_xy"]
+BOX_FORMATS = {NORMALIZED_YX: "yxyx_0_1000", ABSOLUTE_XY: "xyxy_absolute"}
 
 KEYPOINT_SCHEMA_DESCRIPTION = (
     "The skeleton of every class, keyed by class name (keypoint-detection only). Each "
@@ -200,16 +208,54 @@ def resolve_keypoint_skeletons(
     return resolved
 
 
-def build_keypoint_detection_prompt(skeletons: Dict[str, KeypointSkeleton]) -> str:
+def build_keypoint_detection_prompt(
+    skeletons: Dict[str, KeypointSkeleton],
+    *,
+    coordinates: KeypointCoordinates = NORMALIZED_YX,
+    upload_width: Optional[int] = None,
+    upload_height: Optional[int] = None,
+) -> str:
     """Write the instructions that go with the image.
 
     Args:
         skeletons (Dict[str, KeypointSkeleton]): The skeleton of each class to detect.
+        coordinates (KeypointCoordinates): The coordinate contract the answer follows.
+        upload_width (Optional[int]): Width of the uploaded image, which the
+            ``ABSOLUTE_XY`` prompt states.
+        upload_height (Optional[int]): Height of the uploaded image, which the
+            ``ABSOLUTE_XY`` prompt states.
 
     Returns:
         str: The prompt: the answer's layout, then each class's keypoints, edges and,
             when it has one, its template.
+
+    Raises:
+        ValueError: If an ``ABSOLUTE_XY`` prompt has no upload dimensions.
     """
+    if coordinates == ABSOLUTE_XY:
+        if not upload_width or not upload_height:
+            raise ValueError(
+                "An absolute-pixel keypoint prompt needs the size of the uploaded image"
+            )
+        box = (
+            '- "box_2d": the bounding box as [x_min, y_min, x_max, y_max]: the '
+            "top-left and bottom-right corners in absolute pixel coordinates of the "
+            f"{upload_width}x{upload_height} pixel image."
+        )
+        value = (
+            '{"x": int, "y": int, "occluded": bool} in the same absolute pixel '
+            "coordinates"
+        )
+    else:
+        box = (
+            '- "box_2d": the bounding box as [y_min, x_min, y_max, x_max], integers '
+            "between 0 and 1000 normalized to the image height and width."
+        )
+        value = (
+            '{"point": [y, x], "occluded": bool}, with y and x integers between 0 and '
+            "1000 normalized to the image height and width"
+        )
+
     lines = [
         "Find every instance of these classes in this image and locate its keypoints: "
         f"{', '.join(skeletons)}.",
@@ -217,14 +263,12 @@ def build_keypoint_detection_prompt(skeletons: Dict[str, KeypointSkeleton]) -> s
         "Return JSON with one key per class, holding a list with one entry per "
         "instance of that class, or an empty list when the image has none. Each entry "
         "has:",
-        '- "box_2d": the bounding box as [y_min, x_min, y_max, x_max], integers '
-        "between 0 and 1000 normalized to the image height and width.",
+        box,
         '- "keypoints": one key per keypoint of the class skeleton. Each value is '
-        '{"point": [y, x], "occluded": bool}, with y and x integers between 0 and '
-        "1000 normalized to the image height and width, or null when the keypoint is "
-        'outside the image or its position cannot be estimated. Set "occluded" to '
-        "true when the keypoint is hidden (by another object or by the instance "
-        "itself) but you can still estimate where it is.",
+        f"{value}, or null when the keypoint is outside the image or its position "
+        'cannot be estimated. Set "occluded" to true when the keypoint is hidden (by '
+        "another object or by the instance itself) but you can still estimate where "
+        "it is.",
     ]
     for class_name, skeleton in skeletons.items():
         lines.extend(_describe_skeleton(class_name, skeleton=skeleton))
@@ -328,6 +372,76 @@ def _instance_schema(skeleton: KeypointSkeleton) -> dict:
     }
 
 
+def build_absolute_keypoint_json_schema(
+    skeletons: Dict[str, KeypointSkeleton],
+) -> dict:
+    """Build the JSON Schema of an ``ABSOLUTE_XY`` answer.
+
+    The schema stays within the subset that strict structured outputs accept: every
+    object requires all of its properties and allows no others, and a keypoint the
+    model cannot place is ``null``.
+
+    Args:
+        skeletons (Dict[str, KeypointSkeleton]): The skeleton of each class to detect.
+
+    Returns:
+        dict: An object with one required list of instances per class. An instance
+            requires its ``box_2d`` and one nullable property per keypoint.
+    """
+    keypoint = {
+        "type": "object",
+        "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+            "occluded": {"type": "boolean"},
+        },
+        "required": ["x", "y", "occluded"],
+        "additionalProperties": False,
+    }
+    schema = {
+        "type": "object",
+        "properties": {
+            class_name: {
+                "type": "array",
+                "items": _absolute_instance_schema(skeleton),
+            }
+            for class_name, skeleton in skeletons.items()
+        },
+        "required": list(skeletons),
+        "additionalProperties": False,
+        "$defs": {"keypoint": keypoint},
+    }
+
+    return schema
+
+
+def _absolute_instance_schema(skeleton: KeypointSkeleton) -> dict:
+    keys = skeleton.answer_keys
+
+    return {
+        "type": "object",
+        "properties": {
+            "box_2d": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 4,
+                "maxItems": 4,
+            },
+            "keypoints": {
+                "type": "object",
+                "properties": {
+                    key: {"anyOf": [{"$ref": "#/$defs/keypoint"}, {"type": "null"}]}
+                    for key in keys
+                },
+                "required": keys,
+                "additionalProperties": False,
+            },
+        },
+        "required": ["box_2d", "keypoints"],
+        "additionalProperties": False,
+    }
+
+
 def decode_keypoint_detections(
     raw_output: str,
     *,
@@ -335,6 +449,9 @@ def decode_keypoint_detections(
     skeletons: Dict[str, KeypointSkeleton],
     classes: Optional[List[str]],
     inference_id: str,
+    coordinates: KeypointCoordinates = NORMALIZED_YX,
+    upload_width: Optional[int] = None,
+    upload_height: Optional[int] = None,
 ) -> Tuple[bool, Any]:
     """Decode a keypoint answer into keypoint detections in original-image pixels.
 
@@ -351,6 +468,12 @@ def decode_keypoint_detections(
         classes (Optional[List[str]]): Class names the block was given; a class's
             position in them is its class id. Defaults to the skeletons' classes.
         inference_id (str): Identifier attached to every instance.
+        coordinates (KeypointCoordinates): The coordinate contract the request asked
+            for.
+        upload_width (Optional[int]): Width of the uploaded image, which an
+            ``ABSOLUTE_XY`` answer's coordinates refer to.
+        upload_height (Optional[int]): Height of the uploaded image, which an
+            ``ABSOLUTE_XY`` answer's coordinates refer to.
 
     Returns:
         Tuple[bool, Any]: The error flag and the keypoint detections (``None`` on
@@ -367,6 +490,9 @@ def decode_keypoint_detections(
             skeletons=skeletons,
             classes=classes or list(skeletons),
             inference_id=inference_id,
+            coordinates=coordinates,
+            upload_width=upload_width,
+            upload_height=upload_height,
         )
         predictions = to_tensor_native_predictions(
             predictions=detections,
@@ -393,13 +519,24 @@ def _build_keypoint_detections(
     skeletons: Dict[str, KeypointSkeleton],
     classes: List[str],
     inference_id: str,
+    coordinates: KeypointCoordinates,
+    upload_width: Optional[int],
+    upload_height: Optional[int],
 ) -> sv.Detections:
     if not isinstance(parsed, dict):
         raise ValueError("The answer is not an object keyed by class")
 
     image_height, image_width = image._read_shape_without_materialization()
     class_name2id = create_classes_index(classes=classes)
-    box_format = get_detection_box_format(BOX_FORMAT)
+    box_format = get_detection_box_format(BOX_FORMATS[coordinates])
+    if coordinates == ABSOLUTE_XY:
+        if not upload_width or not upload_height:
+            raise ValueError(
+                "An absolute-pixel keypoint answer needs the size of the uploaded image"
+            )
+        frame_width, frame_height = float(upload_width), float(upload_height)
+    else:
+        frame_width = frame_height = NORMALIZED_SCALE
 
     xyxy, class_id, class_name, keypoints = [], [], [], []
     entries_count = 0
@@ -418,6 +555,8 @@ def _build_keypoint_detections(
                     entry=entry,
                     image_width=image_width,
                     image_height=image_height,
+                    upload_width=upload_width,
+                    upload_height=upload_height,
                 )
                 if isinstance(entry, dict)
                 else None
@@ -437,6 +576,9 @@ def _build_keypoint_detections(
                     entry["keypoints"],
                     names=skeleton.keypoints,
                     keys=keys,
+                    coordinates=coordinates,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
                     image_width=image_width,
                     image_height=image_height,
                 )
@@ -487,22 +629,34 @@ def _read_keypoints(
     *,
     names: List[str],
     keys: List[str],
+    coordinates: KeypointCoordinates,
+    frame_width: float,
+    frame_height: float,
     image_width: int,
     image_height: int,
 ) -> List[dict]:
-    """The instance's placed keypoints, in skeleton order, as keypoint models list them."""
+    """The instance's placed keypoints, in skeleton order, as keypoint models list them.
+
+    The answer's coordinates refer to a frame (0-1000 normalized, or the uploaded
+    image) that is scaled onto the original image.
+    """
     keypoints = []
     for keypoint_class_id, (name, key) in enumerate(zip(names, keys)):
-        point = _read_point(raw.get(key))
+        point = _read_point(
+            raw.get(key),
+            coordinates=coordinates,
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
         if point is None:
             continue
 
-        y, x = point
+        x, y = point
         occluded = raw[key].get("occluded") is True
         keypoints.append(
             {
-                "x": x * image_width / NORMALIZED_SCALE,
-                "y": y * image_height / NORMALIZED_SCALE,
+                "x": x * image_width / frame_width,
+                "y": y * image_height / frame_height,
                 KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE: keypoint_class_id,
                 KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE: name,
                 KEYPOINTS_CONFIDENCE_KEY_IN_INFERENCE_RESPONSE: (
@@ -516,26 +670,43 @@ def _read_keypoints(
     return keypoints
 
 
-def _read_point(value: Any) -> Optional[Tuple[float, float]]:
-    """A keypoint's ``[y, x]``, or None when it is null, malformed or off the image."""
+def _read_point(
+    value: Any,
+    *,
+    coordinates: KeypointCoordinates,
+    frame_width: float,
+    frame_height: float,
+) -> Optional[Tuple[float, float]]:
+    """A keypoint's ``(x, y)`` in the answer's frame.
+
+    None when the keypoint is null, malformed or off the image.
+    """
     if not isinstance(value, dict):
         return None
 
-    point = value.get("point")
-    if not isinstance(point, list) or len(point) != 2:
+    if coordinates == ABSOLUTE_XY:
+        raw_x, raw_y = value.get("x"), value.get("y")
+    else:
+        point = value.get("point")
+        if not isinstance(point, list) or len(point) != 2:
+            return None
+        raw_y, raw_x = point
+
+    x = _read_coordinate(raw_x, upper=frame_width)
+    y = _read_coordinate(raw_y, upper=frame_height)
+    if x is None or y is None:
         return None
 
-    coordinates = []
-    for coordinate in point:
-        if (
-            isinstance(coordinate, bool)
-            or not isinstance(coordinate, (int, float))
-            or not math.isfinite(coordinate)
-            or not 0 <= coordinate <= NORMALIZED_SCALE
-        ):
-            return None
-        coordinates.append(float(coordinate))
+    return x, y
 
-    y, x = coordinates
 
-    return y, x
+def _read_coordinate(value: Any, *, upper: float) -> Optional[float]:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not 0 <= value <= upper
+    ):
+        return None
+
+    return float(value)
