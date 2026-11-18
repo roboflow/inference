@@ -10,8 +10,8 @@ _ISOLATED_MODULES = [
     "inference_models.models.common.cuda",
     "inference_models.models.common.trt",
 ]
-_OVERLAP_WAIT_SECONDS = 0.3
-_JOIN_TIMEOUT_SECONDS = 10.0
+_COORDINATION_TIMEOUT_SECONDS = 5.0
+_JOIN_TIMEOUT_SECONDS = 15.0
 
 
 class _FakeSeverity:
@@ -36,20 +36,66 @@ class _FakeEngine:
     pass
 
 
+class _InstrumentedLock:
+    def __init__(self, on_contention):
+        self._lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._attempts = 0
+        self._owner = None
+        self._generation = 0
+        self._on_contention = on_contention
+
+    def held_by_current_thread(self) -> bool:
+        return self._owner == threading.get_ident()
+
+    def held_generation(self) -> int:
+        return self._generation
+
+    def __enter__(self):
+        with self._state_lock:
+            self._attempts += 1
+            if self._attempts > 1:
+                self._on_contention()
+        self._lock.acquire()
+        self._owner = threading.get_ident()
+        self._generation += 1
+        return self
+
+    def __exit__(self, *args):
+        self._owner = None
+        self._lock.release()
+        return False
+
+
 class _ConcurrencyTracker:
     def __init__(self):
         self._state_lock = threading.Lock()
         self._inside = 0
         self.max_inside = 0
-        self.overlap_observed = threading.Event()
+        self.second_arrival = threading.Event()
+        self.lock = _InstrumentedLock(on_contention=self.second_arrival.set)
+        self.unguarded_calls = []
+        self._runtime_generations = {}
+
+    def check_lock_held(self, call_name: str) -> None:
+        if not self.lock.held_by_current_thread():
+            self.unguarded_calls.append(call_name)
+
+    def check_same_acquisition(self) -> None:
+        self.check_lock_held("deserialize_cuda_engine")
+        created_in = self._runtime_generations.get(threading.get_ident())
+        if created_in != self.lock.held_generation():
+            self.unguarded_calls.append("deserialize_cuda_engine_split_lock")
 
     def enter(self) -> None:
+        self.check_lock_held("Runtime")
+        self._runtime_generations[threading.get_ident()] = self.lock.held_generation()
         with self._state_lock:
             self._inside += 1
             self.max_inside = max(self.max_inside, self._inside)
             if self._inside > 1:
-                self.overlap_observed.set()
-        self.overlap_observed.wait(timeout=_OVERLAP_WAIT_SECONDS)
+                self.second_arrival.set()
+        self.second_arrival.wait(timeout=_COORDINATION_TIMEOUT_SECONDS)
 
     def leave(self) -> None:
         with self._state_lock:
@@ -70,6 +116,7 @@ def _build_fake_tensorrt(tracker: _ConcurrencyTracker) -> ModuleType:
             return False
 
         def deserialize_cuda_engine(self, data):
+            tracker.check_same_acquisition()
             return _FakeEngine()
 
     module = ModuleType("tensorrt")
@@ -111,7 +158,9 @@ def trt_module_with_fake_tensorrt(monkeypatch):
         for name in _ISOLATED_MODULES
     }
     try:
-        yield importlib.import_module("inference_models.models.common.trt"), tracker
+        trt_module = importlib.import_module("inference_models.models.common.trt")
+        monkeypatch.setattr(trt_module, "_TRT_RUNTIME_CREATION_LOCK", tracker.lock)
+        yield trt_module, tracker
     finally:
         for name in _ISOLATED_MODULES:
             sys.modules.pop(name, None)
@@ -150,4 +199,5 @@ def test_load_trt_model_never_creates_runtimes_concurrently(
     # then
     assert not any(thread.is_alive() for thread in threads)
     assert errors == []
+    assert tracker.unguarded_calls == []
     assert tracker.max_inside == 1
