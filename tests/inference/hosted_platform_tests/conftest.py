@@ -163,6 +163,9 @@ MODELS_TO_BE_USED = {
         "yolov8n-pose-640": "microsoft-coco-pose/1",
         "rfdetr-od": "rfdetr-nano",
         "rfdetr-is": "asl-instance-seg/160",
+        "rfdetr-atto-od": "paul-guerrie/coin-counting-1306-rfdetr-atto-t1",
+        "rfdetr-femto-od": "paul-guerrie/coin-counting-1306-rfdetr-femto-t2",
+        "rfdetr-pico-od": "paul-guerrie/coin-counting-1306-rfdetr-pico-t3",
         "anomaly-foundad": "paul-guerrie/anomaly-det-1-foundad-t1",
         "anomaly-patchcore": "paul-guerrie/anomaly-det-1-patchcore-t2",
     },
@@ -300,6 +303,13 @@ def rfdetr_od_model_id(platform_environment: PlatformEnvironment) -> str:
 @pytest.fixture(scope="session")
 def rfdetr_is_model_id(platform_environment: PlatformEnvironment) -> str:
     return MODELS_TO_BE_USED[platform_environment]["rfdetr-is"]
+
+
+@pytest.fixture(scope="session", params=["atto", "femto", "pico"])
+def rfdetr_pe_core_t_od_model_id(
+    request, platform_environment: PlatformEnvironment
+) -> str:
+    return MODELS_TO_BE_USED[platform_environment][f"rfdetr-{request.param}-od"]
 
 
 @pytest.fixture(scope="session")

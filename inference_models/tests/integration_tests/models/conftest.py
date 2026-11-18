@@ -44,6 +44,12 @@ COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_CROP_CENTER_CROP_URL = "https://storage.go
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_CROP_CENTER_CROP_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-crop-center-crop-640.zip"
 COIN_COUNTING_RFDETR_NANO_ONNX_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-onnx-static-bs-nonsquare-letterbox.zip"
 COIN_COUNTING_RFDETR_NANO_TORCH_STATIC_BS_NONSQUARE_LETTERBOX_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-nano-torch-static-bs-nonsquare-letterbox.zip"
+COIN_COUNTING_RFDETR_ATTO_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-atto-torch-stretch.zip"
+COIN_COUNTING_RFDETR_ATTO_ONNX_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-atto-onnx-stretch.zip"
+COIN_COUNTING_RFDETR_FEMTO_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-femto-torch-stretch.zip"
+COIN_COUNTING_RFDETR_FEMTO_ONNX_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-femto-onnx-stretch.zip"
+COIN_COUNTING_RFDETR_PICO_TORCH_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-pico-torch-stretch.zip"
+COIN_COUNTING_RFDETR_PICO_ONNX_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-pico-onnx-stretch.zip"
 RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
 RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV = "INFERENCE_MODELS_RFDETR_KP_TRT_PACKAGE"
 
@@ -475,6 +481,54 @@ def coin_counting_rfdetr_nano_torch_cs_stretch_package() -> str:
     return download_model_package(
         model_package_zip_url=COIN_COUNTING_RFDETR_NANO_TORCH_CS_STRETCH_URL,
         package_name="coin-counting-rfdetr-nano-torch-cs-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_atto_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_ATTO_TORCH_STRETCH_URL,
+        package_name="coin-counting-rfdetr-atto-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_atto_onnx_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_ATTO_ONNX_STRETCH_URL,
+        package_name="coin-counting-rfdetr-atto-onnx-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_femto_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_FEMTO_TORCH_STRETCH_URL,
+        package_name="coin-counting-rfdetr-femto-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_femto_onnx_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_FEMTO_ONNX_STRETCH_URL,
+        package_name="coin-counting-rfdetr-femto-onnx-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_pico_torch_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_PICO_TORCH_STRETCH_URL,
+        package_name="coin-counting-rfdetr-pico-torch-stretch",
+    )
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_pico_onnx_stretch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=COIN_COUNTING_RFDETR_PICO_ONNX_STRETCH_URL,
+        package_name="coin-counting-rfdetr-pico-onnx-stretch",
     )
 
 
