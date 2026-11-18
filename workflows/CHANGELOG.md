@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Google Gemini v6 (`roboflow_core/google_gemini@v6`) gains a `keypoint-detection` task. It takes `classes` and a new `keypoint_schema` input, which maps each class to its skeleton: the keypoint names, the edges between them and, optionally, a template with where each keypoint sits on a reference instance, as (x, y) fractions of its box. A response schema has Gemini return one list of instances per class, each with its `box_2d` and one `{"point": [y, x], "occluded": bool}` per keypoint, normalized to 0-1000, or `null` for a keypoint outside the image. `predictions` holds keypoint detections, in the format of keypoint models in both data representations: a visible keypoint gets confidence 1.0, an occluded one (position estimated) 0.5, and a keypoint the model could not place is left out of its instance. Instances get confidence 1.0. Code execution is refused for this task.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.
