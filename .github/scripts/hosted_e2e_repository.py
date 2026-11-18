@@ -159,18 +159,31 @@ class _LogRedactor:
     """Hold possible secret prefixes until subsequent writes complete them."""
 
     def __init__(self):
-        values = runner._secret_values()
+        self.values = runner._secret_values()
         self.pattern = re.compile(
-            "|".join(re.escape(value) for value in values) or r"(?!)"
+            "|".join(re.escape(value) for value in self.values) or r"(?!)"
         )
-        self.overlap = max(map(len, values), default=1) - 1
         self.pending = ""
 
     def _feed(self, text: str, *, final: bool = False) -> str:
+        if not text and not final:
+            return ""
+
         self.pending += text
-        boundary = (
-            len(self.pending) if final else max(0, len(self.pending) - self.overlap)
-        )
+        boundary = len(self.pending)
+        if not final:
+            # Only retain a suffix that could actually begin a secret. Holding
+            # max-secret-length bytes delays all progress behind large CI tokens.
+            for value in self.values:
+                start = self.pending.find(
+                    value[0], max(0, len(self.pending) - len(value) + 1)
+                )
+                while 0 <= start < boundary:
+                    if value.startswith(self.pending[start:]):
+                        boundary = start
+                        break
+                    start = self.pending.find(value[0], start + 1)
+
         # Never split a complete match at the emission boundary either.
         for match in self.pattern.finditer(self.pending):
             if match.start() < boundary < match.end():

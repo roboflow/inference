@@ -470,7 +470,13 @@ class LogRedactionTests(unittest.TestCase):
                     ack.touch()
 
             with patch.dict(
-                os.environ, {"OPENAI_KEY": secret, "GITHUB_ACTIONS": "true"}
+                os.environ,
+                {
+                    "OPENAI_KEY": secret,
+                    "GITHUB_ACTIONS": "true",
+                    "ACTIONS_RUNTIME_TOKEN": "unrelated-long-runner-token-"
+                    + "x" * 16384,
+                },
             ), patch.object(repository.click, "echo", side_effect=record):
                 code = repository._stream_stage(
                     [sys.executable, "-c", source, str(ack)],
