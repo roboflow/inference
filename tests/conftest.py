@@ -25,6 +25,31 @@ os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = (
 )
 
 
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Exit when the repo root shadows the editable inference_models install.
+
+    A command started in the repository root can bind ``inference_models`` to
+    the project directory. That namespace package leaves ``__file__`` unset and
+    hides the real package at ``inference_models/inference_models/``.
+
+    Args:
+        session (pytest.Session): Pytest session that is starting.
+    """
+    try:
+        import inference_models
+    except ImportError:
+        return
+
+    if inference_models.__file__ is None:
+        shadow_message = (
+            "The editable install is shadowed by the repo-root project "
+            "directory. Reinstall with: pip install --config-settings "
+            "editable_mode=compat -e ./inference_models -e ./workflows "
+            "-e ./stream_vision -e ."
+        )
+        pytest.exit(shadow_message, returncode=1)
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
     _stop_usage_collector_threads()
