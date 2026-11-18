@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+from time import monotonic, sleep
+from uuid import uuid4
 
 import click
 import hosted_e2e as runner
@@ -150,13 +155,132 @@ def _execute(stage: str, *, suite: Path, policy: Path, output: Path, shard: str)
     return 0
 
 
+class _LogRedactor:
+    """Hold possible secret prefixes until subsequent writes complete them."""
+
+    def __init__(self):
+        values = runner._secret_values()
+        self.pattern = re.compile(
+            "|".join(re.escape(value) for value in values) or r"(?!)"
+        )
+        self.overlap = max(map(len, values), default=1) - 1
+        self.pending = ""
+
+    def _feed(self, text: str, *, final: bool = False) -> str:
+        self.pending += text
+        boundary = (
+            len(self.pending) if final else max(0, len(self.pending) - self.overlap)
+        )
+        # Never split a complete match at the emission boundary either.
+        for match in self.pattern.finditer(self.pending):
+            if match.start() < boundary < match.end():
+                boundary = match.start()
+                break
+
+        visible = self.pattern.sub("[redacted]", self.pending[:boundary])
+        self.pending = self.pending[boundary:]
+        return visible
+
+
+@contextmanager
+def _public_output():
+    """Prevent test output and test IDs from executing Actions workflow commands."""
+    command_token = uuid4().hex
+    actions = os.environ.get("GITHUB_ACTIONS") == "true"
+    if actions:
+        click.echo(f"::stop-commands::{command_token}")
+    try:
+        yield
+    finally:
+        # Put the resume command on its own line even after unterminated output.
+        click.echo()
+        if actions:
+            click.echo(f"::{command_token}::")
+
+
+def _stream_stage(args: list[str], *, log_path: Path, timeout: float = 1500) -> int:
+    """Keep raw file-descriptor capture, forwarding only redacted text to Actions."""
+    redactor = _LogRedactor()
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    with _public_output():
+        with log_path.open("ab") as log, log_path.open("rb") as reader:
+            reader.seek(0, os.SEEK_END)
+            with subprocess.Popen(
+                args,
+                stdout=log,
+                stderr=log,
+                stdin=subprocess.DEVNULL,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            ) as process:
+                deadline = monotonic() + timeout
+                try:
+                    while process.poll() is None:
+                        chunk = reader.read(65536)
+                        click.echo(redactor._feed(decoder.decode(chunk)), nl=False)
+                        if monotonic() >= deadline:
+                            raise subprocess.TimeoutExpired(args, timeout)
+                        if not chunk:
+                            sleep(0.1)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait()
+                    while chunk := reader.read(65536):
+                        click.echo(redactor._feed(decoder.decode(chunk)), nl=False)
+                    click.echo(
+                        redactor._feed(decoder.decode(b"", final=True), final=True),
+                        nl=False,
+                    )
+                code = process.returncode
+    return code
+
+
+def _report_cases(output: Path, *, stage: str, shard: str) -> dict[str, str]:
+    """Show retry histories and skip IDs, including aggregation policy failures."""
+    paths = (
+        [output / f"shard-{shard}.json"]
+        if stage == "shard"
+        else sorted(output.glob("shard-*.json")) if stage == "aggregate" else []
+    )
+    display_nodeids = {}
+    for path in paths:
+        if not path.exists():
+            continue
+
+        report = runner._read(path)
+        display_nodeids.update(report.get("display_nodeids", {}))
+        for nodeid, case in sorted(report.get("cases", {}).items()):
+            # Do not fall back to raw IDs: aggregation lacks provider secrets.
+            display = display_nodeids.get(nodeid, "[unavailable test ID]")
+            outcomes = case["outcomes"]
+            calls = outcomes["call"]
+            if len(calls) > 1:
+                click.echo(runner._redact(f"RETRIED {display}: {' -> '.join(calls)}"))
+            if any("skipped" in statuses for statuses in outcomes.values()):
+                click.echo(runner._redact(f"SKIPPED {display}"))
+        for nodeid in report.get("collection_skips", []):
+            display = display_nodeids.get(nodeid, "[unavailable test ID]")
+            click.echo(runner._redact(f"SKIPPED collection: {display}"))
+    if stage == "aggregate" and (output / "acceptance.json").exists():
+        result = runner._read(output / "acceptance.json")
+        for nodeid in result.get("failures", []):
+            display = display_nodeids.get(nodeid, "[unavailable test ID]")
+            click.echo(runner._redact(f"FAILED {display}"))
+        for nodeid in result.get("unexpected_skips", []):
+            display = display_nodeids.get(nodeid, "[unavailable test ID]")
+            click.echo(runner._redact(f"UNEXPECTED SKIP {display}"))
+        for issue in result.get("issues", []):
+            click.echo(runner._redact(f"Acceptance issue: {issue}"))
+    return display_nodeids
+
+
 def _run(stage: str, *, suite: Path, policy: Path, output: Path, shard: str) -> int:
     _binding()
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     code = 1
     try:
         # Separate interpreters are essential: conftest reads SKIP_WARMUP on import.
-        for operation in (["prepare", "warmup"] if stage == "prepare" else [stage]):
+        for operation in ["prepare", "warmup"] if stage == "prepare" else [stage]:
             args = [
                 sys.executable,
                 str(Path(__file__).resolve()),
@@ -171,16 +295,7 @@ def _run(stage: str, *, suite: Path, policy: Path, output: Path, shard: str) -> 
                 "--shard",
                 shard,
             ]
-            with (output / "stage.log").open("ab") as log:
-                result = subprocess.run(
-                    args,
-                    stdout=log,
-                    stderr=log,
-                    stdin=subprocess.DEVNULL,
-                    timeout=1500,
-                    check=False,
-                )
-            code = result.returncode
+            code = _stream_stage(args, log_path=output / "stage.log")
             if code:
                 break
     finally:
@@ -191,7 +306,7 @@ def _run(stage: str, *, suite: Path, policy: Path, output: Path, shard: str) -> 
 
 
 def _failure_summaries(output: Path, *, stage: str, shard: str) -> dict:
-    # Only redacted one-line summaries; full tracebacks stay in encrypted stage.log.
+    # A compact aggregate recap complements the full redacted shard output.
     path = output / (f"shard-{shard}.json" if stage == "shard" else "acceptance.json")
     if stage not in {"shard", "aggregate"} or not path.exists():
         return {}
@@ -243,7 +358,7 @@ def _failure_summaries(output: Path, *, stage: str, shard: str) -> dict:
     hidden=True,
 )
 def main(stage, suite, policy, output, source, shard, execute_hidden):
-    """Execute manual hosted stages without emitting raw test output.
+    """Execute manual hosted stages with redacted output and encrypted evidence.
 
     Args:
         stage: Stage to execute or encrypted evidence restoration.
@@ -266,24 +381,33 @@ def main(stage, suite, policy, output, source, shard, execute_hidden):
         else:
             code = _run(stage, suite=suite, policy=policy, output=output, shard=shard)
         if not execute_hidden:
-            click.echo(f"Hosted E2E {stage}: {'passed' if code == 0 else 'failed'}")
-            if code != 0:
-                summaries = _failure_summaries(output, stage=stage, shard=shard)
-                for nodeid, phases in sorted(summaries.items()):
-                    for phase, summary in sorted(phases.items()):
-                        click.echo(f"  {nodeid} [{phase}]: {summary}")
-            if stage == "aggregate" and code == 0:
-                plan = runner._read(output / "plan.json")
-                result = runner._read(output / "acceptance.json")
-                click.echo(
-                    f"Coverage verified: {len(plan['manifest'])} cases "
-                    "across 4 shards; "
-                    f"{len(result['retried'])} retried cases. "
-                    "Deployment identity not verified."
-                )
+            with _public_output():
+                click.echo(f"Hosted E2E {stage}: {'passed' if code == 0 else 'failed'}")
+                display_nodeids = _report_cases(output, stage=stage, shard=shard)
+                if code != 0:
+                    summaries = _failure_summaries(output, stage=stage, shard=shard)
+                    for nodeid, phases in sorted(summaries.items()):
+                        display = display_nodeids.get(nodeid, "[unavailable test ID]")
+                        for phase, summary in sorted(phases.items()):
+                            click.echo(
+                                runner._redact(f"  {display} [{phase}]: {summary}")
+                            )
+                if stage == "aggregate" and code == 0:
+                    plan = runner._read(output / "plan.json")
+                    result = runner._read(output / "acceptance.json")
+                    click.echo(
+                        f"Coverage verified: {len(plan['manifest'])} cases "
+                        "across 4 shards; "
+                        f"{len(result['retried'])} retried cases. "
+                        "Deployment identity not verified."
+                    )
         raise SystemExit(code)
-    except (Exception, KeyboardInterrupt):
-        click.echo("Hosted E2E stage failed; detailed output is not public.", err=True)
+    except (Exception, KeyboardInterrupt) as error:
+        if execute_hidden:
+            # The parent owns redaction; preserve orchestration errors in its log.
+            raise
+        with _public_output():
+            click.echo(runner._redact(f"Hosted E2E stage failed: {error}"))
         raise SystemExit(1) from None
 
 

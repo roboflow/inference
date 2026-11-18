@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
@@ -14,6 +15,7 @@ from collections import defaultdict
 from importlib.metadata import distributions
 from pathlib import Path
 from time import perf_counter
+from urllib.parse import quote, quote_plus
 
 import click
 import pytest
@@ -51,13 +53,35 @@ def _require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+def _secret_values() -> list[str]:
+    """Include common representations used by HTTP errors and Python tracebacks."""
+    values = set()
+    for name, value in os.environ.items():
+        if not value or not re.search(
+            r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PROFILE", name, re.IGNORECASE
+        ):
+            continue
+
+        for part in {value, *(line for line in value.splitlines() if len(line) >= 8)}:
+            values.update(
+                {
+                    part,
+                    repr(part)[1:-1],
+                    json.dumps(part)[1:-1],
+                    quote(part, safe=""),
+                    quote_plus(part, safe=""),
+                    base64.b64encode(part.encode()).decode(),
+                    base64.urlsafe_b64encode(part.encode()).decode(),
+                }
+            )
+    result = sorted(values, key=len, reverse=True)
+    return result
+
+
 def _redact(text: str) -> str:
     # Credential values never enter recorded evidence; stage.log keeps raw output.
-    for name, value in os.environ.items():
-        if len(value) >= 8 and re.search(
-            r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PROFILE", name
-        ):
-            text = text.replace(value, "[redacted]")
+    for value in _secret_values():
+        text = text.replace(value, "[redacted]")
     return text
 
 
@@ -366,6 +390,11 @@ def _pytest(suite: Path, *, recorder: _Recorder, collect: bool = False) -> int:
         "--durations=0",
         "--durations-min=0",
     ]
+    if os.environ.get("HOSTED_E2E_MODE") == "repository":
+        # pytest-retry 1.6.3 only prints unlimited retry tracebacks at verbosity 5.
+        args.extend(
+            ["-vvvvv", "-ra", "--no-fold-skipped", "--tb=long", "--show-capture=all"]
+        )
     if collect:
         args.append("--collect-only")
     result = int(pytest.main(args, plugins=[recorder]))
@@ -572,6 +601,11 @@ def _run_shard(*, suite: Path, policy: Path, output: Path, shard: str) -> int:
             cases=recorder.cases,
             collection_errors=recorder.collection_errors,
             collection_skips=sorted(recorder.collection_skips),
+            # Aggregation deliberately has no provider credentials to redact IDs.
+            display_nodeids={
+                nodeid: _redact(nodeid)
+                for nodeid in [*recorder.cases, *recorder.collection_skips]
+            },
         )
         # An explicitly empty assignment is valid only after collection matches.
         if (

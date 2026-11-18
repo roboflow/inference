@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Hosted E2E test output — November 18, 2026
+
+- Stream redacted pytest output for preparation, warmup and shards A–D to the
+  GitHub Actions log. Show individual test names, skip reasons, full failure
+  tracebacks and captured failure output, durations and pytest-retry diagnostics.
+- Print per-test retry outcome histories and skipped test IDs in each shard and
+  aggregation, including unexpected skips that fail acceptance.
+- Redact configured credential values and their common URL, JSON, Python and
+  base64 representations before emission, including values split across writes.
+  Disable Actions command interpretation while forwarding test output. Preserve
+  raw stage logs and cross-job evidence in the existing encrypted artifacts.
+- Keep test selection, retry policy, skip allowlists and acceptance checks intact.
+  The private deployment-acceptance workflow retains its existing output flags.
+
 ### Persistent model cache on the GPU runner — October 21, 2026
 
 - Mount a per-leg directory under the runner user's home as the server test
@@ -146,7 +160,9 @@ performance or a runtime guarantee. Staging uses its own profile.
 ### Security and rollout
 
 Detailed timing profiles, raw logs, case evidence, credentials and deployment
-metadata remain private. This changelog contains only the aggregate scheduling
+metadata remain private. Repository manual runs expose redacted test output,
+test names and retry/skip summaries in Actions logs. This changelog contains the
+aggregate scheduling
 rationale and public test-suite examples. Private deployment-acceptance execution
 requires the private caller and deployment-verification adapter. The repository
 manual workflows are now connected to sharding; live rollout still requires

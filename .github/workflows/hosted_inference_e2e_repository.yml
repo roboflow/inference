@@ -94,7 +94,7 @@ jobs:
           uv pip install --python .venv/bin/python -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.sdk.http.txt 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
           mkdir -m 700 evidence
           uv pip freeze --python .venv/bin/python > evidence/dependencies.txt
-      - name: Execute stage with captured output and encrypted evidence
+      - name: Execute stage with redacted output and encrypted evidence
         env:
           HOSTED_E2E_TIMING_PROFILE: ${{ secrets.TIMING_PROFILE }}
           HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
@@ -153,7 +153,7 @@ jobs:
         run: .venv/bin/python .github/scripts/hosted_e2e_repository.py restore
       - name: Install the prepared dependency versions
         run: uv pip sync --python .venv/bin/python evidence/dependencies.txt
-      - name: Execute stage with captured output and encrypted evidence
+      - name: Execute stage with redacted output and encrypted evidence
         env:
           HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
@@ -207,7 +207,7 @@ jobs:
         env:
           HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
         run: .venv/bin/python .github/scripts/hosted_e2e_repository.py restore
-      - name: Execute stage with captured output and encrypted evidence
+      - name: Execute stage with redacted output and encrypted evidence
         env:
           HOSTED_PLATFORM_TESTS_API_KEY: ${{ secrets.HOSTED_PLATFORM_TESTS_API_KEY }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
