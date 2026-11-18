@@ -9,10 +9,6 @@ import pytest
 import torch
 
 from inference_models import AutoModel
-from inference_models.models.resnet.resnet_classification_onnx import (
-    ResNetForClassificationOnnx,
-    ResNetForMultiLabelClassificationOnnx,
-)
 
 
 @pytest.mark.slow
@@ -22,6 +18,10 @@ def test_single_label_onnx_dynamic_bs_package_numpy(
     honda_civic_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -49,6 +49,10 @@ def test_single_label_onnx_dynamic_bs_package_numpy_custom_image_size(
     honda_civic_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -77,6 +81,10 @@ def test_single_label_onnx_dynamic_bs_package_batch_numpy(
     toyota_yaris_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -106,6 +114,10 @@ def test_single_label_onnx_dynamic_bs_package_torch(
     honda_civic_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -134,6 +146,10 @@ def test_single_label_onnx_dynamic_bs_package_batch_torch_list(
     toyota_yaris_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -163,6 +179,10 @@ def test_single_label_onnx_static_bs_package_numpy(
     honda_civic_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -191,6 +211,10 @@ def test_single_label_onnx_static_bs_package_batch_numpy(
     toyota_yaris_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -220,6 +244,10 @@ def test_single_label_onnx_static_bs_package_torch(
     honda_civic_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -248,6 +276,10 @@ def test_single_label_onnx_static_bs_package_batch_torch_list(
     toyota_yaris_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = ResNetForClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_single_label_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -277,6 +309,10 @@ def test_multi_label_onnx_dynamic_bs_package_numpy(
     dog_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForMultiLabelClassificationOnnx,
+    )
+
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_multi_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -305,6 +341,10 @@ def test_multi_label_onnx_dynamic_bs_package_batch_numpy(
     cat_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForMultiLabelClassificationOnnx,
+    )
+
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_multi_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -342,6 +382,10 @@ def test_multi_label_onnx_dynamic_bs_package_batch_torch_list(
     cat_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForMultiLabelClassificationOnnx,
+    )
+
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_multi_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -378,6 +422,10 @@ def test_multi_label_onnx_static_bs_package_numpy(
     dog_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForMultiLabelClassificationOnnx,
+    )
+
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_multi_label_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -406,6 +454,10 @@ def test_multi_label_onnx_static_bs_package_batch_numpy(
     cat_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForMultiLabelClassificationOnnx,
+    )
+
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_multi_label_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -443,6 +495,10 @@ def test_multi_label_onnx_static_bs_package_batch_torch_list(
     cat_image_torch: torch.Tensor,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForMultiLabelClassificationOnnx,
+    )
+
     model = ResNetForMultiLabelClassificationOnnx.from_pretrained(
         model_name_or_path=convnext_multi_label_onnx_static_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -479,6 +535,10 @@ def test_auto_model_loads_single_label_package_with_resnet_class(
     honda_civic_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForClassificationOnnx,
+    )
+
     model = AutoModel.from_pretrained(
         model_id_or_path=convnext_single_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -504,6 +564,10 @@ def test_auto_model_loads_multi_label_package_with_resnet_class(
     dog_image_numpy: np.ndarray,
 ) -> None:
     # given
+    from inference_models.models.resnet.resnet_classification_onnx import (
+        ResNetForMultiLabelClassificationOnnx,
+    )
+
     model = AutoModel.from_pretrained(
         model_id_or_path=convnext_multi_label_onnx_dynamic_bs_package,
         onnx_execution_providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
