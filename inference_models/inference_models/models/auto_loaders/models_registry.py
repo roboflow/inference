@@ -662,6 +662,18 @@ REGISTERED_MODELS: Dict[
         module_name="inference_models.models.rfdetr_two_stage.rfdetr_two_stage_key_points_onnx",
         class_name="RFDetrTwoStageKeyPointsONNX",
     ),
+    ("mediapipe-palm-detector", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.mediapipe_hands.palm_detector_onnx",
+        class_name="MediaPipePalmDetectorONNX",
+    ),
+    ("mediapipe-hand-landmarks", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.mediapipe_hands.hand_landmarks_onnx",
+        class_name="MediaPipeHandLandmarksONNX",
+    ),
+    ("mediapipe-hands", KEYPOINT_DETECTION_TASK, BackendType.ONNX): LazyClass(
+        module_name="inference_models.models.mediapipe_hands.mediapipe_hands_onnx",
+        class_name="MediaPipeHandsONNX",
+    ),
     ("l2cs-net", GAZE_DETECTION_TASK, BackendType.ONNX): LazyClass(
         module_name="inference_models.models.l2cs.l2cs_onnx",
         class_name="L2CSNetOnnx",
