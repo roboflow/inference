@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
+  platform, single-label and multi-label, with their own default confidence
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  [model page](models/convnext-classification.md).
+
 ## `0.39.9`
 
 ### Changed

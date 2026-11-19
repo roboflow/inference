@@ -169,6 +169,13 @@ DINOV3_MULTI_LABEL_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-te
 DINOV3_CLASSIFICATION_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-classification-torch.zip"
 DINOV3_MULTI_LABEL_TORCH_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/dinov3-multi-label-torch.zip"
 
+CONVNEXT_SINGLE_LABEL_ONNX_STATIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/convnext-single-label-onnx-static-bs.zip"
+CONVNEXT_SINGLE_LABEL_ONNX_DYNAMIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/convnext-single-label-onnx-dynamic-bs.zip"
+CONVNEXT_SINGLE_LABEL_TORCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/convnext-single-label-torch.zip"
+CONVNEXT_MULTI_LABEL_ONNX_STATIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/convnext-multi-label-onnx-static-bs.zip"
+CONVNEXT_MULTI_LABEL_ONNX_DYNAMIC_BS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/convnext-multi-label-onnx-dynamic-bs.zip"
+CONVNEXT_MULTI_LABEL_TORCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/convnext-multi-label-torch.zip"
+
 YOLO26N_SEG_SNAKES_STRETCH_ONNX_STATIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-stretch-onnx-static.zip"
 YOLO26N_SEG_SNAKES_STRETCH_ONNX_DYNAMIC_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-stretch-onnx-dynamic.zip"
 YOLO26N_SEG_SNAKES_STRETCH_TORCH_SCRIPT_URL = "https://storage.googleapis.com/roboflow-tests-assets/yolo26n-packages/yolo26n-seg-snakes-stretch-torch-script.zip"
@@ -1503,6 +1510,54 @@ def dinov3_multi_label_torch_static_package() -> str:
     return download_model_package(
         model_package_zip_url=DINOV3_MULTI_LABEL_TORCH_STATIC_URL,
         package_name="dinov3-multi-label-torch-static",
+    )
+
+
+@pytest.fixture(scope="module")
+def convnext_single_label_onnx_static_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=CONVNEXT_SINGLE_LABEL_ONNX_STATIC_BS_URL,
+        package_name="convnext-single-label-onnx-static-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def convnext_single_label_onnx_dynamic_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=CONVNEXT_SINGLE_LABEL_ONNX_DYNAMIC_BS_URL,
+        package_name="convnext-single-label-onnx-dynamic-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def convnext_single_label_torch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=CONVNEXT_SINGLE_LABEL_TORCH_URL,
+        package_name="convnext-single-label-torch",
+    )
+
+
+@pytest.fixture(scope="module")
+def convnext_multi_label_onnx_static_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=CONVNEXT_MULTI_LABEL_ONNX_STATIC_BS_URL,
+        package_name="convnext-multi-label-onnx-static-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def convnext_multi_label_onnx_dynamic_bs_package() -> str:
+    return download_model_package(
+        model_package_zip_url=CONVNEXT_MULTI_LABEL_ONNX_DYNAMIC_BS_URL,
+        package_name="convnext-multi-label-onnx-dynamic-bs",
+    )
+
+
+@pytest.fixture(scope="module")
+def convnext_multi_label_torch_package() -> str:
+    return download_model_package(
+        model_package_zip_url=CONVNEXT_MULTI_LABEL_TORCH_URL,
+        package_name="convnext-multi-label-torch",
     )
 
 
