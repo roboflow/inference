@@ -53,10 +53,13 @@ from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
     RFDETR2XLargeConfig,
+    RFDETRAttoConfig,
     RFDETRBaseConfig,
+    RFDETRFemtoConfig,
     RFDETRLargeConfig,
     RFDETRMediumConfig,
     RFDETRNanoConfig,
+    RFDETRPicoConfig,
     RFDETRSmallConfig,
     RFDETRXLargeConfig,
     build_model,
@@ -76,6 +79,9 @@ CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-large": RFDETRLargeConfig,
     "rfdetr-xlarge": RFDETRXLargeConfig,
     "rfdetr-2xlarge": RFDETR2XLargeConfig,
+    "rfdetr-atto": RFDETRAttoConfig,
+    "rfdetr-femto": RFDETRFemtoConfig,
+    "rfdetr-pico": RFDETRPicoConfig,
 }
 
 RESIZE_MODES_TO_REVERT_PADDING = {
@@ -200,7 +206,12 @@ class RFDetrForObjectDetectionTorch(
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        model_config = CONFIG_FOR_MODEL_TYPE[model_type](device=device)
+        # Resolution is passed at construction: the PE-Core-T configs size their
+        # position-embedding grid from it, as training does.
+        model_config = CONFIG_FOR_MODEL_TYPE[model_type](
+            device=device,
+            resolution=inference_config.network_input.training_input_size.height,
+        )
         num_queries = parse_num_queries(
             config_path=model_package_content["model_type.json"]
         )
@@ -211,9 +222,6 @@ class RFDetrForObjectDetectionTorch(
             model_config.num_select = num_queries
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
         model_config.num_classes = checkpoint_num_classes - 1
-        model_config.resolution = (
-            inference_config.network_input.training_input_size.height
-        )
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
@@ -302,7 +310,10 @@ class RFDetrForObjectDetectionTorch(
                     f"proper value, corresponding to the one used to train the model.",
                     help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
                 )
-            model_config.resolution = resolution
+            model_config = CONFIG_FOR_MODEL_TYPE[model_type](
+                device=device,
+                resolution=resolution,
+            )
         if rf_detr_max_input_resolution is not None:
             if isinstance(rf_detr_max_input_resolution, int):
                 rf_detr_max_input_resolution = (

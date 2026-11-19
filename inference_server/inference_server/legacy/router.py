@@ -230,7 +230,7 @@ SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE = (
 )
 _DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
 _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE = (
-    "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+    "Image embeddings require a ResNet, ConvNeXt, ViT or DINOv3 classifier."
 )
 FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Fine-tuned SAM 3 models are not supported on Serverless. "
@@ -735,7 +735,7 @@ async def infer_classification(
     "/infer/embeddings",
     response_model=ImageEmbeddingResponse,
     summary="Image embeddings",
-    description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+    description="Extract raw features from a ResNet, ConvNeXt, ViT or DINOv3 classification model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
