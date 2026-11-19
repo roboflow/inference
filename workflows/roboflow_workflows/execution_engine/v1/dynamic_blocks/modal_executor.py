@@ -26,7 +26,7 @@ import threading
 import time as _time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, NamedTuple, Optional
+from typing import Any, Callable, Dict, NamedTuple, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import numpy as np
@@ -760,24 +760,32 @@ class ModalExecutor:
         return response.json()
 
 
-class _CodeValidationOutcome(NamedTuple):
-    # None when the code compiles, otherwise the public error message.
-    error_message: Optional[str]
+# How long a successful check is reused, counted from the Modal call that made
+# it. The execute-block reply carries no image or validator revision, and a
+# Modal redeploy keeps the same endpoint, so this expiry is what bounds how long
+# a check outlives a rollout.
+CODE_VALIDATION_CACHE_TTL_SECONDS = 600
 
 
-CODE_VALIDATION_CACHE = BasicWorkflowsCache[_CodeValidationOutcome](
-    cache_size=1024,
-    hash_functions=[("code", lambda code: code)],
-)
+def _create_code_validation_cache(
+    clock: Callable[[], float] = _time.monotonic,
+) -> BasicWorkflowsCache[bool]:
+    # The check runs in the workspace's own executor, so it is reused only for
+    # the same workspace and the exact validated source.
+    validation_cache = BasicWorkflowsCache[bool](
+        cache_size=1024,
+        hash_functions=[
+            ("workspace", lambda workspace: workspace),
+            ("code", lambda code: code),
+        ],
+        ttl_seconds=CODE_VALIDATION_CACHE_TTL_SECONDS,
+        clock=clock,
+    )
+
+    return validation_cache
 
 
-def _code_validation_result(outcome: _CodeValidationOutcome) -> bool:
-    if outcome.error_message is not None:
-        raise DynamicBlockError(
-            public_message=outcome.error_message,
-            context="modal_executor | code_validation",
-        )
-    return True
+CODE_VALIDATION_CACHE = _create_code_validation_cache()
 
 
 def validate_code_in_modal(
@@ -790,10 +798,12 @@ def validate_code_in_modal(
     websocket execution must keep both Modal methods deployed: ``execute-block``
     for validation and ``wsapp`` for execution.
 
-    The verdict (valid, or invalid with its error) is cached per process by the
-    validated source text, since compiling the same text always gives the same
-    result. The workspace is not part of the key: it only picks which Modal app
-    runs the check. Failures to get a verdict from Modal are never cached.
+    A successful check is reused per process for the same resolved workspace
+    and validated source, until ``CODE_VALIDATION_CACHE_TTL_SECONDS`` after the
+    Modal call that made it; reads do not extend that. Failed checks and
+    failures to reach Modal are not cached, so a retry runs the check again.
+    Anonymous workspaces always run the check, so the anonymous-execution gate
+    still applies.
 
     Args:
         python_code: The Python code to validate
@@ -821,10 +831,9 @@ def validate_code_in_modal(
 
     # The anonymous-execution gate lives in execute_remote, so a hit must not skip it.
     use_cache = not _is_anonymous_modal_workspace(workspace)
-    cache_key = CODE_VALIDATION_CACHE.get_hash_key(code=full_code)
-    cached_outcome = CODE_VALIDATION_CACHE.get(key=cache_key) if use_cache else None
-    if cached_outcome is not None:
-        return _code_validation_result(cached_outcome)
+    cache_key = CODE_VALIDATION_CACHE.get_hash_key(workspace=workspace, code=full_code)
+    if use_cache and CODE_VALIDATION_CACHE.get(key=cache_key):
+        return True
 
     # Escape the code for safe embedding in the validation function
     # Use repr() to properly escape quotes and special characters
@@ -868,21 +877,24 @@ def validate_syntax():
             workspace_id=workspace,
         )
 
-        verdict = result.get("valid")
-        if verdict is False:
+        if result.get("valid") is False:
             error_msg = result.get("error", "Unknown syntax error")
             line_no = result.get("line", None)
             if line_no:
                 error_msg = f"Line {line_no}: {error_msg}"
-            outcome = _CodeValidationOutcome(
-                error_message=f"Code validation failed: {error_msg}"
+            raise DynamicBlockError(
+                public_message=f"Code validation failed: {error_msg}",
+                context="modal_executor | code_validation",
             )
-        else:
-            outcome = _CodeValidationOutcome(error_message=None)
-        # A reply with no verdict still passes, as before, but is not reused.
-        if use_cache and isinstance(verdict, bool):
-            CODE_VALIDATION_CACHE.cache(key=cache_key, value=outcome)
-        return _code_validation_result(outcome)
+
+        # Only a success is reused. The check reports any exception from
+        # compile() as invalid, a transient MemoryError included, so a retry
+        # must reach Modal again. A reply with no verdict still passes, as
+        # before, but is not reused.
+        if use_cache and result.get("valid") is True:
+            CODE_VALIDATION_CACHE.cache(key=cache_key, value=True)
+
+        return True
 
     except Exception as e:
         if isinstance(e, DynamicBlockError):

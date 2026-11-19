@@ -23,7 +23,7 @@ from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
 )
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.entities import PythonCode
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.modal_executor import (
-    CODE_VALIDATION_CACHE,
+    CODE_VALIDATION_CACHE_TTL_SECONDS,
     serialize_for_modal_remote_execution,
     validate_code_in_modal,
 )
@@ -212,21 +212,19 @@ def test_modal_serializer_handles_batch_without_indices() -> None:
     assert payload["v"]["indices"] is None
 
 
-def _clear_code_validation_cache() -> None:
-    with CODE_VALIDATION_CACHE._cache_lock:
-        CODE_VALIDATION_CACHE._cache.clear()
-        CODE_VALIDATION_CACHE._keys_buffer.clear()
+@pytest.fixture
+def clock() -> mock.Mock:
+    return mock.Mock(return_value=0.0)
 
 
 @pytest.fixture
-def execute_remote():
+def execute_remote(clock: mock.Mock):
     executor = mock.MagicMock()
-    _clear_code_validation_cache()
+    validation_cache = modal_executor._create_code_validation_cache(clock=clock)
     with mock.patch.object(modal_executor, "MODAL_AVAILABLE", True), mock.patch.object(
         modal_executor, "ModalExecutor", return_value=executor
-    ):
+    ), mock.patch.object(modal_executor, "CODE_VALIDATION_CACHE", validation_cache):
         yield executor.execute_remote
-    _clear_code_validation_cache()
 
 
 def _block_code() -> PythonCode:
@@ -236,49 +234,103 @@ def _block_code() -> PythonCode:
     )
 
 
-def test_validate_code_in_modal_reuses_valid_verdict_across_workspaces(
+def _checked_workspaces(execute_remote: mock.MagicMock) -> list:
+    return [call.kwargs["workspace_id"] for call in execute_remote.call_args_list]
+
+
+def test_validate_code_in_modal_reuses_success_within_workspace(
     execute_remote,
 ) -> None:
     execute_remote.return_value = {"valid": True}
 
     first = validate_code_in_modal(_block_code(), "workspace-a")
-    second = validate_code_in_modal(_block_code(), "workspace-b")
+    second = validate_code_in_modal(_block_code(), "workspace-a")
 
     assert first is True
     assert second is True
     execute_remote.assert_called_once()
 
 
-def test_validate_code_in_modal_reuses_syntax_error(execute_remote) -> None:
-    execute_remote.return_value = {
-        "valid": False,
-        "error": "invalid syntax",
-        "line": 2,
-    }
-    errors = []
+def test_validate_code_in_modal_checks_each_workspace_independently(
+    execute_remote,
+) -> None:
+    execute_remote.side_effect = [
+        {"valid": True},
+        {"valid": False, "error": "warning treated as error", "line": 1},
+    ]
 
-    for _ in range(2):
-        with pytest.raises(DynamicBlockError) as error:
-            validate_code_in_modal(_block_code(), "workspace-a")
-        errors.append((error.value.public_message, error.value.context))
+    first = validate_code_in_modal(_block_code(), "workspace-a")
+    with pytest.raises(DynamicBlockError) as error:
+        validate_code_in_modal(_block_code(), "workspace-b")
 
-    expected = (
-        "Code validation failed: Line 2: invalid syntax",
-        "modal_executor | code_validation",
+    assert first is True
+    assert (
+        error.value.public_message
+        == "Code validation failed: Line 1: warning treated as error"
     )
-    assert errors == [expected, expected]
-    execute_remote.assert_called_once()
+    assert _checked_workspaces(execute_remote) == ["workspace-a", "workspace-b"]
+
+
+def test_validate_code_in_modal_revalidates_after_expiry_even_when_read_often(
+    execute_remote, clock: mock.Mock
+) -> None:
+    execute_remote.return_value = {"valid": True}
+
+    validate_code_in_modal(_block_code(), "workspace-a")
+    for elapsed in range(60, CODE_VALIDATION_CACHE_TTL_SECONDS, 60):
+        clock.return_value = elapsed
+        validate_code_in_modal(_block_code(), "workspace-a")
+    checks_before_expiry = execute_remote.call_count
+
+    clock.return_value = CODE_VALIDATION_CACHE_TTL_SECONDS
+    validate_code_in_modal(_block_code(), "workspace-a")
+    clock.return_value = 2 * CODE_VALIDATION_CACHE_TTL_SECONDS - 1
+    validate_code_in_modal(_block_code(), "workspace-a")
+
+    assert checks_before_expiry == 1
+    assert execute_remote.call_count == 2
+
+
+def test_validate_code_in_modal_does_not_cache_failed_check(execute_remote) -> None:
+    execute_remote.side_effect = [
+        {"valid": False, "error": "invalid syntax", "line": 2},
+        {"valid": True},
+    ]
+
+    with pytest.raises(DynamicBlockError) as error:
+        validate_code_in_modal(_block_code(), "workspace-a")
+    retried = validate_code_in_modal(_block_code(), "workspace-a")
+
+    assert (
+        error.value.public_message == "Code validation failed: Line 2: invalid syntax"
+    )
+    assert error.value.context == "modal_executor | code_validation"
+    assert retried is True
+    assert execute_remote.call_count == 2
+
+
+def test_validate_code_in_modal_does_not_cache_reply_without_verdict(
+    execute_remote,
+) -> None:
+    execute_remote.return_value = {}
+
+    first = validate_code_in_modal(_block_code(), "workspace-a")
+    second = validate_code_in_modal(_block_code(), "workspace-a")
+
+    assert first is True
+    assert second is True
+    assert execute_remote.call_count == 2
 
 
 @pytest.mark.parametrize(
     "anonymous_workspace", [modal_executor.MODAL_ANONYMOUS_WORKSPACE_NAME, None]
 )
-def test_validate_code_in_modal_does_not_serve_cache_to_anonymous_workspace(
+def test_validate_code_in_modal_always_checks_anonymous_workspace(
     execute_remote, anonymous_workspace
 ) -> None:
     execute_remote.return_value = {"valid": True}
-    validate_code_in_modal(_block_code(), "workspace-a")
 
+    validate_code_in_modal(_block_code(), anonymous_workspace)
     result = validate_code_in_modal(_block_code(), anonymous_workspace)
 
     assert result is True
