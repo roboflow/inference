@@ -55,6 +55,7 @@ The `inference-models` library supports a wide range of computer vision models a
 | Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
 |-------|--------|---------|-------------------------------|---------------------|-----------------|
 | [RF-DETR Keypoint](rfdetr-keypoint-detection.md) | `onnx`, `trt` | Apache 2.0 | N/A | ✅ | ✅ |
+| [MediaPipe Hands](mediapipe-hands.md) | `onnx` | Apache 2.0 | N/A | ✅ | ❌ |
 | [YOLOv8 Keypoint](yolov8-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [YOLOv11 Keypoint](yolov11-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [YOLO26 Keypoint](yolo26-keypoint-detection.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |

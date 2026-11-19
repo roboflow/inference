@@ -1451,6 +1451,18 @@ if USE_INFERENCE_MODELS:
         InferenceModelsKeyPointsDetectionAdapter
     )
 
+    # MediaPipe hands is inference_models-only too: MediaPipe's palm detector and
+    # hand landmarks converted to ONNX, without the mediapipe library.
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "mediapipe-hands")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "mediapipe-palm-detector")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+    ROBOFLOW_MODEL_TYPES[("keypoint-detection", "mediapipe-hand-landmarks")] = (
+        InferenceModelsKeyPointsDetectionAdapter
+    )
+
     # PatchCore and FoundAD anomaly detection are inference_models-only
     # (no legacy implementation), so we add entries directly.
     InferenceModelsAnomalyDetectionAdapter = _LazyModelClass(
