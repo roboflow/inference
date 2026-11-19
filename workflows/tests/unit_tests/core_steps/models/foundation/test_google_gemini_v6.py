@@ -339,7 +339,7 @@ def test_manifest_accepts_gemini_3_8_flash() -> None:
 def test_segmentation_rejects_other_gemini_models(model: str) -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon, gemini-4-hydrogen and gemini-4-neon",
+        match="Instance segmentation is not supported for this model",
     ):
         BlockManifest.model_validate(
             {
@@ -510,7 +510,7 @@ def test_argon_segmentation_block_and_empty_output() -> None:
 def test_segmentation_runtime_rejects_resolved_other_model() -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon, gemini-4-hydrogen and gemini-4-neon",
+        match="Instance segmentation is not supported for this model",
     ):
         _run_block(
             task_type="instance-segmentation",
@@ -568,9 +568,9 @@ def _run_segmentation(model_version: str) -> dict:
     return execute.call_args.kwargs["gemini_prompts"][0]
 
 
-def test_carbon_is_third_listed_model() -> None:
-    assert GEMINI_MODELS[2]["id"] == "gemini-4-carbon"
-    assert MODEL_VERSION_IDS[2] == "gemini-4-carbon"
+def test_carbon_is_second_listed_model() -> None:
+    assert GEMINI_MODELS[1]["id"] == "gemini-4-carbon"
+    assert MODEL_VERSION_IDS[1] == "gemini-4-carbon"
     assert MODEL_VERSION_METADATA["gemini-4-carbon"]["name"] == "Gemini 4 Carbon"
 
 
@@ -659,7 +659,7 @@ def test_carbon_segmentation_prompt_accepts_model() -> None:
 def test_segmentation_prompt_rejects_other_model() -> None:
     with pytest.raises(
         ValueError,
-        match="gemini-4-argon, gemini-4-carbon, gemini-4-hydrogen or gemini-4-neon",
+        match="Segmentation requires a supported model and classes",
     ):
         prepare_instance_segmentation_prompt(
             base64_image="aW1hZ2U=",
@@ -674,14 +674,14 @@ def test_segmentation_prompt_rejects_other_model() -> None:
 def test_run_gemini_prompting_rejects_segmentation_for_other_model() -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon, gemini-4-hydrogen and gemini-4-neon",
+        match="Instance segmentation is not supported for this model",
     ):
         _run_segmentation("gemini-3.8-flash")
 
 
-def test_hydrogen_is_second_listed_model() -> None:
-    assert GEMINI_MODELS[1]["id"] == "gemini-4-hydrogen"
-    assert MODEL_VERSION_IDS[1] == "gemini-4-hydrogen"
+def test_hydrogen_is_first_listed_model() -> None:
+    assert GEMINI_MODELS[0]["id"] == "gemini-4-hydrogen"
+    assert MODEL_VERSION_IDS[0] == "gemini-4-hydrogen"
     assert MODEL_VERSION_METADATA["gemini-4-hydrogen"]["name"] == "Gemini 4 Hydrogen"
 
 
@@ -919,46 +919,3 @@ def test_run_rejects_resolved_reference_examples_for_other_tasks() -> None:
                 max_concurrent_requests=None,
                 reference_examples=[_reference_example()],
             )
-
-
-def test_neon_model_metadata() -> None:
-    assert MODEL_VERSION_IDS[0] == "gemini-4-neon"
-    assert MODEL_VERSION_METADATA["gemini-4-neon"]["name"] == "Gemini 4 Neon"
-    assert "gemini-4-neon" not in MODELS_SUPPORTING_NATIVE_CODE_EXECUTION
-
-
-@pytest.mark.parametrize("level", [None, "low", "medium", "high", "xhigh", "max"])
-def test_neon_thinking_level_reaches_request(level: Optional[str]) -> None:
-    manifest = BlockManifest.model_validate(
-        _manifest_data("gemini-4-neon", thinking_level=level)
-    )
-    config = prepare_generation_config(
-        model_version=manifest.model_version,
-        max_tokens=16384,
-        temperature=None,
-        thinking_level=manifest.thinking_level,
-    )
-    if level is None:
-        assert "thinking_config" not in config
-    else:
-        assert config["thinking_config"] == {"thinking_level": level}
-
-
-def test_neon_rejects_minimal_thinking_level() -> None:
-    with pytest.raises(ValueError):
-        BlockManifest.model_validate(
-            _manifest_data("gemini-4-neon", thinking_level="minimal")
-        )
-
-
-def test_neon_segmentation_manifest_and_request() -> None:
-    manifest = BlockManifest.model_validate(
-        _segmentation_manifest_data("gemini-4-neon")
-    )
-    outputs = {output.name: output.kind for output in manifest.get_actual_outputs()}
-    assert RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND in outputs["predictions"]
-    payload = _run_segmentation("gemini-4-neon")
-    component = payload["generationConfig"]["response_schema"]["items"]["properties"][
-        "mask"
-    ]["items"]
-    assert set(component["required"]) == {"outer", "holes"}
