@@ -2,17 +2,31 @@
   "source": "inference/models/utils.py",
   "cases": {
     "adapters=False,proxy=False": {
-      "inference.models:DinoV3Classification": [
+      "inference.models:ResNetClassification": [
         [
           "classification",
-          "dinov3"
+          "convnext"
         ],
         [
           "classification",
-          "dinov3_probe"
-        ]
-      ],
-      "inference.models:ResNetClassification": [
+          "convnext_base"
+        ],
+        [
+          "classification",
+          "convnext_large"
+        ],
+        [
+          "classification",
+          "convnext_nano"
+        ],
+        [
+          "classification",
+          "convnext_small"
+        ],
+        [
+          "classification",
+          "convnext_tiny"
+        ],
         [
           "classification",
           "resnet"
@@ -32,6 +46,16 @@
         [
           "classification",
           "resnet50"
+        ]
+      ],
+      "inference.models:DinoV3Classification": [
+        [
+          "classification",
+          "dinov3"
+        ],
+        [
+          "classification",
+          "dinov3_probe"
         ]
       ],
       "inference.core.models.stubs:ClassificationModelStub": [
@@ -968,17 +992,31 @@
       ]
     },
     "adapters=False,proxy=True": {
-      "inference.models:DinoV3Classification": [
+      "inference.models:ResNetClassification": [
         [
           "classification",
-          "dinov3"
+          "convnext"
         ],
         [
           "classification",
-          "dinov3_probe"
-        ]
-      ],
-      "inference.models:ResNetClassification": [
+          "convnext_base"
+        ],
+        [
+          "classification",
+          "convnext_large"
+        ],
+        [
+          "classification",
+          "convnext_nano"
+        ],
+        [
+          "classification",
+          "convnext_small"
+        ],
+        [
+          "classification",
+          "convnext_tiny"
+        ],
         [
           "classification",
           "resnet"
@@ -998,6 +1036,16 @@
         [
           "classification",
           "resnet50"
+        ]
+      ],
+      "inference.models:DinoV3Classification": [
+        [
+          "classification",
+          "dinov3"
+        ],
+        [
+          "classification",
+          "dinov3_probe"
         ]
       ],
       "inference.core.models.stubs:ClassificationModelStub": [
@@ -1953,6 +2001,30 @@
       "inference.core.models.inference_models_adapters:InferenceModelsClassificationAdapter": [
         [
           "classification",
+          "convnext"
+        ],
+        [
+          "classification",
+          "convnext_base"
+        ],
+        [
+          "classification",
+          "convnext_large"
+        ],
+        [
+          "classification",
+          "convnext_nano"
+        ],
+        [
+          "classification",
+          "convnext_small"
+        ],
+        [
+          "classification",
+          "convnext_tiny"
+        ],
+        [
+          "classification",
           "dinov3"
         ],
         [
@@ -2014,6 +2086,10 @@
         [
           "classification",
           "yolov8x"
+        ],
+        [
+          "multi-label-classification",
+          "convnext"
         ],
         [
           "multi-label-classification",
@@ -3249,6 +3325,30 @@
       "inference.core.models.inference_models_adapters:InferenceModelsClassificationAdapter": [
         [
           "classification",
+          "convnext"
+        ],
+        [
+          "classification",
+          "convnext_base"
+        ],
+        [
+          "classification",
+          "convnext_large"
+        ],
+        [
+          "classification",
+          "convnext_nano"
+        ],
+        [
+          "classification",
+          "convnext_small"
+        ],
+        [
+          "classification",
+          "convnext_tiny"
+        ],
+        [
+          "classification",
           "dinov3"
         ],
         [
@@ -3310,6 +3410,10 @@
         [
           "classification",
           "yolov8x"
+        ],
+        [
+          "multi-label-classification",
+          "convnext"
         ],
         [
           "multi-label-classification",

@@ -2221,7 +2221,7 @@ class HttpInterface(BaseInterface):
                 "/infer/embeddings",
                 response_model=ImageEmbeddingResponse,
                 summary="Image embeddings",
-                description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+                description="Extract raw features from a ResNet, ConvNeXt, ViT or DINOv3 classification model",
             )
             @with_route_exceptions
             @usage_collector("request")

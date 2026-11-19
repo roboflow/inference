@@ -16,6 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
+  `compatible_model_architectures`.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.
