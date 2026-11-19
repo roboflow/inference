@@ -501,6 +501,30 @@ def _buffer_bytes(value: Any) -> bytes:
     return data
 
 
+def _b64decode_lenient(encoded: bytes | memoryview) -> bytes:
+    """Decode base64 exactly as ``base64.b64decode(validate=False)`` does.
+
+    Well-formed input takes the strict pybase64 fast path. Anything it
+    rejects (whitespace, stray characters, padding inside the payload) is
+    decoded by the standard library, because pybase64's lenient mode treats
+    padding inside the payload differently from it, and the result depends on
+    the Python and pybase64 versions.
+
+    Raises:
+        InputImageLoadError: When the payload is not valid base64.
+    """
+    try:
+        return pybase64.b64decode(encoded, validate=True)
+    except ValueError:
+        pass
+    try:
+        data = base64.b64decode(encoded, validate=False)
+    except Exception as error:
+        raise image_load_error(_MALFORMED_BASE64_ERROR) from error
+
+    return data
+
+
 def _decode_base64(value: Any) -> bytes:
     if isinstance(value, (bytes, bytearray, memoryview)):
         encoded = bytes(value)
@@ -515,10 +539,7 @@ def _decode_base64(value: Any) -> bytes:
     prefix = _BASE64_DATA_TYPE_PATTERN.match(encoded)
     if prefix is not None:
         encoded = memoryview(encoded)[prefix.end() :]
-    try:
-        data = pybase64.b64decode(encoded, validate=False)
-    except Exception as error:
-        raise image_load_error(_MALFORMED_BASE64_ERROR) from error
+    data = _b64decode_lenient(encoded)
     if not data:
         raise image_load_error(_EMPTY_PAYLOAD_ERROR)
     return data

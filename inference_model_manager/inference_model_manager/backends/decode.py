@@ -3,7 +3,7 @@
 Single-image decoder: make_decoder(name, device) → (bytes) -> image
 
 Decoders:
-  imagecodecs  — CPU, RGB HWC uint8 numpy (replaces cv2)
+  imagecodecs  — CPU, BGR HWC uint8 numpy (imagecodecs decode, cv2 channel swap)
 """
 
 from __future__ import annotations
