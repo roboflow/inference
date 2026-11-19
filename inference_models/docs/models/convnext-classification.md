@@ -9,7 +9,8 @@ Key features:
 - **Five sizes** - Nano, Tiny, Small, Base and Large, trained from timm's pretrained weights
 - **Single-label and multi-label** classification
 - **Image embeddings** - the exported head ends in a `head.fc` linear layer, so models serve the `image_embeddings` capability (`/infer/embeddings` and the Embedding Model block)
-- **Same runtime as ResNet** - roboflow-train packages ConvNeXt exactly like timm ResNet (ImageNet normalization, dynamic-size ONNX), so `inference-models` loads it with the ResNet classification classes
+- **Same runtime as ResNet** - Roboflow packages ConvNeXt exactly like timm ResNet (ImageNet normalization, dynamic-size ONNX), so the ConvNeXt classes reuse the ResNet loading and inference code
+- **Own default confidence** - multi-label models use `INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`, which inherits from `INFERENCE_MODELS_DEFAULT_CONFIDENCE`, so a server can tune ConvNeXt and ResNet separately
 
 ## License
 

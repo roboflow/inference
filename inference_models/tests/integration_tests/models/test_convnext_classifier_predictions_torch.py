@@ -1,4 +1,4 @@
-"""ConvNeXt classifiers trained on the Roboflow platform load with the ResNet classes.
+"""Predictions of ConvNeXt classifiers trained on the Roboflow platform.
 
 Single-label packages tell Honda Civic from Toyota Altis and Toyota Yaris; multi-label
 packages tag cat and dog.
@@ -10,9 +10,9 @@ import torch
 
 from inference_models import AutoModel
 from inference_models.configuration import DEFAULT_DEVICE
-from inference_models.models.resnet.resnet_classification_torch import (
-    ResNetForClassificationTorch,
-    ResNetForMultiLabelClassificationTorch,
+from inference_models.models.convnext.convnext_classification_torch import (
+    ConvNeXtForClassificationTorch,
+    ConvNeXtForMultiLabelClassificationTorch,
 )
 
 
@@ -23,7 +23,7 @@ def test_single_label_torch_package_numpy(
     honda_civic_image_numpy: np.ndarray,
 ) -> None:
     # given
-    model = ResNetForClassificationTorch.from_pretrained(
+    model = ConvNeXtForClassificationTorch.from_pretrained(
         model_name_or_path=convnext_single_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -50,7 +50,7 @@ def test_single_label_torch_package_numpy_custom_image_size(
     honda_civic_image_numpy: np.ndarray,
 ) -> None:
     # given
-    model = ResNetForClassificationTorch.from_pretrained(
+    model = ConvNeXtForClassificationTorch.from_pretrained(
         model_name_or_path=convnext_single_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -78,7 +78,7 @@ def test_single_label_torch_package_batch_numpy(
     toyota_yaris_image_numpy: np.ndarray,
 ) -> None:
     # given
-    model = ResNetForClassificationTorch.from_pretrained(
+    model = ConvNeXtForClassificationTorch.from_pretrained(
         model_name_or_path=convnext_single_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -107,7 +107,7 @@ def test_single_label_torch_package_torch(
     honda_civic_image_torch: torch.Tensor,
 ) -> None:
     # given
-    model = ResNetForClassificationTorch.from_pretrained(
+    model = ConvNeXtForClassificationTorch.from_pretrained(
         model_name_or_path=convnext_single_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -135,7 +135,7 @@ def test_single_label_torch_package_batch_torch(
     toyota_yaris_image_torch: torch.Tensor,
 ) -> None:
     # given
-    model = ResNetForClassificationTorch.from_pretrained(
+    model = ConvNeXtForClassificationTorch.from_pretrained(
         model_name_or_path=convnext_single_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -166,7 +166,7 @@ def test_multi_label_torch_package_numpy(
     dog_image_numpy: np.ndarray,
 ) -> None:
     # given
-    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+    model = ConvNeXtForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=convnext_multi_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -194,7 +194,7 @@ def test_multi_label_torch_package_batch_numpy(
     cat_image_numpy: np.ndarray,
 ) -> None:
     # given
-    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+    model = ConvNeXtForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=convnext_multi_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -231,7 +231,7 @@ def test_multi_label_torch_package_batch_torch_list(
     cat_image_torch: torch.Tensor,
 ) -> None:
     # given
-    model = ResNetForMultiLabelClassificationTorch.from_pretrained(
+    model = ConvNeXtForMultiLabelClassificationTorch.from_pretrained(
         model_name_or_path=convnext_multi_label_torch_package,
         device=DEFAULT_DEVICE,
     )
@@ -262,7 +262,7 @@ def test_multi_label_torch_package_batch_torch_list(
 
 @pytest.mark.slow
 @pytest.mark.torch_models
-def test_auto_model_loads_single_label_package_with_resnet_class(
+def test_auto_model_loads_single_label_package_with_convnext_class(
     convnext_single_label_torch_package: str,
     honda_civic_image_numpy: np.ndarray,
 ) -> None:
@@ -276,7 +276,7 @@ def test_auto_model_loads_single_label_package_with_resnet_class(
     predictions = model(honda_civic_image_numpy)
 
     # then
-    assert isinstance(model, ResNetForClassificationTorch)
+    assert isinstance(model, ConvNeXtForClassificationTorch)
     assert torch.allclose(
         predictions.confidence.cpu(),
         torch.tensor([[1.8091e-07, 9.9999e-01, 1.0181e-05]]).cpu(),
