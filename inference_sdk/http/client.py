@@ -2919,6 +2919,23 @@ class InferenceHTTPClient:
         return url, payload
 
     @wrap_errors
+    def infer_from_owlv2(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        class_names: List[str],
+        confidence: Optional[float] = None,
+    ) -> List[dict]:
+        """Return bounding boxes for text queries using an uploaded OWLv2 detector."""
+        return self._infer_with_text_queries(
+            inference_input,
+            "owlv2/infer",
+            class_names,
+            confidence,
+            {"model_id": model_id},
+        )
+
+    @wrap_errors
     def infer_from_yolo_world(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
@@ -2946,16 +2963,30 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
+        return self._infer_with_text_queries(
+            inference_input,
+            "yolo_world/infer",
+            class_names,
+            confidence,
+            (
+                {"yolo_world_version_id": model_version}
+                if model_version is not None
+                else {}
+            ),
+        )
+
+    def _infer_with_text_queries(
+        self, inference_input, endpoint, class_names, confidence, model_params
+    ):
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
         payload = self.__initialise_payload()
         payload["text"] = class_names
-        if model_version is not None:
-            payload["yolo_world_version_id"] = model_version
+        payload.update(model_params)
         if confidence is not None:
             payload["confidence"] = confidence
-        url = self.__wrap_url_with_api_key(f"{self.__api_url}/yolo_world/infer")
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/{endpoint}")
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
