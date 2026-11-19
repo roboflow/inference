@@ -83,7 +83,12 @@ def test_air_gapped_describe_carries_the_model_requirements_of_a_block(
 
     info = _air_gapped_info(response, EMBEDDING_BLOCK)
     assert info["required_model_capabilities"] == ["image_embeddings"]
-    assert info["compatible_model_architectures"] == ["resnet", "vit", "dinov3_probe"]
+    assert info["compatible_model_architectures"] == [
+        "resnet",
+        "convnext",
+        "vit",
+        "dinov3_probe",
+    ]
 
 
 def test_air_gapped_describe_leaves_the_response_alone_when_not_requested(
