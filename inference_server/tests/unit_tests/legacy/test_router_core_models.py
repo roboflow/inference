@@ -701,9 +701,10 @@ def _sam3_3d_client(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from inference_server.legacy.bridge import LegacyModelBridge
     from inference_server.legacy.router import include_legacy_routers
     from inference_server.middlewares.model_load import ModelLoadHeadersMiddleware
+
+    from inference_server.legacy.bridge import LegacyModelBridge
 
     monkeypatch.setattr("inference_server.configuration.SAM3_3D_OBJECTS_ENABLED", True)
     app = FastAPI()

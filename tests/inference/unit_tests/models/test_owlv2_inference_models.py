@@ -120,5 +120,6 @@ def test_adapter_singleton_defaults_to_shared_blob_cache() -> None:
 
     shared_getter.assert_called_once_with()
     assert (
-        auto_model.call_args.kwargs["content_addressed_artifact_cache"] is shared_cache
+        auto_model.call_args.kwargs["content_addressed_artifact_cache"]
+        is shared_cache
     )
