@@ -22,6 +22,8 @@ for contributor and maintainer responsibilities.
   keeps its per-video state and sends each window's model call to
   `/infer/action_recognition` as a short MPEG-4 clip. It reads the model's
   sampling contract from the package metadata instead of loading the model.
+- The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
+  `compatible_model_architectures`.
 
 ## `0.2.16`
 

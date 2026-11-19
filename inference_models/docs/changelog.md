@@ -16,6 +16,18 @@
   same code. Other subclasses raise `ModelImplementationNotFoundError`.
 - `ActionRecognitionModel.end_exclusive_spans` states whether predictions use
   half-open spans. V-JEPA 2.1 sets it.
+- [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
+  platform, single-label and multi-label, with their own default confidence
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  [model page](models/convnext-classification.md).
+- The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
+  `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
+  packages previously failed with `CorruptedModelPackageError`. The new encoder is a timm
+  `vit_pe_core_tiny_patch16_384` trunk with windowed rotary attention; it needs `timm>=1.0.18`
+  and raises `MissingDependencyError` with an older timm. Inputs other than the trained size
+  work as for the DINOv2 sizes. Models fine-tuned at another resolution store a
+  `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
+  `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
 
 ## `0.39.9`
 
