@@ -2,6 +2,7 @@
 
 import os.path
 from copy import deepcopy
+from math import isqrt
 from threading import RLock
 from typing import Any, List, Mapping, Optional, Tuple, Union
 
@@ -52,6 +53,7 @@ from inference_models.models.rfdetr.optimization.execution_plan import (
 from inference_models.models.rfdetr.post_processor import PostProcess
 from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     LWDETR,
+    ModelConfig,
     RFDETR2XLargeConfig,
     RFDETRAttoConfig,
     RFDETRBaseConfig,
@@ -59,6 +61,7 @@ from inference_models.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRLargeConfig,
     RFDETRMediumConfig,
     RFDETRNanoConfig,
+    RFDETRPECoreTConfig,
     RFDETRPicoConfig,
     RFDETRSmallConfig,
     RFDETRXLargeConfig,
@@ -129,7 +132,8 @@ class RFDetrForObjectDetectionTorch(
             RFDetrForObjectDetectionTorch: Initialized model with resolved stages.
 
         Raises:
-            CorruptedModelPackageError: If the package specifies an unknown variant.
+            CorruptedModelPackageError: If the package specifies an unknown variant or
+                the PE-Core-T weights contain an invalid position grid.
             MissingModelInitParameterError: If checkpoint metadata is insufficient.
             TypeError: If both a non-None execution_plan and its alias are supplied.
             ValueError: If a serialized execution plan is invalid.
@@ -206,16 +210,11 @@ class RFDetrForObjectDetectionTorch(
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        # Resolution is passed at construction: the PE-Core-T configs size their
-        # position-embedding grid from it, as training does.
         model_config = CONFIG_FOR_MODEL_TYPE[model_type](
             device=device,
             resolution=inference_config.network_input.training_input_size.height,
         )
-        checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
-        model_config.num_classes = checkpoint_num_classes - 1
-        model = build_model(config=model_config)
-        model.load_state_dict(weights_dict)
+        model = _load_detector(model_config, weights=weights_dict)
         model = model.eval().to(device)
         post_processor = PostProcess()
         loaded_model = cls(
@@ -262,6 +261,7 @@ class RFDetrForObjectDetectionTorch(
             RFDetrForObjectDetectionTorch: Initialized checkpoint model.
 
         Raises:
+            CorruptedModelPackageError: If the PE-Core-T weights contain an invalid position grid.
             MissingModelInitParameterError: If required architecture metadata is absent.
             TypeError: If both a non-None execution_plan and its alias are supplied.
             ValueError: If a serialized execution plan is invalid.
@@ -343,8 +343,6 @@ class RFDetrForObjectDetectionTorch(
             )
         )
         checkpoint_num_classes = weights_dict["class_embed.bias"].shape[0]
-        model_config.num_classes = checkpoint_num_classes - 1
-        model = build_model(config=model_config)
         if labels is None:
             class_names = [f"class_{i}" for i in range(checkpoint_num_classes)]
         elif isinstance(labels, str):
@@ -357,7 +355,7 @@ class RFDetrForObjectDetectionTorch(
                 f"loaded labels define {len(class_names)} classes - fix the value of `labels` parameter.",
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#invalidmodelinitparametererror",
             )
-        model.load_state_dict(weights_dict)
+        model = _load_detector(model_config, weights=weights_dict)
         model = model.eval().to(device)
         post_processor = PostProcess()
         loaded_model = cls(
@@ -714,3 +712,37 @@ class RFDetrForObjectDetectionTorch(
                 )
             )
         return detections_list
+
+
+def _load_detector(
+    config: ModelConfig, *, weights: Mapping[str, torch.Tensor]
+) -> LWDETR:
+    config.num_classes = weights["class_embed.bias"].shape[0] - 1
+    if isinstance(config, RFDETRPECoreTConfig):
+        config.positional_encoding_size = _stored_position_grid_size(weights)
+
+    model = build_model(config=config)
+    model.load_state_dict(weights)
+
+    return model
+
+
+def _stored_position_grid_size(weights: Mapping[str, torch.Tensor]) -> int:
+    key = "backbone.0.encoder.model.pos_embed"
+    embedding = weights.get(key)
+    if (
+        isinstance(embedding, torch.Tensor)
+        and embedding.ndim == 3
+        and embedding.shape[1] > 1
+    ):
+        # The first row is the class token. The remaining rows form the learned grid.
+        patch_count = embedding.shape[1] - 1
+        side = isqrt(patch_count)
+        if side * side == patch_count:
+            return side
+
+    raise CorruptedModelPackageError(
+        message=f"Expected {key} to contain a class token followed by a square position grid. "
+        f"Got shape {getattr(embedding, 'shape', None)}.",
+        help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+    )

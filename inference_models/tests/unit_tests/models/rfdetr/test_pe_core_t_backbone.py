@@ -8,7 +8,7 @@ import timm
 import torch
 
 from inference_models import AutoModel
-from inference_models.errors import MissingDependencyError
+from inference_models.errors import CorruptedModelPackageError, MissingDependencyError
 from inference_models.models.auto_loaders.core import (
     MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT,
 )
@@ -331,6 +331,54 @@ def _platform_layout(
     return {**state_dict, **unused}
 
 
+@pytest.mark.parametrize("layout", ["package", "checkpoint"])
+def test_loads_stored_position_grid_at_training_resolution(
+    layout: str, tmp_path: Path
+) -> None:
+    device = torch.device("cpu")
+    config = RFDETRAttoConfig(
+        device=device,
+        num_classes=len(CLASS_NAMES) - 1,
+        resolution=440,
+        positional_encoding_size=19,
+    )
+    reference = build_model(config=config).eval()
+    weights = reference.state_dict()
+    if layout == "package":
+        path = _write_torch_package(
+            tmp_path / "package",
+            state_dict=weights,
+            model_type="rfdetr-atto",
+            resolution=config.resolution,
+            divisibility=config.patch_size * config.num_windows,
+        )
+        loaded = AutoModel.from_pretrained(str(path), device=device)
+    else:
+        path = tmp_path / "checkpoint.pth"
+        torch.save({"model": weights}, path)
+        loaded = AutoModel.from_pretrained(
+            str(path),
+            device=device,
+            model_type="rfdetr-atto",
+            resolution=config.resolution,
+        )
+
+    key = "backbone.0.encoder.model.pos_embed"
+    torch.testing.assert_close(
+        _loaded_state_dict(loaded)[key], weights[key], rtol=0, atol=0
+    )
+    image = np.random.default_rng(0).integers(0, 256, (120, 160, 3), dtype=np.uint8)
+    model_input, _ = loaded.pre_process(image)
+    assert model_input.shape == (1, 3, config.resolution, config.resolution)
+
+    with torch.inference_mode():
+        expected = reference(model_input)
+        actual = loaded.forward(model_input)
+
+    torch.testing.assert_close(actual["pred_logits"], expected["pred_logits"])
+    torch.testing.assert_close(actual["pred_boxes"], expected["pred_boxes"])
+
+
 @pytest.mark.parametrize("resolution", [None, 440], ids=["default", "440"])
 def test_platform_and_rfdetr_plus_checkpoint_layouts_load_to_the_same_model(
     resolution, tmp_path: Path
@@ -386,4 +434,17 @@ def test_checkpoint_missing_a_used_encoder_weight_still_fails_to_load(
             model_type="rfdetr-atto",
             labels=CLASS_NAMES,
             device=torch.device("cpu"),
+        )
+
+
+def test_checkpoint_with_non_square_position_grid_fails_to_load(tmp_path: Path) -> None:
+    weights = _trained_state_dict(RFDETRAttoConfig, resolution=380)
+    key = "backbone.0.encoder.model.pos_embed"
+    weights[key] = weights[key][:, :-1]
+    checkpoint = tmp_path / "checkpoint.pth"
+    torch.save({"model": weights}, checkpoint)
+
+    with pytest.raises(CorruptedModelPackageError, match="square position grid"):
+        AutoModel.from_pretrained(
+            str(checkpoint), model_type="rfdetr-atto", device=torch.device("cpu")
         )
