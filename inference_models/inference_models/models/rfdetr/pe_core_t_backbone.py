@@ -104,8 +104,7 @@ class PECoreTEncoder(nn.Module):
             patch_size (int): Patch size of the trained model (16 or 20).
             num_windows (int): Windows per side; 1 disables windowing.
             positional_encoding_size (int): Side length, in patches, of the stored absolute
-                position embedding (``resolution // patch_size`` for the training resolution).
-                timm resamples it for inputs of another size.
+                position embedding. timm resamples it to the input patch grid when needed.
 
         Raises:
             MissingDependencyError: If the installed timm predates PE-Core-T (added in 1.0.18).

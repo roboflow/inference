@@ -42,8 +42,9 @@ released under the [Platform Model License 1.0](https://github.com/roboflow/rf-d
 They are available for models fine-tuned on the Roboflow platform and have no COCO pre-trained model IDs.
 Their `torch` backend needs `timm>=1.0.18`.
 Checkpoints fine-tuned with the `rfdetr_plus` package also load from file. For a checkpoint
-fine-tuned at another resolution, pass that `resolution`: as in training, these sizes use a
-position-embedding grid of `resolution // patch_size` patches per side.
+fine-tuned at another resolution, pass that `resolution` to set the input size.
+The loader reads the learned position grid from the weights, including when training used
+an explicit `positional_encoding_size`.
 
 | Model Size | Model type | Input size |
 |------------|------------|------------|
