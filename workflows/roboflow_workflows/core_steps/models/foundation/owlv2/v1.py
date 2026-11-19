@@ -158,7 +158,7 @@ class OwlV2ModelBlockV1(WorkflowBlock):
                 )
             )
             responses = client.infer_from_owlv2(
-                inference_input=[i.to_inference_format()["value"] for i in images],
+                inference_input=[i.base64_image for i in images],
                 model_id=model_id,
                 class_names=class_names,
                 confidence=confidence,
