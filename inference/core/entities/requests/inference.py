@@ -1,7 +1,7 @@
 from typing import Any, ClassVar, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from inference.core import logger
@@ -134,13 +134,23 @@ class DepthEstimationRequest(InferenceRequest):
         "lossy for geometric use).",
     )
 
-    @validator("model_id", always=True)
-    def validate_model_id(cls, value, values):
-        if value is not None:
-            return value
-        if values.get("depth_version_id") is None:
-            return None
-        return f"depth-anything-v2/{values['depth_version_id']}"
+    @model_validator(mode="after")
+    def validate_model_id(self) -> "DepthEstimationRequest":
+        """Derive the model ID after the depth version has been validated.
+
+        Returns:
+            The request with its explicit or derived model ID.
+        """
+        if (
+            self.model_id is None
+            and "depth_version_id" in self.model_fields_set
+            and self.depth_version_id is not None
+        ):
+            self.model_id = f"depth-anything-v2/{self.depth_version_id}"
+            # A derived ID is not an explicit body ID for path conflict checks.
+            self.model_fields_set.discard("model_id")
+
+        return self
 
 
 class ObjectDetectionInferenceRequest(CVInferenceRequest):

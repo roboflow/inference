@@ -2,12 +2,16 @@ import logging
 from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Type, Union
 
+import cv2
+import numpy as np
 import requests
 import supervision as sv
+from pycocotools import mask as mask_utils
 from pydantic import ConfigDict, Field, model_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.segmentation_entities import (
+    InstanceSegmentationRLEPrediction,
     Sam2SegmentationPrediction,
 )
 from roboflow_workflows.core_steps.common.utils import (
@@ -17,6 +21,9 @@ from roboflow_workflows.core_steps.common.utils import (
 )
 from roboflow_workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
+)
+from roboflow_workflows.core_steps.models.foundation.segment_anything3.v3 import (
+    SegmentAnything3BlockV3,
 )
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.prompts import (
     Box,
@@ -44,6 +51,7 @@ from roboflow_workflows.environment import (
     WORKFLOWS_REMOTE_API_KEY_TRANSPORT,
     WORKFLOWS_REMOTE_API_TARGET,
 )
+from roboflow_workflows.execution_engine.constants import RLE_MASK_KEY_IN_SV_DETECTIONS
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -57,6 +65,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LABELED_POINTS_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     ImageInputField,
     Selector,
 )
@@ -108,6 +117,13 @@ Two prompt inputs are supported (at least one must be provided):
 - **boxes**: detections from another model. Each bounding box becomes a separate prompt and
   the model segments the object inside it. Class names of the boxes are forwarded to the
   predicted masks.
+
+This block supports two output formats:
+- **polygons** (default): Returns polygon coordinates for each mask. A mask made of several
+  separate regions becomes one prediction per region.
+- **rle**: Returns the mask the model predicted in RLE (Run-Length Encoding) format, one
+  prediction per prompt. Use it when you need the exact mask. If the server can only answer
+  with polygons, the block fills them into the mask instead, and holes in the object are lost.
 """
 
 
@@ -193,6 +209,12 @@ class BlockManifest(WorkflowBlockManifest):
         "For ambiguous prompts (like a single point) setting to True is recommended.",
         examples=[True, "$inputs.multimask_output"],
     )
+    output_format: Literal["rle", "polygons"] = Field(
+        default="polygons",
+        title="Output Format",
+        description="'polygons' returns polygon coordinates, 'rle' returns efficient RLE encoding of the exact mask",
+        examples=["polygons", "rle"],
+    )
 
     @model_validator(mode="after")
     def _validate_points(self) -> "BlockManifest":
@@ -209,9 +231,29 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
         ]
+
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        """Declare the kind of ``predictions`` for the selected output format.
+
+        Returns:
+            For ``rle``, the RLE kind first, so the RLE serializer emits
+            ``rle_mask``, then the dense kind, which keeps consumers declared
+            on it connected. For ``polygons``, the dense kind alone.
+        """
+        if self.output_format == "rle":
+            kind = [
+                RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ]
+        else:
+            kind = [INSTANCE_SEGMENTATION_PREDICTION_KIND]
+        return [OutputDefinition(name="predictions", kind=kind)]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -306,6 +348,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch[sv.Detections]],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
         if SAM3_EXEC_MODE == "remote":
             logger.debug(
@@ -317,6 +360,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 boxes=boxes,
                 threshold=threshold,
                 multimask_output=multimask_output,
+                output_format=output_format,
             )
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -325,6 +369,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 boxes=boxes,
                 threshold=threshold,
                 multimask_output=multimask_output,
+                output_format=output_format,
             )
         if self._step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(
@@ -333,6 +378,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 boxes=boxes,
                 threshold=threshold,
                 multimask_output=multimask_output,
+                output_format=output_format,
             )
         raise ValueError(f"Unknown step execution mode: {self._step_execution_mode}")
 
@@ -343,6 +389,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch[sv.Detections]],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
         if boxes is None:
             boxes = [None] * len(images)
@@ -351,6 +398,8 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
             model_id=SAM3_INTERACTIVE_MODEL_ID,
             api_key=self._api_key,
         )
+        # `format` is sent only for RLE, so polygon requests keep their shape.
+        format_kwargs = {"format": "rle"} if output_format == "rle" else {}
 
         predictions = []
         for single_image, boxes_for_image in zip(images, boxes):
@@ -373,29 +422,27 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                     api_key=self._api_key,
                     request_model_id=SAM3_INTERACTIVE_MODEL_ID,
                     multimask_output=multimask_output,
+                    **format_kwargs,
                 )[0]
                 segmentation_predictions.extend(segmentation_response.predictions)
                 class_ids.extend(group.class_ids)
                 class_names.extend(group.class_names)
                 detection_ids.extend(group.detection_ids)
-            prediction = (
-                convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                    sam2_segmentation_predictions=segmentation_predictions,
-                    image=single_image,
-                    prompt_class_ids=class_ids,
-                    prompt_class_names=class_names,
-                    prompt_detection_ids=detection_ids,
-                    threshold=threshold,
-                )
+            prediction = _convert_segmentation_predictions_to_sv_detections(
+                segmentation_predictions=segmentation_predictions,
+                image=single_image,
+                prompt_class_ids=class_ids,
+                prompt_class_names=class_names,
+                prompt_detection_ids=detection_ids,
+                threshold=threshold,
+                output_format=output_format,
             )
             predictions.append(prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
+            output_format=output_format,
         )
 
     def run_remotely(
@@ -405,6 +452,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch[sv.Detections]],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
         ensure_builtin_remote_execution_allowed("SAM3 Interactive remote execution")
         api_url = (
@@ -443,29 +491,28 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                         prompt.dict(exclude_none=True) for prompt in group.prompts
                     ],
                     multimask_output=multimask_output,
+                    # "json" is the polygon response, the SDK default.
+                    mask_input_format="rle" if output_format == "rle" else "json",
                 )
                 segmentation_predictions.extend(_parse_segmentation_predictions(result))
                 class_ids.extend(group.class_ids)
                 class_names.extend(group.class_names)
                 detection_ids.extend(group.detection_ids)
-            prediction = (
-                convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                    sam2_segmentation_predictions=segmentation_predictions,
-                    image=single_image,
-                    prompt_class_ids=class_ids,
-                    prompt_class_names=class_names,
-                    prompt_detection_ids=detection_ids,
-                    threshold=threshold,
-                )
+            prediction = _convert_segmentation_predictions_to_sv_detections(
+                segmentation_predictions=segmentation_predictions,
+                image=single_image,
+                prompt_class_ids=class_ids,
+                prompt_class_names=class_names,
+                prompt_detection_ids=detection_ids,
+                threshold=threshold,
+                output_format=output_format,
             )
             predictions.append(prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
+            output_format=output_format,
         )
 
     def run_via_request(
@@ -475,6 +522,7 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
         boxes: Optional[Batch[sv.Detections]],
         threshold: float,
         multimask_output: bool,
+        output_format: Literal["rle", "polygons"] = "polygons",
     ) -> BlockResult:
         ensure_builtin_remote_execution_allowed(
             "SAM3 Interactive inference proxy execution"
@@ -503,6 +551,8 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                     ),
                     "multimask_output": multimask_output,
                 }
+                if output_format == "rle":
+                    payload["format"] = "rle"
                 try:
                     headers = {"Content-Type": "application/json"}
                     if ROBOFLOW_INTERNAL_SERVICE_NAME:
@@ -535,24 +585,21 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
                 class_ids.extend(group.class_ids)
                 class_names.extend(group.class_names)
                 detection_ids.extend(group.detection_ids)
-            prediction = (
-                convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                    sam2_segmentation_predictions=segmentation_predictions,
-                    image=single_image,
-                    prompt_class_ids=class_ids,
-                    prompt_class_names=class_names,
-                    prompt_detection_ids=detection_ids,
-                    threshold=threshold,
-                )
+            prediction = _convert_segmentation_predictions_to_sv_detections(
+                segmentation_predictions=segmentation_predictions,
+                image=single_image,
+                prompt_class_ids=class_ids,
+                prompt_class_names=class_names,
+                prompt_detection_ids=detection_ids,
+                threshold=threshold,
+                output_format=output_format,
             )
             predictions.append(prediction)
 
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
+            output_format=output_format,
         )
 
     @staticmethod
@@ -615,12 +662,17 @@ class SegmentAnything3InteractiveBlockV1(WorkflowBlock):
     def _post_process_result(
         self,
         images: Batch[WorkflowImageData],
-        predictions: List[dict],
+        predictions: List[sv.Detections],
+        output_format: Literal["rle", "polygons"],
     ) -> BlockResult:
-        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+        prediction_type = (
+            "rle-instance-segmentation"
+            if output_format == "rle"
+            else "instance-segmentation"
+        )
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
-            prediction_type="instance-segmentation",
+            prediction_type=prediction_type,
         )
         predictions = attach_parents_coordinates_to_batch_of_sv_detections(
             images=images,
@@ -651,3 +703,118 @@ def _parse_segmentation_predictions(
         )
         for raw_prediction in raw_predictions
     ]
+
+
+def _convert_segmentation_predictions_to_sv_detections(
+    segmentation_predictions: List[Sam2SegmentationPrediction],
+    image: WorkflowImageData,
+    prompt_class_ids: List[Optional[int]],
+    prompt_class_names: List[str],
+    prompt_detection_ids: List[Optional[str]],
+    threshold: float,
+    output_format: Literal["rle", "polygons"],
+) -> sv.Detections:
+    if output_format == "rle":
+        detections = _convert_rle_segmentation_predictions_to_sv_detections(
+            segmentation_predictions=segmentation_predictions,
+            image=image,
+            prompt_class_ids=prompt_class_ids,
+            prompt_class_names=prompt_class_names,
+            prompt_detection_ids=prompt_detection_ids,
+            threshold=threshold,
+        )
+        return detections
+
+    inference_response = (
+        convert_sam2_segmentation_response_to_inference_instances_seg_response(
+            sam2_segmentation_predictions=segmentation_predictions,
+            image=image,
+            prompt_class_ids=prompt_class_ids,
+            prompt_class_names=prompt_class_names,
+            prompt_detection_ids=prompt_detection_ids,
+            threshold=threshold,
+        )
+    )
+    detections = convert_inference_detections_batch_to_sv_detections(
+        [inference_response.model_dump(by_alias=True, exclude_none=True)]
+    )[0]
+    return detections
+
+
+def _convert_rle_segmentation_predictions_to_sv_detections(
+    segmentation_predictions: List[Sam2SegmentationPrediction],
+    image: WorkflowImageData,
+    prompt_class_ids: List[Optional[int]],
+    prompt_class_names: List[str],
+    prompt_detection_ids: List[Optional[str]],
+    threshold: float,
+) -> sv.Detections:
+    """One detection per prompt, carrying the model's RLE in ``data["rle_mask"]``
+    and the decoded mask, like the RLE output of ``roboflow_core/sam3@v3``."""
+    image_height, image_width = image.numpy_image.shape[:2]
+    predictions: List[InstanceSegmentationRLEPrediction] = []
+    for prediction, class_id, class_name, detection_id in zip(
+        segmentation_predictions,
+        prompt_class_ids,
+        prompt_class_names,
+        prompt_detection_ids,
+    ):
+        if prediction.confidence < threshold:
+            continue
+        rle = _as_coco_rle(
+            prediction.masks, image_height=image_height, image_width=image_width
+        )
+        if mask_utils.area(rle) == 0:
+            # skipping empty masks, as the polygon output does
+            continue
+        x, y, width, height = mask_utils.toBbox(rle).tolist()
+        predictions.append(
+            InstanceSegmentationRLEPrediction(
+                **{
+                    "x": x + width / 2,
+                    "y": y + height / 2,
+                    "width": width,
+                    "height": height,
+                    "confidence": prediction.confidence,
+                    "class": class_name,
+                    "class_id": class_id,
+                    "parent_id": detection_id,
+                    "rle": rle,
+                }
+            )
+        )
+
+    detections = SegmentAnything3BlockV3.build_rle_detections(
+        predictions=predictions,
+        image_height=image_height,
+        image_width=image_width,
+    )
+    if len(detections) > 0:
+        detections.mask = SegmentAnything3BlockV3.decode_rle_masks(
+            detections.data[RLE_MASK_KEY_IN_SV_DETECTIONS]
+        )
+    return detections
+
+
+def _as_coco_rle(
+    masks: Union[dict, List[List[List[int]]]],
+    *,
+    image_height: int,
+    image_width: int,
+) -> dict:
+    if isinstance(masks, dict):
+        return masks
+
+    # A server that drops the `format` field answers polygons. Rasterise them
+    # into one mask, so the prompt still yields a single RLE detection.
+    mask = np.zeros((image_height, image_width), dtype=np.uint8)
+    polygons = [
+        np.round(np.asarray(polygon, dtype=np.float32)).astype(np.int32)
+        for polygon in masks
+        if len(polygon) >= 3
+    ]
+    if polygons:
+        cv2.fillPoly(mask, polygons, 1)
+    rle = mask_utils.encode(np.asfortranarray(mask))
+    rle["counts"] = rle["counts"].decode("utf-8")
+    return rle

@@ -1,8 +1,13 @@
-from contextlib import nullcontext
-from threading import Lock
+from contextlib import contextmanager, nullcontext
+from threading import Lock, RLock
 from typing import ContextManager, Generator, Optional, Tuple
 
 import torch
+
+from inference_models.logger import LOGGER
+
+# Re-entrant so a guarded loader may call another guarded loader on the same thread.
+_TORCH_DEFAULT_DTYPE_LOCK = RLock()
 
 
 def torchscript_global_lock(lock: Optional[Lock]) -> ContextManager[None]:
@@ -13,6 +18,63 @@ def torchscript_global_lock(lock: Optional[Lock]) -> ContextManager[None]:
     corrupt it. With `lock=None` it is a no-op (direct single-threaded library use).
     """
     return lock if lock is not None else nullcontext()
+
+
+@contextmanager
+def torch_default_dtype_lock() -> Generator[None, None, None]:
+    """Serialize code that temporarily changes torch's process-global default dtype.
+
+    transformers' `PreTrainedModel.from_pretrained` saves `torch.get_default_dtype()`,
+    sets the dtype the model is built in, and restores the saved value when done. That
+    is not thread-safe: when two loads overlap, the second one saves the first one's
+    dtype (e.g. `torch.bfloat16`) as the "original" and restores it last, so the default
+    stays changed for the rest of the process. Every transformers model load should run
+    inside this context (with or without an explicit `dtype`, since transformers enters
+    the same save/set/restore with the current default when none is given). On exit the
+    default dtype seen on entry is restored.
+
+    Yields:
+        None.
+    """
+    with _TORCH_DEFAULT_DTYPE_LOCK:
+        dtype_on_entry = torch.get_default_dtype()
+        try:
+            yield
+        finally:
+            if torch.get_default_dtype() != dtype_on_entry:
+                torch.set_default_dtype(dtype_on_entry)
+
+
+def reset_leaked_torch_default_dtype(*, model_name_or_path: str) -> bool:
+    """Reset torch's default dtype to float32 if a model load left it changed.
+
+    Defensive check for the end of a model load. Skips the check while another thread
+    holds `torch_default_dtype_lock()`, because a transformers load in progress changes
+    the default dtype on purpose and restores it itself.
+
+    Args:
+        model_name_or_path: Model that was just loaded, named in the warning.
+
+    Returns:
+        True if the default dtype was reset, False otherwise.
+    """
+    if not _TORCH_DEFAULT_DTYPE_LOCK.acquire(blocking=False):
+        return False
+    try:
+        leaked_dtype = torch.get_default_dtype()
+        if leaked_dtype == torch.float32:
+            return False
+
+        LOGGER.warning(
+            "torch default dtype was %s after loading model %s; resetting it to "
+            "torch.float32. Some model load changed it without restoring it.",
+            leaked_dtype,
+            model_name_or_path,
+        )
+        torch.set_default_dtype(torch.float32)
+        return True
+    finally:
+        _TORCH_DEFAULT_DTYPE_LOCK.release()
 
 
 def generate_batch_chunks(

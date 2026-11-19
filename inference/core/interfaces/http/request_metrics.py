@@ -66,7 +66,7 @@ def build_model_response_headers(
         MODEL_COLD_START_HEADER: "false",
         MODEL_COLD_START_COUNT_HEADER: "0",
     }
-    model_ids = sorted(local_model_ids | remote_model_ids)
+    model_ids = sorted((local_model_ids | remote_model_ids) - {None})
     if model_ids:
         response_headers[MODEL_ID_HEADER] = ",".join(model_ids)
     local_cold_start_count = len(local_cold_start_entries)

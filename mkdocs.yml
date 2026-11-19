@@ -37,6 +37,7 @@ nav:
   - "Models": "https://docs.roboflow.com/models/supported-models"
   - "Workflows": "https://docs.roboflow.com/workflows"
   - "Classifier Embeddings": workflows/classifier_embeddings.md
+  - "Databricks SQL Image Source": workflows/databricks_sql_image_source.md
   - "Reference": "https://docs.roboflow.com/reference/inference/choosing-the-right-tool"
   - "Changelog": "https://github.com/roboflow/inference/releases"
 
@@ -117,13 +118,5 @@ extra_javascript:
   - 'javascript/init_kapa_widget.js'
   - 'javascript/cookbooks.js'
   - 'javascript/workflows.js'
-  - 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js'
-  - 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js'
-  - 'https://unpkg.com/@rive-app/canvas'
-  - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
-  - 'assets/home.js'
   - "https://app.roboflow.com/scripts/utm.js"
   - 'js/segment.js'
-
-hooks:
-  - theme/build.py

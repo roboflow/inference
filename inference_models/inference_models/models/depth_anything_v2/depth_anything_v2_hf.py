@@ -11,6 +11,7 @@ from inference_models.models.base.depth_estimation import DepthEstimationModel
 from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
+from inference_models.models.common.torch import torch_default_dtype_lock
 
 
 class DepthAnythingV2HF(
@@ -25,10 +26,11 @@ class DepthAnythingV2HF(
         local_files_only: bool = True,
         **kwargs,
     ) -> "DepthAnythingV2HF":
-        model = AutoModelForDepthEstimation.from_pretrained(
-            model_name_or_path,
-            local_files_only=local_files_only,
-        ).to(device)
+        with torch_default_dtype_lock():
+            model = AutoModelForDepthEstimation.from_pretrained(
+                model_name_or_path,
+                local_files_only=local_files_only,
+            ).to(device)
         processor = AutoImageProcessor.from_pretrained(
             model_name_or_path, local_files_only=local_files_only, use_fast=True
         )

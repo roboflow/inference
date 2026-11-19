@@ -43,6 +43,9 @@ def adapter_module() -> Generator[ModuleType, None, None]:
     drops both the stubs and the modules imported against them - no mocked
     modules leak into other tests.
     """
+    # Keep native operators and process-global metrics outside the module rollback.
+    importlib.import_module("torchvision")
+    importlib.import_module("inference.core.managers.sam3_metrics")
     stubs = {name: MagicMock() for name in _SAM3_PACKAGE_MODULES}
     with patch.dict(sys.modules, stubs):
         sys.modules.pop(ADAPTER_MODULE, None)

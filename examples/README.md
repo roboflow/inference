@@ -6,7 +6,7 @@ This folder contains examples of projects built with Inference.
 
 ## Index
 
-- [Inference Client](./inference-client-example/): Quickstart HTTP and UDP clients for use with Inference.
+- [Inference Client](./inference-client/): Quickstart HTTP and UDP clients for use with Inference.
 - [Inference dashboard](./inference-dashboard-example/): Extracts insights from video frames at defined intervals and generates informative visualizations and CSV outputs.
 - [CLIP Image-to-Image Search Engine](./clip-search-engine): Find images similar to a given image in a dataset with CLIP. Served as a web application.
 - [SAM Client](./sam-client): Use Segment Anything to segment objects in an image. Served as a command line application.
