@@ -13,7 +13,9 @@
   packages previously failed with `CorruptedModelPackageError`. The new encoder is a timm
   `vit_pe_core_tiny_patch16_384` trunk with windowed rotary attention; it needs `timm>=1.0.18`
   and raises `MissingDependencyError` with an older timm. Inputs other than the trained size
-  work as for the DINOv2 sizes.
+  work as for the DINOv2 sizes. Models fine-tuned at another resolution store a
+  `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
+  `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
 
 ## `0.39.9`
 

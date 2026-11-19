@@ -7,7 +7,7 @@ pass needed for inference is implemented.
 """
 
 import copy
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import timm
 import torch
@@ -104,8 +104,8 @@ class PECoreTEncoder(nn.Module):
             patch_size (int): Patch size of the trained model (16 or 20).
             num_windows (int): Windows per side; 1 disables windowing.
             positional_encoding_size (int): Side length, in patches, of the stored absolute
-                position embedding. Checkpoints keep this size at any training resolution, and
-                timm resamples it to the input grid on every call.
+                position embedding (``resolution // patch_size`` for the training resolution).
+                timm resamples it for inputs of another size.
 
         Raises:
             MissingDependencyError: If the installed timm predates PE-Core-T (added in 1.0.18).
@@ -130,6 +130,10 @@ class PECoreTEncoder(nn.Module):
             patch_size=patch_size,
             img_size=positional_encoding_size * patch_size,
         )
+        # The CLIP attention pool and classifier never run here. Fine-tuned checkpoints
+        # may or may not carry their weights; _load_from_state_dict drops them.
+        self.model.attn_pool = None
+        self.model.head = nn.Identity()
         self.model.dynamic_img_size = True
         self.model.patch_embed.strict_img_size = False
         self.model.patch_embed.output_fmt = "NHWC"
@@ -146,6 +150,33 @@ class PECoreTEncoder(nn.Module):
         self.num_windows = num_windows
         self.out_feature_indexes = out_feature_indexes
         self._out_feature_channels = [self.model.embed_dim] * len(out_feature_indexes)
+
+    def _load_from_state_dict(
+        self,
+        state_dict: Dict[str, Any],
+        prefix: str,
+        local_metadata: Dict[str, Any],
+        strict: bool,
+        missing_keys: List[str],
+        unexpected_keys: List[str],
+        error_msgs: List[str],
+    ) -> None:
+        # Platform checkpoints keep the unused CLIP attention-pool and classifier
+        # weights; RF-DETR+ checkpoints remove those modules before saving. Drop only
+        # these keys so every parameter the detector uses is still loaded strictly.
+        unused_prefixes = (f"{prefix}model.attn_pool.", f"{prefix}model.head.")
+        for key in [key for key in state_dict if key.startswith(unused_prefixes)]:
+            del state_dict[key]
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def _rope_for_grid(self, grid: Tuple[int, int]) -> torch.Tensor:
         # timm's RoPE caches the trained grid's embedding and ignores other shapes. Rebuild it on a

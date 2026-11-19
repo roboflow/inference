@@ -41,6 +41,9 @@ All pre-trained RF-DETR object detection models are trained on the COCO dataset 
 released under the [Platform Model License 1.0](https://github.com/roboflow/rf-detr/blob/develop/rfdetr/platform/LICENSE.platform).
 They are available for models fine-tuned on the Roboflow platform and have no COCO pre-trained model IDs.
 Their `torch` backend needs `timm>=1.0.18`.
+Checkpoints fine-tuned with the `rfdetr_plus` package also load from file. For a checkpoint
+fine-tuned at another resolution, pass that `resolution`: as in training, these sizes use a
+position-embedding grid of `resolution // patch_size` patches per side.
 
 | Model Size | Model type | Input size |
 |------------|------------|------------|

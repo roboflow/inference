@@ -6,7 +6,7 @@ from typing import Callable, List, Literal, Optional, Union
 import torch
 import torch.nn.functional as F
 import torchvision
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from torch import Tensor, nn
 
 from inference_models.models.rfdetr.backbone_builder import build_backbone
@@ -165,6 +165,25 @@ class RFDETRPECoreTConfig(ModelConfig):
     projector_scale: List[Literal["P4",]] = ["P4"]
     out_feature_indexes: List[int] = [2, 5, 8, 11]
     license: str = "PML-1.0"
+
+    @model_validator(mode="after")
+    def _sync_positional_encoding_size_with_resolution(self) -> "RFDETRPECoreTConfig":
+        """Size the position-embedding grid from an explicit ``resolution``.
+
+        Training does the same (as the public ``rfdetr`` package does for its sizes): a
+        model fine-tuned at another resolution stores ``resolution // patch_size`` patches
+        per side. An explicit ``positional_encoding_size`` is kept.
+
+        Returns:
+            RFDETRPECoreTConfig: This config.
+        """
+        if (
+            "resolution" in self.model_fields_set
+            and "positional_encoding_size" not in self.model_fields_set
+        ):
+            self.positional_encoding_size = self.resolution // self.patch_size
+
+        return self
 
 
 class RFDETRAttoConfig(RFDETRPECoreTConfig):
