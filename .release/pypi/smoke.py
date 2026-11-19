@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 from packaging.utils import canonicalize_name, parse_wheel_filename
-from packaging.version import Version
+from versioning import _final_version
 
 IMPORTS = {
     "inference-sdk": "inference_sdk",
@@ -25,7 +25,7 @@ IMPORTS = {
 def _inventory(packages):
     return {
         canonicalize_name(item["name"]): (
-            Version(item["version"]).base_version
+            _final_version(item["version"])
             if canonicalize_name(item["name"]) in IMPORTS
             else item["version"]
         )

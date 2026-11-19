@@ -20,6 +20,8 @@ on:
         description: Exact prepared RC or SDK version
 permissions:
   contents: read
+# Release code must neither consume nor populate shared Actions caches.
+cache-mode: none
 concurrency:
   group: release-${{ github.ref }}-${{ inputs.packages || 'all' }}
   cancel-in-progress: false
@@ -877,7 +879,7 @@ jobs:
           if-no-files-found: error
 
   docker:
-    needs: [prepare, commit_locks, prepare_dependencies, publish_runtime]
+    needs: [prepare, commit_locks, prepare_dependencies, publish_runtime, build_sdk, build_runtime]
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.images) }}
@@ -888,6 +890,8 @@ jobs:
     with:
       source_sha: ${{ needs.commit_locks.outputs.source_sha }}
       state_artifact: ${{ needs.prepare_dependencies.outputs.state_artifact }}
+      runtime_artifact: ${{ needs.build_runtime.outputs.artifact }}
+      sdk_artifact: ${{ needs.build_sdk.outputs.artifact }}
       image: ${{ toJSON(matrix) }}
     secrets: inherit
 
@@ -946,11 +950,11 @@ jobs:
       RELEASE_TAG: ${{ github.event.release.tag_name }}
       HAS_APP: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY != '' && vars.SVIS_DISPATCH_APP_CLIENT_ID != '' }}
     steps:
-      - name: Only announce X.Y.Z and X.Y.Z-postN releases
+      - name: Only announce stable and post-release versions
         id: filter
         run: |
           version="${RELEASE_TAG#v}"
-          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-post[0-9]+)?$ ]]; then
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-]post[0-9]+)?$ ]]; then
             echo "version=$version" >> "$GITHUB_OUTPUT"
           else
             echo "Not a release version ($RELEASE_TAG); nothing to announce."

@@ -8,11 +8,19 @@ on:
       state_artifact:
         type: string
         required: true
+      runtime_artifact:
+        type: string
+        required: true
+      sdk_artifact:
+        type: string
+        required: true
       image:
         type: string
         required: true
 permissions:
   contents: read
+# Release code must neither consume nor populate shared Actions caches.
+cache-mode: none
 concurrency:
   group: release-image-${{ fromJSON(inputs.image).key }}-${{ github.event.release.tag_name || github.event.inputs.expected_version }}
   cancel-in-progress: false
@@ -36,6 +44,14 @@ jobs:
         with:
           name: ${{ inputs.state_artifact }}
           path: release-state
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.runtime_artifact }}
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.sdk_artifact }}
+          path: dist
       - run: bash .release/pypi/flow.sh restore
       - uses: actions/setup-python@v6
         with:
@@ -44,34 +60,35 @@ jobs:
         with:
           version: '0.12.21'
           enable-cache: false
-      - run: uv pip install --system click==8.1.8 packaging==25.0
+      - run: uv pip install --system click==8.1.8 packaging==25.0 pip==25.3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
       - id: plan
         env:
           IMAGE_KEY: ${{ fromJSON(inputs.image).key }}
         run: |
           python .github/scripts/release_images.py plan --key "$IMAGE_KEY"
           cat release-state/outputs >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c
       - name: Build retained candidate image
         id: image
-        if: ${{ !fromJSON(inputs.image).bake }}
+        if: ${{ steps.plan.outputs.bake == 'false' && steps.plan.outputs.reuse_digest == '' }}
         uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287
         with:
           project: ${{ fromJSON(inputs.image).project }}
-          context: ${{ fromJSON(inputs.image).context }}
-          file: ${{ fromJSON(inputs.image).dockerfile }}
+          context: ${{ steps.plan.outputs.context }}
+          file: ${{ steps.plan.outputs.dockerfile }}
           platforms: ${{ steps.plan.outputs.platforms }}
           push: true
           tags: ${{ steps.plan.outputs.candidate }}
           labels: org.opencontainers.image.revision=${{ inputs.source_sha }}
       - name: Build retained Jetson 7.2 candidate with same-source media
         id: bake
-        if: ${{ fromJSON(inputs.image).bake }}
-        uses: depot/bake-action@v1
+        if: ${{ steps.plan.outputs.bake == 'true' && steps.plan.outputs.reuse_digest == '' }}
+        uses: depot/bake-action@1d58c2668346981089b088b7ef36755b206b20e9 # v1.13.0
         env:
           JETSON_SERVER_TAGS: ${{ steps.plan.outputs.candidate }}
         with:
@@ -82,7 +99,7 @@ jobs:
       - id: receipt
         env:
           IMAGE_KEY: ${{ fromJSON(inputs.image).key }}
-          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest || steps.plan.outputs.reuse_digest }}
           BAKE_METADATA: ${{ steps.bake.outputs.metadata }}
         run: |
           digest="$IMAGE_DIGEST"

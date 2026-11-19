@@ -20,8 +20,10 @@ import click
 import dependencies
 import release
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import Version
+from versioning import _final_version
 
 STATE = Path("release-state")
 LOCKS = tuple(f"{directory}/uv.lock" for directory, _ in dependencies.PROJECTS.values())
@@ -86,27 +88,32 @@ def _api(path, *, payload=None):
 
 
 def _base(version):
-    parsed = Version(version)
-    if parsed.local or parsed.dev is not None or parsed.post is not None:
-        raise ValueError(f"Unsupported release version: {version}")
-    if parsed.pre and parsed.pre[0] != "rc":
-        raise ValueError(f"Expected an RC: {version}")
-    return parsed.base_version
+    return _final_version(version)
 
 
 def _requirement(raw):
+    content, separator, comment = raw.partition("#")
     try:
-        requirement = Requirement(raw)
+        requirement = Requirement(content.strip())
     except Exception:
         return raw
     if canonicalize_name(requirement.name) not in FIRST_PARTY:
         return raw
     if requirement.url:
         raise ValueError("First-party release requirements cannot use URLs")
-    for specifier in list(requirement.specifier):
-        if "*" not in specifier.version:
-            _base(specifier.version)
-    normalized = re.sub(r"(?<=[0-9])rc[0-9]+(?=[,;\s)\]'\"]|$)", "", raw)
+    requirement.specifier = SpecifierSet(
+        ",".join(
+            (
+                f"{specifier.operator}{_base(specifier.version)}"
+                if "*" not in specifier.version
+                else str(specifier)
+            )
+            for specifier in requirement.specifier
+        )
+    )
+    normalized = str(requirement)
+    if separator:
+        normalized += " #" + comment
     return normalized
 
 

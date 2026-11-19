@@ -343,6 +343,7 @@
     },
     {
       "key": "models-jp51",
+      "core_only": true,
       "repository": "roboflow/inference-exp",
       "dockerfile": "inference_models/dockerfiles/jp51.cu114.core.dockerfile",
       "context": "inference_models",

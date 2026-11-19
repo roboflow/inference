@@ -188,7 +188,7 @@ def test_equivalence_only_normalizes_release_metadata():
     )
     assert (
         flow._requirement("inference-models>=0.39.9rc2; python_version>='3.10'")
-        == "inference-models>=0.39.9; python_version>='3.10'"
+        == 'inference-models>=0.39.9; python_version >= "3.10"'
     )
     assert flow._requirement("numpy==2.0.0rc1") == "numpy==2.0.0rc1"
 
@@ -608,3 +608,329 @@ def test_manual_channel_requires_rc_release_branch(
     else:
         with pytest.raises(ValueError, match="requires an RC|requires a release"):
             flow._prepare()
+
+
+@pytest.mark.parametrize(
+    "candidate,final",
+    [("1.8.5rc1.post1", "1.8.5.post1"), ("1.8.5-rc2.post3", "1.8.5-post3")],
+)
+def test_post_release_identity_preserves_post_number(candidate, final):
+    assert flow._base(candidate) == flow._base(final)
+    assert flow._base(candidate) != flow._base("1.8.5rc1")
+    assert flow._base(candidate) != flow._base("1.8.5.post4")
+    rc = f"inference-models=={candidate} # keep this pin aligned"
+    stable = f"inference-models=={final} # keep this pin aligned"
+    assert flow._requirement(rc) == flow._requirement(stable)
+    assert flow._canonical(
+        "inference/core/version.py", f'__version__ = "{candidate}"'.encode()
+    ) == flow._canonical(
+        "inference/core/version.py", f'__version__ = "{final}"'.encode()
+    )
+    assert flow._requirement(f"numpy=={candidate}") != flow._requirement(
+        f"numpy=={final}"
+    )
+
+
+def test_post_smoke_inventory_does_not_accept_different_post_release():
+    import smoke
+
+    assert smoke._inventory(
+        [{"name": "inference-sdk", "version": "1.8.5rc1.post1"}]
+    ) == {"inference-sdk": "1.8.5.post1"}
+    assert smoke._inventory([{"name": "inference-sdk", "version": "1.8.5.post2"}]) != {
+        "inference-sdk": "1.8.5.post1"
+    }
+
+
+@pytest.mark.parametrize(
+    "channel,runtime,models,exists,expected",
+    [
+        ("rc", "1.8.6rc1", "0.39.9", True, "cpu-1.8.6rc1"),
+        ("stable", "1.8.6", "0.39.9", True, "cpu-0.39.9"),
+        ("stable", "1.8.7", "0.39.9", True, "cpu-0.39.9"),
+        ("rc", "1.8.6rc1", "0.40.0rc1", False, "cpu-1.8.6rc1"),
+        ("stable", "1.8.6", "0.40.0", False, "cpu-0.40.0"),
+    ],
+)
+@pytest.mark.parametrize("image_key", ["models-cpu", "models-jp51"])
+def test_models_plan_reuses_independent_version_with_retained_content_identity(
+    tmp_path, monkeypatch, channel, runtime, models, exists, expected, image_key
+):
+    images = _load_images()
+    monkeypatch.chdir(tmp_path)
+    directory = Path("inference_models")
+    directory.mkdir()
+    (directory / "pyproject.toml").write_text(
+        f'[project]\nname="inference-models"\nversion="{models}"\n'
+    )
+    package_directory = flow.STATE / "packages/inference-models"
+    package_directory.mkdir(parents=True)
+    wheel = package_directory / f"inference_models-{models}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("inference_models/__init__.py", "answer = 42\n")
+        archive.writestr("inference_models/data/config.json", '{"safe": true}\n')
+    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
+    item = next(image for image in policy["images"] if image["key"] == image_key)
+    core_only = item.get("core_only", False)
+    platform = item["platforms"][0]
+    expected = expected.replace("cpu-", item["tag_prefix"])
+    if core_only:
+        wheel.unlink()  # The existing Jetson core contains no Models package.
+    flow._write(
+        flow.STATE / "release.json",
+        {
+            "channel": channel,
+            "version": runtime,
+            "source_sha": "verified-source",
+            "run_id": "7",
+            "policy": {"images": [item]},
+        },
+    )
+    flow._write(
+        flow.STATE / "accepted-rc.json",
+        {
+            "images": [
+                {
+                    "key": image_key,
+                    "digest": "sha256:" + "b" * 64,
+                    "smoke": {platform: {"inference-models": flow._base(models)}},
+                }
+            ]
+        },
+    )
+    digest = "sha256:" + "a" * 64
+    inspected = []
+
+    def inspect(reference, *, allow_missing=False):
+        inspected.append(reference)
+        return digest if exists else None
+
+    monkeypatch.setattr(images, "_digest", inspect)
+    monkeypatch.setattr(
+        images,
+        "_stable_context",
+        lambda plan, digest: ("final-context", "final-Dockerfile"),
+    )
+    images._plan(image_key)
+    plan = json.loads(Path("image-plan.json").read_text())
+    assert plan["tag"] == expected
+    assert plan["reuse_digest"] == (
+        digest
+        if exists
+        else "sha256:" + "b" * 64 if core_only and channel == "stable" else ""
+    )
+    if channel == "stable" and not exists and not core_only:
+        assert plan["context"] == "final-context"
+        assert plan["dockerfile"] == "final-Dockerfile"
+        assert not plan["bake"]
+    assert plan["models_version"] == models
+    if core_only:
+        assert "models_content_sha256" not in plan
+    else:
+        assert len(plan["models_content_sha256"]) == 64
+    if flow.Version(models).is_prerelease:
+        assert not inspected
+    else:
+        assert inspected == [f"roboflow/inference-exp:{item['tag_prefix']}{models}"]
+    # A same-version content change is observable and cannot inherit the image's evidence.
+    if not core_only:
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr("inference_models/__init__.py", "answer = 0\n")
+        assert images._models_identity(models) != plan["models_content_sha256"]
+    if exists and channel == "stable":
+        flow._write(
+            Path("image-smoke/cpu/image-smoke.json"),
+            {
+                "key": image_key,
+                "digest": digest,
+                "platform": platform,
+                "inventory": {"inference-models": models},
+            },
+        )
+        monkeypatch.setattr(flow, "_api", lambda path: {"tag_name": "v9.0.0"})
+        monkeypatch.setattr(
+            images,
+            "_copy",
+            lambda *args, **kwargs: pytest.fail(
+                "An unchanged Models tag must not be rebuilt or overwritten"
+            ),
+        )
+        images._promote(plan, digest=digest)
+        images._promote(plan, digest=digest)
+        assert json.loads(Path("image-receipt.json").read_text())["reused"] is True
+
+
+@pytest.mark.parametrize("fault", [None, "changed", "missing", "extra", "version"])
+def test_reused_models_image_content_matches_retained_wheel(
+    tmp_path, monkeypatch, fault
+):
+    from types import SimpleNamespace
+
+    images = _load_images()
+    spec = importlib.util.spec_from_file_location(
+        "image_smoke", ROOT / ".github/scripts/release_image_smoke.py"
+    )
+    image_smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(image_smoke)
+    monkeypatch.chdir(tmp_path)
+    directory = flow.STATE / "packages/inference-models"
+    directory.mkdir(parents=True)
+    package = tmp_path / "installed/inference_models"
+    package.mkdir(parents=True)
+    with zipfile.ZipFile(
+        directory / "inference_models-0.39.9-py3-none-any.whl", "w"
+    ) as archive:
+        for name, contents in {
+            "__init__.py": "answer = 42\n",
+            "data.json": "{}\n",
+        }.items():
+            archive.writestr("inference_models/" + name, contents)
+            (package / name).write_text(contents)
+    profile = {
+        "models_version": "0.39.9",
+        "models_content_sha256": images._models_identity("0.39.9"),
+    }
+    monkeypatch.setattr(
+        image_smoke,
+        "version",
+        lambda name: "0.39.8" if fault == "version" else "0.39.9",
+    )
+    (package / "__pycache__").mkdir()
+    (package / "__pycache__/generated.pyc").write_bytes(b"ignored interpreter cache")
+    if fault == "changed":
+        (package / "__init__.py").write_text("answer = 0\n")
+    elif fault == "missing":
+        (package / "data.json").unlink()
+    elif fault == "extra":
+        (package / "unexpected.py").write_text("raise RuntimeError()\n")
+    if fault:
+        with pytest.raises(AssertionError):
+            image_smoke._verify_models_content(
+                SimpleNamespace(__file__=str(package / "__init__.py")), profile
+            )
+    else:
+        image_smoke._verify_models_content(
+            SimpleNamespace(__file__=str(package / "__init__.py")), profile
+        )
+
+
+@pytest.mark.parametrize("fault", [None, "missing", "duplicate", "digest"])
+def test_stable_image_build_uses_accepted_digest_and_offline_retained_wheels(
+    tmp_path, monkeypatch, fault
+):
+    import shutil
+
+    images = _load_images()
+    monkeypatch.chdir(tmp_path)
+    scripts = Path(".github/scripts")
+    scripts.mkdir(parents=True)
+    shutil.copy2(ROOT / ".github/scripts/release_image_finalize.py", scripts)
+    wheels = flow.STATE / "packages"
+    wheels.mkdir(parents=True)
+    for name in flow.FIRST_PARTY:
+        if fault == "missing" and name == "inference-sdk":
+            continue
+        (wheels / f"{name.replace('-', '_')}-1.2.3-py3-none-any.whl").write_bytes(
+            b"retained"
+        )
+    if fault == "duplicate":
+        (wheels / "inference_sdk-1.2.4-py3-none-any.whl").write_bytes(b"duplicate")
+    for module in ("inference", "inference_cli", "inference_sdk"):
+        Path(module).mkdir()
+        (Path(module) / "__init__.py").write_text("stable = True\n")
+    digest = "sha256:" + "a" * 64 if fault != "digest" else "latest"
+    plan = {"repository": "roboflow/test", "version_source": "runtime"}
+    if fault:
+        with pytest.raises(ValueError):
+            images._stable_context(plan, digest)
+        return
+    context, dockerfile = images._stable_context(plan, digest)
+    text = Path(dockerfile).read_text()
+    assert text.startswith(f"FROM roboflow/test@{digest}\n")
+    assert "RUN --network=none" in text
+    assert (
+        set(json.loads((Path(context) / "manifest.json").read_text()))
+        == flow.FIRST_PARTY
+    )
+    assert (Path(context) / "vendor/pip/__main__.py").is_file()
+    assert (
+        Path(context) / "sources/inference/__init__.py"
+    ).read_text() == "stable = True\n"
+
+
+def test_stable_image_finalization_installs_offline_without_third_party_drift(tmp_path):
+    import shutil
+
+    import pip
+
+    def wheel(name, version, destination):
+        package = name.replace("-", "_")
+        info = f"{package}-{version}.dist-info"
+        target = destination / f"{package}-{version}-py3-none-any.whl"
+        files = {
+            f"{package}/__init__.py": f'__version__ = "{version}"\n',
+            f"{info}/METADATA": f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\nRequires-Dist: unavailable-release-test-dependency==999\n",
+            f"{info}/WHEEL": "Wheel-Version: 1.0\nGenerator: fixture\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        }
+        files[f"{info}/RECORD"] = (
+            "".join(f"{path},,\n" for path in files) + f"{info}/RECORD,,\n"
+        )
+        with zipfile.ZipFile(target, "w") as archive:
+            for path, content in files.items():
+                archive.writestr(path, content)
+        return target
+
+    environment = tmp_path / "venv"
+    subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True)
+    python = str(environment / "bin/python")
+    rc = wheel("inference-sdk", "1.2.3rc1", tmp_path)
+    dependency = wheel("third-party-fixture", "7.8.9", tmp_path)
+    subprocess.run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--no-deps",
+            str(rc),
+            str(dependency),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    root = tmp_path / "promotion"
+    (root / "wheels").mkdir(parents=True)
+    stable = wheel("inference-sdk", "1.2.3", root / "wheels")
+    flow._write(
+        root / "manifest.json",
+        {"inference-sdk": {"version": "1.2.3", "file": stable.name}},
+    )
+    shutil.copytree(Path(pip.__file__).parent, root / "vendor/pip")
+    shutil.copy2(
+        ROOT / ".github/scripts/release_image_finalize.py", root / "finalize.py"
+    )
+    source = root / "sources/inference_sdk"
+    source.mkdir(parents=True)
+    (source / "__init__.py").write_text('__version__ = "1.2.3"\n')
+    app = tmp_path / "app"
+    (app / "inference_sdk").mkdir(parents=True)
+    (app / "inference_sdk/__init__.py").write_text('__version__ = "1.2.3rc1"\n')
+    for _ in range(2):
+        subprocess.run(
+            [python, str(root / "finalize.py")],
+            cwd=app,
+            check=True,
+            capture_output=True,
+        )
+    result = subprocess.run(
+        [
+            python,
+            "-c",
+            "from importlib.metadata import version; import inference_sdk; assert version('inference-sdk') == '1.2.3'; assert version('third-party-fixture') == '7.8.9'; assert inference_sdk.__version__ == '1.2.3'",
+        ],
+        cwd=app,
+        check=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0

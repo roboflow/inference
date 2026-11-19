@@ -505,9 +505,17 @@ class WorkflowContractTests(unittest.TestCase):
                     },
                 )
             )
-            self.assertIs(
-                self._workflow(name)["jobs"]["build"]["strategy"]["fail-fast"], True
-            )
+            fail_fast = self._workflow(name)["jobs"]["build"]["strategy"]["fail-fast"]
+            if name == "integration_tests_inference_server_x86.yml":
+                for release_source, expected in (("", True), (SHA, False)):
+                    self.assertEqual(
+                        self._condition_is_true(
+                            fail_fast, context={"inputs.release_source": release_source}
+                        ),
+                        expected,
+                    )
+            else:
+                self.assertIs(fail_fast, True)
         for name in ("docker.cpu.yml", "docker.gpu.yml"):
             self.assertFalse(self._job_is_allowed(name, "docker"))
             for event in ("workflow_dispatch", "release"):
@@ -607,7 +615,29 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn("secrets.CI_", json.dumps(workflow))
             for job in workflow["jobs"].values():
                 for step in job.get("steps", []):
-                    self.assertNotIn("upload-artifact", step.get("uses", ""))
+                    if "upload-artifact" in step.get("uses", ""):
+                        self.assertEqual(
+                            name, "integration_tests_inference_server_x86.yml"
+                        )
+                        for release_source in ("", SHA):
+                            for private in (False, True):
+                                self.assertEqual(
+                                    self._condition_is_true(
+                                        step["if"],
+                                        context={
+                                            "inputs.release_source": release_source,
+                                            "inputs.private_image": private,
+                                        },
+                                    ),
+                                    bool(release_source) and not private,
+                                )
+                        self.assertEqual(
+                            step["with"]["path"].splitlines(),
+                            [
+                                "${{ runner.temp }}/server-test-attempts/attempt-*.log",
+                                "${{ runner.temp }}/server-test-attempts/attempts.txt",
+                            ],
+                        )
                     self.assertNotIn("${{ secrets.", step.get("run", ""))
 
     def test_gate_fails_for_each_incomplete_outcome(self):

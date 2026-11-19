@@ -84,6 +84,10 @@ function runSteps(job, ctx, outcomes) {
 }
 function check(wf) {
   const jobs = wf.jobs;
+  equal(wf["cache-mode"], "none", "release cannot read or poison Actions caches");
+  for (const job of Object.values(jobs)) {
+    equal(job["cache-mode"] ?? "none", "none", "jobs cannot restore cache access");
+  }
   const policy = JSON.parse(fs.readFileSync("/work/.release/release-policy.json", "utf8"));
   const suites = policy.rc_tests.map(name => "rc_" + name.replace(/\.yml$/, "").replaceAll(".", "_"));
   equal(wf.on.release.types, ["published"], "only published official releases trigger stable");
@@ -100,7 +104,7 @@ function check(wf) {
     validation: ["prepare", "commit_locks", "smoke", ...suites],
     prepare_dependencies: ["prepare", "commit_locks", "build_runtime", "validation"],
     publish_runtime: ["prepare", "commit_locks", "build_runtime", "prepare_dependencies"],
-    docker: ["prepare", "commit_locks", "prepare_dependencies", "publish_runtime"],
+    docker: ["prepare", "commit_locks", "prepare_dependencies", "publish_runtime", "build_sdk", "build_runtime"],
     complete: ["prepare", "commit_locks", "prepare_dependencies", "publish_runtime", "docker"],
   })) equal([].concat(jobs[name].needs), expected, `${name}: mandatory dependencies`);
   for (const name of ["publish_models", "publish_workflows", "publish_streamvision"]) {
@@ -116,6 +120,23 @@ function check(wf) {
       assert.ok(!/dependencies.sh coordinate|workflow run|actions\/workflows.*dispatches/.test(step.run || ""), "one workflow run");
     }
   }
+  // The producer artifact, dependency edge and extraction root must all agree.
+  for (const job of Object.values(jobs)) {
+    for (const step of job.steps || []) {
+      if (!step.uses?.startsWith("actions/download-artifact@") || !step.with?.name) continue;
+      const match = step.with.name.match(/^\$\{\{ needs\.([a-z_]+)\.outputs\.([a-z_]+) \}\}$/);
+      assert.ok(match, "artifact name comes from its successful producer output");
+      const [, producer, output] = match;
+      assert.ok([].concat(job.needs || []).includes(producer), "artifact producer is a dependency");
+      const producerName = jobs[producer].outputs[output];
+      assert.ok(jobs[producer].steps.some(s => s.uses?.startsWith("actions/upload-artifact@") && s.with.name === producerName), "download uses the exact retained producer artifact");
+    }
+  }
+  const download = (job, producer) => jobs[job].steps.find(s => s.uses?.startsWith("actions/download-artifact@") && s.with.name.includes(`needs.${producer}.outputs`));
+  equal(download("publish_sdk", "build_sdk").with.path, "dist", "SDK artifact preserves sdk subdirectory under dist");
+  equal(download("build_models", "publish_sdk").with.path, "sdk-evidence", "SDK receipt uses multi-root artifact extraction");
+  assert.ok(jobs.build_models.steps.some(s => s.run === "cp -R sdk-evidence/release-state/smoke release-state/smoke"), "use actual SDK inventory location");
+  equal(download("complete", "publish_runtime").with.path, "release-state", "single runtime receipt extracts directly into release state");
   for (const [index, name] of suites.entries()) {
     equal(jobs[name].uses, `./.github/workflows/${policy.rc_tests[index]}`, "full suite called in same run");
     equal(jobs[name].with.release_source, "${{ needs.commit_locks.outputs.source_sha }}", "test generated lock commit");
@@ -242,10 +263,46 @@ function checkChildren(children) {
   }
 }
 
+function checkImage(wf) {
+  equal(wf["cache-mode"], "none", "image workflow cannot access shared Actions caches");
+  for (const job of Object.values(wf.jobs)) equal(job["cache-mode"] ?? "none", "none", "image jobs cannot restore cache access");
+  const build = wf.jobs.build;
+  const step = id => build.steps.find(s => s.id === id);
+  for (const bake of [false, true]) for (const reused of ["", "sha256:" + "a".repeat(64)]) {
+    const ctx = context();
+    ctx.inputs.image = JSON.stringify({ bake });
+    ctx.steps = { plan: { outputs: { bake: JSON.stringify(bake), reuse_digest: reused } }, image: { outputs: { digest: reused ? "" : "sha256:" + "b".repeat(64) } } };
+    equal(stepEnabled(step("image"), ctx), !bake && !reused, "only build missing non-bake images");
+    equal(stepEnabled(step("bake"), ctx), bake && !reused, "only bake missing images");
+    equal(evaluate(step("receipt").env.IMAGE_DIGEST, ctx), reused || ctx.steps.image.outputs.digest, "retain reused digest without rebuilding");
+    scenarios++;
+  }
+  equal([].concat(wf.jobs.publish.needs), ["build", "smoke"], "promotion requires target-platform smoke");
+  for (const s of build.steps) {
+    if (s.uses && !/^(actions\/|\.\/)/.test(s.uses)) assert.match(s.uses, /@[0-9a-f]{40}$/, "third-party publishing actions are immutable");
+  }
+  for (const [input, producer] of [["runtime_artifact", "build_runtime"], ["sdk_artifact", "build_sdk"]]) {
+    equal(workflow.jobs.docker.with[input], `\${{ needs.${producer}.outputs.artifact }}`, "image finalization uses retained published wheels");
+    assert.ok(workflow.jobs.docker.needs.includes(producer));
+    equal(build.steps.find(s => s.with?.name === `\${{ inputs.${input} }}`).with.path, "dist", "retained wheel extraction root");
+  }
+  for (const name of ["smoke", "publish"]) {
+    const download = wf.jobs[name].steps.find(s => s.uses?.startsWith("actions/download-artifact@"));
+    equal(download.with.name, "${{ needs.build.outputs.plan_artifact }}", "consumer uses retained image plan");
+    equal(download.with.path, undefined, "plan and digest extract into working directory");
+  }
+}
+
+const imageWorkflow = parse(fs.readFileSync("/work/.github/workflows/release.image.yml", "utf8"));
+checkImage(imageWorkflow);
 check(workflow);
 checkChildren(upstreams);
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
+  ["extract SDK into wrong root", wf => { wf.jobs.publish_sdk.steps.find(s => s.uses?.startsWith("actions/download-artifact@")).with.path = "dist/sdk"; }],
+  ["lose artifact producer dependency", wf => { wf.jobs.build_models.steps.find(s => s.uses?.startsWith("actions/download-artifact@")).with.name = "${{ needs.build_sdk.outputs.artifact }}"; }],
+  ["restore release cache writes", wf => { wf["cache-mode"] = "write"; }],
+  ["override release cache restriction", wf => { wf.jobs.build_runtime["cache-mode"] = "write"; }],
   ["inherit runtime version for Models", wf => { wf.jobs.publish_models.env.EXPECTED_VERSION = "${{ inputs.expected_version }}"; }],
   ["publish on created", wf => { wf.on.release.types = ["created"]; }],
   ["skip RC validation", wf => { wf.jobs.prepare_dependencies.needs = wf.jobs.prepare_dependencies.needs.filter(name => name !== "validation"); }],
@@ -288,3 +345,18 @@ for (const [name, mutate] of childMutations) {
   console.log(`Child mutation rejected: ${name}`);
 }
 console.log(`Child workflow mutations: ${childMutations.length}/${childMutations.length} rejected`);
+
+const imageMutations = [
+  ["allow image cache writes", wf => { wf["cache-mode"] = "write"; }],
+  ["rebuild unchanged Models image", wf => { delete wf.jobs.build.steps.find(s => s.id === "image").if; }],
+  ["lose reused image digest", wf => { wf.jobs.build.steps.find(s => s.id === "receipt").env.IMAGE_DIGEST = "${{ steps.image.outputs.digest }}"; }],
+  ["publish images before smoke", wf => { wf.jobs.publish.needs = ["build"]; }],
+];
+for (const [name, mutate] of imageMutations) {
+  const faulty = structuredClone(imageWorkflow);
+  mutate(faulty);
+  assert.notDeepEqual(faulty, imageWorkflow, `${name}: mutation applied`);
+  assert.throws(() => checkImage(faulty), assert.AssertionError, `${name}: rejected`);
+  console.log(`Image mutation rejected: ${name}`);
+}
+console.log(`Image workflow mutations: ${imageMutations.length}/${imageMutations.length} rejected`);

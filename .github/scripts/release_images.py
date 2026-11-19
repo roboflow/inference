@@ -1,19 +1,22 @@
 """Plan, smoke-test and promote retained image digests without rebuilding."""
 
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 import tomllib
+import zipfile
 from pathlib import Path
 
 import click
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / ".release/pypi"))
 import flow
-from packaging.utils import canonicalize_name
+from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
 
@@ -45,14 +48,96 @@ def _digest(reference, *, allow_missing=False):
     return value
 
 
+def _models_identity(version):
+    directory = flow.STATE / "packages/inference-models"
+    wheels = list(directory.glob("*.whl"))
+    if len(wheels) != 1:
+        raise ValueError("Expected one retained Models wheel")
+    name, actual, _, _ = parse_wheel_filename(wheels[0].name)
+    if name != "inference-models" or actual != Version(version):
+        raise ValueError("Retained Models wheel has the wrong identity")
+    with zipfile.ZipFile(wheels[0]) as archive:
+        entries = sorted(
+            (
+                name.removeprefix("inference_models/"),
+                hashlib.sha256(archive.read(name)).hexdigest(),
+            )
+            for name in archive.namelist()
+            if name.startswith("inference_models/") and not name.endswith("/")
+        )
+    if not entries or len(entries) != len({name for name, _ in entries}):
+        raise ValueError("Invalid Models wheel package inventory")
+    return hashlib.sha256(
+        json.dumps(entries, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _stable_context(plan, rc_digest):
+    """Keep the tested OS/native/Python dependencies and replace first-party wheels offline."""
+    import pip
+
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", rc_digest):
+        raise ValueError("Invalid accepted RC image digest")
+    directory = Path("release-image-context")
+    directory.mkdir()
+    wheel_dir = directory / "wheels"
+    wheel_dir.mkdir()
+    manifest = {}
+    for source in [flow.STATE / "packages", Path("dist/pypi"), Path("dist/sdk")]:
+        for wheel in source.rglob("*.whl"):
+            name, version, _, _ = parse_wheel_filename(wheel.name)
+            if name not in flow.FIRST_PARTY or name in manifest:
+                raise ValueError(
+                    f"Unexpected or duplicate promotion wheel: {wheel.name}"
+                )
+            manifest[name] = {"version": str(version), "file": wheel.name}
+            shutil.copy2(wheel, wheel_dir / wheel.name)
+    if set(manifest) != flow.FIRST_PARTY:
+        raise ValueError("Missing retained first-party wheels for image finalization")
+    flow._write(directory / "manifest.json", manifest)
+    shutil.copytree(Path(pip.__file__).parent, directory / "vendor/pip")
+    shutil.copy2(".github/scripts/release_image_finalize.py", directory / "finalize.py")
+    sources = directory / "sources"
+    sources.mkdir()
+    if plan["version_source"] == "runtime":
+        for module in ("inference", "inference_cli", "inference_sdk"):
+            shutil.copytree(module, sources / module)
+    (directory / "Dockerfile").write_text(
+        f"FROM {plan['repository']}@{rc_digest}\n"
+        "COPY . /tmp/release-finalize/\n"
+        "RUN --network=none python3 /tmp/release-finalize/finalize.py "
+        "&& rm -rf /tmp/release-finalize\n"
+    )
+    return str(directory), str(directory / "Dockerfile")
+
+
 def _plan(key):
     state = flow._state()
     item = next(image for image in state["policy"]["images"] if image["key"] == key)
     version = state["version"]
+    reuse_digest = ""
+    model_identity = {}
     if item["version_source"] == "models":
         version = tomllib.loads(Path("inference_models/pyproject.toml").read_text())[
             "project"
         ]["version"]
+        model_identity = {
+            "models_version": version,
+        }
+        if not item.get("core_only"):
+            model_identity["models_content_sha256"] = _models_identity(version)
+        version = str(Version(version))
+        model_identity["models_version"] = version
+        # Models versions are independent. Reuse an existing immutable image,
+        # then verify its installed package content and run target-platform smoke.
+        if not Version(version).is_prerelease:
+            reuse_digest = (
+                _digest(
+                    item["repository"] + ":" + item["tag_prefix"] + version,
+                    allow_missing=True,
+                )
+                or ""
+            )
         # An unchanged stable Models version must not give an RC a stable image tag.
         if state["channel"] == "rc":
             version = state["version"]
@@ -74,6 +159,8 @@ def _plan(key):
         tests.append({"platform": platform, "runner": runner})
     result = {
         **item,
+        **model_identity,
+        "reuse_digest": reuse_digest,
         "tag": tag,
         "repositories": repositories,
         "candidate": item["repository"] + f":candidate-{key}-{state['run_id']}",
@@ -84,14 +171,26 @@ def _plan(key):
     }
     if state["channel"] == "stable":
         receipt = json.loads((flow.STATE / "accepted-rc.json").read_text())
-        result["rc_smoke"] = next(
-            image["smoke"] for image in receipt["images"] if image["key"] == key
-        )
+        rc_image = next(image for image in receipt["images"] if image["key"] == key)
+        result["rc_smoke"] = rc_image["smoke"]
+        if not reuse_digest:
+            if item.get("core_only"):
+                reuse_digest = rc_image["digest"]
+                result["reuse_digest"] = reuse_digest
+            else:
+                result["context"], result["dockerfile"] = _stable_context(
+                    result, rc_image["digest"]
+                )
+                result["bake"] = False
     flow._write(Path("image-plan.json"), result)
     flow._outputs(
         candidate=result["candidate"],
         smoke_matrix=json.dumps(result["smoke_matrix"]),
         platforms=",".join(item["platforms"]),
+        reuse_digest=reuse_digest,
+        context=result["context"],
+        dockerfile=result["dockerfile"],
+        bake=json.dumps(result["bake"]),
     )
 
 
@@ -137,7 +236,7 @@ def _smoke(plan, *, digest, platform):
     )
     inventory = {
         canonicalize_name(item["name"]): (
-            Version(item["version"]).base_version
+            flow._base(item["version"])
             if canonicalize_name(item["name"]) in flow.FIRST_PARTY
             else item["version"]
         )
@@ -212,9 +311,8 @@ def _promote(plan, *, digest):
         raise ValueError("Retained build digest is unavailable")
     latest = False
     if plan["channel"] == "stable":
-        latest = (
-            flow._api("releases/latest")["tag_name"].removeprefix("v")
-            == plan["release_version"]
+        latest = Version(flow._api("releases/latest")["tag_name"]) == Version(
+            plan["release_version"]
         )
     smoke = {}
     for path in Path("image-smoke").rglob("image-smoke.json"):
@@ -250,6 +348,7 @@ def _promote(plan, *, digest):
         {
             "key": plan["key"],
             "source_sha": plan["source_sha"],
+            "reused": bool(plan.get("reuse_digest")),
             "digest": digest,
             "tags": tags,
             "smoke": smoke,

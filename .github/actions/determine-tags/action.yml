@@ -63,7 +63,7 @@ runs:
           exit 1
         fi
 
-        if [[ "${OFFICIAL_RELEASE_ONLY:-false}" == "true" && "$EVENT_NAME" == "workflow_dispatch" && "$FORCE_PUSH" == "true" && -z "$CUSTOM_TAG" && ! "$VERSION" =~ rc[0-9]+$ ]]; then
+        if [[ "${OFFICIAL_RELEASE_ONLY:-false}" == "true" && "$EVENT_NAME" == "workflow_dispatch" && "$FORCE_PUSH" == "true" && -z "$CUSTOM_TAG" && ! "$VERSION" =~ rc[0-9]+([.-]post[0-9]+)?$ ]]; then
           echo "Stable runtime images are published by publish.pypi.yml after the official GitHub Release. Use a custom tag for a diagnostic build." >&2
           exit 1
         fi
