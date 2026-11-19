@@ -183,7 +183,7 @@ def test_real_retry_wrapper_retains_attempts(
     )
     assert result.returncode == expected
     assert int(counter.read_text()) == count
-    assert len(list((tmp_path / "logs").glob("attempt-*.log"))) == count
+    assert not list((tmp_path / "logs").glob("attempt-*.log"))
     assert len((tmp_path / "logs/attempts.txt").read_text().splitlines()) == count
 
 
@@ -200,7 +200,7 @@ def test_retry_does_not_swallow_cancellation(tmp_path):
         capture_output=True,
     )
     assert result.returncode == 130
-    assert len(list((tmp_path / "logs").glob("attempt-*.log"))) == 1
+    assert (tmp_path / "logs/attempts.txt").read_text() == "1 130\n"
 
 
 def test_equivalence_only_normalizes_release_metadata():
@@ -471,12 +471,13 @@ def test_artifact_redirect_strips_token_on_storage_host():
 
 
 def test_successful_rc_receipt_is_found_after_more_than_one_artifact_page(
-    tmp_path, monkeypatch
+    candidate, monkeypatch
 ):
-    monkeypatch.chdir(tmp_path)
+    _, _, state = candidate
     run = {
         "id": 12,
-        "head_sha": "trigger",
+        "head_sha": state["source_sha"],
+        "head_branch": state["branch"],
         "head_repository": {"full_name": flow.REPOSITORY},
     }
     receipt = {
@@ -484,7 +485,9 @@ def test_successful_rc_receipt_is_found_after_more_than_one_artifact_page(
         "channel": "rc",
         "version": "1.2.3rc2",
         "run_id": "12",
-        "trigger_sha": "trigger",
+        "trigger_sha": state["source_sha"],
+        "source_sha": state["source_sha"],
+        "branch": state["branch"],
         "repository": flow.REPOSITORY,
         "complete": True,
     }
@@ -674,6 +677,7 @@ def test_post_smoke_inventory_does_not_accept_different_post_release():
         ("rc", "1.8.6rc1", "0.39.9", True, "cpu-1.8.6rc1"),
         ("stable", "1.8.6", "0.39.9", True, "cpu-0.39.9"),
         ("stable", "1.8.7", "0.39.9", True, "cpu-0.39.9"),
+        ("stable", "1.8.7", "0.39.9", "moved", None),
         ("rc", "1.8.6rc1", "0.40.0rc1", False, "cpu-1.8.6rc1"),
         ("stable", "1.8.6", "0.40.0", False, "cpu-0.40.0"),
     ],
@@ -699,7 +703,7 @@ def test_models_plan_reuses_independent_version_with_retained_content_identity(
     item = next(image for image in policy["images"] if image["key"] == image_key)
     core_only = item.get("core_only", False)
     platform = item["platforms"][0]
-    expected = expected.replace("cpu-", item["tag_prefix"])
+    expected = expected.replace("cpu-", item["tag_prefix"]) if expected else None
     if core_only:
         wheel.unlink()  # The existing Jetson core contains no Models package.
     flow._write(
@@ -718,7 +722,7 @@ def test_models_plan_reuses_independent_version_with_retained_content_identity(
             "images": [
                 {
                     "key": image_key,
-                    "digest": "sha256:" + "b" * 64,
+                    "digest": "sha256:" + ("a" if exists is True else "b") * 64,
                     "smoke": {platform: {"inference-models": flow._base(models)}},
                 }
             ]
@@ -737,6 +741,10 @@ def test_models_plan_reuses_independent_version_with_retained_content_identity(
         "_stable_context",
         lambda plan, digest: ("final-context", "final-Dockerfile"),
     )
+    if exists == "moved":
+        with pytest.raises(ValueError, match="differs from the accepted RC digest"):
+            images._plan(image_key)
+        return
     images._plan(image_key)
     plan = json.loads(Path("image-plan.json").read_text())
     assert plan["tag"] == expected
@@ -861,9 +869,9 @@ def test_stable_image_build_uses_accepted_digest_and_offline_retained_wheels(
         )
     if fault == "duplicate":
         (wheels / "inference_sdk-1.2.4-py3-none-any.whl").write_bytes(b"duplicate")
-    for module in ("inference", "inference_cli", "inference_sdk"):
-        Path(module).mkdir()
-        (Path(module) / "__init__.py").write_text("stable = True\n")
+    Path("inference/core").mkdir(parents=True)
+    Path("inference/core/version.py").write_text('__version__ = "1.2.3"\n')
+    Path("inference/ignored.py").write_text("do not copy\n")
     digest = "sha256:" + "a" * 64 if fault != "digest" else "latest"
     plan = {"repository": "roboflow/test", "version_source": "runtime"}
     if fault:
@@ -880,8 +888,9 @@ def test_stable_image_build_uses_accepted_digest_and_offline_retained_wheels(
     )
     assert (Path(context) / "vendor/pip/__main__.py").is_file()
     assert (
-        Path(context) / "sources/inference/__init__.py"
-    ).read_text() == "stable = True\n"
+        Path(context) / "sources/inference/core/version.py"
+    ).read_text() == '__version__ = "1.2.3"\n'
+    assert not (Path(context) / "sources/inference/ignored.py").exists()
 
 
 def test_stable_image_finalization_installs_offline_without_third_party_drift(tmp_path):
@@ -936,12 +945,13 @@ def test_stable_image_finalization_installs_offline_without_third_party_drift(tm
     shutil.copy2(
         ROOT / ".github/scripts/release_image_finalize.py", root / "finalize.py"
     )
-    source = root / "sources/inference_sdk"
+    source = root / "sources/inference/core"
     source.mkdir(parents=True)
-    (source / "__init__.py").write_text('__version__ = "1.2.3"\n')
+    (source / "version.py").write_text('__version__ = "1.2.3"\n')
     app = tmp_path / "app"
-    (app / "inference_sdk").mkdir(parents=True)
-    (app / "inference_sdk/__init__.py").write_text('__version__ = "1.2.3rc1"\n')
+    (app / "inference/core").mkdir(parents=True)
+    (app / "inference/core/version.py").write_text('__version__ = "1.2.3rc1"\n')
+    (app / "inference/unchanged.py").write_text("preserved\n")
     for _ in range(2):
         subprocess.run(
             [python, str(root / "finalize.py")],
@@ -949,6 +959,8 @@ def test_stable_image_finalization_installs_offline_without_third_party_drift(tm
             check=True,
             capture_output=True,
         )
+    assert (app / "inference/core/version.py").read_text() == '__version__ = "1.2.3"\n'
+    assert (app / "inference/unchanged.py").read_text() == "preserved\n"
     result = subprocess.run(
         [
             python,
@@ -960,3 +972,278 @@ def test_stable_image_finalization_installs_offline_without_third_party_drift(tm
         capture_output=True,
     )
     assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "specifier", ["==0.39.9rc1", ">=0.39.9rc1", ">=0.39.9rc1,<1.0"]
+)
+def test_lock_metadata_normalizes_named_first_party_specifiers(specifier):
+    rc = {
+        "name": "inference-models",
+        "specifier": specifier,
+        "marker": "python_version >= '3.10'",
+    }
+    stable = {**rc, "specifier": specifier.replace("rc1", "")}
+    assert flow._normalize(rc) == flow._normalize(stable)
+    third_party = {**rc, "name": "numpy"}
+    assert flow._normalize(third_party) != flow._normalize(
+        {**third_party, "specifier": stable["specifier"]}
+    )
+    assert flow._normalize(rc) != flow._normalize({**stable, "specifier": ">=0.40.0"})
+
+
+def test_real_lock_first_party_metadata_survives_finalization():
+    import tomllib
+
+    rc = (ROOT / "workflows/uv.lock").read_bytes()
+    assert b'name = "inference-models", specifier = ">=0.39.9rc1"' in rc
+    # Finalization changes only the two named first-party requirement spellings.
+    stable = rc.replace(
+        b'specifier = ">=0.39.9rc1"', b'specifier = ">=0.39.9"'
+    ).replace(b'specifier = ">=1.8.5rc1"', b'specifier = ">=1.8.5"')
+    assert flow._canonical("workflows/uv.lock", rc) == flow._canonical(
+        "workflows/uv.lock", stable
+    )
+    changed = tomllib.loads(stable.decode())
+    changed["revision"] += 1
+    assert flow._normalize(tomllib.loads(rc.decode())) != flow._normalize(changed)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["inference_server/pyproject.toml", "inference_model_manager/pyproject.toml"],
+)
+def test_server_stack_metadata_accepts_only_rc_final_changes(path):
+    rc = b'[project]\nname="server-fixture"\ndependencies=["inference-models>=0.39.9rc1,<1.0", "numpy>=2.0.0rc1"]\n'
+    stable = rc.replace(b"0.39.9rc1", b"0.39.9")
+    assert flow._canonical(path, rc) == flow._canonical(path, stable)
+    assert flow._canonical(path, rc) != flow._canonical(
+        path, stable.replace(b"0.39.9", b"0.40.0")
+    )
+    assert flow._canonical(path, rc) != flow._canonical(
+        path, stable.replace(b"2.0.0rc1", b"2.0.0")
+    )
+
+
+def test_historical_stable_bump_distinguishes_notes_from_dependency_changes():
+    fixture = json.loads(
+        (ROOT / ".github/scripts/fixtures/release_1_8_5_metadata.json").read_text()
+    )
+    for path, versions in fixture["files"].items():
+        equivalent = flow._canonical(
+            path, versions["before"].encode()
+        ) == flow._canonical(path, versions["after"].encode())
+        assert equivalent is (path == "stream_vision/CHANGELOG.md")
+
+
+def test_retry_artifact_payload_contains_only_attempt_numbers_and_exit_codes(tmp_path):
+    secret = "fixture-private-api-key"
+    result = subprocess.run(
+        ["bash", str(ROOT / ".github/scripts/retry.sh")],
+        env={
+            **os.environ,
+            "RETRY_COMMAND": f"echo 'https://example.invalid/?api_key={secret}'; exit 7",
+            "RETRY_ATTEMPTS": "1",
+            "RETRY_LOG_DIR": str(tmp_path / "logs"),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 7
+    assert (
+        secret in result.stdout
+    )  # The runner masks its console; artifacts cannot rely on it.
+    assert {p.name for p in (tmp_path / "logs").iterdir()} == {"attempts.txt"}
+    assert (tmp_path / "logs/attempts.txt").read_text() == "1 7\n"
+
+
+def test_retry_artifact_uploads_never_include_test_output():
+    import yaml
+
+    for path in (ROOT / ".github/workflows").glob("*.yml"):
+        workflow = yaml.safe_load(path.read_text())
+        for job in workflow.get("jobs", {}).values():
+            for step in job.get("steps", []):
+                if step.get("uses", "").startswith(
+                    "actions/upload-artifact@"
+                ) and step.get("with", {}).get("name", "").startswith("rc-"):
+                    paths = step["with"]["path"].splitlines()
+                    assert paths and all(
+                        p.endswith("/attempts.txt") for p in paths
+                    ), path
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "feature-branch", "unrelated-source", "wrong-branch"]
+)
+def test_rc_receipt_requires_release_branch_and_source_ancestry(
+    candidate, monkeypatch, fault
+):
+    source, _, state = candidate
+    source_sha = state["source_sha"]
+    if fault == "unrelated-source":
+        _git(source, "checkout", "--orphan", "unrelated")
+        _git(source, "commit", "--allow-empty", "-m", "Unrelated root")
+        source_sha = _git(source, "rev-parse", "HEAD")
+        _git(source, "checkout", "--detach", state["source_sha"])
+    run = {
+        "id": 12,
+        "head_sha": state["source_sha"],
+        "head_branch": state["branch"],
+        "head_repository": {"full_name": flow.REPOSITORY},
+    }
+    receipt = {
+        "schema": 1,
+        "channel": "rc",
+        "version": "9.9.0rc1",
+        "run_id": "12",
+        "trigger_sha": state["source_sha"],
+        "source_sha": source_sha,
+        "branch": state["branch"],
+        "repository": flow.REPOSITORY,
+        "complete": True,
+    }
+    if fault == "feature-branch":
+        run["head_branch"] = receipt["branch"] = "feature/forged-receipt"
+    elif fault == "wrong-branch":
+        receipt["branch"] = "release/other"
+
+    def api(path):
+        if "workflows/" in path:
+            return {"workflow_runs": [run]}
+        return {
+            "artifacts": [{"id": 101, "name": "release-receipt-1", "expired": False}]
+        }
+
+    monkeypatch.setattr(flow, "_api", api)
+    monkeypatch.setattr(flow, "_download_receipt", lambda artifact_id: receipt)
+    if fault:
+        with pytest.raises(ValueError, match="No successful|ancestor|Untrusted"):
+            flow._find_rc("9.9.0")
+        assert not (flow.STATE / "accepted-rc.json").exists()
+    else:
+        assert flow._find_rc("9.9.0") == receipt
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "lock-structure", "application", "third-party"]
+)
+def test_stable_full_source_and_lock_equivalence_runs_in_prepare(
+    candidate, monkeypatch, fault
+):
+    source, _, state = candidate
+    version_path = Path("inference/core/version.py")
+    version_path.parent.mkdir(parents=True)
+    version_path.write_text('__version__ = "9.9.0rc1"\n')
+    _git(source, "add", "inference/core/version.py")
+    _git(source, "commit", "-m", "Prepared RC")
+    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
+    receipt = {
+        "run_id": "12",
+        "application": flow._fingerprint(include_locks=False),
+        "fingerprint": flow._fingerprint(),
+        "third_party": {p: [] for p in flow.LOCKS},
+        "policy": policy,
+    }
+    version_path.write_text('__version__ = "9.9.0"\n')
+    if fault == "lock-structure":
+        Path(flow.LOCKS[0]).write_text("version = 1\nrevision = 99\n")
+    elif fault == "application":
+        Path("app.py").write_text("answer = 0\n")
+    elif fault == "third-party":
+        Path(flow.LOCKS[0]).write_text(
+            'version = 1\nrevision = 3\n[[package]]\nname = "numpy"\nversion = "2.0.0"\n'
+        )
+    # Only tracked source enters the tag; release-state stays outside Git.
+    _git(source, "add", "inference/core/version.py", "app.py", *flow.LOCKS)
+    _git(source, "commit", "-m", "Prepared final")
+    _git(source, "tag", "v9.9.0")
+    sha = _git(source, "rev-parse", "HEAD")
+    monkeypatch.setattr(flow, "POLICY", ROOT / ".release/release-policy.json")
+    monkeypatch.setattr(flow, "_find_rc", lambda version: receipt)
+    monkeypatch.setattr(flow.release, "_expected_version", lambda: "9.9.0")
+    for name, value in {
+        "GITHUB_REPOSITORY": flow.REPOSITORY,
+        "GITHUB_EVENT_NAME": "release",
+        "GITHUB_SHA": sha,
+        "GITHUB_REF": "refs/tags/v9.9.0",
+        "GITHUB_RUN_ID": "15",
+    }.items():
+        monkeypatch.setenv(name, value)
+    flow._write(
+        flow.STATE / "event.json",
+        {
+            "action": "published",
+            "release": {"tag_name": "v9.9.0", "draft": False, "prerelease": False},
+        },
+    )
+    if fault:
+        with pytest.raises(ValueError, match="Stable source/locks/policy differ"):
+            flow._prepare()
+    else:
+        flow._prepare()
+        assert flow._state()["accepted_rc_run_id"] == "12"
+
+
+@pytest.mark.parametrize("tag", ["1.8.5-post1", "1.8.5.post1"])
+def test_runtime_image_tag_preserves_official_post_release_spelling(
+    tmp_path, monkeypatch, tag
+):
+    images = _load_images()
+    monkeypatch.chdir(tmp_path)
+    item = next(
+        image
+        for image in json.loads((ROOT / ".release/release-policy.json").read_text())[
+            "images"
+        ]
+        if image["version_source"] == "runtime"
+    )
+    flow._write(
+        flow.STATE / "release.json",
+        {
+            "channel": "stable",
+            "version": "1.8.5.post1",
+            "image_version": tag,
+            "source_sha": "source",
+            "run_id": "1",
+            "policy": {"images": [item]},
+        },
+    )
+    flow._write(
+        flow.STATE / "accepted-rc.json",
+        {"images": [{"key": item["key"], "digest": "sha256:" + "a" * 64, "smoke": {}}]},
+    )
+    monkeypatch.setattr(
+        images, "_stable_context", lambda plan, digest: ("context", "Dockerfile")
+    )
+    images._plan(item["key"])
+    assert (
+        json.loads(Path("image-plan.json").read_text())["tag"]
+        == item["tag_prefix"] + tag
+    )
+
+
+@pytest.mark.parametrize(
+    "package", ["inference-models", "roboflow-workflows", "streamvision"]
+)
+@pytest.mark.parametrize(
+    "channel,version,upload,allowed",
+    [
+        ("rc", "1.2.3", True, False),
+        ("rc", "1.2.3", False, True),
+        ("rc", "1.2.3rc1", True, True),
+        ("stable", "1.2.3", True, True),
+    ],
+)
+def test_rc_reuses_but_never_uploads_new_stable_dependencies(
+    tmp_path, monkeypatch, package, channel, version, upload, allowed
+):
+    monkeypatch.chdir(tmp_path)
+    flow._write(flow.STATE / "release.json", {"channel": channel})
+    flow._write(flow.STATE / f"{package}-prepare.json", {"upload": upload})
+    monkeypatch.setattr(flow, "_versions", lambda: {package: version})
+    if allowed:
+        flow._check_upload(package)
+    else:
+        with pytest.raises(ValueError, match="cannot publish a new stable version"):
+            flow._check_upload(package)

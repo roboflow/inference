@@ -225,6 +225,7 @@ jobs:
       - id: prepare
         run: |
           bash .release/pypi/publish.sh prepare --profile inference-models --directory release-state/packages/inference-models --upload-directory release-upload --receipt release-state/inference-models-prepare.json --wait-seconds 600
+          bash .release/pypi/flow.sh check-upload --package inference-models
           echo "upload=$(jq -r '.upload' release-state/inference-models-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: Upload missing distributions
         if: ${{ steps.prepare.outputs.upload == 'true' }}
@@ -303,6 +304,7 @@ jobs:
       - id: prepare
         run: |
           bash .release/pypi/publish.sh prepare --profile roboflow-workflows --directory release-state/packages/roboflow-workflows --upload-directory release-upload --receipt release-state/roboflow-workflows-prepare.json --wait-seconds 600
+          bash .release/pypi/flow.sh check-upload --package roboflow-workflows
           echo "upload=$(jq -r '.upload' release-state/roboflow-workflows-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: Upload missing distributions
         if: ${{ steps.prepare.outputs.upload == 'true' }}
@@ -381,6 +383,7 @@ jobs:
       - id: prepare
         run: |
           bash .release/pypi/publish.sh prepare --profile streamvision --directory release-state/packages/streamvision --upload-directory release-upload --receipt release-state/streamvision-prepare.json --wait-seconds 600
+          bash .release/pypi/flow.sh check-upload --package streamvision
           echo "upload=$(jq -r '.upload' release-state/streamvision-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: Upload missing distributions
         if: ${{ steps.prepare.outputs.upload == 'true' }}
@@ -773,6 +776,7 @@ jobs:
     needs: [prepare, commit_locks, smoke, rc_static_code_analysis, rc_check_model_licenses, rc_unit_tests_inference_x86, rc_unit_tests_inference_cli_x86, rc_unit_tests_inference_sdk_x86, rc_unit_tests_workflows_x86, rc_unit_tests_workflows_tensor_native_x86, rc_unit_tests_streamvision_x86, rc_unit_tests_inference_experimental, rc_integration_tests_inference_experimental_cpu, rc_integration_tests_workflows_x86, rc_integration_tests_workflows_tensor_native_x86, rc_integration_e2e_tests_inference_sdk_x86, rc_test_package_install_inference_sdk, rc_test_pypi_release, rc_unit_tests_inference_model_manager_and_server, rc_unit_tests_inference_experimental_gpu, rc_integration_tests_inference_experimental_gpu, rc_integration_tests_inference_cli_x86, rc_integration_tests_inference_cli_depending_on_inference_x86, rc_integration_tests_inference_models, rc_e2e_tests_inference_experimental_cpu, rc_e2e_tests_inference_experimental_gpu, rc_integration_tests_inference_server_x86]
     if: ${{ !cancelled() && needs.commit_locks.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       checks: write
@@ -794,6 +798,7 @@ jobs:
 
   prepare_dependencies:
     needs: [prepare, commit_locks, build_runtime, validation]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.build_runtime.result == 'success' && needs.validation.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
@@ -830,6 +835,7 @@ jobs:
 
   publish_runtime:
     needs: [prepare, commit_locks, build_runtime, prepare_dependencies]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.build_runtime.result == 'success' && needs.prepare_dependencies.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
@@ -882,6 +888,7 @@ jobs:
 
   docker:
     needs: [prepare, commit_locks, prepare_dependencies, publish_runtime, build_sdk, build_runtime]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.prepare_dependencies.result == 'success' && needs.publish_runtime.result == 'success' && needs.build_sdk.result == 'success' && needs.build_runtime.result == 'success' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.images) }}
@@ -899,6 +906,7 @@ jobs:
 
   complete:
     needs: [prepare, commit_locks, prepare_dependencies, publish_runtime, docker]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.prepare_dependencies.result == 'success' && needs.publish_runtime.result == 'success' && needs.docker.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -939,7 +947,8 @@ jobs:
   notify-svis:
     needs: complete
     if: >-
-      ${{ github.repository == 'roboflow/inference'
+      ${{ !cancelled() && needs.complete.result == 'success'
+          && github.repository == 'roboflow/inference'
           && github.event_name == 'release'
           && github.event.release.draft == false
           && github.event.release.prerelease == false }}

@@ -192,12 +192,11 @@ jobs:
           COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
           MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
           YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
-      - name: Retain RC server test attempts
+      - name: Retain RC server attempt exit codes
         if: ${{ always() && inputs.release_source != '' && !inputs.private_image }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rc-server-attempts-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/server-test-attempts/attempt-*.log
             ${{ runner.temp }}/server-test-attempts/attempts.txt
           if-no-files-found: warn

@@ -49,11 +49,13 @@ def _main():
             env=environment,
             check=True,
         )
-    # Some server images import checkout sources ahead of site-packages.
-    for source in (root / "sources").iterdir():
-        target = Path.cwd() / source.name
-        if (target / "__init__.py").is_file():
-            shutil.copytree(source, target, dirs_exist_ok=True)
+    # Only this source file may differ under RC/source equivalence. Other
+    # checkout files stay byte-for-byte as tested, including Docker exclusions.
+    relative = Path("inference/core/version.py")
+    source = root / "sources" / relative
+    target = Path.cwd() / relative
+    if source.is_file() and target.is_file():
+        shutil.copy2(source, target)
     expected = {
         name: manifest[name]["version"] if name in manifest else version
         for name, version in before.items()

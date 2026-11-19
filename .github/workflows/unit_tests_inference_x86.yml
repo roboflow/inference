@@ -39,7 +39,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 60 || 20 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 150 || 20 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -106,12 +106,11 @@ jobs:
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             python -m pytest development/stream_interface/test_benchmark_pipeline_extraction.py
-      - name: Retain RC test attempt logs
+      - name: Retain RC attempt exit codes
         if: ${{ always() && inputs.release_source != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: rc-attempts-unit_tests_inference_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
             ${{ runner.temp }}/release-test-attempts.*/attempts.txt
           if-no-files-found: warn

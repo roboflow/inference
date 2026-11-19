@@ -106,13 +106,12 @@ jobs:
           command: |
             STREAMVISION_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)" \
               python -m pytest tests/isolation
-      - name: Retain RC test attempt logs
+      - name: Retain RC attempt exit codes
         if: ${{ always() && inputs.release_source != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: rc-attempts-unit_tests_streamvision_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
             ${{ runner.temp }}/release-test-attempts.*/attempts.txt
           if-no-files-found: warn
 

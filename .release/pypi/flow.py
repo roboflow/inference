@@ -126,6 +126,9 @@ def _normalize(value):
         if name in FIRST_PARTY:
             if "version" in result:
                 result["version"] = _base(result["version"])
+            if "specifier" in result:
+                requirement = Requirement(_requirement(name + result["specifier"]))
+                result["specifier"] = str(requirement.specifier)
             # Only first-party distribution identity changes between RC/final.
             result.pop("sdist", None)
             result.pop("wheels", None)
@@ -140,9 +143,7 @@ def _canonical(path, data):
         return json.dumps(
             _normalize(tomllib.loads(data.decode())), sort_keys=True
         ).encode()
-    if path in {
-        f"{directory}/pyproject.toml" for directory, _ in dependencies.PROJECTS.values()
-    }:
+    if Path(path).name == "pyproject.toml":
         return json.dumps(
             _normalize(tomllib.loads(data.decode())), sort_keys=True
         ).encode()
@@ -163,6 +164,16 @@ def _canonical(path, data):
         return "\n".join(
             _requirement(line) for line in data.decode().splitlines()
         ).encode()
+    if path in {
+        f"{directory}/CHANGELOG.md" for directory, _ in dependencies.PROJECTS.values()
+    }:
+        # Release notes may update an inline first-party pin from RC to final.
+        # Keep all prose, third-party versions and actual dependency-floor changes.
+        return re.sub(
+            r"`([^`\n]+)`",
+            lambda match: "`" + _requirement(match[1]) + "`",
+            data.decode(),
+        ).encode()
     return data
 
 
@@ -176,7 +187,7 @@ def _fingerprint(*, include_locks=True):
         if path in LOCKS and not include_locks:
             continue
         file = Path(path)
-        data = os.readlink(file).encode() if file.is_symlink() else file.read_bytes()
+        data = str(file.readlink()).encode() if file.is_symlink() else file.read_bytes()
         entries.append((path, mode, hashlib.sha256(_canonical(path, data)).hexdigest()))
     result = hashlib.sha256(json.dumps(entries).encode()).hexdigest()
     return result
@@ -304,7 +315,10 @@ def _find_rc(version):
             f"?event=workflow_dispatch&status=success&per_page=100&page={page}"
         )["workflow_runs"]
         for run in runs:
-            if run["head_repository"]["full_name"] != REPOSITORY:
+            if run["head_repository"]["full_name"] != REPOSITORY or not re.fullmatch(
+                r"release(?:-candidates)?[-/][A-Za-z0-9._/-]+",
+                run.get("head_branch", ""),
+            ):
                 continue
             artifacts = []
             for artifact_page in range(1, 21):
@@ -334,8 +348,22 @@ def _find_rc(version):
                     or receipt.get("trigger_sha") != run["head_sha"]
                     or receipt.get("repository") != REPOSITORY
                     or receipt.get("complete") is not True
+                    or receipt.get("branch") != run["head_branch"]
+                    or not re.fullmatch(r"[a-f0-9]{40}", receipt.get("source_sha", ""))
                 ):
                     raise ValueError("Untrusted or incomplete RC receipt")
+                try:
+                    _git(
+                        "merge-base",
+                        "--is-ancestor",
+                        run["head_sha"],
+                        receipt["source_sha"],
+                    )
+                    _git("merge-base", "--is-ancestor", receipt["source_sha"], "HEAD")
+                except subprocess.CalledProcessError as error:
+                    raise ValueError(
+                        "RC source is not an ancestor of the stable tag"
+                    ) from error
                 _write(STATE / "accepted-rc.json", receipt)
                 return receipt
         if len(runs) < 100:
@@ -387,6 +415,11 @@ def _prepare():
         "repository": REPOSITORY,
         "channel": channel,
         "version": version,
+        "image_version": (
+            event["release"]["tag_name"].removeprefix("v")
+            if channel == "stable"
+            else version
+        ),
         "source_sha": sha,
         "trigger_sha": os.environ["GITHUB_SHA"],
         "branch": os.environ.get("GITHUB_REF", "").removeprefix("refs/heads/"),
@@ -403,9 +436,10 @@ def _prepare():
             receipt["application"] != state["application"]
             or receipt["policy"] != state["policy"]
             or receipt["third_party"] != state["third_party"]
+            or receipt["fingerprint"] != _fingerprint()
         ):
             raise ValueError(
-                "Stable application/policy differs from RC; complete a new RC"
+                "Stable source/locks/policy differ from RC; complete a new RC"
             )
         state["accepted_rc_run_id"] = receipt["run_id"]
     _write(STATE / "release.json", state)
@@ -502,6 +536,19 @@ def _build_package(package):
         command.append("--wheel")
     subprocess.run(command, cwd=directory, check=True)
     subprocess.run(["python", ".release/pypi/smoke.py", str(destination)], check=True)
+
+
+def _check_upload(package):
+    state = _state()
+    prepared = json.loads((STATE / f"{package}-prepare.json").read_text())
+    if (
+        state["channel"] == "rc"
+        and not Version(_versions()[package]).is_prerelease
+        and prepared["upload"]
+    ):
+        raise ValueError(
+            f"RC may reuse an existing stable {package}, but cannot publish a new stable version"
+        )
 
 
 def _receipt():
@@ -627,6 +674,7 @@ def _validate():
             "restore",
             "lock",
             "build",
+            "check-upload",
             "commit-locks",
             "equivalence",
             "validate",
@@ -644,11 +692,13 @@ def _main(operation, *, package):
         _prepare()
     elif operation == "restore":
         _restore_source()
-    elif operation in {"lock", "build"}:
+    elif operation in {"lock", "build", "check-upload"}:
         if not package:
-            raise click.ClickException("lock requires --package")
+            raise click.ClickException(f"{operation} requires --package")
         if operation == "build":
             _build_package(package)
+        elif operation == "check-upload":
+            _check_upload(package)
         else:
             _restore_locks()
             _prepare_lock(package)

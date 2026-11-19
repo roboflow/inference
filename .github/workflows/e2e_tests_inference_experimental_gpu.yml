@@ -88,12 +88,11 @@ jobs:
           command: |
             source .venv/bin/activate
             ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest -m "e2e_model_inference and not cpu_only" tests/e2e_platform_tests
-      - name: Retain RC test attempt logs
+      - name: Retain RC attempt exit codes
         if: ${{ always() && inputs.release_source != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: rc-attempts-e2e_tests_inference_experimental_gpu-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
             ${{ runner.temp }}/release-test-attempts.*/attempts.txt
           if-no-files-found: warn

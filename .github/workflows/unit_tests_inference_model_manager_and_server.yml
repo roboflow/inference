@@ -125,12 +125,11 @@ jobs:
           command: |
             ../.venv-slim/bin/python -c "import importlib.util; assert importlib.util.find_spec('roboflow_workflows') is None"
             ../.venv-slim/bin/pytest tests/unit_tests/legacy/test_slim_install.py
-      - name: Retain RC test attempt logs
+      - name: Retain RC attempt exit codes
         if: ${{ always() && inputs.release_source != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: rc-attempts-unit_tests_inference_model_manager_and_server-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
             ${{ runner.temp }}/release-test-attempts.*/attempts.txt
           if-no-files-found: warn

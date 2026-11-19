@@ -42,17 +42,39 @@ function evaluate(source, context, status = null) {
 }
 function context(packages = "all", publish = true, event = "workflow_dispatch", repository = "roboflow/inference") {
   return {
-    github: { repository, event_name: event, event: { release: { tag_name: "v1.2.3", prerelease: false } } },
+    github: { repository, event_name: event, event: { release: { tag_name: "v1.2.3", prerelease: false, draft: false } } },
     inputs: { packages, publish, expected_version: "1.2.4rc1" },
     needs: {}, steps: {}, env: {},
   };
 }
-function jobEnabled(job, ctx, cancelled = false) {
-  const dependencies = [].concat(job.needs || []).map(name => ctx.needs[name]?.result);
+function jobEnabled(job, ctx, cancelled = false, ancestorResults = null) {
+  const dependencies = ancestorResults ?? [].concat(job.needs || []).map(name => ctx.needs[name]?.result);
   return evaluate(job.if, ctx, {
     success: !cancelled && dependencies.every(result => result === "success"),
     failure: dependencies.includes("failure"), cancelled,
   });
+}
+// GitHub propagates failed/skipped ancestors, including through a job that has
+// explicitly recovered from the skip. Direct needs alone miss stable RC skips.
+function runWorkflow(wf, channel, faults = {}, cancelled = false) {
+  const ctx = context("all", true, channel === "stable" ? "release" : "workflow_dispatch");
+  const ancestors = name => [...new Set([].concat(wf.jobs[name].needs || []).flatMap(dep => [dep, ...ancestors(dep)]))];
+  const pending = new Set(Object.keys(wf.jobs));
+  while (pending.size) {
+    const ready = [...pending].filter(name => [].concat(wf.jobs[name].needs || []).every(dep => ctx.needs[dep]));
+    assert.ok(ready.length, "workflow graph must make progress");
+    for (const name of ready) {
+      const enabled = jobEnabled(wf.jobs[name], ctx, cancelled, ancestors(name).map(dep => ctx.needs[dep].result));
+      let result = enabled ? faults[name] || "success" : "skipped";
+      if (name === "validation" && enabled) {
+        const expected = channel === "rc" ? "success" : "skipped";
+        if (ctx.needs.smoke.result !== "success" || Object.keys(wf.jobs).filter(id => id.startsWith("rc_")).some(id => ctx.needs[id].result !== expected)) result = "failure";
+      }
+      ctx.needs[name] = {result, outputs: name === "prepare" ? {channel} : {}};
+      pending.delete(name);
+    }
+  }
+  return ctx.needs;
 }
 function stepEnabled(step, ctx, previous = "success", cancelled = false) {
   return evaluate(step.if, ctx, {
@@ -84,6 +106,21 @@ function runSteps(job, ctx, outcomes) {
 }
 function check(wf) {
   const jobs = wf.jobs;
+  for (const channel of ["rc", "stable"]) {
+    const execution = runWorkflow(wf, channel);
+    for (const name of ["publish_sdk", "publish_models", "publish_workflows", "publish_streamvision", "prepare_dependencies", "publish_runtime", "docker", "complete"]) equal(execution[name].result, "success", `${channel}: full graph reaches ${name}`);
+    equal(execution["notify-svis"].result, channel === "stable" ? "success" : "skipped", "stable notification survives transitive RC skips");
+    for (const name of Object.keys(jobs).filter(id => id.startsWith("rc_"))) equal(execution[name].result, channel === "rc" ? "success" : "skipped", `${channel}: full suite policy`);
+    for (const name of ["validation", "prepare_dependencies", "publish_runtime", "docker"]) for (const result of ["failure", "skipped", "cancelled"]) {
+      const broken = runWorkflow(wf, channel, {[name]: result});
+      equal(broken.complete.result, "skipped", `${channel}: ${name}/${result} blocks completion`);
+      equal(broken["notify-svis"].result, "skipped", `${channel}: ${name}/${result} blocks notification`);
+      scenarios++;
+    }
+    const interrupted = runWorkflow(wf, channel, {}, true);
+    equal(interrupted.complete.result, "skipped", "cancellation blocks completion");
+    scenarios++;
+  }
   equal(wf["cache-mode"], "none", "release cannot read or poison Actions caches");
   for (const job of Object.values(jobs)) {
     equal(job["cache-mode"] ?? "none", "none", "jobs cannot restore cache access");
@@ -110,7 +147,8 @@ function check(wf) {
     docker: ["prepare", "commit_locks", "prepare_dependencies", "publish_runtime", "build_sdk", "build_runtime"],
     complete: ["prepare", "commit_locks", "prepare_dependencies", "publish_runtime", "docker"],
   })) equal([].concat(jobs[name].needs), expected, `${name}: mandatory dependencies`);
-  for (const name of ["publish_models", "publish_workflows", "publish_streamvision"]) {
+  for (const [name, packageName] of [["publish_models", "inference-models"], ["publish_workflows", "roboflow-workflows"], ["publish_streamvision", "streamvision"]]) {
+    assert.ok(jobs[name].steps.find(step => step.id === "prepare").run.includes(`flow.sh check-upload --package ${packageName}`), "RC cannot create independently versioned stable packages");
     equal(jobs[name].env.EXPECTED_VERSION, "", "independent project versions must not inherit the runtime version");
   }
   equal(jobs.commit_locks.permissions, { contents: "write" }, "only commit job writes source");
@@ -302,6 +340,7 @@ check(workflow);
 checkChildren(upstreams);
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
+  ...["prepare_dependencies", "publish_runtime", "docker", "complete", "notify-svis"].map(name => [`restore implicit success on ${name}`, wf => { delete wf.jobs[name].if; }]),
   ["extract SDK into wrong root", wf => { wf.jobs.publish_sdk.steps.find(s => s.uses?.startsWith("actions/download-artifact@")).with.path = "dist/sdk"; }],
   ["lose artifact producer dependency", wf => { wf.jobs.build_models.steps.find(s => s.uses?.startsWith("actions/download-artifact@")).with.name = "${{ needs.build_sdk.outputs.artifact }}"; }],
   ["restore release cache writes", wf => { wf["cache-mode"] = "write"; }],

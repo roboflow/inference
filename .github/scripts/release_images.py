@@ -100,8 +100,9 @@ def _stable_context(plan, rc_digest):
     sources = directory / "sources"
     sources.mkdir()
     if plan["version_source"] == "runtime":
-        for module in ("inference", "inference_cli", "inference_sdk"):
-            shutil.copytree(module, sources / module)
+        version_file = sources / "inference/core/version.py"
+        version_file.parent.mkdir(parents=True)
+        shutil.copy2("inference/core/version.py", version_file)
     (directory / "Dockerfile").write_text(
         f"FROM {plan['repository']}@{rc_digest}\n"
         "COPY . /tmp/release-finalize/\n"
@@ -114,9 +115,13 @@ def _stable_context(plan, rc_digest):
 def _plan(key):
     state = flow._state()
     item = next(image for image in state["policy"]["images"] if image["key"] == key)
-    version = state["version"]
+    version = state.get("image_version", state["version"])
     reuse_digest = ""
     model_identity = {}
+    rc_image = None
+    if state["channel"] == "stable":
+        receipt = json.loads((flow.STATE / "accepted-rc.json").read_text())
+        rc_image = next(image for image in receipt["images"] if image["key"] == key)
     if item["version_source"] == "models":
         version = tomllib.loads(Path("inference_models/pyproject.toml").read_text())[
             "project"
@@ -126,8 +131,7 @@ def _plan(key):
         }
         if not item.get("core_only"):
             model_identity["models_content_sha256"] = _models_identity(version)
-        version = str(Version(version))
-        model_identity["models_version"] = version
+        model_identity["models_version"] = str(Version(version))
         # Models versions are independent. Reuse an existing immutable image,
         # then verify its installed package content and run target-platform smoke.
         if not Version(version).is_prerelease:
@@ -138,6 +142,12 @@ def _plan(key):
                 )
                 or ""
             )
+            if rc_image and reuse_digest:
+                if reuse_digest != rc_image["digest"]:
+                    raise ValueError(
+                        "Existing Models tag differs from the accepted RC digest"
+                    )
+                reuse_digest = rc_image["digest"]
         # An unchanged stable Models version must not give an RC a stable image tag.
         if state["channel"] == "rc":
             version = state["version"]
@@ -170,8 +180,6 @@ def _plan(key):
         "smoke_matrix": {"include": tests},
     }
     if state["channel"] == "stable":
-        receipt = json.loads((flow.STATE / "accepted-rc.json").read_text())
-        rc_image = next(image for image in receipt["images"] if image["key"] == key)
         result["rc_smoke"] = rc_image["smoke"]
         if not reuse_digest:
             if item.get("core_only"):

@@ -634,7 +634,6 @@ class WorkflowContractTests(unittest.TestCase):
                         self.assertEqual(
                             step["with"]["path"].splitlines(),
                             [
-                                "${{ runner.temp }}/server-test-attempts/attempt-*.log",
                                 "${{ runner.temp }}/server-test-attempts/attempts.txt",
                             ],
                         )

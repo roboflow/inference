@@ -8,19 +8,18 @@ if ! [[ "$attempts" =~ ^[1-3]$ ]]; then
 fi
 log_dir="${RETRY_LOG_DIR:?RETRY_LOG_DIR is required}"
 mkdir -p "$log_dir"
-script="$log_dir/command.sh"
-printf '%s\n' "${RETRY_COMMAND:?RETRY_COMMAND is required}" > "$script"
+: "${RETRY_COMMAND:?RETRY_COMMAND is required}"
 for ((attempt=1; attempt<=attempts; attempt++)); do
     echo "::group::Test attempt $attempt/$attempts"
     set +e
-    bash -e -o pipefail "$script" 2>&1 | tee "$log_dir/attempt-$attempt.log"
-    status=${PIPESTATUS[0]}
+    bash -e -o pipefail <<< "$RETRY_COMMAND"
+    status=$?
     set -e
     echo "::endgroup::"
     printf '%s %s\n' "$attempt" "$status" >> "$log_dir/attempts.txt"
     if [ "$status" -eq 0 ]; then
         if [ "$attempt" -gt 1 ]; then
-            echo "::warning::Test shard recovered on attempt $attempt; inspect earlier attempt logs"
+            echo "::warning::Test shard recovered on attempt $attempt; inspect earlier attempts in the Actions console"
         fi
         exit 0
     fi

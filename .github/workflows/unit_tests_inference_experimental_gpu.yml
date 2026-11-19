@@ -92,12 +92,11 @@ jobs:
             export PATH=/usr/local/cuda-12.5/bin:$PATH
             export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
             python -m pytest -v -m "gpu_only and trt_extras" tests/unit_tests
-      - name: Retain RC test attempt logs
+      - name: Retain RC attempt exit codes
         if: ${{ always() && inputs.release_source != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: rc-attempts-unit_tests_inference_experimental_gpu-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
             ${{ runner.temp }}/release-test-attempts.*/attempts.txt
           if-no-files-found: warn

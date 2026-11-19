@@ -104,12 +104,11 @@ jobs:
                 python -m isort --check-only .release/pypi/flow.py .release/pypi/smoke.py .release/pypi/versioning.py .github/scripts/release_images.py .github/scripts/release_image_smoke.py .github/scripts/release_image_finalize.py .github/scripts/test_release_flow.py .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py &&
                 python -m pytest .github/scripts/test_release_flow.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py -v &&
                 python -m pytest --confcutdir=tests/inference/unit_tests/deployment tests/inference/unit_tests/deployment/test_determine_tags_security.py -v'
-      - name: Retain RC test attempt logs
+      - name: Retain RC attempt exit codes
         if: ${{ always() && inputs.release_source != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: rc-attempts-test.pypi.release-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
             ${{ runner.temp }}/release-test-attempts.*/attempts.txt
           if-no-files-found: warn

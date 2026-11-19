@@ -883,7 +883,9 @@ def test_runtime_modes_and_dependency_gates_precede_recovery():
     job = config["jobs"]["publish_runtime"]
     assert "prepare_dependencies" in job["needs"]
     assert "validation" in config["jobs"]["prepare_dependencies"]["needs"]
-    assert "if" not in job  # Default success() blocks failed/skipped upstream gates.
+    assert "!cancelled()" in job["if"]
+    for dependency in job["needs"]:
+        assert f"needs.{dependency}.result == 'success'" in job["if"]
     assert job["concurrency"]["cancel-in-progress"] == "false"
     steps = job["steps"]
     prepare = next(
