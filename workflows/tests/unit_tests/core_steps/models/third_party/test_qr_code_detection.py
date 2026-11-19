@@ -120,3 +120,33 @@ def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
         assert np.allclose(root_parent_dimensions, np.array(qr_codes_image.shape[:2]))
         assert np.allclose(parent_coordinates, np.array([0, 0]))
         assert np.allclose(parent_dimensions, np.array(qr_codes_image.shape[:2]))
+
+
+def test_qr_code_detection_when_no_qr_code_in_image() -> None:
+    # given
+    step = QRCodeDetectorBlockV1()
+    images = Batch(
+        content=[
+            WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id="$inputs.image"),
+                numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+            )
+        ],
+        indices=[(0,)],
+    )
+
+    # when
+    result = step.run(images=images)
+
+    # then
+    preds = result[0]["predictions"]
+    assert len(preds) == 0
+    assert preds.xyxy.shape == (0, 4)
+    for key in (
+        "detection_id",
+        "prediction_type",
+        "image_dimensions",
+        "data",
+        "parent_id",
+    ):
+        assert key in preds.data

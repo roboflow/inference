@@ -127,6 +127,9 @@ def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
     class_id = []
     class_name = []
     extracted_data = []
+    if not retval or detections is None or points_list is None:
+        # OpenCV returns (False, None, None, None) when no QR code is found.
+        detections, points_list = (), ()
     for data, points in zip(detections, points_list):
         width = points[2][0] - points[0][0]
         height = points[2][1] - points[0][1]

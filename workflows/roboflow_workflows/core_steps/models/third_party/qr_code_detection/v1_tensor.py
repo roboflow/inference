@@ -130,7 +130,10 @@ class QRCodeDetectorBlockV1(WorkflowBlock):
 
 def detect_qr_codes(image: WorkflowImageData) -> Detections:
     detector = cv2.QRCodeDetector()
-    _retval, decoded, points_list, _ = detector.detectAndDecodeMulti(image.numpy_image)
+    retval, decoded, points_list, _ = detector.detectAndDecodeMulti(image.numpy_image)
+    if not retval or decoded is None or points_list is None:
+        # OpenCV returns (False, None, None, None) when no QR code is found.
+        decoded, points_list = (), ()
     xyxy: List[List[float]] = []
     codes: List[str] = []
     for data, points in zip(decoded, points_list):
