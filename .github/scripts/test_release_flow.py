@@ -70,6 +70,7 @@ def candidate(tmp_path, monkeypatch):
         "channel": "rc",
         "version": "9.9.0rc1",
         "source_sha": sha,
+        "trigger_sha": sha,
         "application": flow._fingerprint(include_locks=False),
         "branch": "release-candidates-9.9.0rc1",
         "run_id": "123",
@@ -106,6 +107,31 @@ def test_empty_lock_update_does_not_create_commit(candidate):
     flow._commit_locks()
     assert flow._state()["source_sha"] == state["source_sha"]
     assert _git(remote, "rev-list", "--count", state["branch"]) == "1"
+
+
+@pytest.mark.parametrize("fault", [None, "lock", "application", "commit"])
+def test_event_checkout_restores_exact_generated_release_tree(candidate, fault):
+    source, _, state = candidate
+    locks = json.loads((flow.STATE / "locks.json").read_text())
+    locks[flow.LOCKS[-1]] += 'requires-python = ">=3.10"\n'
+    flow._write(flow.STATE / "locks.json", locks)
+    flow._commit_locks()
+    committed_tree = _git(source, "rev-parse", "HEAD^{tree}")
+    _git(source, "checkout", "--detach", state["trigger_sha"])
+    if fault == "lock":
+        locks[flow.LOCKS[-1]] += "corrupted = true\n"
+        flow._write(flow.STATE / "locks.json", locks)
+    elif fault in {"application", "commit"}:
+        Path("app.py").write_text("answer = 0\n")
+        if fault == "commit":
+            _git(source, "commit", "-am", "Unrelated commit")
+    if fault:
+        with pytest.raises(ValueError, match="Checkout is not|Restored source differs"):
+            flow._restore_source()
+    else:
+        flow._restore_source()
+        assert _git(source, "write-tree") == committed_tree
+        assert _git(source, "rev-parse", "HEAD") == state["trigger_sha"]
 
 
 def test_branch_movement_is_not_overwritten(candidate):

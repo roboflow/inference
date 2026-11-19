@@ -87,6 +87,9 @@ function check(wf) {
   equal(wf["cache-mode"], "none", "release cannot read or poison Actions caches");
   for (const job of Object.values(jobs)) {
     equal(job["cache-mode"] ?? "none", "none", "jobs cannot restore cache access");
+    for (const step of job.steps || []) {
+      if (step.uses?.startsWith("actions/checkout@")) equal(step.with.ref, "${{ github.sha }}", "root code comes directly from the immutable event commit");
+    }
   }
   const policy = JSON.parse(fs.readFileSync("/work/.release/release-policy.json", "utf8"));
   const suites = policy.rc_tests.map(name => "rc_" + name.replace(/\.yml$/, "").replaceAll(".", "_"));
@@ -302,6 +305,7 @@ const mutations = [
   ["extract SDK into wrong root", wf => { wf.jobs.publish_sdk.steps.find(s => s.uses?.startsWith("actions/download-artifact@")).with.path = "dist/sdk"; }],
   ["lose artifact producer dependency", wf => { wf.jobs.build_models.steps.find(s => s.uses?.startsWith("actions/download-artifact@")).with.name = "${{ needs.build_sdk.outputs.artifact }}"; }],
   ["restore release cache writes", wf => { wf["cache-mode"] = "write"; }],
+  ["checkout code from an indirect artifact output", wf => { wf.jobs.build_runtime.steps.find(s => s.uses?.startsWith("actions/checkout@")).with.ref = "${{ needs.commit_locks.outputs.source_sha }}"; }],
   ["override release cache restriction", wf => { wf.jobs.build_runtime["cache-mode"] = "write"; }],
   ["inherit runtime version for Models", wf => { wf.jobs.publish_models.env.EXPECTED_VERSION = "${{ inputs.expected_version }}"; }],
   ["publish on created", wf => { wf.on.release.types = ["created"]; }],

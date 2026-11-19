@@ -210,6 +210,20 @@ def _restore_locks():
         Path(path).write_text(data)
 
 
+def _restore_source():
+    state = _state()
+    if _git("rev-parse", "HEAD") not in {
+        state["trigger_sha"],
+        state["source_sha"],
+    }:
+        raise ValueError("Checkout is not the triggering or generated release commit")
+    _restore_locks()
+    if "source_tree" in state:
+        _git("add", "--", *LOCKS)
+        if _git("write-tree") != state["source_tree"] or _git("diff", "--name-only"):
+            raise ValueError("Restored source differs from the committed release tree")
+
+
 def _versions():
     versions = {"inference-sdk": release._source_version()}
     for name, (directory, _) in dependencies.PROJECTS.items():
@@ -459,6 +473,7 @@ def _commit_locks():
     else:
         source_sha = remote_sha
     state["source_sha"] = source_sha
+    state["source_tree"] = tree
     _write(STATE / "release.json", state)
     _outputs(source_sha=source_sha)
 
@@ -628,7 +643,7 @@ def _main(operation, *, package):
     if operation == "prepare":
         _prepare()
     elif operation == "restore":
-        _restore_locks()
+        _restore_source()
     elif operation in {"lock", "build"}:
         if not package:
             raise click.ClickException("lock requires --package")
