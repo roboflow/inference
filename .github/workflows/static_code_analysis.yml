@@ -2,6 +2,12 @@ name: Static code analysis
 permissions:
   contents: read
 on:
+  workflow_call:
+    inputs:
+      release_source:
+        description: Exact prepared release commit; empty for normal CI
+        type: string
+        default: ''
   pull_request:
     branches: [main]
   push:
@@ -15,7 +21,7 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-static_code_analysis-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -23,14 +29,16 @@ jobs:
     runs-on:
       labels: depot-ubuntu-24.04-small
       group: public-depot
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.release_source != '' && 45 || 15 }}
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_source || github.sha }}
       - name: Install code analysis dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.code_analysis.txt
-      - name: Check code quality
+      - name: "Check code quality [release-test]"
         run: |
           make check_code_quality

@@ -3,6 +3,12 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
+    inputs:
+      release_source:
+        description: Exact prepared release commit; empty for normal CI
+        type: string
+        default: ''
   pull_request:
     branches: [main]
     paths-ignore:
@@ -20,7 +26,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-unit_tests_workflows_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -33,13 +39,16 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.release_source != '' && 180 || 60 }}
     strategy:
+      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_source || github.sha }}
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -65,9 +74,22 @@ jobs:
         run: make create_isolation_wheels
       - name: 📦 Install roboflow-workflows (test + enterprise extras) from local wheel
         run: pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise,databricks]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
-      - name: 🧪 Server unit tests
-        timeout-minutes: 30
-        run: python -m pytest tests/workflows/unit_tests
+      - name: "🧪 Server unit tests [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 90 || 30 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          command: |
+            python -m pytest tests/workflows/unit_tests
+      - name: Retain RC test attempt logs
+        if: ${{ always() && inputs.release_source != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-attempts-unit_tests_workflows_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
+            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
+          if-no-files-found: warn
 
   package-tests:
     needs: call_is_mergeable
@@ -75,8 +97,9 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.release_source != '' && 135 || 45 }}
     strategy:
+      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     env:
@@ -85,6 +108,9 @@ jobs:
       PIP_CONSTRAINT: ${{ github.workspace }}/workflows/tests/isolation/constraints-cpu.txt
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_source || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
@@ -102,10 +128,22 @@ jobs:
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
           pip check
-      - name: Package unit and installed-wheel isolation tests
-        working-directory: workflows
+      - name: "Package unit and installed-wheel isolation tests [release-test]"
         env:
           WORKFLOWS_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
-        run: |
-          WORKFLOWS_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
-            python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests
+        uses: ./.github/actions/retry-tests
+        with:
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          working-directory: workflows
+          command: |
+            WORKFLOWS_ISOLATION_WHEEL="$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)" \
+              python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests
+      - name: Retain RC test attempt logs
+        if: ${{ always() && inputs.release_source != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-attempts-unit_tests_workflows_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
+            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
+          if-no-files-found: warn

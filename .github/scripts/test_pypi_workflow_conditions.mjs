@@ -10,7 +10,7 @@ const upstreams = Object.fromEntries([
   ["streamvision", "streamvision", "dist"],
 ].map(([name, suffix, directory]) => [name, { directory, workflow: parse(fs.readFileSync(`/work/.github/workflows/publish.pypi.${suffix}.yml`, "utf8")) }]));
 const results = ["success", "failure", "cancelled", "skipped"];
-const modes = ["sdk", "runtime", "all", "dependencies"];
+const modes = ["all", "sdk"];
 let checks = 0;
 let scenarios = 0;
 function equal(actual, expected, label) {
@@ -42,7 +42,7 @@ function evaluate(source, context, status = null) {
 }
 function context(packages = "all", publish = true, event = "workflow_dispatch", repository = "roboflow/inference") {
   return {
-    github: { repository, event_name: event, event: { release: { tag_name: "v1.2.3" } } },
+    github: { repository, event_name: event, event: { release: { tag_name: "v1.2.3", prerelease: false } } },
     inputs: { packages, publish, expected_version: "1.2.4rc1" },
     needs: {}, steps: {}, env: {},
   };
@@ -84,192 +84,107 @@ function runSteps(job, ctx, outcomes) {
 }
 function check(wf) {
   const jobs = wf.jobs;
+  const policy = JSON.parse(fs.readFileSync("/work/.release/release-policy.json", "utf8"));
+  const suites = policy.rc_tests.map(name => "rc_" + name.replace(/\.yml$/, "").replaceAll(".", "_"));
+  equal(wf.on.release.types, ["published"], "only published official releases trigger stable");
   equal(wf.on.workflow_dispatch.inputs.packages.options, modes, "supported package modes");
-  equal(wf.on.workflow_dispatch.inputs.publish.type, "boolean", "typed publication input");
-  equal(wf.on.workflow_dispatch.inputs.publish.default, false, "build-only by default");
-  equal(jobs.publish_sdk["timeout-minutes"], 30, "SDK preparation and verification budget");
-  equal(jobs.publish_sdk.needs, "build_sdk", "SDK build ownership");
-  equal(jobs.prepare_dependencies["timeout-minutes"], 210, "SDK gate, coordinator, planning and infrastructure budget");
-  equal(jobs.publish_runtime["timeout-minutes"], 50, "SDK gate, dependency verification and upload budget");
-  equal(jobs.build_runtime["timeout-minutes"], 20, "runtime build keeps its existing budget");
-  function networkBudget(job) {
-    return job.steps.flatMap(step => [...(step.run || "").matchAll(/--wait-seconds (\d+)/g)]).reduce((sum, match) => sum + Number(match[1]), 0);
+  equal(wf.on.workflow_dispatch.inputs.publish.default, false, "build-only default");
+  equal(wf.concurrency["cancel-in-progress"], false, "publishing runs cannot cancel each other");
+  for (const [name, expected] of Object.entries({
+    build_sdk: ["prepare"], publish_sdk: ["prepare", "build_sdk"],
+    build_models: ["prepare", "publish_sdk"], publish_models: ["prepare", "build_models"],
+    build_workflows: ["prepare", "publish_models"], publish_workflows: ["prepare", "build_workflows"],
+    build_streamvision: ["prepare", "publish_workflows"], publish_streamvision: ["prepare", "build_streamvision"],
+    commit_locks: ["prepare", "publish_streamvision"], build_runtime: ["prepare", "commit_locks"],
+    smoke: ["prepare", "commit_locks", "build_runtime"],
+    validation: ["prepare", "commit_locks", "smoke", ...suites],
+    prepare_dependencies: ["prepare", "commit_locks", "build_runtime", "validation"],
+    publish_runtime: ["prepare", "commit_locks", "build_runtime", "prepare_dependencies"],
+    docker: ["prepare", "commit_locks", "prepare_dependencies", "publish_runtime"],
+    complete: ["prepare", "commit_locks", "prepare_dependencies", "publish_runtime", "docker"],
+  })) equal([].concat(jobs[name].needs), expected, `${name}: mandatory dependencies`);
+  for (const name of ["publish_models", "publish_workflows", "publish_streamvision"]) {
+    equal(jobs[name].env.EXPECTED_VERSION, "", "independent project versions must not inherit the runtime version");
   }
-  equal(networkBudget(jobs.prepare_dependencies), 600 + 600 + 10800, "SDK gate plus planning plus coordination total network budget");
-  equal(jobs.prepare_dependencies["timeout-minutes"] * 60 - networkBudget(jobs.prepare_dependencies), 600, "ten-minute coordinator infrastructure and in-flight allowance");
-  equal(networkBudget(jobs.publish_runtime), 4 * 600, "runtime gates, preparation and final verification budgets");
-  equal(jobs.publish_runtime["timeout-minutes"] * 60 - networkBudget(jobs.publish_runtime), 600, "runtime upload and infrastructure allowance");
-
-  equal(jobs.prepare_dependencies.permissions, { contents: "read", actions: "write" }, "coordinator has no OIDC permission");
-  equal(jobs.prepare_dependencies.concurrency["cancel-in-progress"], false, "never cancel publishing coordinators");
-  assert.ok(jobs.prepare_dependencies.concurrency.group.includes("needs.build_runtime.outputs.version"));
-  assert.ok(jobs.prepare_dependencies.concurrency.group.includes("inputs.publish"));
-  const plan = jobs.prepare_dependencies.steps.find(step => step.id === "plan");
-  const coordinate = jobs.prepare_dependencies.steps.find(step => step.run?.includes("dependencies.sh coordinate "));
-  assert.ok(plan.run.includes("dependencies.sh plan --wait-seconds 600"), "planning has a bounded independent operation");
-  equal(plan.env?.GH_TOKEN, undefined, "planning does not receive a dispatch token");
-  equal(coordinate.env.GH_TOKEN, "${{ github.token }}", "only coordination receives a dispatch token");
-  assert.ok(coordinate.run.includes("--wait-seconds 10800"), "one budget covers all publishers and final verification");
-  assert.ok(jobs.prepare_dependencies.steps.indexOf(plan) < jobs.prepare_dependencies.steps.indexOf(coordinate));
-  for (const publish of [false, true]) for (const event of ["release", "workflow_dispatch"]) for (const previous of results) for (const cancelled of [false, true]) {
-    equal(stepEnabled(coordinate, context("all", publish, event), previous, cancelled),
-      (publish || event === "release") && !["failure", "cancelled"].includes(previous) && !cancelled,
-      "only publishing runs coordinate after successful prior steps");
+  equal(jobs.commit_locks.permissions, { contents: "write" }, "only commit job writes source");
+  equal(jobs.commit_locks.steps.find(step => step.id === "commit").env.GH_TOKEN, "${{ github.token }}", "GITHUB_TOKEN suppresses new CI runs");
+  assert.ok(jobs.prepare.steps.some(step => step.run?.includes("flow.sh prepare")), "stable RC evidence gate precedes any publication");
+  assert.ok(jobs.commit_locks.steps.some(step => step.run?.includes("flow.sh equivalence")), "prepared lock equivalence gate");
+  for (const [name, job] of Object.entries(jobs)) {
+    if (name !== "notify-svis") equal(job.permissions?.actions === "write", false, "no child run dispatch permission");
+    for (const step of job.steps || []) {
+      assert.ok(!/dependencies.sh coordinate|workflow run|actions\/workflows.*dispatches/.test(step.run || ""), "one workflow run");
+    }
+  }
+  for (const [index, name] of suites.entries()) {
+    equal(jobs[name].uses, `./.github/workflows/${policy.rc_tests[index]}`, "full suite called in same run");
+    equal(jobs[name].with.release_source, "${{ needs.commit_locks.outputs.source_sha }}", "test generated lock commit");
+  }
+  for (const channel of ["preview", "sdk", "rc", "stable"]) for (const packages of modes) {
+    const ctx = context(packages, channel !== "preview", channel === "stable" ? "release" : "workflow_dispatch");
+    for (const name of Object.keys(jobs)) ctx.needs[name] = { result: "success", outputs: {} };
+    ctx.needs.prepare.outputs.channel = channel;
+    equal(jobEnabled(jobs.publish_sdk, ctx), channel !== "preview", "SDK publish gate");
+    for (const name of ["build_models", "publish_models", "build_workflows", "publish_workflows", "build_streamvision", "publish_streamvision"]) {
+      equal(jobEnabled(jobs[name], ctx), ["rc", "stable"].includes(channel), `${name}: release channel only`);
+    }
+    for (const name of suites) equal(jobEnabled(jobs[name], ctx), channel === "rc", "full tests run only for RC");
+    equal(jobEnabled(jobs.preview_runtime, ctx), channel === "preview" && packages !== "sdk", "preview is separate build-only path");
+    equal(evaluate(wf.env.PUBLISH, ctx), channel !== "preview", "explicit publish boolean");
+    equal(evaluate(wf.env.EXPECTED_VERSION, ctx), channel === "stable" ? "v1.2.3" : "1.2.4rc1", "tag or input supplies expected version");
+    for (const result of results) {
+      ctx.needs.commit_locks.result = result;
+      equal(jobEnabled(jobs.validation, ctx), result === "success", "validation handles skipped RC jobs on stable");
+      equal(jobEnabled(jobs.validation, ctx, true), false, "validation cannot outlive cancellation");
+    }
     scenarios++;
   }
-
-  equal(jobs.prepare_dependencies.needs, ["build_runtime", "publish_sdk"], "coordinator dependency ownership");
-  equal(jobs.publish_runtime.needs, ["build_runtime", "publish_sdk", "prepare_dependencies"], "runtime dependency ownership");
-
-  for (const packages of modes) for (const publish of [false, true]) {
-    for (const event of ["workflow_dispatch", "release"]) for (const repository of ["roboflow/inference", "fork/inference"]) {
-      const ctx = context(packages, publish, event, repository);
-      const release = event === "release";
-      const sdk = release || packages !== "runtime";
-      const runtime = release || packages !== "sdk";
-      const publishing = repository === "roboflow/inference" && (release || publish);
-      const expected = {
-        build_sdk: sdk,
-        publish_sdk: sdk && publishing,
-        build_runtime: runtime,
-        prepare_dependencies: runtime && repository === "roboflow/inference",
-        publish_runtime: runtime && publishing && (release || packages !== "dependencies"),
-      };
-      for (const name of ["build_sdk", "publish_sdk", "build_runtime", "prepare_dependencies", "publish_runtime"]) {
-        const enabled = jobEnabled(jobs[name], ctx);
-        equal(enabled, expected[name], `${packages}/${publish}/${event}/${repository}: ${name}`);
-        ctx.needs[name] = { result: enabled ? "success" : "skipped" };
-      }
-      equal(evaluate(wf.env.PUBLISH, ctx), release || publish, "PUBLISH boolean expression");
-      equal(evaluate(wf.env.EXPECTED_VERSION, ctx), release ? "v1.2.3" : "1.2.4rc1", "release tag or manual expected version");
+  for (const prerelease of [false, true]) for (const repo of ["roboflow/inference", "fork/inference"]) {
+    const ctx = context("all", true, "release", repo);
+    ctx.github.event.release.prerelease = prerelease;
+    equal(jobEnabled(jobs.prepare, ctx), !prerelease && repo === "roboflow/inference", "only official repository stable release");
+    scenarios++;
+  }
+  for (const name of ["publish_sdk", "publish_models", "publish_workflows", "publish_streamvision", "publish_runtime", "docker", "complete"]) {
+    const job = jobs[name];
+    for (const failed of [].concat(job.needs)) for (const result of ["failure", "skipped", "cancelled"]) {
+      const ctx = context();
+      for (const dep of [].concat(job.needs)) ctx.needs[dep] = { result: "success", outputs: { channel: "rc" } };
+      ctx.needs[failed].result = result;
+      equal(jobEnabled(job, ctx), false, `${name}: ${failed}/${result} blocks publication`);
       scenarios++;
-
-      for (const sdkResult of results) for (const runtimeResult of results) for (const cancelled of [false, true]) {
-        ctx.needs = { build_runtime: { result: runtimeResult }, publish_sdk: { result: sdkResult } };
-        const coordinatorSdkReady = sdkResult === "success" || (!release && (packages === "runtime" || !publish) && sdkResult === "skipped");
-        equal(jobEnabled(jobs.prepare_dependencies, ctx, cancelled),
-          !cancelled && repository === "roboflow/inference" && runtimeResult === "success" && coordinatorSdkReady,
-          `coordinator dependencies: ${JSON.stringify({ packages, publish, event, repository, sdkResult, runtimeResult, cancelled })}`);
-        const sdkReady = sdkResult === "success" || (!release && packages === "runtime" && sdkResult === "skipped");
-        for (const dependencyResult of results) {
-          ctx.needs.prepare_dependencies = { result: dependencyResult };
-          equal(jobEnabled(jobs.publish_runtime, ctx, cancelled),
-            !cancelled && publishing && (release || packages !== "dependencies") && runtimeResult === "success" && dependencyResult === "success" && sdkReady,
-            `runtime dependencies: ${JSON.stringify({ packages, publish, event, repository, sdkResult, runtimeResult, dependencyResult, cancelled })}`);
-          scenarios++;
-        }
-        scenarios++;
-      }
-      for (const result of results) for (const cancelled of [false, true]) {
-        ctx.needs = { build_sdk: { result } };
-        equal(jobEnabled(jobs.publish_sdk, ctx, cancelled), publishing && result === "success" && !cancelled, "SDK build dependency and cancellation");
-        scenarios++;
-      }
+    }
+    if (!name.startsWith("publish_")) continue;
+    equal(job.permissions, { contents: "read", "id-token": "write" }, "PyPI permission boundary");
+    equal(job.uses, undefined, "PyPI upload stays in trusted root workflow");
+    equal(job.environment, undefined, "preserve trusted publisher environment");
+    const upload = job.steps.find(step => step.uses?.startsWith("pypa/"));
+    const verify = job.steps.find(step => /(?:publish.sh verify |release.sh verify-sdk )/.test(step.run || ""));
+    const prepare = job.steps.find(step => step.id === "prepare");
+    assert.ok(upload && verify && prepare, "publication preparation, upload, verification all required");
+    assert.ok(job.steps.indexOf(prepare) < job.steps.indexOf(upload) && job.steps.indexOf(upload) < job.steps.indexOf(verify));
+    equal(upload["continue-on-error"], true, "reconcile partial/duplicate uploads");
+    equal(verify["continue-on-error"] ?? false, false, "strict verification is final authority");
+    equal(upload.with["skip-existing"] ?? false, false, "never blindly skip duplicates");
+    for (const missing of ["true", "false", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
+      const ctx = context(); ctx.steps.prepare = { outputs: { upload: missing } };
+      const ready = !["failure", "cancelled"].includes(previous) && !cancelled;
+      equal(stepEnabled(upload, ctx, previous, cancelled), ready && missing === "true", "only verified missing artifacts upload");
+      equal(stepEnabled(verify, ctx, previous, cancelled), ready, "verify no-op and successful uploads");
+      scenarios++;
+    }
+    for (const uploaded of ["success", "failure"]) for (const verified of ["success", "failure"]) {
+      const execution = runSteps(job, context(), new Map([[upload, uploaded], [verify, verified]]));
+      equal(execution.ran.includes(verify), true, "failed upload reaches content reconciliation");
+      equal(execution.result, verified, "verified complete inventory decides success");
+      scenarios++;
     }
   }
-  const ctx = context();
-  ctx.inputs.expected_version = "";
-  equal(evaluate(wf.env.EXPECTED_VERSION, ctx), "", "empty manual expected version reaches release validation");
-
-  const sdk = publicationSteps(jobs.publish_sdk, "verify-sdk");
-  const runtime = publicationSteps(jobs.publish_runtime, "gate-sdk");
-  const prepare = jobs.publish_sdk.steps.find(step => step.id === "prepare");
-  const dependencyGate = jobs.publish_runtime.steps.find(step => step.run?.includes("dependencies.sh verify "));
-  assert.ok(dependencyGate?.run.includes("--wait-seconds 600"), "all runtime dependency verification shares ten minutes");
-  equal(dependencyGate["continue-on-error"] ?? false, false, "retained dependency verification is strict");
-  assert.ok(jobs.publish_runtime.steps.indexOf(dependencyGate) < jobs.publish_runtime.steps.indexOf(runtime.upload));
-  for (const verificationResult of ["failure", "cancelled"]) {
-    const execution = runSteps(jobs.publish_runtime, context(), new Map([[dependencyGate, verificationResult]]));
-    equal(execution.ran.includes(runtime.upload), false, "dependency verification failure blocks runtime upload");
-    scenarios++;
-  }
-
-  assert.ok(prepare?.run.includes("release.sh prepare-sdk --wait-seconds 600"), "SDK preparation remains bounded");
-  equal(sdk.upload.id, "upload", "record SDK upload outcome");
-  equal(sdk.upload["continue-on-error"], true, "reconcile a failed SDK upload");
-  equal(sdk.gate["continue-on-error"] ?? false, false, "strict verification controls SDK job result");
-  equal(runtime.upload["continue-on-error"], true, "reconcile a failed runtime upload");
-  equal(runtime.gate["continue-on-error"] ?? false, false, "runtime gate errors fail");
-  assert.ok(jobs.publish_sdk.steps.indexOf(prepare) < jobs.publish_sdk.steps.indexOf(sdk.upload));
-  assert.ok(jobs.publish_sdk.steps.indexOf(sdk.upload) < jobs.publish_sdk.steps.indexOf(sdk.gate));
-  assert.ok(jobs.publish_runtime.steps.indexOf(runtime.gate) < jobs.publish_runtime.steps.indexOf(runtime.upload));
-  equal(sdk.upload.with["packages-dir"], "dist/sdk-upload/", "SDK upload ownership");
-  equal(runtime.upload.with["packages-dir"], "dist/runtime-upload/", "runtime upload ownership");
-  equal(sdk.upload.with["skip-existing"] ?? false, false, "SDK recovery uses verification, not skip-existing");
-  const runtimePrepare = jobs.publish_runtime.steps.find(step => step.id === "prepare");
-  const runtimeVerify = jobs.publish_runtime.steps.find(step => step.run?.includes("publish.sh verify "));
-  assert.ok(runtimePrepare?.run.includes("publish.sh prepare --profile runtime"));
-  assert.ok(runtimeVerify?.run.includes("--profile runtime"));
-  assert.ok(jobs.publish_runtime.steps.indexOf(runtimePrepare) < jobs.publish_runtime.steps.indexOf(runtime.upload));
-  assert.ok(jobs.publish_runtime.steps.indexOf(runtime.upload) < jobs.publish_runtime.steps.indexOf(runtimeVerify));
-  equal(runtime.upload.with["skip-existing"] ?? false, false, "runtime recovery requires verified preparation");
-  equal(runtimeVerify["continue-on-error"] ?? false, false, "final runtime verification is mandatory");
-  for (const uploadResult of ["success", "failure"]) for (const verificationResult of ["success", "failure"]) {
-    const execution = runSteps(jobs.publish_runtime, context(), new Map([[runtime.upload, uploadResult], [runtimeVerify, verificationResult]]));
-    equal(execution.ran.includes(runtimeVerify), true, "runtime verification runs after upload failure");
-    equal(execution.result, verificationResult, "complete verified inventory controls runtime result");
-    scenarios++;
-  }
-  for (const upload of ["true", "false", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
-    const recovery = context();
-    recovery.steps.prepare = { outputs: { upload } };
-    equal(stepEnabled(runtimeVerify, recovery, previous, cancelled), !["failure", "cancelled"].includes(previous) && !cancelled, "runtime final verification also runs after no-op uploads");
-    scenarios++;
-  }
-
-
-  for (const upload of ["true", "false", "", undefined]) for (const previous of results) for (const cancelled of [false, true]) {
-    ctx.steps = { prepare: { outputs: { upload }, outcome: previous, conclusion: previous } };
-    equal(stepEnabled(sdk.upload, ctx, previous, cancelled), upload === "true" && previous !== "failure" && previous !== "cancelled" && !cancelled, "SDK upload output and prior status");
-    equal(stepEnabled(sdk.gate, ctx, previous, cancelled), previous !== "failure" && previous !== "cancelled" && !cancelled, "verification cannot be bypassed after successful preparation");
-    equal(stepEnabled(runtime.gate, ctx, previous, cancelled), previous !== "failure" && previous !== "cancelled" && !cancelled, "runtime gate honors prior failures");
-    equal(stepEnabled(runtime.upload, ctx, previous, cancelled), upload === "true" && previous !== "failure" && previous !== "cancelled" && !cancelled, "runtime upload honors failed gate");
-    scenarios++;
-  }
-
-  for (const uploadResult of ["success", "failure"]) for (const verificationResult of ["success", "failure"]) {
-    const execution = runSteps(jobs.publish_sdk, ctx, new Map([[sdk.upload, uploadResult], [sdk.gate, verificationResult]]));
-    equal(execution.ran.includes(sdk.gate), true, "verification runs after tolerated upload failure");
-    equal(ctx.steps.upload.outcome, uploadResult, "upload outcome preserved");
-    equal(ctx.steps.upload.conclusion, "success", "tolerated upload conclusion permits reconciliation");
-    equal(execution.result, verificationResult, "strict verification determines SDK job result");
-    ctx.needs = { build_runtime: { result: "success" }, publish_sdk: { result: execution.result }, prepare_dependencies: { result: "success" } };
-    equal(jobEnabled(jobs.prepare_dependencies, ctx), verificationResult === "success", "final SDK verification controls dependency coordination");
-    equal(jobEnabled(jobs.publish_runtime, ctx), verificationResult === "success", "final SDK verification controls runtime publication");
-    scenarios++;
-  }
-  for (const preparation of ["failure", "cancelled", "skipped"]) {
-    const execution = runSteps(jobs.publish_sdk, ctx, new Map([[prepare, preparation], [sdk.gate, "failure"]]));
-    equal(execution.ran.includes(sdk.upload), false, "failed or skipped preparation cannot upload");
-    equal(execution.result, preparation === "cancelled" ? "cancelled" : "failure", "missing preparation cannot produce a verified SDK");
-    scenarios++;
-  }
-  for (const gateResult of results) {
-    const execution = runSteps(jobs.publish_runtime, ctx, new Map([[runtime.gate, gateResult]]));
-    equal(execution.ran.includes(runtime.upload), !["failure", "cancelled"].includes(gateResult), "runtime upload follows evaluated gate status");
-    scenarios++;
-  }
-  for (const name of Object.keys(jobs)) {
-    if (name.startsWith("publish_")) {
-      equal(jobs[name].environment, undefined, "existing OIDC publisher has no environment");
-      equal(jobs[name].permissions, { contents: "read", "id-token": "write" }, "publisher OIDC permissions");
-    }
-    for (const step of jobs[name].steps) {
-      if (step.env?.PUBLISH !== undefined) equal(step.env.PUBLISH, wf.env.PUBLISH, "no PUBLISH override");
-      if (step.env?.EXPECTED_VERSION !== undefined) equal(step.env.EXPECTED_VERSION, wf.env.EXPECTED_VERSION, "no expected-version override");
-    }
-    equal(jobs[name].env?.PUBLISH, undefined, "inherit PUBLISH at job scope");
-    equal(jobs[name].env?.EXPECTED_VERSION, undefined, "inherit EXPECTED_VERSION at job scope");
-  }
-  for (const publish of [false, true]) {
-    ctx.env = { PUBLISH: String(publish) };
-    for (const name of ["build_sdk", "build_runtime"]) {
-      const summary = jobs[name].steps.find(step => step.run?.includes("Nothing was published"));
-      assert.ok(summary, "build-only result is visible");
-      equal(stepEnabled(summary, ctx), !publish, "build-only summary uses explicit env boolean comparison");
-      equal(stepEnabled(summary, ctx, "failure"), false, "failed builds do not claim success");
-    }
-  }
+  const runtime = jobs.publish_runtime.steps;
+  const gate = runtime.find(step => step.run?.includes("dependencies.sh verify"));
+  assert.ok(gate?.run.includes("gate-sdk"), "runtime retries reverify all dependencies");
+  equal(gate["continue-on-error"] ?? false, false, "dependency mismatch blocks runtime");
+  assert.ok(runtime.indexOf(gate) < runtime.findIndex(step => step.id === "prepare"));
 }
 
 function checkChildren(children) {
@@ -331,23 +246,22 @@ check(workflow);
 checkChildren(upstreams);
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
-  ["stop on runtime duplicate upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
+  ["inherit runtime version for Models", wf => { wf.jobs.publish_models.env.EXPECTED_VERSION = "${{ inputs.expected_version }}"; }],
+  ["publish on created", wf => { wf.on.release.types = ["created"]; }],
+  ["skip RC validation", wf => { wf.jobs.prepare_dependencies.needs = wf.jobs.prepare_dependencies.needs.filter(name => name !== "validation"); }],
+  ["run full stable tests", wf => { wf.jobs.rc_unit_tests_inference_x86.if = "${{ true }}"; }],
+  ["test stale SHA", wf => { wf.jobs.rc_unit_tests_inference_x86.with.release_source = "${{ github.sha }}"; }],
+  ["dispatch extra runs", wf => { wf.jobs.prepare_dependencies.steps.push({run: "bash .release/pypi/dependencies.sh coordinate"}); }],
+  ["publish after failed gates", wf => { wf.jobs.publish_runtime.if = "${{ always() }}"; }],
   ["unconditional runtime upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
-  ["drop runtime final verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],
-  ["tolerate runtime final mismatch", wf => { wf.jobs.publish_runtime.steps.find(step => step.run?.includes("publish.sh verify "))["continue-on-error"] = true; }],
-  ["drop runtime dependency verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("dependencies.sh verify ")); }],
-  ["tolerate runtime dependency mismatch", wf => { wf.jobs.publish_runtime.steps.find(step => step.run?.includes("dependencies.sh verify "))["continue-on-error"] = true; }],
-  ["coordinate build-only runs", wf => { delete wf.jobs.prepare_dependencies.steps.find(step => step.run?.includes("dependencies.sh coordinate ")).if; }],
-  ["give planning a dispatch token", wf => { wf.jobs.prepare_dependencies.steps.find(step => step.id === "plan").env = { GH_TOKEN: "${{ github.token }}" }; }],
-  ["ignore SDK failure", wf => { wf.jobs.publish_runtime.if = wf.jobs.publish_runtime.if.replace("needs.publish_sdk.result == 'success'", "true"); }],
-  ["always after cancellation", wf => { wf.jobs.publish_runtime.if = wf.jobs.publish_runtime.if.replace("!cancelled()", "always()"); }],
-  ["build any mode", wf => { wf.jobs.build_runtime.if = "${{ true }}"; }],
-  ["drop repository guard", wf => { wf.jobs.publish_runtime.if = wf.jobs.publish_runtime.if.replace("github.repository == 'roboflow/inference' &&", ""); }],
-  ["unconditional SDK upload", wf => { delete wf.jobs.publish_sdk.steps.find(step => step.id === "upload").if; }],
+  ["drop runtime verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],
+  ["tolerate runtime mismatch", wf => { wf.jobs.publish_runtime.steps.find(step => step.run?.includes("publish.sh verify "))["continue-on-error"] = true; }],
+  ["drop runtime dependency gate", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("dependencies.sh verify")); }],
+  ["stop on partial SDK upload", wf => { delete wf.jobs.publish_sdk.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
+  ["publish previews", wf => { wf.jobs.publish_sdk.if = "${{ true }}"; }],
   ["PUBLISH hardcoded true", wf => { wf.env.PUBLISH = "${{ true }}"; }],
-  ["EXPECTED_VERSION loses release tag", wf => { wf.env.EXPECTED_VERSION = "${{ inputs.expected_version }}"; }],
-  ["bare string PUBLISH in summary", wf => { for (const name of ["build_sdk", "build_runtime"]) wf.jobs[name].steps.find(step => step.run?.includes("Nothing was published")).if = "${{ env.PUBLISH }}"; }],
-  ["delete SDK verification", wf => { wf.jobs.publish_sdk.steps = wf.jobs.publish_sdk.steps.filter(step => !step.run?.includes("release.sh verify-sdk ")); }],
+  ["ignore release tag", wf => { wf.env.EXPECTED_VERSION = "${{ inputs.expected_version }}"; }],
+  ["publish forks", wf => { delete wf.jobs.prepare.if; }],
 ];
 for (const [name, mutate] of mutations) {
   const faulty = structuredClone(workflow);

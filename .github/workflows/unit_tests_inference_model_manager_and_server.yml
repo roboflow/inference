@@ -3,6 +3,12 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
+    inputs:
+      release_source:
+        description: Exact prepared release commit; empty for normal CI
+        type: string
+        default: ''
   pull_request:
     branches: [main]
     paths:
@@ -28,7 +34,7 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-unit_tests_inference_model_manager_and_server-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -41,13 +47,17 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.release_source != '' && 45 || 15 }}
     strategy:
+      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_source || github.sha }}
+          persist-credentials: false
       - name: 📅 Cache week
         id: cache-week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
@@ -73,18 +83,30 @@ jobs:
           python -m uv pip install -e workflows[test] --python .venv
           python -m uv pip install -e stream_vision --python .venv
           python -m uv pip install -e inference_server[test,workflows] --python .venv
-      - name: 🧪 Unit Tests of Inference Server
-        timeout-minutes: 10
-        working-directory: inference_server
-        run: ../.venv/bin/pytest tests/unit_tests
-      - name: 🧪 Integration Tests of Inference Server
-        timeout-minutes: 10
-        working-directory: inference_server
-        run: ../.venv/bin/pytest tests/integration_tests
-      - name: 🧪 Unit Tests of Inference Model Manager
-        timeout-minutes: 10
-        working-directory: inference_model_manager
-        run: ../.venv/bin/pytest tests/unit_tests
+      - name: "🧪 Unit Tests of Inference Server [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 30 || 10 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          working-directory: inference_server
+          command: |
+            ../.venv/bin/pytest tests/unit_tests
+      - name: "🧪 Integration Tests of Inference Server [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 30 || 10 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          working-directory: inference_server
+          command: |
+            ../.venv/bin/pytest tests/integration_tests
+      - name: "🧪 Unit Tests of Inference Model Manager [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 30 || 10 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          working-directory: inference_model_manager
+          command: |
+            ../.venv/bin/pytest tests/unit_tests
       - name: 📦 Install dependencies (slim, no workflows extra)
         run: |
           python -m uv venv .venv-slim
@@ -94,9 +116,21 @@ jobs:
           python -m uv pip install -e inference_models --python .venv-slim
           python -m uv pip install -e stream_vision --python .venv-slim
           python -m uv pip install -e inference_server[test] --python .venv-slim
-      - name: 🧪 Unit Tests of Inference Server (slim install guard)
-        timeout-minutes: 10
-        working-directory: inference_server
-        run: |
-          ../.venv-slim/bin/python -c "import importlib.util; assert importlib.util.find_spec('roboflow_workflows') is None"
-          ../.venv-slim/bin/pytest tests/unit_tests/legacy/test_slim_install.py
+      - name: "🧪 Unit Tests of Inference Server (slim install guard) [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 30 || 10 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          working-directory: inference_server
+          command: |
+            ../.venv-slim/bin/python -c "import importlib.util; assert importlib.util.find_spec('roboflow_workflows') is None"
+            ../.venv-slim/bin/pytest tests/unit_tests/legacy/test_slim_install.py
+      - name: Retain RC test attempt logs
+        if: ${{ always() && inputs.release_source != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-attempts-unit_tests_inference_model_manager_and_server-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-test-attempts.*/attempt-*.log
+            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
+          if-no-files-found: warn

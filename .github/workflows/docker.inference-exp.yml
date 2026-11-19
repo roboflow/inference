@@ -1,3 +1,4 @@
+# Official releases are orchestrated by publish.pypi.yml / release.image.yml.
 name: Build and Push Inference Experimental Images
 
 on:
@@ -16,8 +17,6 @@ on:
         type: string
         description: "Custom tag to use instead of version"
         required: false
-  release:
-    types: [published]
   push:
     branches:
       - main
@@ -55,9 +54,15 @@ jobs:
         id: tags
         env:
           CUSTOM_TAG: ${{ github.event.inputs.custom_tag }}
+          FORCE_PUSH: ${{ inputs.force_push }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           BASE_TAG="${CUSTOM_TAG:-$VERSION}"
+          if [[ "$FORCE_PUSH" == "true" && "$REF_NAME" != "main" && "$BASE_TAG" =~ ^(latest|v?[0-9]+\.[0-9]+\.[0-9]+([.-]post[0-9]+)?)$ ]]; then
+            echo "Stable runtime image tags require an official GitHub Release; use a diagnostic custom tag." >&2
+            exit 1
+          fi
           if [[ ! "$BASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
             echo "Invalid image tag." >&2
             exit 1
