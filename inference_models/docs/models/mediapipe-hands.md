@@ -1,6 +1,6 @@
 # MediaPipe Hands - Hand Landmarks
 
-MediaPipe Hands finds hands and returns 21 landmarks per hand (wrist, and four joints for each finger), plus handedness. This is Google's hand landmarker, with its two models converted to ONNX and the steps between them re-implemented in `inference-models`, so it runs without the `mediapipe` library on every ONNX execution provider, including CUDA and TensorRT on Jetson.
+MediaPipe Hands finds hands and returns 21 landmarks per hand (wrist, and four joints for each finger), plus handedness. This is Google's hand landmarker, with its two models converted to ONNX and the steps between them re-implemented in `inference-models`, so it runs without the `mediapipe` library. The models are plain ONNX graphs and should run on any ONNX Runtime execution provider, CUDA and TensorRT on Jetson included, but so far only the CPU provider has been tested.
 
 ## Overview
 
@@ -31,9 +31,13 @@ One keypoint instance per hand, in image pixels:
 - `xy` - 21 landmarks (`wrist`, `thumb_cmc` ... `pinky_tip`, MediaPipe's order).
 - `confidence` - the hand's score on every landmark; the model predicts no per-landmark visibility.
 - `detection_confidence` - palm (or detector) score times hand presence.
-- `key_points_metadata` - per hand: `handedness_confidence`, `hand_presence`, `landmarks_z` (relative depth, in the same pixel scale as `x`) and `world_landmarks` (21 x 3, metres, origin at the hand's centre).
+- `key_points_metadata` - per hand: `handedness_confidence`, `hand_presence`, `landmarks_z` (relative depth, in the same pixel scale as `x`), `world_landmarks` (21 x 3, metres, origin at the hand's centre), `hand_rect` (the rotated region the landmarks were predicted from) and `next_hand_rect` (the region those landmarks give for the next video frame). Regions are `[center_x, center_y, width, height, rotation]` in unrounded pixels, rotation in radians.
 
-The detections returned alongside are boxes around the landmarks.
+The detections returned alongside are boxes around the landmarks. The palm detector's own detections carry each palm's hand region as `hand_rect`.
+
+## Video
+
+MediaPipe does not run the palm detector on every video frame. The landmarks found on one frame give the hand regions for the next, and the detector only runs while fewer hands are tracked than asked for. `inference_models.models.mediapipe_hands.tracking` holds those rules (`needs_detection`, `merge_tracked_and_detected`, `deduplicate_hands`); the caller keeps each video's regions. The `roboflow_core/mediapipe_hand_landmarks@v1` Workflow block does this for you.
 
 ## Inference Parameters
 

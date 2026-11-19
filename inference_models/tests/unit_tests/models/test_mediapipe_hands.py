@@ -17,6 +17,11 @@ from inference_models.models.mediapipe_hands.geometry import (
     project_landmarks,
     weighted_non_max_suppression,
 )
+from inference_models.models.mediapipe_hands.tracking import (
+    TrackedHand,
+    deduplicate_hands,
+    merge_tracked_and_detected,
+)
 
 try:
     import onnxruntime  # noqa: F401
@@ -224,6 +229,58 @@ def test_detector_boxes_get_a_second_landmark_pass_on_the_landmark_region() -> N
     # Box score 0.8 fused with presence 0.9.
     assert float(detections.confidence[0]) == pytest.approx(0.72)
     assert tuple(key_points.xy.shape) == (1, 21, 2)
+
+
+def test_tracked_region_wins_over_a_detection_of_the_same_hand() -> None:
+    tracked = TrackedHand(rect=RotatedRect(100.0, 100.0, 80.0, 80.0, 0.3), score=0.6)
+    same_hand = TrackedHand(rect=RotatedRect(105.0, 100.0, 80.0, 80.0, 0.0), score=0.9)
+    other_hand = TrackedHand(rect=RotatedRect(300.0, 100.0, 80.0, 80.0, 0.0), score=0.8)
+    third_hand = TrackedHand(rect=RotatedRect(500.0, 100.0, 80.0, 80.0, 0.0), score=0.7)
+
+    merged = merge_tracked_and_detected(
+        [tracked], [same_hand, other_hand, third_hand], max_num_hands=2
+    )
+
+    assert merged == [tracked, other_hand]
+
+
+def test_duplicate_hands_keep_the_one_with_higher_presence() -> None:
+    boxes = np.asarray(
+        [[0.0, 0.0, 100.0, 100.0], [5.0, 0.0, 105.0, 100.0], [300.0, 0.0, 400.0, 100.0]]
+    )
+
+    kept = deduplicate_hands(boxes, presences=[0.7, 0.95, 0.6])
+
+    assert kept == [1, 2]
+
+
+@requires_onnxruntime
+def test_landmark_results_carry_the_region_for_the_next_frame() -> None:
+    from inference_models.models.mediapipe_hands.hand_landmarks_onnx import (
+        HandPrediction,
+        hands_to_results,
+    )
+
+    landmarks = np.concatenate([_synthetic_landmarks(), np.zeros((21, 1))], axis=1)
+    hand = HandPrediction(
+        landmarks=landmarks.astype(np.float32),
+        world_landmarks=np.zeros((21, 3), dtype=np.float32),
+        presence=0.9,
+        right_hand_score=0.2,
+        rect=RotatedRect(100.0, 100.0, 200.0, 200.0, 0.4),
+    )
+
+    key_points, _ = hands_to_results(
+        hands=[hand], scores=[0.9], image_is_mirrored=False, device=torch.device("cpu")
+    )
+
+    metadata = key_points.key_points_metadata[0]
+    assert metadata["hand_rect"] == pytest.approx([100.0, 100.0, 200.0, 200.0, 0.4])
+    expected = landmarks_to_hand_rect(landmarks[:, :2])
+    assert metadata["next_hand_rect"] == pytest.approx(
+        [expected.center_x, expected.center_y, expected.width, expected.height, 0.0],
+        abs=1e-4,
+    )
 
 
 def _synthetic_landmarks() -> np.ndarray:

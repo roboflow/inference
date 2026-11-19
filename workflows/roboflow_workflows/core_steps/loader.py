@@ -540,6 +540,15 @@ else:
     )
 
 from roboflow_workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.models.foundation.mediapipe_hands.v1 import (
+        MediaPipeHandLandmarksBlockV1,
+    )
+else:
+    from roboflow_workflows.core_steps.models.foundation.mediapipe_hands.v1_tensor import (
+        MediaPipeHandLandmarksBlockV1,
+    )
 from roboflow_workflows.core_steps.models.foundation.glm_ocr.v1 import GLMOCRBlockV1
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
@@ -1989,6 +1998,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV1,
         TwilioSMSNotificationBlockV2,
         GazeBlockV1,
+        MediaPipeHandLandmarksBlockV1,
         LlamaVisionBlockV1,
         LlamaVisionBlockV2,
         MetaVlmBlockV1,

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- MediaPipe hands: Google's hand landmarker as three ONNX models
+  (`mediapipe-palm-detector`, `mediapipe-hand-landmarks` and the `mediapipe-hands`
+  composite) with MediaPipe's steps between them re-implemented, so it runs without
+  the `mediapipe` library. The composite can take any object detection model in
+  place of the palm detector. `mediapipe_hands.tracking` holds MediaPipe's rules for
+  reusing hand regions across video frames, and both stage models report the hand
+  regions they used (`hand_rect`, plus `next_hand_rect` from the landmarks).
+
 ## `0.39.9`
 
 ### Changed

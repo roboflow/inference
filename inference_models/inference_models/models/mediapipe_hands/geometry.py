@@ -283,6 +283,27 @@ def box_to_hand_rect(xyxy: Sequence[float], scale: float) -> RotatedRect:
     )
 
 
+def rect_to_list(rect: RotatedRect) -> List[float]:
+    """``[center_x, center_y, width, height, rotation]``, for model output metadata."""
+    return [rect.center_x, rect.center_y, rect.width, rect.height, rect.rotation]
+
+
+def rect_from_list(values: Sequence[float]) -> RotatedRect:
+    center_x, center_y, width, height, rotation = (float(v) for v in values)
+    return RotatedRect(
+        center_x=center_x,
+        center_y=center_y,
+        width=width,
+        height=height,
+        rotation=rotation,
+    )
+
+
+def rect_iou(first: RotatedRect, second: RotatedRect) -> float:
+    """IoU of the two regions with rotation ignored, as hand association uses it."""
+    return float(_iou(_unrotated_box(first), _unrotated_box(second)[None, :])[0])
+
+
 def transform_rect(rect: RotatedRect, scale: float, shift_y: float) -> RotatedRect:
     """Shift along the rect's own axis, square it on its long side, then scale."""
     sin, cos = math.sin(rect.rotation), math.cos(rect.rotation)
@@ -386,3 +407,16 @@ def _iou(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
     union = area + areas - intersection
     return np.where(union > 0, intersection / np.maximum(union, 1e-12), 0.0)
+
+
+def _unrotated_box(rect: RotatedRect) -> np.ndarray:
+    half_width, half_height = rect.width / 2, rect.height / 2
+    return np.asarray(
+        [
+            rect.center_x - half_width,
+            rect.center_y - half_height,
+            rect.center_x + half_width,
+            rect.center_y + half_height,
+        ],
+        dtype=np.float64,
+    )

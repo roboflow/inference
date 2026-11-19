@@ -27,8 +27,10 @@ from inference_models.models.mediapipe_hands.geometry import (
     RotatedRect,
     crop_rect,
     landmarks_box,
+    landmarks_to_hand_rect,
     project_landmarks,
     project_world_landmarks,
+    rect_to_list,
 )
 from inference_models.models.rfdetr_two_stage.rfdetr_key_points_stage2_onnx import (
     ImagesInput,
@@ -219,7 +221,10 @@ def hands_to_results(
 
     MediaPipe predicts no per-landmark visibility, so every landmark carries the
     hand's score. Depth, metric landmarks and the handedness score travel in
-    the per-instance metadata.
+    the per-instance metadata, with the region the hand was cut from
+    (``hand_rect``) and the region its landmarks give for the next video frame
+    (``next_hand_rect``), both as ``[center_x, center_y, width, height,
+    rotation]`` in unrounded pixels.
     """
     count = len(hands)
     landmarks = np.asarray(
@@ -237,6 +242,10 @@ def hands_to_results(
             "hand_presence": hand.presence,
             "landmarks_z": hand.landmarks[:, 2].tolist(),
             "world_landmarks": hand.world_landmarks.tolist(),
+            "hand_rect": rect_to_list(hand.rect),
+            "next_hand_rect": rect_to_list(
+                landmarks_to_hand_rect(hand.landmarks[:, :2])
+            ),
         }
         for hand in hands
     ]

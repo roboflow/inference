@@ -3,6 +3,8 @@
 Stage one of the MediaPipe hands pipeline. It finds palms rather than whole
 hands (a palm is close to rigid, so a square anchor fits it), and returns
 seven palm key points per palm that orient the hand region stage two crops.
+Each detection's metadata carries that region as ``hand_rect``
+(``[center_x, center_y, width, height, rotation]`` in pixels).
 """
 
 from typing import List, Optional, Tuple
@@ -25,6 +27,8 @@ from inference_models.models.mediapipe_hands.geometry import (
     decode_palm_detections,
     generate_palm_anchors,
     letterbox_matrix,
+    palm_to_hand_rect,
+    rect_to_list,
 )
 from inference_models.models.rfdetr_two_stage.rfdetr_key_points_stage2_onnx import (
     ImagesInput,
@@ -163,6 +167,10 @@ class MediaPipePalmDetectorONNX(
                     .to(torch.int32),
                     class_id=class_id,
                     confidence=scores,
+                    bboxes_metadata=[
+                        {"hand_rect": rect_to_list(palm_to_hand_rect(palm))}
+                        for palm in palms
+                    ],
                 )
             )
         return all_key_points, all_detections

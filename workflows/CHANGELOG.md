@@ -16,6 +16,15 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- `roboflow_core/mediapipe_hand_landmarks@v1` finds hands and their 21 landmarks
+  with MediaPipe's hand landmarker, using the palm detector or boxes from any
+  upstream detection block (for example a model trained on gloved hands). On video
+  it reuses the previous frame's hand regions, the way MediaPipe tracks hands.
+  LOCAL step execution only; needs an
+  `inference-models` release with `mediapipe_hands`.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.
