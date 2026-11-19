@@ -110,3 +110,23 @@ def test_rfdetr_semantic_segmentation_trt_resolution() -> None:
         task_type="semantic-segmentation",
         backend=BackendType.TRT,
     )
+
+
+@pytest.mark.trt_extras
+@pytest.mark.parametrize(
+    "task_type,expected_class_name",
+    [
+        ("classification", "ConvNeXtForClassificationTRT"),
+        ("multi-label-classification", "ConvNeXtForMultiLabelClassificationTRT"),
+    ],
+)
+def test_convnext_classification_trt_resolution(
+    task_type: str, expected_class_name: str
+) -> None:
+    model_class = resolve_model_class(
+        model_architecture="convnext",
+        task_type=task_type,
+        backend=BackendType.TRT,
+    )
+
+    assert model_class.__name__ == expected_class_name
