@@ -11,11 +11,13 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from time import monotonic
 from unittest.mock import patch
 from urllib.parse import quote, quote_plus
 
 import hosted_e2e_repository as repository
 import yaml
+from click.testing import CliRunner
 
 
 class RepositoryRunTests(unittest.TestCase):
@@ -437,7 +439,7 @@ class LogRedactionTests(unittest.TestCase):
 
     def test_secret_representations_are_redacted_at_every_write_boundary(self):
         """URL, JSON, repr, base64 and multiline values survive arbitrary chunking."""
-        secret = "synthetic/secret+with spaces\\and\nnew-line-123456789"
+        secret = "😀synthetic/'\"secret+with spaces\\and\nnew-line-123456789"
         variants = [
             secret,
             repr(secret)[1:-1],
@@ -447,6 +449,8 @@ class LogRedactionTests(unittest.TestCase):
             base64.b64encode(secret.encode()).decode(),
             base64.urlsafe_b64encode(secret.encode()).decode(),
         ]
+        # Each encoding must need its own mask, rather than sharing another's.
+        self.assertEqual(len(set(variants)), len(variants))
         with patch.dict(os.environ, {"OPENAI_KEY": secret}, clear=True):
             for value in variants:
                 message = "before " + value + " after\n"
@@ -456,6 +460,36 @@ class LogRedactionTests(unittest.TestCase):
                         visible = redactor._feed(message[:split])
                         visible += redactor._feed(message[split:], final=True)
                         self.assertEqual(visible, "before [redacted] after\n")
+
+    def test_individual_lines_of_multiline_secrets_are_redacted(self):
+        """A diagnostic may print just one line of a structured secret."""
+        secret = "first-private-line-123456789\nsecond-private-line-987654321"
+        with patch.dict(os.environ, {"TIMING_PROFILE": secret}, clear=True):
+            for line in secret.splitlines():
+                with self.subTest(line=line):
+                    redactor = repository._LogRedactor()
+                    self.assertEqual(
+                        redactor._feed(f"line: {line}\n", final=True),
+                        "line: [redacted]\n",
+                    )
+
+    def test_secret_environment_names_are_case_insensitive(self):
+        """Lowercase credential names receive the same public-log protection."""
+        secret = "lowercase-private-canary-123456789"
+        with patch.dict(os.environ, {"openai_key": secret}, clear=True):
+            redactor = repository._LogRedactor()
+            self.assertEqual(redactor._feed(secret, final=True), "[redacted]")
+
+    def test_complete_secret_is_not_split_by_an_overlapping_secret_prefix(self):
+        """Holding a second secret's prefix must also hold the complete first one."""
+        with patch.dict(
+            os.environ, {"A_KEY": "abcdWXYZ1", "B_KEY": "cdWXYZ1QQ9"}, clear=True
+        ):
+            redactor = repository._LogRedactor()
+            visible = redactor._feed("xxabcdWXYZ1")
+            visible += redactor._feed(" tail")
+            visible += redactor._feed("", final=True)
+            self.assertEqual(visible, "xx[redacted] tail")
 
     def test_overlapping_short_and_multiline_secrets(self):
         """Match longer values first and redact short configured secrets too."""
@@ -525,24 +559,155 @@ class LogRedactionTests(unittest.TestCase):
                 "import os, sys, time\nfrom pathlib import Path\n"
                 "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
                 'os.write(1, ("timeout diagnostic: " + os.environ["OPENAI_KEY"]).encode())\n'
-                "time.sleep(30)\n"
+                "time.sleep(10)\n"
             )
             visible = io.StringIO()
             with patch.dict(
                 os.environ, {"OPENAI_KEY": secret, "GITHUB_ACTIONS": "true"}
             ), redirect_stdout(visible):
+                started = monotonic()
                 with self.assertRaises(subprocess.TimeoutExpired):
                     repository._stream_stage(
                         [sys.executable, "-c", source, str(root / "pid")],
                         log_path=root / "stage.log",
                         timeout=0.5,
                     )
+                self.assertLess(monotonic() - started, 5)
             self.assertIn("timeout diagnostic: [redacted]", visible.getvalue())
             self.assertNotIn(secret, visible.getvalue())
             with self.assertRaises(ProcessLookupError):
                 os.kill(int((root / "pid").read_text()), 0)
             lines = visible.getvalue().splitlines()
             self.assertEqual(lines[-1], f"::{lines[0].split('::')[-1]}::")
+
+    def test_stream_flushes_a_complete_secret_held_at_eof(self):
+        """A complete secret can still be buffered as a prefix of a longer one."""
+        with tempfile.TemporaryDirectory() as directory:
+            secret = "buffered-private-canary-123456789"
+            visible = io.StringIO()
+            with patch.dict(
+                os.environ,
+                {"A_KEY": secret, "B_KEY": secret + "-longer"},
+                clear=True,
+            ), redirect_stdout(visible):
+                code = repository._stream_stage(
+                    [
+                        sys.executable,
+                        "-c",
+                        'import os; os.write(1, ("tail: " + os.environ["A_KEY"]).encode())',
+                    ],
+                    log_path=Path(directory) / "stage.log",
+                    timeout=5,
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(visible.getvalue(), "tail: [redacted]\n")
+
+    def test_stream_decodes_split_utf8_and_flushes_incomplete_bytes_at_eof(self):
+        """Split a credential's UTF-8 character at the actual 64 KiB read boundary."""
+        with tempfile.TemporaryDirectory() as directory:
+            secret = "żółw-private-canary-123456789"
+            source = (
+                "import os\n"
+                'data = b"." * 65535 + os.environ["OPENAI_KEY"].encode()\n'
+                'data += "\\nunicode: żółw".encode() + b"\\xe2\\x82"\n'
+                "os.write(1, data)\n"
+            )
+            visible = io.StringIO()
+            with patch.dict(
+                os.environ, {"OPENAI_KEY": secret}, clear=True
+            ), redirect_stdout(visible):
+                code = repository._stream_stage(
+                    [sys.executable, "-c", source],
+                    log_path=Path(directory) / "stage.log",
+                    timeout=5,
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(
+                visible.getvalue(), "." * 65535 + "[redacted]\nunicode: żółw�\n"
+            )
+
+    def test_aggregate_summary_fences_commands_and_never_uses_raw_ids(self):
+        """Even incomplete display mappings must keep provider keys out of recaps."""
+        secret = "unavailable-provider-canary-123456789"
+        nodeid = f"suite/test_case.py::test_case[{secret}]"
+        display = "suite/test_case.py::test_case[\n::warning::from-test-id]"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            for has_display in [True, False]:
+                with self.subTest(has_display=has_display):
+                    repository.runner._write(
+                        output / "shard-A.json",
+                        {
+                            "display_nodeids": {nodeid: display} if has_display else {},
+                            "cases": {
+                                nodeid: {
+                                    "outcomes": {
+                                        "setup": ["passed"],
+                                        "call": ["failed", "passed"],
+                                        "teardown": ["skipped"],
+                                    }
+                                }
+                            },
+                            "collection_skips": [nodeid],
+                        },
+                    )
+                    repository.runner._write(
+                        output / "acceptance.json",
+                        {
+                            "failures": [nodeid],
+                            "unexpected_skips": [nodeid],
+                            "failure_summaries": {nodeid: {"call": "failure detail"}},
+                        },
+                    )
+                    # Aggregation cannot rely on provider keys in its environment.
+                    with patch.dict(
+                        os.environ, {"GITHUB_ACTIONS": "true"}, clear=True
+                    ), patch.object(repository, "_run", return_value=1), patch.object(
+                        repository.os, "umask"
+                    ):
+                        result = CliRunner().invoke(
+                            repository.main, ["aggregate", "--output", str(output)]
+                        )
+                    self.assertEqual(result.exit_code, 1, result.output)
+                    self.assertNotIn(secret, result.output)
+                    lines = result.output.splitlines()
+                    self.assertRegex(lines[0], r"^::stop-commands::[0-9a-f]{32}$")
+                    self.assertEqual(lines[-1], f"::{lines[0].split('::')[-1]}::")
+                    recap = "\n".join(lines[1:-1])
+                    expected = display if has_display else "[unavailable test ID]"
+                    for prefix in [
+                        "RETRIED ",
+                        "SKIPPED ",
+                        "SKIPPED collection: ",
+                        "FAILED ",
+                        "UNEXPECTED SKIP ",
+                    ]:
+                        self.assertIn(prefix + expected, recap)
+                    self.assertIn(f"  {expected} [call]: failure detail", recap)
+
+    def test_main_exception_output_redacts_secrets_and_fences_commands(self):
+        """Wrapper errors outside the stage stream obey the same log boundary."""
+        secret = "exception-private-canary-123456789"
+        for error_type in [RuntimeError, KeyboardInterrupt]:
+            with self.subTest(error_type=error_type):
+                error = error_type(
+                    f"wrapper diagnostic: {secret}\n::warning::from-error"
+                )
+                with patch.dict(
+                    os.environ,
+                    {"OPENAI_KEY": secret, "GITHUB_ACTIONS": "true"},
+                    clear=True,
+                ), patch.object(repository, "_run", side_effect=error), patch.object(
+                    repository.os, "umask"
+                ):
+                    result = CliRunner().invoke(repository.main, ["shard"])
+                self.assertEqual(result.exit_code, 1, result.output)
+                self.assertNotIn(secret, result.output)
+                lines = result.output.splitlines()
+                self.assertRegex(lines[0], r"^::stop-commands::[0-9a-f]{32}$")
+                self.assertEqual(lines[-1], f"::{lines[0].split('::')[-1]}::")
+                self.assertIn("wrapper diagnostic: [redacted]", "\n".join(lines[1:-1]))
+                self.assertIn("::warning::from-error", lines[1:-1])
 
 
 if __name__ == "__main__":
