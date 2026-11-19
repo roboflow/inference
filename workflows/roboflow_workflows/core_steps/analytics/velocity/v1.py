@@ -18,12 +18,12 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     FLOAT_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
     StepOutputSelector,
-    WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
@@ -134,7 +134,7 @@ class VelocityManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/velocity@v1"]
-    image: WorkflowImageSelector = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image with embedded video metadata. The video_metadata contains fps, frame_number, frame_timestamp, and video_identifier. Required for calculating time deltas and maintaining separate velocity tracking state for different videos.",
     )
     detections: StepOutputSelector(

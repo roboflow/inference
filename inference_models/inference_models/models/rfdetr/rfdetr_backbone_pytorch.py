@@ -11,12 +11,16 @@ from transformers import AutoBackbone
 
 from inference_models.configuration import HF_HUB_CACHE, OFFLINE_MODE
 from inference_models.logger import LOGGER
+from inference_models.models.common.torch import torch_default_dtype_lock
 from inference_models.models.rfdetr.dinov2_with_windowed_attn import (
     WindowedDinov2WithRegistersBackbone,
     WindowedDinov2WithRegistersConfig,
 )
 from inference_models.models.rfdetr.misc import NestedTensor
+from inference_models.models.rfdetr.pe_core_t_backbone import PECoreTEncoder
 from inference_models.models.rfdetr.projector import MultiScaleProjector
+
+PE_CORE_T_ENCODER = "PE-Core-T"
 
 size_to_width = {
     "tiny": 192,
@@ -83,13 +87,14 @@ class DinoV2(nn.Module):
             assert (
                 load_dinov2_weights
             ), "Using non-windowed attention requires loading dinov2 weights from hub"
-            self.encoder = AutoBackbone.from_pretrained(
-                name,
-                cache_dir=HF_HUB_CACHE,
-                out_features=[f"stage{i}" for i in out_feature_indexes],
-                return_dict=False,
-                local_files_only=OFFLINE_MODE,
-            )
+            with torch_default_dtype_lock():
+                self.encoder = AutoBackbone.from_pretrained(
+                    name,
+                    cache_dir=HF_HUB_CACHE,
+                    out_features=[f"stage{i}" for i in out_feature_indexes],
+                    return_dict=False,
+                    local_files_only=OFFLINE_MODE,
+                )
         else:
             window_block_indexes = set(range(out_feature_indexes[-1] + 1))
             window_block_indexes.difference_update(out_feature_indexes)
@@ -130,16 +135,17 @@ class DinoV2(nn.Module):
                     num_register_tokens=0,
                     gradient_checkpointing=gradient_checkpointing,
                 )
-            self.encoder = (
-                WindowedDinov2WithRegistersBackbone.from_pretrained(
-                    name,
-                    cache_dir=HF_HUB_CACHE,
-                    config=windowed_dino_config,
-                    local_files_only=OFFLINE_MODE,
+            with torch_default_dtype_lock():
+                self.encoder = (
+                    WindowedDinov2WithRegistersBackbone.from_pretrained(
+                        name,
+                        cache_dir=HF_HUB_CACHE,
+                        config=windowed_dino_config,
+                        local_files_only=OFFLINE_MODE,
+                    )
+                    if load_dinov2_weights
+                    else WindowedDinov2WithRegistersBackbone(windowed_dino_config)
                 )
-                if load_dinov2_weights
-                else WindowedDinov2WithRegistersBackbone(windowed_dino_config)
-            )
 
         self._out_feature_channels = [size_to_width[size]] * len(out_feature_indexes)
         self._export = False
@@ -247,37 +253,46 @@ class Backbone(BackboneBase):
         positional_encoding_size: bool = False,
     ):
         super().__init__()
-        # an example name here would be "dinov2_base" or "dinov2_registers_windowed_base"
-        # if "registers" is in the name, then use_registers is set to True, otherwise it is set to False
-        # similarly, if "windowed" is in the name, then use_windowed_attn is set to True, otherwise it is set to False
-        # the last part of the name should be the size
-        # and the start should be dinov2
-        name_parts = name.split("_")
-        assert name_parts[0] == "dinov2"
-        size = name_parts[-1]
-        use_registers = False
-        if "registers" in name_parts:
-            use_registers = True
-            name_parts.remove("registers")
-        use_windowed_attn = False
-        if "windowed" in name_parts:
-            use_windowed_attn = True
-            name_parts.remove("windowed")
-        assert (
-            len(name_parts) == 2
-        ), "name should be dinov2, then either registers, windowed, both, or none, then the size"
-        self.encoder = DinoV2(
-            size=name_parts[-1],
-            out_feature_indexes=out_feature_indexes,
-            shape=target_shape,
-            use_registers=use_registers,
-            use_windowed_attn=use_windowed_attn,
-            gradient_checkpointing=gradient_checkpointing,
-            load_dinov2_weights=load_dinov2_weights,
-            patch_size=patch_size,
-            num_windows=num_windows,
-            positional_encoding_size=positional_encoding_size,
-        )
+        if name == PE_CORE_T_ENCODER:
+            self.encoder = PECoreTEncoder(
+                shape=target_shape,
+                out_feature_indexes=out_feature_indexes,
+                patch_size=patch_size,
+                num_windows=num_windows,
+                positional_encoding_size=positional_encoding_size,
+            )
+        else:
+            # an example name here would be "dinov2_base" or "dinov2_registers_windowed_base"
+            # if "registers" is in the name, then use_registers is set to True, otherwise it is set to False
+            # similarly, if "windowed" is in the name, then use_windowed_attn is set to True, otherwise it is set to False
+            # the last part of the name should be the size
+            # and the start should be dinov2
+            name_parts = name.split("_")
+            assert name_parts[0] == "dinov2"
+            size = name_parts[-1]
+            use_registers = False
+            if "registers" in name_parts:
+                use_registers = True
+                name_parts.remove("registers")
+            use_windowed_attn = False
+            if "windowed" in name_parts:
+                use_windowed_attn = True
+                name_parts.remove("windowed")
+            assert (
+                len(name_parts) == 2
+            ), "name should be dinov2, then either registers, windowed, both, or none, then the size"
+            self.encoder = DinoV2(
+                size=name_parts[-1],
+                out_feature_indexes=out_feature_indexes,
+                shape=target_shape,
+                use_registers=use_registers,
+                use_windowed_attn=use_windowed_attn,
+                gradient_checkpointing=gradient_checkpointing,
+                load_dinov2_weights=load_dinov2_weights,
+                patch_size=patch_size,
+                num_windows=num_windows,
+                positional_encoding_size=positional_encoding_size,
+            )
         # build encoder + projector as backbone module
         if freeze_encoder:
             for param in self.encoder.parameters():

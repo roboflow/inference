@@ -1,5 +1,3 @@
-from typing import Optional
-
 from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.models.base import Model
 
@@ -37,8 +35,11 @@ class ModelRegistry:
         Raises:
             ModelNotRecognisedError: If the model_type is not found in the registry_dict.
         """
-        if model_type not in self.registry_dict:
+        try:
+            model_class = self.registry_dict[model_type]
+        except KeyError as error:
             raise ModelNotRecognisedError(
                 f"Could not find model of type: {model_type} in configured registry."
-            )
-        return self.registry_dict[model_type]
+            ) from error
+
+        return model_class

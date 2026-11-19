@@ -22,9 +22,9 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
 from roboflow_workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     FLOAT_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     Selector,
-    WorkflowImageSelector,
     WorkflowParameterSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -98,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/detection_event_log@v1"]
 
-    image: WorkflowImageSelector = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Reference to the image for video metadata (frame number, timestamp).",
         examples=["$inputs.image"],
     )

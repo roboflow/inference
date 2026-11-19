@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import random
 import time
@@ -29,6 +30,7 @@ from streamvision.camera.exceptions import (
     EndOfStreamError,
     StreamOperationNotAllowedError,
 )
+from streamvision.camera.fourcc import parse_fourcc
 from streamvision.camera.source_reference_sanitizer import (
     redact_credentials_in_text,
     sanitize_source_reference,
@@ -188,6 +190,29 @@ class CV2VideoFrameProducer(VideoFrameProducer):
             fps=fps,
             timestamp_created=timestamp_created,
         )
+
+    def _verify_camera_mode(self, properties: Dict[str, Union[float, str]]) -> None:
+        for name, requested in properties.items():
+            name = name.lower()
+            if name not in {"fourcc", "frame_width", "frame_height", "fps"}:
+                continue
+
+            expected = parse_fourcc(requested) if name == "fourcc" else requested
+            effective = self.stream.get(getattr(cv2, "CAP_PROP_" + name.upper()))
+            # UVC commonly reports rounded NTSC rates rather than exact fractions.
+            tolerance = 0.001 if name == "fps" else 0
+            try:
+                matches = expected is not None and math.isclose(
+                    float(expected), float(effective), rel_tol=0, abs_tol=tolerance
+                )
+            except (TypeError, ValueError, OverflowError):
+                matches = False
+            if not matches:
+                raise ValueError(
+                    f"cv2 camera mode mismatch: {name}: requested {requested!r}, "
+                    f"effective {effective!r}. Native capture is unavailable and "
+                    "the CPU fallback cannot honor the requested camera mode."
+                )
 
     def release(self):
         self.stream.release()
@@ -787,6 +812,13 @@ class VideoSource:
                 classification_text=underlying_error,
             )
         self._video.initialize_source_properties(self._video_source_properties)
+        if (
+            type(self._video) is CV2VideoFrameProducer
+            and ENABLE_TENSOR_DATA_REPRESENTATION
+            and not callable(self._stream_reference)
+            and _consumes_camera_on_jetson(video=self._stream_reference)
+        ):
+            self._video._verify_camera_mode(self._video_source_properties)
         self._source_properties = self._video.discover_source_properties()
 
     def _interrupt_video(self) -> None:
@@ -1204,37 +1236,38 @@ class VideoConsumer:
             return True
         self._adaptive_frames_dropped_in_row = 0
         if (
-            not buffer.full()
-            or self._buffer_filling_strategy is BufferFillingStrategy.WAIT
+            buffer.full()
+            and self._buffer_filling_strategy is not BufferFillingStrategy.WAIT
         ):
-            return decode_video_frame_to_buffer(
-                frame_timestamp=frame_timestamp,
-                frame_id=self._frame_counter,
-                video=video,
-                buffer=buffer,
-                decoding_pace_monitor=self._decoding_pace_monitor,
-                source_id=source_id,
-                declared_source_fps=declared_source_fps,
-                measured_source_fps=measured_source_fps,
-                comes_from_video_file=is_source_video_file,
-                total_frames=self._source_total_frames,
-            )
-        if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
-            return self._process_stream_frame_dropping_oldest(
-                frame_timestamp=frame_timestamp,
-                video=video,
-                buffer=buffer,
-                source_id=source_id,
-                is_video_file=is_source_video_file,
-            )
-        send_frame_drop_update(
+            if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
+                drop_single_frame_from_buffer(
+                    buffer=buffer,
+                    cause="DROP_OLDEST strategy",
+                    status_update_handlers=self._status_update_handlers,
+                )
+            else:
+                send_frame_drop_update(
+                    frame_timestamp=frame_timestamp,
+                    frame_id=self._frame_counter,
+                    cause="DROP_LATEST strategy",
+                    status_update_handlers=self._status_update_handlers,
+                    source_id=source_id,
+                )
+                return True
+
+        decoded = decode_video_frame_to_buffer(
             frame_timestamp=frame_timestamp,
             frame_id=self._frame_counter,
-            cause="DROP_LATEST strategy",
-            status_update_handlers=self._status_update_handlers,
+            video=video,
+            buffer=buffer,
+            decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
+            declared_source_fps=declared_source_fps,
+            measured_source_fps=measured_source_fps,
+            comes_from_video_file=is_source_video_file,
+            total_frames=self._source_total_frames,
         )
-        return True
+        return decoded
 
     def _frame_should_be_adaptively_dropped(
         self, declared_source_fps: Optional[float], buffer: Queue
@@ -1307,30 +1340,6 @@ class VideoConsumer:
             # we are too fast for the reader - time to save compute on decoding
             return True
         return False
-
-    def _process_stream_frame_dropping_oldest(
-        self,
-        frame_timestamp: datetime,
-        video: VideoFrameProducer,
-        buffer: Queue,
-        source_id: Optional[int],
-        is_video_file: bool,
-    ) -> bool:
-        drop_single_frame_from_buffer(
-            buffer=buffer,
-            cause="DROP_OLDEST strategy",
-            status_update_handlers=self._status_update_handlers,
-        )
-        return decode_video_frame_to_buffer(
-            frame_timestamp=frame_timestamp,
-            frame_id=self._frame_counter,
-            video=video,
-            buffer=buffer,
-            decoding_pace_monitor=self._decoding_pace_monitor,
-            source_id=source_id,
-            comes_from_video_file=is_video_file,
-            total_frames=self._source_total_frames,
-        )
 
 
 def get_from_queue(

@@ -1,0 +1,1325 @@
+"""Databricks SQL Image Source block.
+
+Queries a Databricks SQL warehouse and turns image bytes stored in a table
+column into Workflow images, one output element per returned row.
+"""
+
+import base64
+import contextlib
+import datetime
+import io
+import json
+import logging
+import re
+import threading
+import time
+from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
+
+import cv2
+import numpy as np
+from PIL import Image
+from pydantic import ConfigDict, Field, field_validator
+from roboflow_workflows.core_steps.integrations.databricks.availability import (
+    CONNECTOR_INSTALL_HINT,
+    DISABLED_HINT,
+    block_enabled,
+    connector_available,
+    databricks_unavailability_reason,
+    running_on_hosted_platform,
+)
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.query import (
+    build_image_query,
+    quote_identifier,
+)
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.row_errors import (
+    MetadataLimitExceeded,
+)
+from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.transport import (
+    PinnedDestination,
+    install_pinned_transport,
+    pinned_destination,
+)
+from roboflow_workflows.environment import (
+    ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES,
+    DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES,
+    DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS,
+    DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES,
+)
+from roboflow_workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    OutputDefinition,
+    WorkflowImageData,
+)
+from roboflow_workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
+    IMAGE_KIND,
+    SECRET_KIND,
+    STRING_KIND,
+    Selector,
+)
+from roboflow_workflows.execution_engine.entities.workload import (
+    Discovery,
+    Runtime,
+    RuntimeRestriction,
+    Severity,
+    WorkOperation,
+)
+from roboflow_workflows.prototypes.block import (
+    AirGappedAvailability,
+    BlockResult,
+    DependentResource,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+    actual_restrictions_of,
+    is_workflow_selector,
+)
+from roboflow_workflows.utils.url_input import (
+    URLAddressNotAllowedError,
+    address_is_global,
+    resolve_and_validate_ips,
+)
+
+logger = logging.getLogger(__name__)
+
+# Only Databricks-operated workspace domains are accepted as a destination. The
+# connector then connects to the validated IP address with the hostname kept
+# for TLS SNI, certificate verification and the Host header (see transport.py).
+ALLOWED_HOST_SUFFIXES = (
+    ".cloud.databricks.com",
+    ".gcp.databricks.com",
+    ".azuredatabricks.net",
+)
+HOSTNAME_PATTERN = re.compile(
+    r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
+)
+# SQL warehouse (`/sql/1.0/warehouses/<id>`, legacy `/sql/1.0/endpoints/<id>`)
+# or all-purpose cluster (`/sql/protocolv1/o/<org>/<cluster-id>`) paths. The
+# cluster form runs customer code on the receiving end and is refused on the
+# hosted platform.
+WAREHOUSE_PATH_PATTERN = re.compile(
+    r"/sql/1\.0/(warehouses|endpoints)/[A-Za-z0-9]{1,64}"
+)
+CLUSTER_PATH_PATTERN = re.compile(r"/sql/protocolv1/o/[0-9]{1,32}/[A-Za-z0-9-]{1,64}")
+DATABRICKS_HTTPS_PORT = 443
+# Deadline model. `timeout_seconds` is the overall deadline for connecting,
+# executing / polling, fetching and decoding. When it expires the watchdog
+# cancels the statement and closes the connection; the blocked request in the
+# step's thread then fails within one socket timeout plus one bounded retry
+# delay, which is the cleanup interval after which the step has returned and
+# released its execution slot.
+SOCKET_TIMEOUT_SECONDS = 30
+RETRY_ATTEMPTS = 3
+RETRY_DELAY_MAX_SECONDS = 5
+CLEANUP_GRACE_SECONDS = SOCKET_TIMEOUT_SECONDS + RETRY_DELAY_MAX_SECONDS
+# Connector buffering. `arraysize` rows / `buffer_size_bytes` bytes request the
+# inline result chunk the warehouse returns per fetch, so the connector holds at
+# most one chunk ahead of the row loop. Transport byte caps enforce the bound.
+FETCH_BATCH_SIZE = 8
+MIN_RESULT_BUFFER_BYTES = 1024 * 1024
+MAX_ROWS = 1_000
+MAX_TIMEOUT_SECONDS = 600
+ALLOWED_IMAGE_FORMATS = ("JPEG", "PNG")
+# Budgets apply per block invocation (not per process): the operator sets them
+# against worker memory and concurrency, see the block documentation.
+MAX_IMAGE_PAYLOAD_BYTES = DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES
+MAX_IMAGE_PIXELS = DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS
+MAX_RUN_BYTES = DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES
+MAX_IMAGE_NAME_CHARS = 255
+MAX_METADATA_VALUE_CHARS = 4_096
+MAX_METADATA_BYTES_PER_ROW = 64 * 1024
+MAX_METADATA_DEPTH = 4
+MAX_METADATA_ITEMS = 256
+IMAGE_CHANNELS = 3
+# CA bundle handed to the connector (``None`` = system trust store). A hook for
+# the real-transport test harness and for self-hosted servers behind a private
+# CA; never relaxes verification.
+TLS_TRUSTED_CA_FILE: Optional[str] = None
+
+HOSTED_PLATFORM_RESTRICTION = RuntimeRestriction(
+    code="unavailable_on_hosted_platform",
+    severity=Severity.HARD,
+    note=(
+        "The Databricks SQL Image Source is disabled by default on the Roboflow "
+        "hosted serverless platform: the operator enables it with "
+        "DATABRICKS_SQL_IMAGE_SOURCE_ENABLED=true (and removes `databricks` from "
+        "WORKFLOW_DISABLED_BLOCK_PATTERNS where set)."
+    ),
+    applies_to_runtimes=[Runtime.HOSTED_SERVERLESS],
+)
+VIDEO_PIPELINE_RESTRICTION = RuntimeRestriction(
+    code="queries_warehouse_on_every_run",
+    severity=Severity.SOFT,
+    note=(
+        "Each run executes the SQL statement again. In a video pipeline that is "
+        "one warehouse query per frame; gate the step or run it from a "
+        "scheduled Workflow instead."
+    ),
+    applies_to_runtimes=[Runtime.INFERENCE_PIPELINE],
+)
+
+SHORT_DESCRIPTION = (
+    "Query a Databricks SQL warehouse and turn image bytes stored in a table "
+    "column into Workflow images."
+)
+
+LONG_DESCRIPTION = """
+Read JPEG or PNG images from a Databricks table or view into a Workflow, for
+labeling, pre-labeling or import through Roboflow Dataset Upload.
+
+Set `catalog`, `schema_name`, `table`, `image_column`, and optionally
+`image_name_column` and `metadata_columns`. Supply each name without SQL quoting;
+a dot inside a name belongs to that one identifier. Complex filters, joins and
+selection logic belong in a view managed in Databricks. Arbitrary SQL and SQL
+expressions are not accepted.
+
+The block owns a fixed SELECT with native IDENTIFIER parameters for the source
+and columns and a bound LIMIT. `max_rows` is 1-1000 (default 100). It limits rows
+returned, not warehouse scan cost or view computation. Use a dedicated identity
+with SELECT on the intended tables/views and CAN USE on the warehouse. The block
+does not verify read-only grants or tenant ownership of the workspace.
+
+Outputs are `images`, `image_names` (the configured column or a UUID), and
+`metadata` (explicitly selected non-binary metadata columns). Connect them to
+batch-aware downstream blocks. The separate `errors` output reports rows rejected
+for metadata limits. The block runs on every invocation, so gate it
+in a video pipeline to avoid one warehouse query per frame.
+
+Only Databricks workspace hosts and SQL endpoint paths are accepted. DNS answers
+are validated, and TLS connects to the pinned address with hostname verification.
+Private destinations require a self-hosted operator opt-in and are always refused
+on hosted workers. Redirects, proxies, secondary connector HTTP clients, CloudFetch,
+Arrow/LZ4 and compressed HTTP responses are refused.
+
+A disposable subprocess runs the connector and image decoder. The request is
+limited to 1 MiB before serialization. HTTP responses are byte capped and Thrift
+structure sizes bounded before materialization. JPEG/PNG headers are checked
+before pixel decoding (defaults: 32 MiB encoded, 25 MP); WebP and TIFF are refused.
+Encoded images, pixels, names and metadata count toward a 1 GiB invocation budget.
+Metadata is limited to 4096 characters per string, 4 nesting levels, 256 items
+per collection and 64 KiB per row. Metadata limit violations skip the entire row
+and emit a bounded `errors` diagnostic, even when all rows are rejected and
+regardless of `skip_undecodable`. Successful rows have no error; rejected rows
+have no image, name or metadata outputs. Workflow JSON preserves null positions.
+`skip_undecodable` controls image failures; total budget exhaustion fails the block.
+
+`timeout_seconds` (5-600, default 120) covers worker startup through result loading.
+Cancellation is best effort; terminating the child does not prove the remote query
+stopped. Cleanup allows up to 35 additional seconds. These are application-data
+bounds, not hard process RSS limits. Operator controls and validation instructions:
+`docs/workflows/databricks_sql_image_source.md`.
+
+The `databricks` extra and `DATABRICKS_SQL_IMAGE_SOURCE_ENABLED` are both required.
+The switch defaults off on hosted workers and on for self-hosted deployments.
+Use a Workflow input or secret for the token, never a literal in a shared workflow.
+"""
+
+
+class BlockManifest(WorkflowBlockManifest):
+    """Describe the fixed table/view reader inputs, outputs and runtime restrictions."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "name": "Databricks SQL Image Source",
+            "version": "v1",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "transformation",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-database",
+                "blockPriority": 5,
+            },
+        },
+    )
+    type: Literal["roboflow_core/databricks_sql_image_source@v1"] = Field(
+        description="Workflow block identifier for the Databricks table/view image reader.",
+        examples=["roboflow_core/databricks_sql_image_source@v1"],
+    )
+    server_hostname: Union[Selector(kind=[STRING_KIND]), str] = Field(
+        description="Databricks workspace host without scheme, e.g. "
+        "`dbc-a1b2c3d4-e5f6.cloud.databricks.com` or "
+        "`adb-1234567890123456.7.azuredatabricks.net`. Only Databricks workspace "
+        "domains are accepted.",
+        examples=["dbc-a1b2c3d4-e5f6.cloud.databricks.com", "$inputs.databricks_host"],
+    )
+    http_path: Union[Selector(kind=[STRING_KIND]), str] = Field(
+        description="HTTP path of the SQL warehouse (`/sql/1.0/warehouses/<id>`), from "
+        "its Connection details tab. Cluster paths "
+        "(`/sql/protocolv1/o/<org>/<cluster-id>`) work on self-hosted servers only.",
+        examples=[
+            "/sql/1.0/warehouses/abcdef1234567890",
+            "$inputs.databricks_http_path",
+        ],
+    )
+    access_token: Union[Selector(kind=[SECRET_KIND, STRING_KIND]), str] = Field(
+        description="Databricks personal access token with read access to the table. "
+        "Reference it from a Workflow input or secret rather than saving a literal "
+        "in a shared Workflow. The statement runs with this token's rights, so use a "
+        "read-only token.",
+        examples=["$inputs.databricks_token"],
+        json_schema_extra={"private": True},
+    )
+    catalog: str = Field(
+        description="Databricks catalog name, as one unquoted identifier.",
+        examples=["main"],
+        min_length=1,
+        max_length=255,
+    )
+    schema_name: str = Field(
+        description="Schema name, as one unquoted identifier.",
+        examples=["vision"],
+        min_length=1,
+        max_length=255,
+    )
+    table: str = Field(
+        description="Table or view name, as one unquoted identifier. Define complex "
+        "selection logic in a Databricks view; this block executes a fixed SELECT.",
+        examples=["images_to_label"],
+        min_length=1,
+        max_length=255,
+    )
+    metadata_columns: List[str] = Field(
+        default_factory=list,
+        max_length=32,
+        description="Up to 32 additional columns to return as metadata. Names are "
+        "unquoted identifiers, never SQL expressions.",
+        examples=[["raccoon_name", "weight"]],
+    )
+    image_column: str = Field(
+        default="bytes",
+        min_length=1,
+        max_length=255,
+        description="Name of the column holding the encoded image (BINARY, or a base64 string).",
+        examples=["bytes", "content"],
+    )
+    image_name_column: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="Optional column whose value becomes the image name (e.g. a primary key); "
+        "it must exist in the result. A UUID is generated when unset or NULL.",
+        examples=["id", "path"],
+    )
+    max_rows: int = Field(
+        default=100,
+        ge=1,
+        le=MAX_ROWS,
+        description="Cap on rows selected and fetched per run (at most 1000). The 1 GiB per-run budget is the practical bound for large "
+        "images.",
+        examples=[100, 500],
+    )
+    timeout_seconds: int = Field(
+        default=120,
+        ge=5,
+        le=MAX_TIMEOUT_SECONDS,
+        description="Overall deadline for the run: connecting, query execution and "
+        "polling, fetching and decoding. The statement is cancelled and the "
+        "connection closed when it expires.",
+        examples=[120, 300],
+    )
+    skip_undecodable: bool = Field(
+        default=True,
+        description="Skip rows whose image bytes cannot be decoded or exceed the per-image "
+        "limits, instead of failing the step. Metadata limit violations always emit "
+        "errors, including when all rows are rejected. If all rows fail image "
+        "conversion and no metadata errors are emitted, the step still fails.",
+        examples=[True, False],
+    )
+
+    @field_validator(
+        "catalog", "schema_name", "table", "image_column", "image_name_column"
+    )
+    @classmethod
+    def _identifier_is_bounded(cls, value: Any) -> Any:
+        if value is not None:
+            quote_identifier(value)
+
+        return value
+
+    @field_validator("metadata_columns")
+    @classmethod
+    def _metadata_identifiers_are_bounded(cls, value: List[str]) -> List[str]:
+        for column in value:
+            quote_identifier(column)
+
+        return value
+
+    @field_validator("server_hostname")
+    @classmethod
+    def _literal_hostname_is_a_databricks_host(cls, value: Any) -> Any:
+        if isinstance(value, str) and not is_workflow_selector(value):
+            normalise_hostname(value)
+        return value
+
+    @field_validator("http_path")
+    @classmethod
+    def _literal_path_is_a_sql_path(cls, value: Any) -> Any:
+        if isinstance(value, str) and not is_workflow_selector(value):
+            classify_http_path(value)
+        return value
+
+    @classmethod
+    def get_output_dimensionality_offset(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_air_gapped_availability(cls) -> AirGappedAvailability:
+        return AirGappedAvailability(available=False, reason="requires_internet")
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="images", kind=[IMAGE_KIND]),
+            OutputDefinition(name="image_names", kind=[STRING_KIND]),
+            OutputDefinition(name="metadata", kind=[DICTIONARY_KIND]),
+            OutputDefinition(name="errors", kind=[DICTIONARY_KIND]),
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        """List the block restrictions advertised to workflow discovery.
+
+        Returns:
+            List[RuntimeRestriction]: Video restrictions plus the disabled-host restriction
+                when the operator has not enabled this block.
+        """
+        restrictions = [VIDEO_PIPELINE_RESTRICTION]
+        if not block_enabled():
+            restrictions.insert(0, HOSTED_PLATFORM_RESTRICTION)
+
+        return restrictions
+
+    def discover_work_operations(self) -> List[WorkOperation]:
+        # One warehouse round-trip, then every row's bytes are decoded.
+        return [
+            WorkOperation.EXTERNAL_REQUEST,
+            WorkOperation.STORAGE_READ,
+            WorkOperation.IMAGE_ENCODING,
+        ]
+
+    def get_actual_restrictions(
+        self, *, ignore_environment_restrictions: bool = False
+    ) -> Discovery[RuntimeRestriction]:
+        """Resolve declared restrictions for this workflow step.
+
+        Args:
+            ignore_environment_restrictions (bool): Omit environment-dependent restrictions
+                when generating portable discovery information.
+
+        Returns:
+            Discovery[RuntimeRestriction]: Restrictions attributed to this step.
+        """
+        restrictions = actual_restrictions_of(
+            declared=self.get_restrictions(),
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
+        )
+
+        return restrictions
+
+    def discover_dependent_resources(self) -> List[DependentResource]:
+        # Databricks is not a Roboflow platform resource.
+        return []
+
+
+class DatabricksSQLImageSourceBlockV1(WorkflowBlock):
+    """Block emitting rows of a Databricks SQL query as Workflow images."""
+
+    def __init__(self, disable_sinks: bool = False):
+        self._disable_sinks = disable_sinks
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["disable_sinks"]
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockManifest
+
+    def run(
+        self,
+        *,
+        server_hostname: str,
+        http_path: str,
+        access_token: str,
+        catalog: str,
+        schema_name: str,
+        table: str,
+        metadata_columns: List[str],
+        image_column: str,
+        image_name_column: Optional[str],
+        max_rows: int,
+        timeout_seconds: int,
+        skip_undecodable: bool,
+    ) -> BlockResult:
+        """Read selected table/view columns in a supervised worker process.
+
+        Args:
+            server_hostname (str): Bare Databricks workspace hostname.
+            http_path (str): Warehouse endpoint path, or a self-hosted cluster path.
+            access_token (str): Credential used only by the worker's warehouse connection.
+            catalog (str): Unquoted catalog identifier.
+            schema_name (str): Unquoted schema identifier.
+            table (str): Unquoted table or view identifier.
+            metadata_columns (List[str]): Additional columns to include as metadata.
+            image_column (str): Column containing encoded JPEG or PNG bytes.
+            image_name_column (Optional[str]): Name column, or None to generate names.
+            max_rows (int): Maximum number of rows selected and fetched.
+            timeout_seconds (int): Invocation deadline in seconds, including worker launch.
+            skip_undecodable (bool): Skip invalid rows; an entirely invalid result fails.
+
+        Returns:
+        BlockResult: Aligned success outputs and metadata-rejection diagnostics.
+
+        Raises:
+            ValueError: Input validation, decoding or an allocation budget fails.
+            RuntimeError: Execution is unavailable, forbidden, or the worker fails.
+            TimeoutError: The invocation exceeds its deadline.
+        """
+        ensure_block_enabled()
+        if self._disable_sinks:
+            raise RuntimeError(
+                "`roboflow_core/databricks_sql_image_source@v1` is disabled by the "
+                "server's execution policy (disable_sinks): the statement would run "
+                "with the token's rights, which the policy forbids."
+            )
+
+        from roboflow_workflows.core_steps.integrations.databricks.sql_image_source.isolation import (
+            run_isolated,
+        )
+
+        build_image_query(
+            catalog=catalog,
+            schema=schema_name,
+            table=table,
+            image_column=image_column,
+            image_name_column=image_name_column,
+            metadata_columns=metadata_columns,
+            max_rows=max_rows,
+        )
+        if (
+            type(timeout_seconds) is not int
+            or not 5 <= timeout_seconds <= MAX_TIMEOUT_SECONDS
+        ):
+            raise ValueError("timeout_seconds must be an integer between 5 and 600")
+
+        deadline = time.monotonic() + float(timeout_seconds)
+        request = dict(
+            server_hostname=server_hostname,
+            http_path=http_path,
+            access_token=access_token,
+            catalog=catalog,
+            schema_name=schema_name,
+            table=table,
+            metadata_columns=metadata_columns,
+            image_column=image_column,
+            image_name_column=image_name_column,
+            max_rows=max_rows,
+            timeout_seconds=timeout_seconds,
+            skip_undecodable=skip_undecodable,
+        )
+        limits = dict(
+            max_run_bytes=MAX_RUN_BYTES,
+            max_image_bytes=MAX_IMAGE_PAYLOAD_BYTES,
+            max_image_pixels=MAX_IMAGE_PIXELS,
+            allow_non_global=ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES,
+            hosted=running_on_hosted_platform(),
+        )
+        results = run_isolated(request, limits=limits, deadline=deadline)
+
+        return results
+
+    def _run_in_process(
+        self,
+        *,
+        server_hostname: str,
+        http_path: str,
+        access_token: str,
+        catalog: str,
+        schema_name: str,
+        table: str,
+        metadata_columns: List[str],
+        image_column: str,
+        image_name_column: Optional[str],
+        max_rows: int,
+        timeout_seconds: int,
+        skip_undecodable: bool,
+        deadline: Optional[float] = None,
+    ) -> BlockResult:
+        # Internal worker entry point, also used by focused connector tests.
+        ensure_block_enabled()
+        if self._disable_sinks:
+            raise RuntimeError("Databricks execution is disabled by disable_sinks")
+
+        if deadline is None:
+            deadline = time.monotonic() + float(timeout_seconds)
+        sql_statement, parameters = build_image_query(
+            catalog=catalog,
+            schema=schema_name,
+            table=table,
+            image_column=image_column,
+            image_name_column=image_name_column,
+            metadata_columns=metadata_columns,
+            max_rows=max_rows,
+        )
+        destination = validate_destination(server_hostname, http_path=http_path)
+        _check_deadline(deadline)
+
+        results: List[Dict[str, Any]] = []
+        budget = RunBudget(limit=MAX_RUN_BYTES)
+        fetched = 0
+        skipped: List[str] = []
+        rows = iter_rows(
+            sql_statement,
+            parameters=parameters,
+            destination=destination,
+            http_path=http_path,
+            access_token=access_token,
+            max_rows=max_rows,
+            deadline=deadline,
+        )
+        with contextlib.closing(rows):
+            for index, row in enumerate(rows):
+                _check_deadline(deadline)
+                fetched += 1
+                if image_column not in row:
+                    raise ValueError(
+                        f"Column `{image_column}` not present in query result. "
+                        f"Available columns: {sorted(row.keys())}"
+                    )
+
+                if image_name_column and image_name_column not in row:
+                    raise ValueError(
+                        f"Column `{image_name_column}` (image_name_column) not present "
+                        f"in query result. Available columns: {sorted(row.keys())}"
+                    )
+
+                try:
+                    name = resolve_image_name(row, image_name_column=image_name_column)
+                    missing = set(metadata_columns) - row.keys()
+                    if missing:
+                        raise ValueError("Missing metadata columns in query result")
+
+                    metadata = build_metadata(
+                        {column: row[column] for column in metadata_columns},
+                        image_column=image_column,
+                    )
+                    budget.reserve(len(name) + metadata_size(metadata))
+                    numpy_image = decode_image(row[image_column], budget=budget)
+                except MetadataLimitExceeded as error:
+                    diagnostic = {
+                        "row_index": index,
+                        "image_name": name if image_name_column else None,
+                        "field": error.field,
+                        "code": error.code,
+                        "message": str(error),
+                    }
+                    budget.reserve(metadata_size(diagnostic))
+                    results.append(
+                        dict(
+                            images=None,
+                            image_names=None,
+                            metadata=None,
+                            errors=diagnostic,
+                        )
+                    )
+                    continue
+                except Exception as error:
+                    if not skip_undecodable or isinstance(error, RunBudgetExceeded):
+                        raise ValueError(
+                            f"Could not decode image in row {index} column "
+                            f"`{image_column}`: {error}"
+                        ) from error
+
+                    skipped.append(f"row {index}: {error}")
+                    logger.warning(
+                        "roboflow_core/databricks_sql_image_source@v1: skipping %s",
+                        skipped[-1],
+                    )
+                    continue
+                image = WorkflowImageData(
+                    parent_metadata=ImageParentMetadata(parent_id=f"databricks.{name}"),
+                    numpy_image=numpy_image,
+                )
+                results.append(
+                    {
+                        "images": image,
+                        "image_names": name,
+                        "metadata": metadata,
+                        "errors": None,
+                    }
+                )
+
+        _check_deadline(deadline)
+        if fetched and not results:
+            raise ValueError(
+                f"All {fetched} fetched rows were skipped; last reason: {skipped[-1]}"
+            )
+
+        return results
+
+
+# ---------------------------------------------------------------------------
+# Availability and destination
+# ---------------------------------------------------------------------------
+
+
+def _check_deadline(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise TimeoutError("Databricks query exceeded timeout_seconds")
+
+
+def ensure_block_enabled() -> None:
+    """Refuse to run where the block is not available.
+
+    Raises:
+        RuntimeError: If ``DATABRICKS_SQL_IMAGE_SOURCE_ENABLED`` is false or the
+            connector package is missing. Raised before any destination lookup
+            or connection attempt.
+    """
+    if not block_enabled():
+        raise RuntimeError(
+            "`roboflow_core/databricks_sql_image_source@v1` cannot run here: "
+            + DISABLED_HINT
+        )
+
+    if not connector_available():
+        raise RuntimeError(
+            "`roboflow_core/databricks_sql_image_source@v1` requires the "
+            "`databricks-sql-connector` package: " + CONNECTOR_INSTALL_HINT
+        )
+
+    reason = databricks_unavailability_reason()
+    if reason is not None:
+        raise RuntimeError("Databricks SQL Image Source cannot run here: " + reason)
+
+
+def normalise_hostname(server_hostname: Any) -> str:
+    """Return the lower-cased hostname, or raise if it is not a Databricks host.
+
+    Args:
+        server_hostname (Any): Raw manifest value.
+
+    Returns:
+        The normalised hostname (lower case, no trailing dot). Whitespace is
+        not tolerated: the value is validated as a whole string.
+
+    Raises:
+        ValueError: If the value is not a bare DNS name under one of
+            ``ALLOWED_HOST_SUFFIXES``.
+    """
+    if not isinstance(server_hostname, str):
+        raise ValueError("`server_hostname` must be a string")
+
+    host = server_hostname.lower().rstrip(".")
+    if not host or len(host) > 253 or not HOSTNAME_PATTERN.fullmatch(host):
+        raise ValueError(
+            "`server_hostname` must be a bare Databricks workspace hostname such as "
+            "`dbc-a1b2c3d4-e5f6.cloud.databricks.com` (no scheme, port or path)."
+        )
+
+    if not host.endswith(ALLOWED_HOST_SUFFIXES):
+        raise ValueError(
+            f"`server_hostname` `{host}` is not a Databricks workspace host; allowed "
+            f"domains: {', '.join('*' + suffix for suffix in ALLOWED_HOST_SUFFIXES)}."
+        )
+
+    return host
+
+
+def classify_http_path(http_path: Any) -> str:
+    """Return ``"warehouse"`` or ``"cluster"`` for a valid HTTP path.
+
+    Args:
+        http_path (Any): Raw manifest value.
+
+    Returns:
+        The path kind.
+
+    Raises:
+        ValueError: If the value is not a SQL warehouse or cluster path.
+    """
+    if not isinstance(http_path, str):
+        raise ValueError("`http_path` must be a string")
+
+    if WAREHOUSE_PATH_PATTERN.fullmatch(http_path):
+        return "warehouse"
+
+    if CLUSTER_PATH_PATTERN.fullmatch(http_path):
+        return "cluster"
+
+    raise ValueError(
+        "`http_path` must look like `/sql/1.0/warehouses/<id>` or "
+        "`/sql/protocolv1/o/<org>/<cluster-id>`."
+    )
+
+
+def validate_destination(server_hostname: Any, *, http_path: Any) -> PinnedDestination:
+    """Check the connection target and resolve it to a pinned address.
+
+    The host must be a bare DNS name under one of ``ALLOWED_HOST_SUFFIXES``;
+    the path must be a SQL warehouse path (cluster paths are refused on the
+    hosted platform). The host is resolved and every answer checked: non-global
+    addresses are refused unless
+    ``ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES`` is set, and
+    never allowed on the hosted platform. The first validated address is the
+    one the transport connects to.
+
+    Args:
+        server_hostname (Any): Value of the ``server_hostname`` manifest field.
+        http_path (Any): Value of the ``http_path`` manifest field.
+
+    Returns:
+        The validated hostname and address the connector must connect to.
+
+    Raises:
+        ValueError: If the host or path is malformed, points outside Databricks,
+            cannot be resolved, or resolves to an address the runtime refuses.
+    """
+    host = normalise_hostname(server_hostname)
+    path_kind = classify_http_path(http_path)
+    hosted = running_on_hosted_platform()
+    if path_kind == "cluster" and hosted:
+        raise ValueError(
+            "`http_path` cluster paths (`/sql/protocolv1/...`) are not allowed on the "
+            "hosted platform; use a SQL warehouse path."
+        )
+
+    allow_non_global = (
+        ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES and not hosted
+    )
+    try:
+        resolved_ips = resolve_and_validate_ips(
+            host=host,
+            port=DATABRICKS_HTTPS_PORT,
+            allow_non_global_addresses=allow_non_global,
+        )
+    except URLAddressNotAllowedError as error:
+        raise ValueError(
+            f"`server_hostname` `{host}` resolves to an address this runtime does "
+            f"not allow: {error}"
+        ) from error
+    except Exception as error:
+        raise ValueError(f"Could not resolve `server_hostname` `{host}`.") from error
+
+    pinned_ip = _pick_address(resolved_ips, allow_non_global=allow_non_global)
+    destination = PinnedDestination(
+        hostname=host,
+        ip_address=pinned_ip,
+        port=DATABRICKS_HTTPS_PORT,
+        max_response_bytes=result_buffer_bytes() + 65536,
+    )
+
+    return destination
+
+
+def _pick_address(resolved_ips: List[str], *, allow_non_global: bool) -> str:
+    for candidate in resolved_ips:
+        if allow_non_global or address_is_global(candidate):
+            return candidate
+    raise ValueError("no resolved address is allowed by the runtime's egress policy")
+
+
+# ---------------------------------------------------------------------------
+# Query execution
+# ---------------------------------------------------------------------------
+
+
+def connection_kwargs(
+    destination: PinnedDestination, *, http_path: str, timeout_seconds: float
+) -> Dict[str, Any]:
+    """Keyword arguments for ``databricks.sql.connect``.
+
+    Args:
+        destination (PinnedDestination): Validated destination.
+        http_path (str): SQL warehouse or cluster HTTP path.
+        timeout_seconds (float): Remaining run time; bounds sockets and the statement.
+
+    Returns:
+        Keyword arguments that disable cloud-fetch result links, telemetry and
+        redirects, bound retries (attempts, delay and total duration) and
+        sockets to the remaining time, and set a server-side statement timeout.
+    """
+    statement_timeout = max(1, int(timeout_seconds))
+    kwargs = {
+        "server_hostname": destination.hostname,
+        "http_path": http_path,
+        "_port": destination.port,
+        "use_cloud_fetch": False,
+        "use_inline_params": False,
+        "enable_query_result_lz4_compression": False,
+        "enable_telemetry": False,
+        "session_configuration": {"STATEMENT_TIMEOUT": str(statement_timeout)},
+        "_socket_timeout": min(SOCKET_TIMEOUT_SECONDS, statement_timeout),
+        "_retry_stop_after_attempts_count": RETRY_ATTEMPTS,
+        "_retry_stop_after_attempts_duration": statement_timeout,
+        "_retry_delay_max": RETRY_DELAY_MAX_SECONDS,
+        "_retry_max_redirects": 0,
+    }
+    if TLS_TRUSTED_CA_FILE is not None:
+        kwargs["_tls_trusted_ca_file"] = TLS_TRUSTED_CA_FILE
+
+    return kwargs
+
+
+def result_buffer_bytes() -> int:
+    """Return the inline result chunk size requested from the warehouse.
+
+    Two maximum-size images always fit, so a batch of ``FETCH_BATCH_SIZE`` rows
+    is only ever smaller than that, never larger.
+    """
+    return max(MIN_RESULT_BUFFER_BYTES, 2 * MAX_IMAGE_PAYLOAD_BYTES)
+
+
+def iter_rows(
+    sql_statement: str,
+    *,
+    destination: PinnedDestination,
+    parameters: Dict[str, Union[str, int]],
+    http_path: str,
+    access_token: str,
+    max_rows: int,
+    deadline: float,
+) -> Iterator[Dict[str, Any]]:
+    """Execute a statement on the pinned warehouse and yield rows as dicts.
+
+    Rows are fetched in batches of ``FETCH_BATCH_SIZE`` and the cursor asks the
+    warehouse for inline result chunks of at most that many rows and
+    :func:`result_buffer_bytes` bytes, with a server-side row limit of
+    ``max_rows``. A watchdog cancels the cursor and closes the connection when
+    ``deadline`` passes, and the loop raises ``TimeoutError`` at the next batch
+    boundary. Closing the generator early (``contextlib.closing``) closes the
+    cursor and the connection.
+
+    Args:
+        sql_statement (str): SQL statement to execute.
+        parameters (Dict[str, Union[str, int]]): Native parameter values for the fixed SELECT.
+        destination (PinnedDestination): Validated hostname and pinned address.
+        http_path (str): SQL warehouse or cluster HTTP path.
+        access_token (str): Databricks personal access token.
+        max_rows (int): Maximum number of rows to yield.
+        deadline (float): ``time.monotonic()`` value after which the run is aborted.
+
+    Yields:
+        One dictionary per fetched row, keyed by column name.
+
+    Raises:
+        RuntimeError: If the connector is missing or fails; the token is
+            redacted from the message.
+        TimeoutError: If ``deadline`` passes.
+    """
+    try:
+        from databricks import sql as databricks_sql
+    except ImportError as error:
+        raise RuntimeError(
+            "`roboflow_core/databricks_sql_image_source@v1` requires the "
+            "`databricks-sql-connector` package: " + CONNECTOR_INSTALL_HINT
+        ) from error
+
+    install_pinned_transport()
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Databricks query deadline expired before connecting")
+
+    kwargs = connection_kwargs(
+        destination, http_path=http_path, timeout_seconds=remaining
+    )
+    kwargs["access_token"] = access_token
+    expired = threading.Event()
+
+    def _redacted(error: BaseException) -> RuntimeError:
+        text = str(error).replace(access_token, "***") if access_token else str(error)
+        return RuntimeError(f"Databricks query failed: {type(error).__name__}: {text}")
+
+    with pinned_destination(destination):
+        try:
+            connection = databricks_sql.connect(**kwargs)
+        except Exception as error:
+            raise _redacted(error) from None
+        with connection:
+            with connection.cursor(
+                arraysize=FETCH_BATCH_SIZE,
+                buffer_size_bytes=result_buffer_bytes(),
+                row_limit=max_rows,
+            ) as cursor:
+                watchdog = threading.Timer(
+                    max(0.0, deadline - time.monotonic()),
+                    _cancel_query,
+                    args=(cursor, connection, expired),
+                )
+                watchdog.daemon = True
+                watchdog.start()
+                try:
+                    try:
+                        cursor.execute(sql_statement, parameters=parameters)
+                    except Exception as error:
+                        if expired.is_set() or time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                "Databricks query exceeded timeout_seconds and was cancelled"
+                            ) from None
+
+                        raise _redacted(error) from None
+                    yielded = 0
+                    while yielded < max_rows:
+                        if expired.is_set() or time.monotonic() > deadline:
+                            raise TimeoutError(
+                                "Databricks query exceeded timeout_seconds and was cancelled"
+                            )
+
+                        try:
+                            batch = cursor.fetchmany(
+                                min(FETCH_BATCH_SIZE, max_rows - yielded)
+                            )
+                        except Exception as error:
+                            if expired.is_set() or time.monotonic() >= deadline:
+                                raise TimeoutError(
+                                    "Databricks query exceeded timeout_seconds and was "
+                                    "cancelled"
+                                ) from None
+
+                            raise _redacted(error) from None
+                        if not batch:
+                            break
+
+                        for row in batch:
+                            yield row.asDict()
+                            yielded += 1
+                finally:
+                    if expired.is_set() or time.monotonic() >= deadline:
+                        # The supervisor can interrupt before the watchdog runs.
+                        # Let cancellation finish before cursor/session teardown,
+                        # within the existing bounded cleanup allowance.
+                        watchdog.join(
+                            timeout=max(
+                                0.0,
+                                deadline + CLEANUP_GRACE_SECONDS - time.monotonic(),
+                            )
+                        )
+                    else:
+                        watchdog.cancel()
+                        watchdog.join(timeout=0.1)
+
+
+def _cancel_query(cursor: Any, connection: Any, expired: threading.Event) -> None:
+    expired.set()
+    for action in (getattr(cursor, "cancel", None), getattr(connection, "close", None)):
+        if action is None:
+            continue
+        try:
+            action()
+        except Exception:  # best effort; the loop reports the timeout
+            logger.debug("databricks watchdog cleanup failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Decoding and budget
+# ---------------------------------------------------------------------------
+
+
+class RunBudgetExceeded(ValueError):
+    """Raised when a run would exceed ``MAX_RUN_BYTES``."""
+
+
+class RunBudget:
+    """Byte budget shared by every row of one block invocation.
+
+    Encoded payloads, decoded pixels (reserved from the image header before
+    any pixel is decoded), names and metadata all count against it. It bounds
+    what the step retains and hands downstream; it is not a process-wide RSS
+    guarantee (connector buffers and decode temporaries are bounded
+    separately, see ``result_buffer_bytes`` and the block documentation).
+    """
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self.used = 0
+
+    def reserve(self, nbytes: int) -> None:
+        """Reserve bytes before decoding or retaining row data.
+
+        Args:
+            nbytes (int): Additional encoded, decoded or metadata bytes to account for.
+
+        Raises:
+            RunBudgetExceeded: The reservation would exceed this invocation's budget.
+        """
+        if self.used + nbytes > self.limit:
+            raise RunBudgetExceeded(
+                f"run would exceed the {self.limit} byte budget "
+                f"({self.used} used, {nbytes} more requested); lower `max_rows` or "
+                "reduce image sizes"
+            )
+
+        self.used += nbytes
+
+
+def decode_image(payload: Any, *, budget: Optional[RunBudget] = None) -> np.ndarray:
+    """Decode an image payload read from a table column into a BGR array.
+
+    The encoded size is capped at ``MAX_IMAGE_PAYLOAD_BYTES``, the format must
+    be one of ``ALLOWED_IMAGE_FORMATS`` and the dimensions, read from the header
+    before any pixel is decoded, are capped at ``MAX_IMAGE_PIXELS``; the decoded
+    array is checked again after decoding.
+
+    Args:
+        payload (Any): Encoded image as ``bytes``, ``bytearray``, ``memoryview`` or a
+            base64 ``str``.
+        budget (Optional[RunBudget]): Optional per-run budget; encoded and decoded bytes are reserved
+            from it before decoding.
+
+    Returns:
+        Decoded image as an OpenCV BGR ``np.ndarray``.
+
+    Raises:
+        ValueError: If the payload is ``NULL``, of an unsupported type or
+            format, over the size limits, or cannot be decoded.
+    """
+    if payload is None:
+        raise ValueError("image payload is NULL")
+
+    payload_size = (
+        payload.nbytes
+        if isinstance(payload, memoryview)
+        else (len(payload) if isinstance(payload, (bytes, bytearray)) else 0)
+    )
+    if payload_size > MAX_IMAGE_PAYLOAD_BYTES:
+        raise ValueError(f"image payload exceeds {MAX_IMAGE_PAYLOAD_BYTES} bytes")
+
+    if isinstance(payload, memoryview):
+        payload = payload.tobytes()
+    elif isinstance(payload, bytearray):
+        payload = bytes(payload)
+    elif isinstance(payload, str):
+        if len(payload) > MAX_IMAGE_PAYLOAD_BYTES * 4 // 3 + 4:
+            raise ValueError(f"image payload exceeds {MAX_IMAGE_PAYLOAD_BYTES} bytes")
+
+        payload = base64.b64decode(payload, validate=True)
+    if not isinstance(payload, bytes):
+        raise ValueError(f"unsupported image payload type: {type(payload).__name__}")
+
+    if len(payload) > MAX_IMAGE_PAYLOAD_BYTES:
+        raise ValueError(
+            f"image payload of {len(payload)} bytes exceeds {MAX_IMAGE_PAYLOAD_BYTES} bytes"
+        )
+
+    image_format, width, height = read_image_header(payload)
+    if image_format not in ALLOWED_IMAGE_FORMATS:
+        raise ValueError(
+            f"image format {image_format} is not allowed; use one of "
+            f"{', '.join(ALLOWED_IMAGE_FORMATS)}"
+        )
+
+    pixels = width * height
+    if pixels > MAX_IMAGE_PIXELS:
+        raise ValueError(
+            f"image of {width}x{height} pixels exceeds {MAX_IMAGE_PIXELS} pixels"
+        )
+
+    if budget is not None:
+        budget.reserve(len(payload) + pixels * IMAGE_CHANNELS)
+
+    image = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("could not decode bytes as image")
+
+    decoded_pixels = int(image.shape[0]) * int(image.shape[1])
+    if decoded_pixels > MAX_IMAGE_PIXELS or decoded_pixels > pixels:
+        raise ValueError(
+            f"decoded image of {image.shape[1]}x{image.shape[0]} pixels does not "
+            f"match its header ({width}x{height})"
+        )
+
+    return image
+
+
+def read_image_header(payload: bytes) -> Tuple[str, int, int]:
+    """Read ``(format, width, height)`` from an encoded image without decoding pixels.
+
+    Args:
+        payload (bytes): Encoded image bytes.
+
+    Returns:
+        Pillow's format name and the dimensions in pixels.
+
+    Raises:
+        ValueError: If the bytes are not a recognised image.
+    """
+    if not (
+        payload.startswith(b"\xff\xd8\xff") or payload.startswith(b"\x89PNG\r\n\x1a\n")
+    ):
+        raise ValueError("image format is not allowed; use JPEG or PNG")
+
+    try:
+        with Image.open(io.BytesIO(payload), formats=["JPEG", "PNG"]) as image:
+            image_format = str(image.format or "")
+            width, height = image.size
+    except Exception as error:
+        raise ValueError("could not read image header") from error
+
+    header = image_format, int(width), int(height)
+
+    return header
+
+
+def resolve_image_name(row: Dict[str, Any], *, image_name_column: Optional[str]) -> str:
+    """Pick the image name for a row.
+
+    Args:
+        row (Dict[str, Any]): Row returned by the query, keyed by column name.
+        image_name_column (Optional[str]): Column whose value becomes the name, or ``None``.
+
+    Returns:
+        The stringified column value when present, otherwise a fresh UUID.
+
+    Raises:
+        ValueError: If the name is longer than ``MAX_IMAGE_NAME_CHARS``.
+    """
+    if image_name_column and row.get(image_name_column) is not None:
+        name = str(row[image_name_column])
+        if len(name) > MAX_IMAGE_NAME_CHARS:
+            raise ValueError(
+                f"image name of {len(name)} characters exceeds {MAX_IMAGE_NAME_CHARS}"
+            )
+
+        return name
+
+    generated_name = str(uuid4())
+
+    return generated_name
+
+
+def build_metadata(row: Dict[str, Any], *, image_column: str) -> Dict[str, Any]:
+    """Convert selected non-binary metadata without silently dropping excess data.
+
+    Args:
+        row (Dict[str, Any]): Selected columns returned by the connector.
+        image_column (str): Image column to exclude.
+
+    Returns:
+        Dict[str, Any]: JSON-compatible metadata within the configured limits.
+
+    Raises:
+        MetadataLimitExceeded: A value, collection, depth or row exceeds a limit.
+    """
+    metadata = to_json_safe(
+        {key: value for key, value in row.items() if key != image_column}, depth=-1
+    )
+
+    return metadata
+
+
+def metadata_size(metadata: Dict[str, Any]) -> int:
+    """Return the serialized UTF-8 JSON size of metadata or a diagnostic.
+
+    Args:
+        metadata (Dict[str, Any]): JSON-compatible metadata or error record.
+
+    Returns:
+        int: Serialized size in bytes, including keys and separators.
+    """
+    size = len(json.dumps(metadata, ensure_ascii=False).encode("utf-8"))
+
+    return size
+
+
+class _MetadataBudget:
+    def __init__(self):
+        self.used = 0
+
+    def reserve(self, size: int) -> None:
+        """Account for JSON bytes before retaining another metadata value.
+
+        Args:
+            size (int): Additional serialized bytes.
+
+        Raises:
+            MetadataLimitExceeded: The cumulative row byte limit is exceeded.
+        """
+        self.used += size
+        if self.used > MAX_METADATA_BYTES_PER_ROW:
+            raise MetadataLimitExceeded("METADATA_TOO_LARGE")
+
+
+def to_json_safe(
+    value: Any,
+    *,
+    depth: int = 0,
+    _budget: Optional[_MetadataBudget] = None,
+    _field: Optional[str] = None,
+) -> Any:
+    """Convert metadata while rejecting excess size, nesting and collection items.
+
+    Args:
+        value (Any): Connector-returned metadata value.
+        depth (int): Container depth; -1 denotes the metadata column mapping.
+        _budget (Optional[_MetadataBudget]): Shared serialized-byte accounting.
+        _field (Optional[str]): Top-level metadata column for diagnostics.
+
+    Returns:
+        Any: JSON-compatible value. Decimals and dates retain their existing
+        string representation; binary container members are excluded.
+
+    Raises:
+        MetadataLimitExceeded: A metadata limit is exceeded, before descending
+            into an oversized or excessively nested collection.
+    """
+    budget = _budget if _budget is not None else _MetadataBudget()
+    if isinstance(value, (dict, list, tuple)):
+        if depth >= MAX_METADATA_DEPTH:
+            raise MetadataLimitExceeded("METADATA_TOO_DEEP", field=_field)
+
+        if len(value) > MAX_METADATA_ITEMS:
+            raise MetadataLimitExceeded("METADATA_TOO_MANY_ITEMS", field=_field)
+
+        budget.reserve(2)  # Braces or brackets.
+        result = {} if isinstance(value, dict) else []
+        items = value.items() if isinstance(value, dict) else enumerate(value)
+        for key, member in items:
+            if _is_binary(member):
+                continue
+
+            if result:
+                budget.reserve(2)  # Default JSON comma and space.
+
+            field = str(key) if depth == -1 else _field
+            if isinstance(value, dict):
+                key = str(key)
+                if len(key) > MAX_METADATA_VALUE_CHARS:
+                    raise MetadataLimitExceeded("METADATA_VALUE_TOO_LONG", field=_field)
+
+                budget.reserve(
+                    len(json.dumps(key, ensure_ascii=False).encode("utf-8")) + 2
+                )
+            converted = to_json_safe(
+                member, depth=depth + 1, _budget=budget, _field=field
+            )
+            if isinstance(result, dict):
+                result[key] = converted
+            else:
+                result.append(converted)
+
+        return result
+
+    if value is None or isinstance(value, (bool, int, float, str)):
+        result = value
+    elif isinstance(value, (datetime.date, datetime.datetime, datetime.time)):
+        result = value.isoformat()
+    else:
+        result = str(value)
+    if isinstance(result, str) and len(result) > MAX_METADATA_VALUE_CHARS:
+        raise MetadataLimitExceeded("METADATA_VALUE_TOO_LONG", field=_field)
+
+    budget.reserve(len(json.dumps(result, ensure_ascii=False).encode("utf-8")))
+
+    return result
+
+
+def _is_binary(value: Any) -> bool:
+    return isinstance(value, (bytes, bytearray, memoryview))

@@ -102,7 +102,7 @@ This error occurs when loading a model (usually directly from a checkpoint file)
 
 2. **Check supported model types:**
 
-   - For RFDetr object detection: `rfdetr-nano`, `rfdetr-small`, `rfdetr-medium`, `rfdetr-large`
+   - For RFDetr object detection: `rfdetr-nano`, `rfdetr-small`, `rfdetr-medium`, `rfdetr-large`, `rfdetr-atto`, `rfdetr-femto`, `rfdetr-pico`
    
    - For RFDetr instance segmentation: `rfdetr-seg-preview`
 

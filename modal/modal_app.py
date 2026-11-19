@@ -10,6 +10,7 @@ import asyncio
 import base64
 import gzip
 import hashlib
+import importlib
 import inspect
 import json
 import os
@@ -515,6 +516,27 @@ class Executor:
         )
         self._ws_response_cache = _WsResponseCache()
         self._ws_inflight: Dict[str, "asyncio.Task"] = {}
+
+    @modal.enter()
+    def preload_legacy_workflows_modules(self):
+        # The handlers import these lazily. On a pinned image whose
+        # inference/_workflows_compat.py predates the import race fix, concurrent
+        # first imports of a legacy path fail with "cannot import name ...
+        # (unknown location)". Enter hooks run before any input is served.
+        for module_name in (
+            "inference.core.workflows.core_steps.common.deserializers",
+            "inference.core.workflows.core_steps.common.serializers",
+            "inference.core.workflows.execution_engine.entities.base",
+            "inference.core.workflows.prototypes.block",
+        ):
+            importlib.import_module(module_name)
+        # Guarded like the TENSOR_NATIVE_IMPORTS_LINES import it warms.
+        try:
+            importlib.import_module(
+                "inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding"
+            )
+        except ImportError:
+            pass
 
     def _get_code_hash(self, code_str: str, imports: list) -> str:
         """Compute a stable hash for the code to identify unique blocks."""

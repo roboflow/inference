@@ -1,3 +1,4 @@
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -59,6 +60,64 @@ def test_add_model_passes_manager_owned_artifact_cache() -> None:
     assert model_class.call_count == 2
     for call in model_class.call_args_list:
         assert call.kwargs["content_addressed_artifact_cache"] is artifact_cache
+
+
+@pytest.mark.parametrize("dtype_name", ["float16", "bfloat16"])
+def test_add_model_preserves_dtype_of_concurrent_legacy_load(dtype_name: str) -> None:
+    import torch
+
+    temporary_dtype = getattr(torch, dtype_name)
+    original_dtype = torch.get_default_dtype()
+    construction_started = Event()
+    unrelated_load_finished = Event()
+    constructed_dtypes = []
+    errors = []
+
+    def construct_legacy_model(**kwargs):
+        # Legacy HF loaders change the global default while constructing the
+        # model, but do not acquire inference_models' dtype lock.
+        torch.set_default_dtype(temporary_dtype)
+        try:
+            constructed_dtypes.append(torch.nn.Linear(2, 2).weight.dtype)
+            construction_started.set()
+            assert unrelated_load_finished.wait(timeout=5)
+            constructed_dtypes.append(torch.nn.Linear(2, 2).weight.dtype)
+        finally:
+            torch.set_default_dtype(original_dtype)
+
+        model = MagicMock()
+        return model
+
+    model_registry = MagicMock()
+    model_registry.get_model.side_effect = [construct_legacy_model, MagicMock()]
+
+    with patch.object(base_module, "USE_INFERENCE_MODELS", False), patch.object(
+        base_module, "MODELS_CACHE_AUTH_ENABLED", False
+    ), patch.object(base_module, "_get_cuda_memory_allocated", return_value=None):
+        manager = ModelManager(model_registry=model_registry)
+
+        def load_legacy_model():
+            try:
+                manager.add_model(model_id="legacy/1", api_key="some_api_key")
+            except BaseException as error:
+                errors.append(error)
+
+        thread = Thread(target=load_legacy_model)
+        thread.start()
+        try:
+            assert construction_started.wait(timeout=5)
+            # This completes while the other constructor still needs its
+            # temporary dtype. It must not reset that dtype as if it leaked.
+            manager.add_model(model_id="unrelated/1", api_key="some_api_key")
+        finally:
+            unrelated_load_finished.set()
+            thread.join(timeout=5)
+            torch.set_default_dtype(original_dtype)
+
+    assert not thread.is_alive()
+    assert errors == []
+    assert constructed_dtypes == [temporary_dtype, temporary_dtype]
+    assert set(manager.models()) == {"legacy/1", "unrelated/1"}
 
 
 def test_model_manager_uses_shared_artifact_cache() -> None:
@@ -960,3 +1019,19 @@ def test_decorator_forwards_the_new_members() -> None:
     inner.load_action_recognition_model.assert_called_once_with(
         model_id="ar/1", api_key="k"
     )
+
+
+def test_access_denial_does_not_disclose_api_key(monkeypatch) -> None:
+    key = "sentinel-private-key"
+    monkeypatch.setattr(base_module, "MODELS_CACHE_AUTH_ENABLED", True)
+    monkeypatch.setattr(base_module, "OFFLINE_MODE", False)
+    monkeypatch.setattr(
+        base_module, "_check_if_api_key_has_access_to_model", lambda **kwargs: False
+    )
+    manager = ModelManager(model_registry=MagicMock())
+
+    with pytest.raises(base_module.RoboflowAPINotAuthorizedError) as error:
+        manager.add_model(model_id="example/1", api_key=key)
+
+    assert key not in str(error.value)
+    assert "does not have access to model example/1" in str(error.value)

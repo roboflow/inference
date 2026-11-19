@@ -89,3 +89,30 @@ def test_build_model_response_headers_sets_zero_count_when_no_cold_start() -> No
     assert result[MODEL_ID_HEADER] == "model-a/1"
     assert MODEL_LOAD_TIME_HEADER not in result
     assert MODEL_LOAD_DETAILS_HEADER not in result
+
+
+def test_build_model_response_headers_ignores_missing_model_ids() -> None:
+    result = build_model_response_headers(
+        local_model_ids={None, "local-model/1"},
+        local_cold_start_entries=[],
+        remote_model_ids={None, "remote-model/2"},
+        remote_cold_start_entries=[],
+        remote_cold_start_count=0,
+        remote_cold_start_total_load_time=0.0,
+    )
+
+    assert result[MODEL_ID_HEADER] == "local-model/1,remote-model/2"
+
+
+def test_build_model_response_headers_omits_missing_model_ids() -> None:
+    result = build_model_response_headers(
+        local_model_ids={None},
+        local_cold_start_entries=[],
+        remote_model_ids={None},
+        remote_cold_start_entries=[],
+        remote_cold_start_count=0,
+        remote_cold_start_total_load_time=0.0,
+    )
+
+    assert MODEL_ID_HEADER not in result
+    assert result[MODEL_COLD_START_COUNT_HEADER] == "0"

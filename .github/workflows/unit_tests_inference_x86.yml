@@ -62,14 +62,18 @@ jobs:
           pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
           pip install --no-deps ./inference_model_manager
           pip install --no-deps ./inference_server
+      - name: OpenCV build script regression tests
+        timeout-minutes: 2
+        run: python -m pytest tests/docker/test_build_opencv.py -q
       - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
           make create_workflows_wheel create_streamvision_wheel
-          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]"
+          pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]"
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
-        run: python -m pytest -n auto --dist loadfile tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
+        # The CPU dependency profile does not install SAM3/SAM3D extras.
+        run: python -m pytest -n auto --dist loadfile -m "not sam3_extras" tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: 🧪 Development Profiling Tests
         timeout-minutes: 5
         run: python -m pytest tests/development/profiling

@@ -422,7 +422,18 @@ def test_infer_lmm_with_model_id_uses_alias_registry_key(monkeypatch) -> None:
     assert inference_request.api_key == "query-api-key"
 
 
-def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "body_fields, expected_model_id",
+    [
+        ({"model_id": "depth-anything-v3/small"}, "depth-anything-v3/small"),
+        ({"depth_version_id": "base"}, "depth-anything-v2/base"),
+        ({}, "depth-anything-v2/small"),
+        ({"model_id": None}, "depth-anything-v2/small"),
+    ],
+)
+def test_depth_estimation_uses_query_api_key_for_model_loading(
+    monkeypatch, body_fields, expected_model_id
+) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -445,7 +456,7 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
             "/infer/depth-estimation",
             params={"api_key": "query-api-key"},
             json={
-                "model_id": "depth-anything-v3/small",
+                **body_fields,
                 "image": {
                     "type": "url",
                     "value": "https://example.com/test.jpg",
@@ -460,14 +471,14 @@ def test_depth_estimation_uses_query_api_key_for_model_loading(monkeypatch) -> N
     assert payload["depth_map_format"] == "json"
     assert payload["normalized_depth"] == _DUMMY_DEPTH_MAP.tolist()
     model_manager.add_model.assert_called_once_with(
-        "depth-anything-v3/small",
+        expected_model_id,
         "query-api-key",
         countinference=None,
         service_secret=None,
     )
     model_manager.infer_from_request_sync.assert_called_once()
     inference_request = model_manager.infer_from_request_sync.call_args.args[1]
-    assert inference_request.model_id == "depth-anything-v3/small"
+    assert inference_request.model_id == expected_model_id
     assert inference_request.api_key == "query-api-key"
 
 
@@ -545,7 +556,18 @@ def test_depth_estimation_json_format_returns_legacy_shape(monkeypatch) -> None:
     assert payload["image"] == "depth-image"
 
 
-def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "body_fields",
+    [
+        {},
+        {"model_id": None},
+        {"depth_version_id": "base"},
+        {"model_id": None, "depth_version_id": "base"},
+    ],
+)
+def test_depth_estimation_with_model_id_path_sets_request_model_id(
+    monkeypatch, body_fields
+) -> None:
     import inference.core.interfaces.http.http_api as http_api
 
     monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
@@ -568,6 +590,7 @@ def test_depth_estimation_with_model_id_path_sets_request_model_id(monkeypatch) 
             "/infer/depth-estimation/depth-anything-v3/small",
             params={"api_key": "query-api-key"},
             json={
+                **body_fields,
                 "image": {
                     "type": "url",
                     "value": "https://example.com/test.jpg",
@@ -2444,3 +2467,58 @@ def test_instance_segmentation_routes_forward_mask_resolution_opt_in(
     assert request.allow_reduced_mask_resolution is (opt_in is True)
     assert request.mask_decode_mode == "tradeoff"
     assert request.tradeoff_factor == 0.25
+
+
+@pytest.mark.parametrize("failure_site", ["add_model", "pin_model"])
+@pytest.mark.parametrize(
+    "reason_template",
+    [
+        "API key {key} does not have access to model florence-2-base",
+        'weights request failed: {{"Authorization": "Bearer {key}"}}',
+    ],
+)
+def test_preload_errors_redact_credentials_from_logs_and_state(
+    monkeypatch, failure_site, reason_template
+) -> None:
+    key = "sentinel-private-preload-key"
+    monkeypatch.setattr(http_api, "InferenceInstrumentator", _DummyInstrumentator)
+    monkeypatch.setattr(
+        http_api.usage_collector, "async_push_usage_payloads", AsyncMock()
+    )
+    monkeypatch.setattr(http_api, "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None)
+    monkeypatch.setattr(http_api, "GCP_SERVERLESS", False)
+    monkeypatch.setattr(http_api, "PRELOAD_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PINNED_MODELS", ["florence-2-base"])
+    monkeypatch.setattr(http_api, "PRELOAD_API_KEY", key)
+    log = MagicMock()
+    monkeypatch.setattr(http_api.logger, "error", log)
+    states = []
+
+    class ImmediateThread:
+        def __init__(self, target, args, daemon):
+            self.target = target
+            self.args = args
+            states.append(args[0])
+
+        def start(self):
+            self.target(*self.args)
+
+    monkeypatch.setattr(http_api, "Thread", ImmediateThread)
+    manager = MagicMock()
+    manager.pingback = None
+    manager.num_errors = 0
+    getattr(manager, failure_site).side_effect = RuntimeError(
+        reason_template.format(key=key)
+    )
+    interface = http_api.HttpInterface(model_manager=manager)
+
+    with TestClient(interface.app) as client:
+        assert client.get("/readiness").status_code == 200
+
+    assert log.call_count == 1
+    assert key not in str(log.call_args_list)
+    assert "[REDACTED]" in str(log.call_args_list)
+    assert "florence-2-base" in str(log.call_args_list)
+    assert states[0].initialization_errors == [
+        ("florence-2-base", reason_template.format(key="[REDACTED]"))
+    ]

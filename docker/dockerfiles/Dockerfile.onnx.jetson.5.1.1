@@ -120,7 +120,7 @@ RUN python -m pip install uv \
     && cd stream_vision \
     && uv build --out-dir /wheels \
     && cd - \
-    && python -m pip install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise]" \
+    && python -m pip install --find-links /wheels "$(ls /wheels/roboflow_workflows-*.whl)[enterprise,databricks]" \
     && python -m pip install --find-links /wheels "$(ls /wheels/streamvision-*.whl)[webrtc]"
 # Force-downgrade transformers: torch 2.4.1 cannot run transformers >= 5.10.
 # Must stay AFTER the roboflow-workflows install above - that step depends on
