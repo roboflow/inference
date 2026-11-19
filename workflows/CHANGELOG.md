@@ -93,6 +93,11 @@ for contributor and maintainer responsibilities.
   Invalid values fall back to the default with a warning. `docs/workflows/video_clips.md`
   describes the clip contract, host support and the measured performance envelope.
 
+### Changed
+
+- The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
+  `compatible_model_architectures`.
+
 ### Fixed
 
 - Video Clip Recorder, NVENC backend: the first frame of a GPU stream no longer stalls the pipeline thread. The process-wide NVENC start-up (the PyNvVideoCodec import, the CUDA context, the conversion kernels and a throwaway encoder session) now runs once per process on a background thread that the recorder starts when it is constructed on a CUDA host (torch already imported with CUDA image tensors or an initialised CUDA context, and PyNvVideoCodec installed); CPU hosts and hosts without PyNvVideoCodec do nothing and never import torch. Frames that arrive before it finishes are not buffered and are reported in a new `startup_dropped` loss count (clip report `loss.startup_dropped`, ring stats `startup_dropped`); the recorder never falls back to x264 while NVENC is still starting, and uses x264 only if the start-up finds NVENC unavailable or does not finish within 60 s. Until a stream's encoder session is open, its GPU frame pool may grow to 32 frames (at most 192 MiB of device memory, freed once the backlog drains), so the frames that arrive while NVENC opens the session are kept instead of dropped; frames refused in that window also count as `startup_dropped`, and a full pool afterwards still counts `queue_drops`.
