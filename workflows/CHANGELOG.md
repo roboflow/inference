@@ -28,6 +28,8 @@ for contributor and maintainer responsibilities.
   Live streams and files without a usable frame count behave as before, and
   so does a file whose last frame the source drops (for example with
   `max_fps`).
+- The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
+  `compatible_model_architectures`.
 
 ## `0.2.16`
 

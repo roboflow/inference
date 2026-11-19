@@ -93,6 +93,13 @@ REGISTERED_COMPILATION_HANDLERS = {
             verify_model=verify_auto_model,
         ),
     ),
+    # ConvNeXt classifiers are packaged exactly like ResNet ones.
+    "convnext": partial(
+        compile_and_register_default_model,
+        compilation_config=CompilationConfig.for_resnet_models(
+            verify_model=verify_auto_model,
+        ),
+    ),
     "deep-lab-v3-plus": partial(
         compile_and_register_default_model,
         compilation_config=CompilationConfig.for_deep_lab_models(
