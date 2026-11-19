@@ -235,7 +235,7 @@ SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE = (
 )
 _DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
 _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE = (
-    "Image embeddings require a ResNet, ViT or DINOv3 "
+    "Image embeddings require a ResNet, ConvNeXt, ViT or DINOv3 "
     "classifier, or a pretrained embedding model (CLIP, "
     "DINOv2, DINOv3, SigLIP2)."
 )
@@ -742,9 +742,9 @@ async def infer_classification(
     "/infer/embeddings",
     response_model=ImageEmbeddingResponse,
     summary="Image embeddings",
-    description="Extract raw features or logits from a ResNet, ViT or DINOv3 "
-    "classification model, or raw features from a pretrained embedding model "
-    "(CLIP, DINOv2, DINOv3, SigLIP2)",
+    description="Extract raw features or logits from a ResNet, ConvNeXt, ViT or "
+    "DINOv3 classification model, or raw features from a pretrained embedding "
+    "model (CLIP, DINOv2, DINOv3, SigLIP2)",
     response_model_exclude_none=True,
 )
 @with_legacy_errors

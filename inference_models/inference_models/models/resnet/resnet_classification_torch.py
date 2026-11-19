@@ -215,6 +215,8 @@ class ResNetMultiLabelClassifier(nn.Module):
 class ResNetForMultiLabelClassificationTorch(
     TorchClassifierEmbeddings, MultiLabelClassificationModel[torch.Tensor, torch.Tensor]
 ):
+    # Subclasses for other architectures override this with their own setting.
+    _default_confidence = INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE
 
     @classmethod
     def from_pretrained(
@@ -350,7 +352,7 @@ class ResNetForMultiLabelClassificationTorch(
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,
-            default_confidence=INFERENCE_MODELS_RESNET_DEFAULT_CONFIDENCE,
+            default_confidence=self._default_confidence,
         )
         threshold = confidence_filter.get_threshold(self.class_names)
         if isinstance(threshold, torch.Tensor):

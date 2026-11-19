@@ -50,7 +50,7 @@ def require_feature_vector_output(output_type):
         raise ModelInputError(
             message=f"Pretrained embedding models return only "
             f"`{FEATURE_VECTOR_OUTPUT_TYPE}` embeddings, requested `{output_type}`. "
-            f"Logits are available for ResNet, ViT and DINOv3 classifiers.",
+            f"Logits are available for ResNet, ConvNeXt, ViT and DINOv3 classifiers.",
             help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
         )
 

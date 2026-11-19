@@ -17,6 +17,10 @@
   `get_embedding_info()` reports raw `clip-image-embeds@v1` feature vectors and
   `embedding_preprocessing` the resize, center crop and normalization that
   `embed_images` applies. Embedding outputs are unchanged.
+- [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
+  platform, single-label and multi-label, with their own default confidence
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  [model page](models/convnext-classification.md).
 
 ## `0.39.9`
 

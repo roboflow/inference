@@ -6,7 +6,7 @@ from inference.core.entities.requests.inference import CVInferenceRequest
 
 
 class ImageEmbeddingRequest(CVInferenceRequest):
-    """Raw features or logits from a ResNet, ViT or DINOv3 classifier, or raw
+    """Raw features or logits from a ResNet, ConvNeXt, ViT or DINOv3 classifier, or raw
     features from a pretrained embedding model."""
 
     model_id: str = Field(

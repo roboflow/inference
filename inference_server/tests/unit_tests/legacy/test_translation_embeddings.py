@@ -358,8 +358,8 @@ def test_require_feature_vector_output_rejects_logits_with_the_legacy_message():
 
     assert error.value.args[0] == (
         "Pretrained embedding models return only `feature_vector` embeddings, "
-        "requested `logits`. Logits are available for ResNet, ViT and DINOv3 "
-        "classifiers."
+        "requested `logits`. Logits are available for ResNet, ConvNeXt, ViT and "
+        "DINOv3 classifiers."
     )
     assert error.value.help_url == (
         "https://inference-models.roboflow.com/errors/input-validation/"

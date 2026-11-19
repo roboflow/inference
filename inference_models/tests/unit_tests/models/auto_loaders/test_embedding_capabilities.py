@@ -23,6 +23,8 @@ from inference_models.weights_providers.entities import (
     [
         ("resnet", "torch"),
         ("resnet", "onnx"),
+        ("convnext", "torch"),
+        ("convnext", "onnx"),
         ("vit", "onnx"),
         ("vit", "hugging-face"),
         ("dinov3_probe", "torch"),
@@ -44,6 +46,17 @@ def test_supported_pretrained_embedding_capabilities(architecture):
         architecture, "embedding", "trt", ["image_embeddings"]
     )
     assert not supports_capabilities("clip", "embedding", "onnx", ["image_embeddings"])
+
+
+@pytest.mark.parametrize("backend", [BackendType.ONNX, BackendType.TORCH])
+@pytest.mark.parametrize("task", ["classification", "multi-label-classification"])
+def test_convnext_package_registry_and_embedding_capability_agree(backend, task):
+    model_class = resolve_model_class(
+        model_architecture="convnext", task_type=task, backend=backend
+    )
+
+    assert issubclass(model_class, ImageEmbeddingModel)
+    assert supports_capabilities("convnext", task, backend, ["image_embeddings"])
 
 
 @pytest.mark.parametrize("backend", [BackendType.ONNX, BackendType.TORCH])

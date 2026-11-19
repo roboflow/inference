@@ -13,13 +13,13 @@ from tests.unit_tests.legacy.conftest import FakeGateway
 from tests.unit_tests.legacy.test_router_stub_models import fake_platform  # noqa: F401
 
 EMBEDDINGS_UNSUPPORTED = (
-    "Image embeddings require a ResNet, ViT or DINOv3 classifier, or a pretrained "
-    "embedding model (CLIP, DINOv2, DINOv3, SigLIP2)."
+    "Image embeddings require a ResNet, ConvNeXt, ViT or DINOv3 classifier, or a "
+    "pretrained embedding model (CLIP, DINOv2, DINOv3, SigLIP2)."
 )
 FEATURE_VECTOR_ONLY = (
     "Error with model input. Cause: Pretrained embedding models return only "
     "`feature_vector` embeddings, requested `logits`. Logits are available for "
-    "ResNet, ViT and DINOv3 classifiers. - VISIT "
+    "ResNet, ConvNeXt, ViT and DINOv3 classifiers. - VISIT "
     "https://inference-models.roboflow.com/errors/input-validation/#modelinputerror "
     "FOR FURTHER SUPPORT"
 )
