@@ -1,7 +1,5 @@
-import json
 import types
 from collections import defaultdict
-from pathlib import Path
 from threading import RLock
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
@@ -26,9 +24,8 @@ from inference_models.configuration import (
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
 from inference_models.entities import ImageDimensions
-from inference_models.errors import CorruptedModelPackageError, ModelInputError
+from inference_models.errors import ModelInputError
 from inference_models.models.base.types import PreprocessedInputs, PreprocessingMetadata
-from inference_models.models.common.roboflow.post_processing import ConfidenceFilter
 from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
     images_to_pillow,
@@ -154,10 +151,8 @@ class OWLv2HF(
         blacklisted_domains: Optional[List[str]] = None,
         allow_local_storage_access_for_reference_images: bool = ALLOW_LOCAL_STORAGE_ACCESS_FOR_REFERENCE_DATA,
         owlv2_enforce_model_compilation: bool = False,
-        recommended_parameters=None,
         **kwargs,
     ) -> "OpenVocabularyObjectDetectionModel":
-        class_names, prompts = _load_saved_queries(Path(model_name_or_path))
         if owlv2_class_embeddings_cache is None:
             owlv2_class_embeddings_cache = OwlV2ClassEmbeddingsCacheNullObject()
         if owlv2_images_embeddings_cache is None:
@@ -191,9 +186,6 @@ class OWLv2HF(
             whitelisted_domains=whitelisted_domains,
             blacklisted_domains=blacklisted_domains,
             allow_local_storage_access_for_reference_images=allow_local_storage_access_for_reference_images,
-            class_names=class_names,
-            prompts=prompts,
-            recommended_parameters=recommended_parameters,
         )
         if owlv2_enforce_model_compilation:
             instance.optimize_for_inference()
@@ -212,16 +204,10 @@ class OWLv2HF(
         whitelisted_domains: Optional[List[str]],
         blacklisted_domains: Optional[List[str]],
         allow_local_storage_access_for_reference_images: bool,
-        class_names: Optional[List[str]] = None,
-        prompts: Optional[List[str]] = None,
-        recommended_parameters=None,
     ):
         self._model = model
         self._processor = processor
         self._device = device
-        self._class_names = class_names
-        self._prompts = prompts
-        self.recommended_parameters = recommended_parameters
         self._owlv2_class_embeddings_cache = owlv2_class_embeddings_cache
         self._owlv2_images_embeddings_cache = owlv2_images_embeddings_cache
         self._allow_url_input = allow_url_input
@@ -234,49 +220,6 @@ class OWLv2HF(
         )
         self._compiled = False
         self._lock = RLock()
-
-    @property
-    def saved_class_names(self) -> List[str]:
-        """Return the package labels independently of per-request text queries.
-
-        Returns:
-            A copy of the saved labels, or an empty list for open-vocabulary packages.
-        """
-        return list(self._class_names or [])
-
-    def infer(
-        self, images, classes=None, *, input_color_format=None, **kwargs
-    ) -> List[Detections]:
-        """Detect objects using explicit queries or the package's saved prompts.
-
-        Args:
-            images: Images to process.
-            classes: Explicit text queries, or None to use saved prompts.
-            input_color_format: Input channel order, or None for processor defaults.
-            **kwargs: Inference parameters passed to the detection pipeline.
-
-        Returns:
-            Detections for each input image.
-        """
-        if classes is None:
-            classes = self._prompts
-            class_names = self._class_names
-        else:
-            class_names = classes if self._class_names is not None else None
-        if classes is None:
-            raise ModelInputError(
-                message="Provide classes or an OWLv2 package with saved prompts."
-            )
-        return super().infer(
-            images,
-            classes=classes,
-            class_names=class_names,
-            input_color_format=input_color_format,
-            **kwargs,
-        )
-
-    def __call__(self, images, classes=None, **kwargs) -> List[Detections]:
-        return self.infer(images, classes=classes, **kwargs)
 
     def optimize_for_inference(self) -> None:
         with self._lock:
@@ -292,18 +235,22 @@ class OWLv2HF(
             _ = self.infer(example_image, ["some", "other"])
             self._compiled = True
 
+    def infer(self, images, classes, *, input_color_format=None, **kwargs):
+        return super().infer(
+            images, classes=classes, input_color_format=input_color_format, **kwargs
+        )
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
-        input_color_format = kwargs.get("input_color_format")
-        if input_color_format is not None:
-            images, image_dimensions = images_to_pillow(
-                images, input_color_format=input_color_format
-            )
-        else:
+        if kwargs.get("input_color_format") is None:
             image_dimensions = extract_input_images_dimensions(images=images)
+        else:
+            images, image_dimensions = images_to_pillow(
+                images, input_color_format=kwargs["input_color_format"]
+            )
         inputs = self._processor(images=images, return_tensors="pt")
         return inputs["pixel_values"].to(self._device), image_dimensions
 
@@ -327,23 +274,13 @@ class OWLv2HF(
         iou_threshold: float = INFERENCE_MODELS_OWLV2_DEFAULT_IOU_THRESHOLD,
         class_agnostic_nms: bool = INFERENCE_MODELS_OWLV2_DEFAULT_CLASS_AGNOSTIC_NMS,
         max_detections: int = INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
-        class_names=None,
         **kwargs,
     ) -> List[Detections]:
-        threshold = confidence
-        if class_names is not None:
-            threshold = ConfidenceFilter(
-                confidence=(
-                    float(confidence) if isinstance(confidence, int) else confidence
-                ),
-                recommended_parameters=self.recommended_parameters,
-                default_confidence=INFERENCE_MODELS_OWLV2_DEFAULT_CONFIDENCE,
-            ).get_threshold(class_names)
         target_sizes = [(dim.height, dim.width) for dim in pre_processing_meta]
         post_processed_outputs = self._processor.post_process_grounded_object_detection(
             outputs=model_results,
             target_sizes=target_sizes,
-            threshold=float("-inf"),
+            threshold=confidence,
         )
         results = []
         for i in range(len(post_processed_outputs)):
@@ -352,14 +289,6 @@ class OWLv2HF(
                 post_processed_outputs[i]["scores"],
                 post_processed_outputs[i]["labels"],
             )
-            if isinstance(threshold, torch.Tensor):
-                score_thresholds = threshold.to(
-                    device=scores.device, dtype=scores.dtype
-                )[labels.long()]
-            else:
-                score_thresholds = threshold
-            valid = scores > score_thresholds
-            boxes, scores, labels = boxes[valid], scores[valid], labels[valid]
             nms_class_ids = torch.zeros_like(labels) if class_agnostic_nms else labels
             keep = torchvision.ops.batched_nms(
                 boxes, scores, nms_class_ids, iou_threshold
@@ -370,11 +299,6 @@ class OWLv2HF(
                     xyxy=boxes[keep].contiguous().int(),
                     class_id=labels[keep].contiguous().int(),
                     confidence=scores[keep].contiguous(),
-                    image_metadata=(
-                        {"class_names": class_names}
-                        if class_names is not None
-                        else None
-                    ),
                 )
             )
         return results
@@ -772,30 +696,6 @@ class OWLv2HF(
         )
         self._owlv2_images_embeddings_cache.save_embeddings(embeddings=embeddings)
         return embeddings
-
-
-def _load_saved_queries(
-    package: Path,
-) -> Tuple[Optional[List[str]], Optional[List[str]]]:
-    # The exporter validates these files; only the alignment that inference relies on is checked.
-    labels_path = package / "class_names.txt"
-    prompts_path = package / "owlv2_prompts.json"
-    if not labels_path.exists() and not prompts_path.exists():
-        return None, None
-    try:
-        class_names = labels_path.read_text().splitlines()
-        prompts = json.loads(prompts_path.read_text())
-    except (OSError, ValueError) as error:
-        raise CorruptedModelPackageError(
-            message=f"Invalid OWLv2 classes or prompts: {error}",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        ) from error
-    if not class_names or len(prompts) != len(class_names):
-        raise CorruptedModelPackageError(
-            message="OWLv2 classes and prompts must be nonempty and have matching lengths.",
-            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-        )
-    return class_names, prompts
 
 
 def to_corners(box: torch.Tensor) -> torch.Tensor:

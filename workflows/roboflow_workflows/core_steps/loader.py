@@ -799,6 +799,7 @@ else:
         StabilityAIInpaintingBlockV1,
     )
 
+from roboflow_workflows.core_steps.models.foundation.owlv2.v1 import OwlV2ModelBlockV1
 from roboflow_workflows.core_steps.models.foundation.stability_ai.outpainting.v1 import (
     StabilityAIOutpaintingBlockV1,
 )
@@ -1933,6 +1934,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
+        OwlV2ModelBlockV1,
         KeypointVisualizationBlockV1,
         DataAggregatorBlockV1,
         DetectionEventLogBlockV1,

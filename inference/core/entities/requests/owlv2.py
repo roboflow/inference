@@ -3,6 +3,9 @@ from typing import List, Optional, Union
 from pydantic import BaseModel, Field, validator
 
 from inference.core.entities.common import ApiKey
+from inference.core.entities.requests.dynamic_class_base import (
+    DynamicClassBaseInferenceRequest,
+)
 from inference.core.entities.requests.inference import (
     BaseRequest,
     InferenceRequestImage,
@@ -29,6 +32,14 @@ class TrainingImage(BaseModel):
     image: InferenceRequestImage = Field(
         description="Image data that `boxes` describes"
     )
+
+
+class OwlV2TextInferenceRequest(DynamicClassBaseInferenceRequest):
+    """Detect the supplied text queries with registered OWLv2 weights."""
+
+    model_id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+/[A-Za-z0-9_-]+$")
+    text: List[str] = Field(min_length=1)
+    confidence: float = Field(default=0.1, ge=0, le=1)
 
 
 class OwlV2InferenceRequest(BaseRequest):

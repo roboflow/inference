@@ -809,6 +809,14 @@ class Sam3_3D_Objects_InferenceRequest(BaseRequest):
         return "sam3-3d-objects"
 
 
+class OwlV2TextInferenceRequest(DynamicClassBaseInferenceRequest):
+    """Detect the supplied text queries with registered OWLv2 weights."""
+
+    model_id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+/[A-Za-z0-9_-]+$")
+    text: List[str] = Field(min_length=1)
+    confidence: float = Field(default=0.1, ge=0, le=1)
+
+
 class OwlV2InferenceRequest(BaseRequest):
     """Request for OwlV2 inference.
 

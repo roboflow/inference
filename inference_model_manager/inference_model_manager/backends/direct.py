@@ -289,17 +289,7 @@ class DirectBackend(Backend):
 
     @property
     def class_names(self) -> Optional[List[str]]:
-        """Return fixed labels or saved package labels for model metadata.
-
-        Returns:
-            Model labels when available, otherwise saved labels or None.
-            Per-request labels remain attached to the predictions.
-        """
-        names = getattr(self._model, "class_names", None)
-        if names is None:
-            names = getattr(self._model, "saved_class_names", None)
-
-        return names
+        return getattr(self._model, "class_names", None)
 
     @property
     def key_points_classes(self) -> Optional[List[List[str]]]:
