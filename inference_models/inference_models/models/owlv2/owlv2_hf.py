@@ -23,7 +23,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
-from inference_models.entities import ImageDimensions
+from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError
 from inference_models.models.base.types import PreprocessedInputs, PreprocessingMetadata
 from inference_models.models.common.roboflow.pre_processing import (
@@ -235,6 +235,20 @@ class OWLv2HF(
             ).to(self._device)
             _ = self.infer(example_image, ["some", "other"])
             self._compiled = True
+
+    def infer(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        classes: Union[str, List[str]],
+        input_color_format: Optional[ColorFormat] = None,
+        **kwargs,
+    ) -> List[Detections]:
+        # The processor reads every image as RGB. `pre_process` does not name
+        # this parameter on purpose: the reference-example methods share it,
+        # and their stored embeddings depend on the colour order they get today.
+        if input_color_format == "bgr":
+            images = _reverse_channels(images)
+        return super().infer(images, classes, **kwargs)
 
     def pre_process(
         self,
@@ -701,6 +715,17 @@ class OWLv2HF(
         )
         self._owlv2_images_embeddings_cache.save_embeddings(embeddings=embeddings)
         return embeddings
+
+
+def _reverse_channels(
+    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+) -> Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]:
+    if isinstance(images, list):
+        return [_reverse_channels(image) for image in images]
+    elif isinstance(images, np.ndarray):
+        return np.ascontiguousarray(images[..., ::-1])
+    else:
+        return images.flip(-3)
 
 
 def to_corners(box: torch.Tensor) -> torch.Tensor:

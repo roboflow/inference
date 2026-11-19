@@ -2,17 +2,15 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-
-from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.models.foundation.owlv2.v1 import (
-    OwlV2ModelBlockV1,
-)
-from inference.core.workflows.execution_engine.entities.base import (
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.models.foundation.owlv2.v1 import OwlV2ModelBlockV1
+from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
 )
+
+from inference.core.env import ENABLE_TENSOR_DATA_REPRESENTATION
 
 
 @pytest.mark.skipif(
