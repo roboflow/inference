@@ -88,7 +88,6 @@ from inference_server.legacy.entities import (
     ObjectDetectionInferenceResponse,
     OCRInferenceResponse,
     OwlV2InferenceRequest,
-    OwlV2TextInferenceRequest,
     PerceptionEncoderCompareRequest,
     PerceptionEncoderCompareResponse,
     PerceptionEncoderEmbeddingResponse,
@@ -941,20 +940,16 @@ async def infer_sam3_3d(request: Request) -> Response:
     response_model=Union[
         ObjectDetectionInferenceResponse, List[ObjectDetectionInferenceResponse]
     ],
-    summary="OWLv2 object detection",
-    description="Detect with text queries and an uploaded model ID, or with visual examples and a core OWLv2 model.",
+    summary="Owlv2 image prompting",
+    description="Run the google owlv2 model to few-shot object detect",
 )
 @with_legacy_errors
 @report_request_usage
 async def infer_owlv2(
     request: Request,
-    inference_request: Union[OwlV2InferenceRequest, OwlV2TextInferenceRequest],
+    inference_request: OwlV2InferenceRequest,
     bridge: LegacyModelBridge = Depends(get_bridge),
 ) -> Any:
-    if isinstance(inference_request, OwlV2TextInferenceRequest):
-        return await _run_open_vocabulary_detection(
-            request, inference_request, bridge, "owlv2"
-        )
     return await _run_few_shot_detection(request, inference_request, bridge, "owlv2")
 
 
@@ -1207,19 +1202,10 @@ async def _resolve_core_model(
         request, request.query_params.get("api_key"), inference_request.api_key
     )
     inference_request.api_key = api_key
-    if isinstance(inference_request, OwlV2TextInferenceRequest):
-        core_model_id = inference_request.model_id
-    else:
-        core_model_id = f"{core}/{getattr(inference_request, f'{core}_version_id')}"
+    core_model_id = f"{core}/{getattr(inference_request, f'{core}_version_id')}"
     route = await bridge.resolve(
         core_model_id, api_key, row_key=core_model_id, path=request.scope["path"]
     )
-    if (
-        isinstance(inference_request, OwlV2TextInferenceRequest)
-        and route.model_architecture != "owlv2"
-        and route.model_class_name != "OWLv2HF"
-    ):
-        raise LegacyHTTPError(400, "Expected an uploaded OWLv2 model.")
     bridge.record_request(route, core_model_id, request.scope["path"])
     return route, core_model_id, api_key
 

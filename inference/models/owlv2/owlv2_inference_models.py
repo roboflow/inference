@@ -32,7 +32,7 @@ from inference.core.roboflow_api import (
     ENFORCE_CREDITS_VERIFICATION_HEADER,
     get_extra_weights_provider_headers,
 )
-from inference.core.utils.image_utils import load_image_bgr
+from inference.core.utils.image_utils import load_image_bgr, load_image_rgb
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.usage_tracking.collector import usage_collector
 from inference_models import AutoModel, Detections
@@ -282,6 +282,18 @@ class InferenceModelsOwlV2Adapter(Model):
         text: Optional[List[str]] = None,
         **kwargs,
     ):
+        if text is not None:
+            rgb_image = load_image_rgb(image)
+            predictions = self._model.infer(
+                images=rgb_image,
+                classes=text,
+                confidence=confidence,
+                iou_threshold=iou_threshold,
+                max_detections=max_detections,
+            )
+            height, width = rgb_image.shape[:2]
+            return self.make_response(predictions, [(width, height)], text=text)
+
         reference_examples = []
         for example in training_data or []:
             boxes = []
@@ -298,31 +310,20 @@ class InferenceModelsOwlV2Adapter(Model):
         else:
             image_decoded = [load_image_bgr(image)]
         image_sizes: List[Tuple[int, int]] = [i.shape[:2][::-1] for i in image_decoded]  # type: ignore
-        if text is not None:
-            results = self._model.infer(
-                images=image_decoded,
-                input_color_format="bgr",
-                classes=text,
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-            )
-        else:
-            results = self._model.infer_with_reference_examples(
-                images=image_decoded,
-                reference_examples=reference_examples,
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-            )
-        return self.make_response(
-            predictions=results, image_sizes=image_sizes, text=text
+        results = self._model.infer_with_reference_examples(
+            images=image_decoded,
+            reference_examples=reference_examples,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
         )
+        return self.make_response(predictions=results, image_sizes=image_sizes)
 
     def make_response(
         self,
         predictions: List[Detections],
         image_sizes: List[Tuple[int, int]],
+        text: Optional[List[str]] = None,
         **kwargs,
     ) -> List[ObjectDetectionInferenceResponse]:
         responses = []
@@ -336,9 +337,12 @@ class InferenceModelsOwlV2Adapter(Model):
                 center_y = (y_min + y_max) / 2
                 class_id = image_prediction.class_id[instance_id].item()
                 confidence = image_prediction.confidence[instance_id].item()
-                class_name = (
-                    kwargs.get("text") or image_prediction.image_metadata["class_names"]
-                )[class_id]
+                class_names = (
+                    text
+                    if text is not None
+                    else image_prediction.image_metadata["class_names"]
+                )
+                class_name = class_names[class_id]
                 image_instances.append(
                     ObjectDetectionPrediction(
                         # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)

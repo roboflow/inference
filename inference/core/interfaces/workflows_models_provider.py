@@ -49,7 +49,6 @@ from inference.core.entities.requests.inference import (
     SemanticSegmentationInferenceRequest,
 )
 from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
-from inference.core.entities.requests.owlv2 import OwlV2TextInferenceRequest
 from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
@@ -519,24 +518,6 @@ class ModelManagerModelsProvider:
             core_model_id, api_key, endpoint_type=ModelEndpointType.CORE_MODEL
         )
         return self._dump(self._infer(model_id=core_model_id, request=request))[0]
-
-    def run_owlv2_text(
-        self,
-        model_id: str,
-        images: List[Any],
-        text: List[str],
-        confidence: float,
-        api_key: Optional[str] = None,
-    ) -> List[dict]:
-        request = OwlV2TextInferenceRequest(
-            model_id=model_id,
-            image=images,
-            text=text,
-            confidence=confidence,
-            api_key=api_key,
-            source="workflow",
-        )
-        return self._dump(self._infer(model_id=model_id, request=request))
 
     def run_yolo_world(
         self,

@@ -275,15 +275,6 @@ class ModelsProvider(Protocol):
         text_recognition: Union[str, None, _Unset] = UNSET,
     ) -> dict: ...
 
-    def run_owlv2_text(
-        self,
-        model_id: str,
-        images: List[Any],
-        text: List[str],
-        confidence: float,
-        api_key: Optional[str] = None,
-    ) -> List[dict]: ...
-
     def run_yolo_world(
         self,
         model_id: str,

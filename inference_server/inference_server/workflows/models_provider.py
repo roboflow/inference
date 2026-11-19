@@ -61,7 +61,6 @@ from inference_server.legacy.entities import (
     LMMInferenceRequest,
     Moondream2InferenceRequest,
     ObjectDetectionInferenceRequest,
-    OwlV2TextInferenceRequest,
     PerceptionEncoderImageEmbeddingRequest,
     PerceptionEncoderTextEmbeddingRequest,
     PPOCRInferenceRequest,
@@ -841,24 +840,6 @@ class GatewayModelsProvider:
         core_model_id = request.model_id
         self.add_model(core_model_id, api_key)
         return self._dump(self._run_ocr(core_model_id, request, api_key))[0]
-
-    def run_owlv2_text(
-        self,
-        model_id: str,
-        images: List[Any],
-        text: List[str],
-        confidence: float,
-        api_key: Optional[str] = None,
-    ) -> List[dict]:
-        request = OwlV2TextInferenceRequest(
-            model_id=model_id,
-            image=images,
-            text=text,
-            confidence=confidence,
-            api_key=api_key,
-            source="workflow",
-        )
-        return self._dump(self._run_open_vocabulary(model_id, request, api_key))
 
     def run_yolo_world(
         self,

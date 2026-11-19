@@ -4378,10 +4378,7 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/owlv2/infer",
-                    response_model=Union[
-                        ObjectDetectionInferenceResponse,
-                        List[ObjectDetectionInferenceResponse],
-                    ],
+                    response_model=ObjectDetectionInferenceResponse,
                     summary="OWLv2 object detection",
                     description="Detect with text queries and an uploaded model ID, or with visual examples and a core OWLv2 model.",
                 )

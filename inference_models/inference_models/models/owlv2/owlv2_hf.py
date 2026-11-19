@@ -28,7 +28,6 @@ from inference_models.errors import ModelInputError
 from inference_models.models.base.types import PreprocessedInputs, PreprocessingMetadata
 from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
-    images_to_pillow,
 )
 from inference_models.models.common.torch import torch_default_dtype_lock
 from inference_models.models.owlv2.cache import (
@@ -237,22 +236,12 @@ class OWLv2HF(
             _ = self.infer(example_image, ["some", "other"])
             self._compiled = True
 
-    def infer(self, images, classes, *, input_color_format=None, **kwargs):
-        return super().infer(
-            images, classes=classes, input_color_format=input_color_format, **kwargs
-        )
-
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
-        if kwargs.get("input_color_format") is None:
-            image_dimensions = extract_input_images_dimensions(images=images)
-        else:
-            images, image_dimensions = images_to_pillow(
-                images, input_color_format=kwargs["input_color_format"]
-            )
+        image_dimensions = extract_input_images_dimensions(images=images)
         inputs = self._processor(images=images, return_tensors="pt")
         return inputs["pixel_values"].to(self._device), image_dimensions
 
@@ -262,9 +251,9 @@ class OWLv2HF(
         classes: List[str],
         **kwargs,
     ) -> Owlv2ObjectDetectionOutput:
-        input_ids = self._processor(
-            text=[classes] * pre_processed_images.shape[0], return_tensors="pt"
-        )["input_ids"].to(self._device)
+        input_ids = self._processor(text=[classes], return_tensors="pt")[
+            "input_ids"
+        ].to(self._device)
         with self._lock, torch.inference_mode():
             return self._model(input_ids=input_ids, pixel_values=pre_processed_images)
 
