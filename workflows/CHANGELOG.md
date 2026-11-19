@@ -38,6 +38,8 @@ for contributor and maintainer responsibilities.
   covers between it and the previous call. A step has one worker, so its
   streams take turns. Video files always classify inside the step. The default
   is unchanged.
+- The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
+  `compatible_model_architectures`.
 
 ## `0.2.16`
 
