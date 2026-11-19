@@ -366,16 +366,16 @@ def test_owlv2_text_uses_the_uploaded_model_and_query_labels(monkeypatch, fake_s
         json={
             "image": _image(),
             "model_id": model_id,
-            "text": ["maize", "weed"],
+            "text": ["bicycle", "bus"],
             "confidence": 0.2,
         },
     )
     assert response.status_code == 200, response.text
-    assert response.json()["predictions"][0]["class"] == "weed"
+    assert response.json()["predictions"][0]["class"] == "bus"
     assert ("ensure_loaded", model_id, "workspace-key") in gw.calls
     call = next(call for call in gw.calls if call[0] == "infer")
     assert call[1:3] == (model_id, "infer")
-    assert call[3]["classes"] == ["maize", "weed"]
+    assert call[3]["classes"] == ["bicycle", "bus"]
     assert call[3]["confidence"] == 0.2
 
 
