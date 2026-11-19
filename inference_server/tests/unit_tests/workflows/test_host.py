@@ -919,6 +919,39 @@ def test_platform_client_post_waits_and_declares_the_proxy_timeout(
         )
 
 
+@pytest.mark.parametrize(
+    "extra_headers",
+    [
+        {"X-Roboflow-Client-Timeout": "10", "x-roboflow-client-timeout": "20"},
+        {"x-roboflow-client-timeout": "20", "X-Roboflow-Client-Timeout": "10"},
+    ],
+)
+def test_platform_client_post_sends_one_client_timeout_whatever_the_extra_headers(
+    monkeypatch, extra_headers
+):
+    import inference_server.workflows.host as host
+
+    monkeypatch.setattr(host, "API_PROXY_REQUEST_TIMEOUT_S", 330.0)
+    monkeypatch.setattr(
+        host.configuration,
+        "ROBOFLOW_API_EXTRA_HEADERS",
+        json.dumps({**extra_headers, "x-allow-chunked": "false", "X-Other": "kept"}),
+    )
+    with rm.Mocker() as m:
+        m.post(rm.ANY, json={})
+        host.PLATFORM_CLIENT.post("apiproxy/gemini", api_key="k")
+        sent_headers = m.last_request.headers
+
+    client_timeouts = [
+        value
+        for name, value in sent_headers.items()
+        if name.lower() == "x-roboflow-client-timeout"
+    ]
+    assert client_timeouts == ["330"]
+    assert sent_headers["X-Allow-Chunked"] == "true"
+    assert sent_headers["X-Other"] == "kept"
+
+
 def test_api_proxy_base_url_defaults_to_the_api_base_url():
     env = {
         key: value for key, value in os.environ.items() if key != "API_PROXY_BASE_URL"

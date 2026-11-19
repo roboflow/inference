@@ -77,6 +77,35 @@ def test_build_api_headers_ignores_undecodable_extras(monkeypatch):
     }
 
 
+def test_build_api_headers_drops_every_spelling_of_an_overriding_header(
+    monkeypatch,
+):
+    monkeypatch.setattr(configuration, "SERVER_VERSION", "9.9.9")
+    monkeypatch.setattr(
+        configuration,
+        "ROBOFLOW_API_EXTRA_HEADERS",
+        json.dumps(
+            {
+                "x-roboflow-client-timeout": "20",
+                "X-ROBOFLOW-INFERENCE-VERSION": "extra",
+                "x-allow-chunked": "false",
+                "X-Other": "kept",
+            }
+        ),
+    )
+
+    headers = platform_http.build_api_headers(
+        explicit_headers={"X-Roboflow-Client-Timeout": "330"}
+    )
+
+    assert headers == {
+        "X-Other": "kept",
+        "X-Roboflow-Client-Timeout": "330",
+        "x-roboflow-inference-version": "9.9.9",
+        "X-Allow-Chunked": "true",
+    }
+
+
 @pytest.mark.parametrize(
     "overrides, expected",
     [
@@ -89,6 +118,15 @@ def test_build_api_headers_ignores_undecodable_extras(monkeypatch):
                 "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT": "330",
             },
             "330.0",
+        ),
+        ({"ROBOFLOW_API_PROXY_REQUEST_TIMEOUT": ""}, "120.0"),
+        ({"ROBOFLOW_API_PROXY_REQUEST_TIMEOUT": "  "}, "120.0"),
+        (
+            {
+                "ROBOFLOW_API_REQUEST_TIMEOUT": "90",
+                "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT": "",
+            },
+            "90.0",
         ),
     ],
 )

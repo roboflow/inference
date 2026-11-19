@@ -2231,8 +2231,15 @@ def build_roboflow_api_headers(
         return explicit_headers
     try:
         extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
-        if explicit_headers:
-            extra_headers.update(explicit_headers)
+        # Header names are case-insensitive: drop every spelling an explicit
+        # header replaces, or requests could send the extra one instead.
+        explicit_names = {name.lower() for name in explicit_headers}
+        extra_headers = {
+            name: value
+            for name, value in extra_headers.items()
+            if name.lower() not in explicit_names
+        }
+        extra_headers.update(explicit_headers)
         return extra_headers
     except ValueError:
         logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
