@@ -17,6 +17,12 @@
   `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
   `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
 
+### Fixed
+
+- OWLv2 (`OWLv2HF`) raises `ModelInputError` that names each text query longer than the text
+  encoder limit (16 tokens for the released checkpoints). Such queries previously failed in the
+  tokenizer with an unrelated tensor error.
+
 ## `0.39.9`
 
 ### Changed

@@ -283,16 +283,22 @@ class InferenceModelsOwlV2Adapter(Model):
         **kwargs,
     ):
         if text is not None:
-            rgb_image = load_image_rgb(image)
-            predictions = self._model.infer(
-                images=rgb_image,
-                classes=text,
-                confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-            )
-            height, width = rgb_image.shape[:2]
-            return self.make_response(predictions, [(width, height)], text=text)
+            images = image if isinstance(image, list) else [image]
+            rgb_images = [load_image_rgb(i) for i in images]
+            # OWLv2HF tokenizes one set of queries per call, so a batch of
+            # images would not line up with the text embeddings.
+            predictions = [
+                self._model.infer(
+                    images=rgb_image,
+                    classes=text,
+                    confidence=confidence,
+                    iou_threshold=iou_threshold,
+                    max_detections=max_detections,
+                )[0]
+                for rgb_image in rgb_images
+            ]
+            image_sizes = [i.shape[:2][::-1] for i in rgb_images]
+            return self.make_response(predictions, image_sizes, text=text)
 
         reference_examples = []
         for example in training_data or []:

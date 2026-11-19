@@ -251,6 +251,20 @@ class OWLv2HF(
         classes: List[str],
         **kwargs,
     ) -> Owlv2ObjectDetectionOutput:
+        max_tokens = self._model.config.text_config.max_position_embeddings
+        too_long = [
+            query
+            for query, token_ids in zip(
+                classes, self._processor.tokenizer(classes)["input_ids"]
+            )
+            if len(token_ids) > max_tokens
+        ]
+        if too_long:
+            raise ModelInputError(
+                message=f"OWLv2 text queries can have at most {max_tokens} tokens, "
+                f"including the start and end tokens. Shorten these queries: {too_long}",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         input_ids = self._processor(text=[classes], return_tensors="pt")[
             "input_ids"
         ].to(self._device)

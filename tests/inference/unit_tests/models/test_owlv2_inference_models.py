@@ -20,8 +20,10 @@ def test_text_queries_use_rgb_and_return_the_requested_label():
         )
     ]
     queries = ["bicycle", "bus"]
-    (response,) = adapter.infer(image=Image.new("RGB", (3, 2), "red"), text=queries)
+    red = Image.new("RGB", (3, 2), "red")
+    response, _ = adapter.infer(image=[red, red], text=queries)
 
+    assert adapter._model.infer.call_count == 2
     inputs = adapter._model.infer.call_args.kwargs
     assert inputs["images"][0, 0].tolist() == [255, 0, 0]
     assert inputs["classes"] == queries

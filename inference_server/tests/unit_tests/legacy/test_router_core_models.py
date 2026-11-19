@@ -352,6 +352,33 @@ def _owlv2_client(monkeypatch, fake_stat, gateway, task_type="object-detection")
     return TestClient(app, raise_server_exceptions=False)
 
 
+def test_owlv2_text_uses_the_uploaded_model_and_query_labels(monkeypatch, fake_stat):
+    model_id = "workspace/uploaded-owlv2"
+    fake_stat[model_id] = (
+        "open-vocabulary-object-detection",
+        "infer",
+        "owlv2",
+        "owlv2",
+    )
+    gw = FakeGateway(predictions={(model_id, "infer"): _det(class_id=1)})
+    response = _owlv2_client(monkeypatch, fake_stat, gw).post(
+        "/owlv2/infer?api_key=workspace-key",
+        json={
+            "image": _image(),
+            "model_id": model_id,
+            "text": ["bicycle", "bus"],
+            "confidence": 0.2,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["predictions"][0]["class"] == "bus"
+    assert ("ensure_loaded", model_id, "workspace-key") in gw.calls
+    call = next(call for call in gw.calls if call[0] == "infer")
+    assert call[1:3] == (model_id, "infer")
+    assert call[3]["classes"] == ["bicycle", "bus"]
+    assert call[3]["confidence"] == 0.2
+
+
 def _owlv2_body(**extra):
     return {
         "image": _image(),
@@ -674,10 +701,9 @@ def _sam3_3d_client(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
+    from inference_server.legacy.bridge import LegacyModelBridge
     from inference_server.legacy.router import include_legacy_routers
     from inference_server.middlewares.model_load import ModelLoadHeadersMiddleware
-
-    from inference_server.legacy.bridge import LegacyModelBridge
 
     monkeypatch.setattr("inference_server.configuration.SAM3_3D_OBJECTS_ENABLED", True)
     app = FastAPI()
