@@ -6,7 +6,7 @@ or a pretrained alias: `resnet18`, `resnet34`, `resnet50`, or `resnet101`.
 Pretrained aliases use the `inference-models` package registry; enable
 `USE_INFERENCE_MODELS=True` on deployments using the legacy model loader.
 
-Supported model families are Roboflow ResNet, ViT, and DINOv3 classifiers, including
+Supported model families are Roboflow ResNet, ConvNeXt, ViT, and DINOv3 classifiers, including
 single-label and multi-label models. The block preserves trained weights, pooling,
 internal layer normalization, and the model's original image preprocessing. It
 does not add L2 normalization. The `output_type` parameter selects:
@@ -18,8 +18,7 @@ does not add L2 normalization. The `output_type` parameter selects:
   These values are not probabilities. Exports that already return logits retain
   that output; exports with a final activation have that activation removed.
 
-Other classifier families, including ConvNeXt and YOLO classifiers, are not
-supported by this initial release.
+Other classifier families, including YOLO classifiers, are not supported.
 
 ```json
 {

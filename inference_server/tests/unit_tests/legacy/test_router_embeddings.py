@@ -12,7 +12,9 @@ from PIL import Image
 from tests.unit_tests.legacy.conftest import FakeGateway, route_paths
 from tests.unit_tests.legacy.test_router_stub_models import fake_platform  # noqa: F401
 
-EMBEDDINGS_UNSUPPORTED = "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+EMBEDDINGS_UNSUPPORTED = (
+    "Image embeddings require a ResNet, ConvNeXt, ViT or DINOv3 classifier."
+)
 NOT_FOUND = (
     "Requested Roboflow resource not found. Make sure that workspace, project or "
     "model you referred in request exists."

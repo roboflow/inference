@@ -231,7 +231,7 @@ SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE = (
 )
 _DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
 _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE = (
-    "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+    "Image embeddings require a ResNet, ConvNeXt, ViT or DINOv3 classifier."
 )
 FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Fine-tuned SAM 3 models are not supported on Serverless. "
@@ -579,24 +579,30 @@ async def _infer_and_repack(
         model_monitoring=_model_monitoring_enabled(inference_request),
     )
     elapsed = time.perf_counter() - started
-    responses = []
-    for prediction, payload in zip(predictions, payloads):
-        response = repack_prediction(
-            route.task_type,
-            route.action,
-            prediction,
-            (payload.width, payload.height),
-            route,
-            inference_request,
-        )
-        response.time = elapsed
-        response.inference_id = inference_request.id
-        response.resolved_model = resolved_model_for(route)
-        if visualize:
-            response.visualization = render_visualization(
-                route, inference_request, response, payload
+
+    def _repack_all():
+        repacked = []
+        for prediction, payload in zip(predictions, payloads):
+            response = repack_prediction(
+                route.task_type,
+                route.action,
+                prediction,
+                (payload.width, payload.height),
+                route,
+                inference_request,
             )
-        responses.append(response)
+            response.time = elapsed
+            response.inference_id = inference_request.id
+            response.resolved_model = resolved_model_for(route)
+            if visualize:
+                response.visualization = render_visualization(
+                    route, inference_request, response, payload
+                )
+            repacked.append(response)
+
+        return repacked
+
+    responses = await asyncio.to_thread(_repack_all)
     pingback.record_inference(route.registry_id, inference_request, responses)
     if image_format == "image":
         http_response = Response(
@@ -732,7 +738,7 @@ async def infer_classification(
     "/infer/embeddings",
     response_model=ImageEmbeddingResponse,
     summary="Image embeddings",
-    description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+    description="Extract raw features from a ResNet, ConvNeXt, ViT or DINOv3 classification model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
