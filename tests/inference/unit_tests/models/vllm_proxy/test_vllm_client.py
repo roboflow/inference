@@ -131,6 +131,10 @@ class TestChatCompletion:
     def test_connection_error_defaults_to_503(self) -> None:
         assert VLLMConnectionError("unreachable").status_code == 503
 
+    def test_connection_error_takes_its_status_by_keyword_only(self) -> None:
+        with pytest.raises(TypeError):
+            VLLMConnectionError("unreachable", 504)
+
 
 class TestLoraAdapterEndpoints:
     def test_load_lora_adapter_posts_name_and_path(self, client: VLLMClient) -> None:

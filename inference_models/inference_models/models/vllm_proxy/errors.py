@@ -45,8 +45,14 @@ class VLLMConnectionError(VLLMProxyError):
     rows and answer with it.
     """
 
-    def __init__(self, message: str, status_code: int = VLLM_UNAVAILABLE_STATUS_CODE):
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str,
+        help_url: Optional[str] = None,
+        *,
+        status_code: int = VLLM_UNAVAILABLE_STATUS_CODE,
+    ):
+        super().__init__(message, help_url=help_url)
         self.status_code = status_code
 
 

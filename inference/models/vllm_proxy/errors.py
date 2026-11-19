@@ -46,7 +46,9 @@ class VLLMConnectionError(VLLMProxyError):
     `error_status_code` and the HTTP error handlers answer with it.
     """
 
-    def __init__(self, message: str, status_code: int = VLLM_UNAVAILABLE_STATUS_CODE):
+    def __init__(
+        self, message: str, *, status_code: int = VLLM_UNAVAILABLE_STATUS_CODE
+    ):
         super().__init__(message)
         self.status_code = status_code
 

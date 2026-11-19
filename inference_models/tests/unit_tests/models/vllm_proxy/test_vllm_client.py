@@ -1,4 +1,5 @@
 import json
+import pickle
 from unittest.mock import MagicMock
 
 import pytest
@@ -152,6 +153,34 @@ class TestChatCompletion:
 
     def test_connection_error_defaults_to_503(self) -> None:
         assert VLLMConnectionError("unreachable").status_code == 503
+
+    def test_connection_error_takes_help_url_like_its_base_class(self) -> None:
+        by_keyword = VLLMConnectionError(
+            "unreachable", help_url="https://help.example", status_code=504
+        )
+        by_position = VLLMConnectionError("unreachable", "https://help.example")
+
+        assert (by_keyword.help_url, by_keyword.status_code) == (
+            "https://help.example",
+            504,
+        )
+        assert (by_position.help_url, by_position.status_code) == (
+            "https://help.example",
+            503,
+        )
+
+    def test_connection_error_keeps_status_and_help_url_through_pickle(self) -> None:
+        error = VLLMConnectionError(
+            "unreachable", help_url="https://help.example", status_code=504
+        )
+
+        restored = pickle.loads(pickle.dumps(error))
+
+        assert type(restored) is VLLMConnectionError
+        assert (restored.help_url, restored.status_code) == (
+            "https://help.example",
+            504,
+        )
 
 
 class TestLoraAdapterEndpoints:
