@@ -679,9 +679,18 @@ def test_span_helpers_use_the_current_span(fake_otel):
     telemetry.detach_context(token)
 
     tracer.start_as_current_span.assert_called_once_with(
-        "model.infer", attributes={"model.id": "m"}
+        "model.infer",
+        attributes={"model.id": "m"},
+        record_exception=False,
+        set_status_on_exception=False,
     )
-    span.record_exception.assert_called_once_with(error)
+    span.record_exception.assert_called_once()
+    assert str(span.record_exception.call_args.args[0]) == "boom"
+    assert span.record_exception.call_args.kwargs["attributes"] == {
+        "exception.type": "ValueError",
+        "exception.message": "boom",
+        "exception.stacktrace": "ValueError: boom\n",
+    }
     span.set_status.assert_called_once_with("ERROR", "boom")
     span.set_attribute.assert_called_once_with("k", "v")
     mocks["inject"].assert_called_once_with({"a": "b"})
@@ -743,7 +752,13 @@ def test_helpers_work_on_an_external_span_without_the_tracing_flag(fake_otel):
 
     assert telemetry.get_trace_id() == format(TRACE_ID, "032x")
     assert telemetry.trace_context_fields()["span_id"] == format(SPAN_ID, "016x")
-    span.record_exception.assert_called_once_with(error)
+    span.record_exception.assert_called_once()
+    assert str(span.record_exception.call_args.args[0]) == "boom"
+    assert span.record_exception.call_args.kwargs["attributes"] == {
+        "exception.type": "ValueError",
+        "exception.message": "boom",
+        "exception.stacktrace": "ValueError: boom\n",
+    }
     span.set_attribute.assert_called_once_with("k", "v")
     mocks["inject"].assert_called_once_with(headers)
     assert telemetry.capture_context() is mocks["context"].get_current()
