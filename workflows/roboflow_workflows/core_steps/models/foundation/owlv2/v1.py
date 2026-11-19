@@ -65,7 +65,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     class_names: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
         description="Text queries in output class ID order.",
-        examples=[["leaf", "maize tassel"]],
+        examples=[["bicycle", "bus"]],
     )
     confidence: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = 0.1
 
