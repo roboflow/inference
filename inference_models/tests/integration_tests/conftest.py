@@ -19,6 +19,18 @@ DOG_IMAGE_URL = (
 )
 OCR_TEST_IMAGE_PATH = os.path.join(ASSETS_DIR, "ocr_test_image.png")
 OCR_TEST_IMAGE_URL = "https://storage.googleapis.com/roboflow-tests-assets/test-images/ocr_test_image.png"
+CAT_IMAGE_PATH = os.path.join(ASSETS_DIR, "cat.jpg")
+CAT_IMAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/test-images/cat.jpg"
+)
+HONDA_CIVIC_IMAGE_PATH = os.path.join(ASSETS_DIR, "honda-civic.jpg")
+HONDA_CIVIC_IMAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/test-images/honda-civic.jpg"
+)
+TOYOTA_YARIS_IMAGE_PATH = os.path.join(ASSETS_DIR, "toyota-yaris.jpg")
+TOYOTA_YARIS_IMAGE_URL = (
+    "https://storage.googleapis.com/roboflow-tests-assets/test-images/toyota-yaris.jpg"
+)
 MAN_IMAGE_PATH = os.path.join(ASSETS_DIR, "man.jpg")
 MAN_IMAGE_URL = (
     "https://storage.googleapis.com/roboflow-tests-assets/test-images/man.jpg"
@@ -228,6 +240,52 @@ def dog_image_torch() -> torch.Tensor:
 def dog_image_pil() -> Image.Image:
     _download_if_not_exists(file_path=DOG_IMAGE_PATH, url=DOG_IMAGE_URL)
     return Image.open(DOG_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def cat_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=CAT_IMAGE_PATH, url=CAT_IMAGE_URL)
+    image = cv2.imread(CAT_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def cat_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=CAT_IMAGE_PATH, url=CAT_IMAGE_URL)
+    return torchvision.io.read_image(CAT_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def honda_civic_image_numpy() -> np.ndarray:
+    _download_if_not_exists(file_path=HONDA_CIVIC_IMAGE_PATH, url=HONDA_CIVIC_IMAGE_URL)
+    image = cv2.imread(HONDA_CIVIC_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def honda_civic_image_torch() -> torch.Tensor:
+    _download_if_not_exists(file_path=HONDA_CIVIC_IMAGE_PATH, url=HONDA_CIVIC_IMAGE_URL)
+    return torchvision.io.read_image(HONDA_CIVIC_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def toyota_yaris_image_numpy() -> np.ndarray:
+    _download_if_not_exists(
+        file_path=TOYOTA_YARIS_IMAGE_PATH, url=TOYOTA_YARIS_IMAGE_URL
+    )
+    image = cv2.imread(TOYOTA_YARIS_IMAGE_PATH)
+    assert image is not None, "Could not load test image"
+    return image
+
+
+@pytest.fixture(scope="function")
+def toyota_yaris_image_torch() -> torch.Tensor:
+    _download_if_not_exists(
+        file_path=TOYOTA_YARIS_IMAGE_PATH, url=TOYOTA_YARIS_IMAGE_URL
+    )
+    return torchvision.io.read_image(TOYOTA_YARIS_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")

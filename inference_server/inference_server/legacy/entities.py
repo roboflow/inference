@@ -699,7 +699,7 @@ class ClassificationInferenceRequest(CVInferenceRequest):
 
 
 class ImageEmbeddingRequest(CVInferenceRequest):
-    """Raw features or logits from an existing ResNet, ViT or DINOv3 classifier."""
+    """Raw features or logits from an existing ResNet, ConvNeXt, ViT or DINOv3 classifier."""
 
     model_id: str = Field(
         min_length=1, description="Classification model ID or pretrained alias"
