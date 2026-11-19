@@ -387,14 +387,16 @@ def _pytest(suite: Path, *, recorder: _Recorder, collect: bool = False) -> int:
         "pytest_retry.retry_plugin",
         "-o",
         "addopts=",
-        "--durations=0",
-        "--durations-min=0",
     ]
     if os.environ.get("HOSTED_E2E_MODE") == "repository":
         # pytest-retry 1.6.3 only prints unlimited retry tracebacks at verbosity 5.
         args.extend(
             ["-vvvvv", "-ra", "--no-fold-skipped", "--tb=long", "--show-capture=all"]
         )
+        # Phase and retry timings remain in encrypted recorder evidence only.
+        # Do not print a per-test duration table into public Actions logs.
+    else:
+        args.extend(["--durations=0", "--durations-min=0"])
     if collect:
         args.append("--collect-only")
     result = int(pytest.main(args, plugins=[recorder]))

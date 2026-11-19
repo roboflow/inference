@@ -162,6 +162,28 @@ class RepositoryRunTests(unittest.TestCase):
         )
         self._complete()
 
+    def test_detailed_timings_remain_in_encrypted_evidence(self):
+        """Keep phase/retry measurements after transfer without a public table."""
+        self._complete()
+        visible = "".join(result.stdout + result.stderr for result in self.results)
+        self.assertNotRegex(visible, r"slowest .*durations")
+        self.assertNotRegex(visible, r"(?m)^\d+\.\d+s (?:setup|call|teardown)\s")
+        self.assertIn("suite/test_b.py::test_ok PASSED", visible)
+        self.assertIn("deliberate [redacted]", visible)
+        self.assertIn("RETRIED suite/test_a.py::test_retry: failed -> passed", visible)
+        cases = {}
+        # Aggregation gets these reports only through encrypted shard bundles.
+        for path in (self.root / "aggregate/evidence").glob("shard-*.json"):
+            cases.update(json.loads(path.read_text())["cases"])
+        self.assertEqual(len(cases), 5)
+        for case in cases.values():
+            self.assertGreater(case["elapsed_seconds"], 0)
+            self.assertEqual(set(case["durations"]), {"setup", "call", "teardown"})
+            self.assertTrue(all(t > 0 for t in case["durations"]["setup"]))
+        self.assertEqual(
+            len(cases["suite/test_a.py::test_retry"]["durations"]["call"]), 2
+        )
+
     def test_full_failure_output_is_redacted_and_cannot_pass(self):
         """Show full tracebacks and captured output without disclosing secrets."""
         for job in ["prepare", *"ABCD"]:

@@ -6,7 +6,10 @@
 
 - Stream redacted pytest output for preparation, warmup and shards A–D to the
   GitHub Actions log. Show individual test names, skip reasons, full failure
-  tracebacks and captured failure output, durations and pytest-retry diagnostics.
+  tracebacks and captured failure output, and pytest-retry diagnostics.
+- Keep per-test and per-phase duration tables out of repository Actions logs.
+  Detailed phase and retry measurements remain in encrypted shard reports;
+  private deployment-acceptance runs retain their duration output.
 - Print per-test retry outcome histories and skipped test IDs in each shard and
   aggregation, including unexpected skips that fail acceptance.
 - Redact configured credential values and their common URL, JSON, Python and
@@ -161,9 +164,11 @@ performance or a runtime guarantee. Staging uses its own profile.
 
 Detailed timing profiles, raw logs, case evidence, credentials and deployment
 metadata remain private. Repository manual runs expose redacted test output,
-test names and retry/skip summaries in Actions logs. This changelog contains the
-aggregate scheduling
-rationale and public test-suite examples. Private deployment-acceptance execution
+test names and retry/skip summaries in Actions logs, without per-test duration
+tables. Detailed measured timings are retained in encrypted shard reports.
+Normal Actions timestamps and overall pytest elapsed time remain visible.
+This changelog contains the aggregate scheduling rationale and public test-suite
+examples. Private deployment-acceptance execution
 requires the private caller and deployment-verification adapter. The repository
 manual workflows are now connected to sharding; live rollout still requires
 maintainer review and load/isolation validation.
