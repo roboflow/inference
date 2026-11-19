@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Add Gemini 4 Neon to the Google Gemini v6 block with low, medium, high, xhigh and max thinking levels and instance segmentation.
+
 ## `0.2.16.post3`
 
 Bundled execution engine: `1.17.2`.

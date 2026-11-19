@@ -339,7 +339,7 @@ def test_manifest_accepts_gemini_3_8_flash() -> None:
 def test_segmentation_rejects_other_gemini_models(model: str) -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+        match="Instance segmentation is not supported for this model",
     ):
         BlockManifest.model_validate(
             {
@@ -510,7 +510,7 @@ def test_argon_segmentation_block_and_empty_output() -> None:
 def test_segmentation_runtime_rejects_resolved_other_model() -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+        match="Instance segmentation is not supported for this model",
     ):
         _run_block(
             task_type="instance-segmentation",
@@ -574,11 +574,12 @@ def test_carbon_is_second_listed_model() -> None:
     assert MODEL_VERSION_METADATA["gemini-4-carbon"]["name"] == "Gemini 4 Carbon"
 
 
-def test_segmentation_models_are_argon_carbon_and_hydrogen() -> None:
+def test_segmentation_models_are_gemini_4() -> None:
     assert SEGMENTATION_MODEL_IDS == {
         "gemini-4-argon",
         "gemini-4-carbon",
         "gemini-4-hydrogen",
+        "gemini-4-neon",
     }
 
 
@@ -657,7 +658,8 @@ def test_carbon_segmentation_prompt_accepts_model() -> None:
 
 def test_segmentation_prompt_rejects_other_model() -> None:
     with pytest.raises(
-        ValueError, match="gemini-4-argon, gemini-4-carbon or gemini-4-hydrogen"
+        ValueError,
+        match="Segmentation requires a supported model and classes",
     ):
         prepare_instance_segmentation_prompt(
             base64_image="aW1hZ2U=",
@@ -672,7 +674,7 @@ def test_segmentation_prompt_rejects_other_model() -> None:
 def test_run_gemini_prompting_rejects_segmentation_for_other_model() -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+        match="Instance segmentation is not supported for this model",
     ):
         _run_segmentation("gemini-3.8-flash")
 
