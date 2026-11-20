@@ -296,3 +296,115 @@ def test_holds_the_watchdog_lock_of_the_fused_model_until_the_session_is_created
     Path(fused_model_path).unlink()
     model_input = np.zeros((1, SEQUENCE_LENGTH, EMBEDDING_DIM), dtype=np.float32)
     assert session.run(None, {"x": model_input})[0].shape == model_input.shape
+
+
+COREML_PROVIDERS = [
+    (
+        "CoreMLExecutionProvider",
+        {"ModelFormat": "MLProgram", "MLComputeUnits": "CPUAndGPU"},
+    ),
+    "CPUExecutionProvider",
+]
+
+
+@pytest.fixture
+def coreml_rewrite(monkeypatch):
+    monkeypatch.setattr(
+        onnx_attention_fusion, "INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND", True
+    )
+    return onnx_attention_fusion.reorder_key_scale_for_coreml_execution
+
+
+@pytest.mark.parametrize("warm_cache", [False, True])
+def test_coreml_rewrite_keeps_lock_through_load(
+    attention_model_path, coreml_rewrite, monkeypatch, warm_cache
+):
+    if warm_cache:
+        with coreml_rewrite(attention_model_path, providers=COREML_PROVIDERS) as cached:
+            assert cached != attention_model_path
+    folds = count_fold_calls(monkeypatch)
+
+    def load(*, model_path, providers):
+        assert model_path != attention_model_path
+        assert not watchdog_can_lock(model_path)
+        if warm_cache:
+            assert model_path == cached
+        return model_path, onnxruntime.InferenceSession(
+            model_path, providers=["CPUExecutionProvider"]
+        )
+
+    rewritten, session = onnx_attention_fusion.create_attention_session(
+        attention_model_path, providers=COREML_PROVIDERS, session_factory=load
+    )
+    assert len(folds) == (0 if warm_cache else 1)
+    assert watchdog_can_lock(rewritten)
+    producers = {o: n for n in onnx.load(rewritten).graph.node for o in n.output}
+    softmax = next(n for n in producers.values() if n.op_type == "Softmax")
+    key = producers[producers[softmax.input[0]].input[1]]
+    assert key.op_type == "Transpose"
+    assert producers[key.input[0]].op_type == "Mul"
+    Path(rewritten).unlink()
+    x = np.random.default_rng(0).random(
+        (1, SEQUENCE_LENGTH, EMBEDDING_DIM), dtype=np.float32
+    )
+    np.testing.assert_allclose(
+        session.run(None, {"x": x})[0],
+        run_on_cpu(attention_model_path, x),
+        rtol=1e-5,
+        atol=1e-6,
+    )
+
+
+@pytest.mark.parametrize(
+    "enabled,first,units",
+    [
+        (False, True, "CPUAndGPU"),
+        (True, False, "CPUAndGPU"),
+        (True, True, "CPUOnly"),
+    ],
+)
+def test_coreml_gates_before_folding(
+    attention_model_path, monkeypatch, enabled, first, units
+):
+    folds = count_fold_calls(monkeypatch)
+    monkeypatch.setattr(
+        onnx_attention_fusion, "INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND", enabled
+    )
+    coreml = (
+        "CoreMLExecutionProvider",
+        {"ModelFormat": "MLProgram", "MLComputeUnits": units},
+    )
+    providers = [coreml, "CPUExecutionProvider"]
+    if not first:
+        providers.reverse()
+    with onnx_attention_fusion.reorder_key_scale_for_coreml_execution(
+        attention_model_path, providers=providers
+    ) as result:
+        assert result == attention_model_path
+    assert not folds
+
+
+@pytest.mark.parametrize("failure", ["rewrite", "load"])
+def test_coreml_falls_back_to_source(
+    attention_model_path, coreml_rewrite, monkeypatch, failure
+):
+    rewritten = []
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("simulated failure")
+
+    def load(*, model_path, providers):
+        if model_path != attention_model_path:
+            rewritten.append(model_path)
+            assert not watchdog_can_lock(model_path)
+            fail()
+        assert all(watchdog_can_lock(path) for path in rewritten)
+        return model_path
+
+    if failure == "rewrite":
+        monkeypatch.setattr(onnx_attention_fusion, "_fold_constants", fail)
+    result = onnx_attention_fusion.create_attention_session(
+        attention_model_path, providers=COREML_PROVIDERS, session_factory=load
+    )
+    assert result == attention_model_path
+    assert len(rewritten) == int(failure == "load")

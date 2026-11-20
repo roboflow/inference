@@ -280,6 +280,13 @@ model compiles it (about 20 s for RF-DETR) and later loads take well under a sec
 roughly 4x the model's size on disk and is never written for offline or read-only packages.
 Default: `true`
 
+**`INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND`**
+Opt in to a temporary attention rewrite for RF-DETR ONNX on affected Apple Silicon systems.
+It applies when CoreML is first and uses `MLProgram` with `CPUAndGPU`. The original weights
+are preserved and the rewritten graph is cached separately. Validate model outputs and
+throughput for your workload before enabling it.
+Default: `false`
+
 ### Pre-processing
 
 **`INFERENCE_MODELS_TENSOR_RESIZE_MATCH_OPENCV`**

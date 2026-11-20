@@ -12,12 +12,15 @@ import tempfile
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 from filelock import FileLock
 
-from inference_models.configuration import FILE_LOCK_ACQUIRE_TIMEOUT
+from inference_models.configuration import (
+    FILE_LOCK_ACQUIRE_TIMEOUT,
+    INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND,
+)
 from inference_models.logger import LOGGER
 from inference_models.models.common.model_packages import get_file_identity
 
@@ -68,9 +71,89 @@ def fuse_attention_for_cuda_execution(
         yield model_path
         return
 
+    with _locked_attention_model(model_path) as fused_model_path:
+        yield fused_model_path
+
+
+@contextmanager
+def reorder_key_scale_for_coreml_execution(
+    model_path: str, *, providers: List[Union[str, tuple]]
+) -> Iterator[str]:
+    """Yield the CoreML rewrite while protecting its cache entry from eviction.
+
+    Args:
+        model_path (str): Source ONNX model path.
+        providers (list): Execution providers in priority order.
+
+    Yields:
+        str: Rewritten model path, or the source path if skipped or unsuccessful.
+    """
+    first = providers[0] if providers else None
+    if not (
+        INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND
+        and isinstance(first, tuple)
+        and len(first) == 2
+        and first[0] == "CoreMLExecutionProvider"
+        and isinstance(first[1], dict)
+        and first[1].get("ModelFormat") == "MLProgram"
+        and first[1].get("MLComputeUnits") == "CPUAndGPU"
+    ):
+        yield model_path
+        return
+
+    with _locked_attention_model(
+        model_path, cache_name="coreml_key_scale_v2", rewrite=_reorder_key_scale
+    ) as rewritten_path:
+        yield rewritten_path
+
+
+def create_attention_session(
+    model_path: str, *, providers: List[Union[str, tuple]], session_factory: Callable
+):
+    """Load an RF-DETR attention graph under its cache lock.
+
+    Args:
+        model_path (str): Source ONNX model path.
+        providers (list): Execution providers in priority order.
+        session_factory (Callable): Factory accepting model_path and providers.
+
+    Returns:
+        The initialized ONNX Runtime session.
+    """
+    cuda_first = _runs_on_cuda_first(providers=providers)
+    transform = (
+        fuse_attention_for_cuda_execution
+        if cuda_first
+        else reorder_key_scale_for_coreml_execution
+    )
+    with transform(model_path, providers=providers) as selected_path:
+        try:
+            session = session_factory(model_path=selected_path, providers=providers)
+        except Exception as error:
+            if cuda_first or selected_path == model_path:
+                raise
+            # Session factories can raise different errors for a derived graph.
+            # Retry the source once; errors loading the source still propagate.
+            LOGGER.warning(
+                "Could not load CoreML rewrite (%s). Loading the original model.", error
+            )
+        else:
+            return session
+
+    session = session_factory(model_path=model_path, providers=providers)
+    return session
+
+
+@contextmanager
+def _locked_attention_model(
+    model_path: str,
+    *,
+    cache_name: str = CACHE_DIR_NAME,
+    rewrite: Optional[Callable] = None,
+) -> Iterator[str]:
     cache_dir = (
         Path(model_path).parent
-        / CACHE_DIR_NAME
+        / cache_name
         / f"{get_file_identity(model_path)}-v{TRANSFORM_VERSION}"
     )
     with ExitStack() as locks:
@@ -83,10 +166,13 @@ def fuse_attention_for_cuda_execution(
                     timeout=FILE_LOCK_ACQUIRE_TIMEOUT,
                 )
             )
-            fused_model_path = _load_or_fuse(model_path, cache_dir=cache_dir)
+            fused_model_path = _load_or_fuse(
+                model_path, cache_dir=cache_dir, rewrite=rewrite
+            )
         except Exception as error:
             LOGGER.warning(
-                "Could not fuse attention for %s (%s). Loading the model without attention fusion.",
+                "Could not apply %s to %s (%s). Loading the original model.",
+                cache_name,
                 model_path,
                 error,
             )
@@ -108,7 +194,9 @@ def _runs_on_cuda_first(providers: List[Union[str, tuple]]) -> bool:
     return first_provider_name == CUDA_EXECUTION_PROVIDER
 
 
-def _load_or_fuse(model_path: str, *, cache_dir: Path) -> str:
+def _load_or_fuse(
+    model_path: str, *, cache_dir: Path, rewrite: Optional[Callable] = None
+) -> str:
     result_path = cache_dir / RESULT_FILE_NAME
     fused_model_path = cache_dir / FUSED_MODEL_FILE_NAME
     if result_path.exists():
@@ -120,19 +208,21 @@ def _load_or_fuse(model_path: str, *, cache_dir: Path) -> str:
         if fused_model_path.exists():
             return str(fused_model_path)
 
-    fused_blocks = _fuse_into(model_path, destination=fused_model_path)
+    fused_blocks = _fuse_into(model_path, destination=fused_model_path, rewrite=rewrite)
     staged_result_path = result_path.with_suffix(".tmp")
     staged_result_path.write_text(json.dumps({"fused_attention_blocks": fused_blocks}))
     os.replace(staged_result_path, result_path)
     LOGGER.info(
-        "Fused %d attention blocks of %s into MultiHeadAttention.",
+        "Rewrote %d attention blocks of %s.",
         fused_blocks,
         model_path,
     )
     return str(fused_model_path) if fused_blocks else model_path
 
 
-def _fuse_into(model_path: str, *, destination: Path) -> int:
+def _fuse_into(
+    model_path: str, *, destination: Path, rewrite: Optional[Callable] = None
+) -> int:
     """Fold constants, rewrite every matching attention block, and save the result atomically."""
     import onnx
 
@@ -140,17 +230,79 @@ def _fuse_into(model_path: str, *, destination: Path) -> int:
         folded_path = Path(work_dir) / "folded.onnx"
         _fold_constants(model_path, destination=folded_path)
         model = onnx.load(str(folded_path))
-        blocks = _find_attention_blocks(model)
-        if not blocks:
+        if rewrite is None:
+            blocks = _find_attention_blocks(model)
+            if blocks:
+                _replace_attention_blocks(model, blocks=blocks)
+            count = len(blocks)
+        else:
+            count = rewrite(model)
+        if not count:
             return 0
-
-        _replace_attention_blocks(model, blocks=blocks)
         onnx.checker.check_model(model)
         staged_path = Path(work_dir) / FUSED_MODEL_FILE_NAME
         onnx.save(model, str(staged_path))
         os.replace(staged_path, destination)
 
-    return len(blocks)
+    return count
+
+
+def _reorder_key_scale(model) -> int:
+    from onnx import helper
+
+    graph = model.graph
+    producers = {output: node for node in graph.node for output in node.output}
+    constants = _constant_values(model)
+    replacements = {}
+    names = set(producers) | {value.name for value in graph.input} | set(constants)
+    for block in _find_attention_blocks(model):
+        transpose = producers.get(block.transposed_key)
+        if transpose is None or transpose.op_type != "Transpose" or transpose.domain:
+            continue
+        perm = next(
+            (list(attr.ints) for attr in transpose.attribute if attr.name == "perm"),
+            [],
+        )
+        if perm not in ([0, 2, 3, 1], [0, 1, 3, 2], [1, 2, 3, 0]):
+            continue
+        scale = next(
+            (name for name in block.key_scale.input if name != block.transposed_key),
+            None,
+        )
+        factor = constants.get(scale) if scale is not None else None
+        if (
+            factor is None
+            or factor.size != 1
+            or factor.ndim > 1
+            or factor.dtype != np.float32
+            or block.key_scale.domain
+        ):
+            continue
+        output = block.key_scale.output[0]
+        scaled = f"{output}/coreml_key_scale"
+        if scaled in names:
+            continue
+        names.add(scaled)
+        operands = [
+            transpose.input[0] if name == block.transposed_key else name
+            for name in block.key_scale.input
+        ]
+        replacements[output] = (
+            helper.make_node("Mul", operands, [scaled]),
+            helper.make_node("Transpose", [scaled], [output], perm=perm),
+        )
+    if replacements:
+        # Keep original transposes for shared outputs and subgraph captures.
+        # The rewritten path no longer reads them; ORT can prune unused nodes.
+        nodes = [
+            replacement
+            for node in graph.node
+            for replacement in replacements.get(next(iter(node.output), ""), (node,))
+        ]
+        del graph.node[:]
+        graph.node.extend(nodes)
+
+    return len(replacements)
 
 
 def _fold_constants(model_path: str, *, destination: Path) -> None:
