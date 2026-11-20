@@ -2,3 +2,6 @@
 POST /initialise_webrtc_worker
 POST /webrtc/session/heartbeat
 POST /webrtc/session/heartbeat/end
+
+# native OBB: served by the legacy server only (the gateway answers 501)
+POST /infer/oriented_object_detection
