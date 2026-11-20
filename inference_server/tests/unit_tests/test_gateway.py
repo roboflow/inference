@@ -454,6 +454,41 @@ async def test_ensure_loaded_failure_describes_the_error(error, detail):
 
 
 @pytest.mark.asyncio
+async def test_ensure_loaded_answers_busy_when_capacity_is_exhausted():
+    import asyncio
+
+    from inference_model_manager.model_manager import ModelCapacityExhaustedError
+
+    manager = _FailingManager(ModelCapacityExhaustedError("every model is busy"))
+    wrapper = ModelManagerGateway(manager)
+
+    status = await wrapper.ensure_loaded("m")
+    await asyncio.sleep(0)
+
+    assert status == ("load_timeout", 1)
+    assert wrapper.last_load_failure("m") is None
+    assert await wrapper.ensure_loaded("m") == ("load_timeout", 1)
+    assert manager.load_calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pinned", [True, False])
+async def test_explicit_load_answers_busy_when_capacity_is_exhausted(pinned):
+    import asyncio
+
+    from inference_model_manager.model_manager import ModelCapacityExhaustedError
+
+    manager = _FailingManager(ModelCapacityExhaustedError("every model is busy"))
+    wrapper = ModelManagerGateway(manager)
+
+    status = await wrapper.load("m", "key", pinned=pinned)
+    await asyncio.sleep(0)
+
+    assert status == ("load_timeout", 1)
+    assert wrapper.last_load_failure("m") is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("error,detail", LOAD_FAILURES)
 @pytest.mark.parametrize("pinned", [True, False])
 async def test_explicit_load_failure_describes_the_error(error, detail, pinned):
@@ -1732,13 +1767,78 @@ class TestInferRetriesLostModel:
         assert mgr.load_calls == 1
 
     @pytest.mark.asyncio
-    async def test_infer_propagates_second_failure(self):
-        mgr = _VanishingManager([KeyError("gone"), KeyError("gone again")])
+    @pytest.mark.parametrize(
+        "second_error",
+        [
+            KeyError("gone again"),
+            RuntimeError("Backend 'm' not accepting requests (state=unhealthy)"),
+        ],
+    )
+    async def test_infer_answers_server_busy_when_retry_loses_model_again(
+        self, second_error
+    ):
+        from inference_server.errors import ServerBusyError
+
+        mgr = _VanishingManager([KeyError("gone"), second_error])
         wrapper = ModelManagerGateway(mgr)
 
-        with pytest.raises(KeyError):
+        with pytest.raises(ServerBusyError) as raised:
+            await wrapper.infer(model_id="m", image=b"x")
+        assert raised.value.__cause__ is second_error
+        assert mgr.process_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_infer_answers_server_busy_when_reload_is_refused(self):
+        from inference_model_manager.model_manager import ModelCapacityExhaustedError
+        from inference_server.errors import ServerBusyError
+
+        class _RefusingReloadManager(_VanishingManager):
+            def load(self, model_id, api_key, **kwargs):
+                self.load_calls += 1
+                raise ModelCapacityExhaustedError("every loaded model is busy")
+
+        mgr = _RefusingReloadManager([KeyError("gone")])
+        wrapper = ModelManagerGateway(mgr)
+
+        with pytest.raises(ServerBusyError):
+            await wrapper.infer(model_id="m", image=b"x")
+        assert mgr.process_calls == 1
+        assert mgr.load_calls == 1
+        assert wrapper.last_load_failure("m") is None
+
+    @pytest.mark.asyncio
+    async def test_infer_propagates_unrelated_second_failure(self):
+        mgr = _VanishingManager([KeyError("gone"), RuntimeError("model failed")])
+        wrapper = ModelManagerGateway(mgr)
+
+        with pytest.raises(RuntimeError, match="model failed"):
             await wrapper.infer(model_id="m", image=b"x")
         assert mgr.process_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_infer_retries_after_direct_backend_model_dropped(self):
+        from inference_model_manager.backends.direct import DirectBackend
+
+        backend = DirectBackend.__new__(DirectBackend)
+        try:
+            backend._model
+        except AttributeError as dropped:
+            error = dropped
+        mgr = _VanishingManager([error])
+        wrapper = ModelManagerGateway(mgr)
+
+        assert await wrapper.infer(model_id="m", image=b"x") == {"served": "m"}
+        assert mgr.process_calls == 2
+        assert mgr.load_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_infer_does_not_retry_unrelated_attribute_error(self):
+        mgr = _VanishingManager([AttributeError("'NoneType' has no attribute 'x'")])
+        wrapper = ModelManagerGateway(mgr)
+
+        with pytest.raises(AttributeError):
+            await wrapper.infer(model_id="m", image=b"x")
+        assert mgr.process_calls == 1
 
     @pytest.mark.asyncio
     async def test_infer_does_not_retry_unrelated_runtime_error(self):
