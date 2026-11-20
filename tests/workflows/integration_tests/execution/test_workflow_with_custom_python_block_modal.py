@@ -13,7 +13,6 @@ To run these tests:
 
 import base64
 import os
-import subprocess
 import sys
 from typing import Any, Dict
 
@@ -24,6 +23,9 @@ import pytest
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from tests.workflows.integration_tests.execution.modal_platform_retry import (
+    run_with_modal_platform_retries,
+)
 
 # Skip all tests if Modal credentials are not present
 MODAL_TOKEN_ID = os.getenv("MODAL_TOKEN_ID")
@@ -194,7 +196,7 @@ print("RESULT_END")
         except Exception:
             pass
 
-        result = subprocess.run(
+        result = run_with_modal_platform_retries(
             [sys.executable, temp_file],
             capture_output=True,
             text=True,
