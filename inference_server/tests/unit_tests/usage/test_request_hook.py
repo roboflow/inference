@@ -22,15 +22,25 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UsagePausedModelAccessError,
 )
+from inference_models.models.vllm_proxy.errors import VLLMConnectionError
 from inference_models.weights_providers.roboflow import RoboflowModelMetadata
 from inference_sdk.config import apply_duration_minimum, outbound_service_secret
 from inference_server import configuration
 from inference_server.framework import model_stat
-from inference_server.legacy.errors import SERVICE_MISCONFIGURATION_MESSAGE
+from inference_server.gateway import _load_failure
+from inference_server.legacy.errors import (
+    SERVICE_MISCONFIGURATION_MESSAGE,
+    VLLM_TIMEOUT_MESSAGE,
+    VLLM_UNAVAILABLE_MESSAGE,
+)
 from inference_server.usage import request_hook
 from inference_server.usage.collector import UsageCollector
 from inference_server.usage.request_hook import report_request_usage
-from inference_server.usage.rows import USAGE_SCOPE, execution_duration
+from inference_server.usage.rows import (
+    USAGE_SCOPE,
+    exception_error_details,
+    execution_duration,
+)
 from tests.unit_tests.legacy.conftest import FakeGateway
 from tests.unit_tests.legacy.test_router_embeddings import _envelope, _gateway
 
@@ -1979,6 +1989,53 @@ def test_undecodable_image_records_no_model_row_when_the_model_does_not_resolve(
 
     assert response.status_code == status_code
     assert _categories(usage_collector) == ["request"]
+
+
+@pytest.mark.parametrize("status_code", [503, 504])
+def test_vllm_connection_error_row_carries_its_status_code(status_code):
+    error = VLLMConnectionError("Could not reach vLLM sidecar", status_code=status_code)
+
+    details = exception_error_details(error, ())
+
+    assert details == {
+        "error": "VLLMConnectionError: Could not reach vLLM sidecar",
+        "error_type": "VLLMConnectionError",
+        "error_status_code": status_code,
+    }
+
+
+@pytest.mark.parametrize(
+    "status_code,message",
+    [(503, VLLM_UNAVAILABLE_MESSAGE), (504, VLLM_TIMEOUT_MESSAGE)],
+)
+def test_vllm_connection_error_during_a_cold_load_answers_and_records_its_status(
+    usage_client, usage_collector, detection_gateway, status_code, message
+):
+    # The first request for a fine-tuned vLLM model registers its adapter with
+    # the sidecar during the load, so the error arrives as a load failure.
+    detection_gateway.ensure_results = [
+        _load_failure(
+            VLLMConnectionError(
+                "Could not reach vLLM sidecar at http://vllm:8000/v1/load_lora_adapter",
+                status_code=status_code,
+            )
+        )
+    ]
+    client = usage_client(detection_gateway)
+
+    response = client.post(
+        "/infer/object_detection",
+        json={"model_id": "ds/1", "api_key": "k", "image": _image()},
+    )
+
+    assert response.status_code == status_code
+    assert response.json() == {"message": message}
+    assert not any(call[0] == "infer" for call in detection_gateway.calls)
+    row = _request_row(usage_collector)
+    assert (row["error_type"], row["error_status_code"]) == (
+        "VLLMConnectionError",
+        status_code,
+    )
 
 
 BATCH_CONTEXT = json.dumps({"version": "batch-v1", "media": "image", "multiplier": 0.5})
