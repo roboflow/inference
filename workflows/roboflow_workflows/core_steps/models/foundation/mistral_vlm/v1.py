@@ -2,8 +2,7 @@
 
 OpenRouter-only. Uses the request contract validated for Mistral Large 4 in
 the vlm-exam benchmarks: a single user message with the image part before
-the instruction text, no system role, extended reasoning disabled unless the
-user asks for ``high`` (the only level Mistral exposes), and an
+the instruction text, no system role, low reasoning by default, and an
 ``[x_min, y_min, x_max, y_max]`` ``box_2d`` detection prompt on a 0-999
 grid, the normalized convention Mistral documents for its models. Detection
 and classification answers are decoded in-block, so ``predictions``,
@@ -82,32 +81,28 @@ RECOMMENDED_PARSERS = {
 # sibling of that format for both the prompt and the coordinate conversion.
 DETECTION_BOX_FORMAT = "xyxy_0_999"
 
-# Mistral Large 4 has two reasoning states. OpenRouter advertises
-# `supported_efforts: ["high", "none"]` and accepts the other effort names,
-# but a probe (18 detection calls, 3 per level) showed minimal/low/medium/
-# high/xhigh all spend the same 8k-26k reasoning tokens, so only the two
-# real states are exposed.
-REASONING_EFFORT_OPTIONS = ["none", "high"]
+# Keep `none` as a legacy alias so saved v1 workflows remain valid. Mistral
+# no longer supports disabling reasoning; normalize the alias before sending.
+REASONING_EFFORT_OPTIONS = ["low", "medium", "high", "none"]
 ReasoningEffort = Literal[tuple(REASONING_EFFORT_OPTIONS)]
-DEFAULT_REASONING_EFFORT = "none"
+DEFAULT_REASONING_EFFORT = "low"
 
 REASONING_EFFORT_METADATA = {
-    "none": {
-        "name": "Disabled (recommended)",
-        "description": (
-            "Turns extended reasoning off. Detection answers take about "
-            "600 output tokens and under 15 seconds per image; this is the "
-            "configuration validated in the vlm-exam benchmarks."
-        ),
+    "low": {
+        "name": "Low (default)",
+        "description": "Request low reasoning effort.",
+    },
+    "medium": {
+        "name": "Medium",
+        "description": "Request medium reasoning effort.",
     },
     "high": {
         "name": "High",
-        "description": (
-            "Turns extended reasoning on. Mistral does not scale the budget "
-            "by level: expect roughly 8k-26k reasoning tokens and 1.5-6 "
-            "minutes per detection image. If you set `max_tokens`, keep it "
-            "well above that or the answer comes back empty."
-        ),
+        "description": "Request high reasoning effort. Allow enough tokens for the answer after reasoning.",
+    },
+    "none": {
+        "name": "Low (legacy alias)",
+        "description": "Legacy setting, sent as low. Mistral no longer supports disabling reasoning.",
     },
 }
 
@@ -399,12 +394,13 @@ captioning, structured answering, visual question answering).
 * `inference_id` is generated per image.
 
 Every request sends the image before the instruction text in a single user
-message. Mistral exposes extended reasoning as on or off only; the block
-disables it by default (the benchmarked configuration) and `reasoning_effort`
-set to `high` turns it on. `max_tokens` is unset by default: your own
-OpenRouter key gets the model's own output limit, the managed key gets the
-Roboflow proxy maximum of 16384. When you do cap it with reasoning on, leave
-room for a thinking trace of 8k-26k tokens.
+message. `reasoning_effort` supports `low` (default), `medium`, and `high`.
+The legacy `none` value is accepted for saved workflows and sent as `low`,
+since Mistral no longer supports disabling reasoning. Historical benchmarks
+with reasoning disabled do not describe this new default.
+`max_tokens` is unset by default: your own OpenRouter key gets the model's
+own output limit, the managed key gets the Roboflow proxy maximum of 16384.
+When setting a token cap, leave room for both reasoning and the final answer.
 
 By default the block uses the Roboflow-managed OpenRouter key and bills
 your Roboflow credits. Paste your own `sk-or-...` key to call OpenRouter
@@ -505,9 +501,9 @@ class BlockManifest(OpenRouterBlockManifestMixin):
     reasoning_effort: ReasoningEffort = Field(
         default=DEFAULT_REASONING_EFFORT,
         description=(
-            "Extended reasoning. Mistral exposes it as on or off only: "
-            "`none` (the default) disables it, matching the configuration "
-            "validated in the vlm-exam benches; `high` turns it on."
+            "Reasoning effort: low (default), medium, or high. "
+            "Legacy none is accepted and sent as low because Mistral "
+            "no longer supports disabling reasoning."
         ),
         json_schema_extra={"values_metadata": REASONING_EFFORT_METADATA},
     )
@@ -517,9 +513,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "Maximum number of tokens the model can generate in its response. "
             "If not specified, the model's own limit applies with your own "
             "OpenRouter key and 16384 (the Roboflow proxy maximum) with the "
-            "managed key. When set with `reasoning_effort` `high`, keep it "
-            "well above the reasoning trace (8k-26k tokens) or the answer "
-            "comes back empty."
+            "managed key. Leave room for both reasoning tokens and the "
+            "final answer, or the answer may come back empty."
         ),
         gt=1,
     )
@@ -704,7 +699,9 @@ class MistralVlmBlockV1(OpenRouterWorkflowBlockBase):
             temperature=temperature,
             privacy_level=privacy_level,
             max_concurrent_requests=max_concurrent_requests,
-            reasoning=build_openrouter_reasoning_config(reasoning_effort),
+            reasoning=build_openrouter_reasoning_config(
+                "low" if reasoning_effort == "none" else reasoning_effort
+            ),
         )
 
         outputs = []
