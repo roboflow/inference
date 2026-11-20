@@ -433,9 +433,9 @@ def test_execution_policy_noops_without_api_key_tensor_native() -> None:
     ]
 
 
-@mock.patch.object(v2, "register_datapoint_at_roboflow")
+@mock.patch.object(v2, "register_batch_of_datapoints_at_roboflow")
 def test_run_sink_when_data_sampled_off(
-    register_datapoint_at_roboflow_mock: MagicMock,
+    register_batch_of_datapoints_at_roboflow_mock: MagicMock,
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
@@ -450,7 +450,7 @@ def test_run_sink_when_data_sampled_off(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
     )
-    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    register_batch_of_datapoints_at_roboflow_mock.return_value = []
     indices = [(0,), (1,), (2,)]
 
     # when
@@ -484,12 +484,14 @@ def test_run_sink_when_data_sampled_off(
         ]
         * 3
     ), "Expected nothing registered"
-    register_datapoint_at_roboflow_mock.assert_not_called()
+    register_batch_of_datapoints_at_roboflow_mock.assert_called_once()
+    registration_kwargs = register_batch_of_datapoints_at_roboflow_mock.call_args.kwargs
+    assert registration_kwargs["images"] == []
 
 
-@mock.patch.object(v2, "register_datapoint_at_roboflow")
+@mock.patch.object(v2, "register_batch_of_datapoints_at_roboflow")
 def test_run_sink_when_data_sampled(
-    register_datapoint_at_roboflow_mock: MagicMock,
+    register_batch_of_datapoints_at_roboflow_mock: MagicMock,
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
@@ -504,7 +506,7 @@ def test_run_sink_when_data_sampled(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
     )
-    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    register_batch_of_datapoints_at_roboflow_mock.return_value = [(False, "OK")] * 3
     indices = [(0,), (1,), (2,)]
 
     # when
@@ -538,12 +540,14 @@ def test_run_sink_when_data_sampled(
         ]
         * 3
     ), "Expected data registered"
-    assert register_datapoint_at_roboflow_mock.call_count == 3
+    register_batch_of_datapoints_at_roboflow_mock.assert_called_once()
+    registration_kwargs = register_batch_of_datapoints_at_roboflow_mock.call_args.kwargs
+    assert registration_kwargs["images"] == [image, image, image]
 
 
-@mock.patch.object(v2, "register_datapoint_at_roboflow")
+@mock.patch.object(v2, "register_batch_of_datapoints_at_roboflow")
 def test_run_sink_with_image_name_parameter(
-    register_datapoint_at_roboflow_mock: MagicMock,
+    register_batch_of_datapoints_at_roboflow_mock: MagicMock,
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
@@ -558,7 +562,7 @@ def test_run_sink_with_image_name_parameter(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
     )
-    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    register_batch_of_datapoints_at_roboflow_mock.return_value = [(False, "OK")] * 2
     indices = [(0,), (1,)]
 
     # when
@@ -587,12 +591,72 @@ def test_run_sink_with_image_name_parameter(
         {"error_status": False, "message": "OK"},
         {"error_status": False, "message": "OK"},
     ], "Expected data registered"
-    assert register_datapoint_at_roboflow_mock.call_count == 2
+    register_batch_of_datapoints_at_roboflow_mock.assert_called_once()
+    registration_kwargs = register_batch_of_datapoints_at_roboflow_mock.call_args.kwargs
+    assert registration_kwargs["image_names"] == ["serial_001", "serial_002"]
 
-    # Verify image_name was passed correctly
-    calls = register_datapoint_at_roboflow_mock.call_args_list
-    assert calls[0].kwargs["image_name"] == "serial_001"
-    assert calls[1].kwargs["image_name"] == "serial_002"
+
+@mock.patch.object(v2, "register_batch_of_datapoints_at_roboflow")
+@mock.patch.object(v2, "random")
+def test_run_sink_registers_sampled_datapoints_and_keeps_batch_order(
+    random_mock: MagicMock,
+    register_batch_of_datapoints_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    random_mock.random.side_effect = [0.1, 0.9, 0.3]
+    register_batch_of_datapoints_at_roboflow_mock.return_value = [
+        (False, "first registered"),
+        (True, "third failed"),
+    ]
+    data_collector_block = RoboflowDatasetUploadBlockV2(
+        cache=MemoryCache(),
+        api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    images = [
+        WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id=parent_id),
+            numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+        )
+        for parent_id in ["first", "second", "third"]
+    ]
+    indices = [(0,), (1,), (2,)]
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=images, indices=indices),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        data_percentage=50.0,
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+        image_name=Batch(content=["first", "second", "third"], indices=indices),
+    )
+
+    # then
+    assert result == [
+        {"error_status": False, "message": "first registered"},
+        {
+            "error_status": False,
+            "message": "Registration skipped due to sampling settings",
+        },
+        {"error_status": True, "message": "third failed"},
+    ]
+    registration_kwargs = register_batch_of_datapoints_at_roboflow_mock.call_args.kwargs
+    assert registration_kwargs["images"] == [images[0], images[2]]
+    assert registration_kwargs["predictions"] == [None, None]
+    assert registration_kwargs["image_names"] == ["first", "third"]
 
 
 def test_manifest_parsing_with_image_name_field() -> None:
@@ -657,9 +721,9 @@ def test_manifest_parsing_with_static_image_name() -> None:
     assert result.image_name == "my_static_image_name"
 
 
-@mock.patch.object(v2, "register_datapoint_at_roboflow")
+@mock.patch.object(v2, "register_batch_of_datapoints_at_roboflow")
 def test_run_sink_with_metadata_parameter(
-    register_datapoint_at_roboflow_mock: MagicMock,
+    register_batch_of_datapoints_at_roboflow_mock: MagicMock,
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
@@ -674,7 +738,7 @@ def test_run_sink_with_metadata_parameter(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
         numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
     )
-    register_datapoint_at_roboflow_mock.return_value = False, "OK"
+    register_batch_of_datapoints_at_roboflow_mock.return_value = [(False, "OK")] * 2
     indices = [(0,), (1,)]
 
     # when
@@ -706,15 +770,9 @@ def test_run_sink_with_metadata_parameter(
         {"error_status": False, "message": "OK"},
         {"error_status": False, "message": "OK"},
     ], "Expected data registered"
-    assert register_datapoint_at_roboflow_mock.call_count == 2
-
-    # Verify metadata was passed to both calls
-    calls = register_datapoint_at_roboflow_mock.call_args_list
-    assert calls[0].kwargs["metadata"] == {
-        "camera_id": "cam_01",
-        "location": "warehouse_a",
-    }
-    assert calls[1].kwargs["metadata"] == {
+    register_batch_of_datapoints_at_roboflow_mock.assert_called_once()
+    registration_kwargs = register_batch_of_datapoints_at_roboflow_mock.call_args.kwargs
+    assert registration_kwargs["metadata"] == {
         "camera_id": "cam_01",
         "location": "warehouse_a",
     }
