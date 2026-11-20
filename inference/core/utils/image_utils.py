@@ -2,6 +2,7 @@ import binascii
 import math
 import os
 import re
+import tokenize
 import urllib.parse
 from enum import Enum
 from io import BytesIO
@@ -393,7 +394,16 @@ def load_image_from_npy(value: Union[bytes, str]) -> np.ndarray:
             raise ValueError("array size does not match the NPY payload")
 
         data = np.load(BytesIO(value), allow_pickle=False)
-    except (ValueError, TypeError, EOFError) as error:
+    # NumPy's header parser raises TokenError, SyntaxError or RecursionError
+    # for malformed or deeply nested headers; all are a client error.
+    except (
+        ValueError,
+        TypeError,
+        EOFError,
+        SyntaxError,
+        RecursionError,
+        tokenize.TokenError,
+    ) as error:
         raise InvalidNumpyInput(
             message=f"Could not load NPY image data. Cause: {error}",
             public_message="Expected a complete uint8 NPY image with 2 or 3 dimensions and 1 or 3 channels.",

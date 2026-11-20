@@ -83,3 +83,38 @@ def test_embeddings_reject_pickle_without_legacy_opt_in(monkeypatch, api_key, ki
 
     assert response.status_code == 400, response.text
     model._model.pre_process.assert_not_called()
+
+
+_MALFORMED_HEADERS = {
+    "unterminated-brace": b"{",
+    "truncated-dict": b"{'descr': '|u1', 'fortran_order': False, 'shape': (2,2),",
+    "deep-nesting": b"[" * 3000,
+    "binary": b"\x00\xff",
+    "bad-syntax": b"{'descr': '|u1' 'x'}",
+    "not-a-dict": b"(1, 2)",
+}
+
+
+def _malformed_npy(version, header: bytes) -> bytes:
+    size = len(header).to_bytes(2 if version == (1, 0) else 4, "little")
+    return b"\x93NUMPY" + bytes(version) + size + header
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", list(_MALFORMED_HEADERS))
+def test_embeddings_malformed_npy_header_returns_400(monkeypatch, api_key, version, name):
+    model = _inference_models_adapter()
+    client = _hosted_client(monkeypatch, model)
+    data = _malformed_npy(version, _MALFORMED_HEADERS[name])
+
+    response = client.post(
+        "/infer/embeddings",
+        json={
+            "model_id": MODEL_ID,
+            "api_key": api_key,
+            "image": {"type": "npy", "value": base64.b64encode(data).decode("ascii")},
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    model._model.forward_embedding.assert_not_called()

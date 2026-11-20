@@ -222,3 +222,28 @@ def test_workflow_npy_retains_type_and_metadata(monkeypatch, tensor_mode):
     np.testing.assert_array_equal(result.numpy_image, image)
     assert result.parent_metadata.parent_id == "source-frame"
     assert base64.b64decode(result.base64_image).startswith(b"\xff\xd8")
+
+
+_MALFORMED_HEADERS = {
+    "unterminated-brace": b"{",
+    "truncated-dict": b"{'descr': '|u1', 'fortran_order': False, 'shape': (2,2),",
+    "deep-nesting": b"[" * 3000,
+    "binary": b"\x00\xff",
+    "bad-syntax": b"{'descr': '|u1' 'x'}",
+    "not-a-dict": b"(1, 2)",
+}
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", list(_MALFORMED_HEADERS))
+def test_malformed_npy_header_raises_invalid_numpy_input(monkeypatch, version, name):
+    header = _MALFORMED_HEADERS[name]
+    size = len(header).to_bytes(2 if version == (1, 0) else 4, "little")
+    data = b"\x93NUMPY" + bytes(version) + size + header
+    decode = Mock(side_effect=AssertionError("must reject before allocating"))
+    monkeypatch.setattr(image_utils.np, "load", decode)
+
+    with pytest.raises(InvalidNumpyInput):
+        image_utils.load_image({"type": "npy", "value": data})
+
+    decode.assert_not_called()
