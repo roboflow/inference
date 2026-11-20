@@ -725,6 +725,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
         workflow_version_id: Optional[str] = None,
         exec_session_id: Optional[str] = None,
         workflows_dependencies_pre_init: Optional[List[str]] = None,
+        video_identifiers: Optional[List[str]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -833,6 +834,10 @@ class InferencePipeline(HostNeutralInferencePipeline):
                 workflow inputs are resolved and registered on the first frame. Pre-loading honours
                 the effective step execution mode — nothing is fetched when steps execute remotely.
                 Defaults to None — no pre-loading.
+            video_identifiers (Optional[List[str]]): `video_identifier` of each source's video metadata,
+                in `video_reference` order. Blocks that keep process-wide state namespace it by this value
+                (Cache Set / Cache Get), so pipelines sharing a process can keep that state apart. Sources
+                given the same identifier share that state. Defaults to None — each source's index, as a string.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -843,7 +848,8 @@ class InferencePipeline(HostNeutralInferencePipeline):
         Throws:
             * SourceConnectionError if source cannot be connected at start, however it attempts to reconnect
                 always if connection to stream is lost.
-            * ValueError if workflow specification not provided and registered workflow not pointed out
+            * ValueError if workflow specification not provided and registered workflow not pointed out,
+                or if `video_identifiers` does not have one non-empty string per source
             * NotImplementedError if workflow used against multiple videos which is not supported yet
             * MissingApiKeyError - if API key is not provided in situation when retrieving workflow definition
                 from Roboflow API is needed
@@ -865,6 +871,11 @@ class InferencePipeline(HostNeutralInferencePipeline):
             workflow_init_parameters=workflow_init_parameters,
             model_manager=model_manager,
             profiler=profiler,
+        )
+        optional_parameters = (
+            {}
+            if video_identifiers is None
+            else {"video_identifiers": video_identifiers}
         )
         return super().init_with_workflow(
             video_reference=video_reference,
@@ -897,6 +908,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
             exec_session_id=exec_session_id,
             workflows_dependencies_pre_init=workflows_dependencies_pre_init,
             profiler=profiler,
+            **optional_parameters,
         )
 
     @classmethod

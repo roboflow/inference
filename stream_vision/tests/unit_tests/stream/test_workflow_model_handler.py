@@ -78,3 +78,35 @@ def test_workflow_runner_passes_total_frames_into_video_metadata():
         image["video_metadata"].total_frames
         for image in engine.runtime_parameters["image"]
     ] == [431, None]
+
+
+def test_workflow_runner_uses_configured_video_identifiers():
+    engine = CapturingExecutionEngine()
+    frames = [
+        VideoFrame(
+            image=np.zeros((1, 1, 3), dtype=np.uint8),
+            frame_id=1,
+            frame_timestamp=datetime.now(),
+            source_id=source_id,
+        )
+        for source_id in (1, 0)
+    ]
+
+    runner = WorkflowRunner(
+        workflows_parameters={},
+        execution_engine=engine,
+        image_input_name="image",
+        video_metadata_input_name="video_metadata",
+        video_identifiers=["pipeline-a/camera-0", "pipeline-a/camera-1"],
+    )
+
+    runner(frames)
+
+    assert [
+        metadata.video_identifier
+        for metadata in engine.runtime_parameters["video_metadata"]
+    ] == ["pipeline-a/camera-1", "pipeline-a/camera-0"]
+    assert [
+        image["video_metadata"].video_identifier
+        for image in engine.runtime_parameters["image"]
+    ] == ["pipeline-a/camera-1", "pipeline-a/camera-0"]

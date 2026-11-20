@@ -132,7 +132,7 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
 _FROZEN_CONTRACTS = [
     ("InferencePipeline.init", "03780d66f83264e9"),
     ("InferencePipeline.init_with_yolo_world", "568d58ad889728a5"),
-    ("InferencePipeline.init_with_workflow", "b6a6b80a7278d770"),
+    ("InferencePipeline.init_with_workflow", "93f79c1f67c01c07"),
     ("InferencePipeline.init_with_custom_logic", "4eef88c0efdabce0"),
     ("Stream.__init__", "ad88b06bfd0ef5aa"),
     ("sinks.display_image", "96a5ac796c31b98a"),

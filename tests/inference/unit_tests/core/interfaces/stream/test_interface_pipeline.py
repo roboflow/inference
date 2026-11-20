@@ -952,6 +952,65 @@ def test_init_with_workflow_gives_execution_engine_a_separate_thread_pool(
     assert execution_engine_executor._max_workers == 5
 
 
+def test_init_with_workflow_passes_video_identifiers_to_video_metadata(
+    monkeypatch,
+) -> None:
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    execution_engine = MagicMock()
+    execution_engine.run.return_value = []
+    init_with_custom_logic = MagicMock()
+    monkeypatch.setattr(
+        ExecutionEngine, "init", MagicMock(return_value=execution_engine)
+    )
+    monkeypatch.setattr(
+        InferencePipeline, "init_with_custom_logic", init_with_custom_logic
+    )
+
+    InferencePipeline.init_with_workflow(
+        video_reference=["a.mp4", "b.mp4"],
+        workflow_specification={"version": "1.0"},
+        model_manager=MagicMock(),
+        video_identifiers=["line-1", "line-2"],
+    )
+    on_video_frame = init_with_custom_logic.call_args.kwargs["on_video_frame"]
+    on_video_frame(
+        [
+            VideoFrame(
+                image=np.zeros((1, 1, 3), dtype=np.uint8),
+                frame_id=1,
+                frame_timestamp=datetime.now(),
+                source_id=source_id,
+            )
+            for source_id in (0, 1)
+        ]
+    )
+
+    runtime_parameters = execution_engine.run.call_args.kwargs["runtime_parameters"]
+    assert [
+        metadata.video_identifier for metadata in runtime_parameters["video_metadata"]
+    ] == ["line-1", "line-2"]
+
+
+def test_init_with_workflow_rejects_video_identifiers_not_matching_sources(
+    monkeypatch,
+) -> None:
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+
+    execution_engine_init = MagicMock()
+    monkeypatch.setattr(ExecutionEngine, "init", execution_engine_init)
+
+    with pytest.raises(ValueError, match="video_identifiers has 2 entries"):
+        InferencePipeline.init_with_workflow(
+            video_reference="video.mp4",
+            workflow_specification={"version": "1.0"},
+            model_manager=MagicMock(),
+            video_identifiers=["line-1", "line-2"],
+        )
+
+    execution_engine_init.assert_not_called()
+
+
 def test_execute_inference_tags_thread_with_pipeline_stream_session_id() -> None:
     from threading import Thread
     from unittest.mock import MagicMock

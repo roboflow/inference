@@ -163,6 +163,7 @@ class InferencePipeline:
         exec_session_id: Optional[str] = None,
         workflows_dependencies_pre_init: Optional[List[str]] = None,
         profiler: Optional[WorkflowsProfiler] = None,
+        video_identifiers: Optional[List[str]] = None,
     ) -> "InferencePipeline":
         """Create a pipeline running an already-resolved workflow against video.
 
@@ -219,15 +220,39 @@ class InferencePipeline:
             profiler: Profiler to record the workflow runs in, typically the one
                 the host already profiled its own preparation with. Built from
                 the stream configuration when omitted.
+            video_identifiers: `video_identifier` of each source's video
+                metadata, in `video_reference` order. Blocks that keep
+                process-wide state namespace it by this value (Cache Set / Cache
+                Get), so pipelines sharing a process can keep that state apart.
+                Sources given the same identifier share that state. Each
+                source's index, as a string, when omitted.
 
         Returns:
             Instance of the class this method is called on.
 
         Raises:
+            ValueError: `video_identifiers` does not have one non-empty string
+                per source.
             CannotInitialiseModelError: A dependency of workflow processing
                 cannot be imported; when `roboflow-workflows` itself is not
                 installed, the message says how to install it.
         """
+        if video_identifiers is not None:
+            sources_count = (
+                len(video_reference) if isinstance(video_reference, list) else 1
+            )
+            if len(video_identifiers) != sources_count:
+                raise ValueError(
+                    f"video_identifiers has {len(video_identifiers)} entries, "
+                    f"but the pipeline has {sources_count} video sources"
+                )
+
+            if not all(
+                isinstance(identifier, str) and identifier
+                for identifier in video_identifiers
+            ):
+                raise ValueError("video_identifiers must be non-empty strings")
+
         if profiler is None:
             profiler = build_workflows_profiler(
                 enabled=ENABLE_WORKFLOWS_PROFILING,
@@ -267,6 +292,7 @@ class InferencePipeline:
                 video_metadata_input_name=video_metadata_input_name,
                 serialize_results=serialize_results,
                 _is_preview=_is_preview,
+                video_identifiers=video_identifiers,
             )
             on_video_frame = wrap_workflow_runner_for_stream_pipeline(
                 workflow_runner=workflow_runner,

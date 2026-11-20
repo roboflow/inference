@@ -8,6 +8,10 @@ This is the canonical changelog for the `streamvision` package.
 
 - The GStreamer CUDA producer supports VP8 over RTSP with
   `ROBOFLOW_RTSP_VIDEO_CODEC=vp8` on GPUs with a VP8 decoder.
+- `InferencePipeline.init_with_workflow` accepts `video_identifiers`, one per
+  source, to set the `video_identifier` in each frame's video metadata.
+  Pipelines sharing a process no longer share process-wide block state keyed by
+  it, such as Cache Set / Cache Get.
 
 ### Fixed
 

@@ -29,6 +29,7 @@ class WorkflowRunner:
         video_metadata_input_name: str,
         serialize_results: bool = False,
         _is_preview: bool = False,
+        video_identifiers: Optional[List[str]] = None,
     ):
         self._workflows_parameters = workflows_parameters
         self._execution_engine = execution_engine
@@ -36,6 +37,9 @@ class WorkflowRunner:
         self._video_metadata_input_name = video_metadata_input_name
         self._serialize_results = serialize_results
         self._is_preview = _is_preview
+        self._video_identifiers = (
+            None if video_identifiers is None else tuple(video_identifiers)
+        )
         self._clamp_warned_keys: Set[str] = set()
         self._batch_input_names: Set[str] = (
             _declared_batch_input_names(execution_engine=execution_engine)
@@ -76,6 +80,15 @@ class WorkflowRunner:
             _is_preview=self._is_preview,
         )
 
+    def _video_identifier(self, video_frame: VideoFrame) -> str:
+        if video_frame.source_id is None:
+            return "default_source"
+
+        if self._video_identifiers is not None:
+            return self._video_identifiers[video_frame.source_id]
+
+        return str(video_frame.source_id)
+
     def _build_workflows_parameters(
         self,
         video_frames: List[VideoFrame],
@@ -104,11 +117,7 @@ class WorkflowRunner:
             )
         video_metadata_for_images = [
             VideoMetadata(
-                video_identifier=(
-                    str(video_frame.source_id)
-                    if video_frame.source_id is not None
-                    else "default_source"
-                ),
+                video_identifier=self._video_identifier(video_frame=video_frame),
                 frame_number=video_frame.frame_id,
                 frame_timestamp=video_frame.frame_timestamp,
                 fps=video_frame.fps,
