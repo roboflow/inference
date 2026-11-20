@@ -6,6 +6,7 @@ import gc
 import logging
 import threading
 import time
+from collections.abc import Iterator, MutableMapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
@@ -167,6 +168,52 @@ def _reset_entry_point_backends_for_tests() -> None:
         _ENTRY_POINT_BACKENDS_LOADED = False
 
 
+class _BackendRegistry(MutableMapping[str, Backend]):
+    """Keep load timestamps with registrations, including subclass insertions.
+
+    Mutations take the manager's reentrant lifecycle lock, including calls from
+    plugins that do not already hold it. Compound removals hold it throughout.
+    """
+
+    def __init__(self, loaded_ts: Dict[str, float], lock: threading.RLock) -> None:
+        self._data: Dict[str, Backend] = {}
+        self._loaded_ts = loaded_ts
+        self._lock = lock
+
+    def __getitem__(self, model_id: str) -> Backend:
+        return self._data[model_id]
+
+    def __setitem__(self, model_id: str, backend: Backend) -> None:
+        with self._lock:
+            loaded_ts = time.monotonic()
+            self._data[model_id] = backend
+            self._loaded_ts[model_id] = loaded_ts
+
+    def __delitem__(self, model_id: str) -> None:
+        with self._lock:
+            del self._data[model_id]
+            self._loaded_ts.pop(model_id, None)
+
+    def pop(self, model_id: str, *args):
+        with self._lock:
+            return super().pop(model_id, *args)
+
+    def popitem(self):
+        with self._lock:
+            return super().popitem()
+
+    def clear(self) -> None:
+        with self._lock:
+            self._data.clear()
+            self._loaded_ts.clear()
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 class ModelManager:
     """Unified model management layer.
 
@@ -194,8 +241,9 @@ class ModelManager:
     """
 
     def __init__(self) -> None:
-        self._backends: Dict[str, Backend] = {}
-        self._lifecycle_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
+        self._loaded_ts: Dict[str, float] = {}
+        self._backends = _BackendRegistry(self._loaded_ts, self._lifecycle_lock)
         self.torchscript_state_global_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
@@ -468,7 +516,13 @@ class ModelManager:
             if not over_capacity and not pressure:
                 return None
             candidates = sorted(
-                (getattr(b, "last_used_ts", None) or 0.0, mid)
+                (
+                    max(
+                        getattr(b, "last_used_ts", None) or 0.0,
+                        self._loaded_ts.get(mid, 0.0),
+                    ),
+                    mid,
+                )
                 for mid, b in self._backends.items()
                 if mid != incoming and mid not in self._pinned
             )
