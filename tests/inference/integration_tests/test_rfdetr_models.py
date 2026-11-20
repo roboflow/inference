@@ -160,10 +160,9 @@ def test_rfdetr_segmentation_via_legacy_endpoint(
     assert_instances_detected(response)
 
 
-# These pretrained semantic models have no legacy backend implementation.
 @pytest.mark.skipif(
-    not bool_env(os.getenv("USE_INFERENCE_MODELS", False)),
-    reason="RF-DETR semantic segmentation requires the inference-models backend",
+    os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true",
+    reason="RF-DETR semantic segmentation requires USE_INFERENCE_MODELS=true",
 )
 @pytest.mark.parametrize("alias", list(RFDETR_SEMANTIC_ALIASES))
 def test_rfdetr_semantic_segmentation_via_v1_endpoint(
@@ -185,8 +184,8 @@ def test_rfdetr_semantic_segmentation_via_v1_endpoint(
 
 
 @pytest.mark.skipif(
-    not bool_env(os.getenv("USE_INFERENCE_MODELS", False)),
-    reason="RF-DETR semantic segmentation requires the inference-models backend",
+    os.getenv("USE_INFERENCE_MODELS", "false").lower() != "true",
+    reason="RF-DETR semantic segmentation requires USE_INFERENCE_MODELS=true",
 )
 @pytest.mark.parametrize(
     "model_id",

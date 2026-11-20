@@ -1,4 +1,7 @@
+import json
 import re
+from typing import Iterable, Optional
+from urllib.parse import quote, quote_plus
 
 import aiohttp
 from requests import Response
@@ -49,3 +52,23 @@ def deduct_api_key(match: re.Match) -> str:
     key_prefix = key_value[:2]
     key_postfix = key_value[-2:]
     return f"api_key={key_prefix}***{key_postfix}"
+
+
+def _redact_credentials(value: str, *, credentials: Iterable[Optional[str]]) -> str:
+    """Remove known credentials, including URL and JSON encodings, from text."""
+    variants = set()
+    for credential in credentials:
+        if credential:
+            variants.update(
+                {
+                    credential,
+                    quote(credential, safe=""),
+                    quote_plus(credential, safe=""),
+                    json.dumps(credential)[1:-1],
+                }
+            )
+
+    for variant in sorted(variants, key=len, reverse=True):
+        value = value.replace(variant, "[REDACTED]")
+
+    return value

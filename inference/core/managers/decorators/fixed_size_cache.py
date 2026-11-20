@@ -79,7 +79,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
                 service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
-                    f"API key {api_key} does not have access to model {model_id}"
+                    f"API key does not have access to model {model_id}"
                 )
 
         queue_id = self._resolve_queue_id(

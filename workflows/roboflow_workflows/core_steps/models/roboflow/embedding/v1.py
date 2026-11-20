@@ -64,12 +64,17 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Generate image embeddings using a classification model.",
             "long_description": "Extract raw features before the final linear classifier or logits before Softmax/Sigmoid "
-            "of a workspace ResNet, ViT or DINOv3 model, or a pretrained ResNet. "
+            "of a workspace ResNet, ConvNeXt, ViT or DINOv3 model, or a pretrained ResNet. "
             "Uses the model's original preprocessing. Compare vectors only from the same embedding space.",
             "license": "Apache-2.0",
             "block_type": "model",
             "required_model_capabilities": [IMAGE_EMBEDDINGS],
-            "compatible_model_architectures": ["resnet", "vit", "dinov3_probe"],
+            "compatible_model_architectures": [
+                "resnet",
+                "convnext",
+                "vit",
+                "dinov3_probe",
+            ],
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-chart-network",
