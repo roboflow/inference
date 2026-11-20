@@ -130,10 +130,12 @@ def _capture_contracts(env_overrides: Optional[Dict[str, str]] = None) -> dict:
 
 # hashes are sha256[:16] - a change-detector, not a security control.
 _FROZEN_CONTRACTS = [
-    ("InferencePipeline.init", "03780d66f83264e9"),
-    ("InferencePipeline.init_with_yolo_world", "568d58ad889728a5"),
-    ("InferencePipeline.init_with_workflow", "b6a6b80a7278d770"),
-    ("InferencePipeline.init_with_custom_logic", "4eef88c0efdabce0"),
+    # Optional video_source_options is appended to the public factories.
+    # Freeze the canonical post-merge rendering used by the contract probe.
+    ("InferencePipeline.init", "76c3961a25fdf615"),
+    ("InferencePipeline.init_with_yolo_world", "cf0eb9050859d5ab"),
+    ("InferencePipeline.init_with_workflow", "cd27e63d0cb5bb02"),
+    ("InferencePipeline.init_with_custom_logic", "dbd378c88eecb8b2"),
     ("Stream.__init__", "ad88b06bfd0ef5aa"),
     ("sinks.display_image", "96a5ac796c31b98a"),
     ("sinks.render_boxes", "f1d9f447976564cd"),
@@ -423,3 +425,20 @@ def test_stable_signature_ignores_nested_union_order() -> None:
     assert _stable_signature(before) == _stable_signature(after)
     after.__annotations__["value"] = List[Union[str, float]]
     assert _stable_signature(before) != _stable_signature(after)
+
+
+@pytest.mark.parametrize(
+    "factory_name",
+    ["init", "init_with_yolo_world", "init_with_workflow", "init_with_custom_logic"],
+)
+def test_public_video_source_options_remains_optional(factory_name):
+    from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+
+    parameter = inspect.signature(getattr(InferencePipeline, factory_name)).parameters[
+        "video_source_options"
+    ]
+    assert parameter.default is None
+    assert parameter.kind in {
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    }
