@@ -25,10 +25,12 @@ Create a Python environment and install the repo in editable mode:
 ```bash
 conda create -n inference-development python=3.10
 conda activate inference-development
-pip install -e ./inference_models -e ./workflows -e ./stream_vision -e .
+pip install --config-settings editable_mode=compat -e ./inference_models -e ./workflows -e ./stream_vision -e .
 # optional models
-pip install -e ./inference_models -e ./workflows -e ./stream_vision -e ".[sam]"
+pip install --config-settings editable_mode=compat -e ./inference_models -e ./workflows -e ./stream_vision -e ".[sam]"
 ```
+
+compat mode installs a .pth entry, so the real package at inference_models/inference_models/ is found when commands run from the repo root. editable_mode=strict also works, but new files then require a reinstall.
 
 Run development commands from the repository root so the checkout's SDK source
 takes precedence over the installed SDK dependency. The unpublished development
