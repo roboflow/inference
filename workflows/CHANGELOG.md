@@ -16,6 +16,33 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Successful Modal syntax checks of custom Python blocks are reused.**
+  Workflows with custom Python blocks skip the compilation cache, so in Modal
+  mode every compilation sent one request per block to the Modal executor to
+  check its syntax. A successful check is now reused per process, keyed by
+  workspace and block source (up to 1024 entries), for 10 minutes after the
+  Modal call that made it, however often it is read. Failed checks and failures
+  to reach Modal are not cached, so a retry checks again. Anonymous workspaces
+  skip the cache so `MODAL_ALLOW_ANONYMOUS_EXECUTION` still applies. No
+  migration is needed.
+
+### Added
+
+- Add Gemini 4 Neon to the Google Gemini v6 block with low, medium, high, xhigh and max thinking levels and instance segmentation.
+- GPT-6.2 Astra and GPT-6.2 Sol in the OpenAI v7 block (`roboflow_core/open_ai@v7`), with `low`, `medium`, `high`, `xhigh`, and `max` reasoning levels and the existing structured absolute-pixel detection format.
+- Qwen 4 Max via OpenRouter in the Qwen v4 block (`roboflow_core/qwen_vlm@v4`), with the `none`, `low`, `high` and `xhigh` reasoning levels.
+
+### Changed
+
+- The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
+  `compatible_model_architectures`.
+
+### Fixed
+
+- Mistral Large 4 now defaults to low reasoning and supports medium and high; saved workflows using none send low instead of disabling unsupported reasoning. OpenRouter errors retain upstream messages from metadata.raw on direct and managed-key paths.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.

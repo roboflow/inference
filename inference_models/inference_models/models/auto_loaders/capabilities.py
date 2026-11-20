@@ -6,6 +6,7 @@ from inference_models.models.base.image_embeddings import ImageEmbeddingModel
 IMAGE_EMBEDDINGS = "image_embeddings"
 SUPPORTED_IMAGE_EMBEDDING_BACKENDS = {
     "resnet": {"onnx", "torch"},
+    "convnext": {"onnx", "torch"},
     "vit": {"onnx", "hugging-face"},
     "dinov3_probe": {"onnx", "torch"},
 }
@@ -33,8 +34,8 @@ def prepare_required_capabilities(
     if IMAGE_EMBEDDINGS in (required_capabilities or ()):
         if not isinstance(model, ImageEmbeddingModel):
             raise NoModelPackagesAvailableError(
-                "This package cannot produce image embeddings. Select a ResNet, ViT "
-                "or DINOv3 classifier with an ONNX, PyTorch or Hugging Face package. "
+                "This package cannot produce image embeddings. Select a ResNet, ConvNeXt, "
+                "ViT or DINOv3 classifier with an ONNX, PyTorch or Hugging Face package. "
                 "A classification-only TensorRT engine needs an alternative package "
                 "for the same model version."
             )

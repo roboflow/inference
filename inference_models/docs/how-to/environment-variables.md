@@ -376,6 +376,15 @@ export INFERENCE_MODELS_DEFAULT_SKIP_SPECIAL_TOKENS="true"
 
 Individual models can override the general defaults. Below are model-specific environment variables:
 
+#### ConvNeXt
+
+**`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`**
+Default: Inherits from `INFERENCE_MODELS_DEFAULT_CONFIDENCE`
+
+```bash
+export INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE="0.5"
+```
+
 #### DeepLabV3+
 
 **`INFERENCE_MODELS_DEEP_LAB_V3_PLUS_DEFAULT_CONFIDENCE`**
