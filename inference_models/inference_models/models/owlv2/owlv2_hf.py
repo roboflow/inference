@@ -26,6 +26,7 @@ from inference_models.configuration import (
 from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError
 from inference_models.models.base.types import PreprocessedInputs, PreprocessingMetadata
+from inference_models.models.common.image_color import images_to_rgb
 from inference_models.models.common.roboflow.pre_processing import (
     extract_input_images_dimensions,
 )
@@ -247,7 +248,7 @@ class OWLv2HF(
         # this parameter on purpose: the reference-example methods share it,
         # and their stored embeddings depend on the colour order they get today.
         if input_color_format == "bgr":
-            images = _reverse_channels(images)
+            images = images_to_rgb(images, input_color_format)
         return super().infer(images, classes, **kwargs)
 
     def pre_process(
@@ -715,17 +716,6 @@ class OWLv2HF(
         )
         self._owlv2_images_embeddings_cache.save_embeddings(embeddings=embeddings)
         return embeddings
-
-
-def _reverse_channels(
-    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-) -> Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]:
-    if isinstance(images, list):
-        return [_reverse_channels(image) for image in images]
-    elif isinstance(images, np.ndarray):
-        return np.ascontiguousarray(images[..., ::-1])
-    else:
-        return images.flip(-3)
 
 
 def to_corners(box: torch.Tensor) -> torch.Tensor:
