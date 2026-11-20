@@ -1640,6 +1640,23 @@ async def test_explicit_load_timeout_is_not_ready_with_retry_after(fake_stat):
 
 
 @pytest.mark.asyncio
+async def test_explicit_load_answered_busy_is_not_ready_with_retry_after(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    class _BusyGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            return ("load_timeout", 1)
+
+    bridge = LegacyModelBridge(_BusyGateway())
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")
+
+    _assert_not_ready(exc.value)
+    assert bridge._pending_requests == {"ds/1": ({"/model/add"}, set())}
+
+
+@pytest.mark.asyncio
 async def test_inference_timeout_is_not_turned_into_not_ready(fake_stat):
     fake_stat["ds/1"] = ("object-detection", "infer")
 

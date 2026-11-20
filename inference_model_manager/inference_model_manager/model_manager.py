@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import gc
 import logging
@@ -168,6 +169,11 @@ def _reset_entry_point_backends_for_tests() -> None:
         _ENTRY_POINT_BACKENDS_LOADED = False
 
 
+class ModelCapacityExhaustedError(RuntimeError):
+    """Raised when a load would exceed the model cap and every model that could
+    make room still has requests in flight."""
+
+
 class _BackendRegistry(MutableMapping[str, Backend]):
     """Keep load timestamps with registrations, including subclass insertions.
 
@@ -260,6 +266,7 @@ class ModelManager:
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
         self._pinned: set[str] = set()
+        self._pending_requests: Dict[str, Dict[object, float]] = {}
         self._stream_pipelines: Dict[str, "StreamPipelinedModel"] = {}
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
@@ -315,6 +322,8 @@ class ModelManager:
 
         Raises:
             ValueError: If model_id is already loaded.
+            ModelCapacityExhaustedError: If the model cap is reached and every
+                loaded model that is not pinned has requests in flight.
             RuntimeError: If loading fails (bad weights, OOM, download error).
         """
         self._check_open()
@@ -487,8 +496,8 @@ class ModelManager:
                 return
             if not popped:
                 logger.warning(
-                    "Cannot make room for '%s' — every loaded model is pinned; "
-                    "proceeding beyond INFERENCE_MAX_ACTIVE_MODELS",
+                    "Cannot make room for '%s' — every other loaded model is "
+                    "pinned; proceeding without eviction",
                     incoming,
                 )
                 return
@@ -513,21 +522,42 @@ class ModelManager:
         """Atomically decide whether eviction is needed and, if so, remove the
         victims from ``_backends`` in the same lock acquisition used to select
         them — so a concurrent ``pin()`` cannot land between selection and
-        removal, and capacity accounts for reservations still in
-        ``_loading_ids`` (the incoming model's own reservation included).
+        removal.
 
-        Returns None if nothing needs to be evicted this pass, otherwise the
-        list of (model_id, backend, stream pipeline or None) triples already
-        popped from ``_backends`` and ``_stream_pipelines`` (possibly empty,
-        if every remaining candidate is pinned).
+        Capacity counts loaded models plus one slot for ``incoming`` while it
+        is not registered yet. Other loads still in ``_loading_ids`` are not
+        counted, so concurrent loads never evict on each other's behalf; the
+        cap may be exceeded by the number of concurrent loads until each
+        load's post-registration pass trims back to it. Pinned models are
+        never chosen.
+
+        Models with a running request younger than the unserved grace period
+        are busy; victims come from the idle ones. Among idle models, those
+        still within their unserved grace period (with queued first requests,
+        and the newest unrequested one) are spared while another idle model
+        remains. Busy models are taken only under memory pressure with no
+        idle model left. Over the cap without pressure and with every
+        candidate busy, a load that is not registered yet is refused.
+
+        Returns None if nothing needs to be evicted this pass, or if the
+        already registered ``incoming`` cannot trim because every candidate
+        is busy, otherwise the list of (model_id, backend, stream pipeline or
+        None) triples already popped from ``_backends`` and
+        ``_stream_pipelines`` (empty if every other model is pinned).
+
+        Raises:
+            ModelCapacityExhaustedError: If ``incoming`` is not registered,
+                the cap is reached without memory pressure, and every
+                candidate is busy.
         """
         with self._lifecycle_lock:
             max_active = cfg.INFERENCE_MAX_ACTIVE_MODELS
-            total_reserved = len(self._backends) + len(self._loading_ids)
+            incoming_slots = 0 if incoming in self._backends else 1
+            total_reserved = len(self._backends) + incoming_slots
             over_capacity = max_active > 0 and total_reserved > max_active
             if not over_capacity and not pressure:
                 return None
-            candidates = sorted(
+            pool = sorted(
                 (
                     max(
                         getattr(b, "last_used_ts", None) or 0.0,
@@ -539,11 +569,28 @@ class ModelManager:
                 if mid != incoming and mid not in self._pinned
             )
             now = time.monotonic()
+            busy = {
+                mid
+                for mid, started in self._pending_requests.items()
+                if any(
+                    now - ts < cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
+                    for ts in started.values()
+                )
+            }
+            idle = [c for c in pool if c[1] not in busy]
+            if not idle and pool and not pressure:
+                if incoming in self._backends:
+                    return None
+                raise ModelCapacityExhaustedError(
+                    f"Cannot load '{incoming}': INFERENCE_MAX_ACTIVE_MODELS="
+                    f"{max_active} reached and every other loaded model that is "
+                    "not pinned has requests in flight"
+                )
+            idle_ids = {mid for _, mid in idle}
             awaiting = sorted(
                 (self._loaded_ts[mid], mid)
                 for mid in self._awaiting_first_request
-                if mid != incoming
-                and mid not in self._pinned
+                if mid in idle_ids
                 and now - self._loaded_ts[mid] < cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
             )
             queued = {
@@ -551,7 +598,7 @@ class ModelManager:
             }
             unrequested = [mid for _, mid in awaiting if mid not in queued]
             spared = queued.union(unrequested[-1:])
-            candidates = [c for c in candidates if c[1] not in spared] or candidates
+            candidates = [c for c in idle if c[1] not in spared] or idle or pool
             popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)
@@ -589,6 +636,20 @@ class ModelManager:
         if model_supports_rle(backend.model) and "mask_format" not in kwargs:
             kwargs["mask_format"] = "rle"
         return kwargs, n_images
+
+    @contextlib.contextmanager
+    def _pending_request(self, model_id: str) -> Iterator[None]:
+        token = object()
+        with self._lifecycle_lock:
+            self._pending_requests.setdefault(model_id, {})[token] = time.monotonic()
+        try:
+            yield None
+        finally:
+            with self._lifecycle_lock:
+                started = self._pending_requests[model_id]
+                del started[token]
+                if not started:
+                    del self._pending_requests[model_id]
 
     def _admit(
         self, model_id: str, queued: bool = False
@@ -866,45 +927,46 @@ class ModelManager:
         self._check_open()
         loop = asyncio.get_running_loop()
         context = contextvars.copy_context()
-        backend, _ = self._admit(model_id, queued=True)
-        try:
-            if hasattr(backend, "submit_request"):
-                raw_input = kwargs.pop("images", None)
-                future = await loop.run_in_executor(
-                    self._executor,
-                    lambda: context.run(
-                        self.submit,
-                        model_id,
-                        action=action,
-                        raw_input=raw_input,
-                        **kwargs,
-                    ),
-                )
-                waiter = asyncio.wrap_future(future)
-                waiter.add_done_callback(_retrieve_exception)
-                result = await asyncio.wait_for(
-                    asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
-                )
+        with self._pending_request(model_id):
+            backend, _ = self._admit(model_id, queued=True)
+            try:
+                if hasattr(backend, "submit_request"):
+                    raw_input = kwargs.pop("images", None)
+                    future = await loop.run_in_executor(
+                        self._executor,
+                        lambda: context.run(
+                            self.submit,
+                            model_id,
+                            action=action,
+                            raw_input=raw_input,
+                            **kwargs,
+                        ),
+                    )
+                    waiter = asyncio.wrap_future(future)
+                    waiter.add_done_callback(_retrieve_exception)
+                    result = await asyncio.wait_for(
+                        asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
+                    )
+                    return await loop.run_in_executor(
+                        self._executor,
+                        lambda: context.run(
+                            _serialize_remote_result, backend, action, result, serialize
+                        ),
+                    )
                 return await loop.run_in_executor(
                     self._executor,
                     lambda: context.run(
-                        _serialize_remote_result, backend, action, result, serialize
+                        self.process,
+                        model_id,
+                        action=action,
+                        serialize=serialize,
+                        wire_marshalling=wire_marshalling,
+                        timing=timing,
+                        **kwargs,
                     ),
                 )
-            return await loop.run_in_executor(
-                self._executor,
-                lambda: context.run(
-                    self.process,
-                    model_id,
-                    action=action,
-                    serialize=serialize,
-                    wire_marshalling=wire_marshalling,
-                    timing=timing,
-                    **kwargs,
-                ),
-            )
-        finally:
-            self._release_queued_claim(model_id, backend)
+            finally:
+                self._release_queued_claim(model_id, backend)
 
     def submit(
         self,

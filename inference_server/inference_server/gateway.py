@@ -19,8 +19,12 @@ from typing import Any, Optional
 
 from fastapi import Request
 
+from inference_model_manager.backends.direct import DirectBackend
 from inference_model_manager.errors import INPUT_ERROR_PREFIX
-from inference_model_manager.model_manager import ModelManager
+from inference_model_manager.model_manager import (
+    ModelCapacityExhaustedError,
+    ModelManager,
+)
 from inference_models.errors import (
     BaseInferenceModelsError,
     ModelPackageAlternativesExhaustedError,
@@ -135,11 +139,14 @@ def _model_route_lost(exc: Exception) -> bool:
     """Whether the model vanished under a request that had passed ensure_loaded.
 
     Inference takes its in-flight lease inside process(), so capacity churn
-    between ensure_loaded() and that lease shows up either as a missing route
-    (KeyError) or as a backend already drained out of service.
+    between ensure_loaded() and that lease shows up as a missing route
+    (KeyError), a backend already drained out of service, or a direct
+    backend whose model was dropped underneath the request.
     """
     if isinstance(exc, KeyError):
         return True
+    if isinstance(exc, AttributeError):
+        return exc.name == "_model" and isinstance(exc.obj, DirectBackend)
     return isinstance(exc, RuntimeError) and _NOT_ACCEPTING_MARKER in str(exc)
 
 
@@ -380,8 +387,11 @@ class ModelManagerGateway:
             # identity check keeps a stale callback from dropping a newer load.
             if self._pending_loads.get(key) is future:
                 del self._pending_loads[key]
-                if not _f.cancelled() and _f.exception() is not None:
-                    self._remember_load_failure(key, _load_failure(_f.exception()))
+                error = None if _f.cancelled() else _f.exception()
+                if error is not None and not isinstance(
+                    error, ModelCapacityExhaustedError
+                ):
+                    self._remember_load_failure(key, _load_failure(error))
 
         future.add_done_callback(_forget)
         return future
@@ -422,6 +432,9 @@ class ModelManagerGateway:
                 "ModelManagerGateway: load failed", exc_info=future.exception()
             )
             return _load_failure(future.exception())
+        except ModelCapacityExhaustedError as error:
+            logger.warning("ModelManagerGateway: load refused: %s", error)
+            return ("load_timeout", 1)
         except Exception as error:
             logger.warning("ModelManagerGateway: load failed", exc_info=True)
             return _load_failure(error)
@@ -461,6 +474,20 @@ class ModelManagerGateway:
         api_key: str = "",
         device: str = "",
     ) -> tuple:
+        """Start or join the load of a model and wait for it up to the load wait.
+
+        Args:
+            model_id: Model to make ready.
+            instance: Instance part of the routing key.
+            api_key: Key the load runs with.
+            device: Device to load on; empty uses the manager default.
+
+        Returns:
+            ``("model_ready",)``; ``("load_timeout", seconds)`` while the load
+            keeps running, or ``("load_timeout", 1)`` when the manager refused
+            the load because every model that could make room is busy; or the
+            failure tuple of a failed load.
+        """
         key = routing_key(model_id, instance)
         future = await self._acquire_load_future(key, api_key, device or None)
         if future is None:
@@ -661,7 +688,7 @@ class ModelManagerGateway:
             try:
                 try:
                     return await _process()
-                except (KeyError, RuntimeError) as exc:
+                except (KeyError, RuntimeError, AttributeError) as exc:
                     if not _model_route_lost(exc):
                         raise
                     # Capacity churn took the model between ensure_loaded()
@@ -680,7 +707,14 @@ class ModelManagerGateway:
                         raise ServerBusyError(f"reload timed out for '{key}'")
                     if status[0] == "error":
                         raise ReloadAfterEvictionError("reload after eviction failed")
-                    return await _process()
+                    try:
+                        return await _process()
+                    except (KeyError, RuntimeError, AttributeError) as retry_exc:
+                        if not _model_route_lost(retry_exc):
+                            raise
+                        raise ServerBusyError(
+                            f"'{key}' went away again after reload"
+                        ) from retry_exc
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

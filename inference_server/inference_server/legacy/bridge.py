@@ -701,6 +701,8 @@ class LegacyModelBridge:
             except asyncio.TimeoutError as error:
                 raise _not_ready_error() from error
             state = result[0] if result else "error"
+            if state == "load_timeout":
+                raise _not_ready_error()
             if state != "ok":
                 raise _load_error(result)
         except (Exception, asyncio.CancelledError):

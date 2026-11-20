@@ -2237,6 +2237,378 @@ class TestMemoryPressureEviction:
         assert mm_mod._memory_pressure_detected() is False
 
 
+def _occupy_executor(manager: ModelManager) -> threading.Event:
+    started = threading.Event()
+    release = threading.Event()
+
+    def _block() -> None:
+        started.set()
+        release.wait()
+
+    manager.executor.submit(_block)
+    assert started.wait(timeout=5)
+
+    return release
+
+
+def _pending_counts(manager: ModelManager) -> Dict[str, int]:
+    counts = {
+        model_id: len(started)
+        for model_id, started in manager._pending_requests.items()
+    }
+
+    return counts
+
+
+async def _until_pending(manager: ModelManager, expected: Dict[str, int]) -> None:
+    while _pending_counts(manager) != expected:
+        await asyncio.sleep(0)
+
+
+class TestCapacityChurn:
+    def test_concurrent_loads_evict_only_for_themselves(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("r0", api_key="")
+        mm.load("r1", api_key="")
+        backends["r0"].last_used_ts = 1.0
+        backends["r1"].last_used_ts = 2.0
+        resident_sizes: list = []
+        evicted: list = []
+
+        def _record_drain(name):
+            def _drain(timeout_s=30.0):
+                resident_sizes.append(len(mm._backends))
+                evicted.append(name)
+                backends[name].unload()
+
+            return _drain
+
+        for name in ("r0", "r1"):
+            backends[name].drain_and_unload = _record_drain(name)
+        both_building = threading.Barrier(2)
+
+        def slow_create(model_id, api_key, backend, **kwargs):
+            both_building.wait(timeout=5)
+            resident_sizes.append(len(mm._backends))
+            fb = FakeBackend(model_id)
+            fb.drain_and_unload = _record_drain(model_id)
+            backends[model_id] = fb
+            return fb
+
+        mm._create_backend = slow_create
+        errors: list = []
+
+        def load_model(name):
+            try:
+                mm.load(name, api_key="")
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=load_model, args=(name,)) for name in ("n0", "n1")
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        assert errors == []
+        assert len(evicted) <= 2
+        assert min(resident_sizes) >= 1
+        assert len(mm) == 2
+
+    def test_model_with_pending_request_is_not_evicted(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("busy", api_key="")
+        mm.load("idle", api_key="")
+        backends["busy"].last_used_ts = 1.0
+        backends["idle"].last_used_ts = 2.0
+        release = _occupy_executor(mm)
+
+        async def _scenario() -> Any:
+            request = asyncio.ensure_future(mm.process_async("busy", images="i"))
+            await _until_pending(mm, {"busy": 1})
+            mm.load("new", api_key="")
+            resident = set(mm.loaded_models)
+            release.set()
+            result = await request
+
+            return resident, result
+
+        try:
+            resident, result = asyncio.run(_scenario())
+        finally:
+            release.set()
+            mm.shutdown()
+
+        assert resident == {"busy", "new"}
+        assert result["data"]["model_id"] == "busy"
+
+    def test_memory_pressure_evicts_a_busy_model_when_no_idle_one_is_left(
+        self, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+        import inference_model_manager.model_manager as mm_mod
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("busy", api_key="")
+        release = _occupy_executor(mm)
+
+        async def _scenario() -> set:
+            request = asyncio.ensure_future(mm.process_async("busy", images="i"))
+            await _until_pending(mm, {"busy": 1})
+            pressure = [True, False, False]
+            monkeypatch.setattr(
+                mm_mod, "_memory_pressure_detected", lambda: pressure.pop(0)
+            )
+            mm.load("new", api_key="")
+            resident = set(mm.loaded_models)
+            release.set()
+            with pytest.raises(KeyError):
+                await request
+
+            return resident
+
+        try:
+            resident = asyncio.run(_scenario())
+        finally:
+            release.set()
+            mm.shutdown()
+
+        assert resident == {"new"}
+        assert backends["busy"]._unloaded is True
+
+    def test_load_is_refused_while_every_resident_is_busy(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+        from inference_model_manager.model_manager import ModelCapacityExhaustedError
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        release = _occupy_executor(mm)
+
+        async def _scenario() -> Tuple[List[set], set]:
+            requests = [
+                asyncio.ensure_future(mm.process_async(name, images="i"))
+                for name in ("a", "b")
+            ]
+            await _until_pending(mm, {"a": 1, "b": 1})
+            refused = []
+            for name in ("c", "d", "e", "f"):
+                with pytest.raises(ModelCapacityExhaustedError):
+                    mm.load(name, api_key="")
+                assert name not in mm._loading_ids
+                refused.append(set(mm.loaded_models))
+            release.set()
+            await asyncio.gather(*requests)
+            mm.load("c", api_key="")
+            after = set(mm.loaded_models)
+
+            return refused, after
+
+        try:
+            refused, after = asyncio.run(_scenario())
+        finally:
+            release.set()
+            mm.shutdown()
+
+        assert refused == [{"a", "b"}] * 4
+        assert len(after) == 2
+        assert "c" in after
+
+    @pytest.mark.parametrize("pressure", [False, True])
+    def test_idle_unserved_model_is_evicted_before_a_busy_one(
+        self, monkeypatch, pressure
+    ):
+        import inference_model_manager.configuration as cfg
+        import inference_model_manager.model_manager as mm_mod
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0 if pressure else 2)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("busy", api_key="")
+        mm.process("busy", images="i")
+        mm.load("fresh", api_key="")
+        release = _occupy_executor(mm)
+
+        async def _scenario() -> set:
+            request = asyncio.ensure_future(mm.process_async("busy", images="i"))
+            await _until_pending(mm, {"busy": 1})
+            signals = [pressure, False, False]
+            monkeypatch.setattr(
+                mm_mod, "_memory_pressure_detected", lambda: signals.pop(0)
+            )
+            mm.load("new", api_key="")
+            resident = set(mm.loaded_models)
+            release.set()
+            result = await request
+            assert result["data"]["model_id"] == "busy"
+
+            return resident
+
+        try:
+            resident = asyncio.run(_scenario())
+        finally:
+            release.set()
+            mm.shutdown()
+
+        assert resident == {"busy", "new"}
+
+    def test_cancelled_caller_keeps_protection_while_its_work_runs(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 1)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("busy", api_key="")
+        mm.load("idle", api_key="")
+        mm.process("busy", images="i")
+        mm.process("idle", images="i")
+        backends["busy"].last_used_ts = 1.0
+        backends["idle"].last_used_ts = 2.0
+        release = _occupy_executor(mm)
+
+        async def _scenario() -> set:
+            request = asyncio.ensure_future(mm.process_async("busy", images="i"))
+            await _until_pending(mm, {"busy": 1})
+            request.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+            mm.load("new", api_key="")
+            resident = set(mm.loaded_models)
+            release.set()
+            await asyncio.wait_for(_until_pending(mm, {}), timeout=5)
+
+            return resident
+
+        try:
+            resident = asyncio.run(_scenario())
+        finally:
+            release.set()
+            mm.shutdown()
+
+        assert resident == {"busy", "new"}
+        assert backends["busy"].model._inference_count == 2
+
+    def test_pending_request_older_than_grace_stops_protecting(self, monkeypatch):
+        import time as real_time
+
+        import inference_model_manager.configuration as cfg
+        import inference_model_manager.model_manager as mm_mod
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        monkeypatch.setattr(cfg, "INFERENCE_UNSERVED_MODEL_GRACE_S", 30.0)
+        clock = [100.0]
+        monkeypatch.setattr(
+            mm_mod,
+            "time",
+            SimpleNamespace(
+                monotonic=lambda: clock[0], perf_counter=real_time.perf_counter
+            ),
+        )
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("stuck", api_key="")
+        clock[0] += 1.0
+        mm.load("idle", api_key="")
+        backends["stuck"].last_used_ts = 1.0
+        backends["idle"].last_used_ts = 2.0
+        release = _occupy_executor(mm)
+
+        async def _scenario() -> set:
+            request = asyncio.ensure_future(mm.process_async("stuck", images="i"))
+            await _until_pending(mm, {"stuck": 1})
+            clock[0] += 31.0
+            mm.load("new", api_key="")
+            resident = set(mm.loaded_models)
+            release.set()
+            with pytest.raises(KeyError):
+                await request
+
+            return resident
+
+        try:
+            resident = asyncio.run(_scenario())
+        finally:
+            release.set()
+            mm.shutdown()
+
+        assert resident == {"idle", "new"}
+
+    @pytest.mark.parametrize("inflight_cap", [0, 1])
+    def test_pending_count_is_released_after_success_error_and_cancel(
+        self, monkeypatch, inflight_cap
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", inflight_cap)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 1)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        mm.load("m", api_key="")
+        releases: List[threading.Event] = []
+
+        def failing_infer(images=None, **kwargs):
+            raise RuntimeError("model failed")
+
+        async def _scenario() -> List[Dict[str, int]]:
+            observed = []
+            await mm.process_async("m", images="i")
+            observed.append(_pending_counts(mm))
+            backends["m"].model.infer = failing_infer
+            with pytest.raises(RuntimeError, match="model failed"):
+                await mm.process_async("m", images="i")
+            observed.append(_pending_counts(mm))
+            releases.append(_occupy_executor(mm))
+            request = asyncio.ensure_future(mm.process_async("m", images="i"))
+            await _until_pending(mm, {"m": 1})
+            observed.append(_pending_counts(mm))
+            request.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+            releases[0].set()
+            await asyncio.wait_for(_until_pending(mm, {}), timeout=5)
+            observed.append(_pending_counts(mm))
+
+            return observed
+
+        try:
+            observed = asyncio.run(_scenario())
+        finally:
+            for release in releases:
+                release.set()
+            mm.shutdown()
+
+        assert observed == [{}, {}, {"m": 1}, {}]
+
+
 class _FakeRemoteBackend(FakeBackend):
     _model_mro_names = ["InstanceSegmentationModel", "object"]
 
