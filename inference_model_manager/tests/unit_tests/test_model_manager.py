@@ -10,7 +10,7 @@ import contextvars
 import gc
 import threading
 import weakref
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
@@ -1339,6 +1339,140 @@ class TestCapacityEviction:
         for i in range(12):
             mm.load(f"m{i}", api_key="")
         assert len(mm) == 12
+
+
+class TestFreshLoadEvictionRank:
+    def _mm_at_cap(self, monkeypatch, cap):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        return mm, backends
+
+    def test_never_used_models_evicted_in_load_order(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("z", api_key="")
+        mm.load("y", api_key="")
+        mm.load("x", api_key="")
+        assert set(mm.loaded_models) == {"y", "x"}
+
+    def test_just_loaded_model_outranks_older_use(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("b", api_key="")
+        backends["b"].last_used_ts = 1.0
+        mm.load("a", api_key="")
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["b"]
+
+    def test_use_after_load_outranks_later_load(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        ticks = iter([10.0, 20.0])
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: next(ticks))
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        backends["a"].last_used_ts = 25.0
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["b"]
+
+    def test_recorded_load_time_dropped_on_eviction_and_unload(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        mm.load("c", api_key="")
+        assert set(mm._loaded_ts) == {"b", "c"}
+        mm.unload("b")
+        assert set(mm._loaded_ts) == {"c"}
+
+    def test_subclass_registered_head_survives_older_ordinary_model(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        ticks = iter([10.0, 20.0, 30.0])
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: next(ticks))
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="")
+
+        # ServingModelManager.load_shared_head registers directly under this lock.
+        with mm._lifecycle_lock:
+            mm._backends["z"] = FakeBackend("z")
+
+        mm.load("m", api_key="")
+        assert set(mm.loaded_models) == {"z", "m"}
+        assert mm._loaded_ts == {"z": 20.0, "m": 30.0}
+
+    def test_direct_removal_and_reload_reset_timestamp(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        ticks = iter([10.0, 20.0, 30.0])
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: next(ticks))
+        mm, _ = self._mm_at_cap(monkeypatch, 0)
+        with mm._lifecycle_lock:
+            mm._backends["z"] = FakeBackend("z")
+            mm._backends.pop("z")
+            assert mm._loaded_ts == {}
+            mm._backends["a"] = FakeBackend("a")
+            mm._backends["z"] = FakeBackend("z")
+
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["a"]
+        assert mm._loaded_ts == {"z": 30.0}
+        with mm._lifecycle_lock:
+            mm._backends.clear()
+        assert mm._loaded_ts == {}
+
+    def test_unlocked_pop_serializes_with_unload(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("z", api_key="")
+        read = threading.Event()
+        release = threading.Event()
+        checked = threading.Event()
+        acquired = []
+        cleanup_thread = []
+        getitem = type(mm._backends).__getitem__
+
+        def pause_cleanup(registry, model_id):
+            backend = getitem(registry, model_id)
+            if threading.get_ident() in cleanup_thread:
+                read.set()
+                assert release.wait(5)
+            return backend
+
+        monkeypatch.setattr(type(mm._backends), "__getitem__", pause_cleanup)
+
+        def cleanup():
+            cleanup_thread.append(threading.get_ident())
+            return mm._backends.pop("z", None)
+
+        def unload():
+            locked = mm._lifecycle_lock.acquire(blocking=False)
+            acquired.append(locked)
+            if locked:
+                mm._lifecycle_lock.release()
+            checked.set()
+            try:
+                mm.unload("z")
+            except KeyError:
+                pass  # Cleanup may have already removed the model.
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            cleanup_result = pool.submit(cleanup)
+            try:
+                assert read.wait(5)
+                unload_result = pool.submit(unload)
+                assert checked.wait(5)
+                if acquired == [True]:
+                    unload_result.result(timeout=5)
+            finally:
+                release.set()
+            assert cleanup_result.result(timeout=5) is backends["z"]
+            unload_result.result(timeout=5)
+
+        assert acquired == [False]
+        assert not mm._backends
+        assert not mm._loaded_ts
 
 
 class TestEvictionFailureSafety:
