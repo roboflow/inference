@@ -9,7 +9,7 @@ import asyncio
 import contextvars
 import gc
 import threading
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
@@ -1246,6 +1246,57 @@ class TestFreshLoadEvictionRank:
         with mm._lifecycle_lock:
             mm._backends.clear()
         assert mm._loaded_ts == {}
+
+    def test_unlocked_pop_serializes_with_unload(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("z", api_key="")
+        read = threading.Event()
+        release = threading.Event()
+        checked = threading.Event()
+        acquired = []
+        cleanup_thread = []
+        getitem = type(mm._backends).__getitem__
+
+        def pause_cleanup(registry, model_id):
+            backend = getitem(registry, model_id)
+            if threading.get_ident() in cleanup_thread:
+                read.set()
+                assert release.wait(5)
+            return backend
+
+        monkeypatch.setattr(type(mm._backends), "__getitem__", pause_cleanup)
+
+        def cleanup():
+            cleanup_thread.append(threading.get_ident())
+            return mm._backends.pop("z", None)
+
+        def unload():
+            locked = mm._lifecycle_lock.acquire(blocking=False)
+            acquired.append(locked)
+            if locked:
+                mm._lifecycle_lock.release()
+            checked.set()
+            try:
+                mm.unload("z")
+            except KeyError:
+                pass  # Cleanup may have already removed the model.
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            cleanup_result = pool.submit(cleanup)
+            try:
+                assert read.wait(5)
+                unload_result = pool.submit(unload)
+                assert checked.wait(5)
+                if acquired == [True]:
+                    unload_result.result(timeout=5)
+            finally:
+                release.set()
+            assert cleanup_result.result(timeout=5) is backends["z"]
+            unload_result.result(timeout=5)
+
+        assert acquired == [False]
+        assert not mm._backends
+        assert not mm._loaded_ts
 
 
 class TestEvictionFailureSafety:
