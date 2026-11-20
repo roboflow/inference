@@ -1712,6 +1712,70 @@ class TestImagecodecsRejectsBeforeTheCopy:
         assert out.shape == (8, 8, 3)
 
 
+class TestImagecodecsMatchesOpenCV:
+    @pytest.mark.parametrize("fmt", ["jpeg", "png"])
+    def test_output_is_contiguous_bgr_equal_to_cv2_imdecode(
+        self, fmt, jpeg_bytes, png_bytes
+    ):
+        import inference_model_manager.backends.decode as decode_mod
+
+        cv2 = pytest.importorskip("cv2")
+        data = {"jpeg": jpeg_bytes, "png": png_bytes}[fmt]
+        expected = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+        out = decode_mod._imagecodecs_factory("cpu")(data)
+
+        assert out.dtype == np.uint8
+        assert out.flags["C_CONTIGUOUS"]
+        if fmt == "png":
+            np.testing.assert_array_equal(out, expected)
+        else:
+            _assert_close(out, expected)
+
+    @pytest.mark.parametrize(
+        "shape", [(5, 7, 3), (1, 1, 3), (4, 6)], ids=["hwc", "pixel", "gray"]
+    )
+    def test_matches_reversed_channel_copy(self, monkeypatch, shape):
+        import inference_model_manager.backends.decode as decode_mod
+
+        rgb = np.random.default_rng(0).integers(0, 256, shape, dtype=np.uint8)
+        monkeypatch.setattr(decode_mod, "_decode_ic", lambda data: rgb)
+
+        out = decode_mod._imagecodecs_factory("cpu")(b"")
+
+        expected = rgb[..., ::-1].copy()
+        np.testing.assert_array_equal(out, expected)
+        assert out.shape == expected.shape
+        assert out.flags["C_CONTIGUOUS"]
+
+    def test_non_contiguous_input_is_handled(self, monkeypatch):
+        import inference_model_manager.backends.decode as decode_mod
+
+        base = np.random.default_rng(1).integers(0, 256, (6, 8, 3), dtype=np.uint8)
+        view = base.transpose(1, 0, 2)
+        monkeypatch.setattr(decode_mod, "_decode_ic", lambda data: view)
+
+        out = decode_mod._imagecodecs_factory("cpu")(b"")
+
+        np.testing.assert_array_equal(out, view[..., ::-1])
+        assert out.flags["C_CONTIGUOUS"]
+
+    @pytest.mark.parametrize("shape", [(0, 4, 3), (4, 0, 3)])
+    def test_empty_npy_matches_reversed_channel_copy(self, shape):
+        import inference_model_manager.backends.decode as decode_mod
+
+        arr = np.zeros(shape, dtype=np.uint8)
+        buffer = io.BytesIO()
+        np.save(buffer, arr)
+
+        out = decode_mod._imagecodecs_factory("cpu")(buffer.getvalue())
+
+        expected = arr[..., ::-1].copy()
+        assert out.shape == expected.shape
+        assert out.dtype == expected.dtype
+        assert out.flags["C_CONTIGUOUS"]
+
+
 class TestPluginDecoderGate:
     """Entry-point decoders (nvjpeg/nvimgcodec) go through the same gate."""
 
