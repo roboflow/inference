@@ -6,7 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -147,7 +147,8 @@ creating structured events that can be queried, filtered, and visualized in the 
 dashboard.
 
 1. Optionally uploads an input image and/or output image (visualization) to the Vision Events
-   image storage via the public API
+   image storage via the public API, plus any extra images (each stored under its own label,
+   without annotations)
 2. Converts model predictions (object detection, classification, instance segmentation, or
    keypoint detection) into the Vision Events annotation format and attaches them to the
    input image
@@ -276,6 +277,18 @@ class BlockManifest(WorkflowBlockManifest):
         "block). Displayed as the primary image in the Vision Events dashboard.",
         examples=["$steps.visualization.image"],
         json_schema_extra={"always_visible": True},
+    )
+    extra_images: Dict[
+        Annotated[str, Field(min_length=1)], Selector(kind=[IMAGE_KIND])
+    ] = Field(
+        default_factory=dict,
+        title="Extra Images",
+        description="Additional images keyed by a non-empty label, such as raw_crop. "
+        "Each image is stored under its label without annotations. Omit this field "
+        "or use an empty mapping to send the event without extra images. If any "
+        "configured image selector resolves to no image, the workflow skips the "
+        "event for that frame.",
+        examples=[{"raw_crop": "$steps.cropping.crops"}],
     )
     predictions: Optional[
         Selector(
@@ -709,6 +722,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         # Appended last on purpose: inserting it earlier would silently
         # rebind any positional caller's arguments.
         value_base_units: Optional[Union[int, float]] = None,
+        extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
         video_clips: Optional[Any] = None,
         video_label: str = DEFAULT_VIDEO_LABEL,
         confirm_ingestion: bool = False,
@@ -788,6 +802,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 event_data=event_data,
                 custom_metadata=custom_metadata,
                 value_base_units=value_base_units,
+                extra_images=extra_images,
             )
         else:
             if self._api_key is None:
@@ -824,6 +839,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 event_data=event_data,
                 custom_metadata=custom_metadata,
                 value_base_units=value_base_units,
+                extra_images=extra_images,
                 **clip_task_parameters,
             )
 
@@ -1002,6 +1018,7 @@ def _execute_vision_event(
     custom_metadata: Dict[str, Any],
     platform_client: Optional[RoboflowPlatformClient] = None,
     value_base_units: Optional[int] = None,
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
     clip_attachments: Optional[ClipAttachments] = None,
 ) -> Tuple[bool, str, str]:
     payload: Dict[str, Any] = {}
@@ -1034,6 +1051,17 @@ def _execute_vision_event(
             image_entry.update(annotations)
 
         images_payload: List[dict] = [image_entry] if image_entry else []
+        # Extra images are unannotated originals (e.g. a clean crop kept for
+        # relabelling), so they keep the input image's quality.
+        for label, image in _present_extra_images(extra_images):
+            extra_source_id, _ = _upload_image(
+                api_base_url,
+                api_key,
+                image,
+                jpeg_quality=95,
+                platform_client=platform_client,
+            )
+            images_payload.append({"sourceId": extra_source_id, "label": label})
 
         # Step 3: Build and send event
         payload = _build_event_payload(
@@ -1098,6 +1126,7 @@ def _execute_local_event(
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
     value_base_units: Optional[int] = None,
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
 ) -> Tuple[bool, str, str]:
     """Send an event to a local Event Ingestion Service (v2 API).
 
@@ -1122,6 +1151,8 @@ def _execute_local_event(
             image_entry.update(annotations)
 
         images_payload: List[dict] = [image_entry] if image_entry else []
+        for label, image in _present_extra_images(extra_images):
+            images_payload.append({"base64Image": image.base64_image, "label": label})
 
         payload: Dict[str, Any] = {
             "inference_timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1146,6 +1177,19 @@ def _execute_local_event(
             f"Error writing event to event store: {type(error).__name__}: {error}",
             "",
         )
+
+
+def _present_extra_images(
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]],
+) -> List[Tuple[str, WorkflowImageData]]:
+    """Return the extra images that resolved to an image, as (label, image) pairs."""
+    present_images = [
+        (label, image)
+        for label, image in (extra_images or {}).items()
+        if image is not None
+    ]
+
+    return present_images
 
 
 def _send_local_event(
