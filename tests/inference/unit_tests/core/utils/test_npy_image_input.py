@@ -247,3 +247,26 @@ def test_malformed_npy_header_raises_invalid_numpy_input(monkeypatch, version, n
         image_utils.load_image({"type": "npy", "value": data})
 
     decode.assert_not_called()
+
+
+_MALFORMED_DESCRIPTORS = {
+    "empty-tuple": b"{'descr': (), 'fortran_order': False, 'shape': (1, 1)}",
+    "incomplete-tuple": b"{'descr': ('|u1',), 'fortran_order': False, 'shape': (1, 1)}",
+    "list-of-garbage": b"{'descr': [()], 'fortran_order': False, 'shape': (1, 1)}",
+    "missing-keys": b"{'shape': (1, 1)}",
+}
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", list(_MALFORMED_DESCRIPTORS))
+def test_malformed_npy_descriptor_raises_invalid_numpy_input(monkeypatch, version, name):
+    header = _MALFORMED_DESCRIPTORS[name]
+    size = len(header).to_bytes(2 if version == (1, 0) else 4, "little")
+    data = b"\x93NUMPY" + bytes(version) + size + header
+    decode = Mock(side_effect=AssertionError("must reject before allocating"))
+    monkeypatch.setattr(image_utils.np, "load", decode)
+
+    with pytest.raises(InvalidNumpyInput):
+        image_utils.load_image({"type": "npy", "value": data})
+
+    decode.assert_not_called()

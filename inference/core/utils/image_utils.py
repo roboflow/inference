@@ -394,14 +394,19 @@ def load_image_from_npy(value: Union[bytes, str]) -> np.ndarray:
             raise ValueError("array size does not match the NPY payload")
 
         data = np.load(BytesIO(value), allow_pickle=False)
-    # NumPy's header parser raises TokenError, SyntaxError or RecursionError
-    # for malformed or deeply nested headers; all are a client error.
+    # NumPy's header parser raises TokenError, SyntaxError or RecursionError for
+    # malformed or deeply nested headers, and IndexError/KeyError/AttributeError
+    # for malformed dtype descriptors; all are a client error.
     except (
         ValueError,
         TypeError,
         EOFError,
         SyntaxError,
         RecursionError,
+        IndexError,
+        KeyError,
+        AttributeError,
+        OverflowError,
         tokenize.TokenError,
     ) as error:
         raise InvalidNumpyInput(
