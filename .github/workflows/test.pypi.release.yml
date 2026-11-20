@@ -75,15 +75,17 @@ concurrency:
 jobs:
   contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.release_source != '' && 60 || 20 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 152 || 20 }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.release_source || github.sha }}
           persist-credentials: false
       - name: "Test publication conditions and regression mutations in Docker [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 61 || 21 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1200'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             docker build --tag inference-pypi-workflow-tests --file .github/docker/Dockerfile.pypi-workflow-tests .github
@@ -91,8 +93,10 @@ jobs:
             echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
             docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" "$image_id"
       - name: "Test package inventories and registry failure boundaries in Docker [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 61 || 21 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1200'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             docker build --tag inference-pypi-tests --file .release/pypi/Dockerfile .release/pypi

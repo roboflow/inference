@@ -10,6 +10,9 @@ inputs:
   working-directory:
     description: Directory in which the test command runs
     default: '.'
+  timeout-seconds:
+    description: Maximum duration of each attempt, including child processes
+    default: '1800'
 runs:
   using: composite
   steps:
@@ -19,6 +22,7 @@ runs:
       env:
         RETRY_COMMAND: ${{ inputs.command }}
         RETRY_ATTEMPTS: ${{ inputs.attempts }}
+        RETRY_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
       run: |
         log_dir="$(mktemp -d "$RUNNER_TEMP/release-test-attempts.XXXXXX")"
         export RETRY_LOG_DIR="$log_dir"

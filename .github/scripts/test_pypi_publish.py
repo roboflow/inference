@@ -883,9 +883,20 @@ def test_runtime_modes_and_dependency_gates_precede_recovery():
     job = config["jobs"]["publish_runtime"]
     assert "prepare_dependencies" in job["needs"]
     assert "validation" in config["jobs"]["prepare_dependencies"]["needs"]
-    assert "!cancelled()" in job["if"]
-    for dependency in job["needs"]:
-        assert f"needs.{dependency}.result == 'success'" in job["if"]
+    for job_name in (
+        "prepare_dependencies",
+        "publish_runtime",
+        "docker",
+        "complete",
+        "notify-svis",
+    ):
+        guarded = config["jobs"][job_name]
+        assert "!cancelled()" in guarded["if"]
+        needs = guarded["needs"]
+        if isinstance(needs, str):
+            needs = [needs]
+        for dependency in needs:
+            assert f"needs.{dependency}.result == 'success'" in guarded["if"], job_name
     assert job["concurrency"]["cancel-in-progress"] == "false"
     steps = job["steps"]
     prepare = next(

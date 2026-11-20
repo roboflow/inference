@@ -30,7 +30,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-8
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 135 || 45 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 166 || 45 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -72,9 +72,10 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}"/dist/roboflow_workflows-*.whl
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: "🧪 Integration Tests of Inference models [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 135 || 45 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 136 || 46 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '2700'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             USE_INFERENCE_MODELS=False MAX_BATCH_SIZE=6 python -m pytest tests/inference/models_predictions_tests

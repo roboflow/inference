@@ -119,7 +119,7 @@ jobs:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
-    timeout-minutes: ${{ inputs.release_source != '' && 180 || 60 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 211 || 60 }}
 
     steps:
       - name: Checkout candidate
@@ -179,6 +179,7 @@ jobs:
         run: |
           docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.cpu .
       - name: "Run shared CPU server test stages [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 181 || 61 }}
         uses: ./.github/actions/server-tests-cpu
         with:
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}

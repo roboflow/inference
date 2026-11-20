@@ -126,12 +126,9 @@ def _plan(key):
         version = tomllib.loads(Path("inference_models/pyproject.toml").read_text())[
             "project"
         ]["version"]
-        model_identity = {
-            "models_version": version,
-        }
+        model_identity = {"models_version": str(Version(version))}
         if not item.get("core_only"):
             model_identity["models_content_sha256"] = _models_identity(version)
-        model_identity["models_version"] = str(Version(version))
         # Models versions are independent. Reuse an existing immutable image,
         # then verify its installed package content and run target-platform smoke.
         if not Version(version).is_prerelease:
@@ -147,7 +144,6 @@ def _plan(key):
                     raise ValueError(
                         "Existing Models tag differs from the accepted RC digest"
                     )
-                reuse_digest = rc_image["digest"]
         # An unchanged stable Models version must not give an RC a stable image tag.
         if state["channel"] == "rc":
             version = state["version"]

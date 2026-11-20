@@ -56,7 +56,7 @@ jobs:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12","3.13"]' || format('["{0}"]', github.event.inputs.python-version)) }}
-    timeout-minutes: ${{ inputs.release_source != '' && 45 || 15 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 76 || 15 }}
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -92,8 +92,10 @@ jobs:
       - name: "🧪 Integration Tests of Workflows (tensor-native) [release-test]"
         # Tensor-native path only: ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with
         # USE_INFERENCE_MODELS, which defaults to True on Linux runners, so it is not set here.
+        timeout-minutes: ${{ inputs.release_source != '' && 46 || 16 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '900'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             ENABLE_TENSOR_DATA_REPRESENTATION=True ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests

@@ -25,7 +25,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 90 || 30 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -61,9 +61,10 @@ jobs:
           python -m uv venv
           python -m uv pip install -e .[test,onnx-cpu,torch-cpu] --python .venv
       - name: "🧪 Run E2E tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 60 || 20 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 61 || 21 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1200'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           working-directory: inference_models
           command: |

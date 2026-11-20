@@ -49,8 +49,8 @@ def _main():
             env=environment,
             check=True,
         )
-    # Only this source file may differ under RC/source equivalence. Other
-    # checkout files stay byte-for-byte as tested, including Docker exclusions.
+    # version.py is the runtime-relevant source metadata to finalize. Other
+    # normalized metadata stays at its tested RC spelling in checkout files.
     relative = Path("inference/core/version.py")
     source = root / "sources" / relative
     target = Path.cwd() / relative

@@ -6,13 +6,18 @@ if ! [[ "$attempts" =~ ^[1-3]$ ]]; then
     echo "::error::RETRY_ATTEMPTS must be 1, 2, or 3"
     exit 2
 fi
+attempt_seconds="${RETRY_TIMEOUT_SECONDS:-1800}"
+if ! [[ "$attempt_seconds" =~ ^[1-9][0-9]*$ ]]; then
+    echo "::error::RETRY_TIMEOUT_SECONDS must be a positive integer"
+    exit 2
+fi
 log_dir="${RETRY_LOG_DIR:?RETRY_LOG_DIR is required}"
 mkdir -p "$log_dir"
 : "${RETRY_COMMAND:?RETRY_COMMAND is required}"
 for ((attempt=1; attempt<=attempts; attempt++)); do
     echo "::group::Test attempt $attempt/$attempts"
     set +e
-    bash -e -o pipefail <<< "$RETRY_COMMAND"
+    timeout --kill-after=10s "$attempt_seconds" bash -e -o pipefail -c "$RETRY_COMMAND" </dev/null
     status=$?
     set -e
     echo "::endgroup::"

@@ -30,6 +30,20 @@ LOCKS = tuple(f"{directory}/uv.lock" for directory, _ in dependencies.PROJECTS.v
 FIRST_PARTY = dependencies.OWNED | release.RUNTIME
 REPOSITORY = "roboflow/inference"
 POLICY = Path(".release/release-policy.json")
+API_DEADLINE = None
+
+
+def _api_timeout():
+    global API_DEADLINE
+    now = time.monotonic()
+    if API_DEADLINE is None:
+        API_DEADLINE = now + 600
+
+    remaining = API_DEADLINE - now
+    if remaining <= 0:
+        raise TimeoutError("GitHub evidence lookup exceeded its 10-minute budget")
+
+    return min(30, remaining)
 
 
 def _git(*args, env=None):
@@ -70,7 +84,7 @@ def _api(path, *, payload=None):
     )
     for attempt in range(6):
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=_api_timeout()) as response:
                 result = json.load(response)
             return result
         except urllib.error.HTTPError as error:
@@ -83,12 +97,22 @@ def _api(path, *, payload=None):
         except (TimeoutError, OSError):
             if payload is not None or attempt == 5:
                 raise
-        time.sleep(min(2**attempt, 16))
+        time.sleep(min(2**attempt, 16, _api_timeout()))
     raise ValueError("GitHub request exhausted retries")
 
 
 def _base(version):
-    return _final_version(version)
+    result = _final_version(version)
+    return result
+
+
+def _metadata_version(version):
+    parsed = Version(version)
+    if parsed.local or parsed.dev is not None or (parsed.pre and parsed.pre[0] != "rc"):
+        return version
+
+    result = _base(version)
+    return result
 
 
 def _requirement(raw):
@@ -104,7 +128,7 @@ def _requirement(raw):
     requirement.specifier = SpecifierSet(
         ",".join(
             (
-                f"{specifier.operator}{_base(specifier.version)}"
+                f"{specifier.operator}{_metadata_version(specifier.version)}"
                 if "*" not in specifier.version
                 else str(specifier)
             )
@@ -125,7 +149,7 @@ def _normalize(value):
         name = canonicalize_name(str(value.get("name", "")))
         if name in FIRST_PARTY:
             if "version" in result:
-                result["version"] = _base(result["version"])
+                result["version"] = _metadata_version(result["version"])
             if "specifier" in result:
                 requirement = Requirement(_requirement(name + result["specifier"]))
                 result["specifier"] = str(requirement.specifier)
@@ -144,9 +168,23 @@ def _canonical(path, data):
             _normalize(tomllib.loads(data.decode())), sort_keys=True
         ).encode()
     if Path(path).name == "pyproject.toml":
-        return json.dumps(
-            _normalize(tomllib.loads(data.decode())), sort_keys=True
-        ).encode()
+        project_file = tomllib.loads(data.decode())
+        project = project_file.get("project", {})
+        if (
+            canonicalize_name(project.get("name", "")) in FIRST_PARTY
+            and "version" in project
+        ):
+            project["version"] = _metadata_version(project["version"])
+        for key in ("dependencies", "optional-dependencies"):
+            if key in project:
+                project[key] = _normalize(project[key])
+        if "dependency-groups" in project_file:
+            project_file["dependency-groups"] = _normalize(
+                project_file["dependency-groups"]
+            )
+
+        result = json.dumps(project_file, sort_keys=True).encode()
+        return result
     if path == "inference/core/version.py":
         tree = ast.parse(data.decode())
         found = 0
@@ -177,7 +215,7 @@ def _canonical(path, data):
     return data
 
 
-def _fingerprint(*, include_locks=True):
+def _file_fingerprints(*, include_locks=True):
     entries = []
     for line in _git("ls-files", "--stage").splitlines():
         metadata, path = line.split("\t", 1)
@@ -189,7 +227,27 @@ def _fingerprint(*, include_locks=True):
         file = Path(path)
         data = str(file.readlink()).encode() if file.is_symlink() else file.read_bytes()
         entries.append((path, mode, hashlib.sha256(_canonical(path, data)).hexdigest()))
+    return entries
+
+
+def _fingerprint(*, include_locks=True):
+    entries = _file_fingerprints(include_locks=include_locks)
     result = hashlib.sha256(json.dumps(entries).encode()).hexdigest()
+    return result
+
+
+def _source_difference(receipt):
+    if "files" not in receipt:
+        return "per-file evidence unavailable in this older RC receipt"
+
+    previous = {path: (mode, digest) for path, mode, digest in receipt["files"]}
+    current = {path: (mode, digest) for path, mode, digest in _file_fingerprints()}
+    changed = sorted(
+        path
+        for path in previous.keys() | current.keys()
+        if previous.get(path) != current.get(path)
+    )
+    result = ", ".join(changed) or "policy or receipt metadata"
     return result
 
 
@@ -297,7 +355,7 @@ def _download_receipt(artifact_id):
     )
     opener = urllib.request.build_opener(_ArtifactRedirect())
     limit = 8 * 1024 * 1024
-    with opener.open(request, timeout=30) as response:
+    with opener.open(request, timeout=_api_timeout()) as response:
         payload = response.read(limit + 1)
     if len(payload) > limit:
         raise ValueError("RC receipt artifact is too large")
@@ -309,6 +367,8 @@ def _download_receipt(artifact_id):
 
 
 def _find_rc(version):
+    fingerprint = _fingerprint()
+    mismatch = ""
     for page in range(1, 6):
         runs = _api(
             "actions/workflows/publish.pypi.yml/runs"
@@ -317,7 +377,7 @@ def _find_rc(version):
         for run in runs:
             if run["head_repository"]["full_name"] != REPOSITORY or not re.fullmatch(
                 r"release(?:-candidates)?[-/][A-Za-z0-9._/-]+",
-                run.get("head_branch", ""),
+                run.get("head_branch") or "",
             ):
                 continue
             artifacts = []
@@ -349,9 +409,15 @@ def _find_rc(version):
                     or receipt.get("repository") != REPOSITORY
                     or receipt.get("complete") is not True
                     or receipt.get("branch") != run["head_branch"]
-                    or not re.fullmatch(r"[a-f0-9]{40}", receipt.get("source_sha", ""))
+                    or not re.fullmatch(
+                        r"[a-f0-9]{40}", receipt.get("source_sha") or ""
+                    )
+                    or not re.fullmatch(
+                        r"[a-f0-9]{64}", receipt.get("fingerprint") or ""
+                    )
                 ):
                     raise ValueError("Untrusted or incomplete RC receipt")
+
                 try:
                     _git(
                         "merge-base",
@@ -359,18 +425,36 @@ def _find_rc(version):
                         run["head_sha"],
                         receipt["source_sha"],
                     )
-                    _git("merge-base", "--is-ancestor", receipt["source_sha"], "HEAD")
                 except subprocess.CalledProcessError as error:
+                    if error.returncode == 1:
+                        continue
                     raise ValueError(
-                        "RC source is not an ancestor of the stable tag"
+                        "Cannot verify RC trigger-to-source ancestry"
                     ) from error
+
+                # The stable tag may be on a squash merge on main. Its canonical
+                # content, not its commit ancestry, must match the tested RC.
+                if receipt["fingerprint"] != fingerprint:
+                    if not mismatch:
+                        mismatch = f"; newest eligible RC differs at: {_source_difference(receipt)}"
+                    continue
+
                 _write(STATE / "accepted-rc.json", receipt)
                 return receipt
         if len(runs) < 100:
             break
     raise ValueError(
-        f"No successful RC receipt for {version}; run and complete an RC first"
+        f"No successful equivalent RC receipt for {version}; run and complete an RC first{mismatch}"
     )
+
+
+def _preflight():
+    version = release._expected_version()
+    if Version(version).is_prerelease:
+        raise ValueError("Preflight requires prepared final versions")
+
+    receipt = _find_rc(version)
+    click.echo(f"Source and locks match successful RC run {receipt['run_id']}")
 
 
 def _prepare():
@@ -385,6 +469,8 @@ def _prepare():
         item = event["release"]
         if event.get("action") != "published" or item["draft"] or item["prerelease"]:
             raise ValueError("Expected a published, non-draft, stable GitHub Release")
+        if not re.fullmatch(r"v\d+\.\d+\.\d+(?:(?:-|\.)post\d+)?", item["tag_name"]):
+            raise ValueError("Stable tag must be vX.Y.Z, vX.Y.Z-postN or vX.Y.Z.postN")
         if Version(version).is_prerelease or Version(item["tag_name"]) != Version(
             version
         ):
@@ -439,7 +525,8 @@ def _prepare():
             or receipt["fingerprint"] != _fingerprint()
         ):
             raise ValueError(
-                "Stable source/locks/policy differ from RC; complete a new RC"
+                "Stable source/locks/policy differ from RC; complete a new RC: "
+                + _source_difference(receipt)
             )
         state["accepted_rc_run_id"] = receipt["run_id"]
     _write(STATE / "release.json", state)
@@ -519,7 +606,8 @@ def _equivalence():
         receipt = json.loads((STATE / "accepted-rc.json").read_text())
         if _fingerprint() != receipt["fingerprint"]:
             raise ValueError(
-                "Prepared stable locks/dependencies differ from the tested RC"
+                "Prepared stable locks/dependencies differ from the tested RC: "
+                + _source_difference(receipt)
             )
 
 
@@ -589,6 +677,7 @@ def _receipt():
     receipt = {
         **state,
         "fingerprint": _fingerprint(),
+        "files": _file_fingerprints(),
         "complete": True,
         "packages": json.loads((STATE / "dependency-receipt.json").read_text()),
         "runtime": json.loads((STATE / "runtime-receipt.json").read_text()),
@@ -671,6 +760,7 @@ def _validate():
     type=click.Choice(
         [
             "prepare",
+            "preflight",
             "restore",
             "lock",
             "build",
@@ -690,6 +780,8 @@ def _main(operation, *, package):
     STATE.mkdir(exist_ok=True)
     if operation == "prepare":
         _prepare()
+    elif operation == "preflight":
+        _preflight()
     elif operation == "restore":
         _restore_source()
     elif operation in {"lock", "build", "check-upload"}:

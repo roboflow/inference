@@ -59,6 +59,7 @@ runs:
     - name: 🧪 Integration Tests of inference server [x86 CPU]
       env:
         RETRY_ATTEMPTS: ${{ inputs.attempts }}
+        RETRY_TIMEOUT_SECONDS: '3600'
         API_KEY: ${{ inputs.API_KEY }}
         asl_instance_segmentation_API_KEY: ${{ inputs.ASL_INSTANCE_SEGMENTATION_API_KEY }}
         asl_poly_instance_seg_API_KEY: ${{ inputs.ASL_POLY_INSTANCE_SEG_API_KEY }}

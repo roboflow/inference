@@ -77,9 +77,10 @@ jobs:
       - name: "🧪 Server unit tests (tensor-native) [release-test]"
         # ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with USE_INFERENCE_MODELS,
         # which defaults to True on Linux runners, so the tensor-native code path is exercised.
-        timeout-minutes: ${{ inputs.release_source != '' && 90 || 30 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 91 || 31 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1800'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             ENABLE_TENSOR_DATA_REPRESENTATION=True python -m pytest tests/workflows/unit_tests
@@ -98,7 +99,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 135 || 45 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 166 || 45 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -133,8 +134,10 @@ jobs:
         # The installed-wheel isolation probe (WORKFLOWS_ISOLATION_WHEEL) is left to
         # "UNIT TESTS - workflows": it clears ENABLE_TENSOR_DATA_REPRESENTATION and
         # checks both tensor modes itself, so running it here repeated the same check.
+        timeout-minutes: ${{ inputs.release_source != '' && 136 || 46 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '2700'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           working-directory: workflows
           command: |

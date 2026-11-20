@@ -43,7 +43,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 90 || 30 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 121 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,8 +56,10 @@ jobs:
       - name: "Run SDK integration validation in Docker [release-test]"
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
+        timeout-minutes: ${{ inputs.release_source != '' && 91 || 31 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1800'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             bash .github/scripts/run_sdk_tests.sh integration "$PYTHON_VERSION"
@@ -76,7 +78,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 180 || 60 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 211 || 60 }}
     strategy:
       fail-fast: false
       matrix:
@@ -89,8 +91,10 @@ jobs:
       - name: "Run SDK e2e validation in Docker [release-test]"
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
+        timeout-minutes: ${{ inputs.release_source != '' && 181 || 61 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '3600'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             bash .github/scripts/run_sdk_tests.sh e2e "$PYTHON_VERSION"

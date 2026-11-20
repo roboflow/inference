@@ -33,7 +33,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 75 || 25 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 106 || 25 }}
     strategy:
       fail-fast: false
       matrix:
@@ -46,8 +46,10 @@ jobs:
       - name: "Run SDK install validation in Docker [release-test]"
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1500'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             bash .github/scripts/run_sdk_tests.sh install "$PYTHON_VERSION"

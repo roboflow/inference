@@ -89,7 +89,7 @@ jobs:
           --health-interval 5s
           --health-timeout 10s
           --health-retries 12
-    timeout-minutes: ${{ inputs.release_source != '' && 75 || 25 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 182 || 25 }}
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -126,8 +126,10 @@ jobs:
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"
           KAFKA_TEST_BOOTSTRAP_SERVERS: "localhost:9092"
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1500'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
@@ -136,8 +138,10 @@ jobs:
         # same tests. Run it once per Python version, on the "true" leg unless a
         # manual dispatch selected only "false".
         if: ${{ inputs.release_source != '' || matrix.use-inference-models == 'true' || inputs.use-inference-models == 'false' }}
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
         uses: ./.github/actions/retry-tests
         with:
+          timeout-seconds: '1500'
           attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           command: |
             PROJECT=roboflow-staging MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test python -m pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
