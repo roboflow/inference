@@ -1471,13 +1471,13 @@ class TestUnservedModelProtection:
         self._load(mm, clock, "d")
         assert set(mm.loaded_models) == {"a", "b", "d"}
 
-    def test_registration_time_dropped_on_eviction_and_unload(self, monkeypatch):
+    def test_load_time_dropped_on_eviction_and_unload(self, monkeypatch):
         mm, backends, clock = self._mm(monkeypatch, 2)
         for model_id in ("a", "b", "c"):
             self._load(mm, clock, model_id)
-        assert set(mm._registered_ts) == {"b", "c"}
+        assert set(mm._loaded_ts) == {"b", "c"}
         mm.unload("b")
-        assert set(mm._registered_ts) == {"c"}
+        assert set(mm._loaded_ts) == {"c"}
 
     def test_direct_backend_counts_as_served_after_first_inference(self, monkeypatch):
         import inference_model_manager.configuration as cfg

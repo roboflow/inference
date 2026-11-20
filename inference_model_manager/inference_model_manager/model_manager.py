@@ -248,7 +248,6 @@ class ModelManager:
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
         self._pinned: set[str] = set()
-        self._registered_ts: Dict[str, float] = {}
         self._stream_pipelines: Dict[str, "StreamPipelinedModel"] = {}
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
@@ -353,7 +352,6 @@ class ModelManager:
                 lazy_register_by_names(b._model_mro_names)
             with self._lifecycle_lock:
                 self._backends[model_id] = b
-                self._registered_ts[model_id] = time.monotonic()
                 if pinned:
                     self._pinned.add(model_id)
         finally:
@@ -443,7 +441,6 @@ class ModelManager:
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
             self._pinned.discard(model_id)
-            self._registered_ts.pop(model_id, None)
             pipeline = self._stream_pipelines.pop(model_id, None)
 
         if drain:
@@ -526,7 +523,7 @@ class ModelManager:
                     continue
 
                 last_used = getattr(b, "last_used_ts", None)
-                registered = self._registered_ts.get(mid)
+                registered = self._loaded_ts.get(mid)
                 unserved_in_grace = (
                     last_used is not None
                     and registered is not None
@@ -537,7 +534,7 @@ class ModelManager:
                 eligible.append((unserved_in_grace, rank_ts, mid))
             protected_mid = max(
                 (mid for flag, _, mid in eligible if flag),
-                key=lambda mid: self._registered_ts[mid],
+                key=lambda mid: self._loaded_ts[mid],
                 default=None,
             )
             evictable = [entry for entry in eligible if entry[2] != protected_mid]
@@ -548,7 +545,6 @@ class ModelManager:
                 if backend is None:
                     continue
                 self._pinned.discard(mid)
-                self._registered_ts.pop(mid, None)
                 popped.append((mid, backend, self._stream_pipelines.pop(mid, None)))
             return popped
 
