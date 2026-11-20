@@ -15,6 +15,12 @@ instance, enforced via structured outputs and decoded into RLE-masked
 The image is sent at its original resolution for this task - pre-downscaling
 the upload measurably hurt mask quality on GPT-6 Astra, the model the task
 defaults to.
+
+Adds the ``oriented-object-detection`` task: one rotated rectangle per object
+(centre, size and angle, in absolute pixels of the uploaded image), enforced via
+structured outputs and decoded into native oriented ``predictions`` (see
+``vlm_decoding/oriented_detection``). Like ``object-detection`` it uploads the
+downscaled lossless PNG.
 """
 
 import base64
@@ -50,6 +56,15 @@ from roboflow_workflows.core_steps.common.vlm_decoding import (
     decode_vlm_output,
     describe_vlm_prediction_outputs,
 )
+from roboflow_workflows.core_steps.common.vlm_decoding.oriented_detection import (
+    CLASS_HEADING_DESCRIPTION,
+    CLASS_HEADING_EXAMPLE,
+    ORIENTED_OBJECT_DETECTION_TASK,
+    build_oriented_detection_prompt,
+    build_oriented_json_schema,
+    decode_oriented_detections,
+    resolve_class_heading,
+)
 from roboflow_workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from roboflow_workflows.environment import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -60,6 +75,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -419,6 +435,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     "caption",
     "detailed-caption",
     "object-detection",
+    ORIENTED_OBJECT_DETECTION_TASK,
     INSTANCE_SEGMENTATION_TASK,
 ]
 SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
@@ -475,6 +492,19 @@ is set explicitly, this task runs on `{INSTANCE_SEGMENTATION_DEFAULT_MODEL}`,
 the model it was benchmarked with. Like the absolute-coordinate detection
 formats, it provides no confidence scores (`1.0` is assigned).
 
+The `oriented-object-detection` task asks for one rotated rectangle per instance
+of the requested classes: `cx`, `cy`, `length`, `width` and `angle_deg`, in
+absolute pixel coordinates of the uploaded image, enforced via structured
+outputs. `length` is the size along the main axis, `width` the size across it and
+`angle_deg` the clockwise direction of the main axis (0 points right, 90 points
+down). `class_heading` says which classes have a front: for those the main axis
+points toward the front and the angle covers the full circle, for the others it
+follows the long axis. Predictions are native oriented detections
+(`oriented_object_detection_prediction`, the kind of the native oriented model
+block) with `class_heading` completed for every class. The image is downscaled
+and sent as lossless PNG like `object-detection`, `output_classes` apply, and no
+confidence scores are provided (`1.0` is assigned).
+
 ## Version Differences
 
 This version (v7) decodes the model answer inside the block, adding
@@ -482,6 +512,7 @@ This version (v7) decodes the model answer inside the block, adding
 `output` string:
 
 * `predictions` holds object detections for the `object-detection` task,
+native oriented detections for the `oriented-object-detection` task,
 RLE-masked detections for the `instance-segmentation` task and a classification
 prediction for the `classification` / `multi-label-classification` tasks -
 the kind of the output follows the selected task type.
@@ -508,6 +539,7 @@ TASKS_REQUIRING_CLASSES = {
     "classification",
     "multi-label-classification",
     "object-detection",
+    ORIENTED_OBJECT_DETECTION_TASK,
     INSTANCE_SEGMENTATION_TASK,
 }
 
@@ -517,7 +549,12 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 
 TASKS_SUPPORTING_OUTPUT_CLASSES = {
     "object-detection",
+    ORIENTED_OBJECT_DETECTION_TASK,
     INSTANCE_SEGMENTATION_TASK,
+}
+
+TASKS_SUPPORTING_CLASS_HEADING = {
+    ORIENTED_OBJECT_DETECTION_TASK,
 }
 
 
@@ -656,6 +693,21 @@ class BlockManifest(WorkflowBlockManifest):
             },
         )
     )
+    class_heading: Optional[
+        Union[Selector(kind=[DICTIONARY_KIND]), Dict[str, bool]]
+    ] = Field(
+        default=None,
+        description=CLASS_HEADING_DESCRIPTION,
+        examples=[CLASS_HEADING_EXAMPLE, "$inputs.class_heading"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_SUPPORTING_CLASS_HEADING,
+                    "required": False,
+                },
+            },
+        },
+    )
     api_key: Union[
         Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
     ] = Field(
@@ -761,11 +813,18 @@ class BlockManifest(WorkflowBlockManifest):
         if self.output_classes is not None:
             if self.task_type not in TASKS_SUPPORTING_OUTPUT_CLASSES:
                 raise ValueError(
-                    "`output_classes` is only supported for object-detection and "
-                    "instance-segmentation"
+                    "`output_classes` is only supported for object-detection, "
+                    "oriented-object-detection and instance-segmentation"
                 )
             if isinstance(self.classes, list) and isinstance(self.output_classes, list):
                 validate_output_classes(self.classes, self.output_classes)
+        if self.task_type == ORIENTED_OBJECT_DETECTION_TASK and isinstance(
+            self.class_heading, dict
+        ):
+            resolve_class_heading(
+                self.class_heading,
+                labels=self.classes if isinstance(self.classes, list) else [],
+            )
         if (
             self.task_type in TASKS_REQUIRING_OUTPUT_STRUCTURE
             and self.output_structure is None
@@ -871,8 +930,18 @@ class OpenAIBlockV7(WorkflowBlock):
         output_classes: Optional[List[str]] = None,
         api_key: str = "rf_key:account",
         service_tier: Optional[str] = None,
+        class_heading: Optional[Dict[str, bool]] = None,
     ) -> BlockResult:
         resolved_output_classes = validate_output_classes(classes, output_classes)
+        oriented_class_heading = None
+        if task_type == ORIENTED_OBJECT_DETECTION_TASK:
+            if resolved_output_classes is None:
+                raise ValueError(
+                    "`classes` must be provided for oriented-object-detection"
+                )
+            oriented_class_heading = resolve_class_heading(
+                class_heading, labels=resolved_output_classes
+            )
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_openai_prompting(
             platform_client=self._platform_client,
@@ -891,6 +960,7 @@ class OpenAIBlockV7(WorkflowBlock):
             temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
             service_tier=service_tier,
+            class_heading=oriented_class_heading,
         )
         box_format = get_detection_box_format(model_version)
         results = []
@@ -899,16 +969,26 @@ class OpenAIBlockV7(WorkflowBlock):
             upload_width, upload_height = detection_upload_dimensions(
                 image=image, task_type=task_type, box_format=box_format
             )
-            error_status, predictions = decode_vlm_output(
-                task_type=task_type,
-                raw_output=content,
-                image=image,
-                classes=resolved_output_classes,
-                inference_id=inference_id,
-                box_format=box_format,
-                upload_width=upload_width,
-                upload_height=upload_height,
-            )
+            if task_type == ORIENTED_OBJECT_DETECTION_TASK:
+                error_status, predictions = decode_oriented_detections(
+                    content,
+                    image=image,
+                    labels=resolved_output_classes,
+                    class_heading=oriented_class_heading,
+                    upload_width=upload_width,
+                    upload_height=upload_height,
+                )
+            else:
+                error_status, predictions = decode_vlm_output(
+                    task_type=task_type,
+                    raw_output=content,
+                    image=image,
+                    classes=resolved_output_classes,
+                    inference_id=inference_id,
+                    box_format=box_format,
+                    upload_width=upload_width,
+                    upload_height=upload_height,
+                )
             results.append(
                 {
                     "output": content,
@@ -932,8 +1012,9 @@ def detection_upload_dimensions(
 
     The absolute-pixel contracts return coordinates of the uploaded image, so
     decoding has to repeat what ``encode_image_for_task`` did: the detection
-    downscale, or nothing for segmentation, which uploads the original. The
-    normalized detection contract is resolution independent and needs nothing.
+    downscale (also used by oriented detection, whatever the box format), or
+    nothing for segmentation, which uploads the original. The normalized
+    detection contract is resolution independent and needs nothing.
 
     Args:
         image: Workflow image passed to the block.
@@ -947,6 +1028,9 @@ def detection_upload_dimensions(
     if task_type == INSTANCE_SEGMENTATION_TASK:
         height, width = image.numpy_image.shape[:2]
         return width, height
+    if task_type == ORIENTED_OBJECT_DETECTION_TASK:
+        height, width = image.numpy_image.shape[:2]
+        return scale_dimensions_to_max_edge(width, height, DETECTION_MAX_EDGE_PIXELS)
     if task_type != "object-detection" or box_format != ABSOLUTE_BOX_FORMAT:
         return None, None
     height, width = image.numpy_image.shape[:2]
@@ -970,6 +1054,7 @@ def run_openai_prompting(
     temperature: Optional[float],
     max_concurrent_requests: Optional[int],
     service_tier: Optional[str] = None,
+    class_heading: Optional[Dict[str, bool]] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
@@ -995,6 +1080,8 @@ def run_openai_prompting(
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent OpenAI requests.
         service_tier: OpenAI service tier, omitted from the request when ``None``.
+        class_heading: Whether each class has a front, for the oriented
+            detection task.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples, one per input
@@ -1021,6 +1108,7 @@ def run_openai_prompting(
             image_width=image_width,
             image_height=image_height,
             model_version=model_version,
+            class_heading=class_heading,
         )
         openai_prompts.append(generated_prompt)
     return execute_openai_requests(
@@ -1042,12 +1130,12 @@ def encode_image_for_task(
 ) -> Tuple[str, int, int]:
     """Encode an image as base64 using task-appropriate preprocessing.
 
-    The `object-detection` task mirrors the preprocessing used for detection
-    benchmarks: the image is downscaled so its longest edge does not exceed
-    ``DETECTION_MAX_EDGE_PIXELS`` (aspect ratio preserved, never upscaled) and
-    encoded as lossless PNG. All other tasks - `instance-segmentation`
-    deliberately included, see the module docstring - send the image unchanged
-    as JPEG.
+    The `object-detection` and `oriented-object-detection` tasks mirror the
+    preprocessing used for detection benchmarks: the image is downscaled so its
+    longest edge does not exceed ``DETECTION_MAX_EDGE_PIXELS`` (aspect ratio
+    preserved, never upscaled) and encoded as lossless PNG. All other tasks -
+    `instance-segmentation` deliberately included, see the module docstring -
+    send the image unchanged as JPEG.
 
     Args:
         image: BGR image to be encoded.
@@ -1057,7 +1145,7 @@ def encode_image_for_task(
         Tuple of the base64-encoded image payload (without a data URL prefix)
         and the ``(width, height)`` of the encoded image.
     """
-    if task_type == "object-detection":
+    if task_type in ("object-detection", ORIENTED_OBJECT_DETECTION_TASK):
         encoded_image = _downscale_image_to_max_edge(
             image, max_edge=DETECTION_MAX_EDGE_PIXELS
         )
@@ -1872,6 +1960,76 @@ def prepare_instance_segmentation_prompt(
     }
 
 
+def prepare_oriented_object_detection_prompt(
+    base64_image: str,
+    classes: List[str],
+    image_width: int,
+    image_height: int,
+    image_detail: str,
+    class_heading: Dict[str, bool],
+    output_classes: Optional[List[str]] = None,
+    **kwargs,
+) -> dict:
+    """Build the oriented-object-detection request.
+
+    One contract for every model: the shared absolute-pixel rectangle prompt
+    (``build_oriented_detection_prompt``) with the ``{"oriented_detections":
+    [...]}`` wrapper enforced via structured outputs, and ``label`` constrained
+    to the output labels. The image is the downscaled lossless PNG the
+    detection task uploads, so the prompted frame is the encoded frame.
+
+    Args:
+        base64_image: Base64-encoded PNG of the (possibly downscaled) image.
+        classes: Visual prompts describing the classes to detect.
+        image_width: Width of the encoded image in pixels.
+        image_height: Height of the encoded image in pixels.
+        image_detail: Requested image detail level.
+        class_heading: Whether each output label has a front, as
+            ``resolve_class_heading`` returns it.
+        output_classes: Optional stable labels paired by position with ``classes``.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``input`` and structured-output ``text`` keys.
+    """
+    resolved_output_classes = validate_output_classes(classes, output_classes)
+    if resolved_output_classes is None:
+        raise ValueError("`classes` must be provided for oriented-object-detection")
+    _, descriptions = serialise_detection_classes(classes, output_classes)
+    prompt_text = (
+        build_oriented_detection_prompt(
+            resolved_output_classes,
+            class_heading=class_heading,
+            upload_width=image_width,
+            upload_height=image_height,
+        )
+        + descriptions
+    )
+    return {
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/png;base64,{base64_image}",
+                        "detail": image_detail,
+                    },
+                    {"type": "input_text", "text": prompt_text},
+                ],
+            }
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "oriented_detections",
+                "strict": True,
+                "schema": build_oriented_json_schema(resolved_output_classes),
+            }
+        },
+    }
+
+
 def _get_openai_client(api_key: str):
     client = _openai_client_cache.get(api_key)
     if client is None:
@@ -1890,6 +2048,7 @@ PROMPT_BUILDERS = {
     "multi-label-classification": prepare_multi_label_classification_prompt,
     "structured-answering": prepare_structured_answering_prompt,
     "object-detection": prepare_object_detection_prompt,
+    ORIENTED_OBJECT_DETECTION_TASK: prepare_oriented_object_detection_prompt,
     INSTANCE_SEGMENTATION_TASK: prepare_instance_segmentation_prompt,
 }
 

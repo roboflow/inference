@@ -20,6 +20,10 @@ for contributor and maintainer responsibilities.
 
 - Add native `oriented_object_detection_prediction` with original-image float geometry and frozen class heading semantics. Native model, visualization, row filters, combination, crop offsets and serialization retain ordered fronts in NumPy and tensor carriers. Projective transforms retain ordered quadrilaterals instead of silently fitting new rectangle annotations.
 
+### Added
+
+- Google Gemini v6 (`roboflow_core/google_gemini@v6`) and OpenAI v7 (`roboflow_core/open_ai@v7`) gain an `oriented-object-detection` task. It takes `classes` (OpenAI also `output_classes`) and a new `class_heading` input, a mapping of class name to whether the class has a front. A strict response schema has the model return one rotated rectangle per instance as `cx`, `cy`, `length`, `width` and `angle_deg` (clockwise direction of the main axis), in absolute pixels of the uploaded image: the downscaled PNG that `object-detection` uploads for OpenAI, the original JPEG for Gemini. `predictions` are native `oriented_object_detection_prediction` detections, with ordered corners, a front flag per row and the `class_heading` completed for every class, so Oriented Box Visualization and the native serializer apply to them. A class with a front keeps a full-circle angle; a class without one is written with its longer side first and an angle in half a turn. Like the other absolute-coordinate formats, detections get confidence `1.0`. Each side is scaled back by the factor of its own axis, since an upload's size is rounded per axis, and an entry whose box collapses (a side that vanishes next to a large coordinate) is skipped like a malformed one. Gemini rejects `google_code_execution` for this task.
+
 ### Fixed
 
 - Workflows' standalone image codec now reports non-ASCII base64 payloads as

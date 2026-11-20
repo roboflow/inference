@@ -7,16 +7,19 @@ the block from Gemini's native ``yxyx_0_1000`` boxes.
 """
 
 import json
-from typing import List, Optional
+import math
+from typing import Dict, List, Optional
 from unittest.mock import patch
 
 import numpy as np
 import pytest
+from roboflow_workflows.core_steps.common.oriented import serialise_native_obb
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     DETECTION_BOX_FORMAT,
     BlockManifest,
     GoogleGeminiBlockV6,
     prepare_object_detection_prompt,
+    prepare_oriented_object_detection_prompt,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -29,6 +32,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 
@@ -73,6 +77,7 @@ def _run_block(
     classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
     model_version: str = "gemini-2.5-pro",
+    class_heading: Optional[Dict[str, bool]] = None,
 ) -> dict:
     block = GoogleGeminiBlockV6(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
@@ -90,6 +95,7 @@ def _run_block(
             google_code_execution=None,
             max_concurrent_requests=None,
             api_key="google-key",
+            class_heading=class_heading,
         )
     assert len(results) == 1
     return results[0]
@@ -122,6 +128,7 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
         RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
@@ -135,6 +142,10 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     "task_type, expected_kind",
     [
         ("object-detection", [OBJECT_DETECTION_PREDICTION_KIND]),
+        (
+            "oriented-object-detection",
+            [ORIENTED_OBJECT_DETECTION_PREDICTION_KIND],
+        ),
         ("classification", [CLASSIFICATION_PREDICTION_KIND]),
         ("multi-label-classification", [CLASSIFICATION_PREDICTION_KIND]),
     ],
@@ -489,3 +500,263 @@ def test_segmentation_runtime_rejects_resolved_other_model() -> None:
             image=_build_image(),
             classes=["ring"],
         )
+
+
+ORIENTED_OUTPUT = json.dumps(
+    {
+        "oriented_detections": [
+            {
+                "label": "cat",
+                "cx": 400.0,
+                "cy": 200.0,
+                "length": 300.0,
+                "width": 100.0,
+                "angle_deg": -60.0,
+            }
+        ]
+    }
+)
+
+
+def test_manifest_accepts_oriented_object_detection_with_class_heading() -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/google_gemini@v6",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "oriented-object-detection",
+            "classes": ["forklift", "scissor-lift"],
+            "class_heading": {"forklift": True, "scissor-lift": False},
+        }
+    )
+
+    # then
+    assert result.task_type == "oriented-object-detection"
+    assert result.class_heading == {"forklift": True, "scissor-lift": False}
+
+
+def test_manifest_rejects_a_class_heading_that_is_not_class_to_boolean() -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat"],
+                "class_heading": {"cat": "front"},
+            }
+        )
+
+
+def test_manifest_rejects_code_execution_for_oriented_object_detection() -> None:
+    with pytest.raises(ValueError, match="google_code_execution"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat"],
+                "google_code_execution": True,
+            }
+        )
+
+
+def test_oriented_object_detection_prompt_sends_the_image_and_a_response_schema() -> (
+    None
+):
+    # when
+    prompt = prepare_oriented_object_detection_prompt(
+        base64_image="base64-image",
+        classes=["cat", "dog"],
+        class_heading={"cat": True, "dog": False},
+        image_width=800,
+        image_height=400,
+        model_version="gemini-2.5-pro",
+        temperature=None,
+        thinking_level=None,
+        max_tokens=None,
+    )
+
+    # then
+    image_part, text_part = prompt["contents"]["parts"]
+    assert image_part == {
+        "inline_data": {"mime_type": "image/jpeg", "data": "base64-image"}
+    }
+    assert "the image is 800x400 pixels" in text_part["text"]
+    assert "Classes with a front: cat." in text_part["text"]
+    assert "Classes without a front: dog." in text_part["text"]
+    generation_config = prompt["generationConfig"]
+    assert generation_config["response_mime_type"] == "application/json"
+    item = generation_config["response_schema"]["properties"]["oriented_detections"][
+        "items"
+    ]
+    assert item["properties"]["label"]["enum"] == ["cat", "dog"]
+
+
+def test_run_decodes_oriented_object_detection_into_original_image_pixels() -> None:
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=ORIENTED_OUTPUT,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then: the upload is the original image, so the geometry is kept as answered
+    assert result["error_status"] is False
+    native = serialise_native_obb(result["predictions"])
+    assert native["class_heading"] == {"cat": True, "dog": False}
+    assert native["image"] == {"width": IMAGE_WIDTH, "height": IMAGE_HEIGHT}
+    (row,) = native["predictions"]
+    assert row["obb"] == pytest.approx([400.0, 200.0, 300.0, 100.0, math.radians(-60)])
+    assert row["class"] == "cat"
+    assert row["heading"] is True
+
+
+def test_run_prompts_oriented_object_detection_with_the_image_size_and_heading() -> (
+    None
+):
+    # given
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(ORIENTED_OUTPUT, 11, 3)]
+        block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat", "dog"],
+            model_version="gemini-2.5-pro",
+            max_tokens=None,
+            temperature=None,
+            thinking_level=None,
+            google_code_execution=None,
+            max_concurrent_requests=None,
+            api_key="google-key",
+            class_heading={"dog": True},
+        )
+
+    # then
+    (prompt,) = mock_execute.call_args[1]["gemini_prompts"]
+    text = prompt["contents"]["parts"][1]["text"]
+    assert f"the image is {IMAGE_WIDTH}x{IMAGE_HEIGHT} pixels" in text
+    assert "Classes with a front: dog." in text
+    assert "Classes without a front: cat." in text
+
+
+def test_run_rejects_code_execution_for_oriented_object_detection() -> None:
+    # given
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM), pytest.raises(
+        ValueError, match="Code execution"
+    ):
+        block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat"],
+            model_version="gemini-2.5-pro",
+            max_tokens=None,
+            temperature=None,
+            thinking_level=None,
+            google_code_execution=True,
+            max_concurrent_requests=None,
+            api_key="google-key",
+        )
+
+
+def test_run_requires_classes_for_oriented_object_detection() -> None:
+    with pytest.raises(ValueError, match="`classes` must be provided"):
+        _run_block(
+            task_type="oriented-object-detection",
+            raw_output=ORIENTED_OUTPUT,
+            image=_build_image(),
+            classes=None,
+        )
+
+
+def test_run_skips_an_oriented_box_that_collapses_and_keeps_the_others() -> None:
+    # given: the first entry's length vanishes next to its center of 100
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                },
+                json.loads(ORIENTED_OUTPUT)["oriented_detections"][0],
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["obb"] == pytest.approx([400.0, 200.0, 300.0, 100.0, math.radians(-60)])
+
+
+def test_run_reports_an_error_when_every_oriented_box_collapses() -> None:
+    # given
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+def test_run_reports_an_error_for_an_oriented_answer_in_another_contract() -> None:
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=DETECTION_OUTPUT,
+        image=_build_image(),
+        classes=["cat"],
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None

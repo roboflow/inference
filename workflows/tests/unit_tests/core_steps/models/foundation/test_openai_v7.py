@@ -6,13 +6,16 @@ The v5/v6 behavior suites live in ``test_openai_v5.py`` and
 each of the three per-model detection prompt styles.
 """
 
+import base64
 import json
-from typing import List, Optional
+import math
+from typing import Dict, List, Optional
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.oriented import serialise_native_obb
 from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     INSTANCE_SEGMENTATION_DEFAULT_MODEL,
     STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
@@ -25,6 +28,7 @@ from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     get_detection_box_format,
     prepare_instance_segmentation_prompt,
     prepare_object_detection_prompt,
+    prepare_oriented_object_detection_prompt,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -37,6 +41,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 
@@ -99,6 +104,7 @@ def _run_block(
     classes: Optional[List[str]] = None,
     output_classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
+    class_heading: Optional[Dict[str, bool]] = None,
 ) -> dict:
     block = OpenAIBlockV7(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
@@ -117,6 +123,7 @@ def _run_block(
             temperature=None,
             max_concurrent_requests=None,
             api_key="sk-test",
+            class_heading=class_heading,
         )
     assert len(results) == 1
     return results[0]
@@ -179,6 +186,7 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
         RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
@@ -192,6 +200,10 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     "task_type, expected_kind",
     [
         ("object-detection", [OBJECT_DETECTION_PREDICTION_KIND]),
+        (
+            "oriented-object-detection",
+            [ORIENTED_OBJECT_DETECTION_PREDICTION_KIND],
+        ),
         (
             "instance-segmentation",
             [
@@ -243,6 +255,7 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
         RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
@@ -770,3 +783,350 @@ def test_run_hands_the_service_tier_to_every_request() -> None:
         )
 
     assert mock_execute.call_args[1]["service_tier"] == "ultrafast"
+
+
+ORIENTED_OUTPUT = json.dumps(
+    {
+        "oriented_detections": [
+            {
+                "label": "cat",
+                "cx": 1024.0,
+                "cy": 512.0,
+                "length": 600.0,
+                "width": 200.0,
+                "angle_deg": 30.0,
+            }
+        ]
+    }
+)
+
+
+def test_manifest_accepts_oriented_object_detection_with_class_heading() -> None:
+    # given
+    raw_manifest = {
+        "type": "roboflow_core/open_ai@v7",
+        "name": "open_ai",
+        "images": "$inputs.image",
+        "task_type": "oriented-object-detection",
+        "classes": ["a forklift truck", "a scissor lift"],
+        "output_classes": ["forklift", "scissor-lift"],
+        "class_heading": {"forklift": True, "scissor-lift": False},
+    }
+
+    # when
+    result = BlockManifest.model_validate(raw_manifest)
+
+    # then
+    assert result.task_type == "oriented-object-detection"
+    assert result.output_classes == ["forklift", "scissor-lift"]
+    assert result.class_heading == {"forklift": True, "scissor-lift": False}
+
+
+def test_manifest_accepts_class_heading_from_a_selector() -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/open_ai@v7",
+            "name": "open_ai",
+            "images": "$inputs.image",
+            "task_type": "oriented-object-detection",
+            "classes": "$inputs.classes",
+            "class_heading": "$inputs.class_heading",
+        }
+    )
+
+    # then
+    assert result.class_heading == "$inputs.class_heading"
+
+
+def test_manifest_rejects_a_class_heading_that_is_not_class_to_boolean() -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat"],
+                "class_heading": {"cat": "front"},
+            }
+        )
+
+
+def test_manifest_requires_classes_for_oriented_object_detection() -> None:
+    with pytest.raises(ValueError, match="`classes` parameter required"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+            }
+        )
+
+
+def test_oriented_object_detection_prompt_asks_for_strict_structured_rectangles() -> (
+    None
+):
+    # when
+    prompt = prepare_oriented_object_detection_prompt(
+        base64_image="base64-image",
+        classes=["forklift", "scissor-lift"],
+        image_width=2048,
+        image_height=1024,
+        image_detail="high",
+        class_heading={"forklift": True, "scissor-lift": False},
+    )
+
+    # then
+    image_part, text_part = prompt["input"][0]["content"]
+    assert image_part == {
+        "type": "input_image",
+        "image_url": "data:image/png;base64,base64-image",
+        "detail": "high",
+    }
+    assert "the image is 2048x1024 pixels" in text_part["text"]
+    assert "Classes with a front: forklift." in text_part["text"]
+    assert "Classes without a front: scissor-lift." in text_part["text"]
+    output_format = prompt["text"]["format"]
+    assert output_format["type"] == "json_schema"
+    assert output_format["strict"] is True
+    assert output_format["name"] == "oriented_detections"
+    item = output_format["schema"]["properties"]["oriented_detections"]["items"]
+    assert item["properties"]["label"]["enum"] == ["forklift", "scissor-lift"]
+
+
+def test_oriented_object_detection_prompt_pairs_visual_prompts_with_output_labels() -> (
+    None
+):
+    # when
+    prompt = prepare_oriented_object_detection_prompt(
+        base64_image="base64-image",
+        classes=["a forklift truck", "a scissor lift"],
+        output_classes=["forklift", "scissor-lift"],
+        image_width=10,
+        image_height=10,
+        image_detail="auto",
+        class_heading={"forklift": True, "scissor-lift": False},
+    )
+
+    # then
+    text = prompt["input"][0]["content"][1]["text"]
+    assert "Only use these labels: forklift, scissor-lift" in text
+    assert "Use these visual descriptions to identify each label" in text
+    assert "a forklift truck" in text
+    item = prompt["text"]["format"]["schema"]["properties"]["oriented_detections"][
+        "items"
+    ]
+    assert item["properties"]["label"]["enum"] == ["forklift", "scissor-lift"]
+
+
+@pytest.mark.parametrize("model_version", ["gpt-5.1", "gpt-6-astra"])
+def test_oriented_object_detection_uploads_the_downscaled_png_whatever_the_model(
+    model_version: str,
+) -> None:
+    # given
+    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
+
+    # when
+    encoded, width, height = encode_image_for_task(
+        image.numpy_image, task_type="oriented-object-detection"
+    )
+    upload_dimensions = detection_upload_dimensions(
+        image=image,
+        task_type="oriented-object-detection",
+        box_format=get_detection_box_format(model_version),
+    )
+
+    # then
+    assert (width, height) == (2048, 1024)
+    assert base64.b64decode(encoded)[:8] == b"\x89PNG\r\n\x1a\n"
+    assert upload_dimensions == (2048, 1024)
+
+
+def test_run_decodes_oriented_object_detection_into_original_image_pixels() -> None:
+    # given: a 3200x1600 image uploads at 2048x1024, so every length grows by 1.5625
+    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=ORIENTED_OUTPUT,
+        image=image,
+        classes=["cat"],
+        class_heading={"cat": True},
+        model_version="gpt-6-astra",
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["output"] == ORIENTED_OUTPUT
+    native = serialise_native_obb(result["predictions"])
+    assert native["class_heading"] == {"cat": True}
+    assert native["image"] == {
+        "width": DETECTION_IMAGE_WIDTH,
+        "height": DETECTION_IMAGE_HEIGHT,
+    }
+    (row,) = native["predictions"]
+    assert row["obb"] == pytest.approx([1600.0, 800.0, 937.5, 312.5, math.radians(30)])
+    assert row["class"] == "cat"
+    assert row["class_id"] == 0
+    assert row["heading"] is True
+
+
+def test_run_keeps_the_size_of_an_oriented_box_on_a_very_elongated_image() -> None:
+    # given: a 10000x100 image uploads at 2048x20, so its axes scale by 4.8828 and
+    # 5.0 and a horizontal box has to come back 5000 x 50
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 1024.0,
+                    "cy": 10.0,
+                    "length": 1024.0,
+                    "width": 10.0,
+                    "angle_deg": 0.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(width=10000, height=100),
+        classes=["cat"],
+        class_heading={"cat": True},
+        model_version="gpt-6-astra",
+    )
+
+    # then
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["obb"] == pytest.approx([5000.0, 50.0, 5000.0, 50.0, 0.0])
+
+
+def test_run_skips_an_oriented_box_that_collapses_and_keeps_the_others() -> None:
+    # given: the first entry's length vanishes next to its center of 100
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                },
+                json.loads(ORIENTED_OUTPUT)["oriented_detections"][0],
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT),
+        classes=["cat"],
+        class_heading={"cat": True},
+        model_version="gpt-6-astra",
+    )
+
+    # then
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["obb"] == pytest.approx([1600.0, 800.0, 937.5, 312.5, math.radians(30)])
+
+
+def test_run_reports_an_error_when_every_oriented_box_collapses() -> None:
+    # given
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT),
+        classes=["cat"],
+        class_heading={"cat": True},
+        model_version="gpt-6-astra",
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+def test_run_prompts_oriented_object_detection_with_the_resolved_class_heading() -> (
+    None
+):
+    # given
+    block = OpenAIBlockV7(api_key="rf-key")
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(ORIENTED_OUTPUT, 11, 3)]
+        block.run(
+            images=Batch(content=[_build_image(width=64, height=32)], indices=[(0,)]),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat", "dog"],
+            output_classes=None,
+            model_version="gpt-6-astra",
+            reasoning_effort=None,
+            image_detail="high",
+            max_tokens=None,
+            temperature=None,
+            max_concurrent_requests=None,
+            api_key="sk-test",
+            class_heading={"cat": True, "unrelated": True},
+        )
+
+    # then: names outside `classes` are ignored, missing ones have no front
+    (prompt,) = mock_execute.call_args[1]["openai_prompts"]
+    text = prompt["input"][0]["content"][1]["text"]
+    assert "the image is 64x32 pixels" in text
+    assert "Classes with a front: cat." in text
+    assert "Classes without a front: dog." in text
+
+
+def test_run_requires_classes_for_oriented_object_detection() -> None:
+    with pytest.raises(ValueError, match="`classes` must be provided"):
+        _run_block(
+            task_type="oriented-object-detection",
+            raw_output=ORIENTED_OUTPUT,
+            image=_build_image(width=64, height=64),
+            classes=None,
+        )
+
+
+def test_run_reports_an_error_for_an_oriented_answer_in_another_contract() -> None:
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=STRUCTURED_ABSOLUTE_OUTPUT,
+        image=_build_image(width=64, height=64),
+        classes=["cat"],
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
