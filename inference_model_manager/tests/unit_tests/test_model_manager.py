@@ -1455,6 +1455,17 @@ class TestUnservedModelProtection:
         self._load(mm, clock, "new")
         assert set(mm.loaded_models) == {"served", "new"}
 
+    def test_memory_pressure_takes_served_first_then_unserved(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 0)
+        for model_id in ("a", "b", "x", "y"):
+            self._load(mm, clock, model_id)
+        self._serve(backends, clock, "a")
+        self._serve(backends, clock, "b")
+        first = mm._select_and_pop_victims(incoming="new", pressure=True, count=3)
+        second = mm._select_and_pop_victims(incoming="new", pressure=True, count=3)
+        assert [victim for victim, _, _ in first] == ["x", "a", "b"]
+        assert [victim for victim, _, _ in second] == ["y"]
+
     def test_unserved_model_evicted_when_no_other_candidate(self, monkeypatch):
         mm, backends, clock = self._mm(monkeypatch, 2)
         self._load(mm, clock, "keep", pinned=True)
