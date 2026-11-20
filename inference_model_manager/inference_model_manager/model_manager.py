@@ -6,6 +6,7 @@ import gc
 import logging
 import threading
 import time
+from collections.abc import Iterator, MutableMapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
@@ -162,6 +163,36 @@ def _reset_entry_point_backends_for_tests() -> None:
         _ENTRY_POINT_BACKENDS_LOADED = False
 
 
+class _BackendRegistry(MutableMapping[str, Backend]):
+    """Keep load timestamps with registrations, including subclass insertions.
+
+    Mutations use the manager's lifecycle lock, just like the original dict.
+    MutableMapping routes pop, clear and update through these mutation hooks.
+    """
+
+    def __init__(self, loaded_ts: Dict[str, float]) -> None:
+        self._data: Dict[str, Backend] = {}
+        self._loaded_ts = loaded_ts
+
+    def __getitem__(self, model_id: str) -> Backend:
+        return self._data[model_id]
+
+    def __setitem__(self, model_id: str, backend: Backend) -> None:
+        loaded_ts = time.monotonic()
+        self._data[model_id] = backend
+        self._loaded_ts[model_id] = loaded_ts
+
+    def __delitem__(self, model_id: str) -> None:
+        del self._data[model_id]
+        self._loaded_ts.pop(model_id, None)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 class ModelManager:
     """Unified model management layer.
 
@@ -189,8 +220,8 @@ class ModelManager:
     """
 
     def __init__(self) -> None:
-        self._backends: Dict[str, Backend] = {}
         self._loaded_ts: Dict[str, float] = {}
+        self._backends = _BackendRegistry(self._loaded_ts)
         self._lifecycle_lock = threading.Lock()
         self.torchscript_state_global_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
@@ -297,7 +328,6 @@ class ModelManager:
                 lazy_register_by_names(b._model_mro_names)
             with self._lifecycle_lock:
                 self._backends[model_id] = b
-                self._loaded_ts[model_id] = time.monotonic()
                 if pinned:
                     self._pinned.add(model_id)
         finally:
@@ -386,7 +416,6 @@ class ModelManager:
             backend = self._backends.pop(model_id, None)
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
-            self._loaded_ts.pop(model_id, None)
             self._pinned.discard(model_id)
             pipeline = self._stream_pipelines.pop(model_id, None)
 
@@ -479,7 +508,6 @@ class ModelManager:
                 if backend is None:
                     continue
                 self._pinned.discard(mid)
-                self._loaded_ts.pop(mid, None)
                 popped.append((mid, backend, self._stream_pipelines.pop(mid, None)))
             return popped
 

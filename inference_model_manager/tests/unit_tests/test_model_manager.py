@@ -1211,6 +1211,42 @@ class TestFreshLoadEvictionRank:
         mm.unload("b")
         assert set(mm._loaded_ts) == {"c"}
 
+    def test_subclass_registered_head_survives_older_ordinary_model(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        ticks = iter([10.0, 20.0, 30.0])
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: next(ticks))
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="")
+
+        # ServingModelManager.load_shared_head registers directly under this lock.
+        with mm._lifecycle_lock:
+            mm._backends["z"] = FakeBackend("z")
+
+        mm.load("m", api_key="")
+        assert set(mm.loaded_models) == {"z", "m"}
+        assert mm._loaded_ts == {"z": 20.0, "m": 30.0}
+
+    def test_direct_removal_and_reload_reset_timestamp(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        ticks = iter([10.0, 20.0, 30.0])
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: next(ticks))
+        mm, _ = self._mm_at_cap(monkeypatch, 0)
+        with mm._lifecycle_lock:
+            mm._backends["z"] = FakeBackend("z")
+            mm._backends.pop("z")
+            assert mm._loaded_ts == {}
+            mm._backends["a"] = FakeBackend("a")
+            mm._backends["z"] = FakeBackend("z")
+
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["a"]
+        assert mm._loaded_ts == {"z": 30.0}
+        with mm._lifecycle_lock:
+            mm._backends.clear()
+        assert mm._loaded_ts == {}
+
 
 class TestEvictionFailureSafety:
     def test_eviction_failure_does_not_leak_loading_id(self):
