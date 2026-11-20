@@ -1,7 +1,6 @@
 import json
 import os.path
 import subprocess
-from functools import lru_cache
 from typing import Dict, Generator, Iterable, List, Optional, TypeVar, Union
 
 import supervision as sv
@@ -186,53 +185,31 @@ def ensure_target_directory_is_empty(
 
 
 def get_all_images_in_directory(input_directory: str) -> List[str]:
-    file_system_is_case_sensitive = _is_file_system_case_sensitive()
-    if file_system_is_case_sensitive:
-        return [
+    # Extension patterns can discover a path more than once on Windows. Keep
+    # its original spelling so case-sensitive filesystems can still read it.
+    return list(
+        dict.fromkeys(
             path.as_posix()
             for path in sv.list_files_with_extensions(
                 directory=input_directory,
                 extensions=IMAGES_EXTENSIONS,
             )
-        ]
-    return list(
-        {
-            path.as_posix().lower()
-            for path in sv.list_files_with_extensions(
-                directory=input_directory,
-                extensions=IMAGES_EXTENSIONS,
-            )
-        }
+        )
     )
 
 
 def get_all_videos_in_directory(input_directory: str) -> List[str]:
-    file_system_is_case_sensitive = _is_file_system_case_sensitive()
-    if file_system_is_case_sensitive:
-        return [
+    # Extension patterns can discover a path more than once on Windows. Keep
+    # its original spelling so case-sensitive filesystems can still read it.
+    return list(
+        dict.fromkeys(
             path.as_posix()
             for path in sv.list_files_with_extensions(
                 directory=input_directory,
                 extensions=VIDEOS_EXTENSIONS,
             )
-        ]
-    return list(
-        {
-            path.as_posix().lower()
-            for path in sv.list_files_with_extensions(
-                directory=input_directory,
-                extensions=VIDEOS_EXTENSIONS,
-            )
-        }
+        )
     )
-
-
-@lru_cache()
-def _is_file_system_case_sensitive() -> bool:
-    fs_is_case_insensitive = os.path.exists(__file__.upper()) and os.path.exists(
-        __file__.lower()
-    )
-    return not fs_is_case_insensitive
 
 
 def create_batches(
