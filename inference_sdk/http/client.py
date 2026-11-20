@@ -2919,6 +2919,33 @@ class InferenceHTTPClient:
         return url, payload
 
     @wrap_errors
+    def infer_from_owlv2(
+        self,
+        inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str,
+        text_prompts: List[str],
+        confidence: Optional[float] = None,
+    ) -> List[dict]:
+        """Return bounding boxes for text queries using an uploaded OWLv2 detector."""
+        payload = self.__initialise_payload()
+        payload.update({"model_id": model_id, "text": text_prompts})
+        if confidence is not None:
+            payload["confidence"] = confidence
+        requests_data = prepare_requests_data(
+            url=self.__wrap_url_with_api_key(f"{self.__api_url}/owlv2/infer"),
+            encoded_inference_inputs=load_static_inference_input(
+                inference_input=inference_input,
+            ),
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
+        )
+        responses = self._execute_infer_from_api_request(requests_data)
+        return [response.json() for response in responses]
+
+    @wrap_errors
     def infer_from_yolo_world(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],

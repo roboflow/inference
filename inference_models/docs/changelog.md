@@ -41,6 +41,16 @@
   former `500` failed after one attempt. Lower `VLLM_REQUEST_TIMEOUT_S` where
   that wait is too long.
 
+### Fixed
+
+- OWLv2 (`OWLv2HF`) raises `ModelInputError` that names each text query longer than the text
+  encoder limit (16 tokens for the released checkpoints). Such queries previously failed in the
+  tokenizer with an unrelated tensor error.
+- OWLv2 (`OWLv2HF`) text-query inference accepts `input_color_format`. With `"bgr"`, `infer`
+  converts the images to RGB before the processor reads them. Servers that declare the colour
+  order of decoded images previously sent BGR arrays that the model read as RGB. The default
+  (`None`) keeps the previous behaviour, and the reference-example methods are unchanged.
+
 ## `0.39.9`
 
 ### Changed

@@ -1,8 +1,33 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
+from PIL import Image
 
 from inference.models.owlv2 import owlv2_inference_models, rf_instant_inference_models
+
+
+def test_text_queries_use_rgb_and_return_the_requested_label():
+    adapter = owlv2_inference_models.InferenceModelsOwlV2Adapter.__new__(
+        owlv2_inference_models.InferenceModelsOwlV2Adapter
+    )
+    adapter._model = MagicMock()
+    adapter._model.infer.return_value = [
+        owlv2_inference_models.Detections(
+            xyxy=torch.tensor([[0, 0, 2, 1]]),
+            class_id=torch.tensor([1]),
+            confidence=torch.tensor([0.9]),
+        )
+    ]
+    queries = ["bicycle", "bus"]
+    red = Image.new("RGB", (3, 2), "red")
+    response, _ = adapter.infer(image=[red, red], text=queries)
+
+    assert adapter._model.infer.call_count == 2
+    inputs = adapter._model.infer.call_args.kwargs
+    assert inputs["images"][0, 0].tolist() == [255, 0, 0]
+    assert inputs["classes"] == queries
+    assert response.predictions[0].class_name == "bus"
 
 
 @pytest.mark.parametrize("send_to_cpu", [True, False])

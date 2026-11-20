@@ -23,7 +23,7 @@ from inference_models.configuration import (
     INFERENCE_MODELS_OWLV2_DEFAULT_MAX_DETECTIONS,
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
-from inference_models.entities import ImageDimensions
+from inference_models.entities import ColorFormat, ImageDimensions
 from inference_models.errors import ModelInputError
 from inference_models.models.base.types import PreprocessedInputs, PreprocessingMetadata
 from inference_models.models.common.roboflow.pre_processing import (
@@ -236,6 +236,20 @@ class OWLv2HF(
             _ = self.infer(example_image, ["some", "other"])
             self._compiled = True
 
+    def infer(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        classes: Union[str, List[str]],
+        input_color_format: Optional[ColorFormat] = None,
+        **kwargs,
+    ) -> List[Detections]:
+        # The processor reads every image as RGB. `pre_process` does not name
+        # this parameter on purpose: the reference-example methods share it,
+        # and their stored embeddings depend on the colour order they get today.
+        if input_color_format == "bgr":
+            images = _reverse_channels(images)
+        return super().infer(images, classes, **kwargs)
+
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
@@ -251,6 +265,20 @@ class OWLv2HF(
         classes: List[str],
         **kwargs,
     ) -> Owlv2ObjectDetectionOutput:
+        max_tokens = self._model.config.text_config.max_position_embeddings
+        too_long = [
+            query
+            for query, token_ids in zip(
+                classes, self._processor.tokenizer(classes)["input_ids"]
+            )
+            if len(token_ids) > max_tokens
+        ]
+        if too_long:
+            raise ModelInputError(
+                message=f"OWLv2 text queries can have at most {max_tokens} tokens, "
+                f"including the start and end tokens. Shorten these queries: {too_long}",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
         input_ids = self._processor(text=[classes], return_tensors="pt")[
             "input_ids"
         ].to(self._device)
@@ -687,6 +715,17 @@ class OWLv2HF(
         )
         self._owlv2_images_embeddings_cache.save_embeddings(embeddings=embeddings)
         return embeddings
+
+
+def _reverse_channels(
+    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+) -> Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]:
+    if isinstance(images, list):
+        return [_reverse_channels(image) for image in images]
+    elif isinstance(images, np.ndarray):
+        return np.ascontiguousarray(images[..., ::-1])
+    else:
+        return images.flip(-3)
 
 
 def to_corners(box: torch.Tensor) -> torch.Tensor:
