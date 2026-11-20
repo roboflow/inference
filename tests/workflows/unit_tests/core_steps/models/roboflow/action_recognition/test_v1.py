@@ -1669,8 +1669,7 @@ def test_frame_rollback_clears_analyzed_until_frame():
 
 
 def test_last_file_frame_classifies_the_tail_between_scheduled_calls():
-    # Scheduled calls land on 3 and 5. Frame 6 is the last one and sits off
-    # the cadence, so without the tail call its range has no result.
+    # Frame 6 triggers the tail call with samples 3 and 5.
     block, model = _make_block(
         responses=[[], [], [_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]
     )
@@ -1679,10 +1678,31 @@ def test_last_file_frame_classifies_the_tail_between_scheduled_calls():
 
     assert len(model.calls) == 3
     assert results[-2]["analyzed_until_frame"] == 5
-    assert results[-1]["analyzed_until_frame"] == 6
-    assert [entry["class_name"] for entry in _timeline_as_dicts(results[-1])] == [
-        "walk"
-    ]
+    assert results[-1]["analyzed_until_frame"] == 5
+    (action,) = results[-1]["timeline"]
+    assert (action.class_name, action.start_frame_idx, action.end_frame_idx) == (
+        "walk",
+        3,
+        5,
+    )
+
+
+@pytest.mark.parametrize(
+    "supports_observed_duration, expected_mark", [(False, 3), (True, 4)]
+)
+def test_scheduled_call_reports_coverage_without_detections(
+    supports_observed_duration, expected_mark
+):
+    block, model = _make_block()
+    model.supports_observed_duration = supports_observed_duration
+
+    for number in range(1, 5):
+        result = _run(block, _make_frame(number), stride_seconds=0.75)
+
+    assert len(model.calls) == 1
+    assert result["error_status"] == ""
+    assert result["timeline"] == []
+    assert result["analyzed_until_frame"] == expected_mark
 
 
 def test_file_shorter_than_one_stride_still_gets_a_result():
@@ -1696,7 +1716,7 @@ def test_file_shorter_than_one_stride_still_gets_a_result():
     )
 
     assert len(model.calls) == 1
-    assert results[-1]["analyzed_until_frame"] == 6
+    assert results[-1]["analyzed_until_frame"] == 5
     assert len(results[-1]["timeline"]) == 1
 
 

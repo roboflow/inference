@@ -102,10 +102,13 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-analyzed_until_frame is the source index of the last frame that a successful
-classification covered, or null before the first one. An empty timeline after
-it means "not analyzed", not "no action". Failed and skipped windows do not
-advance it. Overlapping windows can still revise ranges before it.
+analyzed_until_frame is the inclusive source-frame index covered by the end
+of the latest successful window, or null before the first success. For models
+like Cosmos that return sampled-frame indices, it is the last sampled frame.
+For models like V-JEPA that use the observed window duration, it is the source
+frame that triggered the call. The mark updates even if no actions are detected.
+Earlier gaps can remain after failed or skipped windows, and overlapping
+windows can still revise earlier predictions.
 
 On a video file that reports its frame count, the last frame can trigger a
 classification before the next scheduled call. This call uses the current
@@ -699,6 +702,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         frames = self._prepare_frames_for_model(
             [sample.frame for sample in bookkeeping.sampled]
         )
+        analyzed_until_frame = bookkeeping.sampled[-1].source_frame_number
         try:
             infer_kwargs = (
                 {"confidence": confidence}
@@ -712,6 +716,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 infer_kwargs["duration_seconds"] = min(
                     duration_seconds, model.video_sampling.window_seconds
                 )
+                analyzed_until_frame = frame_limit - 1
             segments = model.infer(
                 frames=frames,
                 class_names=block_filter,
@@ -750,10 +755,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             sample_stride=sampling_stride,
             frame_limit=frame_limit,
         )
-        if frame_limit is not None:
-            # Only a call that returned moves the mark, so a consumer can tell
-            # "no action" from "not analyzed".
-            bookkeeping.analyzed_until_frame = frame_limit - 1
+        bookkeeping.analyzed_until_frame = analyzed_until_frame
         return ""
 
     @staticmethod
