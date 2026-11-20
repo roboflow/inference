@@ -1133,9 +1133,9 @@ def encode_image_for_task(
     The `object-detection` and `oriented-object-detection` tasks mirror the
     preprocessing used for detection benchmarks: the image is downscaled so its
     longest edge does not exceed ``DETECTION_MAX_EDGE_PIXELS`` (aspect ratio
-    preserved, never upscaled) and encoded as lossless PNG. All other tasks - `instance-segmentation`
-    deliberately included, see the module docstring - send the image unchanged
-    as JPEG.
+    preserved, never upscaled) and encoded as lossless PNG. All other tasks -
+    `instance-segmentation` deliberately included, see the module docstring -
+    send the image unchanged as JPEG.
 
     Args:
         image: BGR image to be encoded.
