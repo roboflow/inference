@@ -293,12 +293,15 @@ derived from the masks. Other Gemini models reject this task.
 
 Keypoint detection takes the skeleton of every class in `keypoint_schema`: its
 keypoint names, the edges between them and, optionally, where each keypoint sits
-on a reference instance. A response schema has Gemini return each instance's
-`box_2d` and one `[y, x]` point per keypoint, normalized to 0-1000, or null for a
-keypoint outside the image. Predictions are keypoint detections: a keypoint the
-model sees gets confidence {VISIBLE_KEYPOINT_CONFIDENCE}, one it marks occluded
-(hidden, its position estimated) {OCCLUDED_KEYPOINT_CONFIDENCE}, and one it could
-not place is left out.
+on a reference instance. Its edges are 0-based indices into the keypoint names,
+while Keypoint Visualization numbers keypoints from 1 in its `edges`, so add 1 to
+each index to draw the skeleton with that block. A response schema has Gemini
+return each instance's `box_2d` and one `[y, x]` point per keypoint, normalized
+to 0-1000, or null for a keypoint outside the image. Predictions are keypoint
+detections: a keypoint the model sees gets confidence
+{VISIBLE_KEYPOINT_CONFIDENCE}, one it marks occluded (hidden, its position
+estimated) {OCCLUDED_KEYPOINT_CONFIDENCE}, and one it could not place is left
+out.
 
 This version (v6) decodes the model answer inside the block, adding
 `predictions`, `error_status` and `inference_id` outputs next to the raw

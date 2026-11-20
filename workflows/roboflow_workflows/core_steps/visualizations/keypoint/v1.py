@@ -16,7 +16,10 @@ from roboflow_workflows.core_steps.visualizations.common.base import (
     VisualizationBlock,
     VisualizationManifest,
 )
-from roboflow_workflows.core_steps.visualizations.common.utils import str_to_color
+from roboflow_workflows.core_steps.visualizations.common.utils import (
+    pad_key_points_to_edges,
+    str_to_color,
+)
 from roboflow_workflows.execution_engine.constants import (
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
 )
@@ -203,7 +206,7 @@ class KeypointManifest(VisualizationManifest):
         },
     )
     edges: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Edge connections between keypoints (edge mode only). List of pairs of keypoint indices (e.g., [(0, 1), (1, 2), ...]) defining which keypoints should be connected with lines. For pose estimation, this typically represents skeleton connections (e.g., connecting joints). Only applies when annotator_type is 'edge'. Required for edge visualization.",
+        description="Edge connections between keypoints (edge mode only). List of pairs of keypoint numbers, counted from 1 in skeleton order (e.g., [(1, 2), (2, 3), ...]), defining which keypoints should be connected with lines. For pose estimation, this typically represents skeleton connections (e.g., connecting joints). Only applies when annotator_type is 'edge'. Required for edge visualization.",
         default=None,
         examples=["$inputs.edges"],
     )
@@ -415,6 +418,8 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         )
 
         keypoints = self.convert_detections_to_keypoints(predictions)
+        if isinstance(annotator, sv.EdgeAnnotator):
+            keypoints = pad_key_points_to_edges(keypoints, edges=annotator.edges)
 
         scene = image.numpy_image
         if copy_image:

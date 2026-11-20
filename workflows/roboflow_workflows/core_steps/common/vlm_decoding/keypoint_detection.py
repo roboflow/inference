@@ -77,7 +77,8 @@ KEYPOINT_SCHEMA_DESCRIPTION = (
     "0-based indices into `keypoints`, and where each keypoint sits on a reference "
     "instance, as (x, y) fractions of its bounding box from the top-left corner (`null` "
     "for a keypoint without a position). `edges` and `template` are optional. Every "
-    "class in `classes` needs a skeleton."
+    "class in `classes` needs a skeleton. Keypoint Visualization numbers keypoints "
+    "from 1 in its `edges`, so add 1 to each index to draw these edges with it."
 )
 KEYPOINT_SCHEMA_EXAMPLE = {
     "license-plate": {
@@ -103,7 +104,7 @@ class KeypointSkeleton(BaseModel):
     edges: Optional[List[Tuple[int, int]]] = Field(
         default=None,
         description="Pairs of connected keypoints, as 0-based indices into "
-        "`keypoints`.",
+        "`keypoints` (Keypoint Visualization's `edges` number keypoints from 1).",
         examples=[[[0, 1], [1, 2], [2, 3], [3, 0]]],
     )
     template: Optional[List[Optional[Tuple[FiniteFloat, FiniteFloat]]]] = Field(

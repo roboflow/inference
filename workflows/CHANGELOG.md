@@ -38,6 +38,16 @@ for contributor and maintainer responsibilities.
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
 
+### Fixed
+
+- Keypoint Visualization (`roboflow_core/keypoint_visualization@v1`) no longer
+  fails the run when its `edges` name a keypoint that no instance has, as when
+  a model left out every keypoint, or the last keypoints of a skeleton, in every
+  instance. Edges to such a keypoint are skipped like edges to any missing
+  keypoint. Its `edges` description now says keypoints are numbered from 1, as
+  supervision requires; `keypoint_schema` edges in the Gemini v6 and OpenAI v7
+  `keypoint-detection` task stay 0-based, and their descriptions say so.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.

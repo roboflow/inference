@@ -539,13 +539,16 @@ formats, it provides no confidence scores (`1.0` is assigned).
 
 The `keypoint-detection` task takes the skeleton of every class in
 `keypoint_schema`: its keypoint names, the edges between them and, optionally,
-where each keypoint sits on a reference instance. Structured outputs have the
-model return each instance's `box_2d` and one
+where each keypoint sits on a reference instance. Its edges are 0-based indices
+into the keypoint names, while Keypoint Visualization numbers keypoints from 1
+in its `edges`, so add 1 to each index to draw the skeleton with that block.
+Structured outputs have the model return each instance's `box_2d` and one
 `{{"x": int, "y": int, "occluded": bool}}` point per keypoint, in absolute pixel
-coordinates of the uploaded image, or null for a keypoint outside the image. Predictions are keypoint detections: a keypoint the
-model sees gets confidence {VISIBLE_KEYPOINT_CONFIDENCE}, one it marks occluded
-(hidden, its position estimated) {OCCLUDED_KEYPOINT_CONFIDENCE}, and one it could
-not place is left out. As for `instance-segmentation`, the image is sent at its
+coordinates of the uploaded image, or null for a keypoint outside the image.
+Predictions are keypoint detections: a keypoint the model sees gets confidence
+{VISIBLE_KEYPOINT_CONFIDENCE}, one it marks occluded (hidden, its position
+estimated) {OCCLUDED_KEYPOINT_CONFIDENCE}, and one it could not place is left
+out. As for `instance-segmentation`, the image is sent at its
 original resolution as JPEG with the `image_detail` hint, and an unset
 `model_version` runs `{KEYPOINT_DETECTION_DEFAULT_MODEL}`.
 

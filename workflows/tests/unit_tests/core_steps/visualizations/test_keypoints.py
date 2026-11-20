@@ -3,6 +3,9 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common.keypoints import MAX_KEYPOINT_SLOTS
+from roboflow_workflows.core_steps.common.utils import (
+    add_inference_keypoints_to_sv_detections,
+)
 from roboflow_workflows.core_steps.visualizations.keypoint.v1 import (
     COCO_KEYPOINT_NAMES,
     KeypointManifest,
@@ -472,6 +475,94 @@ def test_keypoint_visualization_block_draws_edges_for_upper_body_only() -> None:
 
     # then
     assert output["image"].numpy_image.any(), "upper-body edges must be drawn"
+
+
+def _tool_predictions(instances_keypoint_ids: list) -> sv.Detections:
+    # Instances of a three-vertex skeleton (tip, joint, base) holding only the
+    # given keypoints, stored the way keypoint models and VLM blocks store them.
+    names = ["tip", "joint", "base"]
+    detections = sv.Detections(
+        xyxy=np.array([[50, 50, 450, 450]] * len(instances_keypoint_ids), dtype=float),
+        class_id=np.zeros(len(instances_keypoint_ids), dtype=int),
+    )
+    predictions = add_inference_keypoints_to_sv_detections(
+        inference_prediction=[
+            {
+                "keypoints": [
+                    {
+                        "x": 100.0 + 100 * keypoint_id,
+                        "y": 100.0 + 50 * keypoint_id,
+                        "confidence": 1.0,
+                        "class": names[keypoint_id],
+                        "class_id": keypoint_id,
+                    }
+                    for keypoint_id in keypoint_ids
+                ]
+            }
+            for keypoint_ids in instances_keypoint_ids
+        ],
+        detections=detections,
+    )
+    return predictions
+
+
+def _render_edges(predictions: sv.Detections, edges: list) -> np.ndarray:
+    output = KeypointVisualizationBlockV1().run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np.zeros((500, 500, 3), dtype=np.uint8),
+        ),
+        predictions=predictions,
+        copy_image=True,
+        annotator_type="edge",
+        color="#A351FB",
+        text_color="black",
+        text_scale=0.5,
+        text_thickness=1,
+        text_padding=10,
+        thickness=2,
+        radius=10,
+        edges=edges,
+    )
+    return output["image"].numpy_image
+
+
+def test_keypoint_visualization_block_draws_nothing_when_no_instance_has_keypoints() -> (
+    None
+):
+    # given: every keypoint of every instance was left out, so the keypoint
+    # arrays have no slot for the edges to name
+    predictions = _tool_predictions([[], []])
+
+    # when
+    rendered = _render_edges(predictions, edges=[(1, 2), (2, 3)])
+
+    # then
+    assert predictions.data["keypoints_xy"].shape == (2, 0, 2)
+    assert not rendered.any()
+
+
+def test_keypoint_visualization_block_skips_edges_to_a_vertex_no_instance_has() -> None:
+    # given: no instance has the skeleton's last vertex, so the keypoint arrays
+    # end before the vertex the second edge names
+    predictions = _tool_predictions([[0, 1], [0, 1]])
+
+    # when
+    rendered = _render_edges(predictions, edges=[(1, 2), (2, 3)])
+
+    # then: the first edge is drawn as if the second were not there
+    assert rendered.any()
+    assert np.array_equal(rendered, _render_edges(predictions, edges=[(1, 2)]))
+
+
+def test_keypoint_visualization_block_does_not_pad_past_the_slot_limit() -> None:
+    # given: edges can come from runtime input, so a vertex number must not size
+    # the keypoint arrays beyond the per-skeleton slot limit
+    predictions = _tool_predictions([[0, 1]])
+
+    # when / then: supervision still rejects the edge
+    with pytest.raises(ValueError, match="keypoint range"):
+        _render_edges(predictions, edges=[(1, MAX_KEYPOINT_SLOTS + 1)])
 
 
 def test_keypoints_without_class_ids_are_used_as_stored() -> None:
