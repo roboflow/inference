@@ -846,14 +846,14 @@ class GatewayModelsProvider:
         self,
         model_id: str,
         images: List[Any],
-        text: List[str],
+        text_prompts: List[str],
         confidence: float,
         api_key: Optional[str] = None,
     ) -> List[dict]:
         request = OwlV2TextInferenceRequest(
             model_id=model_id,
             image=images,
-            text=text,
+            text=text_prompts,
             confidence=confidence,
             api_key=api_key,
             source="workflow",

@@ -138,7 +138,7 @@ class OwlV2ModelBlockV1(WorkflowBlock):
             responses = self._model_manager.run_owlv2_text(
                 model_id=model_id,
                 images=[i.to_inference_format(numpy_preferred=True) for i in images],
-                text=text_prompts,
+                text_prompts=text_prompts,
                 confidence=confidence,
                 api_key=self._api_key,
             )

@@ -343,12 +343,12 @@ class InferenceModelsOwlV2Adapter(Model):
                 center_y = (y_min + y_max) / 2
                 class_id = image_prediction.class_id[instance_id].item()
                 confidence = image_prediction.confidence[instance_id].item()
-                class_names = (
+                response_labels = (
                     text
                     if text is not None
                     else image_prediction.image_metadata["class_names"]
                 )
-                class_name = class_names[class_id]
+                class_name = response_labels[class_id]
                 image_instances.append(
                     ObjectDetectionPrediction(
                         # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)

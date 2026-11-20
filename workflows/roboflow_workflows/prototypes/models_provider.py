@@ -279,7 +279,7 @@ class ModelsProvider(Protocol):
         self,
         model_id: str,
         images: List[Any],
-        text: List[str],
+        text_prompts: List[str],
         confidence: float,
         api_key: Optional[str] = None,
     ) -> List[dict]: ...
