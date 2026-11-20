@@ -7,6 +7,7 @@ import math
 import os
 import re
 import stat
+import tokenize
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
@@ -428,7 +429,16 @@ def _npy_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
         # Remote workers already accept NPY bytes. Only decode for gateways
         # that accept arrays, avoiding a decode/re-encode on the remote path.
         data = np.load(io.BytesIO(value), allow_pickle=False) if ndarray_ok else value
-    except (ValueError, TypeError, EOFError) as error:
+    # NumPy's header parser raises TokenError, SyntaxError or RecursionError
+    # for malformed or deeply nested headers; all are a client error.
+    except (
+        ValueError,
+        TypeError,
+        EOFError,
+        SyntaxError,
+        RecursionError,
+        tokenize.TokenError,
+    ) as error:
         raise image_load_error(
             "Expected a complete uint8 NPY image with 2 or 3 dimensions and 1 or 3 channels.",
             InvalidNumpyInput,

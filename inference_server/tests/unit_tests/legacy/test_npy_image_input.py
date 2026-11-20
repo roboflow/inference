@@ -203,3 +203,49 @@ def test_http_pickle_remains_rejected(legacy_client, fake_stat, kind):
 
     assert response.status_code == 400, response.text
     assert not _inferred_images(gateway)
+
+
+_MALFORMED_HEADERS = {
+    "unterminated-brace": b"{",
+    "truncated-dict": b"{'descr': '|u1', 'fortran_order': False, 'shape': (2,2),",
+    "deep-nesting": b"[" * 3000,
+    "binary": b"\x00\xff",
+    "bad-syntax": b"{'descr': '|u1' 'x'}",
+    "not-a-dict": b"(1, 2)",
+}
+
+
+def _malformed_npy(version, header: bytes) -> bytes:
+    size = len(header).to_bytes(2 if version == (1, 0) else 4, "little")
+    return b"\x93NUMPY" + bytes(version) + size + header
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", list(_MALFORMED_HEADERS))
+def test_npy_malformed_header_is_a_client_error(monkeypatch, version, name):
+    decode = Mock(side_effect=AssertionError("must reject before allocating"))
+    monkeypatch.setattr(common.np, "load", decode)
+
+    with pytest.raises(InvalidNumpyInput):
+        decode_inline_image(
+            {"type": "npy", "value": _malformed_npy(version, _MALFORMED_HEADERS[name])},
+            ndarray_ok=True,
+        )
+
+    decode.assert_not_called()
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", ["unterminated-brace", "deep-nesting", "binary"])
+def test_http_npy_malformed_header_returns_400(legacy_client, fake_stat, version, name):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _detection_gateway()
+    data = _malformed_npy(version, _MALFORMED_HEADERS[name])
+
+    response = _post_image(
+        legacy_client(gateway),
+        {"type": "npy", "value": base64.b64encode(data).decode("ascii")},
+    )
+
+    assert response.status_code == 400, response.text
+    assert not _inferred_images(gateway)
