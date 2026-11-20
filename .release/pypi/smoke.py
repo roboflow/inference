@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 from packaging.utils import canonicalize_name, parse_wheel_filename
-from versioning import _final_version
+from versioning import _final_version, _validate_inventory
 
 IMPORTS = {
     "inference-sdk": "inference_sdk",
@@ -23,7 +23,7 @@ IMPORTS = {
 
 
 def _inventory(packages):
-    return {
+    inventory = {
         canonicalize_name(item["name"]): (
             _final_version(item["version"])
             if canonicalize_name(item["name"]) in IMPORTS
@@ -31,6 +31,8 @@ def _inventory(packages):
         )
         for item in packages
     }
+    _validate_inventory(inventory)
+    return inventory
 
 
 def _smoke(wheel, *, python, state):

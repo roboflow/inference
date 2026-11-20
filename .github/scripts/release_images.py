@@ -246,6 +246,7 @@ def _smoke(plan, *, digest, platform):
         )
         for item in json.loads(inventory_result.stdout)
     }
+    flow._validate_inventory(inventory)
     if plan["channel"] == "stable" and inventory != plan["rc_smoke"][platform]:
         raise ValueError("Image Python dependency inventory differs from tested RC")
     flow._write(

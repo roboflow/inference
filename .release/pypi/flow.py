@@ -27,7 +27,7 @@ from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import Version
-from versioning import _final_version
+from versioning import _final_version, _validate_inventory
 
 STATE = Path("release-state")
 LOCKS = tuple(f"{directory}/uv.lock" for directory, _ in dependencies.PROJECTS.values())
@@ -545,20 +545,7 @@ def _validate_rc_receipt(receipt, *, run):
         inventories.extend(image["smoke"].values())
 
     for inventory in inventories:
-        if (
-            not isinstance(inventory, dict)
-            or not inventory
-            or any(
-                not isinstance(name, str)
-                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name)
-                or not isinstance(version, str)
-                or not version
-                for name, version in inventory.items()
-            )
-        ):
-            raise ValueError("Invalid RC dependency inventory")
-        for version in inventory.values():
-            Version(version)
+        _validate_inventory(inventory)
 
 
 def _find_rc(version):
@@ -845,6 +832,8 @@ def _receipt():
     images_by_key = {}
     for path in sorted((STATE / "images").rglob("image-receipt.json")):
         image = json.loads(path.read_text())
+        for inventory in image["smoke"].values():
+            _validate_inventory(inventory)
         previous = images_by_key.get(image["key"])
         if previous is not None and previous != image:
             raise ValueError("Conflicting image receipts across attempts")
@@ -859,6 +848,7 @@ def _receipt():
     for directory in (STATE / "smoke", STATE / "runtime-smoke"):
         for path in directory.rglob("*.json"):
             inventory = json.loads(path.read_text())
+            _validate_inventory(inventory)
             if path.stem in smoke and smoke[path.stem] != inventory:
                 raise ValueError(
                     "Conflicting package smoke inventories across attempts"

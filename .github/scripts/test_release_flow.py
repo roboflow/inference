@@ -640,7 +640,11 @@ def test_release_receipt_requires_complete_package_and_image_smoke_evidence(cand
     flow._write(flow.STATE / "release.json", state)
     flow._write(
         flow.STATE / "images/cpu/image-receipt.json",
-        {"key": "cpu", "source_sha": state["source_sha"]},
+        {
+            "key": "cpu",
+            "source_sha": state["source_sha"],
+            "smoke": {"linux/amd64": {"numpy": "2.0.0"}},
+        },
     )
     flow._write(flow.STATE / "dependency-receipt.json", {})
     flow._write(flow.STATE / "runtime-receipt.json", {})
@@ -2260,3 +2264,156 @@ def test_rc_receipt_download_accepts_supported_compression(monkeypatch, compress
     monkeypatch.setenv("GH_TOKEN", "fixture-token")
     monkeypatch.setattr(flow.urllib.request, "build_opener", lambda *args: Opener())
     assert flow._download_receipt("123") == receipt
+
+
+@pytest.mark.parametrize("image_key", ["cpu", "jetson51", "models-jp51"])
+@pytest.mark.parametrize("version", ["1.1build1", "1.1+build1"])
+def test_rc_image_inventory_is_validated_before_recording(
+    tmp_path, monkeypatch, image_key, version
+):
+    images = _load_images()
+    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
+    plan = {
+        **next(item for item in policy["images"] if item["key"] == image_key),
+        "channel": "rc",
+    }
+    platform = plan["platforms"][0]
+    inventory = [{"name": "distro-package", "version": version}]
+    commands = []
+
+    def command(*args, **kwargs):
+        commands.append(args)
+        return subprocess.CompletedProcess(
+            args, 0, stdout=json.dumps(inventory), stderr=""
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(images, "_command", command)
+    monkeypatch.setattr(
+        images.subprocess, "run", lambda args, **kwargs: command(*args, **kwargs)
+    )
+    if version == "1.1build1":
+        with pytest.raises(ValueError, match="1.1build1"):
+            images._smoke(plan, digest="sha256:" + "a" * 64, platform=platform)
+        assert not Path("image-smoke.json").exists()
+    else:
+        images._smoke(plan, digest="sha256:" + "a" * 64, platform=platform)
+        assert json.loads(Path("image-smoke.json").read_text())["inventory"] == {
+            "distro-package": version
+        }
+    if image_key in {"jetson51", "models-jp51"}:
+        assert platform == "linux/arm64"
+        assert any("--runtime" in args and "nvidia" in args for args in commands)
+
+
+@pytest.mark.parametrize("version", ["1.1build1", "1.1+build1"])
+def test_rc_package_inventory_is_validated_before_recording(
+    tmp_path, monkeypatch, version
+):
+    import smoke
+
+    packages = [
+        {"name": "inference-sdk", "version": "9.9.0rc1"},
+        {"name": "distro-package", "version": version},
+    ]
+    monkeypatch.setattr(
+        smoke.subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(
+            args, 0, stdout=json.dumps(packages)
+        ),
+    )
+    state = tmp_path / "release-state"
+    wheel = tmp_path / "inference_sdk-9.9.0rc1-py3-none-any.whl"
+    destination = state / "smoke/inference-sdk-py3.12.json"
+    if version == "1.1build1":
+        with pytest.raises(ValueError, match="1.1build1"):
+            smoke._smoke(wheel, python="3.12", state=state)
+        assert not destination.exists()
+    else:
+        smoke._smoke(wheel, python="3.12", state=state)
+        assert json.loads(destination.read_text()) == {
+            "inference-sdk": "9.9.0",
+            "distro-package": version,
+        }
+
+
+@pytest.mark.parametrize("origin", ["image", "package"])
+@pytest.mark.parametrize("version", ["1.1build1", "1.1+build1"])
+def test_rc_receipt_revalidates_recorded_inventories(candidate, origin, version):
+    _, _, state = candidate
+    state["policy"] = {"images": [{"key": "cpu"}], "python_versions": ["3.12"]}
+    flow._write(flow.STATE / "release.json", state)
+    image_inventory = {"distro-package": version if origin == "image" else "1.0.0"}
+    flow._write(
+        flow.STATE / "images/cpu/image-receipt.json",
+        {
+            "key": "cpu",
+            "source_sha": state["source_sha"],
+            "smoke": {"linux/amd64": image_inventory},
+        },
+    )
+    flow._write(flow.STATE / "dependency-receipt.json", {})
+    flow._write(flow.STATE / "runtime-receipt.json", {})
+    for name in flow.FIRST_PARTY:
+        inventory = {
+            name: "9.9.0",
+            "distro-package": version if origin == "package" else "1.0.0",
+        }
+        flow._write(flow.STATE / "smoke" / f"{name}-py3.12.json", inventory)
+    if version == "1.1build1":
+        with pytest.raises(ValueError, match="1.1build1"):
+            flow._receipt()
+        assert not (flow.STATE / "receipt.json").exists()
+    else:
+        flow._receipt()
+        receipt = json.loads((flow.STATE / "receipt.json").read_text())
+        assert receipt["complete"] is True
+        recorded = (
+            receipt["images"][0]["smoke"]["linux/amd64"]
+            if origin == "image"
+            else receipt["smoke"]["inference-sdk-py3.12"]
+        )
+        assert recorded["distro-package"] == version
+
+
+@pytest.mark.parametrize("origin", ["image", "package"])
+def test_stable_receipt_rejects_invalid_recorded_inventory(candidate, origin):
+    _, _, state = candidate
+    receipt = _rc_evidence(state)
+    receipt["evidence_ref"] = flow._evidence_ref(receipt["run_id"])
+    if origin == "image":
+        inventory = next(iter(receipt["images"][0]["smoke"].values()))
+    else:
+        inventory = next(iter(receipt["smoke"].values()))
+    inventory["distro-package"] = "1.1build1"
+    run = {
+        "id": receipt["run_id"],
+        "head_sha": receipt["trigger_sha"],
+        "head_branch": receipt["branch"],
+    }
+    with pytest.raises(ValueError, match="1.1build1"):
+        flow._validate_rc_receipt(receipt, run=run)
+
+
+def test_package_smoke_import_does_not_require_tomllib():
+    script = """
+import runpy
+import sys
+
+class WithoutTomllib:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "tomllib":
+            raise ModuleNotFoundError("tomllib is unavailable on Python 3.10")
+
+sys.meta_path.insert(0, WithoutTomllib())
+sys.path.insert(0, sys.argv[1])
+smoke = runpy.run_path(sys.argv[1] + "/smoke.py")
+assert smoke["_inventory"]([{"name": "distro-package", "version": "1.1+build1"}]) == {"distro-package": "1.1+build1"}
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(ROOT / ".release/pypi")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
