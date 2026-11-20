@@ -16,6 +16,18 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Successful Modal syntax checks of custom Python blocks are reused.**
+  Workflows with custom Python blocks skip the compilation cache, so in Modal
+  mode every compilation sent one request per block to the Modal executor to
+  check its syntax. A successful check is now reused per process, keyed by
+  workspace and block source (up to 1024 entries), for 10 minutes after the
+  Modal call that made it, however often it is read. Failed checks and failures
+  to reach Modal are not cached, so a retry checks again. Anonymous workspaces
+  skip the cache so `MODAL_ALLOW_ANONYMOUS_EXECUTION` still applies. No
+  migration is needed.
+
 ### Added
 
 - Google Gemini v6 (`roboflow_core/google_gemini@v6`) gains a `keypoint-detection` task. It takes `classes` and a new `keypoint_schema` input, which maps each class to its skeleton: the keypoint names, the edges between them and, optionally, a template with where each keypoint sits on a reference instance, as (x, y) fractions of its box. A response schema has Gemini return one list of instances per class, each with its `box_2d` and one `{"point": [y, x], "occluded": bool}` per keypoint, normalized to 0-1000, or `null` for a keypoint outside the image. `predictions` holds keypoint detections, in the format of keypoint models in both data representations: a visible keypoint gets confidence 1.0, an occluded one (position estimated) 0.5, and a keypoint the model could not place is left out of its instance. Instances get confidence 1.0. Code execution is refused for this task.
