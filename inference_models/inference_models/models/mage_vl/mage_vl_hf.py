@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
 from threading import Lock
-from typing import List, Optional, Union
+from typing import List, Optional, Sequence, Union
 
+import numpy as np
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoProcessor
 from transformers.utils import is_flash_attn_2_available
@@ -22,11 +23,11 @@ from inference_models.errors import (
     ModelInputError,
     ModelRuntimeError,
 )
-from inference_models.models.common.image_color import ImageInput, images_to_rgb
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.torch import torch_default_dtype_lock
 
 VideoInput = Union[str, "os.PathLike[str]"]
+ImageInput = Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
 
 CODEC_ENGINES = MAGE_VL_CODEC_ENGINES
 # Mandated by the checkpoint's image processor (patch_size=16, merge_size=2). The
@@ -283,7 +284,7 @@ class MageVLHF:
         prompt: str,
         input_color_format: Optional[ColorFormat],
     ) -> dict:
-        images = images_to_rgb(images=images, input_color_format=input_color_format)
+        images = _to_rgb(images=images, input_color_format=input_color_format)
         text = self._chat_text(media_type="image", prompt=prompt)
         model_inputs = self._processor(
             text=[text],
@@ -406,3 +407,36 @@ class MageVLHF:
             skip_special_tokens=skip_special_tokens,
         )
         return [text.strip() for text in decoded]
+
+
+def _to_rgb(
+    images: ImageInput,
+    input_color_format: Optional[ColorFormat],
+) -> ImageInput:
+    """Flip BGR inputs to the RGB the processor expects.
+
+    An explicit "bgr" flips every input, tensors included (rank 3 and batched
+    rank 4, CHW/BCHW and HWC/BHWC), like the sibling VLMs. When no format is
+    declared, numpy inputs are assumed BGR (the cv2 default) and flipped;
+    tensors are passed through unchanged.
+    """
+    if input_color_format == "rgb":
+        return images
+    flip_tensors = input_color_format == "bgr"
+    if isinstance(images, Sequence) and not isinstance(images, (str, bytes)):
+        return [_flip_to_rgb(image, flip_tensors=flip_tensors) for image in images]
+    return _flip_to_rgb(images, flip_tensors=flip_tensors)
+
+
+def _flip_to_rgb(image, flip_tensors: bool):
+    if isinstance(image, np.ndarray):
+        return image[..., ::-1].copy()
+    if flip_tensors and isinstance(image, torch.Tensor) and image.ndim in (3, 4):
+        channel_dim = image.ndim - 3  # 0 for CHW, 1 for BCHW
+        if image.shape[channel_dim] == 3:  # CHW / BCHW
+            return image.index_select(
+                channel_dim, torch.tensor([2, 1, 0], device=image.device)
+            )
+        if image.shape[-1] == 3:  # HWC / BHWC
+            return image[..., [2, 1, 0]]
+    return image
