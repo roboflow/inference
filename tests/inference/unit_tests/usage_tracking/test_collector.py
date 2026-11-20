@@ -12,10 +12,16 @@ from unittest import mock
 
 import numpy as np
 import pytest
+import requests
 
 from inference.core.env import LAMBDA
 from inference.core.version import __version__ as inference_version
-from inference.core.workflows.errors import ClientCausedStepExecutionError
+from inference.core.workflows.errors import (
+    ClientCausedStepExecutionError,
+    StepExecutionError,
+)
+from inference.models.vllm_proxy.errors import VLLMConnectionError, VLLMHTTPError
+from inference.models.vllm_proxy.vllm_client import VLLMClient
 from inference.usage_tracking import payload_helpers
 from inference.usage_tracking.decorator_helpers import (
     record_fixed_model_input_for_request,
@@ -2050,6 +2056,132 @@ def test_wrapped_remote_http_errors_are_partitioned_by_status_code(
     )
     assert (
         json.loads(usage[forbidden_key]["resource_details"])["error_status_code"] == 403
+    )
+
+
+def _vllm_client_with_mocked_session() -> VLLMClient:
+    client = VLLMClient(base_url="http://vllm-test:8000", request_timeout_s=5)
+    client._session = mock.MagicMock()
+    return client
+
+
+@pytest.mark.parametrize(
+    "transport_error, expected_status_code",
+    [
+        (requests.exceptions.ReadTimeout("read timed out"), 504),
+        (requests.exceptions.ConnectTimeout("connect timed out"), 504),
+        (requests.exceptions.ConnectionError("connection refused"), 503),
+    ],
+)
+def test_vllm_sidecar_connectivity_failure_records_error_status_code(
+    usage_collector_with_mocked_threads,
+    transport_error,
+    expected_status_code,
+):
+    usage_collector = usage_collector_with_mocked_threads
+    client = _vllm_client_with_mocked_session()
+    client._session.request.side_effect = transport_error
+
+    @usage_collector(category="model")
+    def test_func(api_key="test_key"):
+        return client.chat_completion(model="served-model", messages=[])
+
+    with pytest.raises(VLLMConnectionError):
+        test_func()
+
+    key = usage_key(
+        "model",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="VLLMConnectionError",
+        error_status_code=expected_status_code,
+    )
+    assert set(usage_collector._usage["test_key"]) == {key}
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["error_type"] == "VLLMConnectionError"
+    assert details["error_status_code"] == expected_status_code
+    assert details["error"].startswith(
+        "VLLMConnectionError: Could not reach vLLM sidecar at "
+    )
+
+
+@pytest.mark.parametrize(
+    "transport_error, expected_status_code",
+    [
+        (requests.exceptions.ReadTimeout("read timed out"), 504),
+        (requests.exceptions.ConnectionError("connection refused"), 503),
+    ],
+)
+def test_vllm_sidecar_connectivity_failure_in_workflow_step_records_error_status_code(
+    usage_collector_with_mocked_threads,
+    transport_error,
+    expected_status_code,
+):
+    usage_collector = usage_collector_with_mocked_threads
+    client = _vllm_client_with_mocked_session()
+    client._session.request.side_effect = transport_error
+
+    @usage_collector(category="workflows")
+    def test_func(api_key="test_key"):
+        try:
+            return client.chat_completion(model="served-model", messages=[])
+        except VLLMConnectionError as error:
+            raise StepExecutionError(
+                block_id="vlm",
+                block_type="roboflow_core/qwen3_5vl@v1",
+                public_message="Error during execution of step: vlm.",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
+
+    with pytest.raises(StepExecutionError):
+        test_func()
+
+    key = usage_key(
+        "workflows",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="VLLMConnectionError",
+        error_status_code=expected_status_code,
+    )
+    assert set(usage_collector._usage["test_key"]) == {key}
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["error_type"] == "VLLMConnectionError"
+    assert details["error_status_code"] == expected_status_code
+
+
+def test_vllm_sidecar_http_error_keeps_recording_sidecar_status_code(
+    usage_collector_with_mocked_threads,
+):
+    usage_collector = usage_collector_with_mocked_threads
+    client = _vllm_client_with_mocked_session()
+    client._session.request.return_value = mock.MagicMock(
+        status_code=500, text="engine failure"
+    )
+
+    @usage_collector(category="model")
+    def test_func(api_key="test_key"):
+        return client.chat_completion(model="served-model", messages=[])
+
+    with pytest.raises(VLLMHTTPError):
+        test_func()
+
+    key = usage_key(
+        "model",
+        "unknown",
+        billable=True,
+        outcome="error",
+        error_type="VLLMHTTPError",
+        error_status_code=500,
+    )
+    assert set(usage_collector._usage["test_key"]) == {key}
+    details = json.loads(usage_collector._usage["test_key"][key]["resource_details"])
+    assert details["error_type"] == "VLLMHTTPError"
+    assert details["error_status_code"] == 500
+    assert details["error"] == (
+        "VLLMHTTPError: vLLM sidecar returned HTTP 500 for POST /v1/chat/completions"
     )
 
 

@@ -31,7 +31,11 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UntrustedFileError,
 )
-from inference_models.models.vllm_proxy.errors import NotServableOnVLLMError
+from inference_models.models.vllm_proxy.errors import (
+    VLLM_TIMEOUT_STATUS_CODE,
+    NotServableOnVLLMError,
+    VLLMConnectionError,
+)
 from inference_server import configuration
 from inference_server.errors import PayloadTooLargeError, ServerBusyError
 from inference_server.gateway import _redact_secrets
@@ -65,6 +69,10 @@ REGISTRY_TIMEOUT_MESSAGE = "Timeout when attempting to connect to Roboflow API."
 SERVICE_MISCONFIGURATION_MESSAGE = "Service misconfiguration."
 INFERENCE_TIMEOUT_MESSAGE = "Timed out waiting for inference result."
 INTERNAL_ERROR_MESSAGE = "Internal error."
+VLLM_TIMEOUT_MESSAGE = "Timed out waiting for the model serving backend."
+VLLM_UNAVAILABLE_MESSAGE = (
+    "Model serving backend is temporarily unavailable - retry request."
+)
 INVALID_MODEL_ID_MESSAGE = "Invalid Model ID sent in request."
 MODEL_NOT_READY_MESSAGE = "Model is temporarily not ready - retry request."
 
@@ -307,6 +315,10 @@ def _mapped_answer(error: BaseException) -> Optional[Tuple[int, dict]]:
         }
     if isinstance(error, NotServableOnVLLMError):
         return 501, {"message": str(error)}
+    if isinstance(error, VLLMConnectionError):
+        if error.status_code == VLLM_TIMEOUT_STATUS_CODE:
+            return error.status_code, {"message": VLLM_TIMEOUT_MESSAGE}
+        return error.status_code, {"message": VLLM_UNAVAILABLE_MESSAGE}
     if isinstance(error, ModelLoadingError):
         return 500, {
             "message": f"Model loading failed: {error}",

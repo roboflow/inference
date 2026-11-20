@@ -1,9 +1,15 @@
 name: Publish Inference Models Wheels to PyPi
 on:
-  release:
-    types: [created]
   workflow_dispatch:
     inputs:
+      expected_version:
+        description: Expected package version (set by the release coordinator)
+        type: string
+        default: ""
+      expected_revision:
+        description: Expected commit SHA (set by the release coordinator)
+        type: string
+        default: ""
       publish:
         description: "Actually publish the package to PyPI"
         required: false
@@ -16,17 +22,28 @@ permissions:
 
 jobs:
   build:
-    name: ${{ github.event_name == 'release' && 'Release publish' || (github.event.inputs.publish == 'true' && 'Manual publish' || 'Manual build only') }}
+    if: ${{ github.repository == 'roboflow/inference' }}
+    env:
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
+    name: ${{ inputs.publish && 'Manual publish' || 'Manual build only' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 20
+    timeout-minutes: 50
+    concurrency:
+      group: pypi-inference-models-${{ github.event.inputs.publish == 'true' && 'publish' || github.run_id }}
+      cancel-in-progress: false
     strategy:
       matrix:
         python-version: ["3.12"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify the requested candidate revision and version
+        run: bash .release/pypi/dependencies.sh guard --package inference-models
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -40,10 +57,35 @@ jobs:
       - name: 🔨 Build package
         working-directory: inference_models
         run: |
-          python -m uv build
-      - name: 🚀 Publish to PyPI
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+          python -m uv lock --check
+          python -m uv build --no-create-gitignore
+      - name: Verify published dependencies before upload
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/dependencies.sh gate --directory inference_models/dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
+      - uses: actions/upload-artifact@v4
         with:
-          packages-dir: inference_models/dist/
-          skip-existing: true
+          name: inference-models-distributions-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: inference_models/dist/
+      - name: Verify existing files and stage missing distributions
+        if: ${{ github.event.inputs.publish == 'true' }}
+        id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile inference-models --directory inference_models/dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-prepare.json
+          echo "upload=$(jq -r '.upload' release-evidence/publication-prepare.json)" >> "$GITHUB_OUTPUT"
+      - name: 🚀 Publish to PyPI
+        continue-on-error: true
+        if: ${{ github.event.inputs.publish == 'true' && steps.prepare.outputs.upload == 'true' }}
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        with:
+          packages-dir: release-upload/
+      - name: Verify the complete published inventory
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/publish.sh verify --profile inference-models --directory inference_models/dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-receipt.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && github.event.inputs.publish == 'true' }}
+        with:
+          name: inference-models-dependencies-${{ github.run_attempt }}
+          path: release-evidence/
+          if-no-files-found: error

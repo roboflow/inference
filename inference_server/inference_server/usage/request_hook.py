@@ -6,7 +6,9 @@ handler, so the model calls and workflow runs made inside it record their own
 """
 
 import functools
+import json
 import logging
+import re
 import time
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -40,6 +42,14 @@ EXTERNAL_SOURCE = "external"
 RESPONSE_ERROR_TYPE = "HTTPResponseError"
 BODY_FIELDS = ("api_key", "model_id", "source", "source_info")
 WORKFLOW_REQUEST_ARGUMENT = "workflow_request"
+BATCH_BILLING_CONTEXT_VERSION = "batch-v1"
+BATCH_BILLING_MEDIA = ("image", "video")
+# Same shape the batch service validates; the id is copied into usage rows.
+BATCH_BILLING_JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+class InvalidBatchBillingContextError(ValueError):
+    """A batch billing context presented with a valid service secret is invalid."""
 
 
 def report_request_usage(fn: Any) -> Any:
@@ -48,8 +58,10 @@ def report_request_usage(fn: Any) -> Any:
     The row is recorded through the collector on ``request.app.state`` when
     the handler returns and when it raises an ``Exception``, which is then
     re-raised. Without a collector nothing is recorded. A failure while
-    recording is logged and never changes the response. A handler without an
-    ``inference_request`` argument is attributed from the JSON object in the
+    recording is logged and never changes the response, except an invalid
+    authenticated batch billing context, which is raised before the handler
+    runs. A handler without an ``inference_request`` argument is attributed
+    from the JSON object in the
     request body (``api_key``, ``model_id``, ``source``, ``source_info``),
     except the catch-all route, which reads its image from the body. A
     workflow run handler (``workflow_request`` argument) is attributed to the
@@ -77,6 +89,9 @@ def report_request_usage(fn: Any) -> Any:
         try:
             subject = await _subject_of(request, kwargs)
             scope = _scope_of(collector, request, kwargs, subject)
+        except InvalidBatchBillingContextError:
+            # Serving it unrecorded would make an authenticated batch call free.
+            raise
         except Exception as failure:
             logger.debug(
                 "Usage of the request was not recorded: %s", type(failure).__name__
@@ -161,9 +176,75 @@ def _scope_of(
         source_info=_source_tag(query, subject, "source_info"),
         service_secret=service_secret,
         exec_session_id=execution_id.get(),
+        billing_context=batch_billing_context(
+            query.get("billing_context"), service_secret
+        ),
     )
 
     return scope
+
+
+def batch_billing_context(raw: Any, service_secret: Any) -> Optional[str]:
+    """Validate a batch billing context authenticated by the service secret.
+
+    Validates and canonicalises like ``read_batch_billing_context`` of the
+    legacy server. This stack honours the context on every route wrapped by
+    ``report_request_usage``; the legacy server only on handlers that bind
+    ``request``, such as the ``/{dataset_id}/{version_id}`` route the batch
+    proxy calls.
+
+    Args:
+        raw: ``billing_context`` query parameter of the request.
+        service_secret: ``service_secret`` query parameter of the request.
+
+    Returns:
+        Canonical JSON context, or None when the request carries no context
+        or no valid service secret.
+
+    Raises:
+        InvalidBatchBillingContextError: The authenticated context is not a
+            ``batch-v1`` context with an image or video media, a
+            multiplier in (0, 1] and, when present, a well-formed ``jobId``.
+    """
+    if raw is None or not service_secret_is_valid(service_secret):
+        return None
+
+    try:
+        context = json.loads(raw)
+        media = context["media"]
+        multiplier = context["multiplier"]
+    except (ValueError, TypeError, KeyError, RecursionError):
+        raise InvalidBatchBillingContextError(
+            "Invalid authenticated batch billing context"
+        ) from None
+    # Comparisons reject NaN and infinities without converting huge integers.
+    valid = (
+        context.get("version") == BATCH_BILLING_CONTEXT_VERSION
+        and media in BATCH_BILLING_MEDIA
+        and type(multiplier) in (int, float)
+        and 0 < multiplier <= 1
+    )
+    job_id = context.get("jobId")
+    job_id_valid = job_id is None or (
+        isinstance(job_id, str) and BATCH_BILLING_JOB_ID.fullmatch(job_id) is not None
+    )
+    if not valid or not job_id_valid:
+        raise InvalidBatchBillingContextError(
+            "Invalid authenticated batch billing context"
+        )
+
+    fields = {
+        "media": media,
+        "multiplier": multiplier,
+        "version": BATCH_BILLING_CONTEXT_VERSION,
+    }
+    if job_id is not None:
+        # Usage is aggregated per context, so the id keeps each job's usage apart.
+        fields["jobId"] = job_id
+
+    canonical = json.dumps(fields, sort_keys=True)
+
+    return canonical
 
 
 def _record(
@@ -246,6 +327,8 @@ def _row(
         details["execution_mode"] = configuration.SAM3_EXEC_MODE
     if scope.source_info is not None:
         details["source_info"] = scope.source_info
+    if scope.billing_context is not None:
+        details["billing_context"] = scope.billing_context
     details.update(error_details)
 
     row = {

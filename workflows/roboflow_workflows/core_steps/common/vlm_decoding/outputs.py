@@ -32,6 +32,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -43,6 +44,7 @@ logger = get_logger(__name__)
 DETECTION_TASKS = {"object-detection"}
 ORIENTED_DETECTION_TASKS = {"oriented-object-detection"}
 SEGMENTATION_TASKS = {"instance-segmentation"}
+KEYPOINT_TASKS = {"keypoint-detection"}
 CLASSIFICATION_TASKS = {"classification", "multi-label-classification"}
 
 LEGACY_PREDICTION_KINDS_UNION = [
@@ -65,7 +67,8 @@ def prediction_kinds_for_tasks(task_types: Iterable[str]) -> List[Kind]:
 
     Returns:
         Kinds in the stable detection / oriented detection / segmentation /
-        classification order, limited to the families present in ``task_types``.
+        keypoints / classification order, limited to the families present in
+        ``task_types``.
     """
     task_types = set(task_types)
     kinds = []
@@ -78,6 +81,8 @@ def prediction_kinds_for_tasks(task_types: Iterable[str]) -> List[Kind]:
         # consumers declared on it still connect (they decode lazily).
         kinds.append(RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND)
         kinds.append(INSTANCE_SEGMENTATION_PREDICTION_KIND)
+    if task_types & KEYPOINT_TASKS:
+        kinds.append(KEYPOINT_DETECTION_PREDICTION_KIND)
     if task_types & CLASSIFICATION_TASKS:
         kinds.append(CLASSIFICATION_PREDICTION_KIND)
     return kinds
@@ -136,6 +141,8 @@ def actual_vlm_prediction_outputs(
             RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
+    elif task_type in KEYPOINT_TASKS:
+        prediction_kind = [KEYPOINT_DETECTION_PREDICTION_KIND]
     elif task_type in CLASSIFICATION_TASKS:
         prediction_kind = [CLASSIFICATION_PREDICTION_KIND]
     else:

@@ -47,6 +47,10 @@ VLM_TASKS_METADATA = {
         "name": "Instance Segmentation",
         "description": "Model segments every instance of the provided classes and returns a polygon outline per instance",
     },
+    "keypoint-detection": {
+        "name": "Keypoint Detection",
+        "description": "Model finds every instance of the provided classes and locates the keypoints of its skeleton (from `keypoint_schema`), decoded into keypoint predictions by the block.",
+    },
     "open-vocabulary-object-detection": {
         "name": "Object Detection",
         "description": "Model detects and returns the bounding boxes for the provided classes",

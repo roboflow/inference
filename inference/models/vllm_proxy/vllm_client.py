@@ -23,7 +23,12 @@ from inference.models.vllm_proxy.config import (
     get_vllm_base_url,
     get_vllm_request_timeout_s,
 )
-from inference.models.vllm_proxy.errors import VLLMConnectionError, VLLMHTTPError
+from inference.models.vllm_proxy.errors import (
+    VLLM_TIMEOUT_STATUS_CODE,
+    VLLM_UNAVAILABLE_STATUS_CODE,
+    VLLMConnectionError,
+    VLLMHTTPError,
+)
 
 CONNECTION_POOL_SIZE = 128
 
@@ -198,8 +203,16 @@ class VLLMClient:
                 method, url, timeout=self._request_timeout_s, **kwargs
             )
         except _CONNECTIVITY_ERRORS as error:
+            # `requests` connect timeouts subclass both Timeout and
+            # ConnectionError - any timeout is reported as a timeout.
+            timed_out = isinstance(error, requests.exceptions.Timeout)
             raise VLLMConnectionError(
-                f"Could not reach vLLM sidecar at {url}: {error}"
+                f"Could not reach vLLM sidecar at {url}: {error}",
+                status_code=(
+                    VLLM_TIMEOUT_STATUS_CODE
+                    if timed_out
+                    else VLLM_UNAVAILABLE_STATUS_CODE
+                ),
             ) from error
         if response.status_code >= 400:
             raise VLLMHTTPError(

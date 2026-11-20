@@ -154,7 +154,7 @@ class ModelManager:
                 service_secret=service_secret,
             ):
                 raise RoboflowAPINotAuthorizedError(
-                    f"API key {api_key} does not have access to model {model_id}"
+                    f"API key does not have access to model {model_id}"
                 )
 
         logger.debug(
@@ -199,7 +199,7 @@ class ModelManager:
                         model_class, "infer_embeddings_from_request"
                     ):
                         raise ModelDeploymentNotSupportedError(
-                            "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+                            "Image embeddings require a ResNet, ConvNeXt, ViT or DINOv3 classifier."
                         )
 
                     extra_init_kwargs = {}

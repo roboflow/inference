@@ -238,6 +238,12 @@ ROBOFLOW_MODEL_TYPES = _LazyModelRegistry(
         ("classification", "resnet34"): ResNetClassification,
         ("classification", "resnet50"): ResNetClassification,
         ("classification", "resnet101"): ResNetClassification,
+        ("classification", "convnext"): ResNetClassification,
+        ("classification", "convnext_nano"): ResNetClassification,
+        ("classification", "convnext_tiny"): ResNetClassification,
+        ("classification", "convnext_small"): ResNetClassification,
+        ("classification", "convnext_base"): ResNetClassification,
+        ("classification", "convnext_large"): ResNetClassification,
         ("classification", "yolov8"): YOLOv8Classification,
         ("classification", "yolov8n"): YOLOv8Classification,
         ("classification", "yolov8s"): YOLOv8Classification,
@@ -294,6 +300,9 @@ ROBOFLOW_MODEL_TYPES = _LazyModelRegistry(
         ("object-detection", "yolo26x"): YOLO26ObjectDetection,
         ("object-detection", "rfdetr"): RFDETRObjectDetection,
         ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
+        ("object-detection", "rfdetr-atto"): RFDETRObjectDetection,
+        ("object-detection", "rfdetr-femto"): RFDETRObjectDetection,
+        ("object-detection", "rfdetr-pico"): RFDETRObjectDetection,
         ("object-detection", "rfdetr-nano"): RFDETRObjectDetection,
         ("object-detection", "rfdetr-small"): RFDETRObjectDetection,
         ("object-detection", "rfdetr-medium"): RFDETRObjectDetection,
@@ -1005,6 +1014,7 @@ if USE_INFERENCE_MODELS:
             variant.startswith("yolov")
             or variant.startswith("dinov3")
             or variant.startswith("resnet")
+            or variant.startswith("convnext")
             or variant.startswith("vit")
         ):
             ROBOFLOW_MODEL_TYPES[(task, variant)] = InferenceModelsClassificationAdapter
@@ -1360,6 +1370,7 @@ if USE_INFERENCE_MODELS:
             ),
             ("classification", "dinov3_probe"): InferenceModelsClassificationAdapter,
             ("classification", "resnet"): InferenceModelsClassificationAdapter,
+            ("classification", "convnext"): InferenceModelsClassificationAdapter,
             ("classification", "vit"): InferenceModelsClassificationAdapter,
             ("classification", "yolov11"): InferenceModelsClassificationAdapter,
             ("classification", "yolov8"): InferenceModelsClassificationAdapter,
@@ -1367,6 +1378,9 @@ if USE_INFERENCE_MODELS:
                 InferenceModelsClassificationAdapter
             ),
             ("multi-label-classification", "resnet"): (
+                InferenceModelsClassificationAdapter
+            ),
+            ("multi-label-classification", "convnext"): (
                 InferenceModelsClassificationAdapter
             ),
             ("multi-label-classification", "vit"): (
