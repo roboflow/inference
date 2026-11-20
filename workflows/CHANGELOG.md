@@ -16,6 +16,12 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- Explicit `type: "npy"` workflow image inputs are decoded by the host image
+  codec, preserving their pixels and metadata. This requires a server with NPY
+  input support and a Workflows release containing this change.
+
 ### Changed
 
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its

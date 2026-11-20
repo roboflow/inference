@@ -1,6 +1,6 @@
 import binascii
+import math
 import os
-import pickle
 import re
 import urllib.parse
 from enum import Enum
@@ -53,6 +53,7 @@ class ImageType(Enum):
     BASE64 = "base64"
     FILE = "file"
     MULTIPART = "multipart"
+    NPY = "npy"
     NUMPY = "numpy"
     NUMPY_OBJECT = "numpy_object"
     PILLOW = "pil"
@@ -271,6 +272,13 @@ def attempt_loading_image_from_string(
     try:
         return load_image_from_numpy_str(value=value), True
     except InvalidImageTypeDeclared as error:
+        if ALLOW_NUMPY_INPUT:
+            # The pickle fallback this flag used to open no longer exists, so an
+            # unrecognised string is simply not an image format we can infer.
+            raise InputFormatInferenceFailed(
+                message="Input image format could not be inferred from string.",
+                public_message="Input image format could not be inferred from string.",
+            ) from error
         raise error
     except InvalidNumpyInput as error:
         raise InputFormatInferenceFailed(
@@ -345,40 +353,77 @@ def load_image_from_buffer(
     return result
 
 
-def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
-    """Loads an image from a numpy array string.
+def load_image_from_npy(value: Union[bytes, str]) -> np.ndarray:
+    """Load a uint8 BGR or grayscale image from a single non-pickled NPY array.
 
     Args:
-        value (Union[bytes, str]): Base64 string or byte sequence representing the pickled numpy array of the image.
+        value (Union[bytes, str]): Raw NPY bytes or their base64-encoded string.
 
     Returns:
-        Image.Image: The loaded PIL image.
+        np.ndarray: The image, preserving its pixels and channel order.
 
     Raises:
-        InvalidNumpyInput: If the numpy data is invalid.
+        InvalidNumpyInput: If the payload is not a complete uint8 NPY image.
     """
-    if not ALLOW_NUMPY_INPUT:
-        raise InvalidImageTypeDeclared(
-            message=f"NumPy image type is not supported in this configuration of `inference`.",
-            public_message=f"NumPy image type is not supported in this configuration of `inference`.",
-        )
     try:
         if isinstance(value, str):
-            value = pybase64.b64decode(value)
-        data = pickle.loads(value)
-    except (
-        EOFError,
-        TypeError,
-        ValueError,
-        pickle.UnpicklingError,
-        binascii.Error,
-    ) as error:
+            value = pybase64.b64decode(value, validate=True)
+        if not isinstance(value, bytes):
+            raise ValueError("expected NPY bytes or a base64 string")
+
+        # Bound header parsing before reading any array data. Keep this contract
+        # in sync with inference_server.legacy.common._npy_payload; the servers
+        # are distributed separately and cannot import each other's internals.
+        header = BytesIO(value[: 12 + 10_000])
+        version = np.lib.format.read_magic(header)
+        if version == (1, 0):
+            shape, _, dtype = np.lib.format.read_array_header_1_0(header)
+        elif version == (2, 0):
+            shape, _, dtype = np.lib.format.read_array_header_2_0(header)
+        else:
+            raise ValueError("expected NPY format version 1.0 or 2.0")
+        if dtype != np.dtype(np.uint8):
+            raise ValueError("expected a uint8 array")
+        if len(shape) not in (2, 3) or any(d <= 0 for d in shape):
+            raise ValueError("expected a non-empty 2D or 3D image")
+        if len(shape) == 3 and shape[2] not in (1, 3):
+            raise ValueError("expected 1 or 3 channels")
+        # A forged shape must not cause allocation beyond the supplied data.
+        if math.prod(shape) != len(value) - header.tell():
+            raise ValueError("array size does not match the NPY payload")
+
+        data = np.load(BytesIO(value), allow_pickle=False)
+    except (ValueError, TypeError, EOFError) as error:
         raise InvalidNumpyInput(
-            message=f"Could not unpickle image data. Cause: {error}",
-            public_message="Could not deserialize pickle payload.",
+            message=f"Could not load NPY image data. Cause: {error}",
+            public_message="Expected a complete uint8 NPY image with 2 or 3 dimensions and 1 or 3 channels.",
         ) from error
-    validate_numpy_image(data=data)
+
     return data
+
+
+def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
+    """Refuse the removed pickled 'numpy' image format.
+
+    Request data is never unpickled: `pickle.loads` on a client payload can run
+    arbitrary code. Send `type: "npy"` (base64 of `np.save(..., allow_pickle=False)`)
+    instead; `load_image_from_npy` decodes it without pickle.
+
+    Args:
+        value (Union[bytes, str]): Ignored; kept for the loader signature.
+
+    Raises:
+        InvalidImageTypeDeclared: Always.
+    """
+    if ALLOW_NUMPY_INPUT:
+        message = (
+            "The pickled 'numpy' image type has been removed and ALLOW_NUMPY_INPUT "
+            "no longer enables it. Send type='npy' with base64-encoded "
+            "np.save(..., allow_pickle=False) data instead."
+        )
+    else:
+        message = "NumPy image type is not supported in this configuration of `inference`."
+    raise InvalidImageTypeDeclared(message=message, public_message=message)
 
 
 def load_image_from_numpy_object(value: np.ndarray) -> np.ndarray:
@@ -618,6 +663,7 @@ IMAGE_LOADERS = {
     ImageType.BASE64: load_image_base64,
     ImageType.FILE: cv2.imread,
     ImageType.MULTIPART: load_image_from_buffer,
+    ImageType.NPY: lambda v, _: load_image_from_npy(v),
     ImageType.NUMPY: lambda v, _: load_image_from_numpy_str(v),
     ImageType.NUMPY_OBJECT: lambda v, _: load_image_from_numpy_object(v),
     ImageType.PILLOW: lambda v, _: np.asarray(v.convert("RGB")),

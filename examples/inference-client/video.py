@@ -1,9 +1,10 @@
 import argparse
+import io
 import os
-import pickle
 from typing import List
 
 import cv2
+import numpy as np
 import requests
 import supervision as sv
 
@@ -47,7 +48,7 @@ def process_and_annotate_frames(
     confidence: float,
     api_key: str,
 ) -> None:
-    url = f"http://localhost:9001/{dataset_id}/{version_id}?image_type=numpy"
+    url = f"http://localhost:9001/{dataset_id}/{version_id}?image_type=npy"
     headers = {"Content-Type": "application/json"}
     params = {
         "api_key": api_key,
@@ -57,7 +58,9 @@ def process_and_annotate_frames(
     box_annotator = sv.BoxAnnotator()
 
     for frame in sv.get_video_frames_generator(source_path=video_path):
-        numpy_data = pickle.dumps(frame)
+        buffer = io.BytesIO()
+        np.save(buffer, frame, allow_pickle=False)
+        numpy_data = buffer.getvalue()
         response = requests.post(
             url, headers=headers, params=params, data=numpy_data
         ).json()

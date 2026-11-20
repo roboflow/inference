@@ -118,6 +118,10 @@ uv pip install -e ".[torch-cpu,onnx-cpu,workflows]"
 still runs (the legacy inference routes work), but the `/workflows/*` routes
 are dropped at startup instead of registered.
 
+Legacy JSON image declarations also accept explicit `type: "npy"` for lossless
+uint8 BGR or grayscale arrays. See the [NumPy input migration guide](../docs/server_configuration/numpy_image_inputs.md)
+for encoding examples and migrating from the removed pickle format.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LEGACY_ROUTES_ENABLED` | `true` | Enables the legacy model routes; workflows routes depend only on the installed `workflows` extra and `DISABLE_WORKFLOW_ENDPOINTS` |
