@@ -32,6 +32,9 @@ for contributor and maintainer responsibilities.
 
 - Google Gemini v6 (`roboflow_core/google_gemini@v6`) gains a `keypoint-detection` task. It takes `classes` and a new `keypoint_schema` input, which maps each class to its skeleton: the keypoint names, the edges between them and, optionally, a template with where each keypoint sits on a reference instance, as (x, y) fractions of its box. A response schema has Gemini return one list of instances per class, each with its `box_2d` and one `{"point": [y, x], "occluded": bool}` per keypoint, normalized to 0-1000, or `null` for a keypoint outside the image. `predictions` holds keypoint detections, in the format of keypoint models in both data representations: a visible keypoint gets confidence 1.0, an occluded one (position estimated) 0.5, and a keypoint the model could not place is left out of its instance. Instances get confidence 1.0. Code execution is refused for this task.
 - OpenAI v7 (`roboflow_core/open_ai@v7`) gains the same `keypoint-detection` task, with the same `classes` and `keypoint_schema` inputs and the same predictions. Strict structured outputs have the model return each instance's `box_2d` and one `{"x": int, "y": int, "occluded": bool}` per keypoint, in absolute pixels of the uploaded image, or `null` for a keypoint outside the image. As for `instance-segmentation`, the image is uploaded at its original resolution as JPEG with the `image_detail` hint, and an unset `model_version` runs `gpt-6-astra`.
+- Add Gemini 4 Neon to the Google Gemini v6 block with low, medium, high, xhigh and max thinking levels and instance segmentation.
+- GPT-6.2 Astra and GPT-6.2 Sol in the OpenAI v7 block (`roboflow_core/open_ai@v7`), with `low`, `medium`, `high`, `xhigh`, and `max` reasoning levels and the existing structured absolute-pixel detection format.
+- Qwen 4 Max via OpenRouter in the Qwen v4 block (`roboflow_core/qwen_vlm@v4`), with the `none`, `low`, `high` and `xhigh` reasoning levels.
 
 ### Changed
 
@@ -50,6 +53,7 @@ for contributor and maintainer responsibilities.
   block also draws the `edges` each run gets: its cached annotator kept the
   first run's edges, so edges from a runtime input that changed between runs
   were ignored.
+- Mistral Large 4 now defaults to low reasoning and supports medium and high; saved workflows using none send low instead of disabling unsupported reasoning. OpenRouter errors retain upstream messages from metadata.raw on direct and managed-key paths.
 
 ## `0.2.16`
 
