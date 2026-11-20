@@ -1202,6 +1202,18 @@ class TestFreshLoadEvictionRank:
         victims = mm._select_and_pop_victims("other", True, 1)
         assert [mid for mid, _, _ in victims] == ["b"]
 
+    def test_use_after_load_outranks_later_load(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        ticks = iter([10.0, 20.0])
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: next(ticks))
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        backends["a"].last_used_ts = 25.0
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["b"]
+
     def test_recorded_load_time_dropped_on_eviction_and_unload(self, monkeypatch):
         mm, _ = self._mm_at_cap(monkeypatch, 2)
         mm.load("a", api_key="")
