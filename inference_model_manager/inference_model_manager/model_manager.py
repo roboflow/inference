@@ -478,8 +478,13 @@ class ModelManager:
                     and now - registered < grace_s
                 )
                 eligible.append((unserved_in_grace, last_used or 0.0, mid))
-            evictable = [entry for entry in eligible if not entry[0]] or eligible
-            candidates = sorted((ts, mid) for _, ts, mid in evictable)
+            protected_mid = max(
+                (mid for flag, _, mid in eligible if flag),
+                key=lambda mid: self._registered_ts[mid],
+                default=None,
+            )
+            evictable = [entry for entry in eligible if entry[2] != protected_mid]
+            candidates = sorted((ts, mid) for _, ts, mid in evictable or eligible)
             popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)

@@ -98,7 +98,7 @@ without a code change here:
 | `ENABLE_CONTROL_PLANE_ROUTES` | `false` | Enables model list/load/unload and server info/metrics routes; they accept any valid key without workspace scoping |
 | `INFERENCE_MAX_ACTIVE_MODELS` | `8` | Max concurrently loaded models (direct gateway); LRU drain-unload on overflow, `<=0` unbounded |
 | `INFERENCE_MEMORY_FREE_THRESHOLD` | `0` | Free-VRAM fraction below which loads evict LRU models first; `0` off |
-| `INFERENCE_UNSERVED_MODEL_GRACE_S` | `30.0` | Seconds a loaded model that has not served yet is evicted only when no other unpinned model can be; `0` off. Keep it above `INFERENCE_LOAD_WAIT_S` |
+| `INFERENCE_UNSERVED_MODEL_GRACE_S` | `30.0` | Seconds the most recently loaded model that has not served yet is evicted only when no other unpinned model can be; `0` off. Keep it longer than the expected client retry interval |
 | `PRELOAD_API_KEY` | `ROBOFLOW_API_KEY` | API key for `INFERENCE_PRELOAD_MODELS`, `PINNED_MODELS` and `PRELOAD_HF_IDS` startup loads when an entry carries no key of its own |
 | `MAX_INFERENCE_MODELS_CACHE_SIZE_MB` | `-1` | Disk cache watchdog size cap; `-1` off |
 | `INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES` | `60` | Disk cache watchdog interval |

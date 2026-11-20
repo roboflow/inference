@@ -1227,6 +1227,26 @@ class TestUnservedModelProtection:
         self._load(mm, clock, "d")
         assert set(mm.loaded_models) == {"b", "c", "d"}
 
+    def test_repeated_unserved_loads_do_not_displace_hot_models(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 5)
+        hot = ("h1", "h2", "h3")
+        for model_id in hot:
+            self._load(mm, clock, model_id)
+            self._serve(backends, clock, model_id)
+        for i in range(5):
+            self._load(mm, clock, f"cold{i}")
+            for model_id in hot:
+                self._serve(backends, clock, model_id)
+            assert set(hot) <= set(mm.loaded_models)
+
+    def test_only_newest_unserved_model_is_protected(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 3)
+        for model_id in ("hot", "old", "new"):
+            self._load(mm, clock, model_id)
+        self._serve(backends, clock, "hot")
+        self._load(mm, clock, "incoming")
+        assert set(mm.loaded_models) == {"hot", "new", "incoming"}
+
     def test_unserved_model_evicted_in_lru_order_after_grace(self, monkeypatch):
         mm, backends, clock = self._mm(monkeypatch, 3)
         for model_id in ("a", "b", "c"):
@@ -1279,17 +1299,6 @@ class TestUnservedModelProtection:
         mm.load("a", api_key="")
         mm.load("c", api_key="")
         assert set(mm.loaded_models) == {"b", "c"}
-
-    def test_memory_pressure_takes_served_first_then_unserved(self, monkeypatch):
-        mm, backends, clock = self._mm(monkeypatch, 0)
-        for model_id in ("a", "b", "x", "y"):
-            self._load(mm, clock, model_id)
-        self._serve(backends, clock, "a")
-        self._serve(backends, clock, "b")
-        first = mm._select_and_pop_victims(incoming="new", pressure=True, count=3)
-        second = mm._select_and_pop_victims(incoming="new", pressure=True, count=3)
-        assert [victim for victim, _, _ in first] == ["a", "b"]
-        assert [victim for victim, _, _ in second] == ["x", "y"]
 
     def test_unserved_model_evicted_when_no_other_candidate(self, monkeypatch):
         mm, backends, clock = self._mm(monkeypatch, 2)
@@ -1523,6 +1532,7 @@ class TestEvictionConvergenceAndDrainSafety:
         import inference_model_manager.model_manager as mm_mod
 
         monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0)
+        monkeypatch.setattr(cfg, "INFERENCE_UNSERVED_MODEL_GRACE_S", 0.0)
         mm = ModelManager()
         backends: dict = {}
         _patch_create_backend(mm, backends)
