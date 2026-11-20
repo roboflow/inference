@@ -124,6 +124,12 @@ GEMINI_MODELS = [
         "supports_native_code_execution": False,
     },
     {
+        "id": "gemini-4-neon",
+        "name": "Gemini 4 Neon",
+        "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
+        "supports_native_code_execution": False,
+    },
+    {
         "id": "gemini-4-argon",
         "name": "Gemini 4 Argon",
         "thinking_levels": ["low", "high"],
@@ -197,7 +203,12 @@ GEMINI_MODELS = [
     },
 ]
 
-SEGMENTATION_MODEL_IDS = {"gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen"}
+SEGMENTATION_MODEL_IDS = {
+    "gemini-4-argon",
+    "gemini-4-carbon",
+    "gemini-4-hydrogen",
+    "gemini-4-neon",
+}
 
 MODEL_VERSION_IDS = [model["id"] for model in GEMINI_MODELS]
 
@@ -271,7 +282,7 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 ## Version Differences
 
-Instance segmentation is available only for `gemini-4-argon`, `gemini-4-carbon` and `gemini-4-hydrogen`. It uses lossless PNG
+Instance segmentation is available for supported Gemini 4 models. It uses lossless PNG
 images up to 1600 pixels on the long edge and normalized YX polygons with
 detached components and holes. Predictions use RLE masks; bounding boxes are
 derived from the masks. Other Gemini models reject this task.
@@ -456,15 +467,10 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ] = Field(
         default=None,
-        description="Controls the depth of internal reasoning for Gemini 3+ models. "
-        "'minimal' matches no-thinking for most queries, 'low' minimizes latency and cost, "
-        "'medium' balances both, 'high' maximizes reasoning depth; 'xhigh' and 'max' go "
-        "deeper still and are supported only by Gemini 4 Carbon and Gemini 4 Hydrogen. Supported values differ "
-        "per model (see the model dropdown): Gemini 3.1 Pro and Gemini 3.7/3.8 Flash have "
-        "no 'minimal'; Gemini 3.1 Pro also cannot disable thinking. When unset, the Google "
-        "API default for the selected model is used (e.g. 'high' for Gemini 3.1 Pro, "
-        "'medium' for Gemini 3.5/3.6 Flash). "
-        "Not supported by the Gemini 2.5 series.",
+        description="Controls the depth of internal reasoning. Higher levels allow more "
+        "reasoning at the cost of latency and tokens. Supported values differ per "
+        "model (see the model dropdown). When unset, the Google API default for "
+        "the selected model is used. Not supported by the Gemini 2.5 series.",
         json_schema_extra={
             "relevant_for": {
                 "model_version": {
@@ -531,10 +537,7 @@ class BlockManifest(WorkflowBlockManifest):
             and self.model_version not in SEGMENTATION_MODEL_IDS
             and not self.model_version.startswith("$")
         ):
-            raise ValueError(
-                "Instance segmentation is supported only for gemini-4-argon, "
-                "gemini-4-carbon and gemini-4-hydrogen"
-            )
+            raise ValueError("Instance segmentation is not supported for this model")
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(
                 f"`prompt` parameter required to be set for task `{self.task_type}`"
@@ -728,10 +731,7 @@ def run_gemini_prompting(
         task_type == "instance-segmentation"
         and model_version not in SEGMENTATION_MODEL_IDS
     ):
-        raise ValueError(
-            "Instance segmentation is supported only for gemini-4-argon, "
-            "gemini-4-carbon and gemini-4-hydrogen"
-        )
+        raise ValueError("Instance segmentation is not supported for this model")
     if task_type == "instance-segmentation" and google_code_execution:
         raise ValueError(
             "Code execution is not supported with segmentation JSON output"
@@ -1326,7 +1326,7 @@ def prepare_instance_segmentation_prompt(
     Args:
         base64_image (str): Lossless PNG image encoded as base64.
         classes (List[str]): Allowed instance labels.
-        model_version (str): Must be gemini-4-argon, gemini-4-carbon or gemini-4-hydrogen.
+        model_version (str): A model in SEGMENTATION_MODEL_IDS.
         temperature (Optional[float]): Sampling temperature.
         thinking_level (Optional[str]): Model reasoning level.
         max_tokens (Optional[int]): Output token budget.
@@ -1339,10 +1339,7 @@ def prepare_instance_segmentation_prompt(
         ValueError: If model or classes do not support segmentation.
     """
     if model_version not in SEGMENTATION_MODEL_IDS or not classes:
-        raise ValueError(
-            "Segmentation requires gemini-4-argon, gemini-4-carbon or "
-            "gemini-4-hydrogen and classes"
-        )
+        raise ValueError("Segmentation requires a supported model and classes")
 
     config = prepare_generation_config(
         max_tokens=max_tokens,
