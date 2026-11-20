@@ -116,24 +116,25 @@ of the platform's default-off gate for new OBB authoring/jobs.
 
 ## Package and worker release gate
 
-This feature is pending release. The registry versions below are forward
-requirements, not evidence of a published or deployed native provider. These
-candidate IDs were vacant when checked and are not reserved; recheck registry
-metadata and wheel contents before separately approving a normal release:
+This feature is pending release. No published package contains it yet:
+`inference` `1.8.5`, `inference-sdk` `1.8.5`, `inference-models` `0.39.9` and
+`roboflow-workflows` `0.2.16` shipped without it. Each distribution below needs
+its first release that includes this change. Maintainers pick the version
+numbers at release:
 
-| Distribution | Required version | Consumer |
-| --- | --- | --- |
-| `inference-sdk` | `1.8.5` | Remote native task dispatch in Workflows and model evaluation |
-| `inference-models` | `0.39.9` | Native RF-DETR ONNX registry/runtime |
-| `roboflow-workflows` | `0.2.16` | Canonical native response entities, blocks and consensus v2 |
-| `inference`, `inference-cpu`, `inference-gpu`, `inference-core` | `1.8.5` | HTTP server and model adapters |
+| Distribution | Consumer |
+| --- | --- |
+| `inference-sdk` | Remote native task dispatch in Workflows and model evaluation |
+| `inference-models` | Native RF-DETR ONNX registry/runtime |
+| `roboflow-workflows` | Canonical native response entities, blocks and consensus v2 |
+| `inference`, `inference-cpu`, `inference-gpu`, `inference-core` | HTTP server and model adapters |
 
 ### Build validation before release
 
 Build candidate packages from the same reviewed checkout:
 
 ```bash
-make create_sdk_wheel
+make create_pypi_sdk_wheel
 (cd inference_models && uv build)
 make download_fonts
 (cd workflows && uv build --wheel --out-dir ../dist)
@@ -155,7 +156,7 @@ cannot satisfy that order by publishing from an unmerged branch. This dependency
 order is required for release; no package publication or deployment is established
 by the local build checks above.
 
-1. Merge the SDK and Models changes, then release SDK `1.8.5` and Models `0.39.9`
+1. Merge the SDK and Models changes, then release the SDK and Models
    through their existing release workflows after separate release approval.
    Verify the registry wheels' metadata and contents against the merged source.
 2. Once those registry releases are verified, update the consumer pins and run
@@ -168,12 +169,12 @@ by the local build checks above.
    The Models project lock must also pass
    `cd inference_models && uv lock --check`. Local wheel overrides, fabricated
    hashes, and vendored wheels do not satisfy the registry-lock gate.
-3. After the consumer changes merge, release Workflows `0.2.16` through its
+3. After the consumer changes merge, release Workflows through its
    existing workflow. Verify the registry wheel contains
    `core_steps/common/oriented_entities.py`, and verify clean ordinary server
    imports with the released dependency set. Workflows must be available before
    root distributions requiring its exact version become consumable.
-4. Release the root `1.8.5` packages after their consumer changes merge and build
+4. Release the root packages after their consumer changes merge and build
    server images. `make create_wheels` builds the root release set, including the
    SDK; the root workflow handles the SDK upload separately. Full CPU/GPU builds
    explicitly install their checkout Models wheel; slim builds resolve the new
