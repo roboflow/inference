@@ -1,9 +1,8 @@
+# Official releases are orchestrated by publish.pypi.yml / release.image.yml.
 name: Build and Push GPU Container
 permissions:
   contents: read
 on:
-  release:
-    types: [created]
   workflow_dispatch:
     inputs:
       force_push:
@@ -76,6 +75,7 @@ jobs:
         id: tags
         uses: ./.github/actions/determine-tags
         with:
+          official-release-only: 'true'
           custom_tag: ${{ inputs.custom_tag }}
           version: ${{ env.VERSION }}
           base_image: ${{ env.BASE_IMAGE }}

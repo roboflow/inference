@@ -298,7 +298,7 @@ model = AutoModel.from_pretrained(
 
 **Required parameters:**
 
-- **`model_type`** - RF-DETR architecture variant: `rfdetr-nano`, `rfdetr-small`, `rfdetr-base`, `rfdetr-medium`, `rfdetr-large`, `rfdetr-seg-preview`
+- **`model_type`** - RF-DETR architecture variant: `rfdetr-nano`, `rfdetr-small`, `rfdetr-base`, `rfdetr-medium`, `rfdetr-large`, `rfdetr-atto`, `rfdetr-femto`, `rfdetr-pico`, `rfdetr-seg-preview`
 
 **Optional parameters:**
 
