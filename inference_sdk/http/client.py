@@ -2927,13 +2927,23 @@ class InferenceHTTPClient:
         confidence: Optional[float] = None,
     ) -> List[dict]:
         """Return bounding boxes for text queries using an uploaded OWLv2 detector."""
-        return self._infer_with_text_queries(
-            inference_input,
-            "owlv2/infer",
-            class_names,
-            confidence,
-            {"model_id": model_id},
+        payload = self.__initialise_payload()
+        payload.update({"model_id": model_id, "text": class_names})
+        if confidence is not None:
+            payload["confidence"] = confidence
+        requests_data = prepare_requests_data(
+            url=self.__wrap_url_with_api_key(f"{self.__api_url}/owlv2/infer"),
+            encoded_inference_inputs=load_static_inference_input(
+                inference_input=inference_input,
+            ),
+            headers=self.__headers_with_auth(DEFAULT_HEADERS),
+            parameters=None,
+            payload=payload,
+            max_batch_size=1,
+            image_placement=ImagePlacement.JSON,
         )
+        responses = self._execute_infer_from_api_request(requests_data)
+        return [response.json() for response in responses]
 
     @wrap_errors
     def infer_from_yolo_world(
@@ -2963,30 +2973,16 @@ class InferenceHTTPClient:
             HTTPCallErrorError: If there is an error in the HTTP call.
             HTTPClientError: If there is an error with the server connection.
         """
-        return self._infer_with_text_queries(
-            inference_input,
-            "yolo_world/infer",
-            class_names,
-            confidence,
-            (
-                {"yolo_world_version_id": model_version}
-                if model_version is not None
-                else {}
-            ),
-        )
-
-    def _infer_with_text_queries(
-        self, inference_input, endpoint, class_names, confidence, model_params
-    ):
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
         payload = self.__initialise_payload()
         payload["text"] = class_names
-        payload.update(model_params)
+        if model_version is not None:
+            payload["yolo_world_version_id"] = model_version
         if confidence is not None:
             payload["confidence"] = confidence
-        url = self.__wrap_url_with_api_key(f"{self.__api_url}/{endpoint}")
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}/yolo_world/infer")
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
