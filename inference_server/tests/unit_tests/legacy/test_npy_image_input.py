@@ -249,3 +249,53 @@ def test_http_npy_malformed_header_returns_400(legacy_client, fake_stat, version
 
     assert response.status_code == 400, response.text
     assert not _inferred_images(gateway)
+
+
+_MALFORMED_DESCRIPTORS = {
+    "empty-tuple": b"{'descr': (), 'fortran_order': False, 'shape': (1, 1)}",
+    "incomplete-tuple": b"{'descr': ('|u1',), 'fortran_order': False, 'shape': (1, 1)}",
+    "list-of-garbage": b"{'descr': [()], 'fortran_order': False, 'shape': (1, 1)}",
+    "missing-keys": b"{'shape': (1, 1)}",
+}
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", list(_MALFORMED_DESCRIPTORS))
+def test_npy_malformed_descriptor_is_a_client_error(monkeypatch, version, name):
+    decode = Mock(side_effect=AssertionError("must reject before allocating"))
+    monkeypatch.setattr(common.np, "load", decode)
+
+    with pytest.raises(InvalidNumpyInput):
+        decode_inline_image(
+            {"type": "npy", "value": _malformed_npy(version, _MALFORMED_DESCRIPTORS[name])},
+            ndarray_ok=True,
+        )
+
+    decode.assert_not_called()
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", list(_MALFORMED_DESCRIPTORS))
+def test_http_npy_malformed_descriptor_returns_400(legacy_client, fake_stat, version, name):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+    gateway = _detection_gateway()
+    data = _malformed_npy(version, _MALFORMED_DESCRIPTORS[name])
+
+    response = _post_image(
+        legacy_client(gateway),
+        {"type": "npy", "value": base64.b64encode(data).decode("ascii")},
+    )
+
+    assert response.status_code == 400, response.text
+    assert not _inferred_images(gateway)
+
+
+@pytest.mark.parametrize("channels_axis", [False, True])
+def test_decoded_grayscale_npy_reaches_direct_gateways_as_bgr(channels_axis):
+    gray = np.arange(35, dtype=np.uint8).reshape(5, 7)
+    image = gray[..., None] if channels_axis else gray
+
+    payload = decode_inline_image({"type": "npy", "value": _npy(image)}, ndarray_ok=True)
+
+    assert payload.data.shape == (5, 7, 3)
+    np.testing.assert_array_equal(payload.data, np.repeat(gray[..., None], 3, axis=2))

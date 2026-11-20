@@ -118,3 +118,54 @@ def test_embeddings_malformed_npy_header_returns_400(monkeypatch, api_key, versi
 
     assert response.status_code == 400, response.text
     model._model.forward_embedding.assert_not_called()
+
+
+_MALFORMED_DESCRIPTORS = {
+    "empty-tuple": b"{'descr': (), 'fortran_order': False, 'shape': (1, 1)}",
+    "incomplete-tuple": b"{'descr': ('|u1',), 'fortran_order': False, 'shape': (1, 1)}",
+    "list-of-garbage": b"{'descr': [()], 'fortran_order': False, 'shape': (1, 1)}",
+    "missing-keys": b"{'shape': (1, 1)}",
+}
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
+@pytest.mark.parametrize("name", list(_MALFORMED_DESCRIPTORS))
+def test_embeddings_malformed_npy_descriptor_returns_400(monkeypatch, api_key, version, name):
+    model = _inference_models_adapter()
+    client = _hosted_client(monkeypatch, model)
+    data = _malformed_npy(version, _MALFORMED_DESCRIPTORS[name])
+
+    response = client.post(
+        "/infer/embeddings",
+        json={
+            "model_id": MODEL_ID,
+            "api_key": api_key,
+            "image": {"type": "npy", "value": base64.b64encode(data).decode("ascii")},
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    model._model.forward_embedding.assert_not_called()
+
+
+@pytest.mark.parametrize("channels_axis", [False, True])
+def test_embeddings_grayscale_npy_reaches_the_model_as_bgr(monkeypatch, api_key, channels_axis):
+    gray = np.arange(35, dtype=np.uint8).reshape(5, 7)
+    image = gray[..., None] if channels_axis else gray
+    buffer = io.BytesIO()
+    np.save(buffer, image, allow_pickle=False)
+    model = _inference_models_adapter()
+    client = _hosted_client(monkeypatch, model)
+
+    response = client.post(
+        "/infer/embeddings",
+        json={
+            "model_id": MODEL_ID,
+            "api_key": api_key,
+            "image": {"type": "npy", "value": base64.b64encode(buffer.getvalue()).decode("ascii")},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    forwarded = model._model.pre_process.call_args.args[0][0]
+    np.testing.assert_array_equal(forwarded, np.repeat(gray[..., None], 3, axis=2))

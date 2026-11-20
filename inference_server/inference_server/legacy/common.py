@@ -429,14 +429,23 @@ def _npy_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
         # Remote workers already accept NPY bytes. Only decode for gateways
         # that accept arrays, avoiding a decode/re-encode on the remote path.
         data = np.load(io.BytesIO(value), allow_pickle=False) if ndarray_ok else value
-    # NumPy's header parser raises TokenError, SyntaxError or RecursionError
-    # for malformed or deeply nested headers; all are a client error.
+        if ndarray_ok and (data.ndim == 2 or data.shape[2] == 1):
+            # Direct model gateways expect three-channel BGR, as the legacy
+            # stack's load_image produces for grayscale input.
+            data = cv2.cvtColor(data, cv2.COLOR_GRAY2BGR)
+    # NumPy's header parser raises TokenError, SyntaxError or RecursionError for
+    # malformed or deeply nested headers, and IndexError/KeyError/AttributeError
+    # for malformed dtype descriptors; all are a client error.
     except (
         ValueError,
         TypeError,
         EOFError,
         SyntaxError,
         RecursionError,
+        IndexError,
+        KeyError,
+        AttributeError,
+        OverflowError,
         tokenize.TokenError,
     ) as error:
         raise image_load_error(
