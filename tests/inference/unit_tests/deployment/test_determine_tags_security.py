@@ -115,3 +115,21 @@ def test_custom_tag_never_executes_submitted_shell(tmp_path, custom):
     assert result.returncode != 0
     assert not output
     assert not (tmp_path / "sentinel").exists()
+
+
+@pytest.mark.parametrize(
+    "overrides,allowed",
+    [
+        ({"FORCE_PUSH": "true"}, False),
+        ({"FORCE_PUSH": "true", "CUSTOM_TAG": "diagnostic"}, True),
+        ({"FORCE_PUSH": "true", "VERSION": "1.2.3rc1"}, True),
+        ({"FORCE_PUSH": "false"}, True),
+    ],
+)
+def test_official_only_requires_release_event_for_stable_publication(
+    tmp_path, overrides, allowed
+):
+    result, output = run_tags(tmp_path, OFFICIAL_RELEASE_ONLY="true", **overrides)
+    assert (result.returncode == 0) is allowed, result.stderr
+    assert bool(output) is allowed
+    assert ":latest" not in output
