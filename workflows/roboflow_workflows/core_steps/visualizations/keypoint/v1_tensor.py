@@ -252,6 +252,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
                     thickness,
                     radius,
                     annotator_type,
+                    edges,
                 ],
             )
         )

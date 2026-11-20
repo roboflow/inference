@@ -46,11 +46,15 @@ def _remote_pose_response(keypoints: list) -> list:
     ]
 
 
-def _render_edges(response: list, edges: Optional[list] = None) -> np.ndarray:
+def _render_edges(
+    response: list,
+    edges: Optional[list] = None,
+    block: Optional[KeypointVisualizationBlockV1] = None,
+) -> np.ndarray:
     key_points = _native_key_points_from_inference_predictions(
         detection_dicts=response, image_metadata={}
     )
-    output = KeypointVisualizationBlockV1().run(
+    output = (block or KeypointVisualizationBlockV1()).run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=np.zeros((500, 500, 3), dtype=np.uint8),
@@ -119,3 +123,18 @@ def test_tensor_keypoint_visualization_skips_edges_to_a_vertex_no_instance_has()
     # then: the first edge is drawn as if the second were not there
     assert rendered.any()
     assert np.array_equal(rendered, _render_edges(response, edges=[(1, 2)]))
+
+
+def test_tensor_keypoint_visualization_draws_the_edges_given_to_each_run() -> None:
+    # given: one block drawing the same keypoints with other edges, as a compiled
+    # workflow does when its edges come from a runtime input
+    block = KeypointVisualizationBlockV1()
+    response = _remote_pose_response([(0, "tip"), (1, "joint"), (2, "base")])
+    _render_edges(response, edges=[(1, 2)], block=block)
+
+    # when
+    rendered = _render_edges(response, edges=[(2, 3)], block=block)
+
+    # then
+    assert np.array_equal(rendered, _render_edges(response, edges=[(2, 3)]))
+    assert not np.array_equal(rendered, _render_edges(response, edges=[(1, 2)]))

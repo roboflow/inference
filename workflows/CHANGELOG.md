@@ -46,7 +46,10 @@ for contributor and maintainer responsibilities.
   instance. Edges to such a keypoint are skipped like edges to any missing
   keypoint. Its `edges` description now says keypoints are numbered from 1, as
   supervision requires; `keypoint_schema` edges in the Gemini v6 and OpenAI v7
-  `keypoint-detection` task stay 0-based, and their descriptions say so.
+  `keypoint-detection` task stay 0-based, and their descriptions say so. The
+  block also draws the `edges` each run gets: its cached annotator kept the
+  first run's edges, so edges from a runtime input that changed between runs
+  were ignored.
 
 ## `0.2.16`
 
