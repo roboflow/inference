@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from inference.core.exceptions import (
@@ -20,6 +22,7 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowInliningStructureError,
     InnerWorkflowParameterBindingsUnknownInputError,
 )
+from inference.models.vllm_proxy.errors import VLLMConnectionError, VLLMHTTPError
 from inference_models.errors import (
     FileHashSumMissmatch,
     ModelInputError,
@@ -744,3 +747,71 @@ def test_with_route_exceptions_does_not_echo_a_password_from_describe_interface(
     for secret in ("Qz7u", "Xk9p"):
         assert secret not in body
         assert secret not in logged
+
+
+@pytest.mark.parametrize(
+    "status_code, expected_message",
+    [
+        (504, "Timed out waiting for the model serving backend."),
+        (
+            503,
+            "Model serving backend is temporarily unavailable - retry request.",
+        ),
+    ],
+)
+def test_with_route_exceptions_when_vllm_connection_error_raised(
+    status_code: int, expected_message: str
+):
+    @with_route_exceptions
+    def my_route():
+        raise VLLMConnectionError(
+            "Could not reach vLLM sidecar at http://vllm:8000/v1/chat/completions",
+            status_code=status_code,
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == status_code
+    assert json.loads(resp.body) == {"message": expected_message}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status_code, expected_message",
+    [
+        (504, "Timed out waiting for the model serving backend."),
+        (
+            503,
+            "Model serving backend is temporarily unavailable - retry request.",
+        ),
+    ],
+)
+async def test_with_route_exceptions_async_when_vllm_connection_error_raised(
+    status_code: int, expected_message: str
+):
+    @with_route_exceptions_async
+    async def my_route():
+        raise VLLMConnectionError(
+            "Could not reach vLLM sidecar at http://vllm:8000/v1/chat/completions",
+            status_code=status_code,
+        )
+
+    resp = await my_route()
+
+    assert resp.status_code == status_code
+    assert json.loads(resp.body) == {"message": expected_message}
+
+
+def test_with_route_exceptions_when_vllm_http_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise VLLMHTTPError(
+            message="vLLM sidecar returned HTTP 502",
+            status_code=502,
+            response_body="bad gateway",
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == 500
+    assert json.loads(resp.body) == {"message": "Internal error."}
