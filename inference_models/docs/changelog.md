@@ -41,6 +41,14 @@
   former `500` failed after one attempt. Lower `VLLM_REQUEST_TIMEOUT_S` where
   that wait is too long.
 
+### Fixed
+
+- Loading a TensorRT engine while other threads run TensorRT models no longer
+  freezes the whole process. Engines are deserialized with TensorRT's built-in
+  logger instead of a Python one, so a TensorRT call never waits for the GIL.
+  TensorRT runtime messages now go to the process output, and a corrupted engine
+  error points there instead of embedding them.
+
 ## `0.39.9`
 
 ### Changed
