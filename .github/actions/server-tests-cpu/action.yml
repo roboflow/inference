@@ -1,6 +1,9 @@
 name: Server CPU regression steps
 description: Shared server test stages for legacy and saved-image workflows
 inputs:
+  attempts:
+    description: Maximum test attempts
+    default: "1"
   private_logs:
     description: Suppress runtime and test output in public CI logs
     default: "false"
@@ -55,6 +58,8 @@ runs:
         CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
     - name: 🧪 Integration Tests of inference server [x86 CPU]
       env:
+        RETRY_ATTEMPTS: ${{ inputs.attempts }}
+        RETRY_TIMEOUT_SECONDS: '3600'
         API_KEY: ${{ inputs.API_KEY }}
         asl_instance_segmentation_API_KEY: ${{ inputs.ASL_INSTANCE_SEGMENTATION_API_KEY }}
         asl_poly_instance_seg_API_KEY: ${{ inputs.ASL_POLY_INSTANCE_SEG_API_KEY }}
@@ -66,7 +71,9 @@ runs:
         yolonas_test_API_KEY: ${{ inputs.YOLONAS_TEST_API_KEY }}
       shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
       run: |
-        USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python -m pytest tests/inference/integration_tests $PYTEST_EXTRA_ARGS
+        export RETRY_LOG_DIR="$RUNNER_TEMP/server-test-attempts"
+        export RETRY_COMMAND='USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python -m pytest tests/inference/integration_tests $PYTEST_EXTRA_ARGS'
+        bash .github/scripts/retry.sh
         make stop_test_docker
     - name: 📜 Dump server logs on failure
       if: failure()

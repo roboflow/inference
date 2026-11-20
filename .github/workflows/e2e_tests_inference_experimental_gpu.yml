@@ -2,6 +2,12 @@ name: E2E tests - inference_models (GPU)
 permissions:
   contents: read
 on:
+  workflow_call:
+    inputs:
+      release_source:
+        description: Exact prepared release commit; empty for normal CI
+        type: string
+        default: ''
   push:
     branches: [main]
   workflow_dispatch:
@@ -11,16 +17,19 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-e2e_tests_inference_experimental_gpu-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   e2e-tests-inference-models-gpu:
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.release_source != '' && 92 || 30 }}
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_source || github.sha }}
+          persist-credentials: false
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -70,9 +79,21 @@ jobs:
           python -m pip install uv
           python -m uv venv
           python -m uv pip install -e .[test,onnx-cu12,trt10,torch-cu124] --python .venv
-      - name: 🧪 Run E2E tests
-        working-directory: inference_models
-        timeout-minutes: 20
-        run: |
-          source .venv/bin/activate
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest -m "e2e_model_inference and not cpu_only" tests/e2e_platform_tests
+      - name: "🧪 Run E2E tests [release-test]"
+        timeout-minutes: ${{ inputs.release_source != '' && 62 || 20 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          timeout-seconds: '1200'
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          working-directory: inference_models
+          command: |
+            source .venv/bin/activate
+            ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest -m "e2e_model_inference and not cpu_only" tests/e2e_platform_tests
+      - name: Retain RC attempt exit codes
+        if: ${{ always() && inputs.release_source != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-attempts-e2e_tests_inference_experimental_gpu-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
+          if-no-files-found: warn
