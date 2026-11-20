@@ -3,7 +3,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
 
 import cv2
 import numpy as np
@@ -15,6 +15,11 @@ from roboflow_workflows.core_steps.common.workload_presets import (
     FIRE_AND_FORGET_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_message
+from roboflow_workflows.core_steps.sinks.roboflow.event_store_transport import (
+    PreparedImage,
+    post_local_event,
+    prepare_local_images,
+)
 from roboflow_workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -62,6 +67,12 @@ using the v2 API.
 Each event includes one image entry. You must provide an **output image** (the
 primary display image, typically a visualization). You can optionally attach an
 **input image** (the original frame before any annotation).
+
+When the Event Ingestion Service runs in the same IPC namespace (e.g. Docker
+`ipc_mode: host`), images are handed over through shared memory (`/dev/shm`)
+instead of base64 in the request; the block detects this automatically and falls
+back to base64 otherwise. Set `EVENT_STORE_SHARED_MEMORY=false` to always send
+base64.
 
 ## Annotations
 
@@ -461,9 +472,10 @@ class EventWriterSinkBlockV1(WorkflowBlock):
             custom_value=custom_value,
         )
 
+        prepared_images = prepare_local_images(
+            output_image=output_image, input_image=input_image
+        )
         image_entry = _build_image_entry(
-            output_image=output_image,
-            input_image=input_image,
             image_label=image_label,
             object_detections=object_detections,
             classifications=classifications,
@@ -487,6 +499,7 @@ class EventWriterSinkBlockV1(WorkflowBlock):
             payload=payload,
             api_key=os.environ.get("EVENT_INGESTION_API_KEY"),
             timeout=request_timeout,
+            prepared_images=prepared_images,
         )
 
         if fire_and_forget and self._background_tasks:
@@ -710,7 +723,7 @@ def _keypoints_to_v2(detections: Any) -> List[Dict[str, Any]]:
 
 
 def _build_image_entry(
-    output_image: WorkflowImageData,
+    output_image: Optional[WorkflowImageData] = None,
     input_image: Optional[WorkflowImageData] = None,
     image_label: Optional[str] = None,
     object_detections: Optional[Any] = None,
@@ -719,9 +732,9 @@ def _build_image_entry(
     keypoint_detections: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Build the single image object for the v2 API payload."""
-    entry: Dict[str, Any] = {
-        "base64Image": output_image.base64_image,
-    }
+    entry: Dict[str, Any] = {}
+    if output_image is not None:
+        entry["base64Image"] = output_image.base64_image
     if input_image is not None:
         entry["inputBase64Image"] = input_image.base64_image
     if image_label is not None:
@@ -751,6 +764,7 @@ def _execute_event_request(
     payload: Dict[str, Any],
     api_key: Optional[str],
     timeout: int,
+    prepared_images: Sequence[PreparedImage] = (),
 ) -> Tuple[bool, str, str]:
     """POST the event to the ingestion service.
 
@@ -762,7 +776,13 @@ def _execute_event_request(
         if api_key:
             headers["X-API-Key"] = api_key
 
-        response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        response = post_local_event(
+            url,
+            payload=payload,
+            prepared_images=prepared_images,
+            headers=headers,
+            timeout=timeout,
+        )
 
         if response.status_code == 201:
             data = response.json()

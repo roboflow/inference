@@ -25,6 +25,7 @@ PERMITTED_ENVIRONMENT_READS = {
         "roboflow_workflows/core_steps/secrets_providers/environment_secrets_store/v1.py",
         1,
     ),
+    ("roboflow_workflows/core_steps/sinks/roboflow/event_store_transport.py", 2),
     # `EVENT_INGESTION_API_KEY`, the local event-ingestion service key.
     ("roboflow_workflows/core_steps/sinks/roboflow/vision_events/v1.py", 1),
     (
