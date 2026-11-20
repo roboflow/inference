@@ -631,39 +631,43 @@ def test_workflow_ownership_and_credential_boundaries():
         Loader=yaml.BaseLoader,
     )
     assert not (ROOT / ".github/workflows/publish.pypi.inference_sdk.yml").exists()
-    assert workflow["on"]["release"]["types"] == ["created"]
+    assert workflow["on"]["release"]["types"] == ["published"]
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert inputs["publish"]["default"] == "false"
     assert inputs["packages"]["default"] == "all"
-    assert inputs["packages"]["options"] == ["sdk", "runtime", "all", "dependencies"]
+    assert inputs["packages"]["options"] == ["all", "sdk"]
     assert "id-token" not in workflow["permissions"]
     jobs = workflow["jobs"]
-    assert jobs["publish_sdk"]["needs"] == "build_sdk"
+    assert jobs["publish_sdk"]["needs"] == ["prepare", "build_sdk"]
     assert set(jobs["publish_runtime"]["needs"]) == {
+        "prepare",
+        "commit_locks",
         "build_runtime",
-        "publish_sdk",
         "prepare_dependencies",
     }
-
+    publishers = {
+        "publish_sdk",
+        "publish_models",
+        "publish_workflows",
+        "publish_streamvision",
+        "publish_runtime",
+    }
     for name, job in jobs.items():
-        assert "environment" not in job
-        assert "uses" not in job  # Upload stays in the already trusted workflow.
         uploads = [
-            step for step in job["steps"] if step.get("uses", "").startswith("pypa/")
+            step
+            for step in job.get("steps", [])
+            if step.get("uses", "").startswith("pypa/")
         ]
-        if name in {"build_sdk", "build_runtime", "prepare_dependencies"}:
-            assert "id-token" not in job.get("permissions", {})
+        if name not in publishers:
             assert not uploads
             continue
-
-        assert job["permissions"]["id-token"] == "write"
+        assert "environment" not in job
+        assert "uses" not in job  # PyPI uploads retain the trusted root identity.
+        assert job["permissions"] == {"contents": "read", "id-token": "write"}
         assert len(uploads) == 1
-        expected = (
-            "dist/sdk-upload/" if name == "publish_sdk" else "dist/runtime-upload/"
+        assert uploads[0]["with"]["packages-dir"] == (
+            "dist/sdk-upload/" if name == "publish_sdk" else "release-upload/"
         )
-        assert uploads[0]["with"]["packages-dir"] == expected
-
-    # The real registry gate must run before the consumer upload in every mode.
     steps = jobs["publish_runtime"]["steps"]
     gate = next(i for i, step in enumerate(steps) if "gate-sdk" in step.get("run", ""))
     upload = next(
