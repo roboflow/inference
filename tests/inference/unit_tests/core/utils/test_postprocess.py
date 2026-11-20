@@ -14,6 +14,8 @@ from inference.core.utils.postprocess import (
     post_process_bboxes,
     post_process_keypoints,
     post_process_polygons,
+    process_mask_accurate,
+    process_mask_tradeoff,
     scale_bboxes,
     scale_polygons,
     shift_bboxes,
@@ -856,3 +858,49 @@ def test_post_process_keypoints_when_crop_was_taken_and_fit_to_padding_method_us
 
     # then
     assert np.allclose(np.array(result), expected_result)
+
+
+@pytest.mark.parametrize("tradeoff_factor", [0.25, 0.5, 1.0])
+def test_process_mask_tradeoff_against_non_square_image(tradeoff_factor: float) -> None:
+    # given
+    protos = np.random.rand(32, 80, 80).astype(np.float32)
+    masks_in = np.random.rand(1, 32).astype(np.float32)
+    boxes = np.array([[10, 10, 180, 100]], dtype=np.float32)
+    image_height, image_width = 120, 200
+    expected_height = int(80 * (1 - tradeoff_factor) + image_height * tradeoff_factor)
+    expected_width = int(80 * (1 - tradeoff_factor) + image_width * tradeoff_factor)
+
+    # when
+    result = process_mask_tradeoff(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=boxes,
+        shape=(image_height, image_width),
+        tradeoff_factor=tradeoff_factor,
+    )
+
+    # then
+    assert result.shape == (1, expected_height, expected_width)
+
+
+def test_process_mask_tradeoff_matches_accurate_at_full_tradeoff() -> None:
+    # given
+    protos = np.random.rand(32, 80, 80).astype(np.float32)
+    masks_in = np.random.rand(1, 32).astype(np.float32)
+    boxes = np.array([[10, 10, 180, 100]], dtype=np.float32)
+    shape = (120, 200)
+
+    # when
+    accurate = process_mask_accurate(
+        protos=protos, masks_in=masks_in, bboxes=boxes.copy(), shape=shape
+    )
+    tradeoff = process_mask_tradeoff(
+        protos=protos,
+        masks_in=masks_in,
+        bboxes=boxes.copy(),
+        shape=shape,
+        tradeoff_factor=1.0,
+    )
+
+    # then
+    assert tradeoff.shape == accurate.shape
