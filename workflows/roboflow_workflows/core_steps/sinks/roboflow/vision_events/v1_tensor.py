@@ -5,7 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -240,12 +240,16 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.visualization.image"],
         json_schema_extra={"always_visible": True},
     )
-    extra_images: Dict[str, Selector(kind=[IMAGE_KIND])] = Field(
+    extra_images: Dict[
+        Annotated[str, Field(min_length=1)], Selector(kind=[IMAGE_KIND])
+    ] = Field(
         default_factory=dict,
         title="Extra Images",
-        description="Additional images to store with the event, keyed by label (for "
-        "example a clean crop next to the annotated one). Each image becomes its own "
-        "entry in the event's images, labelled with its key and without annotations.",
+        description="Additional images keyed by a non-empty label, such as raw_crop. "
+        "Each image is stored under its label without annotations. Omit this field "
+        "or use an empty mapping to send the event without extra images. If any "
+        "configured image selector resolves to no image, the workflow skips the "
+        "event for that frame.",
         examples=[{"raw_crop": "$steps.cropping.crops"}],
     )
     predictions: Optional[
