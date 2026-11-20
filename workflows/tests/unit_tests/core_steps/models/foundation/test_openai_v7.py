@@ -16,12 +16,22 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common import vlm_reference_examples
+from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
+    ABSOLUTE_XY,
+    OCCLUDED_KEYPOINT_CONFIDENCE,
+    VISIBLE_KEYPOINT_CONFIDENCE,
+    build_absolute_keypoint_json_schema,
+    build_keypoint_detection_prompt,
+    resolve_keypoint_skeletons,
+)
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     SHARED_REFERENCE_PARTS_CACHE,
     ReferenceExample,
 )
+from roboflow_workflows.core_steps.loader import KINDS_SERIALIZERS
 from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     INSTANCE_SEGMENTATION_DEFAULT_MODEL,
+    KEYPOINT_DETECTION_DEFAULT_MODEL,
     STRUCTURED_INSTANCE_SEGMENTATION_OUTPUT_FORMAT,
     BlockManifest,
     OpenAIBlockV7,
@@ -31,6 +41,7 @@ from roboflow_workflows.core_steps.models.foundation.openai.v7 import (
     encode_image_for_task,
     get_detection_box_format,
     prepare_instance_segmentation_prompt,
+    prepare_keypoint_detection_prompt,
     prepare_object_detection_prompt,
 )
 from roboflow_workflows.execution_engine.entities.base import (
@@ -43,6 +54,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
@@ -114,6 +126,7 @@ def _run_block(
     classes: Optional[List[str]] = None,
     output_classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
+    keypoint_schema: Optional[dict] = None,
 ) -> dict:
     block = OpenAIBlockV7(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
@@ -132,6 +145,7 @@ def _run_block(
             temperature=None,
             max_concurrent_requests=None,
             api_key="sk-test",
+            keypoint_schema=keypoint_schema,
         )
     assert len(results) == 1
     return results[0]
@@ -196,6 +210,7 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
         OBJECT_DETECTION_PREDICTION_KIND,
         RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        KEYPOINT_DETECTION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert outputs["error_status"] == [BOOLEAN_KIND]
@@ -260,6 +275,7 @@ def test_get_actual_outputs_keeps_union_for_unconstrained_task() -> None:
         OBJECT_DETECTION_PREDICTION_KIND,
         RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        KEYPOINT_DETECTION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert [output.name for output in BlockManifest.describe_outputs()] == list(outputs)
@@ -379,10 +395,11 @@ def test_detection_upload_dimensions_only_apply_to_absolute_formats() -> None:
     assert detection_upload_dimensions(
         image=image, task_type="unconstrained", box_format="xyxy_absolute"
     ) == (None, None)
-    # Segmentation uploads the original image, whatever the box format.
-    assert detection_upload_dimensions(
-        image=image, task_type="instance-segmentation", box_format="named_normalized"
-    ) == (DETECTION_IMAGE_WIDTH, DETECTION_IMAGE_HEIGHT)
+    # Segmentation and keypoints upload the original image, whatever the box format.
+    for task_type in ("instance-segmentation", "keypoint-detection"):
+        assert detection_upload_dimensions(
+            image=image, task_type=task_type, box_format="named_normalized"
+        ) == (DETECTION_IMAGE_WIDTH, DETECTION_IMAGE_HEIGHT)
 
 
 @pytest.mark.parametrize(
@@ -616,10 +633,11 @@ def test_instance_segmentation_prompt_separates_descriptions_from_output_labels(
     assert label_schema == {"type": "string", "enum": ["Piano Key"]}
 
 
-def test_encode_image_for_task_keeps_original_resolution_for_segmentation() -> None:
+@pytest.mark.parametrize("task_type", ["instance-segmentation", "keypoint-detection"])
+def test_encode_image_for_task_keeps_original_resolution(task_type: str) -> None:
     image = np.zeros((DETECTION_IMAGE_HEIGHT, DETECTION_IMAGE_WIDTH, 3), dtype=np.uint8)
 
-    _, width, height = encode_image_for_task(image, task_type="instance-segmentation")
+    _, width, height = encode_image_for_task(image, task_type=task_type)
     _, det_width, det_height = encode_image_for_task(
         image, task_type="object-detection"
     )
@@ -675,6 +693,218 @@ def test_run_reports_error_status_for_unparsable_segmentation_output() -> None:
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+# Keypoint detection
+# ---------------------------------------------------------------------------
+
+KEYPOINT_SCHEMA = {
+    "plate": {
+        "keypoints": ["TL", "TR", "BR", "BL"],
+        "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
+        "template": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+    }
+}
+# Absolute pixels of the original image, which this task uploads unchanged: the
+# plate box is EXPECTED_XYXY, TR is occluded and BR could not be placed.
+KEYPOINT_OUTPUT = json.dumps(
+    {
+        "plate": [
+            {
+                "box_2d": [800, 400, 1600, 1200],
+                "keypoints": {
+                    "TL": {"x": 800, "y": 400, "occluded": False},
+                    "TR": {"x": 1600, "y": 400, "occluded": True},
+                    "BR": None,
+                    "BL": {"x": 800, "y": 1200, "occluded": False},
+                },
+            }
+        ]
+    }
+)
+
+
+def _keypoint_manifest(**overrides: object) -> BlockManifest:
+    raw_manifest = {
+        "type": "roboflow_core/open_ai@v7",
+        "name": "open_ai",
+        "images": "$inputs.image",
+        "task_type": "keypoint-detection",
+        "classes": ["plate"],
+        "keypoint_schema": KEYPOINT_SCHEMA,
+    }
+    raw_manifest.update(overrides)
+    return BlockManifest.model_validate(raw_manifest)
+
+
+def test_keypoint_task_narrows_predictions_and_defaults_model_to_astra() -> None:
+    # when
+    manifest = _keypoint_manifest()
+
+    # then
+    outputs = {output.name: output.kind for output in manifest.get_actual_outputs()}
+    assert outputs["predictions"] == [KEYPOINT_DETECTION_PREDICTION_KIND]
+    assert manifest.model_version == KEYPOINT_DETECTION_DEFAULT_MODEL == "gpt-6-astra"
+    assert manifest.keypoint_schema["plate"].keypoints == ["TL", "TR", "BR", "BL"]
+
+
+def test_keypoint_task_accepts_selectors() -> None:
+    # when
+    manifest = _keypoint_manifest(
+        classes="$inputs.classes",
+        keypoint_schema="$inputs.keypoint_schema",
+        model_version="$inputs.openai_model",
+    )
+
+    # then
+    assert manifest.keypoint_schema == "$inputs.keypoint_schema"
+    assert manifest.model_version == "$inputs.openai_model"
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"keypoint_schema": None}, "`keypoint_schema` parameter required"),
+        ({"classes": ["plate", "dog"]}, r"no skeleton for classes: \['dog'\]"),
+        ({"classes": None}, "`classes` parameter required"),
+        ({"output_classes": ["Plate"]}, "`output_classes` is only supported"),
+    ],
+)
+def test_keypoint_task_rejects_an_unusable_setup(overrides: dict, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _keypoint_manifest(**overrides)
+
+
+def test_keypoint_prompt_asks_for_pixels_under_a_strict_schema() -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(KEYPOINT_SCHEMA, classes=["plate"])
+
+    # when
+    prompt = prepare_keypoint_detection_prompt(
+        base64_image="abc",
+        keypoint_skeletons=skeletons,
+        image_width=640,
+        image_height=480,
+        image_detail="high",
+    )
+
+    # then
+    assert prompt["input"][0]["content"] == [
+        {
+            "type": "input_image",
+            "image_url": "data:image/jpeg;base64,abc",
+            "detail": "high",
+        },
+        {
+            "type": "input_text",
+            "text": build_keypoint_detection_prompt(
+                skeletons, coordinates=ABSOLUTE_XY, upload_width=640, upload_height=480
+            ),
+        },
+    ]
+    assert prompt["text"] == {
+        "format": {
+            "type": "json_schema",
+            "name": "keypoints",
+            "strict": True,
+            "schema": build_absolute_keypoint_json_schema(skeletons),
+        }
+    }
+    assert "instructions" not in prompt
+
+
+def test_run_decodes_keypoint_detection_into_original_image_pixels() -> None:
+    # given
+    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
+    block = OpenAIBlockV7(api_key="rf-key")
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(KEYPOINT_OUTPUT, 11, 3)]
+        result = block.run(
+            images=Batch(content=[image], indices=[(0,)]),
+            task_type="keypoint-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["plate"],
+            model_version="gpt-6-astra",
+            reasoning_effort="low",
+            image_detail="high",
+            max_tokens=None,
+            temperature=None,
+            max_concurrent_requests=None,
+            api_key="sk-test",
+            keypoint_schema=KEYPOINT_SCHEMA,
+        )[0]
+
+    # then
+    request = mock_execute.call_args.kwargs["openai_prompts"][0]
+    prompt_text = request["input"][0]["content"][1]["text"]
+    assert "of the 3200x1600 pixel image" in prompt_text
+    assert result["error_status"] is False
+    serializer = KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name]
+    predictions = serializer(result["predictions"])["predictions"]
+    assert len(predictions) == 1
+    assert predictions[0]["class"] == "plate"
+    assert [
+        predictions[0]["x"],
+        predictions[0]["y"],
+        predictions[0]["width"],
+        predictions[0]["height"],
+    ] == [1200.0, 800.0, 800.0, 800.0]
+    assert predictions[0]["keypoints"] == [
+        {
+            "class_id": 0,
+            "class": "TL",
+            "confidence": VISIBLE_KEYPOINT_CONFIDENCE,
+            "x": 800.0,
+            "y": 400.0,
+        },
+        {
+            "class_id": 1,
+            "class": "TR",
+            "confidence": OCCLUDED_KEYPOINT_CONFIDENCE,
+            "x": 1600.0,
+            "y": 400.0,
+        },
+        {
+            "class_id": 3,
+            "class": "BL",
+            "confidence": VISIBLE_KEYPOINT_CONFIDENCE,
+            "x": 800.0,
+            "y": 1200.0,
+        },
+    ]
+
+
+def test_run_reports_error_status_for_unparsable_keypoint_output() -> None:
+    # when
+    result = _run_block(
+        task_type="keypoint-detection",
+        raw_output="I am sorry, I cannot help with that.",
+        image=_build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT),
+        model_version="gpt-6-astra",
+        classes=["plate"],
+        keypoint_schema=KEYPOINT_SCHEMA,
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+def test_run_rejects_a_resolved_keypoint_schema_without_the_class() -> None:
+    with pytest.raises(ValueError, match=r"no skeleton for classes: \['dog'\]"):
+        _run_block(
+            task_type="keypoint-detection",
+            raw_output="{}",
+            image=_build_image(
+                width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT
+            ),
+            model_version="gpt-6-astra",
+            classes=["dog"],
+            keypoint_schema=KEYPOINT_SCHEMA,
+        )
 
 
 @pytest.mark.parametrize("service_tier", ["ultrafast", "flex", "$inputs.service_tier"])
