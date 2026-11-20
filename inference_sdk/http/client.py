@@ -2923,12 +2923,12 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: str,
-        class_names: List[str],
+        text_prompts: List[str],
         confidence: Optional[float] = None,
     ) -> List[dict]:
         """Return bounding boxes for text queries using an uploaded OWLv2 detector."""
         payload = self.__initialise_payload()
-        payload.update({"model_id": model_id, "text": class_names})
+        payload.update({"model_id": model_id, "text": text_prompts})
         if confidence is not None:
             payload["confidence"] = confidence
         requests_data = prepare_requests_data(

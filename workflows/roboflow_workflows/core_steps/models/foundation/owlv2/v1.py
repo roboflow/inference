@@ -67,8 +67,8 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/owlv2_model@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    class_names: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
-        description="Text queries in output class ID order.",
+    text_prompts: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
+        description="Text prompts to detect. Each output class ID is the index of its matching prompt.",
         examples=[["bicycle", "bus"]],
     )
     confidence: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = 0.1
@@ -130,7 +130,7 @@ class OwlV2ModelBlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        class_names: List[str],
+        text_prompts: List[str],
         confidence: float,
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
@@ -138,7 +138,7 @@ class OwlV2ModelBlockV1(WorkflowBlock):
             responses = self._model_manager.run_owlv2_text(
                 model_id=model_id,
                 images=[i.to_inference_format(numpy_preferred=True) for i in images],
-                text=class_names,
+                text=text_prompts,
                 confidence=confidence,
                 api_key=self._api_key,
             )
@@ -160,7 +160,7 @@ class OwlV2ModelBlockV1(WorkflowBlock):
             responses = client.infer_from_owlv2(
                 inference_input=[i.base64_image for i in images],
                 model_id=model_id,
-                class_names=class_names,
+                text_prompts=text_prompts,
                 confidence=confidence,
             )
         if ENABLE_TENSOR_DATA_REPRESENTATION:
@@ -169,7 +169,7 @@ class OwlV2ModelBlockV1(WorkflowBlock):
             )
             from roboflow_workflows.environment import WORKFLOWS_IMAGE_TENSOR_DEVICE
 
-            names = dict(enumerate(class_names))
+            names = dict(enumerate(text_prompts))
             return [
                 {
                     "predictions": native_detections_from_inference_predictions(
