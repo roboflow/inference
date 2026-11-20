@@ -209,6 +209,8 @@ def _resolve_api_proxy_request_timeout(
         (None, "330", 330),
         ("90", "330", 330),
         ("90", "", 90),
+        (None, "  ", 120),
+        ("90", "  ", 90),
     ],
 )
 def test_api_proxy_request_timeout_is_the_api_request_timeout_unless_set(

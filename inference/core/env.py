@@ -1420,7 +1420,10 @@ if ROBOFLOW_API_REQUEST_TIMEOUT:
 # `api-proxy/...`), which waits on a third-party model's answer. Unset, it is
 # ROBOFLOW_API_REQUEST_TIMEOUT. A deployment that runs batch jobs on large models
 # can wait longer for those answers than for the rest of the Roboflow API.
-ROBOFLOW_API_PROXY_REQUEST_TIMEOUT = os.getenv("ROBOFLOW_API_PROXY_REQUEST_TIMEOUT")
+# Empty or blank, it is unset.
+ROBOFLOW_API_PROXY_REQUEST_TIMEOUT = os.getenv(
+    "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", ""
+).strip()
 ROBOFLOW_API_PROXY_REQUEST_TIMEOUT = (
     int(ROBOFLOW_API_PROXY_REQUEST_TIMEOUT)
     if ROBOFLOW_API_PROXY_REQUEST_TIMEOUT

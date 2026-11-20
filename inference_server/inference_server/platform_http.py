@@ -24,7 +24,7 @@ API_REQUEST_TIMEOUT_S = get_float_from_env(
 # A POST to the API proxy waits on a third-party model's answer; a deployment
 # that runs batch jobs on large models can wait longer for it than for the rest
 # of the platform.
-# Empty or blank, it is unset, as in the legacy server.
+# Empty or blank, it is unset, as in the legacy server (inference/core/env.py).
 API_PROXY_REQUEST_TIMEOUT_S = (
     get_float_from_env("ROBOFLOW_API_PROXY_REQUEST_TIMEOUT")
     if os.environ.get("ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", "").strip()
