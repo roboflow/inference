@@ -81,3 +81,46 @@ def test_workflow_sends_each_crop_as_its_own_event_with_raw_crop(
         assert labels == ["workflow", "raw_crop"]
         workflow_entry, crop_entry = payload["images"]
         assert crop_entry["base64Image"] == workflow_entry["inputBase64Image"]
+
+
+def test_workflow_skips_only_the_frame_with_a_missing_extra_image(
+    model_manager: ModelManager,
+) -> None:
+    crop = {
+        "type": "roboflow_core/absolute_static_crop@v1",
+        "name": "crop_to_part",
+        "images": "$inputs.image",
+        "x_center": 80,
+        "y_center": 80,
+        "width": 16,
+        "height": 16,
+    }
+    sink = {
+        **WORKFLOW_WITH_CROPS_AS_EXTRA_IMAGES["steps"][1],
+        "input_image": "$inputs.image",
+        "extra_images": {"raw_crop": "$steps.crop_to_part.crops"},
+    }
+    engine = ExecutionEngine.init(
+        workflow_definition={
+            **WORKFLOW_WITH_CROPS_AS_EXTRA_IMAGES,
+            "steps": [crop, sink],
+        },
+        init_parameters={
+            "workflows_core.model_manager": model_manager,
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+    # Both frames have a primary image. The extra crop fits only the first.
+    frames = [np.zeros((size, size, 3), dtype=np.uint8) for size in (128, 32)]
+
+    with mock.patch.object(requests, "post", side_effect=_local_event_response) as post:
+        result = engine.run(runtime_parameters={"image": frames})
+
+    assert result == [{"event_id": "evt-local"}, {"event_id": None}]
+    post.assert_called_once()
+    assert [image["label"] for image in post.call_args.kwargs["json"]["images"]] == [
+        "workflow",
+        "raw_crop",
+    ]
