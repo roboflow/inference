@@ -974,6 +974,106 @@ def test_run_decodes_oriented_object_detection_into_original_image_pixels() -> N
     assert row["heading"] is True
 
 
+def test_run_keeps_the_size_of_an_oriented_box_on_a_very_elongated_image() -> None:
+    # given: a 10000x100 image uploads at 2048x20, so its axes scale by 4.8828 and
+    # 5.0 and a horizontal box has to come back 5000 x 50
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 1024.0,
+                    "cy": 10.0,
+                    "length": 1024.0,
+                    "width": 10.0,
+                    "angle_deg": 0.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(width=10000, height=100),
+        classes=["cat"],
+        class_heading={"cat": True},
+        model_version="gpt-6-astra",
+    )
+
+    # then
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["obb"] == pytest.approx([5000.0, 50.0, 5000.0, 50.0, 0.0])
+
+
+def test_run_skips_an_oriented_box_that_collapses_and_keeps_the_others() -> None:
+    # given: the first entry's length vanishes next to its center of 100
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                },
+                json.loads(ORIENTED_OUTPUT)["oriented_detections"][0],
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT),
+        classes=["cat"],
+        class_heading={"cat": True},
+        model_version="gpt-6-astra",
+    )
+
+    # then
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["obb"] == pytest.approx([1600.0, 800.0, 937.5, 312.5, math.radians(30)])
+
+
+def test_run_reports_an_error_when_every_oriented_box_collapses() -> None:
+    # given
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT),
+        classes=["cat"],
+        class_heading={"cat": True},
+        model_version="gpt-6-astra",
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
 def test_run_prompts_oriented_object_detection_with_the_resolved_class_heading() -> (
     None
 ):

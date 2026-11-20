@@ -30,6 +30,7 @@ from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.oriented import (
     native_obb_from_inference,
     native_obb_to_tensor,
+    serialise_native_obb,
 )
 from roboflow_workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
@@ -329,7 +330,9 @@ def build_oriented_detections(
         ValueError: If the payload shape is not recognised, the upload
             dimensions are missing, or entries were present but none was
             well-formed - i.e. the model answered in a different contract
-            (a partial mismatch keeps skipping the offending entries).
+            (a partial mismatch keeps skipping the offending entries). An
+            entry whose box the native transport cannot carry, such as a
+            rectangle that collapses onto a line, counts as not well-formed.
     """
     if not upload_width or not upload_height:
         raise ValueError("The dimensions of the uploaded image are required")
@@ -337,7 +340,6 @@ def build_oriented_detections(
     entries = extract_oriented_entries(parsed_data)
     image_height, image_width = image._read_shape_without_materialization()
     scale_x, scale_y = image_width / upload_width, image_height / upload_height
-    size_scale = (scale_x + scale_y) / 2
     label_to_id = create_classes_index(classes=labels)
 
     rows = []
@@ -348,7 +350,6 @@ def build_oriented_detections(
             class_heading=class_heading,
             scale_x=scale_x,
             scale_y=scale_y,
-            size_scale=size_scale,
         )
         if row is None:
             logger.warning(
@@ -359,6 +360,32 @@ def build_oriented_detections(
 
         rows.append(row)
 
+    native_header = {
+        "task_type": ORIENTED_OBJECT_DETECTION_TASK,
+        "image": {"width": image_width, "height": image_height},
+        "class_heading": {label: bool(class_heading.get(label)) for label in labels},
+    }
+    detections = _carry_rows(native_header, rows)
+    if detections is None:
+        # A box that is finite and has positive sides can still collapse once its
+        # corners are computed (next to a large coordinate a tiny side vanishes).
+        # Serialization rejects it and so would the workflow consuming the
+        # predictions, so each such entry is skipped instead of failing the answer.
+        carried_rows = []
+        for row in rows:
+            if _carry_rows(native_header, [row]) is None:
+                logger.warning(
+                    "Skipping VLM oriented detection entry whose box cannot be "
+                    "carried by the native transport: %r",
+                    row["obb"],
+                )
+                continue
+
+            carried_rows.append(row)
+
+        rows = carried_rows
+        detections = _carry_rows(native_header, rows)
+
     if entries and not rows:
         # Every entry was skipped: the model answered in another contract.
         # Reporting that as "nothing detected" would hide it, so fail instead
@@ -367,17 +394,29 @@ def build_oriented_detections(
             f"none of {len(entries)} oriented detection entries was well formed"
         )
 
-    native_response = {
-        "task_type": ORIENTED_OBJECT_DETECTION_TASK,
-        "image": {"width": image_width, "height": image_height},
-        "class_heading": {label: bool(class_heading.get(label)) for label in labels},
-        "predictions": rows,
-    }
-    detections = native_obb_from_inference(native_response)
+    if detections is None:
+        raise ValueError("The native transport rejected the decoded oriented boxes")
+
     detections = attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,
     )
+
+    return detections
+
+
+def _carry_rows(native_header: dict, rows: List[dict]) -> Optional[sv.Detections]:
+    """Build the native carrier of ``rows``, or ``None`` when the transport rejects it.
+
+    The carrier is serialized once as well: serializing is the strictest check of
+    the ordered corners, and a box that only fails there would later break the
+    workflow that consumes the predictions.
+    """
+    try:
+        detections = native_obb_from_inference({**native_header, "predictions": rows})
+        serialise_native_obb(detections)
+    except ValueError:
+        return None
 
     return detections
 
@@ -421,7 +460,6 @@ def _read_entry(
     class_heading: Dict[str, bool],
     scale_x: float,
     scale_y: float,
-    size_scale: float,
 ) -> Optional[dict]:
     """Build one native prediction row from an answer entry, or ``None``."""
     label = get_detection_class_name(entry)
@@ -436,18 +474,25 @@ def _read_entry(
         return None
 
     has_front = bool(class_heading.get(label))
-    length, width, theta = _normalize_orientation(
+    length, width, theta = _scale_rectangle(
         length=numbers["length"],
         width=numbers["width"],
-        angle_deg=numbers["angle_deg"],
+        theta=math.radians(numbers["angle_deg"]),
+        scale_x=scale_x,
+        scale_y=scale_y,
+    )
+    length, width, theta = _normalize_orientation(
+        length=length,
+        width=width,
+        theta=theta,
         has_front=has_front,
     )
     row = {
         "obb": [
             numbers["cx"] * scale_x,
             numbers["cy"] * scale_y,
-            length * size_scale,
-            width * size_scale,
+            length,
+            width,
             theta,
         ],
         "class": label,
@@ -460,11 +505,40 @@ def _read_entry(
     return row
 
 
+def _scale_rectangle(
+    *,
+    length: float,
+    width: float,
+    theta: float,
+    scale_x: float,
+    scale_y: float,
+) -> Tuple[float, float, float]:
+    """Map a rectangle drawn in the uploaded frame onto the original image.
+
+    The upload is resampled per axis (its size is rounded to whole pixels), so a
+    side is scaled by the factor of its own direction, not by an average, and the
+    heading follows the two factors. A rotated rectangle becomes a parallelogram
+    whose shear is about the relative difference of the factors in radians, which
+    is rounding noise for an ordinary image; the rectangle keeps the exact center,
+    the exact heading and the exact length of both sides. Returns
+    ``(length, width, theta)`` in the original frame, ``theta`` in radians.
+    """
+    if scale_x == scale_y:
+        return length * scale_x, width * scale_x, theta
+
+    sin_theta, cos_theta = math.sin(theta), math.cos(theta)
+    scaled_length = length * math.hypot(scale_x * cos_theta, scale_y * sin_theta)
+    scaled_width = width * math.hypot(scale_x * sin_theta, scale_y * cos_theta)
+    scaled_theta = math.atan2(scale_y * sin_theta, scale_x * cos_theta)
+
+    return scaled_length, scaled_width, scaled_theta
+
+
 def _normalize_orientation(
     *,
     length: float,
     width: float,
-    angle_deg: float,
+    theta: float,
     has_front: bool,
 ) -> Tuple[float, float, float]:
     """Express a reported rectangle in the native ordered-axes convention.
@@ -472,10 +546,9 @@ def _normalize_orientation(
     A class with a front keeps its sides and its full-circle angle, wrapped
     into ``[-pi, pi)``. A class without one is undirected, so the same footprint
     is written with the longer side first (a swap adds a quarter turn) and the
-    angle wrapped into ``[-pi/2, pi/2)``. Returns ``(length, width, theta)``
-    with ``theta`` in radians.
+    angle wrapped into ``[-pi/2, pi/2)``. ``theta`` is in radians, and so is the
+    returned ``(length, width, theta)``.
     """
-    theta = math.radians(angle_deg)
     if has_front:
         theta = (theta + math.pi) % (2 * math.pi) - math.pi
 

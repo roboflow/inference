@@ -89,11 +89,7 @@ def _workflow_definition(block: str) -> Dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("block", sorted(BLOCKS))
-def test_oriented_predictions_feed_an_oriented_consumer_and_serialize_natively(
-    block: str,
-) -> None:
-    # given
+def _run_workflow(block: str, answer: str) -> list:
     execution_engine = ExecutionEngine.init(
         workflow_definition=_workflow_definition(block),
         init_parameters={
@@ -105,13 +101,46 @@ def test_oriented_predictions_feed_an_oriented_consumer_and_serialize_natively(
     )
     image = np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8)
 
-    # when
     with patch(BLOCKS[block]["seam"]) as mock_execute:
-        mock_execute.return_value = [(VLM_ANSWER, 11, 3)]
+        mock_execute.return_value = [(answer, 11, 3)]
         result = execution_engine.run(
             runtime_parameters={"image": [image], "api_key": "sk-test"},
             serialize_results=True,
         )
+
+    return result
+
+
+@pytest.mark.parametrize("block", sorted(BLOCKS))
+def test_a_collapsed_box_does_not_fail_the_run_of_the_predictions_around_it(
+    block: str,
+) -> None:
+    # given: the first box has a side that vanishes next to its center, which the
+    # native serializer rejects, and the second one is fine
+    answer = (
+        '{"oriented_detections": ['
+        '{"label": "forklift", "cx": 100, "cy": 50, "length": 1e-15, "width": 20, '
+        '"angle_deg": 0}, '
+        '{"label": "forklift", "cx": 100, "cy": 50, "length": 80, "width": 20, '
+        '"angle_deg": 90}]}'
+    )
+
+    # when
+    result = _run_workflow(block, answer)
+
+    # then
+    assert result[0]["error_status"] is False
+    (row,) = result[0]["predictions"]["predictions"]
+    assert row["obb"] == pytest.approx([100.0, 50.0, 80.0, 20.0, math.pi / 2])
+    assert result[0]["visualization"] is not None
+
+
+@pytest.mark.parametrize("block", sorted(BLOCKS))
+def test_oriented_predictions_feed_an_oriented_consumer_and_serialize_natively(
+    block: str,
+) -> None:
+    # when
+    result = _run_workflow(block, VLM_ANSWER)
 
     # then
     assert len(result) == 1

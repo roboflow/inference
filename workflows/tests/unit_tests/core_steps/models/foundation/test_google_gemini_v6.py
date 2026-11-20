@@ -684,6 +684,70 @@ def test_run_requires_classes_for_oriented_object_detection() -> None:
         )
 
 
+def test_run_skips_an_oriented_box_that_collapses_and_keeps_the_others() -> None:
+    # given: the first entry's length vanishes next to its center of 100
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                },
+                json.loads(ORIENTED_OUTPUT)["oriented_detections"][0],
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["obb"] == pytest.approx([400.0, 200.0, 300.0, 100.0, math.radians(-60)])
+
+
+def test_run_reports_an_error_when_every_oriented_box_collapses() -> None:
+    # given
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
 def test_run_reports_an_error_for_an_oriented_answer_in_another_contract() -> None:
     # when
     result = _run_block(

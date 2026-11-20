@@ -307,6 +307,71 @@ def test_decode_scales_the_geometry_from_the_uploaded_frame_to_the_original() ->
     assert row["obb"] == pytest.approx([200.0, 100.0, 160.0, 60.0, 0.0])
 
 
+def test_decode_scales_each_side_by_the_factor_of_its_own_axis() -> None:
+    # given: a 10000x100 image is uploaded as 2048x20, so the axes scale by 4.8828
+    # and 5.0; a horizontal box has to come back 5000 x 50 whatever the average is
+    raw_output = _answer(_entry(cx=1024.0, cy=10.0, length=1024.0, width=10.0))
+
+    # when
+    (row,) = _rows(
+        raw_output,
+        image=_build_image(width=10000, height=100),
+        upload_width=2048,
+        upload_height=20,
+    )
+
+    # then
+    assert row["obb"] == pytest.approx([5000.0, 50.0, 5000.0, 50.0, 0.0])
+
+
+@pytest.mark.parametrize("angle_deg", [40.0, 135.0, -70.0])
+def test_decode_maps_a_rotated_box_through_an_anisotropic_upload_axis_by_axis(
+    angle_deg: float,
+) -> None:
+    # given: 1000x500 uploaded as 640x300 (the axes scale by 1.5625 and 1.6667)
+    scale = np.array([1000 / 640, 500 / 300])
+    theta = math.radians(angle_deg)
+    heading = np.array([math.cos(theta), math.sin(theta)]) * 200.0 * scale
+    across = np.array([-math.sin(theta), math.cos(theta)]) * 80.0 * scale
+    raw_output = _answer(
+        _entry(cx=300.0, cy=100.0, length=200.0, width=80.0, angle_deg=angle_deg)
+    )
+
+    # when
+    (row,) = _rows(
+        raw_output,
+        image=_build_image(width=1000, height=500),
+        upload_width=640,
+        upload_height=300,
+    )
+
+    # then: the center, the heading edge and the length of the other edge are exact
+    cx, cy, length, width, rotation = row["obb"]
+    assert [cx, cy] == pytest.approx([300.0 * scale[0], 100.0 * scale[1]])
+    assert length == pytest.approx(np.linalg.norm(heading))
+    assert width == pytest.approx(np.linalg.norm(across))
+    assert rotation == pytest.approx(math.atan2(heading[1], heading[0]))
+
+
+def test_decode_keeps_the_longer_side_first_after_an_anisotropic_scale() -> None:
+    # given: 1000x525 uploaded as 1000x500 stretches the vertical axis by 1.05, so
+    # the 99 px side of this undirected box ends up the longer one
+    raw_output = _answer(
+        _entry(label="scissor-lift", cx=300.0, cy=100.0, length=100.0, width=99.0)
+    )
+
+    # when
+    (row,) = _rows(
+        raw_output,
+        image=_build_image(width=1000, height=525),
+        upload_width=1000,
+        upload_height=500,
+    )
+
+    # then
+    assert row["obb"] == pytest.approx([300.0, 105.0, 99.0 * 1.05, 100.0, -math.pi / 2])
+
+
 def test_decode_accepts_a_bare_list_and_numeric_strings() -> None:
     # given
     raw_output = json.dumps(
@@ -355,6 +420,41 @@ def test_decode_drops_non_finite_numbers() -> None:
 
     # then
     assert len(rows) == 1
+
+
+@pytest.mark.parametrize(
+    "degenerate",
+    [
+        {"length": 1e-15},  # the side vanishes next to a center of 100
+        {"width": 1e-15},
+        {"length": 1e-300, "width": 1e-300},
+        {"cx": 1e308},  # overflows to infinity once scaled to the original image
+    ],
+)
+def test_decode_drops_a_box_that_collapses_and_keeps_the_rest(degenerate: dict) -> None:
+    # given: a box the transport cannot serialize next to a valid one
+    raw_output = _answer(_entry(**degenerate), _entry(cx=500.0, angle_deg=20.0))
+
+    # when
+    (row,) = _rows(raw_output, upload_width=960, upload_height=600)
+
+    # then: the answer is not lost with the one bad entry, and every kept box serializes
+    assert row["obb"][0] == pytest.approx(1000.0)
+    assert row["class"] == "forklift"
+
+
+def test_decode_reports_an_error_when_only_collapsed_boxes_remain() -> None:
+    # given
+    raw_output = _answer(
+        _entry(length=1e-15), _entry(label="scissor-lift", width=1e-15)
+    )
+
+    # when
+    error_status, detections = _decode(raw_output)
+
+    # then
+    assert error_status is True
+    assert detections is None
 
 
 def test_decode_reports_an_error_when_no_entry_is_well_formed() -> None:
