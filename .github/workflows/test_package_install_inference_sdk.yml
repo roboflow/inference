@@ -46,7 +46,7 @@ jobs:
       - name: "Run SDK install validation in Docker [release-test]"
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
-        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 25 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1500'

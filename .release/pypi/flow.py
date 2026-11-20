@@ -2,6 +2,7 @@
 
 import ast
 import base64
+import functools
 import hashlib
 import io
 import json
@@ -30,20 +31,27 @@ LOCKS = tuple(f"{directory}/uv.lock" for directory, _ in dependencies.PROJECTS.v
 FIRST_PARTY = dependencies.OWNED | release.RUNTIME
 REPOSITORY = "roboflow/inference"
 POLICY = Path(".release/release-policy.json")
-API_DEADLINE = None
+
+
+class _EvidenceDeadlineExceeded(RuntimeError):
+    pass
+
+
+@functools.lru_cache(maxsize=1)
+def _api_deadline():
+    deadline = time.monotonic() + 600
+    return deadline
 
 
 def _api_timeout():
-    global API_DEADLINE
-    now = time.monotonic()
-    if API_DEADLINE is None:
-        API_DEADLINE = now + 600
-
-    remaining = API_DEADLINE - now
+    remaining = _api_deadline() - time.monotonic()
     if remaining <= 0:
-        raise TimeoutError("GitHub evidence lookup exceeded its 10-minute budget")
+        raise _EvidenceDeadlineExceeded(
+            "GitHub evidence lookup exceeded its 10-minute budget"
+        )
 
-    return min(30, remaining)
+    timeout = min(30, remaining)
+    return timeout
 
 
 def _git(*args, env=None):
@@ -86,6 +94,7 @@ def _api(path, *, payload=None):
         try:
             with urllib.request.urlopen(request, timeout=_api_timeout()) as response:
                 result = json.load(response)
+            _api_timeout()
             return result
         except urllib.error.HTTPError as error:
             if (
@@ -215,9 +224,13 @@ def _canonical(path, data):
     return data
 
 
-def _file_fingerprints(*, include_locks=True):
+def _file_fingerprints(*, include_locks=True, ref=None):
+    if ref is not None:
+        entries = _tree_fingerprints(ref, include_locks=include_locks)
+        return entries
+
     entries = []
-    for line in _git("ls-files", "--stage").splitlines():
+    for line in _git("ls-files", "--stage", "-z").split("\0")[:-1]:
         metadata, path = line.split("\t", 1)
         mode, _, stage = metadata.split()
         if stage != "0" or mode == "160000":
@@ -230,8 +243,36 @@ def _file_fingerprints(*, include_locks=True):
     return entries
 
 
-def _fingerprint(*, include_locks=True):
-    entries = _file_fingerprints(include_locks=include_locks)
+def _tree_fingerprints(ref, *, include_locks=True):
+    """Hash retained Git blobs without checking out or executing RC source."""
+    files = []
+    for entry in _git("ls-tree", "-rz", "--full-tree", ref).split("\0")[:-1]:
+        metadata, path = entry.split("\t", 1)
+        mode, kind, oid = metadata.split()
+        if kind != "blob":
+            raise ValueError(f"Unsupported object in RC source: {path}")
+        if path not in LOCKS or include_locks:
+            files.append((path, mode, oid))
+
+    batch = subprocess.run(
+        ["git", "cat-file", "--batch"],
+        input="".join(oid + "\n" for _, _, oid in files).encode(),
+        capture_output=True,
+        check=True,
+    )
+    stream = io.BytesIO(batch.stdout)
+    entries = []
+    for path, mode, oid in files:
+        actual, kind, size = stream.readline().decode().split()
+        data = stream.read(int(size))
+        if actual != oid or kind != "blob" or stream.read(1) != b"\n":
+            raise ValueError(f"Invalid Git blob evidence: {path}")
+        entries.append((path, mode, hashlib.sha256(_canonical(path, data)).hexdigest()))
+    return entries
+
+
+def _fingerprint(*, include_locks=True, ref=None):
+    entries = _file_fingerprints(include_locks=include_locks, ref=ref)
     result = hashlib.sha256(json.dumps(entries).encode()).hexdigest()
     return result
 
@@ -357,6 +398,7 @@ def _download_receipt(artifact_id):
     limit = 8 * 1024 * 1024
     with opener.open(request, timeout=_api_timeout()) as response:
         payload = response.read(limit + 1)
+    _api_timeout()
     if len(payload) > limit:
         raise ValueError("RC receipt artifact is too large")
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
@@ -366,9 +408,63 @@ def _download_receipt(artifact_id):
     return receipt
 
 
+def _evidence_ref(run_id):
+    if not re.fullmatch(r"[1-9][0-9]*", str(run_id)):
+        raise ValueError("Invalid RC run ID")
+
+    ref = f"refs/tags/rc-evidence/{run_id}"
+    return ref
+
+
+def _retain_rc_source(source_sha, *, run_id, remote, env):
+    """Keep the tested commit reachable after the release branch is deleted."""
+    ref = _evidence_ref(run_id)
+    existing = _git("ls-remote", "--refs", remote, ref, env=env)
+    if existing:
+        if existing != f"{source_sha}\t{ref}":
+            raise ValueError("RC evidence tag already identifies a different commit")
+    else:
+        _git("push", remote, f"{source_sha}:{ref}", env=env)
+    return ref
+
+
+def _verify_rc_source(receipt):
+    """Bind receipt claims to retained source and the workflow trigger."""
+    ref = _evidence_ref(receipt["run_id"])
+    _git("fetch", "--no-tags", f"https://github.com/{REPOSITORY}.git", ref)
+    if _git("rev-parse", "FETCH_HEAD^{commit}") != receipt["source_sha"]:
+        raise ValueError("RC evidence tag does not match the receipt source")
+
+    _git("merge-base", "--is-ancestor", receipt["trigger_sha"], receipt["source_sha"])
+    changed = _git(
+        "diff", "--name-only", receipt["trigger_sha"], receipt["source_sha"]
+    ).splitlines()
+    if not set(changed) <= set(LOCKS):
+        raise ValueError(
+            "RC source changed files other than generated locks after its trigger"
+        )
+    if _fingerprint(ref=receipt["source_sha"]) != receipt["fingerprint"]:
+        raise ValueError("RC receipt fingerprint does not match its Git source")
+
+
+def _validate_rc_receipt(receipt, *, run):
+    if (
+        receipt.get("schema") != 1
+        or str(receipt.get("run_id")) != str(run["id"])
+        or receipt.get("trigger_sha") != run["head_sha"]
+        or receipt.get("repository") != REPOSITORY
+        or receipt.get("complete") is not True
+        or receipt.get("branch") != run["head_branch"]
+        or receipt.get("evidence_ref") != _evidence_ref(run["id"])
+        or not re.fullmatch(r"[a-f0-9]{40}", receipt.get("source_sha") or "")
+        or not re.fullmatch(r"[a-f0-9]{64}", receipt.get("fingerprint") or "")
+    ):
+        raise ValueError("Untrusted or incomplete RC receipt")
+
+
 def _find_rc(version):
     fingerprint = _fingerprint()
-    mismatch = ""
+    rejected = []
     for page in range(1, 6):
         runs = _api(
             "actions/workflows/publish.pypi.yml/runs"
@@ -397,54 +493,36 @@ def _find_rc(version):
                     "release-receipt-"
                 ):
                     continue
-                receipt = _download_receipt(artifact["id"])
-                if receipt.get("channel") != "rc" or _base(receipt["version"]) != _base(
-                    version
-                ):
-                    continue
-                if (
-                    receipt.get("schema") != 1
-                    or str(receipt.get("run_id")) != str(run["id"])
-                    or receipt.get("trigger_sha") != run["head_sha"]
-                    or receipt.get("repository") != REPOSITORY
-                    or receipt.get("complete") is not True
-                    or receipt.get("branch") != run["head_branch"]
-                    or not re.fullmatch(
-                        r"[a-f0-9]{40}", receipt.get("source_sha") or ""
-                    )
-                    or not re.fullmatch(
-                        r"[a-f0-9]{64}", receipt.get("fingerprint") or ""
-                    )
-                ):
-                    raise ValueError("Untrusted or incomplete RC receipt")
-
                 try:
-                    _git(
-                        "merge-base",
-                        "--is-ancestor",
-                        run["head_sha"],
-                        receipt["source_sha"],
-                    )
-                except subprocess.CalledProcessError as error:
-                    if error.returncode == 1:
+                    receipt = _download_receipt(artifact["id"])
+                    if not isinstance(receipt, dict):
+                        raise ValueError("RC receipt is not an object")
+                    if receipt.get("channel") != "rc" or _base(
+                        receipt["version"]
+                    ) != _base(version):
                         continue
-                    raise ValueError(
-                        "Cannot verify RC trigger-to-source ancestry"
-                    ) from error
-
-                # The stable tag may be on a squash merge on main. Its canonical
-                # content, not its commit ancestry, must match the tested RC.
-                if receipt["fingerprint"] != fingerprint:
-                    if not mismatch:
-                        mismatch = f"; newest eligible RC differs at: {_source_difference(receipt)}"
+                    _validate_rc_receipt(receipt, run=run)
+                    if receipt["fingerprint"] != fingerprint:
+                        raise ValueError(
+                            f"RC source differs at: {_source_difference(receipt)}"
+                        )
+                    _verify_rc_source(receipt)
+                except subprocess.CalledProcessError as error:
+                    rejected.append(
+                        f"run {run['id']}: RC Git evidence unavailable or non-ancestral (exit {error.returncode})"
+                    )
+                    continue
+                except (ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
+                    rejected.append(f"run {run['id']}: {error}")
                     continue
 
                 _write(STATE / "accepted-rc.json", receipt)
                 return receipt
         if len(runs) < 100:
             break
+    detail = "; ".join(rejected[:5])
     raise ValueError(
-        f"No successful equivalent RC receipt for {version}; run and complete an RC first{mismatch}"
+        f"No successful equivalent RC receipt for {version}; complete a matching RC. {detail}"
     )
 
 
@@ -469,7 +547,11 @@ def _prepare():
         item = event["release"]
         if event.get("action") != "published" or item["draft"] or item["prerelease"]:
             raise ValueError("Expected a published, non-draft, stable GitHub Release")
-        if not re.fullmatch(r"v\d+\.\d+\.\d+(?:(?:-|\.)post\d+)?", item["tag_name"]):
+        component = r"(?:0|[1-9][0-9]*)"
+        if not re.fullmatch(
+            rf"v{component}\.{component}\.{component}(?:(?:-|\.)post{component})?",
+            item["tag_name"],
+        ):
             raise ValueError("Stable tag must be vX.Y.Z, vX.Y.Z-postN or vX.Y.Z.postN")
         if Version(version).is_prerelease or Version(item["tag_name"]) != Version(
             version
@@ -595,6 +677,9 @@ def _commit_locks():
         source_sha = remote_sha
     state["source_sha"] = source_sha
     state["source_tree"] = tree
+    state["evidence_ref"] = _retain_rc_source(
+        source_sha, run_id=state["run_id"], remote=remote, env=env
+    )
     _write(STATE / "release.json", state)
     _outputs(source_sha=source_sha)
 

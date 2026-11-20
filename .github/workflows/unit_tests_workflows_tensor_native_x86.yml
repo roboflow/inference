@@ -77,7 +77,7 @@ jobs:
       - name: "🧪 Server unit tests (tensor-native) [release-test]"
         # ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with USE_INFERENCE_MODELS,
         # which defaults to True on Linux runners, so the tensor-native code path is exercised.
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 31 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1800'
@@ -134,7 +134,7 @@ jobs:
         # The installed-wheel isolation probe (WORKFLOWS_ISOLATION_WHEEL) is left to
         # "UNIT TESTS - workflows": it clears ENABLE_TENSOR_DATA_REPRESENTATION and
         # checks both tensor modes itself, so running it here repeated the same check.
-        timeout-minutes: ${{ inputs.release_source != '' && 136 || 46 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 136 || 45 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '2700'

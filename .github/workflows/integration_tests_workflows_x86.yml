@@ -126,7 +126,7 @@ jobs:
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"
           KAFKA_TEST_BOOTSTRAP_SERVERS: "localhost:9092"
-        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 25 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1500'
@@ -138,7 +138,7 @@ jobs:
         # same tests. Run it once per Python version, on the "true" leg unless a
         # manual dispatch selected only "false".
         if: ${{ inputs.release_source != '' || matrix.use-inference-models == 'true' || inputs.use-inference-models == 'false' }}
-        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 25 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1500'

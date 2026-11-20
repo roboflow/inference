@@ -92,7 +92,7 @@ jobs:
       - name: "🧪 Integration Tests of Workflows (tensor-native) [release-test]"
         # Tensor-native path only: ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with
         # USE_INFERENCE_MODELS, which defaults to True on Linux runners, so it is not set here.
-        timeout-minutes: ${{ inputs.release_source != '' && 46 || 16 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 46 || 15 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '900'

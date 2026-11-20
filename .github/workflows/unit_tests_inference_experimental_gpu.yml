@@ -81,7 +81,7 @@ jobs:
           python -m uv venv
           python -m uv pip install -e .[test,trt10,torch-cu124] --python .venv
       - name: "🧪 Run GPU-only TRT unit tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 16 || 6 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 16 || 5 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '300'

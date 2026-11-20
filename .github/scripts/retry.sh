@@ -17,7 +17,11 @@ mkdir -p "$log_dir"
 for ((attempt=1; attempt<=attempts; attempt++)); do
     echo "::group::Test attempt $attempt/$attempts"
     set +e
-    timeout --kill-after=10s "$attempt_seconds" bash -e -o pipefail -c "$RETRY_COMMAND" </dev/null
+    if [ "$attempts" -gt 1 ]; then
+        timeout --kill-after=10s "$attempt_seconds" bash -e -o pipefail -c "$RETRY_COMMAND" </dev/null
+    else
+        bash -e -o pipefail -c "$RETRY_COMMAND" </dev/null
+    fi
     status=$?
     set -e
     echo "::endgroup::"

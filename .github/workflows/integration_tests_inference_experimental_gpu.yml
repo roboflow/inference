@@ -134,7 +134,7 @@ jobs:
           python -c "import torch; print(torch.cuda.get_device_name(0))"
       - name: "🧪 Run tests marked `${{ matrix.extras.marker }}` [release-test]"
         if: ${{ (inputs.extras == '' || inputs.extras == matrix.extras.marker) && (inputs.python_version == '' || inputs.python_version == matrix.python-version) }}
-        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 25 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1500'

@@ -515,7 +515,7 @@ def test_artifact_redirect_strips_token_on_storage_host():
 def test_successful_rc_receipt_is_found_after_more_than_one_artifact_page(
     candidate, monkeypatch
 ):
-    _, _, state = candidate
+    _, remote, state = candidate
     run = {
         "id": 12,
         "head_sha": state["source_sha"],
@@ -527,6 +527,7 @@ def test_successful_rc_receipt_is_found_after_more_than_one_artifact_page(
         "channel": "rc",
         "version": "1.2.3rc2",
         "run_id": "12",
+        "evidence_ref": flow._evidence_ref("12"),
         "trigger_sha": state["source_sha"],
         "source_sha": state["source_sha"],
         "branch": state["branch"],
@@ -534,6 +535,7 @@ def test_successful_rc_receipt_is_found_after_more_than_one_artifact_page(
         "complete": True,
         "fingerprint": flow._fingerprint(),
     }
+    flow._git("push", str(remote), f"{state['source_sha']}:{receipt['evidence_ref']}")
     calls = []
 
     def api(path):
@@ -1130,7 +1132,7 @@ def test_retry_artifact_uploads_never_include_test_output():
 def test_rc_receipt_requires_release_branch_and_source_ancestry(
     candidate, monkeypatch, fault
 ):
-    source, _, state = candidate
+    source, remote, state = candidate
     source_sha = state["source_sha"]
     if fault == "unrelated-source":
         _git(source, "checkout", "--orphan", "unrelated")
@@ -1148,6 +1150,7 @@ def test_rc_receipt_requires_release_branch_and_source_ancestry(
         "channel": "rc",
         "version": "9.9.0rc1",
         "run_id": "12",
+        "evidence_ref": flow._evidence_ref("12"),
         "trigger_sha": state["source_sha"],
         "source_sha": source_sha,
         "branch": state["branch"],
@@ -1155,6 +1158,7 @@ def test_rc_receipt_requires_release_branch_and_source_ancestry(
         "complete": True,
         "fingerprint": flow._fingerprint(),
     }
+    flow._git("push", str(remote), f"{source_sha}:{receipt['evidence_ref']}")
     if fault == "feature-branch":
         run["head_branch"] = receipt["branch"] = "feature/forged-receipt"
     elif fault == "null-branch":
@@ -1305,7 +1309,15 @@ def test_rc_reuses_but_never_uploads_new_stable_dependencies(
             flow._check_upload(package)
 
 
-def _mock_rc_evidence(monkeypatch, receipts):
+def _mock_rc_evidence(monkeypatch, receipts, *, retain=True):
+    if retain:
+        for receipt in receipts:
+            receipt["evidence_ref"] = flow._evidence_ref(receipt["run_id"])
+            flow._git(
+                "push",
+                f"https://github.com/{flow.REPOSITORY}.git",
+                f"{receipt['source_sha']}:{receipt['evidence_ref']}",
+            )
     runs = [
         {
             "id": receipt["run_id"],
@@ -1451,7 +1463,19 @@ def test_rc_selection_reports_differing_paths_and_preflight_detects_them(
 
 
 @pytest.mark.parametrize(
-    "tag", ["V9.9.0", "v9.9.0.0", "v9.9.0_post1", "9.9.0", "v9.9.0rc1"]
+    "tag",
+    [
+        "V9.9.0",
+        "v9.9.0.0",
+        "v9.9.0_post1",
+        "9.9.0",
+        "v9.9.0rc1",
+        "v09.9.0",
+        "v9.09.0",
+        "v9.9.00",
+        "v9.9.0-post01",
+        "v9.9.0.post01",
+    ],
 )
 def test_stable_prepare_rejects_noncanonical_image_tag_spellings(
     candidate, monkeypatch, tag
@@ -1505,7 +1529,7 @@ def test_api_retries_share_a_bounded_evidence_lookup_budget(monkeypatch):
     clock = [0.0]
     requests = []
     monkeypatch.setenv("GH_TOKEN", "fixture-token")
-    monkeypatch.setattr(flow, "API_DEADLINE", None)
+    flow._api_deadline.cache_clear()
     monkeypatch.setattr(flow.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(
         flow.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds)
@@ -1520,7 +1544,7 @@ def test_api_retries_share_a_bounded_evidence_lookup_budget(monkeypatch):
     for _ in range(2):
         with pytest.raises(urllib.error.URLError):
             flow._api("actions/runs/1/jobs")
-    with pytest.raises(TimeoutError, match="10-minute budget"):
+    with pytest.raises(flow._EvidenceDeadlineExceeded, match="10-minute budget"):
         flow._api("actions/runs/1/jobs?page=2")
     assert clock[0] == 600
     assert requests[-1] <= 30
@@ -1565,3 +1589,278 @@ def test_rc_attempt_and_job_budgets_cover_retries_and_setup():
                 if "timeout-minutes" in step
             )
             assert rc_minutes(job["timeout-minutes"]) >= step_budget + 30, (path, name)
+
+
+@pytest.fixture(autouse=True)
+def reset_evidence_request_budget():
+    flow._api_deadline.cache_clear()
+    yield
+    flow._api_deadline.cache_clear()
+
+
+@pytest.mark.parametrize("attempts", [1, 3])
+def test_retry_command_cannot_consume_inherited_input(tmp_path, attempts):
+    sentinel = "caller-input-must-not-reach-tests"
+    result = subprocess.run(
+        ["bash", str(ROOT / ".github/scripts/retry.sh")],
+        env={
+            **os.environ,
+            "RETRY_COMMAND": "cat; exit 0",
+            "RETRY_ATTEMPTS": str(attempts),
+            "RETRY_LOG_DIR": str(tmp_path / "logs"),
+        },
+        input=sentinel,
+        text=True,
+        capture_output=True,
+        timeout=5,
+    )
+    assert result.returncode == 0
+    assert sentinel not in result.stdout
+
+
+def test_single_attempt_keeps_existing_ci_step_deadline(tmp_path):
+    result = subprocess.run(
+        ["bash", str(ROOT / ".github/scripts/retry.sh")],
+        env={
+            **os.environ,
+            "RETRY_COMMAND": "sleep 1.2",
+            "RETRY_ATTEMPTS": "1",
+            "RETRY_TIMEOUT_SECONDS": "1",
+            "RETRY_LOG_DIR": str(tmp_path / "logs"),
+        },
+        capture_output=True,
+        timeout=5,
+    )
+    assert result.returncode == 0
+    assert (tmp_path / "logs/attempts.txt").read_text() == "1 0\n"
+
+
+def test_successful_slow_api_read_still_exceeds_shared_budget(monkeypatch):
+    import io
+
+    clock = [0.0]
+    calls = []
+    monkeypatch.setenv("GH_TOKEN", "fixture-token")
+    monkeypatch.setattr(flow.time, "monotonic", lambda: clock[0])
+
+    class SlowResponse(io.BytesIO):
+        def read(self, *args):
+            clock[0] = 601.0
+            return super().read(*args)
+
+    def open_response(request, *, timeout):
+        calls.append(timeout)
+        return SlowResponse(b"{}")
+
+    monkeypatch.setattr(flow.urllib.request, "urlopen", open_response)
+    with pytest.raises(flow._EvidenceDeadlineExceeded, match="10-minute budget"):
+        flow._api("actions/runs/1")
+    assert calls == [30]
+
+
+def test_rc_source_tag_is_created_without_lock_changes_and_never_overwritten(candidate):
+    source, remote, state = candidate
+    flow._commit_locks()
+    ref = flow._state()["evidence_ref"]
+    assert ref == "refs/tags/rc-evidence/123"
+    assert _git(remote, "rev-parse", ref) == state["source_sha"]
+    flow._commit_locks()
+    _git(source, "commit", "--allow-empty", "-m", "Different commit")
+    with pytest.raises(ValueError, match="already identifies a different commit"):
+        flow._retain_rc_source(
+            _git(source, "rev-parse", "HEAD"),
+            run_id="123",
+            remote=str(remote),
+            env=None,
+        )
+    assert _git(remote, "rev-parse", ref) == state["source_sha"]
+
+
+@pytest.mark.parametrize("fetch_all_tags", [False, True])
+@pytest.mark.parametrize("fault", [None, "missing-tag", "wrong-tag", "main-moved"])
+def test_stable_from_fresh_clone_after_squash_and_release_branch_deletion(
+    candidate, monkeypatch, tmp_path, fetch_all_tags, fault
+):
+    source, remote, state = candidate
+    base = state["source_sha"]
+    version = Path("inference/core/version.py")
+    version.parent.mkdir(parents=True)
+    version.write_text('__version__ = "9.9.0rc1"\n')
+    _git(source, "add", str(version))
+    _git(source, "commit", "-m", "Prepare RC")
+    trigger = _git(source, "rev-parse", "HEAD")
+    _git(source, "push", str(remote), f"HEAD:refs/heads/{state['branch']}")
+    state.update(
+        source_sha=trigger,
+        trigger_sha=trigger,
+        application=flow._fingerprint(include_locks=False),
+    )
+    flow._write(flow.STATE / "release.json", state)
+    locks = json.loads((flow.STATE / "locks.json").read_text())
+    locks[flow.LOCKS[0]] += 'requires-python = ">=3.10"\n'
+    flow._write(flow.STATE / "locks.json", locks)
+    flow._commit_locks()
+    receipt = _rc_evidence(flow._state())
+    assert receipt["source_sha"] != trigger
+    assert receipt["evidence_ref"] == "refs/tags/rc-evidence/123"
+    assert _git(remote, "rev-parse", receipt["evidence_ref"]) == receipt["source_sha"]
+    _mock_rc_evidence(monkeypatch, [receipt], retain=False)
+    _git(source, "checkout", "-b", "main", base)
+    _git(source, "merge", "--squash", receipt["source_sha"])
+    version.write_text('__version__ = "9.9.0"\n')
+    if fault == "main-moved":
+        Path("main-only.py").write_text("untested = True\n")
+        _git(source, "add", "main-only.py")
+    _git(source, "add", str(version))
+    _git(source, "commit", "-m", "Release squash")
+    stable_sha = _git(source, "rev-parse", "HEAD")
+    _git(source, "tag", "v9.9.0")
+    _git(source, "push", str(remote), "refs/heads/main", "refs/tags/v9.9.0")
+    _git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+    _git(source, "push", str(remote), "--delete", state["branch"])
+    if fault == "missing-tag":
+        _git(remote, "update-ref", "-d", receipt["evidence_ref"])
+    elif fault == "wrong-tag":
+        _git(remote, "update-ref", receipt["evidence_ref"], stable_sha)
+    _git(remote, "reflog", "expire", "--expire=now", "--all")
+    _git(remote, "gc", "--prune=now")
+    fresh = tmp_path / "fresh-stable"
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--no-local",
+            "--no-tags",
+            "--single-branch",
+            "--branch",
+            "main",
+            str(remote),
+            str(fresh),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    missing = subprocess.run(
+        ["git", "-C", str(fresh), "cat-file", "-e", receipt["source_sha"]],
+        capture_output=True,
+    )
+    assert missing.returncode != 0
+    assert not _git(remote, "for-each-ref", f"refs/heads/{state['branch']}")
+    _git(fresh, "fetch", "origin", "refs/tags/v9.9.0:refs/tags/v9.9.0")
+    if fetch_all_tags:
+        _git(
+            fresh,
+            "fetch",
+            "origin",
+            "+refs/heads/*:refs/remotes/origin/*",
+            "+refs/tags/*:refs/tags/*",
+        )
+    monkeypatch.chdir(fresh)
+    monkeypatch.setattr(flow, "POLICY", ROOT / ".release/release-policy.json")
+    for name, value in {
+        "GITHUB_REPOSITORY": flow.REPOSITORY,
+        "GITHUB_EVENT_NAME": "release",
+        "GITHUB_SHA": stable_sha,
+        "GITHUB_REF": "refs/tags/v9.9.0",
+        "GITHUB_RUN_ID": "456",
+    }.items():
+        monkeypatch.setenv(name, value)
+    flow._write(
+        flow.STATE / "event.json",
+        {
+            "action": "published",
+            "release": {"tag_name": "v9.9.0", "draft": False, "prerelease": False},
+        },
+    )
+    if fault:
+        with pytest.raises(ValueError, match="No successful equivalent") as error:
+            flow._prepare()
+        if fault == "main-moved":
+            assert "main-only.py" in str(error.value)
+        assert not (flow.STATE / "accepted-rc.json").exists()
+    else:
+        flow._prepare()
+        assert flow._state()["accepted_rc_run_id"] == "123"
+        assert _git(fresh, "rev-parse", "HEAD") == stable_sha
+        assert flow._fingerprint(ref=receipt["source_sha"]) == receipt["fingerprint"]
+
+
+@pytest.mark.parametrize("attack", ["source-tree", "trigger-workflow"])
+def test_forged_rc_receipt_cannot_substitute_git_source(candidate, monkeypatch, attack):
+    source, _, state = candidate
+    workflow = Path(".github/workflows/publish.pypi.yml")
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("trusted pipeline\n")
+    _git(source, "add", str(workflow))
+    _git(source, "commit", "-m", "Reviewed pipeline")
+    trusted = _git(source, "rev-parse", "HEAD")
+    fingerprint = flow._fingerprint()
+    workflow.write_text("forged receipt producer\n")
+    _git(source, "commit", "-am", "Untrusted pipeline")
+    trigger = _git(source, "rev-parse", "HEAD")
+    if attack == "trigger-workflow":
+        workflow.write_text("trusted pipeline\n")
+        _git(source, "commit", "-am", "Restore reviewed tree after forged run")
+    receipt = _rc_evidence({**state, "trigger_sha": trigger})
+    receipt["fingerprint"] = fingerprint
+    _mock_rc_evidence(monkeypatch, [receipt])
+    _git(source, "checkout", "--detach", trusted)
+    with pytest.raises(
+        ValueError, match="fingerprint does not match|other than generated locks"
+    ):
+        flow._find_rc("9.9.0")
+    assert not (flow.STATE / "accepted-rc.json").exists()
+
+
+@pytest.mark.parametrize(
+    "fault", ["schema", "source", "missing-tag", "missing-object-mismatch", "json"]
+)
+def test_unusable_newer_receipt_cannot_hide_valid_older_evidence(
+    candidate, monkeypatch, fault
+):
+    _, remote, state = candidate
+    good = _rc_evidence(state)
+    bad = {**good, "run_id": "124"}
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    if fault == "schema":
+        bad["schema"] = 999
+    elif fault == "source":
+        bad["source_sha"] = "HEAD"
+    elif fault == "missing-tag":
+        _git(remote, "update-ref", "-d", bad["evidence_ref"])
+    elif fault == "missing-object-mismatch":
+        bad["source_sha"] = "a" * 40
+        bad["fingerprint"] = "b" * 64
+    else:
+        download = flow._download_receipt
+
+        def broken_json(artifact_id):
+            if str(artifact_id) == "124":
+                raise json.JSONDecodeError("invalid artifact", "", 0)
+            return download(artifact_id)
+
+        monkeypatch.setattr(flow, "_download_receipt", broken_json)
+    fetches = []
+    git = flow._git
+
+    def record_git(*args, **kwargs):
+        if args[0] == "fetch":
+            fetches.append(args[-1])
+        return git(*args, **kwargs)
+
+    monkeypatch.setattr(flow, "_git", record_git)
+    assert flow._find_rc("9.9.0")["run_id"] == "123"
+    if fault in {"schema", "source", "missing-object-mismatch", "json"}:
+        assert fetches == [good["evidence_ref"]]
+
+
+def test_git_blob_fingerprint_matches_worktree_for_modes_and_binary_files(candidate):
+    source, _, _ = candidate
+    Path("bytes.bin").write_bytes(b"\x00\xff\xfe\n")
+    Path("script.sh").write_text("#!/bin/sh\nexit 0\n")
+    Path("script.sh").chmod(0o755)
+    Path("link").symlink_to("script.sh")
+    _git(source, "add", "bytes.bin", "script.sh", "link")
+    _git(source, "commit", "-m", "Mixed blobs")
+    assert flow._file_fingerprints(ref="HEAD") == flow._file_fingerprints()
+    assert flow._fingerprint(ref="HEAD") == flow._fingerprint()

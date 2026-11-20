@@ -61,7 +61,7 @@ jobs:
           # Numerical embedding graph tests exercise the ONNX CPU backend.
           python -m uv pip install -e .[torch-cpu,onnx-cpu,test,model-blob-cache] --python .venv
       - name: "🧪 Unit Tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 31 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1800'

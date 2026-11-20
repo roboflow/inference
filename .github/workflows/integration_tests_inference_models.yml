@@ -72,7 +72,7 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "${{ github.workspace }}"/dist/roboflow_workflows-*.whl
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: "🧪 Integration Tests of Inference models [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 136 || 46 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 136 || 45 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '2700'

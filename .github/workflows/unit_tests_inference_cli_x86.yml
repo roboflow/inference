@@ -74,7 +74,7 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]"
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: "🧪 Unit Tests of Inference CLI [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 31 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1800'

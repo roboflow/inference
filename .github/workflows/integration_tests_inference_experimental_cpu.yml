@@ -106,7 +106,7 @@ jobs:
           df -h .
       - name: "🧪 Run tests marked `${{ matrix.extras.marker }}` [release-test]"
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        timeout-minutes: ${{ inputs.release_source != '' && 76 || 26 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 76 || 25 }}
         env:
           SHARD: ${{ matrix.extras.shard }}
         uses: ./.github/actions/retry-tests
