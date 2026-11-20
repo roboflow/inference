@@ -1236,37 +1236,38 @@ class VideoConsumer:
             return True
         self._adaptive_frames_dropped_in_row = 0
         if (
-            not buffer.full()
-            or self._buffer_filling_strategy is BufferFillingStrategy.WAIT
+            buffer.full()
+            and self._buffer_filling_strategy is not BufferFillingStrategy.WAIT
         ):
-            return decode_video_frame_to_buffer(
-                frame_timestamp=frame_timestamp,
-                frame_id=self._frame_counter,
-                video=video,
-                buffer=buffer,
-                decoding_pace_monitor=self._decoding_pace_monitor,
-                source_id=source_id,
-                declared_source_fps=declared_source_fps,
-                measured_source_fps=measured_source_fps,
-                comes_from_video_file=is_source_video_file,
-                total_frames=self._source_total_frames,
-            )
-        if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
-            return self._process_stream_frame_dropping_oldest(
-                frame_timestamp=frame_timestamp,
-                video=video,
-                buffer=buffer,
-                source_id=source_id,
-                is_video_file=is_source_video_file,
-            )
-        send_frame_drop_update(
+            if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
+                drop_single_frame_from_buffer(
+                    buffer=buffer,
+                    cause="DROP_OLDEST strategy",
+                    status_update_handlers=self._status_update_handlers,
+                )
+            else:
+                send_frame_drop_update(
+                    frame_timestamp=frame_timestamp,
+                    frame_id=self._frame_counter,
+                    cause="DROP_LATEST strategy",
+                    status_update_handlers=self._status_update_handlers,
+                    source_id=source_id,
+                )
+                return True
+
+        decoded = decode_video_frame_to_buffer(
             frame_timestamp=frame_timestamp,
             frame_id=self._frame_counter,
-            cause="DROP_LATEST strategy",
-            status_update_handlers=self._status_update_handlers,
+            video=video,
+            buffer=buffer,
+            decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
+            declared_source_fps=declared_source_fps,
+            measured_source_fps=measured_source_fps,
+            comes_from_video_file=is_source_video_file,
+            total_frames=self._source_total_frames,
         )
-        return True
+        return decoded
 
     def _frame_should_be_adaptively_dropped(
         self, declared_source_fps: Optional[float], buffer: Queue
@@ -1339,30 +1340,6 @@ class VideoConsumer:
             # we are too fast for the reader - time to save compute on decoding
             return True
         return False
-
-    def _process_stream_frame_dropping_oldest(
-        self,
-        frame_timestamp: datetime,
-        video: VideoFrameProducer,
-        buffer: Queue,
-        source_id: Optional[int],
-        is_video_file: bool,
-    ) -> bool:
-        drop_single_frame_from_buffer(
-            buffer=buffer,
-            cause="DROP_OLDEST strategy",
-            status_update_handlers=self._status_update_handlers,
-        )
-        return decode_video_frame_to_buffer(
-            frame_timestamp=frame_timestamp,
-            frame_id=self._frame_counter,
-            video=video,
-            buffer=buffer,
-            decoding_pace_monitor=self._decoding_pace_monitor,
-            source_id=source_id,
-            comes_from_video_file=is_video_file,
-            total_frames=self._source_total_frames,
-        )
 
 
 def get_from_queue(

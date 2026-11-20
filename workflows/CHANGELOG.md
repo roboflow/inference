@@ -16,6 +16,23 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Successful Modal syntax checks of custom Python blocks are reused.**
+  Workflows with custom Python blocks skip the compilation cache, so in Modal
+  mode every compilation sent one request per block to the Modal executor to
+  check its syntax. A successful check is now reused per process, keyed by
+  workspace and block source (up to 1024 entries), for 10 minutes after the
+  Modal call that made it, however often it is read. Failed checks and failures
+  to reach Modal are not cached, so a retry checks again. Anonymous workspaces
+  skip the cache so `MODAL_ALLOW_ANONYMOUS_EXECUTION` still applies. No
+  migration is needed.
+
+### Changed
+
+- The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
+  `compatible_model_architectures`.
+
 ## `0.2.16`
 
 Bundled execution engine: `1.17.2`.
