@@ -102,11 +102,14 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-analyzed_until_frame is the inclusive source-frame index covered by the end
-of the latest successful window, or null before the first success. For models
+analyzed_until_frame is the last source frame for which the latest successful
+call could report an action, or null before the first success. For models
 like Cosmos that return sampled-frame indices, it is the last sampled frame.
 For models like V-JEPA that use the observed window duration, it is the source
-frame that triggered the call. The mark updates even if no actions are detected.
+frame that triggered the call. Models can therefore report different values
+for the same input frame. To display file-processing progress when the frame
+count is known, use frame_number and total_frames from the video metadata.
+The mark updates even if no actions are detected.
 Earlier gaps can remain after failed or skipped windows, and overlapping
 windows can still revise earlier predictions.
 
