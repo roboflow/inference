@@ -44,6 +44,15 @@ from roboflow_workflows.core_steps.common.vlm_decoding.argon_segmentation import
     ARGON_SEGMENTATION_SCHEMA,
     decode_argon_segmentations,
 )
+from roboflow_workflows.core_steps.common.vlm_decoding.oriented_detection import (
+    CLASS_HEADING_DESCRIPTION,
+    CLASS_HEADING_EXAMPLE,
+    ORIENTED_OBJECT_DETECTION_TASK,
+    build_oriented_detection_prompt,
+    build_oriented_response_schema,
+    decode_oriented_detections,
+    resolve_class_heading,
+)
 from roboflow_workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from roboflow_workflows.environment import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -55,6 +64,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    DICTIONARY_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -213,6 +223,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     "caption",
     "detailed-caption",
     "object-detection",
+    ORIENTED_OBJECT_DETECTION_TASK,
     "instance-segmentation",
 ]
 SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
@@ -229,6 +240,13 @@ RELEVANT_TASKS_METADATA["object-detection"] = {
 RELEVANT_TASKS_METADATA["instance-segmentation"] = {
     "name": "Instance Segmentation",
     "description": "Gemini 4 Argon only: predict masks with detached components and holes, decoded to RLE predictions.",
+}
+RELEVANT_TASKS_METADATA[ORIENTED_OBJECT_DETECTION_TASK] = {
+    "name": "Oriented Object Detection",
+    "description": "Model returns a rotated rectangle for every instance of the provided "
+    "classes (center, size and angle in pixels of the uploaded image), decoded into "
+    "native oriented predictions by the block. Classes with a front "
+    "(`class_heading`) also report the direction it points to.",
 }
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -249,11 +267,24 @@ images up to 1600 pixels on the long edge and normalized YX polygons with
 detached components and holes. Predictions use RLE masks; bounding boxes are
 derived from the masks. Other Gemini models reject this task.
 
+Oriented object detection asks for one rotated rectangle per instance of the
+provided classes. A response schema has Gemini return each instance's `cx`, `cy`,
+`length`, `width` and `angle_deg`, in pixels of the uploaded image (the original
+image, sent as JPEG): `length` is the size along the main axis, `width` the size
+across it and `angle_deg` the clockwise direction of the main axis (0 points
+right, 90 points down). `class_heading` says which classes have a front: for those
+the main axis points toward the front and the angle covers the full circle, for
+the others it follows the long axis. Predictions are native oriented detections
+(`oriented_object_detection_prediction`, the kind of the native oriented model
+block) with `class_heading` completed for every class. Like the other
+absolute-coordinate formats they carry no confidence scores (`1.0` is assigned).
+
 This version (v6) decodes the model answer inside the block, adding
 `predictions`, `error_status` and `inference_id` outputs next to the raw
 `output` string:
 
-* `predictions` holds object detections for `object-detection`, RLE instance
+* `predictions` holds object detections for `object-detection`, native oriented
+detections for `oriented-object-detection`, RLE instance
 masks for `instance-segmentation`, and a classification prediction for `classification` /
 `multi-label-classification` tasks - the kind of the output follows the
 selected task type.
@@ -295,7 +326,12 @@ TASKS_REQUIRING_CLASSES = {
     "classification",
     "multi-label-classification",
     "object-detection",
+    ORIENTED_OBJECT_DETECTION_TASK,
     "instance-segmentation",
+}
+
+TASKS_SUPPORTING_CLASS_HEADING = {
+    ORIENTED_OBJECT_DETECTION_TASK,
 }
 
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
@@ -370,6 +406,21 @@ class BlockManifest(WorkflowBlockManifest):
                 "task_type": {
                     "values": TASKS_REQUIRING_CLASSES,
                     "required": True,
+                },
+            },
+        },
+    )
+    class_heading: Optional[
+        Union[Selector(kind=[DICTIONARY_KIND]), Dict[str, bool]]
+    ] = Field(
+        default=None,
+        description=CLASS_HEADING_DESCRIPTION,
+        examples=[CLASS_HEADING_EXAMPLE, "$inputs.class_heading"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_SUPPORTING_CLASS_HEADING,
+                    "required": False,
                 },
             },
         },
@@ -492,6 +543,17 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        if self.task_type == ORIENTED_OBJECT_DETECTION_TASK:
+            if self.google_code_execution is True:
+                raise ValueError(
+                    f"`google_code_execution` is not supported for task "
+                    f"`{self.task_type}`, whose answer follows a JSON response schema"
+                )
+            if isinstance(self.class_heading, dict):
+                resolve_class_heading(
+                    self.class_heading,
+                    labels=self.classes if isinstance(self.classes, list) else [],
+                )
         validate_reasoning_level(
             model=self.model_version,
             level=self.thinking_level,
@@ -585,7 +647,17 @@ class GoogleGeminiBlockV6(WorkflowBlock):
         google_code_execution: Optional[bool],
         max_concurrent_requests: Optional[int],
         api_key: str = "rf_key:account",
+        class_heading: Optional[Dict[str, bool]] = None,
     ) -> BlockResult:
+        oriented_class_heading = None
+        if task_type == ORIENTED_OBJECT_DETECTION_TASK:
+            if classes is None:
+                raise ValueError(
+                    "`classes` must be provided for oriented-object-detection"
+                )
+            oriented_class_heading = resolve_class_heading(
+                class_heading, labels=classes
+            )
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gemini_prompting(
             platform_client=self._platform_client,
@@ -602,6 +674,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
             thinking_level=thinking_level,
             google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
+            class_heading=oriented_class_heading,
         )
         results = []
         for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
@@ -612,6 +685,18 @@ class GoogleGeminiBlockV6(WorkflowBlock):
                     image=image,
                     classes=classes,
                     inference_id=inference_id,
+                )
+            elif task_type == ORIENTED_OBJECT_DETECTION_TASK:
+                upload_height, upload_width = (
+                    image._read_shape_without_materialization()
+                )
+                error_status, predictions = decode_oriented_detections(
+                    content,
+                    image=image,
+                    labels=classes,
+                    class_heading=oriented_class_heading,
+                    upload_width=upload_width,
+                    upload_height=upload_height,
                 )
             else:
                 error_status, predictions = decode_vlm_output(
@@ -651,6 +736,7 @@ def run_gemini_prompting(
     thinking_level: Optional[str],
     google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
+    class_heading: Optional[Dict[str, bool]] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
@@ -659,6 +745,10 @@ def run_gemini_prompting(
     if task_type == "instance-segmentation" and google_code_execution:
         raise ValueError(
             "Code execution is not supported with segmentation JSON output"
+        )
+    if task_type == ORIENTED_OBJECT_DETECTION_TASK and google_code_execution:
+        raise ValueError(
+            "Code execution is not supported with oriented detection JSON output"
         )
     gemini_prompts = []
     for image in images:
@@ -682,6 +772,9 @@ def run_gemini_prompting(
             temperature=temperature,
             thinking_level=thinking_level,
             max_tokens=max_tokens,
+            class_heading=class_heading,
+            image_width=loaded_image.shape[1],
+            image_height=loaded_image.shape[0],
         )
 
         if (
@@ -1276,6 +1369,70 @@ def prepare_instance_segmentation_prompt(
     return payload
 
 
+def prepare_oriented_object_detection_prompt(
+    base64_image: str,
+    classes: List[str],
+    class_heading: Dict[str, bool],
+    image_width: int,
+    image_height: int,
+    model_version: str,
+    temperature: Optional[float],
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
+    **kwargs,
+) -> dict:
+    """Build an oriented-detection request whose answer a response schema constrains.
+
+    Args:
+        base64_image (str): JPEG image encoded as base64, at its original size.
+        classes (List[str]): Class labels to detect.
+        class_heading (Dict[str, bool]): Whether each class has a front.
+        image_width (int): Width of the encoded image in pixels.
+        image_height (int): Height of the encoded image in pixels.
+        model_version (str): Gemini model to run.
+        temperature (Optional[float]): Sampling temperature.
+        thinking_level (Optional[str]): Model reasoning level.
+        max_tokens (Optional[int]): Output token budget.
+        **kwargs: Unused shared prompt-builder arguments.
+
+    Returns:
+        dict: Gemini generateContent payload.
+    """
+    prompt_text = build_oriented_detection_prompt(
+        classes,
+        class_heading=class_heading,
+        upload_width=image_width,
+        upload_height=image_height,
+    )
+    generation_config = prepare_generation_config(
+        max_tokens=max_tokens,
+        temperature=temperature,
+        thinking_level=thinking_level,
+        model_version=model_version,
+        response_mime_type="application/json",
+    )
+    generation_config["response_schema"] = build_oriented_response_schema(classes)
+    payload = {
+        "contents": {
+            "parts": [
+                {
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": base64_image,
+                    }
+                },
+                {
+                    "text": prompt_text,
+                },
+            ],
+            "role": "user",
+        },
+        "generationConfig": generation_config,
+    }
+
+    return payload
+
+
 def prepare_generation_config(
     max_tokens: Optional[int],
     temperature: Optional[float],
@@ -1336,4 +1493,5 @@ PROMPT_BUILDERS = {
     "structured-answering": prepare_structured_answering_prompt,
     "object-detection": prepare_object_detection_prompt,
     "instance-segmentation": prepare_instance_segmentation_prompt,
+    ORIENTED_OBJECT_DETECTION_TASK: prepare_oriented_object_detection_prompt,
 }
