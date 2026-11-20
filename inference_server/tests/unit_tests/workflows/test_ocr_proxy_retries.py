@@ -109,7 +109,7 @@ def test_request_is_preserved(requests_mock, sleep, monkeypatch):
         assert request.json() == {"a": 1}
         assert request.headers["X-Allow-Chunked"] == "true"
         assert request.headers["X-Test"] == "value"
-        assert request.timeout == host.API_REQUEST_TIMEOUT_S
+        assert request.timeout == host.API_PROXY_REQUEST_TIMEOUT_S
         assert request.verify is False
 
 
