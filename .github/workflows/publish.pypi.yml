@@ -1,255 +1,993 @@
 name: Publish Wheels to PyPi
+# All release uploads stay in this trusted publisher identity.
 on:
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
     inputs:
       packages:
         type: choice
         default: all
-        options: [sdk, runtime, all, dependencies]
-        description: Package group (dependencies prepares upstreams without uploading runtime)
+        options: [all, sdk]
+        description: Complete RC pipeline, or independent SDK publication
       publish:
         type: boolean
         default: false
-        description: Publish the selected packages (default builds only)
+        description: Publish an RC (false builds wheels only)
       expected_version:
         type: string
-        default: ""
-        description: Required for manual publication; must match package metadata
-
+        default: ''
+        description: Exact prepared RC or SDK version
 permissions:
   contents: read
-
+# Release code must neither consume nor populate shared Actions caches.
+cache-mode: none
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.packages || 'all' }}
+  cancel-in-progress: false
 env:
   EXPECTED_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.expected_version }}
   PUBLISH: ${{ github.event_name == 'release' || inputs.publish == true }}
-
-# Keep publication in this file: all six PyPI projects already trust its identity.
-# No environment or reusable publishing workflow may change that OIDC identity.
+  PACKAGES: ${{ inputs.packages || 'all' }}
 jobs:
-  build_sdk:
-    if: ${{ github.event_name == 'release' || inputs.packages == 'sdk' || inputs.packages == 'all' || inputs.packages == 'dependencies' }}
-    runs-on:
-      labels: depot-ubuntu-22.04-small
-      group: public-depot
-    timeout-minutes: 15
+  prepare:
+    if: ${{ github.repository == 'roboflow/inference' && (github.event_name != 'release' || github.event.release.prerelease == false) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     outputs:
-      version: ${{ steps.build.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
+      version: ${{ steps.plan.outputs.version }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+      images: ${{ steps.plan.outputs.images }}
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate candidate and locate equivalent successful RC for stable
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .release/pypi/flow.sh prepare
+      - id: state
+        run: echo "artifact=release-initial-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+  build_sdk:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
       artifact: ${{ steps.build.outputs.artifact }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Build and inspect the SDK wheel in Docker
-        id: build
+      - id: build
         run: |
           bash .release/pypi/release.sh build-sdk
-          echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
           echo "artifact=sdk-wheel-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.build.outputs.artifact }}
-          retention-days: 90
-          if-no-files-found: error
           path: |
             dist/sdk/*.whl
             dist/sdk-manifest.json
             dist/version.txt
-      - name: Report build-only result
-        if: ${{ env.PUBLISH == 'false' }}
-        run: echo "SDK wheel built. Nothing was published (publish=false)." >> "$GITHUB_STEP_SUMMARY"
+          retention-days: 90
+          if-no-files-found: error
+
+  preview_runtime:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.channel == 'preview' && inputs.packages != 'sdk' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - run: bash .release/pypi/release.sh build-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-runtime-${{ github.run_attempt }}
+          path: dist/
+          retention-days: 90
+          if-no-files-found: error
+      - run: echo "Build only; nothing published." >> "$GITHUB_STEP_SUMMARY"
 
   publish_sdk:
-    needs: build_sdk
-    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || inputs.publish == true) }}
+    needs: [prepare, build_sdk]
+    if: ${{ needs.prepare.outputs.channel != 'preview' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
       id-token: write
     concurrency:
-      group: pypi-sdk-${{ needs.build_sdk.outputs.version }}
+      group: pypi-sdk-${{ needs.prepare.outputs.version }}
       cancel-in-progress: false
+    outputs:
+      artifact: ${{ steps.receipt.outputs.artifact }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build_sdk.outputs.artifact }}
           path: dist
-      - name: Verify an existing SDK or stage the missing wheel
-        id: prepare
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.state_artifact }}
+          path: release-state
+      - name: Smoke-test the retained SDK wheel
+        run: |
+          docker build --tag release-smoke --file .release/pypi/Dockerfile .release/pypi
+          docker run --rm -v "$PWD:/work" -w /work release-smoke python .release/pypi/smoke.py dist/sdk
+      - id: prepare
         run: |
           bash .release/pypi/release.sh prepare-sdk --wait-seconds 600
           echo "upload=$(jq -r '.upload' dist/sdk-decision.json)" >> "$GITHUB_OUTPUT"
-      - name: Publish the missing SDK wheel
-        id: upload
+      - name: Upload missing SDK wheel
         if: ${{ steps.prepare.outputs.upload == 'true' }}
         continue-on-error: true
-        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
         with:
           packages-dir: dist/sdk-upload/
-      - name: Verify the published bytes and package contents
+      - name: Verify complete SDK publication, including retries
         run: bash .release/pypi/release.sh verify-sdk --wait-seconds 600
+      - id: receipt
+        run: echo "artifact=sdk-receipt-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: sdk-publication-receipt-${{ github.run_attempt }}
+          name: ${{ steps.receipt.outputs.artifact }}
+          path: |
+            dist/sdk-receipt.json
+            release-state/smoke/
           retention-days: 90
           if-no-files-found: error
-          path: |
-            dist/sdk-decision.json
-            dist/sdk-receipt.json
 
-  build_runtime:
-    if: ${{ github.event_name == 'release' || inputs.packages == 'runtime' || inputs.packages == 'all' || inputs.packages == 'dependencies' }}
-    runs-on:
-      labels: depot-ubuntu-22.04-small
-      group: public-depot
-    timeout-minutes: 20
+
+  build_models:
+    needs: [prepare, publish_sdk]
+    if: ${{ needs.prepare.outputs.channel == 'rc' || needs.prepare.outputs.channel == 'stable' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     outputs:
-      version: ${{ steps.build.outputs.version }}
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.state_artifact }}
+          path: release-state
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.publish_sdk.outputs.artifact }}
+          path: sdk-evidence
+      - run: cp -R sdk-evidence/release-state/smoke release-state/smoke
+      - name: Prepare lock, build retained distributions and smoke-test
+        run: bash .release/pypi/flow.sh build --package inference-models
+      - id: state
+        run: echo "artifact=release-models-built-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+
+  publish_models:
+    needs: [prepare, build_models]
+    if: ${{ needs.prepare.outputs.channel == 'rc' || needs.prepare.outputs.channel == 'stable' }}
+    env:
+      # This project has an independent version, read from its checked-out pyproject.
+      EXPECTED_VERSION: ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: pypi-inference-models
+      cancel-in-progress: false
+    outputs:
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_models.outputs.state_artifact }}
+          path: release-state
+      - run: bash .release/pypi/flow.sh restore
+      - name: Verify public upstream dependencies
+        run: bash .release/pypi/dependencies.sh gate --directory release-state/packages/inference-models --plan-file release-state/inference-models-dependencies.json --wait-seconds 600
+      - id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile inference-models --directory release-state/packages/inference-models --upload-directory release-upload --receipt release-state/inference-models-prepare.json --wait-seconds 600
+          bash .release/pypi/flow.sh check-upload --package inference-models
+          echo "upload=$(jq -r '.upload' release-state/inference-models-prepare.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload missing distributions
+        if: ${{ steps.prepare.outputs.upload == 'true' }}
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+        with:
+          packages-dir: release-upload/
+      - name: Verify complete publication
+        run: bash .release/pypi/publish.sh verify --profile inference-models --directory release-state/packages/inference-models --upload-directory release-upload --receipt release-state/inference-models-receipt.json --wait-seconds 600
+      - id: state
+        run: echo "artifact=release-models-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+
+  build_workflows:
+    needs: [prepare, publish_models]
+    if: ${{ needs.prepare.outputs.channel == 'rc' || needs.prepare.outputs.channel == 'stable' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.publish_models.outputs.state_artifact }}
+          path: release-state
+      - name: Prepare lock, build retained distributions and smoke-test
+        run: bash .release/pypi/flow.sh build --package roboflow-workflows
+      - id: state
+        run: echo "artifact=release-workflows-built-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+
+  publish_workflows:
+    needs: [prepare, build_workflows]
+    if: ${{ needs.prepare.outputs.channel == 'rc' || needs.prepare.outputs.channel == 'stable' }}
+    env:
+      # This project has an independent version, read from its checked-out pyproject.
+      EXPECTED_VERSION: ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: pypi-roboflow-workflows
+      cancel-in-progress: false
+    outputs:
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_workflows.outputs.state_artifact }}
+          path: release-state
+      - run: bash .release/pypi/flow.sh restore
+      - name: Verify public upstream dependencies
+        run: bash .release/pypi/dependencies.sh gate --directory release-state/packages/roboflow-workflows --plan-file release-state/roboflow-workflows-dependencies.json --wait-seconds 600
+      - id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile roboflow-workflows --directory release-state/packages/roboflow-workflows --upload-directory release-upload --receipt release-state/roboflow-workflows-prepare.json --wait-seconds 600
+          bash .release/pypi/flow.sh check-upload --package roboflow-workflows
+          echo "upload=$(jq -r '.upload' release-state/roboflow-workflows-prepare.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload missing distributions
+        if: ${{ steps.prepare.outputs.upload == 'true' }}
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+        with:
+          packages-dir: release-upload/
+      - name: Verify complete publication
+        run: bash .release/pypi/publish.sh verify --profile roboflow-workflows --directory release-state/packages/roboflow-workflows --upload-directory release-upload --receipt release-state/roboflow-workflows-receipt.json --wait-seconds 600
+      - id: state
+        run: echo "artifact=release-workflows-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+
+  build_streamvision:
+    needs: [prepare, publish_workflows]
+    if: ${{ needs.prepare.outputs.channel == 'rc' || needs.prepare.outputs.channel == 'stable' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.publish_workflows.outputs.state_artifact }}
+          path: release-state
+      - name: Prepare lock, build retained distributions and smoke-test
+        run: bash .release/pypi/flow.sh build --package streamvision
+      - id: state
+        run: echo "artifact=release-streamvision-built-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+
+  publish_streamvision:
+    needs: [prepare, build_streamvision]
+    if: ${{ needs.prepare.outputs.channel == 'rc' || needs.prepare.outputs.channel == 'stable' }}
+    env:
+      # This project has an independent version, read from its checked-out pyproject.
+      EXPECTED_VERSION: ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: pypi-streamvision
+      cancel-in-progress: false
+    outputs:
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_streamvision.outputs.state_artifact }}
+          path: release-state
+      - run: bash .release/pypi/flow.sh restore
+      - name: Verify public upstream dependencies
+        run: bash .release/pypi/dependencies.sh gate --directory release-state/packages/streamvision --plan-file release-state/streamvision-dependencies.json --wait-seconds 600
+      - id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile streamvision --directory release-state/packages/streamvision --upload-directory release-upload --receipt release-state/streamvision-prepare.json --wait-seconds 600
+          bash .release/pypi/flow.sh check-upload --package streamvision
+          echo "upload=$(jq -r '.upload' release-state/streamvision-prepare.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload missing distributions
+        if: ${{ steps.prepare.outputs.upload == 'true' }}
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+        with:
+          packages-dir: release-upload/
+      - name: Verify complete publication
+        run: bash .release/pypi/publish.sh verify --profile streamvision --directory release-state/packages/streamvision --upload-directory release-upload --receipt release-state/streamvision-receipt.json --wait-seconds 600
+      - id: state
+        run: echo "artifact=release-streamvision-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+
+  commit_locks:
+    needs: [prepare, publish_streamvision]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      source_sha: ${{ steps.commit.outputs.source_sha }}
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.publish_streamvision.outputs.state_artifact }}
+          path: release-state
+      - name: Validate prepared stable dependencies against the RC
+        run: bash .release/pypi/flow.sh equivalence
+      - name: Commit RC locks without triggering another run
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .release/pypi/flow.sh commit-locks
+      - id: state
+        run: echo "artifact=release-prepared-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
+
+  # Root jobs execute the immutable event commit. Restored lock snapshots are
+  # verified against the committed release tree before any runtime build.
+  build_runtime:
+    needs: [prepare, commit_locks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
       artifact: ${{ steps.build.outputs.artifact }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Build five wheels and an SDK verification reference in Docker
-        id: build
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.commit_locks.outputs.state_artifact }}
+          path: release-state
+      - run: bash .release/pypi/flow.sh restore
+      - id: build
         run: |
           bash .release/pypi/release.sh build-runtime
-          echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
           echo "artifact=runtime-wheels-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.build.outputs.artifact }}
+          path: dist/
           retention-days: 90
           if-no-files-found: error
-          path: |
-            dist/pypi/*.whl
-            dist/sdk/*.whl
-            dist/*-manifest.json
-            dist/version.txt
-      - name: Report build-only result
-        if: ${{ env.PUBLISH == 'false' }}
-        run: echo "Runtime wheels built. Nothing was published (publish=false)." >> "$GITHUB_STEP_SUMMARY"
 
-  prepare_dependencies:
-    needs: [build_runtime, publish_sdk]
-    if: >-
-      ${{ !cancelled() && github.repository == 'roboflow/inference' &&
-          needs.build_runtime.result == 'success' &&
-          (needs.publish_sdk.result == 'success' ||
-           (github.event_name == 'workflow_dispatch' &&
-            (inputs.packages == 'runtime' || inputs.publish != true) &&
-            needs.publish_sdk.result == 'skipped')) }}
+  smoke:
+    needs: [prepare, commit_locks, build_runtime]
     runs-on: ubuntu-latest
-    timeout-minutes: 210
-    permissions:
-      contents: read
-      actions: write
-    concurrency:
-      group: pypi-dependencies-${{ needs.build_runtime.outputs.version }}-${{ github.event_name == 'release' || inputs.publish == true }}
-      cancel-in-progress: false
-    outputs:
-      artifact: ${{ steps.plan.outputs.artifact }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build_runtime.outputs.artifact }}
           path: dist
-      - name: Require the exact SDK before publishing upstream dependencies
-        if: ${{ github.event_name == 'release' || inputs.publish == true }}
-        run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
-      - name: Resolve first-party dependency versions
-        id: plan
-        run: |
-          bash .release/pypi/dependencies.sh plan --wait-seconds 600
-          echo "artifact=dependency-plan-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - name: Publish missing upstream versions in dependency order
-        if: ${{ github.event_name == 'release' || inputs.publish == true }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash .release/pypi/dependencies.sh coordinate --wait-seconds 10800
-      - uses: actions/upload-artifact@v4
-        if: ${{ always() }}
+      - uses: actions/download-artifact@v4
         with:
-          name: dependency-plan-${{ github.run_attempt }}
+          name: ${{ needs.commit_locks.outputs.state_artifact }}
+          path: release-state
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: '0.12.21'
+          enable-cache: false
+      - run: uv pip install --system click==8.1.8 packaging==25.0
+      - name: Install and smoke-test each exact runtime wheel
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: python .release/pypi/smoke.py dist/pypi --python "$PYTHON_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-${{ matrix.python-version }}-${{ github.run_attempt }}
+          path: release-state/smoke/
           retention-days: 90
           if-no-files-found: error
-          path: |
-            dist/dependency-plan.json
-            dist/dependency-receipt.json
+
+  rc_static_code_analysis:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/static_code_analysis.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_check_model_licenses:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/check_model_licenses.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_inference_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_inference_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_inference_cli_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_inference_cli_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_inference_sdk_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_inference_sdk_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_workflows_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_workflows_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_workflows_tensor_native_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_workflows_tensor_native_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_streamvision_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_streamvision_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_inference_experimental:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_inference_experimental.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_inference_experimental_cpu:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_tests_inference_experimental_cpu.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_workflows_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_tests_workflows_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_workflows_tensor_native_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_tests_workflows_tensor_native_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_e2e_tests_inference_sdk_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_e2e_tests_inference_sdk_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_test_package_install_inference_sdk:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/test_package_install_inference_sdk.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_test_pypi_release:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/test.pypi.release.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_inference_model_manager_and_server:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_inference_model_manager_and_server.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_unit_tests_inference_experimental_gpu:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/unit_tests_inference_experimental_gpu.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_inference_experimental_gpu:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_tests_inference_experimental_gpu.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_inference_cli_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_tests_inference_cli_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_inference_cli_depending_on_inference_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_tests_inference_cli_depending_on_inference_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_inference_models:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/integration_tests_inference_models.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_e2e_tests_inference_experimental_cpu:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/e2e_tests_inference_experimental_cpu.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_e2e_tests_inference_experimental_gpu:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/e2e_tests_inference_experimental_gpu.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  rc_integration_tests_inference_server_x86:
+    needs: [prepare, commit_locks]
+    if: ${{ needs.prepare.outputs.channel == 'rc' }}
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    uses: ./.github/workflows/integration_tests_inference_server_x86.yml
+    with:
+      release_source: ${{ needs.commit_locks.outputs.source_sha }}
+    secrets: inherit
+
+  validation:
+    needs: [prepare, commit_locks, smoke, rc_static_code_analysis, rc_check_model_licenses, rc_unit_tests_inference_x86, rc_unit_tests_inference_cli_x86, rc_unit_tests_inference_sdk_x86, rc_unit_tests_workflows_x86, rc_unit_tests_workflows_tensor_native_x86, rc_unit_tests_streamvision_x86, rc_unit_tests_inference_experimental, rc_integration_tests_inference_experimental_cpu, rc_integration_tests_workflows_x86, rc_integration_tests_workflows_tensor_native_x86, rc_integration_e2e_tests_inference_sdk_x86, rc_test_package_install_inference_sdk, rc_test_pypi_release, rc_unit_tests_inference_model_manager_and_server, rc_unit_tests_inference_experimental_gpu, rc_integration_tests_inference_experimental_gpu, rc_integration_tests_inference_cli_x86, rc_integration_tests_inference_cli_depending_on_inference_x86, rc_integration_tests_inference_models, rc_e2e_tests_inference_experimental_cpu, rc_e2e_tests_inference_experimental_gpu, rc_integration_tests_inference_server_x86]
+    if: ${{ !cancelled() && needs.commit_locks.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      checks: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.commit_locks.outputs.state_artifact }}
+          path: release-state
+      - name: Require every selected suite and report against the lock commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RESULTS: ${{ toJSON(needs) }}
+        run: bash .release/pypi/flow.sh validate
+
+  prepare_dependencies:
+    needs: [prepare, commit_locks, build_runtime, validation]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.build_runtime.result == 'success' && needs.validation.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      state_artifact: ${{ steps.state.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_runtime.outputs.artifact }}
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.commit_locks.outputs.state_artifact }}
+          path: release-state
+      - run: bash .release/pypi/flow.sh restore
+      - name: Verify SDK and exact dependency inventory before runtime upload
+        run: |
+          bash .release/pypi/release.sh gate-sdk --wait-seconds 600
+          bash .release/pypi/dependencies.sh plan --wait-seconds 600
+          bash .release/pypi/dependencies.sh verify --wait-seconds 600
+          cp dist/dependency-receipt.json release-state/dependency-receipt.json
+          cp dist/dependency-plan.json release-state/dependency-plan.json
+      - id: state
+        run: echo "artifact=release-verified-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.state.outputs.artifact }}
+          path: release-state/
+          retention-days: 90
+          if-no-files-found: error
 
   publish_runtime:
-    needs: [build_runtime, publish_sdk, prepare_dependencies]
-    # Runtime-only dispatches skip the SDK job; all/release runs require it to
-    # finish verification successfully. A failed or cancelled SDK blocks upload.
-    if: >-
-      ${{ !cancelled() && github.repository == 'roboflow/inference' &&
-          (github.event_name == 'release' || inputs.publish == true) &&
-          (github.event_name == 'release' || inputs.packages != 'dependencies') &&
-          needs.build_runtime.result == 'success' &&
-          needs.prepare_dependencies.result == 'success' &&
-          (needs.publish_sdk.result == 'success' ||
-           (github.event_name == 'workflow_dispatch' && inputs.packages == 'runtime' &&
-            needs.publish_sdk.result == 'skipped')) }}
+    needs: [prepare, commit_locks, build_runtime, prepare_dependencies]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.build_runtime.result == 'success' && needs.prepare_dependencies.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
       contents: read
       id-token: write
     concurrency:
-      group: pypi-runtime-${{ needs.build_runtime.outputs.version }}
+      group: pypi-runtime-${{ needs.prepare.outputs.version }}
       cancel-in-progress: false
+    outputs:
+      artifact: ${{ steps.receipt.outputs.artifact }}
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build_runtime.outputs.artifact }}
           path: dist
-      - name: Verify the published SDK before uploading any consumer
-        run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.prepare_dependencies.outputs.artifact }}
-          path: dist
-      - name: Verify the selected dependencies against the retained consumer wheels
-        run: bash .release/pypi/dependencies.sh verify --wait-seconds 600
-      - uses: actions/upload-artifact@v4
-        with:
-          name: runtime-sdk-verification-${{ github.run_attempt }}
-          retention-days: 90
-          if-no-files-found: error
-          path: |
-            dist/sdk-receipt.json
-            dist/dependency-plan.json
-            dist/dependency-receipt.json
-      - name: Verify existing runtime files and stage missing wheels
-        id: prepare
+          name: ${{ needs.prepare_dependencies.outputs.state_artifact }}
+          path: release-state
+      - run: bash .release/pypi/flow.sh restore
+      - name: Reverify dependencies for a resumed publication
         run: |
-          bash .release/pypi/publish.sh prepare --profile runtime --directory dist/pypi --upload-directory dist/runtime-upload --receipt dist/runtime-prepare.json --wait-seconds 600
-          echo "upload=$(jq -r '.upload' dist/runtime-prepare.json)" >> "$GITHUB_OUTPUT"
-      - name: Publish the missing runtime and CLI wheels
-        continue-on-error: true
+          cp release-state/dependency-plan.json dist/dependency-plan.json
+          bash .release/pypi/release.sh gate-sdk --wait-seconds 600
+          bash .release/pypi/dependencies.sh verify --wait-seconds 600
+      - id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile runtime --directory dist/pypi --upload-directory release-upload --receipt release-state/runtime-prepare.json --wait-seconds 600
+          echo "upload=$(jq -r '.upload' release-state/runtime-prepare.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload missing runtime wheels
         if: ${{ steps.prepare.outputs.upload == 'true' }}
-        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
         with:
-          packages-dir: dist/runtime-upload/
-      - name: Verify the complete published runtime inventory
-        run: bash .release/pypi/publish.sh verify --profile runtime --directory dist/pypi --upload-directory dist/runtime-upload --receipt dist/runtime-receipt.json --wait-seconds 600
+          packages-dir: release-upload/
+      - name: Verify complete runtime publication
+        run: bash .release/pypi/publish.sh verify --profile runtime --directory dist/pypi --upload-directory release-upload --receipt release-state/runtime-receipt.json --wait-seconds 600
+      - id: receipt
+        run: echo "artifact=runtime-receipt-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
-        if: ${{ always() }}
         with:
-          name: runtime-publication-receipt-${{ github.run_attempt }}
+          name: ${{ steps.receipt.outputs.artifact }}
+          path: release-state/runtime-receipt.json
           retention-days: 90
           if-no-files-found: error
-          path: |
-            dist/runtime-prepare.json
-            dist/runtime-receipt.json
+
+  docker:
+    needs: [prepare, commit_locks, prepare_dependencies, publish_runtime, build_sdk, build_runtime]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.prepare_dependencies.result == 'success' && needs.publish_runtime.result == 'success' && needs.build_sdk.result == 'success' && needs.build_runtime.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.images) }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release.image.yml
+    with:
+      source_sha: ${{ needs.commit_locks.outputs.source_sha }}
+      state_artifact: ${{ needs.prepare_dependencies.outputs.state_artifact }}
+      runtime_artifact: ${{ needs.build_runtime.outputs.artifact }}
+      sdk_artifact: ${{ needs.build_sdk.outputs.artifact }}
+      image: ${{ toJSON(matrix) }}
+    secrets: inherit
+
+  complete:
+    needs: [prepare, commit_locks, prepare_dependencies, publish_runtime, docker]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.commit_locks.result == 'success' && needs.prepare_dependencies.result == 'success' && needs.publish_runtime.result == 'success' && needs.docker.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare_dependencies.outputs.state_artifact }}
+          path: release-state
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.publish_runtime.outputs.artifact }}
+          path: release-state
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-publication-*
+          path: release-state/images
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runtime-smoke-*
+          path: release-state/runtime-smoke
+      - name: Record completed release
+        run: bash .release/pypi/flow.sh receipt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-receipt-${{ github.run_attempt }}
+          path: release-state/receipt.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Summarize
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE: ${{ needs.commit_locks.outputs.source_sha }}
+        run: echo "Verified release $VERSION from $SOURCE. Retry failures using Re-run failed jobs in this run." >> "$GITHUB_STEP_SUMMARY"
+
+  notify-svis:
+    needs: complete
+    if: >-
+      ${{ !cancelled() && needs.complete.result == 'success'
+          && github.repository == 'roboflow/inference'
+          && github.event_name == 'release'
+          && github.event.release.draft == false
+          && github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    environment: svis-dispatch
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions: {}
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      HAS_APP: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY != '' && vars.SVIS_DISPATCH_APP_CLIENT_ID != '' }}
+    steps:
+      - name: Only announce stable and post-release versions
+        id: filter
+        run: |
+          version="${RELEASE_TAG#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-]post[0-9]+)?$ ]]; then
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not a release version ($RELEASE_TAG); nothing to announce."
+          fi
+      - name: Mint a token scoped to the SVIS repository
+        id: app-token
+        if: ${{ steps.filter.outputs.version != '' && env.HAS_APP == 'true' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SVIS_DISPATCH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY }}
+          owner: roboflow
+          repositories: streaming-video-inference-services
+          permission-contents: write
+      - name: Ping SVIS
+        if: ${{ steps.app-token.outputs.token != '' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.filter.outputs.version }}
+        run: |
+          gh api repos/roboflow/streaming-video-inference-services/dispatches \
+            -f event_type=inference-release \
+            -f "client_payload[version]=$VERSION" \
+            -f "client_payload[sha]=$GITHUB_SHA"
+          echo "Announced $VERSION ($GITHUB_SHA) to streaming-video-inference-services"

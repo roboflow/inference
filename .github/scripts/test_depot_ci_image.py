@@ -480,7 +480,18 @@ class WorkflowTests(unittest.TestCase):
                 set(steps[depot_steps[0]].get("env", {})), {"CI_DEPOT_ACTION"}
             )
             for step in steps:
-                self.assertNotIn("upload-artifact", step.get("uses", ""))
+                if "upload-artifact" in step.get("uses", ""):
+                    self.assertEqual(name, "integration_tests_inference_server_x86.yml")
+                    self.assertEqual(
+                        step["if"],
+                        "${{ always() && inputs.release_source != '' && !inputs.private_image }}",
+                    )
+                    self.assertEqual(
+                        step["with"]["path"].splitlines(),
+                        [
+                            "${{ runner.temp }}/server-test-attempts/attempts.txt",
+                        ],
+                    )
                 self.assertNotIn("${{ secrets.", step.get("run", ""))
                 action = step.get("uses", "")
                 if action and not action.startswith("./"):
