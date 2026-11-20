@@ -1303,6 +1303,25 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
 
 
+@pytest.mark.parametrize("source_fps", [30000 / 1001, 24000 / 1001])
+def test_a_model_without_a_frame_budget_gets_at_most_its_window(source_fps) -> None:
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=16.0, sample_fps=4.0, min_frames=4
+    )
+    window_frames = round(16.0 * source_fps)
+
+    # One default-stride window in about 16 holds a 65th sample.
+    for frame_number in range(20 * window_frames):
+        block.run(
+            images=[_make_frame(frame_number, fps=source_fps)],
+            model_id="cosmos-3-edge",
+        )
+
+    assert any(len(call["frames"]) == 64 for call in model.calls)
+    assert all(len(call["frames"]) <= 64 for call in model.calls)
+
+
 @pytest.mark.parametrize("supports_confidence", [False, True])
 def test_confidence_option_uses_declared_capability(supports_confidence):
     block, model = _make_block()

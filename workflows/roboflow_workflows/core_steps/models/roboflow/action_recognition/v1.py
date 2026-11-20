@@ -629,10 +629,18 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             and bookkeeping.sampled[0].intended_frame_number <= cutoff_frame_number
         ):
             bookkeeping.sampled.pop(0)
-        if video_sampling.max_frames is not None:
-            # Rounded source-frame windows can contain one extra sampling timestamp.
-            while len(bookkeeping.sampled) > video_sampling.max_frames:
-                bookkeeping.sampled.pop(0)
+        # Rounded source-frame windows can contain one extra sampling timestamp.
+        # Without a trained budget the cap is the model window, so a remote call
+        # sends the same frames as a local one instead of a clip the server splits.
+        window_sample_limit = (
+            video_sampling.max_frames
+            if video_sampling.max_frames is not None
+            else max(
+                1, math.floor(requested_window_seconds * effective_sample_fps + 1e-9)
+            )
+        )
+        while len(bookkeeping.sampled) > window_sample_limit:
+            bookkeeping.sampled.pop(0)
 
         return effective_sample_fps, sampling_stride, stride_frames
 

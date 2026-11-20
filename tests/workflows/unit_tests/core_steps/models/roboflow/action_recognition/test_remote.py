@@ -338,24 +338,26 @@ def test_rate_the_clip_container_rounds_still_maps_one_to_one(monkeypatch, fps):
     assert model.infer(frames=_frames(8), fps=fps) == []
 
 
-def _video_frame(frame_number: int) -> WorkflowImageData:
+def _video_frame(frame_number: int, fps: float = 8.0) -> WorkflowImageData:
     return WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id=f"clip:{frame_number}"),
         workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="clip:root"),
         video_metadata=VideoMetadata(
             video_identifier="clip",
             frame_number=frame_number,
-            fps=8.0,
+            fps=fps,
             frame_timestamp=datetime(2024, 1, 1),
         ),
         numpy_image=np.full((24, 32, 3), frame_number % 255, dtype=np.uint8),
     )
 
 
-def _remote_block(monkeypatch, *, timeline: List[dict]):
+def _remote_block(
+    monkeypatch, *, timeline: List[dict], video_sampling: VideoSampling = BLOCK_SAMPLING
+):
     server = _FakeServer(timeline=timeline)
     lookups = _fake_platform(
-        monkeypatch, server.post, class_names=["punch"], video_sampling=BLOCK_SAMPLING
+        monkeypatch, server.post, class_names=["punch"], video_sampling=video_sampling
     )
     block = ActionRecognitionModelBlockV1(
         api_key="key",
@@ -398,3 +400,25 @@ def test_block_keeps_its_state_and_sends_only_window_calls_in_remote_mode(
         (entry.start_frame_idx, entry.end_frame_idx, entry.class_name, entry.class_id)
         for entry in results[-1]["timeline"]
     ] == [(4, 6, "punch", 0), (12, 14, "punch", 0)]
+
+
+@pytest.mark.parametrize("source_fps", [30000 / 1001, 24000 / 1001])
+def test_ntsc_windows_without_a_frame_budget_still_classify_remotely(
+    monkeypatch, source_fps
+):
+    # A rounded 16 s window at an NTSC rate holds 65 samples about once in 16
+    # windows, and the endpoint would split such a clip.
+    sampling = VideoSampling(window_seconds=16.0, sample_fps=4.0, min_frames=4)
+    block, server, _ = _remote_block(monkeypatch, timeline=[], video_sampling=sampling)
+    window_frames = round(16.0 * source_fps)
+
+    results = [
+        block.run(
+            images=[_video_frame(number, fps=source_fps)],
+            model_id="ws/cosmos/1",
+        )[0]
+        for number in range(20 * window_frames)
+    ]
+
+    assert len(server.requests) == 19
+    assert all(result["error_status"] == "" for result in results)
