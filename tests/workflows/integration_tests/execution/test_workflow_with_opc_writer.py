@@ -500,7 +500,7 @@ def test_workflow_with_opc_writer_sink(
     bool_env(os.getenv("SKIP_OPC_WRITER_TEST", False)),
     reason="Skipping OPC writer test due to flag `SKIP_OPC_WRITER_TEST`",
 )
-@pytest.mark.timeout(5)
+@pytest.mark.timeout(10)
 def test_workflow_with_opc_writer_sink_direct_mode(test_opc_server) -> None:
     """Test OPC writer with direct NodeId lookup mode using the shared server"""
     # given

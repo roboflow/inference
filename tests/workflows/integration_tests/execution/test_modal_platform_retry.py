@@ -35,6 +35,7 @@ OTHER_FAILURES = [
     TRACEBACK_TAIL + "Modal endpoint returned status 500: Internal Server Error",
     TRACEBACK_TAIL + "Modal endpoint returned status 401: modal-http: invalid "
     "credentials",
+    "Modal endpoint returned status 502: ",
     "AssertionError",
 ]
 
@@ -44,13 +45,17 @@ class FakeRuns:
 
     def __init__(self) -> None:
         self.stderr_queue: List[str] = []
+        self.returncode_queue: List[int] = []
         self.count = 0
 
     def run(self, args: List[str], **kwargs) -> subprocess.CompletedProcess:
         stderr = self.stderr_queue.pop(0) if self.stderr_queue else ""
+        returncode = (
+            self.returncode_queue.pop(0) if self.returncode_queue else int(bool(stderr))
+        )
         self.count += 1
         return subprocess.CompletedProcess(
-            args=args, returncode=1 if stderr else 0, stdout="", stderr=stderr
+            args=args, returncode=returncode, stdout="", stderr=stderr
         )
 
 
@@ -86,6 +91,18 @@ def test_other_failures_are_not_run_again(runs: FakeRuns, stderr: str) -> None:
     result = modal_platform_retry.run_with_modal_platform_retries(["python"])
 
     assert result.returncode == 1
+    assert runs.count == 1
+    modal_platform_retry.time.sleep.assert_not_called()
+
+
+def test_success_with_platform_error_in_stderr_is_not_run_again(runs: FakeRuns) -> None:
+    runs.stderr_queue.append(TRACEBACK_TAIL + MODAL_PLATFORM_ERRORS[0])
+    runs.returncode_queue.append(0)
+
+    result = modal_platform_retry.run_with_modal_platform_retries(["python"])
+
+    assert result.returncode == 0
+    assert result.stderr == TRACEBACK_TAIL + MODAL_PLATFORM_ERRORS[0]
     assert runs.count == 1
     modal_platform_retry.time.sleep.assert_not_called()
 
