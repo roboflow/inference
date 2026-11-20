@@ -26,7 +26,7 @@ import threading
 import time as _time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, NamedTuple, Optional
+from typing import Any, Callable, Dict, NamedTuple, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import numpy as np
@@ -55,6 +55,7 @@ from roboflow_workflows.environment import (
 )
 from roboflow_workflows.errors import DynamicBlockCodeError, DynamicBlockError
 from roboflow_workflows.execution_engine.entities.base import ParentOrigin
+from roboflow_workflows.execution_engine.v1.compiler.cache import BasicWorkflowsCache
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_duration import (
     BLOCK_DURATION_SOURCE_REMOTE_RUNTIME,
     record_block_duration,
@@ -280,6 +281,14 @@ def _compute_code_hash(code_str: str, imports: Optional[list]) -> str:
     """
     content = (code_str or "") + "\n" + "\n".join(imports or [])
     return hashlib.md5(content.encode("utf-8")).hexdigest()
+
+
+def _is_anonymous_modal_workspace(workspace: Optional[str]) -> bool:
+    return not workspace or workspace in (
+        "anonymous",
+        "unauthorized",
+        MODAL_ANONYMOUS_WORKSPACE_NAME,
+    )
 
 
 def _serialise_image_for_webexec(image: Any) -> dict:
@@ -600,12 +609,7 @@ class ModalExecutor:
                 python_code.imports,
             )
 
-            if (
-                not workspace
-                or workspace == "anonymous"
-                or workspace == "unauthorized"
-                or workspace == MODAL_ANONYMOUS_WORKSPACE_NAME
-            ):
+            if _is_anonymous_modal_workspace(workspace):
                 from roboflow_workflows.environment import (
                     MODAL_ALLOW_ANONYMOUS_EXECUTION,
                 )
@@ -756,6 +760,34 @@ class ModalExecutor:
         return response.json()
 
 
+# How long a successful check is reused, counted from the Modal call that made
+# it. The execute-block reply carries no image or validator revision, and a
+# Modal redeploy keeps the same endpoint, so this expiry is what bounds how long
+# a check outlives a rollout.
+CODE_VALIDATION_CACHE_TTL_SECONDS = 600
+
+
+def _create_code_validation_cache(
+    clock: Callable[[], float] = _time.monotonic,
+) -> BasicWorkflowsCache[bool]:
+    # The check runs in the workspace's own executor, so it is reused only for
+    # the same workspace and the exact validated source.
+    validation_cache = BasicWorkflowsCache[bool](
+        cache_size=1024,
+        hash_functions=[
+            ("workspace", lambda workspace: workspace),
+            ("code", lambda code: code),
+        ],
+        ttl_seconds=CODE_VALIDATION_CACHE_TTL_SECONDS,
+        clock=clock,
+    )
+
+    return validation_cache
+
+
+CODE_VALIDATION_CACHE = _create_code_validation_cache()
+
+
 def validate_code_in_modal(
     python_code: PythonCode, workspace_id: Optional[str] = None
 ) -> bool:
@@ -765,6 +797,13 @@ def validate_code_in_modal(
     ``WEBEXEC_TRANSPORT=websocket`` for execution. Deployments that use
     websocket execution must keep both Modal methods deployed: ``execute-block``
     for validation and ``wsapp`` for execution.
+
+    A successful check is reused per process for the same resolved workspace
+    and validated source, until ``CODE_VALIDATION_CACHE_TTL_SECONDS`` after the
+    Modal call that made it; reads do not extend that. Failed checks and
+    failures to reach Modal are not cached, so a retry runs the check again.
+    Anonymous workspaces always run the check, so the anonymous-execution gate
+    still applies.
 
     Args:
         python_code: The Python code to validate
@@ -789,6 +828,12 @@ def validate_code_in_modal(
     full_code = python_code.run_function_code
     if python_code.init_function_code:
         full_code += "\n\n" + python_code.init_function_code
+
+    # The anonymous-execution gate lives in execute_remote, so a hit must not skip it.
+    use_cache = not _is_anonymous_modal_workspace(workspace)
+    cache_key = CODE_VALIDATION_CACHE.get_hash_key(workspace=workspace, code=full_code)
+    if use_cache and CODE_VALIDATION_CACHE.get(key=cache_key):
+        return True
 
     # Escape the code for safe embedding in the validation function
     # Use repr() to properly escape quotes and special characters
@@ -841,6 +886,13 @@ def validate_syntax():
                 public_message=f"Code validation failed: {error_msg}",
                 context="modal_executor | code_validation",
             )
+
+        # Only a success is reused. The check reports any exception from
+        # compile() as invalid, a transient MemoryError included, so a retry
+        # must reach Modal again. A reply with no verdict still passes, as
+        # before, but is not reused.
+        if use_cache and result.get("valid") is True:
+            CODE_VALIDATION_CACHE.cache(key=cache_key, value=True)
 
         return True
 
@@ -1619,11 +1671,7 @@ class WebSocketModalExecutor:
             )
 
         workspace = workspace_id or self.workspace_id
-        if not workspace or workspace in (
-            "anonymous",
-            "unauthorized",
-            MODAL_ANONYMOUS_WORKSPACE_NAME,
-        ):
+        if _is_anonymous_modal_workspace(workspace):
             from roboflow_workflows.environment import MODAL_ALLOW_ANONYMOUS_EXECUTION
 
             if not MODAL_ALLOW_ANONYMOUS_EXECUTION:

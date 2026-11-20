@@ -16,6 +16,7 @@ from roboflow_workflows.core_steps.models.foundation.mistral_vlm import (
 )
 from roboflow_workflows.core_steps.models.foundation.openai import v6 as openai_v6
 from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v3 as qwen_vlm_v3
+from roboflow_workflows.core_steps.models.foundation.qwen_vlm import v4 as qwen_vlm_v4
 from roboflow_workflows.core_steps.models.foundation.spacexai import v2 as spacexai_v2
 from roboflow_workflows.core_steps.models.foundation.spacexai import v3 as spacexai_v3
 from roboflow_workflows.core_steps.models.foundation.zai_vlm import v1 as zai_vlm_v1
@@ -100,6 +101,12 @@ BLOCK_CONTRACTS = {
         qwen_vlm_v3.OPENROUTER_MODEL_VERSION_METADATA,
         "none",
     ),
+    "qwen_vlm@v4": (
+        qwen_vlm_v4.MODEL_REASONING_LEVELS,
+        qwen_vlm_v4.REASONING_EFFORT_OPTIONS,
+        qwen_vlm_v4.OPENROUTER_MODEL_VERSION_METADATA,
+        "none",
+    ),
     "zai_vlm@v1": (
         zai_vlm_v1.MODEL_REASONING_LEVELS,
         zai_vlm_v1.REASONING_EFFORT_OPTIONS,
@@ -168,6 +175,7 @@ _MANIFESTS = {
     "meta_vlm@v2": meta_vlm_v2.BlockManifest,
     "meta_vlm@v3": meta_vlm_v3.BlockManifest,
     "qwen_vlm@v3": qwen_vlm_v3.BlockManifest,
+    "qwen_vlm@v4": qwen_vlm_v4.BlockManifest,
 }
 
 
@@ -191,6 +199,31 @@ def _manifest(block_type: str, **overrides):
         ("open_ai@v6", {"model_version": "$inputs.model", "reasoning_effort": "xhigh"}),
         ("open_ai@v6", {"model_version": "gpt-4o"}),
         ("qwen_vlm@v3", {"backend": "native"}),
+        ("qwen_vlm@v4", {"backend": "native"}),
+        (
+            "qwen_vlm@v4",
+            {
+                "backend": "openrouter",
+                "openrouter_model_version": "Qwen 4 Max",
+                "reasoning_effort": "xhigh",
+            },
+        ),
+        (
+            "qwen_vlm@v4",
+            {
+                "backend": "openrouter",
+                "openrouter_model_version": "Qwen 4 Max",
+                "reasoning_effort": "none",
+            },
+        ),
+        (
+            "qwen_vlm@v4",
+            {
+                "backend": "openrouter",
+                "openrouter_model_version": "Qwen 3.8 Max",
+                "reasoning_effort": "medium",
+            },
+        ),
         ("spacexai@v3", {"model_version": "grok-4.7", "reasoning_effort": "xhigh"}),
     ],
 )
@@ -228,6 +261,22 @@ def test_manifest_accepts_edges_rejects_cannot_cover(block_type, overrides):
         (
             "meta_vlm@v3",
             {"model_version": "Muse Glimmer", "reasoning_effort": "minimal"},
+        ),
+        (
+            "qwen_vlm@v4",
+            {
+                "backend": "openrouter",
+                "openrouter_model_version": "Qwen 4 Max",
+                "reasoning_effort": "medium",
+            },
+        ),
+        (
+            "qwen_vlm@v4",
+            {
+                "backend": "openrouter",
+                "openrouter_model_version": "Qwen 3.8 Max",
+                "reasoning_effort": "xhigh",
+            },
         ),
     ],
 )
