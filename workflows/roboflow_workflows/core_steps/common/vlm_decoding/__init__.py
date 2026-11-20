@@ -41,6 +41,7 @@ from roboflow_workflows.core_steps.common.vlm_decoding.json_extraction import (
 from roboflow_workflows.core_steps.common.vlm_decoding.outputs import (
     CLASSIFICATION_TASKS,
     DETECTION_TASKS,
+    KEYPOINT_TASKS,
     LEGACY_PREDICTION_KINDS_UNION,
     SEGMENTATION_TASKS,
     actual_vlm_prediction_outputs,
@@ -72,6 +73,7 @@ __all__ = [
     "DETECTION_BOX_FORMATS",
     "DETECTION_TASKS",
     "INSTANCE_SEGMENTATION_PROMPT_TEMPLATE",
+    "KEYPOINT_TASKS",
     "LABEL_KEYS",
     "NAMED_0_1000_PROMPT_TEMPLATE",
     "LEGACY_PREDICTION_KINDS_UNION",
