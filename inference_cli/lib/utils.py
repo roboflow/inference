@@ -115,7 +115,7 @@ def read_env_file(path: str) -> Dict[str, str]:
     file_lines = read_file_lines(path=path)
     result = {}
     for line in file_lines:
-        chunks = line.split("=")
+        chunks = line.split("=", 1)
         if len(chunks) != 2:
             CLI_LOGGER.warning(
                 f"Line: `{line}` in {path} file does not match pattern NAME=VALUE"
