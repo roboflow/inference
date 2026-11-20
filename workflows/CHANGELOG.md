@@ -34,6 +34,9 @@ for contributor and maintainer responsibilities.
   - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
   - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
   - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
+- Explicit `type: "npy"` workflow image inputs are decoded by the host image
+  codec, preserving their pixels and metadata. This requires a server with NPY
+  input support and a Workflows release containing this change.
 
 ### Changed
 
