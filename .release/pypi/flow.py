@@ -532,7 +532,8 @@ def _validate_rc_receipt(receipt, *, run):
     if not isinstance(smoke, dict) or set(smoke) != expected_smoke:
         raise ValueError("Missing RC package smoke inventories")
 
-    inventories = list(smoke.values())
+    for key, inventory in smoke.items():
+        _validate_inventory(inventory, context=f"package smoke {key}")
     for item in policy["images"]:
         image = by_key[item["key"]]
         if (
@@ -542,10 +543,12 @@ def _validate_rc_receipt(receipt, *, run):
             or set(image["smoke"]) != set(item["platforms"])
         ):
             raise ValueError("Invalid RC image digest, source or smoke platforms")
-        inventories.extend(image["smoke"].values())
-
-    for inventory in inventories:
-        _validate_inventory(inventory)
+        for platform, inventory in image["smoke"].items():
+            _validate_inventory(
+                inventory,
+                context=f"image {item['key']} {platform}",
+                strict_packages=FIRST_PARTY,
+            )
 
 
 def _find_rc(version):
@@ -832,8 +835,12 @@ def _receipt():
     images_by_key = {}
     for path in sorted((STATE / "images").rglob("image-receipt.json")):
         image = json.loads(path.read_text())
-        for inventory in image["smoke"].values():
-            _validate_inventory(inventory)
+        for platform, inventory in image["smoke"].items():
+            _validate_inventory(
+                inventory,
+                context=f"image {image['key']} {platform}",
+                strict_packages=FIRST_PARTY,
+            )
         previous = images_by_key.get(image["key"])
         if previous is not None and previous != image:
             raise ValueError("Conflicting image receipts across attempts")
@@ -848,7 +855,7 @@ def _receipt():
     for directory in (STATE / "smoke", STATE / "runtime-smoke"):
         for path in directory.rglob("*.json"):
             inventory = json.loads(path.read_text())
-            _validate_inventory(inventory)
+            _validate_inventory(inventory, context=f"package smoke {path.stem}")
             if path.stem in smoke and smoke[path.stem] != inventory:
                 raise ValueError(
                     "Conflicting package smoke inventories across attempts"

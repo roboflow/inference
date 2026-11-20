@@ -238,15 +238,22 @@ def _smoke(plan, *, digest, platform):
         "-c",
         'import importlib.metadata as m,json; print(json.dumps([{"name":d.metadata["Name"],"version":d.version} for d in m.distributions()]))',
     )
-    inventory = {
-        canonicalize_name(item["name"]): (
-            flow._base(item["version"])
-            if canonicalize_name(item["name"]) in flow.FIRST_PARTY
-            else item["version"]
-        )
-        for item in json.loads(inventory_result.stdout)
+    raw_inventory = {
+        item["name"]: item["version"] for item in json.loads(inventory_result.stdout)
     }
-    flow._validate_inventory(inventory)
+    flow._validate_inventory(
+        raw_inventory,
+        context=f"image {plan['key']} {platform}",
+        strict_packages=flow.FIRST_PARTY,
+    )
+    inventory = {
+        canonicalize_name(name): (
+            flow._base(version)
+            if canonicalize_name(name) in flow.FIRST_PARTY
+            else version
+        )
+        for name, version in raw_inventory.items()
+    }
     if plan["channel"] == "stable" and inventory != plan["rc_smoke"][platform]:
         raise ValueError("Image Python dependency inventory differs from tested RC")
     flow._write(

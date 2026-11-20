@@ -22,16 +22,15 @@ IMPORTS = {
 }
 
 
-def _inventory(packages):
+def _inventory(packages, *, context="package smoke"):
+    raw_inventory = {item["name"]: item["version"] for item in packages}
+    _validate_inventory(raw_inventory, context=context)
     inventory = {
-        canonicalize_name(item["name"]): (
-            _final_version(item["version"])
-            if canonicalize_name(item["name"]) in IMPORTS
-            else item["version"]
+        canonicalize_name(name): (
+            _final_version(version) if canonicalize_name(name) in IMPORTS else version
         )
-        for item in packages
+        for name, version in raw_inventory.items()
     }
-    _validate_inventory(inventory)
     return inventory
 
 
@@ -100,7 +99,9 @@ def _smoke(wheel, *, python, state):
             text=True,
             cwd=temporary,
         )
-        inventory = _inventory(json.loads(installed.stdout))
+        inventory = _inventory(
+            json.loads(installed.stdout), context=f"package smoke {key}"
+        )
         if baseline is not None and inventory != baseline:
             raise ValueError(f"{key}: installed dependency graph differs from RC")
         destination = state / "smoke" / f"{key}.json"

@@ -2266,23 +2266,10 @@ def test_rc_receipt_download_accepts_supported_compression(monkeypatch, compress
     assert flow._download_receipt("123") == receipt
 
 
-@pytest.mark.parametrize("image_key", ["cpu", "jetson51", "models-jp51"])
-@pytest.mark.parametrize("version", ["1.1build1", "1.1+build1"])
-def test_rc_image_inventory_is_validated_before_recording(
-    tmp_path, monkeypatch, image_key, version
-):
+def _mock_image_inventory(tmp_path, monkeypatch, inventory):
     images = _load_images()
-    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
-    plan = {
-        **next(item for item in policy["images"] if item["key"] == image_key),
-        "channel": "rc",
-    }
-    platform = plan["platforms"][0]
-    inventory = [{"name": "distro-package", "version": version}]
-    commands = []
 
     def command(*args, **kwargs):
-        commands.append(args)
         return subprocess.CompletedProcess(
             args, 0, stdout=json.dumps(inventory), stderr=""
         )
@@ -2292,18 +2279,74 @@ def test_rc_image_inventory_is_validated_before_recording(
     monkeypatch.setattr(
         images.subprocess, "run", lambda args, **kwargs: command(*args, **kwargs)
     )
-    if version == "1.1build1":
-        with pytest.raises(ValueError, match="1.1build1"):
-            images._smoke(plan, digest="sha256:" + "a" * 64, platform=platform)
-        assert not Path("image-smoke.json").exists()
-    else:
-        images._smoke(plan, digest="sha256:" + "a" * 64, platform=platform)
-        assert json.loads(Path("image-smoke.json").read_text())["inventory"] == {
-            "distro-package": version
-        }
-    if image_key in {"jetson51", "models-jp51"}:
-        assert platform == "linux/arm64"
-        assert any("--runtime" in args and "nvidia" in args for args in commands)
+    return images
+
+
+@pytest.mark.parametrize("image_key", ["cpu", "jetson51", "models-jp51"])
+@pytest.mark.parametrize("version", ["1.1build1", "1.1+build1"])
+@pytest.mark.parametrize("channel", ["rc", "stable"])
+def test_image_inventory_preserves_opaque_versions(
+    tmp_path, monkeypatch, image_key, version, channel
+):
+    inventory = [{"name": "distro-package", "version": version}]
+    images = _mock_image_inventory(tmp_path, monkeypatch, inventory)
+    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
+    plan = {
+        **next(item for item in policy["images"] if item["key"] == image_key),
+        "channel": channel,
+    }
+    platform = plan["platforms"][0]
+    plan["rc_smoke"] = {platform: {"distro-package": version}}
+    images._smoke(plan, digest="sha256:" + "a" * 64, platform=platform)
+    assert json.loads(Path("image-smoke.json").read_text())["inventory"] == {
+        "distro-package": version
+    }
+
+
+@pytest.mark.parametrize("version", ["1.1build1", "1.1+build1"])
+def test_stable_image_rejects_changed_opaque_inventory(tmp_path, monkeypatch, version):
+    images = _mock_image_inventory(
+        tmp_path, monkeypatch, [{"name": "distro-package", "version": version}]
+    )
+    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
+    plan = {
+        **next(item for item in policy["images"] if item["key"] == "jetson51"),
+        "channel": "stable",
+        "rc_smoke": {"linux/arm64": {"distro-package": "different-version"}},
+    }
+    with pytest.raises(ValueError, match="differs from tested RC"):
+        images._smoke(plan, digest="sha256:" + "a" * 64, platform="linux/arm64")
+    assert not Path("image-smoke.json").exists()
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("distro-package", None),
+        ("distro-package", ""),
+        ("bad name", "1.0"),
+        (None, "1.0"),
+        ("Inference_Models", "1.1build1"),
+    ],
+)
+def test_image_inventory_errors_identify_raw_entry_and_platform(
+    tmp_path, monkeypatch, name, value
+):
+    images = _mock_image_inventory(
+        tmp_path, monkeypatch, [{"name": name, "version": value}]
+    )
+    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
+    plan = {
+        **next(item for item in policy["images"] if item["key"] == "jetson51"),
+        "channel": "rc",
+    }
+    with pytest.raises(ValueError) as error:
+        images._smoke(plan, digest="sha256:" + "a" * 64, platform="linux/arm64")
+    assert all(
+        text in str(error.value)
+        for text in [repr(name), repr(value), "jetson51", "linux/arm64"]
+    )
+    assert not Path("image-smoke.json").exists()
 
 
 @pytest.mark.parametrize("version", ["1.1build1", "1.1+build1"])
@@ -2361,7 +2404,7 @@ def test_rc_receipt_revalidates_recorded_inventories(candidate, origin, version)
             "distro-package": version if origin == "package" else "1.0.0",
         }
         flow._write(flow.STATE / "smoke" / f"{name}-py3.12.json", inventory)
-    if version == "1.1build1":
+    if origin == "package" and version == "1.1build1":
         with pytest.raises(ValueError, match="1.1build1"):
             flow._receipt()
         assert not (flow.STATE / "receipt.json").exists()
@@ -2386,7 +2429,9 @@ def test_stable_receipt_rejects_invalid_recorded_inventory(candidate, origin):
         inventory = next(iter(receipt["images"][0]["smoke"].values()))
     else:
         inventory = next(iter(receipt["smoke"].values()))
-    inventory["distro-package"] = "1.1build1"
+    inventory["Inference_Models" if origin == "image" else "distro-package"] = (
+        "1.1build1"
+    )
     run = {
         "id": receipt["run_id"],
         "head_sha": receipt["trigger_sha"],
@@ -2417,3 +2462,104 @@ assert smoke["_inventory"]([{"name": "distro-package", "version": "1.1+build1"}]
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("distro-package", None),
+        ("bad name", "1.0"),
+        (None, "1.0"),
+        ("Inference_SDK", "1.1build1"),
+    ],
+)
+def test_package_inventory_errors_identify_raw_entry_and_smoke_key(
+    tmp_path, monkeypatch, name, value
+):
+    import smoke
+
+    monkeypatch.setattr(
+        smoke.subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(
+            args, 0, stdout=json.dumps([{"name": name, "version": value}])
+        ),
+    )
+    with pytest.raises(ValueError) as error:
+        smoke._smoke(
+            tmp_path / "inference_sdk-9.9.0rc1-py3-none-any.whl",
+            python="3.12",
+            state=tmp_path / "state",
+        )
+    assert all(
+        text in str(error.value)
+        for text in [repr(name), repr(value), "inference-sdk-py3.12"]
+    )
+    assert not (tmp_path / "state/smoke/inference-sdk-py3.12.json").exists()
+
+
+@pytest.mark.parametrize("origin", ["image", "package"])
+@pytest.mark.parametrize(
+    "name,value",
+    [("bad name", "1.0"), ("distro-package", None), ("Inference_Models", "1.1build1")],
+)
+def test_rc_receipt_inventory_errors_identify_entry_and_context(
+    candidate, origin, name, value
+):
+    _, _, state = candidate
+    receipt = _rc_evidence(state)
+    receipt["evidence_ref"] = flow._evidence_ref(receipt["run_id"])
+    if origin == "image":
+        receipt["images"][0]["smoke"]["linux/amd64"] = {name: value}
+        context = ["cpu", "linux/amd64"]
+    else:
+        receipt["smoke"]["inference-sdk-py3.12"] = {name: value}
+        context = ["inference-sdk-py3.12"]
+    run = {
+        "id": receipt["run_id"],
+        "head_sha": receipt["trigger_sha"],
+        "head_branch": receipt["branch"],
+    }
+    with pytest.raises(ValueError) as error:
+        flow._validate_rc_receipt(receipt, run=run)
+    assert all(text in str(error.value) for text in [repr(name), repr(value), *context])
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "image-key",
+        "image-platform",
+        "image-name",
+        "package-name",
+        "package-version",
+        "first-party-image-version",
+        "opaque-image-version",
+    ],
+)
+def test_rc_selection_checks_inventory_policy_and_versions(
+    candidate, monkeypatch, fault
+):
+    _, _, state = candidate
+    good = _rc_evidence(state)
+    bad = json.loads(json.dumps({**good, "run_id": "124"}))
+    if fault == "image-key":
+        bad["images"].append({**bad["images"][0], "key": "unexpected"})
+    elif fault == "image-platform":
+        bad["images"][0]["smoke"]["linux/unexpected"] = {"numpy": "2.0.0"}
+    elif fault in {"image-name", "first-party-image-version", "opaque-image-version"}:
+        name = {
+            "image-name": "bad name",
+            "first-party-image-version": "Inference_Models",
+            "opaque-image-version": "distro-package",
+        }[fault]
+        bad["images"][0]["smoke"]["linux/amd64"] = {name: "1.1build1"}
+    else:
+        name = "bad name" if fault == "package-name" else "distro-package"
+        bad["smoke"]["inference-sdk-py3.12"] = {name: "1.1build1"}
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    expected = "124" if fault == "opaque-image-version" else "123"
+    assert flow._find_rc("9.9.0")["run_id"] == expected
+    assert (
+        json.loads((flow.STATE / "accepted-rc.json").read_text())["run_id"] == expected
+    )
