@@ -101,6 +101,11 @@ def _retrieve_exception(future: "asyncio.Future") -> None:
         future.exception()
 
 
+def _release_inflight(semaphore: asyncio.Semaphore, task: "asyncio.Future") -> None:
+    semaphore.release()
+    _retrieve_exception(task)
+
+
 def _serialize_remote_result(
     backend: Any, action: Optional[str], result: Any, serialize: bool
 ) -> Any:
@@ -247,6 +252,9 @@ class ModelManager:
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
         self._closed = False
+
+        self._inflight_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._inflight_semaphores: Dict[str, asyncio.Semaphore] = {}
 
         # Shared thread pool for DirectBackends and infer_async
         self._executor = ThreadPoolExecutor(
@@ -759,6 +767,62 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If action is not supported by the model.
         """
+        if cfg.INFERENCE_MAX_INFLIGHT_PER_MODEL <= 0:
+            return await self._process_async(
+                model_id,
+                action,
+                serialize=serialize,
+                wire_marshalling=wire_marshalling,
+                timing=timing,
+                **kwargs,
+            )
+
+        self._check_open()
+        semaphore = self._inflight_semaphore(model_id)
+        await semaphore.acquire()
+        try:
+            task = asyncio.ensure_future(
+                self._process_async(
+                    model_id,
+                    action,
+                    serialize=serialize,
+                    wire_marshalling=wire_marshalling,
+                    timing=timing,
+                    **kwargs,
+                )
+            )
+        except BaseException:
+            semaphore.release()
+            raise
+
+        task.add_done_callback(lambda done: _release_inflight(semaphore, done))
+        result = await asyncio.shield(task)
+
+        return result
+
+    def _inflight_semaphore(self, model_id: str) -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        if loop is not self._inflight_loop:
+            self._inflight_loop = loop
+            self._inflight_semaphores = {}
+
+        semaphore = self._inflight_semaphores.get(model_id)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(cfg.INFERENCE_MAX_INFLIGHT_PER_MODEL)
+            self._inflight_semaphores[model_id] = semaphore
+
+        return semaphore
+
+    async def _process_async(
+        self,
+        model_id: str,
+        action: Optional[str] = None,
+        *,
+        serialize: bool = True,
+        wire_marshalling: bool = False,
+        timing: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> Any:
         self._check_open()
         loop = asyncio.get_running_loop()
         context = contextvars.copy_context()
