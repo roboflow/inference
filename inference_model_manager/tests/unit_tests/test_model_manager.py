@@ -1710,22 +1710,22 @@ class TestUnservedModelProtection:
         assert not mm._awaiting_first_request
 
     @staticmethod
-    def _park_first_requests(mm, model_ids):
+    async def _park_first_requests(mm, model_ids):
         mm._executor.shutdown(wait=False)
         mm._executor = _ParkingExecutor()
+        tasks = [
+            asyncio.ensure_future(mm.process_async(model_id, images="image"))
+            for model_id in model_ids
+        ]
+        for _ in range(5):
+            await asyncio.sleep(0)
+        return tasks
 
-        async def arrive():
-            tasks = [
-                asyncio.ensure_future(mm.process_async(model_id, images="image"))
-                for model_id in model_ids
-            ]
-            for _ in range(5):
-                await asyncio.sleep(0)
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-        asyncio.run(arrive())
+    @staticmethod
+    async def _cancel(tasks):
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def test_every_model_with_a_first_request_waiting_for_a_worker_is_spared(
         self, monkeypatch
@@ -1735,20 +1735,120 @@ class TestUnservedModelProtection:
             self._load(mm, clock, model_id)
         self._serve(mm, clock, "a")
         self._serve(mm, clock, "b")
-        self._park_first_requests(mm, ["x", "y", "z"])
-        self._load(mm, clock, "c")
-        self._load(mm, clock, "d")
-        assert set(mm.loaded_models) == {"x", "y", "z", "c", "d"}
+
+        async def scenario():
+            tasks = await self._park_first_requests(mm, ["x", "y", "z"])
+            self._load(mm, clock, "c")
+            self._load(mm, clock, "d")
+            loaded = set(mm.loaded_models)
+            await self._cancel(tasks)
+            return loaded
+
+        assert asyncio.run(scenario()) == {"x", "y", "z", "c", "d"}
 
     def test_first_request_that_never_runs_stops_sparing_after_grace(self, monkeypatch):
         mm, _, clock = self._mm(monkeypatch, 3)
         for model_id in ("a", "x", "y"):
             self._load(mm, clock, model_id)
-        self._park_first_requests(mm, ["x", "y"])
-        clock[0] += 30.0
+
+        async def scenario():
+            tasks = await self._park_first_requests(mm, ["x", "y"])
+            clock[0] += 30.0
+            self._serve(mm, clock, "a")
+            self._load(mm, clock, "c")
+            loaded = set(mm.loaded_models)
+            await self._cancel(tasks)
+            return loaded
+
+        assert asyncio.run(scenario()) == {"a", "y", "c"}
+
+    def test_cancelled_first_requests_stop_sparing(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 8, grace_s=300.0)
+        hot = [f"hot{i}" for i in range(6)]
+        for model_id in hot:
+            self._load(mm, clock, model_id)
+            self._serve(mm, clock, model_id)
+        self._load(mm, clock, "x")
+        self._load(mm, clock, "y")
+
+        async def scenario():
+            tasks = await self._park_first_requests(mm, ["x", "y"])
+            await self._cancel(tasks)
+
+        asyncio.run(scenario())
+        for model_id in hot:
+            self._serve(mm, clock, model_id)
+        for i in range(5):
+            self._load(mm, clock, f"cold{i}")
+            assert set(hot) <= set(mm.loaded_models)
+            for model_id in hot:
+                self._serve(mm, clock, model_id)
+        assert "x" not in mm and "y" not in mm
+
+    def test_first_request_timing_out_in_the_worker_queue_stops_sparing(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "x", "b"):
+            self._load(mm, clock, model_id)
+        mm._executor.shutdown(wait=False)
+        mm._executor = ThreadPoolExecutor(max_workers=1)
+        gate = threading.Event()
+        mm._executor.submit(gate.wait)
+
+        async def scenario():
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    mm.process_async("x", images="image"), timeout=0.05
+                )
+
+        try:
+            asyncio.run(scenario())
+        finally:
+            gate.set()
+            mm._executor.shutdown(wait=True)
         self._serve(mm, clock, "a")
-        self._load(mm, clock, "c")
-        assert set(mm.loaded_models) == {"a", "y", "c"}
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"a", "b", "d"}
+
+    def test_model_stays_spared_until_its_last_queued_first_request_is_cancelled(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "x", "b"):
+            self._load(mm, clock, model_id)
+
+        async def scenario():
+            first, second = await self._park_first_requests(mm, ["x", "x"])
+            await self._cancel([first])
+            self._serve(mm, clock, "a")
+            self._load(mm, clock, "d")
+            one_cancelled = set(mm.loaded_models)
+            await self._cancel([second])
+            self._load(mm, clock, "e")
+            both_cancelled = set(mm.loaded_models)
+            return one_cancelled, both_cancelled
+
+        one_cancelled, both_cancelled = asyncio.run(scenario())
+        assert one_cancelled == {"x", "b", "d"}
+        assert both_cancelled == {"b", "d", "e"}
+
+    def test_cancelled_request_leaves_a_reloaded_model_claim_alone(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 0)
+        self._load(mm, clock, "x")
+
+        async def scenario():
+            (stale,) = await self._park_first_requests(mm, ["x"])
+            mm.unload("x")
+            self._load(mm, clock, "x")
+            (live,) = await self._park_first_requests(mm, ["x"])
+            await self._cancel([stale])
+            after_stale = mm._awaiting_first_request["x"]
+            await self._cancel([live])
+            after_live = mm._awaiting_first_request["x"]
+            return after_stale, after_live
+
+        assert asyncio.run(scenario()) == (1, 0)
 
 
 class TestUnservedGraceConfiguration:

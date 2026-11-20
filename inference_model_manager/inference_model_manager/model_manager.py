@@ -178,7 +178,7 @@ class _BackendRegistry(MutableMapping[str, Backend]):
     def __init__(
         self,
         loaded_ts: Dict[str, float],
-        awaiting_first_request: Dict[str, bool],
+        awaiting_first_request: Dict[str, int],
         lock: threading.RLock,
     ) -> None:
         self._data: Dict[str, Backend] = {}
@@ -194,7 +194,7 @@ class _BackendRegistry(MutableMapping[str, Backend]):
             loaded_ts = time.monotonic()
             self._data[model_id] = backend
             self._loaded_ts[model_id] = loaded_ts
-            self._awaiting_first_request[model_id] = False
+            self._awaiting_first_request[model_id] = 0
 
     def __delitem__(self, model_id: str) -> None:
         with self._lock:
@@ -252,7 +252,7 @@ class ModelManager:
     def __init__(self) -> None:
         self._lifecycle_lock = threading.RLock()
         self._loaded_ts: Dict[str, float] = {}
-        self._awaiting_first_request: Dict[str, bool] = {}
+        self._awaiting_first_request: Dict[str, int] = {}
         self._backends = _BackendRegistry(
             self._loaded_ts, self._awaiting_first_request, self._lifecycle_lock
         )
@@ -546,7 +546,9 @@ class ModelManager:
                 and mid not in self._pinned
                 and now - self._loaded_ts[mid] < cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
             )
-            queued = {mid for _, mid in awaiting if self._awaiting_first_request[mid]}
+            queued = {
+                mid for _, mid in awaiting if self._awaiting_first_request[mid] > 0
+            }
             unrequested = [mid for _, mid in awaiting if mid not in queued]
             spared = queued.union(unrequested[-1:])
             candidates = [c for c in candidates if c[1] not in spared] or candidates
@@ -598,10 +600,18 @@ class ModelManager:
             if not queued:
                 self._awaiting_first_request.pop(model_id, None)
             elif model_id in self._awaiting_first_request:
-                self._awaiting_first_request[model_id] = True
+                self._awaiting_first_request[model_id] += 1
             pipeline = self._stream_pipelines.get(model_id)
 
         return backend, pipeline
+
+    def _release_queued_claim(self, model_id: str, backend: Backend) -> None:
+        with self._lifecycle_lock:
+            if self._backends.get(model_id) is not backend:
+                return
+
+            if self._awaiting_first_request.get(model_id, 0) > 0:
+                self._awaiting_first_request[model_id] -= 1
 
     @staticmethod
     def _invoke(
@@ -857,41 +867,44 @@ class ModelManager:
         loop = asyncio.get_running_loop()
         context = contextvars.copy_context()
         backend, _ = self._admit(model_id, queued=True)
-        if hasattr(backend, "submit_request"):
-            raw_input = kwargs.pop("images", None)
-            future = await loop.run_in_executor(
-                self._executor,
-                lambda: context.run(
-                    self.submit,
-                    model_id,
-                    action=action,
-                    raw_input=raw_input,
-                    **kwargs,
-                ),
-            )
-            waiter = asyncio.wrap_future(future)
-            waiter.add_done_callback(_retrieve_exception)
-            result = await asyncio.wait_for(
-                asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
-            )
+        try:
+            if hasattr(backend, "submit_request"):
+                raw_input = kwargs.pop("images", None)
+                future = await loop.run_in_executor(
+                    self._executor,
+                    lambda: context.run(
+                        self.submit,
+                        model_id,
+                        action=action,
+                        raw_input=raw_input,
+                        **kwargs,
+                    ),
+                )
+                waiter = asyncio.wrap_future(future)
+                waiter.add_done_callback(_retrieve_exception)
+                result = await asyncio.wait_for(
+                    asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
+                )
+                return await loop.run_in_executor(
+                    self._executor,
+                    lambda: context.run(
+                        _serialize_remote_result, backend, action, result, serialize
+                    ),
+                )
             return await loop.run_in_executor(
                 self._executor,
                 lambda: context.run(
-                    _serialize_remote_result, backend, action, result, serialize
+                    self.process,
+                    model_id,
+                    action=action,
+                    serialize=serialize,
+                    wire_marshalling=wire_marshalling,
+                    timing=timing,
+                    **kwargs,
                 ),
             )
-        return await loop.run_in_executor(
-            self._executor,
-            lambda: context.run(
-                self.process,
-                model_id,
-                action=action,
-                serialize=serialize,
-                wire_marshalling=wire_marshalling,
-                timing=timing,
-                **kwargs,
-            ),
-        )
+        finally:
+            self._release_queued_claim(model_id, backend)
 
     def submit(
         self,
