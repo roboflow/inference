@@ -6,6 +6,8 @@ emit the full skeleton; remotely executed model steps, the rollup block and the
 dynamic-block boundary rebuild ``KeyPoints`` through ``build_native_key_points``.
 """
 
+from typing import Optional
+
 import numpy as np
 from roboflow_workflows.core_steps.common.keypoints import COCO_KEYPOINT_NAMES
 from roboflow_workflows.core_steps.models.roboflow.keypoint_detection.v1_tensor import (
@@ -44,11 +46,15 @@ def _remote_pose_response(keypoints: list) -> list:
     ]
 
 
-def _render_edges(response: list) -> np.ndarray:
+def _render_edges(
+    response: list,
+    edges: Optional[list] = None,
+    block: Optional[KeypointVisualizationBlockV1] = None,
+) -> np.ndarray:
     key_points = _native_key_points_from_inference_predictions(
         detection_dicts=response, image_metadata={}
     )
-    output = KeypointVisualizationBlockV1().run(
+    output = (block or KeypointVisualizationBlockV1()).run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=np.zeros((500, 500, 3), dtype=np.uint8),
@@ -63,6 +69,7 @@ def _render_edges(response: list) -> np.ndarray:
         text_padding=10,
         thickness=2,
         radius=10,
+        edges=edges,
     )
     return output["image"].numpy_image
 
@@ -89,3 +96,45 @@ def test_tensor_keypoint_visualization_does_not_draw_coco_bones_for_other_order(
 
     # then: no default skeleton for three keypoints, so nothing is drawn
     assert not rendered.any()
+
+
+def test_tensor_keypoint_visualization_draws_nothing_when_no_instance_has_keypoints() -> (
+    None
+):
+    # given: a remotely executed model step left out every keypoint
+    response = _remote_pose_response([])
+
+    # when
+    rendered = _render_edges(response, edges=[(1, 2), (2, 3)])
+
+    # then
+    assert not rendered.any()
+
+
+def test_tensor_keypoint_visualization_skips_edges_to_a_vertex_no_instance_has() -> (
+    None
+):
+    # given: no instance has the last vertex of a three-vertex skeleton
+    response = _remote_pose_response([(0, "tip"), (1, "joint")])
+
+    # when
+    rendered = _render_edges(response, edges=[(1, 2), (2, 3)])
+
+    # then: the first edge is drawn as if the second were not there
+    assert rendered.any()
+    assert np.array_equal(rendered, _render_edges(response, edges=[(1, 2)]))
+
+
+def test_tensor_keypoint_visualization_draws_the_edges_given_to_each_run() -> None:
+    # given: one block drawing the same keypoints with other edges, as a compiled
+    # workflow does when its edges come from a runtime input
+    block = KeypointVisualizationBlockV1()
+    response = _remote_pose_response([(0, "tip"), (1, "joint"), (2, "base")])
+    _render_edges(response, edges=[(1, 2)], block=block)
+
+    # when
+    rendered = _render_edges(response, edges=[(2, 3)], block=block)
+
+    # then
+    assert np.array_equal(rendered, _render_edges(response, edges=[(2, 3)]))
+    assert not np.array_equal(rendered, _render_edges(response, edges=[(1, 2)]))

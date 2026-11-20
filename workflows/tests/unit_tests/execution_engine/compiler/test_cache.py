@@ -1,3 +1,5 @@
+from unittest import mock
+
 import pytest
 from roboflow_workflows.errors import WorkflowEnvironmentConfigurationError
 from roboflow_workflows.execution_engine.v1.compiler.cache import BasicWorkflowsCache
@@ -117,3 +119,56 @@ def test_recaching_an_existing_key_replaces_value() -> None:
 
     assert cache.get(key="a") == "1"
     assert cache.get(key="b") == "updated"
+
+
+def test_entry_expires_ttl_after_it_was_cached_however_often_it_is_read() -> None:
+    clock = mock.Mock(return_value=0.0)
+    cache = BasicWorkflowsCache[str](
+        cache_size=2, hash_functions=[], ttl_seconds=10, clock=clock
+    )
+    cache.cache(key="a", value="1")
+
+    reads_before_expiry = []
+    for now in range(1, 10):
+        clock.return_value = now
+        reads_before_expiry.append(cache.get(key="a"))
+    clock.return_value = 10
+    read_at_expiry = cache.get(key="a")
+
+    assert reads_before_expiry == ["1"] * 9
+    assert read_at_expiry is None
+
+
+def test_recaching_restarts_ttl() -> None:
+    clock = mock.Mock(return_value=0.0)
+    cache = BasicWorkflowsCache[str](
+        cache_size=2, hash_functions=[], ttl_seconds=10, clock=clock
+    )
+    cache.cache(key="a", value="1")
+
+    clock.return_value = 10
+    cache.cache(key="a", value="2")
+    clock.return_value = 19
+    read_before_new_expiry = cache.get(key="a")
+    clock.return_value = 20
+    read_at_new_expiry = cache.get(key="a")
+
+    assert read_before_new_expiry == "2"
+    assert read_at_new_expiry is None
+
+
+def test_recaching_an_expired_key_keeps_it_until_evicted() -> None:
+    clock = mock.Mock(return_value=0.0)
+    cache = BasicWorkflowsCache[str](
+        cache_size=2, hash_functions=[], ttl_seconds=10, clock=clock
+    )
+    cache.cache(key="a", value="1")
+    clock.return_value = 10
+    expired_read = cache.get(key="a")
+
+    cache.cache(key="a", value="2")
+    cache.cache(key="b", value="3")
+
+    assert expired_read is None
+    assert cache.get(key="a") == "2"
+    assert cache.get(key="b") == "3"
