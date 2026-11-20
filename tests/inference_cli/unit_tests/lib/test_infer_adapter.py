@@ -1,7 +1,9 @@
 import copy
 import json
 import os.path
+from pathlib import Path
 from typing import Optional
+from unittest import mock
 from unittest.mock import MagicMock
 
 import cv2
@@ -9,13 +11,16 @@ import numpy as np
 import pytest
 from supervision import MaskAnnotator
 
+from inference_cli.lib import infer_adapter
 from inference_cli.lib.infer_adapter import (
     create_visualisation,
+    infer,
     is_something_to_do,
     prepare_target_path,
     save_prediction,
     save_visualisation_image,
 )
+from inference_sdk.http.client import InferenceHTTPClient
 
 
 def test_prepare_target_path_when_reference_is_integer() -> None:
@@ -324,3 +329,126 @@ def test_create_visualisation_keeps_rle_mask_predictions_with_short_points() -> 
     assert len(detections) == 2
     assert detections.mask is not None
     assert detections.mask.shape == (2, 4, 4)
+
+
+def _run_infer(input_reference: str) -> None:
+    infer(
+        input_reference=input_reference,
+        model_id="some/1",
+        api_key="some-key",
+        host="http://127.0.0.1:9001",
+        output_location=None,
+        display=False,
+        visualise=False,
+        visualisation_config=None,
+        model_configuration=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "input_reference",
+    ["clip.mp4", "CLIP.MP4", "clip.MOV", "clip.Mp4", "/some/dir/clip.AVI"],
+)
+@mock.patch.object(infer_adapter, "infer_on_image")
+@mock.patch.object(infer_adapter, "infer_on_video")
+def test_infer_treats_video_extension_case_insensitively(
+    infer_on_video_mock: MagicMock,
+    infer_on_image_mock: MagicMock,
+    input_reference: str,
+) -> None:
+    # when
+    _run_infer(input_reference=input_reference)
+
+    # then
+    infer_on_video_mock.assert_called_once()
+    assert infer_on_video_mock.call_args.kwargs["input_reference"] == input_reference
+    infer_on_image_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("input_reference", ["photo.jpg", "PHOTO.JPG"])
+@mock.patch.object(infer_adapter, "infer_on_image")
+@mock.patch.object(infer_adapter, "infer_on_video")
+def test_infer_keeps_routing_images_to_image_inference(
+    infer_on_video_mock: MagicMock,
+    infer_on_image_mock: MagicMock,
+    input_reference: str,
+) -> None:
+    # when
+    _run_infer(input_reference=input_reference)
+
+    # then
+    infer_on_image_mock.assert_called_once()
+    infer_on_video_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "directory_name", ["MP4", "mp4", "clips.MOV", "clips.mov", "./clips.MOV"]
+)
+@mock.patch.object(infer_adapter, "infer_on_directory")
+@mock.patch.object(infer_adapter, "infer_on_image")
+@mock.patch.object(infer_adapter, "infer_on_video")
+def test_infer_routes_directory_named_like_video_to_directory_inference(
+    infer_on_video_mock: MagicMock,
+    infer_on_image_mock: MagicMock,
+    infer_on_directory_mock: MagicMock,
+    directory_name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # given
+    (tmp_path / directory_name).mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    # when
+    _run_infer(input_reference=directory_name)
+
+    # then
+    infer_on_directory_mock.assert_called_once()
+    infer_on_video_mock.assert_not_called()
+    infer_on_image_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("video_name", ["clip.avi", "CLIP.AVI"])
+@mock.patch.object(infer_adapter, "initialise_client")
+def test_infer_sends_each_frame_of_real_video_to_inference(
+    initialise_client_mock: MagicMock,
+    video_name: str,
+    tmp_path: Path,
+) -> None:
+    # given
+    video_path = tmp_path / video_name
+    writer = cv2.VideoWriter(
+        str(video_path), cv2.VideoWriter_fourcc(*"MJPG"), 10, (64, 64)
+    )
+    assert writer.isOpened()
+    for value in (0, 40, 80):
+        writer.write(np.full((64, 64, 3), value, dtype=np.uint8))
+    writer.release()
+    client = InferenceHTTPClient(api_url="http://127.0.0.1:9001", api_key="some-key")
+    client.infer = MagicMock(return_value={"predictions": []})
+    initialise_client_mock.return_value = client
+    output_location = tmp_path / "output"
+    output_location.mkdir()
+
+    # when
+    infer(
+        input_reference=str(video_path),
+        model_id="some/1",
+        api_key="some-key",
+        host="http://127.0.0.1:9001",
+        output_location=str(output_location),
+        display=False,
+        visualise=False,
+        visualisation_config=None,
+        model_configuration=None,
+    )
+
+    # then
+    assert client.infer.call_count == 3
+    for call in client.infer.call_args_list:
+        assert call.kwargs["inference_input"].shape == (64, 64, 3)
+    assert sorted(os.listdir(output_location)) == [
+        "frame_000000.json",
+        "frame_000001.json",
+        "frame_000002.json",
+    ]
