@@ -437,7 +437,9 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
             "np.save(..., allow_pickle=False) data instead."
         )
     else:
-        message = "NumPy image type is not supported in this configuration of `inference`."
+        message = (
+            "NumPy image type is not supported in this configuration of `inference`."
+        )
     raise InvalidImageTypeDeclared(message=message, public_message=message)
 
 
