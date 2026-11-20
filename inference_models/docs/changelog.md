@@ -17,6 +17,22 @@
   `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
   `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
 
+### Changed
+
+- `VLLMConnectionError` (vLLM proxy backend) carries a `status_code`: `504` when
+  the vLLM sidecar does not answer within `VLLM_REQUEST_TIMEOUT_S`, `503` when
+  the connection cannot be established or is dropped. Hosting servers read it to
+  tag usage rows with `error_status_code` and to answer with that status instead
+  of a generic `500`, also when the failure happens while a model loads (a
+  fine-tuned model registers its LoRA adapter with the sidecar on first use).
+  The exception type and message are unchanged, and the constructor still takes
+  `help_url`; `status_code` is keyword-only.
+- Clients that retry `503` and `504` now retry these failures. `inference_sdk`
+  makes up to 3 attempts, so a sidecar that keeps timing out holds a caller for
+  up to 3 × `VLLM_REQUEST_TIMEOUT_S` (6 minutes at the default 120 s) where the
+  former `500` failed after one attempt. Lower `VLLM_REQUEST_TIMEOUT_S` where
+  that wait is too long.
+
 ## `0.39.9`
 
 ### Changed
