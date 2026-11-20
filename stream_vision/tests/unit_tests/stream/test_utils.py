@@ -10,6 +10,7 @@ from streamvision.stream import utils
 from streamvision.stream.utils import (
     broadcast_elements,
     on_pipeline_end,
+    prepare_video_sources,
     save_workflows_profiler_trace,
     wrap_in_list,
 )
@@ -144,6 +145,9 @@ def test_on_pipeline_end_when_profiling_enabled(empty_directory: str) -> None:
     assert thread_pool_executor._shutdown is True, "Expected pool executor to be closed"
     json_files_in_directory = glob(os.path.join(empty_directory, "*.json"))
     assert len(json_files_in_directory) == 1, "Expected profiler trace saved"
+    assert "inference_pipeline_workflow_execution_track_" in os.path.basename(
+        json_files_in_directory[0]
+    )
     with open(json_files_in_directory[0], "r") as f:
         result = json.load(f)
     assert result == [{"my": "trace"}], "Expected dump to preserve content"
@@ -251,3 +255,18 @@ def test_on_pipeline_end_accepts_engines_without_close(
 
     # then
     assert thread_pool_executor._shutdown is True
+
+
+def test_prepare_video_sources_mismatch_error_message() -> None:
+    # given
+    video_reference = ["video1.mp4", "video2.mp4"]
+    properties = [{"fps": 30}, {"fps": 30}, {"fps": 30}]
+    # when / then
+    with pytest.raises(ValueError, match="due to mismatch in number of entries"):
+        prepare_video_sources(
+            video_reference=video_reference,
+            video_source_properties=properties,
+            status_update_handlers=None,
+            source_buffer_filling_strategy=None,
+            source_buffer_consumption_strategy=None,
+        )
