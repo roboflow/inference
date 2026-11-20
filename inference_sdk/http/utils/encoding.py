@@ -20,6 +20,9 @@ def numpy_array_to_base64_jpeg(
     Returns:
         The base64 JPEG string.
     """
+    if image.dtype == np.uint16:
+        # Scale unsigned 16-bit to 8-bit with a right shift instead of clipping.
+        image = (image >> 8).astype(np.uint8)
     _, img_encoded = cv2.imencode(".jpg", image)
     image_bytes = np.array(img_encoded).tobytes()
     return encode_base_64(payload=image_bytes)
