@@ -175,9 +175,15 @@ class _BackendRegistry(MutableMapping[str, Backend]):
     plugins that do not already hold it. Compound removals hold it throughout.
     """
 
-    def __init__(self, loaded_ts: Dict[str, float], lock: threading.RLock) -> None:
+    def __init__(
+        self,
+        loaded_ts: Dict[str, float],
+        awaiting_first_request: Dict[str, bool],
+        lock: threading.RLock,
+    ) -> None:
         self._data: Dict[str, Backend] = {}
         self._loaded_ts = loaded_ts
+        self._awaiting_first_request = awaiting_first_request
         self._lock = lock
 
     def __getitem__(self, model_id: str) -> Backend:
@@ -188,11 +194,13 @@ class _BackendRegistry(MutableMapping[str, Backend]):
             loaded_ts = time.monotonic()
             self._data[model_id] = backend
             self._loaded_ts[model_id] = loaded_ts
+            self._awaiting_first_request[model_id] = False
 
     def __delitem__(self, model_id: str) -> None:
         with self._lock:
             del self._data[model_id]
             self._loaded_ts.pop(model_id, None)
+            self._awaiting_first_request.pop(model_id, None)
 
     def pop(self, model_id: str, *args):
         with self._lock:
@@ -206,6 +214,7 @@ class _BackendRegistry(MutableMapping[str, Backend]):
         with self._lock:
             self._data.clear()
             self._loaded_ts.clear()
+            self._awaiting_first_request.clear()
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._data)
@@ -243,7 +252,10 @@ class ModelManager:
     def __init__(self) -> None:
         self._lifecycle_lock = threading.RLock()
         self._loaded_ts: Dict[str, float] = {}
-        self._backends = _BackendRegistry(self._loaded_ts, self._lifecycle_lock)
+        self._awaiting_first_request: Dict[str, bool] = {}
+        self._backends = _BackendRegistry(
+            self._loaded_ts, self._awaiting_first_request, self._lifecycle_lock
+        )
         self.torchscript_state_global_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
@@ -515,30 +527,29 @@ class ModelManager:
             over_capacity = max_active > 0 and total_reserved > max_active
             if not over_capacity and not pressure:
                 return None
-            now = time.monotonic()
-            grace_s = cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
-            eligible = []
-            for mid, b in self._backends.items():
-                if mid == incoming or mid in self._pinned:
-                    continue
-
-                last_used = getattr(b, "last_used_ts", None)
-                registered = self._loaded_ts.get(mid)
-                unserved_in_grace = (
-                    last_used is not None
-                    and registered is not None
-                    and last_used <= registered
-                    and now - registered < grace_s
+            candidates = sorted(
+                (
+                    max(
+                        getattr(b, "last_used_ts", None) or 0.0,
+                        self._loaded_ts.get(mid, 0.0),
+                    ),
+                    mid,
                 )
-                rank_ts = max(last_used or 0.0, self._loaded_ts.get(mid, 0.0))
-                eligible.append((unserved_in_grace, rank_ts, mid))
-            protected_mid = max(
-                (mid for flag, _, mid in eligible if flag),
-                key=lambda mid: self._loaded_ts[mid],
-                default=None,
+                for mid, b in self._backends.items()
+                if mid != incoming and mid not in self._pinned
             )
-            evictable = [entry for entry in eligible if entry[2] != protected_mid]
-            candidates = sorted((ts, mid) for _, ts, mid in evictable or eligible)
+            now = time.monotonic()
+            awaiting = sorted(
+                (self._loaded_ts[mid], mid)
+                for mid in self._awaiting_first_request
+                if mid != incoming
+                and mid not in self._pinned
+                and now - self._loaded_ts[mid] < cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
+            )
+            queued = {mid for _, mid in awaiting if self._awaiting_first_request[mid]}
+            unrequested = [mid for _, mid in awaiting if mid not in queued]
+            spared = queued.union(unrequested[-1:])
+            candidates = [c for c in candidates if c[1] not in spared] or candidates
             popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)
@@ -577,11 +588,17 @@ class ModelManager:
             kwargs["mask_format"] = "rle"
         return kwargs, n_images
 
-    def _admit(self, model_id: str) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
+    def _admit(
+        self, model_id: str, queued: bool = False
+    ) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
         with self._lifecycle_lock:
             backend = self._backends.get(model_id)
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
+            if not queued:
+                self._awaiting_first_request.pop(model_id, None)
+            elif model_id in self._awaiting_first_request:
+                self._awaiting_first_request[model_id] = True
             pipeline = self._stream_pipelines.get(model_id)
 
         return backend, pipeline
@@ -839,7 +856,7 @@ class ModelManager:
         self._check_open()
         loop = asyncio.get_running_loop()
         context = contextvars.copy_context()
-        backend, _ = self._admit(model_id)
+        backend, _ = self._admit(model_id, queued=True)
         if hasattr(backend, "submit_request"):
             raw_input = kwargs.pop("images", None)
             future = await loop.run_in_executor(

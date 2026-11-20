@@ -52,7 +52,7 @@ INFERENCE_MAX_ACTIVE_MODELS = get_integer_from_env(
 INFERENCE_MEMORY_FREE_THRESHOLD = get_float_from_env(
     "INFERENCE_MEMORY_FREE_THRESHOLD", default=0.0
 )
-# Seconds the newest not-yet-served model is spared from LRU eviction; 0 disables.
+# Seconds a new model is spared from LRU eviction until its first request runs; 0 off.
 INFERENCE_UNSERVED_MODEL_GRACE_S = _require_finite(
     "INFERENCE_UNSERVED_MODEL_GRACE_S",
     get_float_from_env("INFERENCE_UNSERVED_MODEL_GRACE_S", default=30.0),
