@@ -4,8 +4,10 @@ import ast
 import base64
 import functools
 import hashlib
+import http.client
 import io
 import json
+import lzma
 import os
 import re
 import subprocess
@@ -14,6 +16,7 @@ import tomllib
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -54,9 +57,14 @@ def _api_timeout():
     return timeout
 
 
-def _git(*args, env=None):
+def _git(*args, env=None, timeout=None):
     result = subprocess.run(
-        ["git", *args], check=True, text=True, capture_output=True, env=env
+        ["git", *args],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=timeout,
     )
     return result.stdout.strip()
 
@@ -396,15 +404,33 @@ def _download_receipt(artifact_id):
     )
     opener = urllib.request.build_opener(_ArtifactRedirect())
     limit = 8 * 1024 * 1024
-    with opener.open(request, timeout=_api_timeout()) as response:
-        payload = response.read(limit + 1)
+    try:
+        with opener.open(request, timeout=_api_timeout()) as response:
+            payload = response.read(limit + 1)
+    except (OSError, http.client.HTTPException) as error:
+        _api_timeout()
+        raise urllib.error.URLError(error) from error
     _api_timeout()
     if len(payload) > limit:
         raise ValueError("RC receipt artifact is too large")
-    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-        if archive.getinfo("receipt.json").file_size > limit:
-            raise ValueError("Uncompressed RC receipt is too large")
-        receipt = json.loads(archive.read("receipt.json"))
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            if archive.getinfo("receipt.json").file_size > limit:
+                raise ValueError("Uncompressed RC receipt is too large")
+            receipt = json.loads(archive.read("receipt.json"))
+    except _EvidenceDeadlineExceeded:
+        raise
+    except (
+        zipfile.BadZipFile,
+        zlib.error,
+        lzma.LZMAError,
+        OSError,
+        EOFError,
+        RuntimeError,
+    ) as error:
+        raise ValueError(f"Invalid RC receipt archive: {error}") from error
+    finally:
+        _api_timeout()
     return receipt
 
 
@@ -431,13 +457,26 @@ def _retain_rc_source(source_sha, *, run_id, remote, env):
 def _verify_rc_source(receipt):
     """Bind receipt claims to retained source and the workflow trigger."""
     ref = _evidence_ref(receipt["run_id"])
-    _git("fetch", "--no-tags", f"https://github.com/{REPOSITORY}.git", ref)
+    try:
+        _git(
+            "fetch",
+            "--no-tags",
+            f"https://github.com/{REPOSITORY}.git",
+            ref,
+            timeout=_api_timeout(),
+        )
+    finally:
+        _api_timeout()
     if _git("rev-parse", "FETCH_HEAD^{commit}") != receipt["source_sha"]:
         raise ValueError("RC evidence tag does not match the receipt source")
 
     _git("merge-base", "--is-ancestor", receipt["trigger_sha"], receipt["source_sha"])
     changed = _git(
-        "diff", "--name-only", receipt["trigger_sha"], receipt["source_sha"]
+        "diff",
+        "--no-renames",
+        "--name-only",
+        receipt["trigger_sha"],
+        receipt["source_sha"],
     ).splitlines()
     if not set(changed) <= set(LOCKS):
         raise ValueError(
@@ -458,8 +497,68 @@ def _validate_rc_receipt(receipt, *, run):
         or receipt.get("evidence_ref") != _evidence_ref(run["id"])
         or not re.fullmatch(r"[a-f0-9]{40}", receipt.get("source_sha") or "")
         or not re.fullmatch(r"[a-f0-9]{64}", receipt.get("fingerprint") or "")
+        or not re.fullmatch(r"[a-f0-9]{64}", receipt.get("application") or "")
     ):
         raise ValueError("Untrusted or incomplete RC receipt")
+
+    policy = json.loads(POLICY.read_text())
+    third_party = {
+        path: _third_party(tomllib.loads(Path(path).read_text())) for path in LOCKS
+    }
+    if receipt.get("policy") != policy or receipt.get("third_party") != third_party:
+        raise ValueError(
+            "RC source/locks/policy differ at: " + _source_difference(receipt)
+        )
+
+    images = receipt.get("images")
+    if not isinstance(images, list) or any(
+        not isinstance(image, dict) for image in images
+    ):
+        raise ValueError("Invalid RC image receipts")
+
+    by_key = {image["key"]: image for image in images}
+    if len(by_key) != len(images) or set(by_key) != {
+        item["key"] for item in policy["images"]
+    }:
+        raise ValueError("Missing or duplicate RC image receipts")
+
+    smoke = receipt.get("smoke")
+    expected_smoke = {f"{name}-py3.12" for name in dependencies.OWNED}
+    expected_smoke |= {
+        f"{name}-py{version}"
+        for name in release.RUNTIME
+        for version in policy["python_versions"]
+    }
+    if not isinstance(smoke, dict) or set(smoke) != expected_smoke:
+        raise ValueError("Missing RC package smoke inventories")
+
+    inventories = list(smoke.values())
+    for item in policy["images"]:
+        image = by_key[item["key"]]
+        if (
+            image.get("source_sha") != receipt["source_sha"]
+            or not re.fullmatch(r"sha256:[a-f0-9]{64}", image.get("digest") or "")
+            or not isinstance(image.get("smoke"), dict)
+            or set(image["smoke"]) != set(item["platforms"])
+        ):
+            raise ValueError("Invalid RC image digest, source or smoke platforms")
+        inventories.extend(image["smoke"].values())
+
+    for inventory in inventories:
+        if (
+            not isinstance(inventory, dict)
+            or not inventory
+            or any(
+                not isinstance(name, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name)
+                or not isinstance(version, str)
+                or not version
+                for name, version in inventory.items()
+            )
+        ):
+            raise ValueError("Invalid RC dependency inventory")
+        for version in inventory.values():
+            Version(version)
 
 
 def _find_rc(version):
@@ -507,9 +606,23 @@ def _find_rc(version):
                             f"RC source differs at: {_source_difference(receipt)}"
                         )
                     _verify_rc_source(receipt)
+                    if receipt["application"] != _fingerprint(include_locks=False):
+                        raise ValueError(
+                            "RC application metadata differs from its source"
+                        )
                 except subprocess.CalledProcessError as error:
                     rejected.append(
                         f"run {run['id']}: RC Git evidence unavailable or non-ancestral (exit {error.returncode})"
+                    )
+                    continue
+                except (
+                    subprocess.TimeoutExpired,
+                    urllib.error.URLError,
+                    TimeoutError,
+                ) as error:
+                    _api_timeout()
+                    rejected.append(
+                        f"run {run['id']}: RC evidence request failed: {error}"
                     )
                     continue
                 except (ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:

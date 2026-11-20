@@ -23,7 +23,7 @@ concurrency:
 jobs:
   e2e-tests-inference-models-gpu:
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 92 || 30 }}
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
@@ -80,7 +80,7 @@ jobs:
           python -m uv venv
           python -m uv pip install -e .[test,onnx-cu12,trt10,torch-cu124] --python .venv
       - name: "🧪 Run E2E tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 61 || 20 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 62 || 20 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1200'

@@ -37,7 +37,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 121 || 15 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 122 || 15 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -61,7 +61,7 @@ jobs:
           # Numerical embedding graph tests exercise the ONNX CPU backend.
           python -m uv pip install -e .[torch-cpu,onnx-cpu,test,model-blob-cache] --python .venv
       - name: "🧪 Unit Tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 92 || 15 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1800'

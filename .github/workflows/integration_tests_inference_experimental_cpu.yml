@@ -48,7 +48,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 106 || 30 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 107 || 30 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -106,7 +106,7 @@ jobs:
           df -h .
       - name: "🧪 Run tests marked `${{ matrix.extras.marker }}` [release-test]"
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        timeout-minutes: ${{ inputs.release_source != '' && 76 || 25 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 77 || 25 }}
         env:
           SHARD: ${{ matrix.extras.shard }}
         uses: ./.github/actions/retry-tests

@@ -30,7 +30,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 121 || 30 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 122 || 30 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -63,7 +63,7 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]"
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: "🧪 Integration Tests of Inference CLI [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 92 || 30 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1800'

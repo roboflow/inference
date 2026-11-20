@@ -39,7 +39,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 175 || 20 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 179 || 20 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -72,7 +72,7 @@ jobs:
           pip install --no-deps ./inference_model_manager
           pip install --no-deps ./inference_server
       - name: "OpenCV build script regression tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 7 || 2 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 8 || 2 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '120'
@@ -85,7 +85,7 @@ jobs:
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]"
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: "🧪 Unit Tests of Inference [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 92 || 20 }}
         # The CPU dependency profile does not install SAM3/SAM3D extras.
         uses: ./.github/actions/retry-tests
         with:
@@ -94,7 +94,7 @@ jobs:
           command: |
             python -m pytest -n auto --dist loadfile -m "not sam3_extras" tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
       - name: "🧪 Development Profiling Tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 16 || 5 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 17 || 5 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '300'
@@ -103,7 +103,7 @@ jobs:
             python -m pytest tests/development/profiling
       - name: 🧪 Stream Pipeline Benchmark Harness Tests
         if: github.event_name == 'workflow_dispatch' && inputs.run_stream_benchmark_checks
-        timeout-minutes: ${{ inputs.release_source != '' && 31 || 10 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 32 || 10 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '600'

@@ -1,13 +1,16 @@
 """Behavioral boundaries for the one-run release pipeline."""
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import sys
 import threading
+import urllib.error
 import zipfile
 from functools import partial
+from http.client import IncompleteRead
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -55,15 +58,16 @@ def candidate(tmp_path, monkeypatch):
         capture_output=True,
     )
     monkeypatch.chdir(source)
+    monkeypatch.setattr(flow, "POLICY", ROOT / ".release/release-policy.json")
     monkeypatch.setenv("GH_TOKEN", "fixture-token")
     original_git = flow._git
 
-    def local_git(*args, env=None):
+    def local_git(*args, env=None, **kwargs):
         args = tuple(
             str(remote) if arg == "https://github.com/roboflow/inference.git" else arg
             for arg in args
         )
-        return original_git(*args, env=env)
+        return original_git(*args, env=env, **kwargs)
 
     monkeypatch.setattr(flow, "_git", local_git)
     state = {
@@ -523,6 +527,7 @@ def test_successful_rc_receipt_is_found_after_more_than_one_artifact_page(
         "head_repository": {"full_name": flow.REPOSITORY},
     }
     receipt = {
+        **_rc_evidence(state),
         "schema": 1,
         "channel": "rc",
         "version": "1.2.3rc2",
@@ -1146,6 +1151,7 @@ def test_rc_receipt_requires_release_branch_and_source_ancestry(
         "head_repository": {"full_name": flow.REPOSITORY},
     }
     receipt = {
+        **_rc_evidence(state),
         "schema": 1,
         "channel": "rc",
         "version": "9.9.0rc1",
@@ -1344,6 +1350,24 @@ def _mock_rc_evidence(monkeypatch, receipts, *, retain=True):
 
 
 def _rc_evidence(state):
+    policy = json.loads((ROOT / ".release/release-policy.json").read_text())
+    smoke = {f"{name}-py3.12": {name: "9.9.0"} for name in flow.dependencies.OWNED}
+    smoke.update(
+        {
+            f"{name}-py{version}": {name: "9.9.0"}
+            for name in flow.release.RUNTIME
+            for version in policy["python_versions"]
+        }
+    )
+    images = [
+        {
+            "key": item["key"],
+            "source_sha": flow._git("rev-parse", "HEAD"),
+            "digest": "sha256:" + "a" * 64,
+            "smoke": {platform: {"numpy": "2.0.0"} for platform in item["platforms"]},
+        }
+        for item in policy["images"]
+    ]
     return {
         **state,
         "schema": 1,
@@ -1354,6 +1378,8 @@ def _rc_evidence(state):
         "files": flow._file_fingerprints(),
         "policy": json.loads((ROOT / ".release/release-policy.json").read_text()),
         "third_party": {p: [] for p in flow.LOCKS},
+        "images": images,
+        "smoke": smoke,
         "complete": True,
     }
 
@@ -1555,10 +1581,20 @@ def test_rc_attempt_and_job_budgets_cover_retries_and_setup():
 
     import yaml
 
-    def rc_minutes(value):
-        if isinstance(value, int):
-            return value
-        return int(re.search(r"&& (\d+) ", value)[1])
+    def minutes(value, *, release=True):
+        if isinstance(value, int) or value.isdigit():
+            return int(value)
+
+        pattern = r"&& (\d+) " if release else r"\|\| (\d+) "
+        return int(re.search(pattern, value)[1])
+
+    actions = {
+        action: yaml.safe_load((ROOT / action / "action.yml").read_text())
+        for action in (
+            ".github/actions/retry-tests",
+            ".github/actions/server-tests-cpu",
+        )
+    }
 
     for path in (ROOT / ".github/workflows").glob("*.yml"):
         workflow = yaml.safe_load(path.read_text())
@@ -1577,18 +1613,53 @@ def test_rc_attempt_and_job_budgets_cover_retries_and_setup():
                 job.get("timeout-minutes", "")
             ):
                 continue
+
+            normal_job_minutes = minutes(job["timeout-minutes"], release=False)
+            for step in steps:
+                if "timeout-minutes" in step:
+                    assert (
+                        minutes(step["timeout-minutes"], release=False)
+                        <= normal_job_minutes
+                    ), (path, name, step["name"], "normal step exceeds job")
             for step in retry_steps:
-                seconds = int(step.get("with", {}).get("timeout-seconds", "3600"))
-                assert rc_minutes(step["timeout-minutes"]) * 60 >= 3 * seconds + 50, (
+                action = actions[step["uses"].removeprefix("./")]
+                inputs = step.get("with", {})
+                attempts = inputs.get(
+                    "attempts", action["inputs"]["attempts"]["default"]
+                )
+                assert minutes(attempts) == 3, (path, name, "RC attempts")
+                assert minutes(attempts, release=False) == 1, (
                     path,
                     name,
+                    "normal attempts",
+                )
+                if "timeout-seconds" in action["inputs"]:
+                    seconds = int(
+                        inputs.get(
+                            "timeout-seconds",
+                            action["inputs"]["timeout-seconds"]["default"],
+                        )
+                    )
+                else:
+                    seconds = int(
+                        next(
+                            inner["env"]["RETRY_TIMEOUT_SECONDS"]
+                            for inner in action["runs"]["steps"]
+                            if "RETRY_TIMEOUT_SECONDS" in inner.get("env", {})
+                        )
+                    )
+                assert minutes(step["timeout-minutes"]) * 60 >= 3 * seconds + 110, (
+                    path,
+                    name,
+                    step["name"],
+                    "RC retries need kill grace, retry waits and 60 seconds spare",
                 )
             step_budget = sum(
-                rc_minutes(step["timeout-minutes"])
+                minutes(step["timeout-minutes"])
                 for step in steps
                 if "timeout-minutes" in step
             )
-            assert rc_minutes(job["timeout-minutes"]) >= step_budget + 30, (path, name)
+            assert minutes(job["timeout-minutes"]) >= step_budget + 30, (path, name)
 
 
 @pytest.fixture(autouse=True)
@@ -1864,3 +1935,328 @@ def test_git_blob_fingerprint_matches_worktree_for_modes_and_binary_files(candid
     _git(source, "commit", "-m", "Mixed blobs")
     assert flow._file_fingerprints(ref="HEAD") == flow._file_fingerprints()
     assert flow._fingerprint(ref="HEAD") == flow._fingerprint()
+
+
+def test_rc_lock_rename_cannot_hide_non_lock_deletion(candidate, monkeypatch):
+    source, _, state = candidate
+    lock = flow.LOCKS[0]
+    Path("app.py").write_text("version = 1\nrevision = 99\n")
+    Path(lock).unlink()
+    _git(source, "add", "-A")
+    _git(source, "commit", "-m", "Prepare trigger without generated lock")
+    state["trigger_sha"] = _git(source, "rev-parse", "HEAD")
+    _git(source, "mv", "app.py", lock)
+    _git(source, "commit", "-m", "Rename application into lock")
+    receipt = _rc_evidence(state)
+    _mock_rc_evidence(monkeypatch, [receipt])
+    assert _git(
+        source, "diff", "--name-status", state["trigger_sha"], "HEAD"
+    ).startswith("R100\tapp.py\t")
+    with pytest.raises(ValueError, match="other than generated locks"):
+        flow._find_rc("9.9.0")
+    assert not (flow.STATE / "accepted-rc.json").exists()
+
+
+@pytest.mark.parametrize(
+    "field", ["application", "policy", "third_party", "images", "smoke"]
+)
+@pytest.mark.parametrize("fault", ["missing", "wrong-shape", "incompatible"])
+def test_rc_selection_skips_incomplete_consumer_metadata(
+    candidate, monkeypatch, field, fault
+):
+    _, _, state = candidate
+    good = _rc_evidence(state)
+    bad = json.loads(json.dumps({**good, "run_id": "124"}))
+    if fault == "missing":
+        del bad[field]
+    elif fault == "wrong-shape":
+        bad[field] = [] if field != "images" else {}
+    elif field == "application":
+        bad[field] = "b" * 64
+    elif field == "policy":
+        bad[field]["python_versions"] = ["3.99"]
+    elif field == "third_party":
+        bad[field][flow.LOCKS[0]] = [{"name": "numpy", "version": "999"}]
+    elif field == "images":
+        bad[field][0]["smoke"] = {}
+    else:
+        bad[field].pop(next(iter(bad[field])))
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    assert flow._find_rc("9.9.0")["run_id"] == "123"
+    assert json.loads((flow.STATE / "accepted-rc.json").read_text())["run_id"] == "123"
+
+
+@pytest.mark.parametrize("fault", ["digest", "source", "duplicate", "inventory"])
+def test_rc_selection_rejects_unusable_image_evidence(candidate, monkeypatch, fault):
+    _, _, state = candidate
+    good = _rc_evidence(state)
+    bad = json.loads(json.dumps({**good, "run_id": "124"}))
+    image = bad["images"][0]
+    if fault == "digest":
+        image["digest"] = "mutable-tag"
+    elif fault == "source":
+        image["source_sha"] = "b" * 40
+    elif fault == "duplicate":
+        bad["images"].append(image.copy())
+    else:
+        image["smoke"][next(iter(image["smoke"]))] = []
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    assert flow._find_rc("9.9.0")["run_id"] == "123"
+
+
+@pytest.mark.parametrize("fault", [None, [], {}, {"numpy": None}, {"numpy": ""}])
+def test_rc_selection_rejects_unusable_package_inventory(candidate, monkeypatch, fault):
+    _, _, state = candidate
+    good = _rc_evidence(state)
+    bad = json.loads(json.dumps({**good, "run_id": "124"}))
+    bad["smoke"][next(iter(bad["smoke"]))] = fault
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    assert flow._find_rc("9.9.0")["run_id"] == "123"
+
+
+@pytest.mark.parametrize("failure", ["http", "url", "read_oserror", "read_reset"])
+@pytest.mark.parametrize("exhausted", [False, True])
+def test_rc_download_failure_respects_candidate_and_shared_budgets(
+    candidate, monkeypatch, failure, exhausted
+):
+    _, _, state = candidate
+    good = _rc_evidence(state)
+    bad = {**good, "run_id": "124"}
+    download = flow._download_receipt
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    downloads = []
+
+    def record_download(artifact_id):
+        downloads.append(str(artifact_id))
+        return download(artifact_id)
+
+    monkeypatch.setattr(flow, "_download_receipt", record_download)
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("receipt.json", json.dumps(good))
+    now = [0]
+    monkeypatch.setattr(flow, "_api_deadline", lambda: 600)
+    monkeypatch.setattr(flow.time, "monotonic", lambda: now[0])
+    calls = []
+
+    class Opener:
+        def open(self, request, *, timeout):
+            calls.append(request.full_url)
+            if "/124/" in request.full_url:
+                now[0] = 601 if exhausted else 1
+                if failure == "http":
+                    raise urllib.error.HTTPError(
+                        request.full_url, 410, "Gone", {}, None
+                    )
+                if failure == "url":
+                    raise urllib.error.URLError("connection failed")
+
+                class BrokenResponse(io.BytesIO):
+                    def read(self, *args):
+                        error = (
+                            ConnectionResetError if failure == "read_reset" else OSError
+                        )
+                        raise error("receipt body interrupted")
+
+                return BrokenResponse()
+            return io.BytesIO(payload.getvalue())
+
+    monkeypatch.setattr(flow.urllib.request, "build_opener", lambda *args: Opener())
+    if exhausted:
+        with pytest.raises(flow._EvidenceDeadlineExceeded):
+            flow._find_rc("9.9.0")
+        assert len(calls) == 1
+        assert downloads == ["124"]
+        assert not (flow.STATE / "accepted-rc.json").exists()
+    else:
+        assert flow._find_rc("9.9.0")["run_id"] == "123"
+        assert len(calls) == 2
+
+
+@pytest.mark.parametrize("outcome", ["timeout", "slow-success", "already-expired"])
+@pytest.mark.parametrize("exhausted", [False, True])
+def test_rc_fetch_respects_candidate_and_shared_budgets(
+    candidate, monkeypatch, outcome, exhausted
+):
+    _, _, state = candidate
+    good = _rc_evidence(state)
+    bad = {**good, "run_id": "124"}
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    now = [601 if outcome == "already-expired" else 0]
+    monkeypatch.setattr(flow, "_api_deadline", lambda: 600)
+    monkeypatch.setattr(flow.time, "monotonic", lambda: now[0])
+    run = subprocess.run
+    fetches = []
+
+    def fetch(args, **kwargs):
+        if args[:2] == ["git", "fetch"]:
+            fetches.append((args[-1], kwargs.get("timeout")))
+            if args[-1] == bad["evidence_ref"]:
+                now[0] = 601 if exhausted else 31
+                if outcome == "timeout":
+                    raise subprocess.TimeoutExpired(args, kwargs.get("timeout", 30))
+        return run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fetch)
+    if exhausted or outcome == "already-expired":
+        with pytest.raises(flow._EvidenceDeadlineExceeded):
+            flow._find_rc("9.9.0")
+        assert len(fetches) == (0 if outcome == "already-expired" else 1)
+        assert not (flow.STATE / "accepted-rc.json").exists()
+    else:
+        expected = "123" if outcome == "timeout" else "124"
+        assert flow._find_rc("9.9.0")["run_id"] == expected
+        assert all(timeout == 30 for _, timeout in fetches)
+
+
+@pytest.mark.parametrize("fault", ["wrong-tag", "evidence-ref"])
+def test_rc_tag_identity_requires_exact_commit_and_receipt_ref(
+    candidate, monkeypatch, fault
+):
+    source, remote, state = candidate
+    receipt = _rc_evidence(state)
+    _mock_rc_evidence(monkeypatch, [receipt])
+    if fault == "wrong-tag":
+        _git(source, "commit", "--allow-empty", "-m", "Same tree different commit")
+        other = _git(source, "rev-parse", "HEAD")
+        assert other != receipt["source_sha"]
+        assert flow._fingerprint(ref=other) == receipt["fingerprint"]
+        _git(source, "push", str(remote), f"+{other}:{receipt['evidence_ref']}")
+    else:
+        receipt["evidence_ref"] = "refs/tags/rc-evidence/999"
+    with pytest.raises(ValueError, match="does not match the receipt source|Untrusted"):
+        flow._find_rc("9.9.0")
+    assert not (flow.STATE / "accepted-rc.json").exists()
+
+
+@pytest.mark.parametrize("fault", ["oid", "kind", "separator"])
+def test_git_blob_fingerprint_rejects_corrupt_batch_headers(
+    candidate, monkeypatch, fault
+):
+    run = subprocess.run
+
+    def corrupt(args, **kwargs):
+        result = run(args, **kwargs)
+        if args == ["git", "cat-file", "--batch"]:
+            header, content = result.stdout.split(b"\n", 1)
+            oid, kind, size = header.split()
+            if fault == "oid":
+                oid = b"0" * 40
+            elif fault == "kind":
+                kind = b"tree"
+            else:
+                offset = int(size)
+                content = content[:offset] + b"!" + content[offset + 1 :]
+            result.stdout = b" ".join([oid, kind, size]) + b"\n" + content
+        return result
+
+    monkeypatch.setattr(subprocess, "run", corrupt)
+    with pytest.raises(ValueError, match="Invalid Git blob evidence"):
+        flow._fingerprint(ref="HEAD")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "deflate",
+        "bzip2",
+        "lzma",
+        "encrypted",
+        "unsupported-compression",
+        "incomplete-read",
+    ],
+)
+@pytest.mark.parametrize("exhausted", [False, True])
+def test_rc_malformed_download_falls_back_within_shared_budget(
+    candidate, monkeypatch, fault, exhausted
+):
+    _, _, state = candidate
+    good = _rc_evidence(state)
+    bad = {**good, "run_id": "124"}
+    download = flow._download_receipt
+    _mock_rc_evidence(monkeypatch, [bad, good])
+    downloads = []
+
+    def record_download(artifact_id):
+        downloads.append(str(artifact_id))
+        return download(artifact_id)
+
+    monkeypatch.setattr(flow, "_download_receipt", record_download)
+    buffer_type = io.BytesIO
+    payload = buffer_type()
+    compression = {"bzip2": zipfile.ZIP_BZIP2, "lzma": zipfile.ZIP_LZMA}.get(
+        fault, zipfile.ZIP_DEFLATED
+    )
+    with zipfile.ZipFile(payload, "w", compression=compression) as archive:
+        archive.writestr("receipt.json", json.dumps(good))
+    valid = payload.getvalue()
+    broken = bytearray(valid)
+    if fault == "deflate":
+        broken[30 + len("receipt.json")] = 7  # Reserved DEFLATE block type.
+    elif fault == "bzip2":
+        broken[30 + len("receipt.json")] = 0
+    elif fault == "lzma":
+        offset = 30 + len("receipt.json")
+        broken[offset + 2 : offset + 4] = b"\x00\x00"
+    elif fault == "encrypted":
+        broken[6] |= 1
+        central = broken.index(b"PK\x01\x02")
+        broken[central + 8] |= 1
+    elif fault == "unsupported-compression":
+        broken[8:10] = (99).to_bytes(2, "little")
+        central = broken.index(b"PK\x01\x02")
+        broken[central + 10 : central + 12] = (99).to_bytes(2, "little")
+
+    now = [0]
+    monkeypatch.setattr(flow, "_api_deadline", lambda: 600)
+    monkeypatch.setattr(flow.time, "monotonic", lambda: now[0])
+
+    class ArchiveBuffer(buffer_type):
+        def read(self, *args):
+            if exhausted:
+                now[0] = 601
+            return super().read(*args)
+
+    class BrokenBody(buffer_type):
+        def read(self, *args):
+            if exhausted:
+                now[0] = 601
+            raise IncompleteRead(b"partial", 100)
+
+    class Opener:
+        def open(self, request, *, timeout):
+            if "/124/" in request.full_url:
+                if fault == "incomplete-read":
+                    return BrokenBody()
+                return buffer_type(broken)
+            return buffer_type(valid)
+
+    monkeypatch.setattr(flow.urllib.request, "build_opener", lambda *args: Opener())
+    monkeypatch.setattr(flow.io, "BytesIO", ArchiveBuffer)
+    if exhausted:
+        with pytest.raises(flow._EvidenceDeadlineExceeded):
+            flow._find_rc("9.9.0")
+        assert downloads == ["124"]
+        assert not (flow.STATE / "accepted-rc.json").exists()
+    else:
+        assert flow._find_rc("9.9.0")["run_id"] == "123"
+        assert downloads == ["124", "123"]
+
+
+@pytest.mark.parametrize(
+    "compression",
+    [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED, zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA],
+)
+def test_rc_receipt_download_accepts_supported_compression(monkeypatch, compression):
+    receipt = {"schema": 1}
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", compression=compression) as archive:
+        archive.writestr("receipt.json", json.dumps(receipt))
+
+    class Opener:
+        def open(self, request, *, timeout):
+            return io.BytesIO(payload.getvalue())
+
+    monkeypatch.setenv("GH_TOKEN", "fixture-token")
+    monkeypatch.setattr(flow.urllib.request, "build_opener", lambda *args: Opener())
+    assert flow._download_receipt("123") == receipt

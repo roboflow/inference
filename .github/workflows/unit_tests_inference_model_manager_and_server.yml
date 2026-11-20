@@ -47,7 +47,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 154 || 15 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 158 || 15 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -84,7 +84,7 @@ jobs:
           python -m uv pip install -e stream_vision --python .venv
           python -m uv pip install -e inference_server[test,workflows] --python .venv
       - name: "🧪 Unit Tests of Inference Server [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 31 || 10 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 32 || 10 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '600'
@@ -93,7 +93,7 @@ jobs:
           command: |
             ../.venv/bin/pytest tests/unit_tests
       - name: "🧪 Integration Tests of Inference Server [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 31 || 10 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 32 || 10 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '600'
@@ -102,7 +102,7 @@ jobs:
           command: |
             ../.venv/bin/pytest tests/integration_tests
       - name: "🧪 Unit Tests of Inference Model Manager [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 31 || 10 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 32 || 10 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '600'
@@ -120,7 +120,7 @@ jobs:
           python -m uv pip install -e stream_vision --python .venv-slim
           python -m uv pip install -e inference_server[test] --python .venv-slim
       - name: "🧪 Unit Tests of Inference Server (slim install guard) [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 31 || 10 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 32 || 10 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '600'

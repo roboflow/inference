@@ -75,7 +75,7 @@ jobs:
       - name: 📦 Install roboflow-workflows (test + enterprise extras) from local wheel
         run: pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise,databricks]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
       - name: "🧪 Server unit tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 92 || 30 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1800'
@@ -97,7 +97,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 166 || 45 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 167 || 45 }}
     strategy:
       fail-fast: ${{ inputs.release_source == '' }}
       matrix:
@@ -131,7 +131,7 @@ jobs:
       - name: "Package unit and installed-wheel isolation tests [release-test]"
         env:
           WORKFLOWS_ISOLATION_FIND_LINKS: ${{ github.workspace }}/dist
-        timeout-minutes: ${{ inputs.release_source != '' && 136 || 45 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 137 || 45 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '2700'

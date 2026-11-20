@@ -43,7 +43,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 121 || 30 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 122 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +56,7 @@ jobs:
       - name: "Run SDK integration validation in Docker [release-test]"
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
-        timeout-minutes: ${{ inputs.release_source != '' && 91 || 30 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 92 || 30 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '1800'
@@ -78,7 +78,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 211 || 60 }}
+    timeout-minutes: ${{ inputs.release_source != '' && 212 || 60 }}
     strategy:
       fail-fast: false
       matrix:
@@ -91,7 +91,7 @@ jobs:
       - name: "Run SDK e2e validation in Docker [release-test]"
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
-        timeout-minutes: ${{ inputs.release_source != '' && 181 || 60 }}
+        timeout-minutes: ${{ inputs.release_source != '' && 182 || 60 }}
         uses: ./.github/actions/retry-tests
         with:
           timeout-seconds: '3600'
