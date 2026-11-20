@@ -53,6 +53,24 @@ for contributor and maintainer responsibilities.
 
 ### Execution engine
 
+- **Custom Python `self` state persists under remote execution.** When a
+  Custom Python block runs in the Modal sandbox
+  (`WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal`), attributes it sets on
+  `self` (a first-frame flag, a counter) now persist between calls of the same
+  block instance, as in local execution; previously the sandbox rebuilt an
+  empty `self` on every call. Only `None`, `bool`, `int` (signed 64-bit),
+  finite `float`, `str`, `list` and `dict` with `str` keys persist, at most 32
+  levels deep and 1 MiB serialized. If any attribute holds anything else (a
+  tuple, a numpy value, an annotator or another object), no state is carried
+  for that call and every attribute is rebuilt on the next one, as before this
+  change, with a warning naming the attribute; convert numpy values with
+  `int()`, `float()` or `.tolist()` to persist them. Values come back as
+  copies, so two attributes pointing at one list become two lists, and state
+  changed by a call that raises is not kept. Against a webexec server without
+  this change blocks behave as before, with a warning. The webexec request
+  and response carry the state as a JSON string (`block_state_json` /
+  `block_state`); clients that do not send it are unaffected.
+
 - A Workflow that references a block this server knows but does not offer (an optional dependency is missing, or a runtime switch disables it) now fails to compile with `WorkflowDefinitionError` naming the block, the step and the reason, instead of the generic unknown-type validation error. Behaviour for every other definition is unchanged.
 
 ## `0.2.16`
@@ -112,24 +130,6 @@ Bundled execution engine: `1.17.1`.
   `InnerWorkflowInvalidStepEntryError` instead of producing an invalid selector
   later. Workflows that worked around the cast by converting inside the child
   keep working; no migration is needed.
-
-- **Custom Python `self` state persists under remote execution.** When a
-  Custom Python block runs in the Modal sandbox
-  (`WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE=modal`), attributes it sets on
-  `self` (a first-frame flag, a counter) now persist between calls of the same
-  block instance, as in local execution; previously the sandbox rebuilt an
-  empty `self` on every call. Only `None`, `bool`, `int` (signed 64-bit),
-  finite `float`, `str`, `list` and `dict` with `str` keys persist, at most 32
-  levels deep and 1 MiB serialized. If any attribute holds anything else (a
-  tuple, a numpy value, an annotator or another object), no state is carried
-  for that call and every attribute is rebuilt on the next one, as before this
-  change, with a warning naming the attribute; convert numpy values with
-  `int()`, `float()` or `.tolist()` to persist them. Values come back as
-  copies, so two attributes pointing at one list become two lists, and state
-  changed by a call that raises is not kept. Against a webexec server without
-  this change blocks behave as before, with a warning. The webexec request
-  and response carry the state as a JSON string (`block_state_json` /
-  `block_state`); clients that do not send it are unaffected.
 
 ### Breaking
 

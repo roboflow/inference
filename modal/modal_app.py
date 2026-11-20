@@ -153,6 +153,24 @@ class _BlockSelf:
         return context
 
 
+def _new_block_self(
+    workflow_context: Dict[str, Any], state: Dict[str, Any]
+) -> _BlockSelf:
+    """Build the ``self`` for one call on a class of its own.
+
+    A fresh plain subclass per call keeps writes to the class (``type(self).x``,
+    a replaced method, a property) inside that call, as when every call defined
+    its own class, so they cannot reach later calls of this or another block in
+    the container. Without ``__slots__`` the subclass also gets ``__weakref__``,
+    so user code can weak-reference ``self``.
+    """
+
+    class BlockSelf(_BlockSelf):
+        pass
+
+    return BlockSelf(workflow_context, state)
+
+
 def _short_state_name(name: str) -> str:
     if len(name) <= _BLOCK_STATE_MAX_WARNED_NAME_LENGTH:
         return name
@@ -1141,7 +1159,9 @@ from datetime import datetime
                 with capture_output() as (stdout_buf, stderr_buf):
                     # If function expects 'self' as first param, create a simple object to pass
                     if params and params[0] == "self":
-                        block_self = _BlockSelf(workflow_context, block_state or {})
+                        block_self = _new_block_self(
+                            workflow_context, block_state or {}
+                        )
                         result = user_function(block_self, **inputs)
                     else:
                         result = user_function(**inputs)
@@ -1292,7 +1312,7 @@ from datetime import datetime
         try:
             with capture_output() as (stdout_buf, stderr_buf):
                 if params and params[0] == "self":
-                    block_self = _BlockSelf(_workflow_context, block_state or {})
+                    block_self = _new_block_self(_workflow_context, block_state or {})
                     result = user_function(block_self, **inputs)
                 else:
                     result = user_function(**inputs)
