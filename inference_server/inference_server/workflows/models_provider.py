@@ -125,6 +125,9 @@ _WORKFLOW_SOURCE = "workflow-execution"
 _SAM3_3D_UNAVAILABLE = (
     "SAM3 3D object reconstruction is not available on inference_server"
 )
+_NATIVE_OBB_UNAVAILABLE = (
+    "Native oriented object detection is not available on inference_server"
+)
 
 
 def _passed(**arguments: Any) -> Dict[str, Any]:
@@ -313,6 +316,19 @@ class GatewayModelsProvider:
             confidence=confidence,
         )
         return self._dump(self._run_cv(model_id, request, api_key))
+
+    def run_oriented_object_detection(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        confidence: float = 0.5,
+        max_detections: int = 300,
+        class_filter: Optional[List[str]] = None,
+    ) -> List[dict]:
+        # Native OBB is served by the legacy server only. Fail here instead of
+        # routing the model as ordinary object detection, which drops the angle.
+        raise LegacyHTTPError(501, f"{_NATIVE_OBB_UNAVAILABLE}.")
 
     def run_classification(
         self,

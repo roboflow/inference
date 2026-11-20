@@ -96,6 +96,16 @@ class ModelsProvider(Protocol):
         active_learning_target_dataset: Optional[str] = None,
     ) -> List[dict]: ...
 
+    def run_oriented_object_detection(
+        self,
+        model_id: str,
+        images: List[Any],
+        api_key: Optional[str] = None,
+        confidence: float = 0.5,
+        max_detections: int = 300,
+        class_filter: Optional[List[str]] = None,
+    ) -> List[dict]: ...
+
     def run_classification(
         self,
         model_id: str,

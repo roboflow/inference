@@ -20,6 +20,9 @@ from inference_models.models.base.object_detection import (
     OpenVocabularyObjectDetectionModel,
 )
 from inference_models.models.base.semantic_segmentation import SemanticSegmentationModel
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 
 ModelArchitecture = str
 TaskType = Optional[str]
@@ -95,6 +98,7 @@ class InferenceModelConfig:
     # computed while reading the manifest so auto-resolution metadata can bind
     # every load-driving field, including custom model_module/model_class keys.
     manifest_content_hash: Optional[str] = None
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None
 
     def is_library_model(self) -> bool:
         return self.model_architecture is not None and self.backend_type is not None

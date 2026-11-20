@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 
 
 class PackageSourceType(str, Enum):
@@ -222,3 +225,4 @@ class ModelMetadata:
     model_variant: Optional[str] = field(default=None)
     model_dependencies: Optional[List[ModelDependency]] = field(default=None)
     recommended_parameters: Optional[RecommendedParameters] = field(default=None)
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = field(default=None)

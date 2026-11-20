@@ -16,6 +16,12 @@
   work as for the DINOv2 sizes. Models fine-tuned at another resolution store a
   `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
   `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
+- Native oriented object detection for RF-DETR on the ONNX backend: task
+  `oriented-object-detection` (the trainer's `obb-detection` alias is accepted), model
+  variant `rfdetr-obb-preview-2xl`. Predictions keep the ordered box `[cx, cy, w, h, angle]`
+  and a front per class. The loader requires `orientedBoxMetadata.classHeading` in the model
+  metadata response and keeps it through cached and offline loads; a package without it
+  does not load.
 
 ### Changed
 

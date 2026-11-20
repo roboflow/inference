@@ -115,7 +115,7 @@ create_wheels: create_workflows_wheel create_models_wheel create_streamvision_wh
 	rm -rf build/*
 	python .release/pypi/inference.cli.setup.py bdist_wheel
 
-create_wheels_for_gpu_notebook: create_workflows_wheel create_streamvision_wheel
+create_wheels_for_gpu_notebook: create_workflows_wheel create_models_wheel create_streamvision_wheel
 	python -m pip install --upgrade pip
 	python -m pip install setuptools wheel twine requests
 	rm -rf build/*

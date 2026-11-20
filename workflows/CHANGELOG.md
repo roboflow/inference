@@ -27,6 +27,7 @@ for contributor and maintainer responsibilities.
   to reach Modal are not cached, so a retry checks again. Anonymous workspaces
   skip the cache so `MODAL_ALLOW_ANONYMOUS_EXECUTION` still applies. No
   migration is needed.
+- Add native `oriented_object_detection_prediction` with original-image float geometry and frozen class heading semantics. Native model, visualization, row filters, combination, crop offsets and serialization retain ordered fronts in NumPy and tensor carriers. Projective transforms retain ordered quadrilaterals instead of silently fitting new rectangle annotations.
 
 ### Added
 
@@ -35,11 +36,13 @@ for contributor and maintainer responsibilities.
 - Add Gemini 4 Neon to the Google Gemini v6 block with low, medium, high, xhigh and max thinking levels and instance segmentation.
 - GPT-6.2 Astra and GPT-6.2 Sol in the OpenAI v7 block (`roboflow_core/open_ai@v7`), with `low`, `medium`, `high`, `xhigh`, and `max` reasoning levels and the existing structured absolute-pixel detection format.
 - Qwen 4 Max via OpenRouter in the Qwen v4 block (`roboflow_core/qwen_vlm@v4`), with the `none`, `low`, `high` and `xhigh` reasoning levels.
+- Opt-in Detections Consensus v2 ports mask/rotated overlap voting from contributor PR #2420 and preserves a winning native OBB contributor, front, identity and frozen class policy through NumPy and tensor transport. Ordinary tensor inputs remain explicitly unsupported by v2.
 
 ### Changed
 
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
+- Native OBB in Workflows needs `inference-models` and `inference-sdk` releases that include it. The dependency floors in `workflows/pyproject.toml` rise to those versions at release. Existing Supervision `<0.31.0` support is retained.
 
 ### Fixed
 
@@ -54,6 +57,13 @@ for contributor and maintainer responsibilities.
   first run's edges, so edges from a runtime input that changed between runs
   were ignored.
 - Mistral Large 4 now defaults to low reasoning and supports medium and high; saved workflows using none send low instead of disabling unsupported reasoning. OpenRouter errors retain upstream messages from metadata.raw on direct and managed-key paths.
+- Keep native OBB image headers through filtering, combination, crop/scale/root transforms and empty selections; derive Perspective bounds from ordered corners.
+- Preserve native class names across colliding model-local IDs, initialize external native input lineage, render empty tensor predictions, admit native perspective connections without rounding corners, and declare native blocks in workload discovery.
+- Keep legacy oriented-corner scaling and perspective rounding unchanged; float corner transport is specific to native OBB metadata.
+- Reject native oriented detections at ordinary detection conversion and input boundaries; use the dedicated native kind and model block.
+- Reject native oriented detections in query-language `DetectionsShift`, `DetectionsOffset`, and `DetectionsRename` before mutation; these operations are excluded from native kind compatibility.
+- Clip native Dynamic Crop extraction windows to image boundaries while retaining the complete ordered geometry relative to the visible crop.
+- Detections Consensus v2 compares complete segmentation masks even when foreground extends beyond the detector boxes.
 
 ## `0.2.16`
 
