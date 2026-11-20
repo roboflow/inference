@@ -3,6 +3,12 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
+    inputs:
+      release_source:
+        description: Exact prepared release commit; empty for normal CI
+        type: string
+        default: ''
   pull_request:
     branches: [main]
     paths-ignore:
@@ -20,7 +26,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-unit_tests_workflows_tensor_native_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -33,13 +39,16 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.release_source != '' && 180 || 60 }}
     strategy:
+      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_source || github.sha }}
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -65,11 +74,24 @@ jobs:
         run: make create_isolation_wheels
       - name: 📦 Install roboflow-workflows (test + enterprise extras) from local wheel
         run: pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[test,enterprise,databricks]" "${{ github.workspace }}"/dist/inference_sdk-*.whl "${{ github.workspace }}"/dist/inference_models-*.whl "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
-      - name: 🧪 Server unit tests (tensor-native)
+      - name: "🧪 Server unit tests (tensor-native) [release-test]"
         # ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with USE_INFERENCE_MODELS,
         # which defaults to True on Linux runners, so the tensor-native code path is exercised.
-        timeout-minutes: 30
-        run: ENABLE_TENSOR_DATA_REPRESENTATION=True python -m pytest tests/workflows/unit_tests
+        timeout-minutes: ${{ inputs.release_source != '' && 92 || 30 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          timeout-seconds: '1800'
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          command: |
+            ENABLE_TENSOR_DATA_REPRESENTATION=True python -m pytest tests/workflows/unit_tests
+      - name: Retain RC attempt exit codes
+        if: ${{ always() && inputs.release_source != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-attempts-unit_tests_workflows_tensor_native_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
+          if-no-files-found: warn
 
   package-tests:
     needs: call_is_mergeable
@@ -77,8 +99,9 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.release_source != '' && 167 || 45 }}
     strategy:
+      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     env:
@@ -87,6 +110,9 @@ jobs:
       PIP_CONSTRAINT: ${{ github.workspace }}/workflows/tests/isolation/constraints-cpu.txt
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_source || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
@@ -104,9 +130,23 @@ jobs:
             "${{ github.workspace }}"/dist/inference_sdk-*.whl \
             "${{ github.workspace }}"/dist/inference_models-*.whl
           pip check
-      - name: Package unit tests
-        working-directory: workflows
+      - name: "Package unit tests [release-test]"
         # The installed-wheel isolation probe (WORKFLOWS_ISOLATION_WHEEL) is left to
         # "UNIT TESTS - workflows": it clears ENABLE_TENSOR_DATA_REPRESENTATION and
         # checks both tensor modes itself, so running it here repeated the same check.
-        run: python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests
+        timeout-minutes: ${{ inputs.release_source != '' && 137 || 45 }}
+        uses: ./.github/actions/retry-tests
+        with:
+          timeout-seconds: '2700'
+          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
+          working-directory: workflows
+          command: |
+            python -m pytest -n auto --dist loadfile tests/isolation tests/unit_tests
+      - name: Retain RC attempt exit codes
+        if: ${{ always() && inputs.release_source != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-attempts-unit_tests_workflows_tensor_native_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
+          if-no-files-found: warn
