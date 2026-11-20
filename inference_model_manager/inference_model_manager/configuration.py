@@ -10,6 +10,7 @@ call site keeps the ``os.environ.get`` so the read happens at the right
 moment.
 """
 
+import math
 import os
 from typing import Optional
 
@@ -20,6 +21,14 @@ from inference_models.utils.environment import (
     get_integer_from_env,
     parse_comma_separated_values,
 )
+
+
+def _require_finite(name: str, value: float) -> float:
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number, got {value}")
+
+    return value
+
 
 # ── ModelManager (model_manager.py) ─────────────────────────────────────────
 INFERENCE_DIRECT_MAX_WORKERS = get_integer_from_env(
@@ -38,6 +47,11 @@ INFERENCE_MAX_ACTIVE_MODELS = get_integer_from_env(
 # 0 disables the check.
 INFERENCE_MEMORY_FREE_THRESHOLD = get_float_from_env(
     "INFERENCE_MEMORY_FREE_THRESHOLD", default=0.0
+)
+# Seconds a not-yet-served model is spared from LRU eviction; 0 disables.
+INFERENCE_UNSERVED_MODEL_GRACE_S = _require_finite(
+    "INFERENCE_UNSERVED_MODEL_GRACE_S",
+    get_float_from_env("INFERENCE_UNSERVED_MODEL_GRACE_S", default=30.0),
 )
 
 # ── Model loading (pipelines.py) ───────────────────────────────────────────

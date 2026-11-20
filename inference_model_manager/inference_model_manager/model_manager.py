@@ -195,7 +195,7 @@ class ModelManager:
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
         self._pinned: set[str] = set()
-        self._registered_last_used_ts: Dict[str, Optional[float]] = {}
+        self._registered_ts: Dict[str, float] = {}
         self._stream_pipelines: Dict[str, "StreamPipelinedModel"] = {}
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
@@ -297,9 +297,7 @@ class ModelManager:
                 lazy_register_by_names(b._model_mro_names)
             with self._lifecycle_lock:
                 self._backends[model_id] = b
-                self._registered_last_used_ts[model_id] = getattr(
-                    b, "last_used_ts", None
-                )
+                self._registered_ts[model_id] = time.monotonic()
                 if pinned:
                     self._pinned.add(model_id)
         finally:
@@ -389,7 +387,7 @@ class ModelManager:
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
             self._pinned.discard(model_id)
-            self._registered_last_used_ts.pop(model_id, None)
+            self._registered_ts.pop(model_id, None)
             pipeline = self._stream_pipelines.pop(model_id, None)
 
         if drain:
@@ -464,28 +462,31 @@ class ModelManager:
             over_capacity = max_active > 0 and total_reserved > max_active
             if not over_capacity and not pressure:
                 return None
-            eligible = [
-                (b, mid)
-                for mid, b in self._backends.items()
-                if mid != incoming and mid not in self._pinned
-            ]
-            served = [
-                (b, mid)
-                for b, mid in eligible
-                if getattr(b, "last_used_ts", None)
-                != self._registered_last_used_ts.get(mid)
-            ]
-            candidates = sorted(
-                (getattr(b, "last_used_ts", None) or 0.0, mid)
-                for b, mid in (served or eligible)
-            )
+            now = time.monotonic()
+            grace_s = cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
+            eligible = []
+            for mid, b in self._backends.items():
+                if mid == incoming or mid in self._pinned:
+                    continue
+
+                last_used = getattr(b, "last_used_ts", None)
+                registered = self._registered_ts.get(mid)
+                unserved_in_grace = (
+                    last_used is not None
+                    and registered is not None
+                    and last_used <= registered
+                    and now - registered < grace_s
+                )
+                eligible.append((unserved_in_grace, last_used or 0.0, mid))
+            evictable = [entry for entry in eligible if not entry[0]] or eligible
+            candidates = sorted((ts, mid) for _, ts, mid in evictable)
             popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)
                 if backend is None:
                     continue
                 self._pinned.discard(mid)
-                self._registered_last_used_ts.pop(mid, None)
+                self._registered_ts.pop(mid, None)
                 popped.append((mid, backend, self._stream_pipelines.pop(mid, None)))
             return popped
 
