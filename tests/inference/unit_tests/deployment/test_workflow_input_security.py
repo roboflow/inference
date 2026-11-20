@@ -66,7 +66,7 @@ BAD_VALUES = [
             "docker.inference-exp.yml",
             "generate tags",
             "CUSTOM_TAG",
-            {"VERSION": "1.2.3"},
+            {"VERSION": "1.2.3", "FORCE_PUSH": "false", "REF_NAME": "main"},
         ),
         (
             "docker.inference-exp.yml",
@@ -150,10 +150,24 @@ def test_installers_preserve_manual_and_release_versions(
 @pytest.mark.parametrize(
     "step,values,expected",
     [
-        ("generate tags", {"CUSTOM_TAG": "", "VERSION": "1.2.3"}, "base-tag=1.2.3\n"),
         (
             "generate tags",
-            {"CUSTOM_TAG": "canary", "VERSION": "1.2.3"},
+            {
+                "CUSTOM_TAG": "",
+                "VERSION": "1.2.3",
+                "FORCE_PUSH": "false",
+                "REF_NAME": "main",
+            },
+            "base-tag=1.2.3\n",
+        ),
+        (
+            "generate tags",
+            {
+                "CUSTOM_TAG": "canary",
+                "VERSION": "1.2.3",
+                "FORCE_PUSH": "true",
+                "REF_NAME": "release/1.2.3",
+            },
             "base-tag=canary\n",
         ),
         (
@@ -193,6 +207,32 @@ def test_experimental_workflow_preserves_tag_and_platform_rules(
     result, output, _ = run_step(tmp_path, "docker.inference-exp.yml", step, **values)
     assert result.returncode == 0, result.stderr
     assert output == expected
+
+
+@pytest.mark.parametrize(
+    "tag", ["latest", "1.2.3", "v1.2.3", "1.2.3.post1", "1.2.3-post1"]
+)
+def test_experimental_manual_publish_rejects_stable_tags(tmp_path, tag):
+    """Require the official release workflow for stable tags on release branches.
+
+    Args:
+        tmp_path (Path): Isolated directory for workflow shell outputs.
+        tag (str): Stable image tag that manual publication must reject.
+    """
+    result, output, _ = run_step(
+        tmp_path,
+        "docker.inference-exp.yml",
+        "generate tags",
+        CUSTOM_TAG=tag,
+        VERSION="1.2.3",
+        FORCE_PUSH="true",
+        REF_NAME="release/1.2.3",
+    )
+    assert result.returncode != 0
+    assert (
+        "Stable runtime image tags require an official GitHub Release" in result.stderr
+    )
+    assert not output
 
 
 def test_jetson_media_reference_is_validated_and_preserved(tmp_path):
