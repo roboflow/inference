@@ -18,6 +18,7 @@ FQDN (empty for IPs and hosts without a public suffix) for the
 against the concatenated ``subdomain.domain.suffix`` network location.
 """
 
+import asyncio
 import contextlib
 import ipaddress
 import socket
@@ -519,11 +520,15 @@ async def fetch_url_bytes_async(
         except HTTPClientError:
             # Our own validation / SSRF / redirect errors are already correct.
             raise
-        except aiohttp.ClientError as error:
-            # TooManyRedirects, connection errors, ... -> uniform SDK error.
+        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+            # Total timeouts may surface as asyncio.TimeoutError rather than
+            # aiohttp.ClientError; map both to the same SDK error.
+            details = deduct_api_key_from_string(str(error))
+            if isinstance(error, asyncio.TimeoutError) and not details:
+                details = "request timed out"
+
             raise HTTPClientError(
-                f"Could not load image from URL. Details: "
-                f"{deduct_api_key_from_string(str(error))}"
+                f"Could not load image from URL. Details: {details}"
             ) from error
 
 
