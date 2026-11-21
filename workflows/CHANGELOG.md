@@ -53,6 +53,9 @@ Bundled execution engine: `1.17.3`.
 
 ### Fixed
 
+- Tensor-native Detections Difference v1 uses per-detection labels for class
+  matching when they are present, including labels that share a class ID.
+
 - Keypoint Visualization (`roboflow_core/keypoint_visualization@v1`) no longer
   fails the run when its `edges` name a keypoint that no instance has, as when
   a model left out every keypoint, or the last keypoints of a skeleton, in every
