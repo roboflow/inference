@@ -22,8 +22,17 @@ This is the canonical changelog for the `streamvision` package.
   with a time limit: `max(1, WEBRTC_MODAL_SHUTDOWN_RESERVE - 1)` seconds, capped at
   `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS`. Sessions without a time limit use the
   default.
+
+## `0.1.7`
+
+### Added
+
 - The GStreamer CUDA producer supports VP8 over RTSP with
   `ROBOFLOW_RTSP_VIDEO_CODEC=vp8` on GPUs with a VP8 decoder.
+
+### Changed
+
+- The `workflows` extra now requires `roboflow-workflows>=0.2.17`.
 
 ### Fixed
 
