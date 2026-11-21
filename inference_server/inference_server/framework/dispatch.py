@@ -305,6 +305,14 @@ async def handle_model_inference_request(
             follow_up="retry after Retry-After seconds",
             headers={"Retry-After": str(status[1])},
         )
+    if status[0] == "server_full":
+        return error_response(
+            503,
+            "SERVER_BUSY",
+            "no capacity, try again",
+            follow_up="retry after Retry-After seconds",
+            headers={"Retry-After": str(status[1])},
+        )
     if status[0] == "error":
         return error_response(500, "LOAD_FAILED", "model load failed")
 

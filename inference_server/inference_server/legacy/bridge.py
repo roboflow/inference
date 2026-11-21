@@ -651,6 +651,8 @@ class LegacyModelBridge:
             state = result[0] if result else "error"
             if state == "model_ready":
                 return
+            if state == "server_full":
+                raise _not_ready_error()
             if state == "error":
                 code = result[1] if len(result) > 1 else None
                 if code == _ERR_NOT_LOADED:
@@ -701,7 +703,7 @@ class LegacyModelBridge:
             except asyncio.TimeoutError as error:
                 raise _not_ready_error() from error
             state = result[0] if result else "error"
-            if state == "load_timeout":
+            if state in ("load_timeout", "server_full"):
                 raise _not_ready_error()
             if state != "ok":
                 raise _load_error(result)

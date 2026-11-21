@@ -465,9 +465,9 @@ async def test_ensure_loaded_answers_busy_when_capacity_is_exhausted():
     status = await wrapper.ensure_loaded("m")
     await asyncio.sleep(0)
 
-    assert status == ("load_timeout", 1)
+    assert status == ("server_full", 1)
     assert wrapper.last_load_failure("m") is None
-    assert await wrapper.ensure_loaded("m") == ("load_timeout", 1)
+    assert await wrapper.ensure_loaded("m") == ("server_full", 1)
     assert manager.load_calls == 2
 
 
@@ -484,7 +484,7 @@ async def test_explicit_load_answers_busy_when_capacity_is_exhausted(pinned):
     status = await wrapper.load("m", "key", pinned=pinned)
     await asyncio.sleep(0)
 
-    assert status == ("load_timeout", 1)
+    assert status == ("server_full", 1)
     assert wrapper.last_load_failure("m") is None
 
 
@@ -1874,6 +1874,18 @@ class TestInferRetriesLostModel:
         wrapper.ensure_loaded = AsyncMock(return_value=("load_timeout", 5))
 
         with pytest.raises(ServerBusyError):
+            await wrapper.infer(model_id="m", image=b"x")
+        assert mgr.process_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_infer_raises_server_busy_when_reload_reports_server_full(self):
+        from inference_server.errors import ServerBusyError
+
+        mgr = _VanishingManager([KeyError("Model 'm' is not loaded")])
+        wrapper = ModelManagerGateway(mgr)
+        wrapper.ensure_loaded = AsyncMock(return_value=("server_full", 1))
+
+        with pytest.raises(ServerBusyError, match="reload refused"):
             await wrapper.infer(model_id="m", image=b"x")
         assert mgr.process_calls == 1
 
