@@ -47,7 +47,7 @@ This block crops rectangular regions from input images using bounding boxes from
 
 1. Receives input images and detection predictions (object detection, instance segmentation, or keypoint detection) containing bounding boxes
 2. Validates that predictions contain detection IDs required for crop tracking
-3. Extracts each bounding box from the predictions and crops the corresponding rectangular region from the input image
+3. Clips each bounding box's crop region to the image boundaries, returning empty outputs when there is no intersection, and extracts the corresponding pixels
 4. For instance segmentation predictions with `mask_opacity > 0`: Applies background removal by overlaying the segmentation mask, replacing background pixels outside the detected instance with the specified `background_color` and blending with the original crop based on mask opacity
 5. Creates cropped image objects with metadata tracking the crop's origin (original image, offset coordinates, detection ID)
 6. Translates prediction coordinates from the original image space to the cropped region space (adjusts bounding boxes, masks, keypoints, and polygons to be relative to the crop origin)
@@ -220,6 +220,24 @@ def crop_image(
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> List[Dict[str, any]]:
+    """Extract each box's intersection with the image and translate its prediction.
+
+    Args:
+        image: Source image and its coordinate lineage.
+        detections: Predictions defining the requested crop regions.
+        mask_opacity: Background-removal strength when masks are available.
+        background_color: RGB color used for background removal.
+        detection_id_key: Per-detection identifier used to identify each crop.
+
+    Returns:
+        One result per detection, in input order. Non-intersecting or empty
+        regions contain ``None`` for both outputs. Image pixels and masks use
+        the clipped region; prediction geometry is translated by that region's
+        origin, without clipping the original boxes, keypoints or polygons.
+
+    Raises:
+        ValueError: If nonempty detections have no detection identifiers.
+    """
     if len(detections) == 0:
         return []
     if detection_id_key not in detections.data:
@@ -227,11 +245,20 @@ def crop_image(
             f"sv.Detections object passed to crop step do not fulfill contract - lack of {detection_id_key} key "
             f"in data dictionary."
         )
+
+    source_image = image.numpy_image
+    image_height, image_width = source_image.shape[:2]
     crops = []
     for idx, ((x_min, y_min, x_max, y_max), detection_id) in enumerate(
         zip(detections.xyxy.round().astype(dtype=int), detections[detection_id_key])
     ):
-        cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
+        # Negative numpy indices wrap from the opposite edge. Match the native
+        # path's intersection and use the actual crop origin for every field.
+        x_min = max(0, min(x_min, image_width))
+        y_min = max(0, min(y_min, image_height))
+        x_max = max(0, min(x_max, image_width))
+        y_max = max(0, min(y_max, image_height))
+        cropped_image = source_image[y_min:y_max, x_min:x_max]
         if not cropped_image.size:
             crops.append({"crops": None, "predictions": None})
             continue
