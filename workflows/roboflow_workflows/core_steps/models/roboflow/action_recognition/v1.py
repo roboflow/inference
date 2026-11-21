@@ -6,7 +6,8 @@ import threading
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, List, Literal, Optional, Set, Tuple, Type, Union
+from functools import partial
+from typing import Any, Callable, List, Literal, Optional, Set, Tuple, Type, Union
 from weakref import finalize
 
 import cv2
@@ -181,6 +182,71 @@ class _WindowCall:
     id_vocabulary: Optional[List[str]]
     sampling_stride: float
     future: Optional[Future] = None
+
+
+_WindowResult = Tuple[List[ModelActionRecognitionPrediction], int]
+
+
+class _WindowWorker:
+    """Keep windows in FIFO order until one worker claims them.
+
+    Cancelling a future submitted directly to ThreadPoolExecutor leaves its
+    arguments in the pool's queue until the worker reaches it. Only submit
+    the drain to the pool so discarding a window also releases its frames.
+    """
+
+    def __init__(self):
+        self._pool = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="action-recognition"
+        )
+        self._lock = threading.Lock()
+        self._waiting: OrderedDict[Future, Callable[[], _WindowResult]] = OrderedDict()
+        self._draining = False
+        self._closed = False
+
+    def submit(self, classify: Callable[[], _WindowResult]) -> Future:
+        future = Future()
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("The action recognition worker is closed.")
+
+            if not self._draining:
+                self._pool.submit(self._drain)
+                self._draining = True
+            self._waiting[future] = classify
+
+        return future
+
+    def discard(self, future: Future) -> None:
+        with self._lock:
+            if self._waiting.pop(future, None) is not None:
+                future.cancel()
+
+    def _drain(self) -> None:
+        while True:
+            with self._lock:
+                if not self._waiting:
+                    self._draining = False
+                    return
+
+                future, classify = self._waiting.popitem(last=False)
+                if not future.set_running_or_notify_cancel():
+                    continue
+
+            try:
+                result = classify()
+            except BaseException as error:
+                future.set_exception(error)
+            else:
+                future.set_result(result)
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            for future in self._waiting:
+                future.cancel()
+            self._waiting.clear()
+            self._pool.shutdown(wait=False, cancel_futures=True)
 
 
 @dataclass
@@ -409,8 +475,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # A file stream classifies on the step thread while a live stream's
         # worker may be inside the same model.
         self._model_lock = threading.Lock()
-        self._executor: Optional[ThreadPoolExecutor] = None
-        self._executor_finalizer = None
+        self._worker: Optional[_WindowWorker] = None
+        self._worker_finalizer = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -435,8 +501,14 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 model_id=model_id, api_key=self._api_key
             )
             self._current_model_id = model_id
+            for bookkeeping in self._video_bookkeeping.values():
+                self._discard_pending_call(bookkeeping)
             self._video_bookkeeping.clear()
         return self._model
+
+    def _discard_pending_call(self, bookkeeping: _ActionRecognitionBookkeeping) -> None:
+        if bookkeeping.pending is not None and self._worker is not None:
+            self._worker.discard(bookkeeping.pending.future)
 
     def _extract_frame(self, image: WorkflowImageData):
         return _extract_rgb_frame(image=image)
@@ -540,10 +612,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 and frame_number < bookkeeping.last_frame_number
             )
         ):
+            if bookkeeping is not None:
+                self._discard_pending_call(bookkeeping)
             bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
-                evicted_video_id, _ = self._video_bookkeeping.popitem(last=False)
+                evicted_video_id, evicted = self._video_bookkeeping.popitem(last=False)
+                self._discard_pending_call(evicted)
                 self._warned_fps_video_ids.discard(evicted_video_id)
                 logger.warning(
                     "Action Recognition Model tracks at most %s videos and "
@@ -779,24 +854,21 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             id_vocabulary=id_vocabulary,
             sampling_stride=sampling_stride,
         )
+        classify = partial(
+            self._infer_window,
+            model,
+            call=call,
+            model_lock=self._model_lock,
+            effective_sample_fps=effective_sample_fps,
+            confidence=confidence,
+        )
         if background:
-            call.future = self._get_executor().submit(
-                self._infer_window,
-                model,
-                call=call,
-                effective_sample_fps=effective_sample_fps,
-                confidence=confidence,
-            )
+            call.future = self._get_worker().submit(classify)
             bookkeeping.pending = call
             return ""
 
         try:
-            segments, analyzed_until_frame = self._infer_window(
-                model,
-                call=call,
-                effective_sample_fps=effective_sample_fps,
-                confidence=confidence,
-            )
+            segments, analyzed_until_frame = classify()
         except Exception as error:
             logger.warning(
                 "Action Recognition Model call failed: %s",
@@ -813,16 +885,18 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         )
         return ""
 
+    @classmethod
     def _infer_window(
-        self,
+        cls,
         model,
         *,
         call: _WindowCall,
+        model_lock,
         effective_sample_fps: float,
         confidence: Optional[Confidence],
-    ) -> Tuple[List[ModelActionRecognitionPrediction], int]:
-        """Run the model on one window. Touches no per-video state."""
-        frames = self._prepare_frames_for_model(
+    ) -> _WindowResult:
+        """Run one window without keeping the owning block alive in the worker."""
+        frames = cls._prepare_frames_for_model(
             [sample.frame for sample in call.sampled]
         )
         infer_kwargs = (
@@ -840,7 +914,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
             analyzed_until_frame = call.frame_limit - 1
 
-        with self._model_lock:
+        with model_lock:
             segments = model.infer(
                 frames=frames,
                 class_names=call.block_filter,
@@ -953,34 +1027,25 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             f"{first_uncovered}-{cutoff_frame_number}."
         )
 
-    def _get_executor(self) -> ThreadPoolExecutor:
-        if self._executor is None:
-            # One worker: calls on one model must not overlap on the device.
-            self._executor = ThreadPoolExecutor(
-                max_workers=1,
-                thread_name_prefix="action-recognition",
-            )
+    def _get_worker(self) -> _WindowWorker:
+        if self._worker is None:
+            self._worker = _WindowWorker()
             # A block dropped without close() must not leave its thread behind.
-            self._executor_finalizer = finalize(
-                self,
-                self._executor.shutdown,
-                wait=False,
-                cancel_futures=True,
-            )
-        return self._executor
+            self._worker_finalizer = finalize(self, self._worker.close)
+        return self._worker
 
     def close(self) -> None:
         """Stop the background worker and drop calls that have not started.
 
         A call that already runs finishes on its own; nothing reads its result.
         """
-        if self._executor is None:
+        if self._worker is None:
             return
 
         # Calling the finalizer runs the shutdown once and disarms it.
-        self._executor_finalizer()
-        self._executor = None
-        self._executor_finalizer = None
+        self._worker_finalizer()
+        self._worker = None
+        self._worker_finalizer = None
 
     @staticmethod
     def _prepare_frames_for_model(frames: List[Any]) -> List[Any]:

@@ -3,6 +3,7 @@
 import importlib
 import math
 import threading
+import weakref
 from datetime import datetime
 from typing import List, Optional, Union
 from unittest.mock import MagicMock
@@ -2002,6 +2003,7 @@ def test_stream_restart_drops_the_result_of_the_call_it_left_behind():
         for number in (1, 2, 3):
             _run_background(block, number)
         stale_call = block._video_bookkeeping["stream-0"].pending
+        assert model.entered.wait(timeout=5)
 
         restarted = _run_background(block, 1)
         model.gate.set()
@@ -2014,6 +2016,99 @@ def test_stream_restart_drops_the_result_of_the_call_it_left_behind():
     assert restarted["timeline"] == []
     assert after["timeline"] == []
     assert after["analyzed_until_frame"] is None
+
+
+def _submit_camera_window(block, video_id, *, bgr_color=None):
+    for number in (1, 2, 3):
+        frame = _make_frame(number, video_id=video_id, bgr_color=bgr_color)
+        _run(block, frame, background_inference=True)
+
+    return block._video_bookkeeping[video_id].pending
+
+
+def test_repeated_restarts_release_queued_frames_while_another_camera_runs():
+    block, model = _make_background_block()
+    try:
+        _submit_camera_window(block, "camera-a")
+        assert model.entered.wait(timeout=5)
+
+        futures = []
+        frame_refs = []
+        for generation in range(4):
+            pending = _submit_camera_window(
+                block, "camera-b", bgr_color=[generation, 0, 0]
+            )
+            futures.append(pending.future)
+            frame_refs.append(weakref.ref(pending.sampled[0].frame))
+            del pending
+
+        assert all(future.cancelled() for future in futures[:-1])
+        assert all(frame_ref() is None for frame_ref in frame_refs[:-1])
+        assert frame_refs[-1]() is not None
+
+        model.gate.set()
+        futures[-1].result(timeout=5)
+        landed = _run(
+            block, _make_frame(4, video_id="camera-b"), background_inference=True
+        )
+        assert landed["analyzed_until_frame"] == 3
+        assert len(model.calls) == 2
+        assert model.calls[-1]["frames"][0][0, 0, 2] == 3
+    finally:
+        model.gate.set()
+        block.close()
+
+
+@pytest.mark.parametrize("reason", ["class_filter", "model_id", "eviction"])
+def test_discarding_stream_state_releases_a_waiting_call(reason, monkeypatch):
+    monkeypatch.setattr(video_classification_module, "MAX_TRACKED_VIDEOS", 2)
+    block, model = _make_background_block()
+    try:
+        _submit_camera_window(block, "camera-a")
+        assert model.entered.wait(timeout=5)
+        queued = _submit_camera_window(block, "camera-b")
+        future = queued.future
+        frame_ref = weakref.ref(queued.sampled[0].frame)
+        del queued
+
+        if reason == "class_filter":
+            _run(block, _make_frame(4, video_id="camera-b"), class_filter=["run"])
+        elif reason == "model_id":
+            block._model_manager = MagicMock()
+            block._model_manager.load_action_recognition_model.return_value = (
+                _FakeActionRecognitionModel()
+            )
+            block.run(
+                images=[_make_frame(4, video_id="camera-b")], model_id="other-model"
+            )
+        else:
+            _run(block, _make_frame(4, video_id="camera-a"))
+            _run(block, _make_frame(1, video_id="camera-c"))
+
+        assert future.cancelled()
+        assert frame_ref() is None
+    finally:
+        model.gate.set()
+        block.close()
+
+
+def test_close_cancels_waiting_windows_while_the_running_call_finishes():
+    block, model = _make_background_block()
+    try:
+        running = _submit_camera_window(block, "camera-a").future
+        assert model.entered.wait(timeout=5)
+        waiting = _submit_camera_window(block, "camera-b").future
+
+        block.close()
+
+        assert running.running()
+        assert waiting.cancelled()
+        model.gate.set()
+        running.result(timeout=5)
+        assert len(model.calls) == 1
+    finally:
+        model.gate.set()
+        block.close()
 
 
 def test_switching_background_inference_off_still_collects_the_running_call():
