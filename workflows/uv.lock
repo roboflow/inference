@@ -1713,7 +1713,7 @@ wheels = [
 
 [[package]]
 name = "inference-sdk"
-version = "1.8.6rc1"
+version = "1.8.6rc2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1731,7 +1731,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5c/d8/5bc52d0a39670b0eca8ebf7773c61cdf2a78513169e4671dd3f4f3587437/inference_sdk-1.8.6rc1-py3-none-any.whl", hash = "sha256:71edaa08de1f7cb3ac48bc69bf8b5596169852fe3c8118d5a6321d2a6cb863e9", size = 109199, upload-time = "2026-11-21T00:03:35.238Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/70/cd61b15dc74a0c55fd9dcc8ed0096872b73ff79b2dcd9707492524658fc3/inference_sdk-1.8.6rc2-py3-none-any.whl", hash = "sha256:e0a5099f86176bae56317c466675ba7c800855942c45c53ff7c81a682919ebe1", size = 109197, upload-time = "2026-11-21T03:44:20.84Z" },
 ]
 
 [[package]]
