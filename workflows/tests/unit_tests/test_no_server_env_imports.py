@@ -27,6 +27,8 @@ PERMITTED_ENVIRONMENT_READS = {
     ),
     # `EVENT_INGESTION_API_KEY`, the local event-ingestion service key.
     ("roboflow_workflows/core_steps/sinks/roboflow/vision_events/v1.py", 1),
+    # The `WORKFLOWS_VIDEO_CLIP_*` settings, read through one helper.
+    ("roboflow_workflows/core_steps/common/video_clips/__init__.py", 1),
     (
         "roboflow_workflows/core_steps/sinks/roboflow/vision_events/v1_tensor.py",
         1,

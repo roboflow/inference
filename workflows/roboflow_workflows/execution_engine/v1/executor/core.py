@@ -365,6 +365,36 @@ def _downstream_step_selectors(
     return result
 
 
+def prepare_close_workflow_blocks(
+    workflow: CompiledWorkflow,
+    *,
+    deadline_seconds: Optional[float] = None,
+) -> None:
+    """Call ``prepare_close(deadline_seconds)`` on every block that defines one.
+
+    The first phase of a two-phase close, run while the host's thread pools may
+    still be draining: blocks stop taking new work and start finishing what they
+    hold (a recorder stops ingesting and starts muxing pending clips), so that
+    ``close_workflow_blocks`` afterwards only has to wait. A failing block is
+    logged and does not stop the others.
+
+    Args:
+        workflow: The compiled workflow whose block instances to prepare.
+        deadline_seconds: Seconds the host allows, from now, for the blocks to
+            finish before ``close()``; ``None`` when the host sets no limit.
+    """
+    for step_name, step in workflow.steps.items():
+        prepare_close_fn = getattr(step.step, "prepare_close", None)
+        if not callable(prepare_close_fn):
+            continue
+        try:
+            prepare_close_fn(deadline_seconds)
+        except Exception as error:
+            logger.warning(
+                f"Could not prepare workflow step `{step_name}` for close: {error}"
+            )
+
+
 def close_workflow_blocks(workflow: CompiledWorkflow) -> None:
     """Call ``close()`` on every initialised block that defines one.
 

@@ -49,6 +49,7 @@ from streamvision.stream.environment import (
     WEBRTC_MODAL_RTSP_PLACEHOLDER,
     WEBRTC_MODAL_RTSP_PLACEHOLDER_URL,
     WEBRTC_MODAL_SHUTDOWN_RESERVE,
+    WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS,
 )
 from streamvision.stream.exceptions import MissingApiKeyError, WebRTCConfigurationError
 from streamvision.stream_manager.manager_app.entities import (
@@ -260,6 +261,31 @@ def _build_rtc_configuration(
     return RTCConfiguration(iceServers=ice_servers)
 
 
+def derive_block_close_deadline_seconds(
+    shutdown_reserve: float,
+    *,
+    default_deadline_seconds: float = WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS,
+) -> float:
+    """Derive the workflow blocks' close deadline from the session's shutdown reserve.
+
+    A session with a time limit starts terminating ``shutdown_reserve`` seconds
+    before the limit, so its blocks must finish within that reserve. One second
+    is kept back for the rest of the teardown, but blocks always get at least
+    one second, and never more than the default deadline.
+
+    Args:
+        shutdown_reserve: Seconds between the termination date and the time limit.
+        default_deadline_seconds: Deadline used when the reserve allows more.
+
+    Returns:
+        The deadline in seconds to pass to the blocks' ``prepare_close``.
+    """
+    reserve_deadline_seconds = max(1.0, float(shutdown_reserve) - 1.0)
+    deadline_seconds = min(float(default_deadline_seconds), reserve_deadline_seconds)
+
+    return deadline_seconds
+
+
 class VideoFrameProcessor:
     """Base class for processing video frames through workflow.
 
@@ -282,6 +308,7 @@ class VideoFrameProcessor:
         heartbeat_callback: Optional[Callable[[], None]] = None,
         realtime_processing: bool = True,
         is_preview: bool = False,
+        block_close_deadline_seconds: Optional[float] = None,
     ):
         self._file_processing = False
         self._loop = asyncio_loop
@@ -351,6 +378,13 @@ class VideoFrameProcessor:
             _is_preview=is_preview,
             workflow_version_id=workflow_configuration.workflow_version_id,
         )
+        if block_close_deadline_seconds is not None:
+            # Duck-typed: a host may build a pipeline without this setter.
+            set_block_close_deadline = getattr(
+                self._inference_pipeline, "set_block_close_deadline", None
+            )
+            if callable(set_block_close_deadline):
+                set_block_close_deadline(block_close_deadline_seconds)
 
     def set_track(self, track: MediaStreamTrack, rotation_code: Optional[int] = None):
         if not self.track:
@@ -763,6 +797,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
         heartbeat_callback: Optional[Callable[[], None]] = None,
         realtime_processing: bool = True,
         is_preview: bool = False,
+        block_close_deadline_seconds: Optional[float] = None,
         *args,
         **kwargs,
     ):
@@ -782,6 +817,7 @@ class VideoTransformTrackWithLoop(VideoStreamTrack, VideoFrameProcessor):
             heartbeat_callback=heartbeat_callback,
             realtime_processing=realtime_processing,
             is_preview=is_preview,
+            block_close_deadline_seconds=block_close_deadline_seconds,
         )
 
     async def _auto_detect_stream_output(
@@ -990,6 +1026,8 @@ async def init_rtc_peer_connection_with_loop(
         )
 
     termination_date = None
+    # Set with the termination date: the blocks then must finish within the reserve.
+    block_close_deadline_seconds = None
     terminate_event = asyncio.Event()
 
     if webrtc_request.processing_timeout is not None:
@@ -1000,6 +1038,9 @@ async def init_rtc_peer_connection_with_loop(
                 datetime_now = datetime.datetime.now()
             termination_date = datetime_now + datetime.timedelta(
                 seconds=time_limit_seconds - shutdown_reserve
+            )
+            block_close_deadline_seconds = derive_block_close_deadline_seconds(
+                shutdown_reserve
             )
             logger.info(
                 "Setting termination date to %s (%s seconds from %s)",
@@ -1049,6 +1090,7 @@ async def init_rtc_peer_connection_with_loop(
                 heartbeat_callback=heartbeat_callback,
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
                 is_preview=webrtc_request.is_preview,
+                block_close_deadline_seconds=block_close_deadline_seconds,
             )
         else:
             # No video track - use base VideoFrameProcessor
@@ -1066,6 +1108,7 @@ async def init_rtc_peer_connection_with_loop(
                 heartbeat_callback=heartbeat_callback,
                 realtime_processing=webrtc_request.webrtc_realtime_processing,
                 is_preview=webrtc_request.is_preview,
+                block_close_deadline_seconds=block_close_deadline_seconds,
             )
     except (
         ValidationError,
