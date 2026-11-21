@@ -2,12 +2,6 @@ name: INTEGRATION TESTS - inference_models (CPU)
 permissions:
   contents: read
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   pull_request:
     branches: [main]
   push:
@@ -39,7 +33,7 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-integration_tests_inference_experimental_cpu-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -48,9 +42,8 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 107 || 30 }}
+    timeout-minutes: 30
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
         extras:
@@ -64,8 +57,6 @@ jobs:
       - name: 🛎️ Checkout
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
       # Restoring the full uv cache alongside model assets can exhaust runner disk.
       # Download dependencies per job and retain only the model-asset cache.
       - name: Check disk space before restoring model assets
@@ -104,40 +95,28 @@ jobs:
           python -m uv venv
           python -m uv pip install --no-cache -e ".[test,${{ matrix.extras.install }}]" --python .venv
           df -h .
-      - name: "🧪 Run tests marked `${{ matrix.extras.marker }}` [release-test]"
+      - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
-        timeout-minutes: ${{ inputs.release_source != '' && 77 || 25 }}
+        working-directory: inference_models
+        timeout-minutes: 25
         env:
           SHARD: ${{ matrix.extras.shard }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1500'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          working-directory: inference_models
-          command: |
-            source .venv/bin/activate
-            # Shards 1 and 2 run fixed file lists, balanced by measured duration; shard 3 runs
-            # everything else, so every test runs exactly once and new files land in shard 3.
-            m=tests/integration_tests/models
-            SHARD_1="$m/test_rfdetr_seg_predictions_torch.py $m/test_yolov8_keypoints_detection_predictions_torch.py
-              $m/test_doctr_predictions.py $m/test_trocr_predictions.py $m/test_deep_lab_v3_segmentation_predictions_torch.py
-              $m/test_yolo26_keypoints_detection_predictions_torch.py $m/test_perception_encoder_preprocessing.py"
-            SHARD_2="$m/test_rfdetr_predictions_torch.py $m/test_yolov8_instance_segmentation_predictions_torch.py
-              $m/test_sam2_predictions.py $m/test_yolov8_object_detection_predictions_torch.py $m/test_depth_anything_v2_predictions.py
-              $m/test_vit_classifier_predictions_torch.py $m/test_rfdetr_semantic_segmentation_predictions_torch.py
-              $m/test_resnet_classifier_predictions_torch.py"
-            case "$SHARD" in
-              1) targets="$SHARD_1" ;;
-              2) targets="$SHARD_2" ;;
-              3) targets="tests/integration_tests $(printf -- '--ignore=%s ' $SHARD_1 $SHARD_2)" ;;
-              *) targets="tests/integration_tests" ;;
-            esac
-            python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not gpu_only" $targets
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-integration_tests_inference_experimental_cpu-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+        run: |
+          source .venv/bin/activate
+          # Shards 1 and 2 run fixed file lists, balanced by measured duration; shard 3 runs
+          # everything else, so every test runs exactly once and new files land in shard 3.
+          m=tests/integration_tests/models
+          SHARD_1="$m/test_rfdetr_seg_predictions_torch.py $m/test_yolov8_keypoints_detection_predictions_torch.py
+            $m/test_doctr_predictions.py $m/test_trocr_predictions.py $m/test_deep_lab_v3_segmentation_predictions_torch.py
+            $m/test_yolo26_keypoints_detection_predictions_torch.py $m/test_perception_encoder_preprocessing.py"
+          SHARD_2="$m/test_rfdetr_predictions_torch.py $m/test_yolov8_instance_segmentation_predictions_torch.py
+            $m/test_sam2_predictions.py $m/test_yolov8_object_detection_predictions_torch.py $m/test_depth_anything_v2_predictions.py
+            $m/test_vit_classifier_predictions_torch.py $m/test_rfdetr_semantic_segmentation_predictions_torch.py
+            $m/test_resnet_classifier_predictions_torch.py"
+          case "$SHARD" in
+            1) targets="$SHARD_1" ;;
+            2) targets="$SHARD_2" ;;
+            3) targets="tests/integration_tests $(printf -- '--ignore=%s ' $SHARD_1 $SHARD_2)" ;;
+            *) targets="tests/integration_tests" ;;
+          esac
+          python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not gpu_only" $targets

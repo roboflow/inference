@@ -2,12 +2,6 @@ name: INTEGRATION TESTS - workflows
 permissions:
   contents: read
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   pull_request:
     branches: [main]
     paths-ignore:
@@ -44,7 +38,7 @@ on:
           - "false"
 
 concurrency:
-  group: ${{ github.workflow }}-integration_tests_workflows_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -53,7 +47,7 @@ jobs:
     secrets: inherit
   build-dev-test:
     needs: call_is_mergeable
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
     # These are workflow integration tests (pytest + Modal staging calls) — I/O-bound,
     # not compute-bound. Measured on Depot across the 3.10/3.11/3.12 x true/false matrix:
     # ~10-13% average CPU and ~9.3GB peak RAM, so the 16c/64GB machine sat almost idle.
@@ -62,7 +56,6 @@ jobs:
       labels: depot-ubuntu-22.04-4
       group: public-depot
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12","3.13"]' || format('["{0}"]', github.event.inputs.python-version)) }}
         use-inference-models: ${{ fromJSON((github.event.inputs.use-inference-models || 'all') == 'all'&& '["true","false"]'|| format('["{0}"]', github.event.inputs.use-inference-models)) }}
@@ -89,12 +82,10 @@ jobs:
           --health-interval 5s
           --health-timeout 10s
           --health-retries 12
-    timeout-minutes: ${{ inputs.release_source != '' && 184 || 25 }}
+    timeout-minutes: 25
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -122,34 +113,14 @@ jobs:
         run: |
           make create_workflows_wheel create_streamvision_wheel
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
-      - name: "🧪 Integration Tests of Workflows [release-test]"
+      - name: 🧪 Integration Tests of Workflows
         env:
           POSTGRESQL_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=postgres-test-only sslmode=disable"
           KAFKA_TEST_BOOTSTRAP_SERVERS: "localhost:9092"
-        timeout-minutes: ${{ inputs.release_source != '' && 77 || 25 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1500'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
-      - name: "🧪 Integration Tests of Workflows (Modal, staging) [release-test]"
+        run: USE_INFERENCE_MODELS=${{ matrix.use-inference-models }} ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests --ignore=tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py --ignore=tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
+      - name: 🧪 Integration Tests of Workflows (Modal, staging)
         # This step does not read matrix.use-inference-models, so both legs ran the
         # same tests. Run it once per Python version, on the "true" leg unless a
         # manual dispatch selected only "false".
-        if: ${{ inputs.release_source != '' || matrix.use-inference-models == 'true' || inputs.use-inference-models == 'false' }}
-        timeout-minutes: ${{ inputs.release_source != '' && 77 || 25 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1500'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            PROJECT=roboflow-staging MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test python -m pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-integration_tests_workflows_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+        if: ${{ matrix.use-inference-models == 'true' || inputs.use-inference-models == 'false' }}
+        run: PROJECT=roboflow-staging MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test python -m pytest tests/workflows/integration_tests/execution/test_existing_blocks_modal_compatibility.py tests/workflows/integration_tests/execution/test_workflow_with_custom_python_block_modal.py
