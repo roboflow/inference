@@ -215,6 +215,8 @@ WEBRTC_VIDEO_QUEUE_MAX_SIZE = int(os.getenv("WEBRTC_VIDEO_QUEUE_MAX_SIZE", "8"))
 WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT = float(
     os.getenv("WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT", "2.0")
 )
+# Grace for each asynchronous startup/peer/source cleanup phase.
+WEBRTC_CLEANUP_TIMEOUT = float(os.getenv("WEBRTC_CLEANUP_TIMEOUT", "10.0"))
 
 # Video file upload via datachannel
 WEBRTC_VIDEO_UPLOAD_CHUNK_SIZE = int(
