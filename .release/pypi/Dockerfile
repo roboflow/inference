@@ -1,6 +1,6 @@
 FROM python:3.12-slim-bookworm
 
-RUN apt-get update && apt-get install -y --no-install-recommends make git \
+RUN apt-get update && apt-get install -y --no-install-recommends make git libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 # Match the existing setuptools build path; do not install runtime packages.
 RUN python -m pip install --no-cache-dir \
