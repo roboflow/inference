@@ -652,7 +652,7 @@ classifier. Select a workspace classification model version
 or a pretrained alias: <code>resnet18</code>, <code>resnet34</code>, <code>resnet50</code>, or <code>resnet101</code>.
 Pretrained aliases use the <code>inference-models</code> package registry; enable
 <code>USE_INFERENCE_MODELS=True</code> on deployments using the legacy model loader.</p>
-<p>Supported model families are Roboflow ResNet, ViT, and DINOv3 classifiers, including
+<p>Supported model families are Roboflow ResNet, ConvNeXt, ViT, and DINOv3 classifiers, including
 single-label and multi-label models. The block preserves trained weights, pooling,
 internal layer normalization, and the model's original image preprocessing. It
 does not add L2 normalization. The <code>output_type</code> parameter selects:</p>
@@ -664,8 +664,7 @@ does not add L2 normalization. The <code>output_type</code> parameter selects:</
   These values are not probabilities. Exports that already return logits retain
   that output; exports with a final activation have that activation removed.</li>
 </ul>
-<p>Other classifier families, including ConvNeXt and YOLO classifiers, are not
-supported by this initial release.</p>
+<p>Other classifier families, including YOLO classifiers, are not supported.</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1.0"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"inputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"InferenceImage"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"image"</span><span class="p">}],</span>
