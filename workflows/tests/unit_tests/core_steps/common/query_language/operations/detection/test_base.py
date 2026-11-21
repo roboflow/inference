@@ -11,6 +11,7 @@ from roboflow_workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from roboflow_workflows.execution_engine.constants import (
     AREA_CONVERTED_KEY_IN_SV_DETECTIONS,
     AREA_KEY_IN_SV_DETECTIONS,
+    CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY_IN_SV_DETECTIONS,
@@ -195,6 +196,21 @@ def test_extract_class_name_tensor_native(class_name: str) -> None:
 
     assert result == class_name
     assert type(result) is str
+
+
+@_TENSOR_ONLY
+@pytest.mark.parametrize("row_name", ["left", ""])
+def test_extract_class_name_tensor_native_prefers_row_name(row_name: str) -> None:
+    detection = _single_tensor_native_detection()
+    detection[5][CLASS_NAME_KEY] = row_name
+
+    result = extract_detection_property(
+        value=detection,
+        property_name=DetectionsProperty.CLASS_NAME,
+        execution_context="<test>",
+    )
+
+    assert result == row_name
 
 
 @_TENSOR_ONLY

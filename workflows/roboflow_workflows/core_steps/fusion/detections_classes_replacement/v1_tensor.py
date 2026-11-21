@@ -14,6 +14,7 @@ from roboflow_workflows.core_steps.common.tensor_native import (
     take_prediction_by_indices,
 )
 from roboflow_workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
     PARENT_ID_KEY,
@@ -461,9 +462,8 @@ def _select_native_prediction(
         dtype=selected_detections.confidence.dtype,
         device=selected_detections.confidence.device,
     )
-    # Refresh the class_id -> name map so the per-box class_id resolves to the
-    # replacement class name on serialisation (numpy wrote a per-box class_name
-    # string column; natively the name lives in image_metadata["class_names"]).
+    # Keep the image-level map for ID-based consumers. Per-row names below
+    # also cover text replacements that intentionally share a class ID.
     image_metadata = dict(selected_detections.image_metadata or {})
     image_metadata[CLASS_NAMES_KEY] = {
         int(class_id): class_name
@@ -481,12 +481,17 @@ def _select_native_prediction(
                 for key, value in (box or {}).items()
                 if key not in HOST_MIRROR_KEYS
             },
+            CLASS_NAME_KEY: class_name,
             DETECTION_ID_KEY: f"{uuid4()}",
         }
-        for box in (
-            selected_detections.bboxes_metadata
-            if selected_detections.bboxes_metadata is not None
-            else [{} for _ in range(len(selected_detections))]
+        for box, class_name in zip(
+            (
+                selected_detections.bboxes_metadata
+                if selected_detections.bboxes_metadata is not None
+                else [{} for _ in range(len(selected_detections))]
+            ),
+            new_class_names,
+            strict=True,
         )
     ]
     if isinstance(selected, tuple):

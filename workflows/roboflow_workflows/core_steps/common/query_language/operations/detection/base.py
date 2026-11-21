@@ -27,6 +27,7 @@ from roboflow_workflows.execution_engine.constants import (
     BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+    CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
@@ -124,6 +125,8 @@ def _extract_detection_property(
 
 def _extract_class_name_tensor_native(detection: tuple) -> str:
     class_names = detection[6].get(CLASS_NAMES_KEY)
+    if CLASS_NAME_KEY in detection[5]:
+        return str(detection[5][CLASS_NAME_KEY])
     if class_names is None:
         raise OperationError(
             public_message=(
