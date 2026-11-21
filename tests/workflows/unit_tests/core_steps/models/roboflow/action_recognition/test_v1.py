@@ -40,6 +40,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    INTEGER_KIND,
     STRING_KIND,
 )
 from inference_models import ActionRecognitionModel
@@ -126,6 +127,8 @@ def _make_frame(
     frame_timestamp: datetime = datetime(2024, 1, 1),
     bgr_color: Optional[List[int]] = None,
     tensor_rgb_color: Optional[List[int]] = None,
+    comes_from_video_file: Optional[bool] = None,
+    total_frames: Optional[int] = None,
 ) -> WorkflowImageData:
     metadata = VideoMetadata(
         video_identifier=video_id,
@@ -133,6 +136,8 @@ def _make_frame(
         fps=fps,
         measured_fps=measured_fps,
         frame_timestamp=frame_timestamp,
+        comes_from_video_file=comes_from_video_file,
+        total_frames=total_frames,
     )
     image_kwargs = {}
     if tensor_rgb_color is not None:
@@ -276,9 +281,14 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest.stride_seconds is None
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     outputs = manifest_type.describe_outputs()
-    assert [output.name for output in outputs] == ["timeline", "error_status"]
+    assert [output.name for output in outputs] == [
+        "timeline",
+        "error_status",
+        "analyzed_until_frame",
+    ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
+    assert outputs[2].kind == [INTEGER_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -1609,3 +1619,149 @@ def test_tensor_block_caps_on_device_without_leaving_the_tensor():
     assert result.dtype == torch.uint8
     assert result.device == frame.device
     assert result.shape == (3, 11, 16)
+
+
+def _run_file(block, *, frame_numbers, total_frames, **run_kwargs):
+    results = [
+        _run(
+            block,
+            _make_frame(
+                frame_number,
+                comes_from_video_file=True,
+                total_frames=total_frames,
+            ),
+            **run_kwargs,
+        )
+        for frame_number in frame_numbers
+    ]
+    return results
+
+
+def test_analyzed_until_frame_follows_successful_classifications():
+    # The cadence anchors at frame 1 and fires at 3, 5 and 7. The call at 5
+    # fails, so the mark must stay on 3 until the call at 7 returns.
+    block, _ = _make_block(responses=[[], RuntimeError("model failure"), []])
+
+    results = [_run(block, _make_frame(number)) for number in range(1, 8)]
+
+    assert [result["analyzed_until_frame"] for result in results] == [
+        None,
+        None,
+        3,
+        3,
+        3,
+        3,
+        7,
+    ]
+    assert results[4]["error_status"] == "model failure"
+
+
+def test_frame_rollback_clears_analyzed_until_frame():
+    block, _ = _make_block(responses=[[]])
+    for number in (1, 2):
+        _run(block, _make_frame(number))
+    analyzed = _run(block, _make_frame(3))
+
+    restarted = _run(block, _make_frame(1))
+
+    assert analyzed["analyzed_until_frame"] == 3
+    assert restarted["analyzed_until_frame"] is None
+
+
+def test_last_file_frame_classifies_the_tail_between_scheduled_calls():
+    # Scheduled calls land on 3 and 5. Frame 6 is the last one and sits off
+    # the cadence, so without the tail call its range has no result.
+    block, model = _make_block(
+        responses=[[], [], [_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]
+    )
+
+    results = _run_file(block, frame_numbers=range(1, 7), total_frames=6)
+
+    assert len(model.calls) == 3
+    assert results[-2]["analyzed_until_frame"] == 5
+    assert results[-1]["analyzed_until_frame"] == 6
+    assert [entry["class_name"] for entry in _timeline_as_dicts(results[-1])] == [
+        "walk"
+    ]
+
+
+def test_file_shorter_than_one_stride_still_gets_a_result():
+    block, model = _make_block(responses=[[_model_segment("run")]])
+
+    results = _run_file(
+        block,
+        frame_numbers=range(1, 7),
+        total_frames=6,
+        stride_seconds=10.0,
+    )
+
+    assert len(model.calls) == 1
+    assert results[-1]["analyzed_until_frame"] == 6
+    assert len(results[-1]["timeline"]) == 1
+
+
+@pytest.mark.parametrize(
+    "comes_from_video_file, total_frames",
+    [(False, 6), (None, 6), (True, None)],
+)
+def test_sources_without_a_known_last_frame_get_no_tail_call(
+    comes_from_video_file, total_frames
+):
+    block, model = _make_block()
+
+    for number in range(1, 7):
+        _run(
+            block,
+            _make_frame(
+                number,
+                comes_from_video_file=comes_from_video_file,
+                total_frames=total_frames,
+            ),
+        )
+
+    assert len(model.calls) == 2
+
+
+def test_tail_call_runs_once_when_the_container_count_is_too_low():
+    # The container reports 4 frames but 8 arrive. Calls: scheduled at 3, the
+    # tail at 4, then the cadence from 4 gives 6 and 8. Frames 5 and 7 are
+    # also at or past the count and must not classify again.
+    block, model = _make_block()
+
+    _run_file(block, frame_numbers=range(1, 9), total_frames=4)
+
+    assert len(model.calls) == 4
+
+
+def test_scheduled_call_on_the_last_frame_is_not_repeated():
+    block, model = _make_block()
+
+    results = _run_file(block, frame_numbers=range(1, 6), total_frames=5)
+
+    assert len(model.calls) == 2
+    assert results[-1]["analyzed_until_frame"] == 5
+
+
+def test_single_frame_file_gets_no_tail_call():
+    block, model = _make_block()
+
+    results = _run_file(block, frame_numbers=[1], total_frames=1)
+
+    assert model.calls == []
+    assert results[-1]["analyzed_until_frame"] is None
+
+
+def test_tail_call_waits_for_the_minimum_sampled_frames():
+    # Four source frames at half the sample rate buffer two samples.
+    block, model = _make_block()
+
+    results = _run_file(
+        block,
+        frame_numbers=range(1, 5),
+        total_frames=4,
+        stride_seconds=10.0,
+        min_frames=3,
+    )
+
+    assert model.calls == []
+    assert results[-1]["analyzed_until_frame"] is None
