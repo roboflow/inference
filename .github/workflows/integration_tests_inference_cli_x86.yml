@@ -2,12 +2,6 @@ name: INTEGRATION TESTS - inference CLI
 permissions:
   contents: read
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   push:
     branches: [main]
   workflow_dispatch:
@@ -17,7 +11,7 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-integration_tests_inference_cli_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -30,17 +24,13 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 122 || 30 }}
+    timeout-minutes: 30
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
-          persist-credentials: false
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -56,19 +46,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt
-      - name: "🧪 Integration Tests of Inference CLI [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 92 || 30 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1800'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED=True INFERENCE_CLI_TESTS_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest tests/inference_cli/integration_tests
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-integration_tests_inference_cli_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+      - name: 🧪 Integration Tests of Inference CLI
+        run: RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED=True INFERENCE_CLI_TESTS_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m pytest tests/inference_cli/integration_tests
