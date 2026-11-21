@@ -227,45 +227,50 @@ class LiveRunnerTest(unittest.TestCase):
         )
         self.assertEqual(query.count("repeat('m', 4096)"), 17)
 
-    def _slow_case(self, *, status="CANCELED", observe=True):
+    def _slow_case(
+        self,
+        *,
+        status="CANCELED",
+        message="",
+        observe=True,
+        terminal_id="reader-select",
+    ):
+        self.create_view.reset_mock()
         queried = threading.Event()
         observed = threading.Event()
-        state = {}
+        probe = {"user_id": 42, "warehouse_id": "warehouse", "query_end_time_ms": 1000}
 
-        class _Target:
-            def run(self, specification, *, inputs):
-                """Simulate a slow workflow failure with an elapsed-time record.
+        def _run(specification, *, inputs):
+            queried.set()
+            self.assertTrue(observed.wait(timeout=3))
+            raise runner.RunError("Statement has timed out after 7 seconds.", 0.01)
 
-                Args:
-                    specification (dict): Fixture workflow definition accepted by the target interface.
-                    inputs (dict): Runtime inputs accepted by the target interface.
+        def _probe(token):
+            self.assertEqual(self.create_view.call_count, 1)
+            self.assertFalse(queried.is_set())
 
-                Raises:
-                    RunError: The simulated slow invocation always reaches its deadline.
-                """
-                state["query"] = specification["steps"][0]["table"]
-                queried.set()
-                if not observed.wait(timeout=3):
-                    raise AssertionError("test observer did not run")
+            return probe
 
-                raise runner.RunError("query timeout", 0.01)
-
-        def _history(statuses, since_ms, token):
+        def _history(statuses, *, since_ms, token, reader_probe):
+            self.assertIs(reader_probe, probe)
+            self.assertEqual(since_ms, probe["query_end_time_ms"])
             self.assertTrue(queried.wait(timeout=3))
-            if statuses == ["RUNNING"]:
-                # Return RUNNING while the target is still executing. The
-                # mocked Event.wait below releases the query after observation.
-                result = (
-                    [{"query_text": state["query"], "status": "RUNNING"}]
-                    if observe
-                    else []
+            rows = [
+                {"query_text": "CREATE VIEW /* rf_live_slow */", "status": "FINISHED"}
+            ]
+            if observe:
+                active = not observed.is_set()
+                rows.append(
+                    {
+                        "query_id": "reader-select" if active else terminal_id,
+                        "query_text": "SELECT IDENTIFIER(:column_0), IDENTIFIER(:column_1) "
+                        "FROM IDENTIFIER(:source) LIMIT :row_limit",
+                        "status": "RUNNING" if active else status,
+                        "error_message": message,
+                    }
                 )
 
-                return result
-
-            result = []
-
-            return result
+            return rows
 
         original_wait = threading.Event.wait
 
@@ -279,33 +284,82 @@ class LiveRunnerTest(unittest.TestCase):
         with patch.object(runner, "env", return_value="configured"), patch.object(
             runner, "query_history", side_effect=_history
         ), patch.object(
-            runner, "wait_for_history", return_value={"status": status}
+            runner, "_reader_history_probe", side_effect=_probe
         ), patch.object(
             threading.Event, "wait", _wait
+        ), patch.dict(
+            runner._SLOW_STATEMENTS, clear=True
         ):
             result = runner.case_slow(
-                _Target(),
+                Mock(run=_run),
                 table="catalog.schema.images",
                 token="token",
                 deadline=5,
                 extra_sql="",
             )
+            outcome = runner._SLOW_STATEMENTS[result["query_id"]]
 
-        return result
+        return outcome
 
-    def test_slow_case_observes_active_query_and_accepts_canceled(self):
-        """Verify slow case observes active query and accepts canceled."""
-        self.assertEqual(self._slow_case()["status"], "CANCELED")
+    def test_slow_case_distinguishes_cancellation_from_warehouse_timeout(self):
+        """Verify the recorded outcomes for the same parameterized reader statement."""
+        self.assertEqual(self._slow_case(), "canceled")
+        self.assertEqual(
+            self._slow_case(
+                status="FAILED", message="Statement has timed out after 7 seconds."
+            ),
+            "warehouse_timeout",
+        )
 
-    def test_slow_case_rejects_unrelated_failed_state(self):
-        """Verify slow case rejects unrelated failed state."""
-        with self.assertRaisesRegex(AssertionError, "did not confirm cancellation"):
-            self._slow_case(status="FAILED")
+    def test_slow_case_rejects_unrelated_terminal_results(self):
+        """Require warehouse evidence of cancellation or a specific statement timeout."""
+        for status, message in (("FAILED", "permission denied"), ("FINISHED", "")):
+            with self.subTest(status=status), self.assertRaisesRegex(
+                AssertionError, "unexpected warehouse result"
+            ):
+                self._slow_case(status=status, message=message)
 
     def test_slow_case_requires_active_observation(self):
         """Verify slow case requires active observation."""
         with self.assertRaisesRegex(AssertionError, "not observed RUNNING"):
             self._slow_case(observe=False)
+
+    def test_slow_case_rejects_a_different_terminal_statement(self):
+        """Require the terminal state to belong to the observed reader statement."""
+        with self.assertRaisesRegex(AssertionError, "statement ID changed"):
+            self._slow_case(terminal_id="other-reader-select")
+
+    def test_slow_history_rejects_ambiguous_statements(self):
+        """Refuse to attribute two concurrent identical reads to the test."""
+        rows = [
+            {"query_text": runner._SLOW_READER_QUERY, "query_id": query_id}
+            for query_id in ("reader-select", "another-select")
+        ]
+        with patch.object(runner, "query_history", return_value=rows):
+            with self.assertRaisesRegex(AssertionError, "multiple reader statements"):
+                runner._slow_reader_statement(
+                    {"query_end_time_ms": 1000}, token="token"
+                )
+
+    def test_slow_history_filters_by_reader_and_warehouse_and_rejects_partial_page(
+        self,
+    ):
+        """Verify filters sent to Databricks and require complete history."""
+        response = Mock(status_code=200)
+        response.json.return_value = {"has_next_page": True, "res": []}
+        probe = {"user_id": 42, "warehouse_id": "warehouse"}
+        with patch.object(runner, "env", return_value="configured"), patch.object(
+            runner.requests, "get", return_value=response
+        ) as get:
+            with self.assertRaisesRegex(RuntimeError, "Incomplete reader history"):
+                runner.query_history(
+                    [], since_ms=1000, token="token", reader_probe=probe
+                )
+
+        params = get.call_args.kwargs["params"]
+        self.assertEqual(params["filter_by.user_ids"], 42)
+        self.assertEqual(params["filter_by.warehouse_ids"], "warehouse")
+        self.assertEqual(params["filter_by.query_start_time_range.start_time_ms"], 1000)
 
 
 if __name__ == "__main__":

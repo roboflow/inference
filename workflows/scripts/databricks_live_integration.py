@@ -27,9 +27,9 @@ Cases (see the PR discussion for the acceptance table):
                   the run with the budget error instead of retaining the rows
     disabled      only with --expect-disabled: the target rejects the Workflow
                   at compile time and no query reaches the warehouse
-    slow          a query held busy past ``--slow-deadline`` is cancelled: the
-                  job fails within deadline + cleanup grace, the warehouse's
-                  query history shows the statement CANCELED, nothing RUNNING
+    slow          a live reader statement stops within the timeout and cleanup
+                  allowance. The report distinguishes cancellation from a
+                  warehouse-enforced statement timeout.
     recovery      three slow failures in a row, then a successful import; the
                   history shows no accumulated RUNNING queries
     concurrent    an unrelated trivial Workflow keeps answering while the slow
@@ -69,6 +69,13 @@ FIXTURE_ROWS = 20
 CLEANUP_GRACE_SECONDS = 35  # SOCKET_TIMEOUT_SECONDS + RETRY_DELAY_MAX_SECONDS
 RUN_ID = uuid.uuid4().hex[:12]
 _CREATED_VIEWS: List[str] = []
+# The slow fixture projects bytes and id. Native binding leaves both identifiers
+# and the source as parameter markers in the warehouse's recorded SELECT.
+_SLOW_READER_QUERY = (
+    "SELECT IDENTIFIER(:column_0), IDENTIFIER(:column_1) "
+    "FROM IDENTIFIER(:source) LIMIT :row_limit"
+)
+_SLOW_STATEMENTS: Dict[str, str] = {}
 CASE_NAMES = (
     "import",
     "bad-image",
@@ -202,7 +209,11 @@ def setup_fixtures(table: str) -> None:
 
 
 def query_history(
-    statuses: List[str], *, since_ms: int, token: str
+    statuses: List[str],
+    *,
+    since_ms: int,
+    token: str,
+    reader_probe: Optional[dict] = None,
 ) -> List[Dict[str, Any]]:
     """Read warehouse query history without following credentialed redirects.
 
@@ -210,6 +221,7 @@ def query_history(
         statuses (List[str]): Warehouse states to include.
         since_ms (int): Earliest start time in Unix milliseconds.
         token (str): Identity allowed to read the test queries.
+        reader_probe (Optional[dict]): History row identifying the dedicated reader and warehouse.
 
     Returns:
         Query-history entries returned by the warehouse.
@@ -223,6 +235,10 @@ def query_history(
         "filter_by.query_start_time_range.start_time_ms": since_ms,
         "max_results": 100,
     }
+    if reader_probe is not None:
+        params["filter_by.user_ids"] = reader_probe["user_id"]
+        params["filter_by.warehouse_ids"] = reader_probe["warehouse_id"]
+
     for status in statuses:
         params.setdefault("filter_by.statuses", []).append(status)
     response = requests.get(
@@ -235,7 +251,13 @@ def query_history(
     if response.status_code != 200:
         raise RuntimeError(f"Query history returned HTTP {response.status_code}")
 
-    entries = response.json().get("res", [])
+    page = response.json()
+    if reader_probe is not None and page.get("has_next_page"):
+        raise RuntimeError(
+            "Incomplete reader history prevents identifying the slow statement"
+        )
+
+    entries = page.get("res", [])
 
     return entries
 
@@ -708,10 +730,47 @@ def slow_statement(table: str, *, marker: str, extra: str) -> str:
     return result
 
 
+def _reader_history_probe(token: str) -> Dict[str, Any]:
+    # Use the same reader and warehouse as the block. The completed probe gives
+    # us a lower time bound on the warehouse clock for matching reader statements.
+    marker = f"rf_live_probe_{uuid.uuid4().hex}"
+    since_ms = int(time.time() * 1000) - 60_000
+    with sql_connect(token) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(f"SELECT 1 /* {marker} */")
+            cursor.fetchall()
+
+    probe = wait_for_history(
+        marker,
+        statuses=["FINISHED"],
+        since_ms=since_ms,
+        token=token,
+        timeout=CLEANUP_GRACE_SECONDS,
+    )
+    assert probe and all(
+        probe.get(key) for key in ("user_id", "warehouse_id", "query_end_time_ms")
+    ), "could not identify the reader and warehouse in query history"
+
+    return probe
+
+
+def _slow_reader_statement(probe: Dict[str, Any], *, token: str) -> Optional[dict]:
+    entries = query_history(
+        [], since_ms=probe["query_end_time_ms"], token=token, reader_probe=probe
+    )
+    matches = [
+        entry for entry in entries if entry.get("query_text") == _SLOW_READER_QUERY
+    ]
+    assert len(matches) <= 1, "multiple reader statements match the slow invocation"
+    statement = next(iter(matches), None)
+
+    return statement
+
+
 def case_slow(
     target, *, table: str, token: str, deadline: int, extra_sql: str
 ) -> Dict[str, Any]:
-    """Observe an active query and verify its cancellation after a timeout.
+    """Observe an active reader statement and verify how it terminates.
 
     Args:
         target (LocalTarget | ServerTarget): Local or server workflow runner.
@@ -721,27 +780,25 @@ def case_slow(
         extra_sql (str): Optional expensive SQL predicate for the fixture query.
 
     Returns:
-        The terminal query-history entry confirming cancellation.
+        The terminal query-history entry for the observed reader statement.
 
     Raises:
-        AssertionError: If execution, active observation or cancellation fails.
+        AssertionError: If the invocation, live observation or terminal state is unexpected.
     """
     marker = f"rf_live_slow_{RUN_ID}_{uuid.uuid4().hex[:6]}"
-    since_ms = int(time.time() * 1000) - 60_000
-    started = time.monotonic()
+    specification = workflow_specification(
+        slow_statement(table, marker=marker, extra=extra_sql),
+        max_rows=1,
+        timeout_seconds=deadline,
+    )
+    probe = _reader_history_probe(token)
     finished = threading.Event()
     outcome: Dict[str, Any] = {}
+    started = time.monotonic()
 
     def _run_query() -> None:
         try:
-            target.run(
-                workflow_specification(
-                    slow_statement(table, marker=marker, extra=extra_sql),
-                    max_rows=1,
-                    timeout_seconds=deadline,
-                ),
-                inputs={"token": token},
-            )
+            target.run(specification, inputs={"token": token})
         except Exception as error:
             outcome["error"] = error
         finally:
@@ -750,16 +807,24 @@ def case_slow(
 
     thread = threading.Thread(target=_run_query, daemon=True)
     thread.start()
-    observed_active = False
+    query_id = None
     try:
-        while not finished.is_set() and time.monotonic() < started + deadline:
-            entries = query_history(["RUNNING"], since_ms=since_ms, token=token)
-            # A historical RUNNING row received after completion is not evidence
-            # that we observed the query while this invocation was active.
-            if not finished.is_set() and time.monotonic() < started + deadline:
-                observed_active |= any(
-                    marker in entry.get("query_text", "") for entry in entries
-                )
+        while (
+            query_id is None
+            and not finished.is_set()
+            and time.monotonic() < started + deadline
+        ):
+            entry = _slow_reader_statement(probe, token=token)
+            # The history request itself can outlast the invocation.
+            if (
+                entry
+                and entry["status"] == "RUNNING"
+                and not finished.is_set()
+                and time.monotonic() < started + deadline
+            ):
+                query_id = entry["query_id"]
+                _SLOW_STATEMENTS[query_id] = "observed_running"
+
             finished.wait(timeout=0.5)
     finally:
         thread.join(
@@ -773,37 +838,44 @@ def case_slow(
     ), "target did not finish within deadline plus cleanup allowance"
     elapsed = outcome["elapsed"]
     assert elapsed < deadline + CLEANUP_GRACE_SECONDS, f"returned after {elapsed:.1f}s"
-    assert (
-        observed_active
-    ), "query was not observed RUNNING before the invocation deadline"
     error = outcome.get("error")
-    assert isinstance(
-        error, RunError
-    ), "slow query did not fail with a controlled timeout"
-    assert "timeout" in str(error).lower() or "cancel" in str(error).lower(), str(error)
-
-    terminal = wait_for_history(
-        marker,
-        statuses=["CANCELED", "FAILED", "FINISHED"],
-        since_ms=since_ms,
-        token=token,
-        timeout=CLEANUP_GRACE_SECONDS,
-    )
-    assert terminal is not None, "warehouse never reported a terminal statement state"
-    # FAILED also includes permissions, malformed SQL and unrelated failures.
-    # Until a specific statement-timeout error is verified, require CANCELED.
+    assert isinstance(error, RunError), "slow query did not return a workflow error"
+    assert re.search(r"timeout|timed out|cancel", str(error), re.I), _safe_error(error)
     assert (
-        terminal.get("status") == "CANCELED"
-    ), "warehouse did not confirm cancellation"
-    still_running = [
-        e
-        for e in query_history(["RUNNING", "QUEUED"], since_ms=since_ms, token=token)
-        if marker in e.get("query_text", "")
-    ]
-    assert not still_running, "the statement is still running after cancellation"
+        query_id is not None
+    ), "reader SELECT was not observed RUNNING before the invocation deadline"
+
+    history_deadline = time.monotonic() + CLEANUP_GRACE_SECONDS
+    while time.monotonic() < history_deadline:
+        terminal = _slow_reader_statement(probe, token=token) or {}
+        assert (
+            not terminal or terminal["query_id"] == query_id
+        ), "reader statement ID changed"
+        status = terminal.get("status")
+        if status in ("CANCELED", "FAILED", "FINISHED"):
+            break
+
+        time.sleep(1)
+    else:
+        raise AssertionError(
+            f"warehouse never reported a terminal state for {query_id}"
+        )
+
+    if status == "CANCELED":
+        warehouse_outcome = "canceled"
+    elif status == "FAILED" and re.fullmatch(
+        r"Statement has timed out after [1-9][0-9]* seconds?\.",
+        terminal.get("error_message") or "",
+    ):
+        warehouse_outcome = "warehouse_timeout"
+    else:
+        raise AssertionError(
+            f"statement {query_id} ended with unexpected warehouse result {status}"
+        )
+
+    _SLOW_STATEMENTS[query_id] = warehouse_outcome
     print(
-        f"  slow: observed RUNNING before deadline; returned in {elapsed:.1f}s; "
-        "warehouse confirmed CANCELED"
+        f"  slow: {query_id} observed RUNNING, returned in {elapsed:.1f}s, {warehouse_outcome}"
     )
 
     return terminal
@@ -833,7 +905,7 @@ def case_recovery(
     running = [
         e
         for e in query_history(["RUNNING", "QUEUED"], since_ms=since_ms, token=token)
-        if RUN_ID in e.get("query_text", "")
+        if RUN_ID in e.get("query_text", "") or e.get("query_id") in _SLOW_STATEMENTS
     ]
     assert not running, f"{len(running)} test queries still running after recovery"
     print("  recovery: subsequent import succeeded, no accumulated running queries")
@@ -1011,8 +1083,11 @@ def main() -> int:
     leftovers = [
         e
         for e in query_history(["RUNNING", "QUEUED"], since_ms=since_ms, token=token)
-        if RUN_ID in e.get("query_text", "")
+        if RUN_ID in e.get("query_text", "") or e.get("query_id") in _SLOW_STATEMENTS
     ]
+    if _SLOW_STATEMENTS:
+        report["slow_statements"] = dict(_SLOW_STATEMENTS)
+
     report["running_after_suite"] = len(leftovers)
     if leftovers:
         failures += 1
