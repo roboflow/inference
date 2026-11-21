@@ -62,6 +62,7 @@ For the composable five-stage Torch, ONNX and TensorRT execution-plan architectu
 | `onnx` | `onnx-cpu`, `onnx-cu12`, `onnx-cu118`, `onnx-jp6-cu126` |
 | `trt` | `trt10` |
 | `coreml` | `coreml` (macOS 13+ on Apple Silicon) |
+| `executorch` | none; see [Backends](../getting-started/backends.md#executorch) |
 
 ## Roboflow Platform Compatibility
 
@@ -84,6 +85,7 @@ Install with one of the following extras depending on your backend:
 - **ONNX**: `onnx-cpu`, `onnx-cu12`
 - **TensorRT**: `trt10` (requires CUDA 12.x)
 - **Core ML**: `coreml` (macOS 13+ on Apple Silicon)
+- **ExecuTorch**: no extra; see [Backends](../getting-started/backends.md#executorch)
 
 ## Usage Example
 

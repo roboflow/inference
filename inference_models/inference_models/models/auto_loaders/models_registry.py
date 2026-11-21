@@ -429,6 +429,20 @@ REGISTERED_MODELS: Dict[
             "num_select",
         },
     ),
+    ("rfdetr", OBJECT_DETECTION_TASK, BackendType.EXECUTORCH): RegistryEntry(
+        model_class=LazyClass(
+            module_name="inference_models.models.rfdetr.rfdetr_object_detection_executorch",
+            class_name="RFDetrForObjectDetectionExecuTorch",
+        ),
+        supported_model_features={
+            "resolution",
+            "patch_size",
+            "num_windows",
+            "dec_layers",
+            "num_queries",
+            "num_select",
+        },
+    ),
     ("rfdetr", INSTANCE_SEGMENTATION_TASK, BackendType.TORCH): LazyClass(
         module_name="inference_models.models.rfdetr.rfdetr_instance_segmentation_pytorch",
         class_name="RFDetrForInstanceSegmentationTorch",

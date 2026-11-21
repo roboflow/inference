@@ -52,6 +52,9 @@ COIN_COUNTING_RFDETR_PICO_TORCH_STRETCH_URL = "https://storage.googleapis.com/ro
 COIN_COUNTING_RFDETR_PICO_ONNX_STRETCH_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-pico-onnx-stretch.zip"
 RFDETR_KP_PREVIEW_ONNX_GLUE_STICKS_URL = "https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/rfdetr-kp-preview-onnx-glue-sticks.zip"
 RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV = "INFERENCE_MODELS_RFDETR_KP_TRT_PACKAGE"
+RFDETR_NANO_EXECUTORCH_CS_STRETCH_PACKAGE_ENV = (
+    "INFERENCE_MODELS_RFDETR_EXECUTORCH_PACKAGE"
+)
 
 OG_RFDETR_WEIGHTS_URL = "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth"
 
@@ -556,6 +559,20 @@ def rfdetr_kp_preview_trt_package() -> str:
             f"{RFDETR_KP_PREVIEW_TRT_PACKAGE_ENV} to a local flat package directory "
             "(class_names.txt, inference_config.json, trt_config.json, engine.plan, "
             "keypoints_metadata.json) or wait for Core-team Surface 2 upload."
+        )
+    return package_path
+
+
+@pytest.fixture(scope="module")
+def coin_counting_rfdetr_nano_executorch_cs_stretch_package() -> str:
+    package_path = os.getenv(RFDETR_NANO_EXECUTORCH_CS_STRETCH_PACKAGE_ENV)
+    if not package_path or not os.path.isdir(package_path):
+        pytest.skip(
+            "RF-DETR ExecuTorch package is not published. Set "
+            f"{RFDETR_NANO_EXECUTORCH_CS_STRETCH_PACKAGE_ENV} to a local package directory "
+            "(model_config.json, class_names.txt, inference_config.json, weights.pte and "
+            "weights.ptd if the program has one) exported from the coin-counting RF-DETR "
+            "Nano torch package."
         )
     return package_path
 
