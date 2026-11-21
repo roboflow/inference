@@ -1,3 +1,4 @@
+import math
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import torch
@@ -196,12 +197,49 @@ def filter_detections_by_class_confidence(
         thresholds.get(str(class_names[i] if i < len(class_names) else None), default)
         for i in range(int(confidences.shape[0]))
     ]
-    keep = confidences >= torch.as_tensor(
-        per_row_thresholds, dtype=confidences.dtype, device=confidences.device
+    cutoffs = _minimum_scores_for_thresholds(
+        per_row_thresholds, dtype=confidences.dtype
     )
+    comparison_device = confidences.device
+    if comparison_device.type == "mps" and confidences.is_floating_point():
+        # Metal may flush subnormal float comparisons to zero. Use the host
+        # comparison when a nonzero threshold needs that precision.
+        smallest_normal = torch.finfo(confidences.dtype).tiny
+        if any(
+            0 < abs(threshold) < smallest_normal for threshold in per_row_thresholds
+        ):
+            comparison_device = torch.device("cpu")
+
+    keep = (
+        confidences.to(device=comparison_device) >= cutoffs.to(device=comparison_device)
+    ).to(device=confidences.device)
     if bool(keep.all()):
         return prediction
     return take_prediction_by_mask(prediction, keep)
+
+
+def _minimum_scores_for_thresholds(
+    thresholds: List[float], *, dtype: torch.dtype
+) -> torch.Tensor:
+    """Compute the least representable score at or above each threshold."""
+    if not dtype.is_floating_point:
+        integral_cutoffs = torch.tensor(
+            [float(math.ceil(threshold)) for threshold in thresholds],
+            dtype=dtype,
+            device="cpu",
+        )
+        return integral_cutoffs
+
+    # Keep the configured precision on the host. The device sees one vector in
+    # the score dtype, including on devices without float64 support.
+    exact = torch.tensor(thresholds, dtype=torch.float64, device="cpu")
+    if dtype == exact.dtype:
+        return exact
+
+    rounded = exact.to(dtype=dtype)
+    rounded_up = torch.nextafter(rounded, torch.full_like(rounded, torch.inf))
+    cutoffs = torch.where(rounded < exact, rounded_up, rounded)
+    return cutoffs
 
 
 def _resolve_class_names(
