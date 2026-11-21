@@ -1,16 +1,13 @@
-# Official releases are orchestrated by publish.pypi.yml / release.image.yml.
 name: Build and Push GPU Slim Container
 permissions:
   contents: read
 on:
+  release:
+    types: [created]
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      custom_tag:
-        type: string
-        default: ""
-        description: Diagnostic tag suffix; stable release tags are reserved
       force_push:
         type: boolean
         description: "Do you want to push image after build?"
@@ -45,16 +42,6 @@ jobs:
         uses: actions/checkout@v6
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
-      - name: Determine diagnostic image tags
-        id: tags
-        uses: ./.github/actions/determine-tags
-        with:
-          official-release-only: 'true'
-          version: ${{ env.VERSION }}
-          base_image: roboflow/roboflow-inference-server-gpu-slim
-          token: ${{ github.token }}
-          force_push: ${{ inputs.force_push }}
-          custom_tag: ${{ inputs.custom_tag }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Build and Push
@@ -62,6 +49,6 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
-          tags: ${{ steps.tags.outputs.image_tags }}
+          tags: roboflow/roboflow-inference-server-gpu-slim:latest,roboflow/roboflow-inference-server-gpu-slim:${{env.VERSION}}
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.gpu.slim

@@ -34,12 +34,3 @@ paths:
   .github/workflows/maintainer-review-slack.yml:
     ignore:
       - 'unexpected key "queue" for "concurrency" section'
-
-  # GitHub enforces cache-mode with scoped tokens. This parser version predates
-  # the key; release contract tests require none and reject job overrides.
-  .github/workflows/publish.pypi.yml:
-    ignore:
-      - 'unexpected key "cache-mode" for "workflow" section'
-  .github/workflows/release.image.yml:
-    ignore:
-      - 'unexpected key "cache-mode" for "workflow" section'

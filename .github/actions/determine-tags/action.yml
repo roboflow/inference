@@ -1,9 +1,6 @@
 name: "Determine Image Tags"
 description: "Determine Docker image tags based on inputs, version, branch, and base image name"
 inputs:
-  official-release-only:
-    description: Reserve stable runtime tags for the official release workflow
-    default: "false"
   custom_tag:
     description: "Custom tag to use for the image (overrides VERSION)"
     required: false
@@ -36,7 +33,6 @@ runs:
         VERSION: ${{ inputs.version }}
         BASE_IMAGE: ${{ inputs.base_image }}
         TOKEN: ${{ inputs.token }}
-        OFFICIAL_RELEASE_ONLY: ${{ inputs.official-release-only }}
         FORCE_PUSH: ${{ inputs.force_push }}
         BRANCH: ${{ github.ref_name }}
         EVENT_NAME: ${{ github.event_name }}
@@ -60,11 +56,6 @@ runs:
         fi
         if [[ -n "$CUSTOM_TAG" && ! "$CUSTOM_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
           echo "Invalid custom tag." >&2
-          exit 1
-        fi
-
-        if [[ "${OFFICIAL_RELEASE_ONLY:-false}" == "true" && "$EVENT_NAME" == "workflow_dispatch" && "$FORCE_PUSH" == "true" && -z "$CUSTOM_TAG" && ! "$VERSION" =~ rc[0-9]+([.-]post[0-9]+)?$ ]]; then
-          echo "Stable runtime images are published by publish.pypi.yml after the official GitHub Release. Use a custom tag for a diagnostic build." >&2
           exit 1
         fi
 
