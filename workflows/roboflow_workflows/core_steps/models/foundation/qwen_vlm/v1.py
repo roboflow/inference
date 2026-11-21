@@ -603,8 +603,8 @@ class BlockManifest(OpenRouterBlockManifestMixin):
             "call OpenRouter directly without Roboflow billing."
         ),
         examples=["rf_key:account", "sk-or-...", "$inputs.openrouter_api_key"],
-        private=True,
         json_schema_extra={
+            "private": True,
             "relevant_for": {"backend": {"values": ["openrouter"], "required": False}},
         },
     )
