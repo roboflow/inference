@@ -13,6 +13,8 @@ from inference_models.configuration import (
     INFERENCE_MODELS_COREML_MODEL_CACHE_ENABLED,
     INFERENCE_MODELS_COREML_MODEL_FORMAT,
     OFFLINE_MODE,
+    ONNXRUNTIME_ALLOW_SPINNING,
+    ONNXRUNTIME_INTRA_OP_NUM_THREADS,
 )
 from inference_models.errors import (
     EnvironmentConfigurationError,
@@ -222,6 +224,15 @@ def _replace_coreml_provider(
     ]
 
 
+def default_onnx_session_options() -> onnxruntime.SessionOptions:
+    """Session options with the intra-op thread count and spinning set from the environment."""
+    session_options = onnxruntime.SessionOptions()
+    session_options.intra_op_num_threads = ONNXRUNTIME_INTRA_OP_NUM_THREADS
+    if not ONNXRUNTIME_ALLOW_SPINNING:
+        session_options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    return session_options
+
+
 def create_onnx_inference_session(
     model_path: str,
     providers: List[Union[str, tuple]],
@@ -238,6 +249,8 @@ def create_onnx_inference_session(
     `_create_session_with_coreml_cache`). CoreML options a caller configured, including their own
     `ModelCacheDirectory`, are passed to onnxruntime unchanged.
     """
+    if sess_options is None:
+        sess_options = default_onnx_session_options()
     coreml_options = _get_coreml_provider_options(providers=providers)
     if not isinstance(coreml_options, _PackageCoreMLProviderOptions):
         return onnxruntime.InferenceSession(

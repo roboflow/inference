@@ -4,6 +4,12 @@
 
 ### Added
 
+- `ONNXRUNTIME_INTRA_OP_NUM_THREADS` and `ONNXRUNTIME_ALLOW_SPINNING` set the
+  intra-op thread count and busy-waiting of every ONNX model session. By default
+  each session starts one thread per physical core and those threads spin, so
+  several models running on the CPU in one process oversubscribe it. Unset, both
+  keep onnxruntime's defaults. All ONNX model loaders now create their sessions
+  through `create_onnx_inference_session`, which applies them.
 - [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
   platform, single-label and multi-label, with their own default confidence
   (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the

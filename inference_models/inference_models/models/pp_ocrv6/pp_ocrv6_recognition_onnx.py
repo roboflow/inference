@@ -11,6 +11,7 @@ from inference_models.models.base.documents_parsing import TextOnlyOCRModel
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
     align_device_with_onnx_session,
+    create_onnx_inference_session,
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
@@ -92,8 +93,8 @@ class PPOCRv6RecognitionOnnx(TextOnlyOCRModel[torch.Tensor, torch.Tensor]):
         image_shape, characters = load_inference_config(
             config_path=model_package_content[PP_OCRV6_RECOGNITION_CONFIG_FILE]
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content[PP_OCRV6_RECOGNITION_MODEL_FILE],
+        session = create_onnx_inference_session(
+            model_path=model_package_content[PP_OCRV6_RECOGNITION_MODEL_FILE],
             providers=onnx_execution_providers,
         )
         device = align_device_with_onnx_session(session=session, device=device)

@@ -17,6 +17,7 @@ from inference_models.models.base.object_detection import (
     ObjectDetectionModel,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
+from inference_models.models.common.onnx import create_onnx_inference_session
 from inference_models.models.pp_ocrv6.pp_ocrv6_common import (
     PreProcessingMetadata,
     is_torch_input,
@@ -105,8 +106,8 @@ class PPOCRv6DetectionOnnx(
         config = load_detection_config(
             config_path=model_package_content[PP_OCRV6_DETECTION_CONFIG_FILE]
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content[PP_OCRV6_DETECTION_MODEL_FILE],
+        session = create_onnx_inference_session(
+            model_path=model_package_content[PP_OCRV6_DETECTION_MODEL_FILE],
             providers=onnx_execution_providers,
         )
         device = align_device_with_onnx_session(session=session, device=device)

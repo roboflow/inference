@@ -24,7 +24,10 @@ from inference_models.models.base.types import (
     RawPrediction,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
-from inference_models.models.common.onnx import run_onnx_session_with_batch_size_limit
+from inference_models.models.common.onnx import (
+    create_onnx_inference_session,
+    run_onnx_session_with_batch_size_limit,
+)
 from inference_models.models.common.roboflow.model_packages import (
     InferenceConfig,
     PreProcessingMetadata,
@@ -121,8 +124,8 @@ class DeepLabV3PlusForSemanticSegmentationOnnx(
                 )
             },
         )
-        session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["weights.onnx"],
+        session = create_onnx_inference_session(
+            model_path=model_package_content["weights.onnx"],
             providers=onnx_execution_providers,
         )
         device = align_device_with_onnx_session(session=session, device=device)
