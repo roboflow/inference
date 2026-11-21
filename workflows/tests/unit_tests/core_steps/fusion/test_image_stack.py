@@ -369,29 +369,26 @@ def test_clear_only_affects_targeted_camera() -> None:
 
 
 def test_stack_size_shrink_preserves_newest_frames() -> None:
+    """Keep the latest frames in order when a full stack is resized."""
     block = ImageStackBlockV1()
+    frames_added = []
 
-    # fill with stack_size=3
-    for i in range(3):
-        block.run(
-            image=_make_image(frame_number=i),
-            stack_size=3,
+    for value, stack_size in ((32, 4), (64, 4), (96, 4), (128, 4), (160, 3)):
+        result = block.run(
+            image=WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id="cam-1"),
+                numpy_image=np.full((64, 64, 3), value, dtype=np.uint8),
+            ),
+            stack_size=stack_size,
             resolution_width=1920,
             resolution_height=1080,
             clear=False,
         )
+        frames_added.append(result["frames"][0])
 
-    # shrink stack_size to 2 — preserves 2 newest + adds current frame
-    result = block.run(
-        image=_make_image(frame_number=10),
-        stack_size=2,
-        resolution_width=1920,
-        resolution_height=1080,
-        clear=False,
-    )
-    # deque(old_3_items, maxlen=2) keeps 2 newest, then appendleft adds 1 more
-    # but maxlen=2 evicts oldest → 2 frames
-    assert result["frames_count"] == 2
+    assert len(set(frames_added)) == 5
+    assert result["frames_count"] == 3
+    assert result["frames"] == [frames_added[4], frames_added[3], frames_added[2]]
 
 
 def test_stack_size_grow_preserves_all_frames() -> None:

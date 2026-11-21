@@ -1,7 +1,14 @@
+import cv2
 import numpy as np
 
-from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.env import (
+    ENABLE_TENSOR_DATA_REPRESENTATION,
+    WORKFLOWS_MAX_CONCURRENT_STEPS,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.tensor_input_utils import (
+    numpy_image_as_tensor,
+)
 
 IMAGE_STACK_WORKFLOW = {
     "version": "1.0",
@@ -77,6 +84,41 @@ def test_image_stack_evicts_oldest_when_full(
     # then — only 3 most recent kept
     assert result[0]["frames_count"] == 3
     assert len(result[0]["frames"]) == 3
+
+
+def test_image_stack_shrink_keeps_latest_frames() -> None:
+    """Changing the stack size through a selector keeps the current and prior frame."""
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=IMAGE_STACK_WORKFLOW,
+        init_parameters={},
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    try:
+        for value, stack_size in ((32, 3), (64, 3), (96, 3), (128, 2)):
+            image = np.full((64, 64, 3), value, dtype=np.uint8)
+            result = execution_engine.run(
+                runtime_parameters={
+                    "image": (
+                        numpy_image_as_tensor(image)
+                        if ENABLE_TENSOR_DATA_REPRESENTATION
+                        else image
+                    ),
+                    "stack_size": stack_size,
+                }
+            )[0]
+    finally:
+        execution_engine.close()
+
+    assert result["frames_count"] == 2
+    frame_values = []
+    for frame in result["frames"]:
+        decoded = cv2.imdecode(
+            np.frombuffer(frame, dtype=np.uint8), cv2.IMREAD_GRAYSCALE
+        )
+        assert decoded is not None
+        frame_values.append(int(decoded[32, 32]))
+    assert frame_values == [128, 96]
 
 
 def test_image_stack_clear_resets_buffer(
