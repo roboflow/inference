@@ -11,6 +11,7 @@ from inference.core.entities.requests.action_recognition import (
     ActionRecognitionInferenceRequest,
     InferenceRequestVideo,
 )
+from inference_models.errors import ModelInputError
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction,
     VideoSampling,
@@ -576,3 +577,54 @@ def test_shared_loader_honors_vjepa_enablement(
                 countinference=None,
                 service_secret=None,
             )
+
+
+class _PromptRecordingModel(_FakeModel):
+    supports_prompt = True
+
+    def infer(self, frames, class_names=None, fps=None, **kwargs):
+        self.calls.append(kwargs)
+        return []
+
+
+def _prompt_request(prompt):
+    return ActionRecognitionInferenceRequest(
+        model_id="workspace/model",
+        video=InferenceRequestVideo(type="base64", value="Zm9v"),
+        prompt=prompt,
+    )
+
+
+def test_a_prompt_reaches_a_model_that_supports_one() -> None:
+    model = _PromptRecordingModel(responses=[])
+    with _clip(frame_count=1000, source_fps=10.0):
+        _adapter(model).infer_from_request(_prompt_request("List the lifts."))
+
+    assert model.calls
+    assert all(call["prompt"] == "List the lifts." for call in model.calls)
+
+
+def test_no_prompt_sends_no_prompt_to_the_model() -> None:
+    model = _PromptRecordingModel(responses=[])
+    with _clip(frame_count=1000, source_fps=10.0):
+        _adapter(model).infer_from_request(_request())
+
+    assert model.calls
+    assert all("prompt" not in call for call in model.calls)
+
+
+def test_a_prompt_is_refused_by_a_model_that_supports_none() -> None:
+    model = _FakeModel(responses=[[]], class_names=["walk", "run"])
+    model.supports_prompt = False
+    with _clip(frame_count=1000, source_fps=10.0), pytest.raises(
+        ModelInputError, match="does not take a prompt"
+    ):
+        _adapter(model).infer_from_request(_prompt_request("List the lifts."))
+
+    assert model.calls == []
+
+
+@pytest.mark.parametrize("prompt", ["", " \n"])
+def test_a_blank_prompt_fails_request_validation(prompt) -> None:
+    with pytest.raises(ValueError, match="prompt must not be blank"):
+        _prompt_request(prompt)

@@ -34,6 +34,7 @@ from inference_server.legacy.action_recognition import (
     ACTION_RECOGNITION_TASK,
     classify_video,
     ensure_action_recognition_route,
+    ensure_route_takes_prompt,
 )
 from inference_server.legacy.active_learning_registration import register_inference
 from inference_server.legacy.bridge import (
@@ -884,6 +885,9 @@ async def infer_action_recognition(
         return orjson_response(_stub_response(inference_request, route))
 
     ensure_action_recognition_route(inference_request.model_id, route)
+    ensure_route_takes_prompt(
+        inference_request.model_id, route, inference_request.prompt
+    )
     http_response = await _classify_and_repack(inference_request, bridge, route)
 
     return http_response
@@ -902,6 +906,7 @@ async def _classify_and_repack(
         video_type=inference_request.video.type,
         video_value=inference_request.video.value,
         class_filter=inference_request.class_filter or None,
+        prompt=inference_request.prompt,
     )
     response.time = time.perf_counter() - started
     response.inference_id = inference_request.id
@@ -1026,6 +1031,13 @@ async def legacy_infer_from_request(
             "fine-tuned model's classes to report."
         ),
     ),
+    prompt: Optional[str] = Query(
+        None,
+        description=(
+            "Action recognition only: replaces the instruction zero-shot "
+            "Cosmos 3 is asked with. Any other model rejects it."
+        ),
+    ),
     labels: Optional[bool] = Query(
         False,
         description="If true, labels will be include in any inference visualization.",
@@ -1109,6 +1121,7 @@ async def legacy_infer_from_request(
     )
     bridge.record_request(route, model_id, request.scope["path"])
     if route.task_type == ACTION_RECOGNITION_TASK and not route.is_stub:
+        ensure_route_takes_prompt(model_id, route, prompt)
         inference_request = ActionRecognitionInferenceRequest(
             api_key=resolved_key,
             model_id=model_id,
@@ -1116,6 +1129,7 @@ async def legacy_infer_from_request(
                 type=request_image.type, value=request_image.value
             ),
             class_filter=_parse_legacy_class_filter(class_filter),
+            prompt=prompt,
         )
         http_response = await _classify_and_repack(inference_request, bridge, route)
 

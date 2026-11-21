@@ -4,6 +4,11 @@
 
 ### Added
 
+- `Cosmos3EdgeActionRecognition.infer(..., prompt=...)` replaces the zero-shot
+  instruction ("List all action segments in the video."). The answer format block
+  is always appended, so the output still parses into spans. A fine-tuned model
+  raises `ModelInputError` when given a prompt. `ActionRecognitionModel` gains
+  `supports_prompt` (default `False`).
 - [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
   platform, single-label and multi-label, with their own default confidence
   (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the

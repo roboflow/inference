@@ -99,6 +99,24 @@ answers = model.prompt(images=image, prompt="your custom question", max_new_toke
 print(f"Answer: {answers[0]}")
 ```
 
+### Zero-shot Action Recognition Prompt
+
+Over HTTP, `/infer/action_recognition` with `nvidia/cosmos-3-edge-action-recognition` asks the model "List all action segments in the video." and reads back a list of timed captions. An optional `prompt` in the request replaces that instruction; the answer format is always appended, so the response keeps its shape. The model was trained on the default phrasing, so a reworded instruction can return fewer, coarser segments.
+
+```python
+from inference_sdk import InferenceHTTPClient
+
+client = InferenceHTTPClient(api_url="http://localhost:9001", api_key="your_roboflow_api_key")
+result = client.infer_on_video(
+    "https://example.com/clip.mp4",
+    model_id="nvidia/cosmos-3-edge-action-recognition",
+    prompt="List every time a person picks up a box.",
+)
+print(result["timeline"])
+```
+
+A fine-tuned Cosmos 3 model and any other action recognition model reject a `prompt` with HTTP 400.
+
 ## Environment Variables
 
 | Variable | Default | Description |

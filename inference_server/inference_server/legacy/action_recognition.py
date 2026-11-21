@@ -32,6 +32,7 @@ from inference_server.legacy.video import (
 ACTION_RECOGNITION_TASK = "action-recognition"
 ACTION_RECOGNITION_ACTION = "infer"
 _COSMOS_REASONER_CLASS = "Cosmos3EdgeReasoner"
+_COSMOS_ACTION_RECOGNITION_CLASS = "Cosmos3EdgeActionRecognition"
 
 
 def ensure_action_recognition_route(model_id: str, route: Route) -> None:
@@ -59,6 +60,41 @@ def ensure_action_recognition_route(model_id: str, route: Route) -> None:
     raise LegacyHTTPError(400, f"Model {model_id!r} is a {route.task_type} model.")
 
 
+def ensure_route_takes_prompt(
+    model_id: str, route: Route, prompt: Optional[str]
+) -> None:
+    """Refuse a prompt the model behind ``route`` would not answer under.
+
+    Only zero-shot Cosmos 3 takes one. A model with its own class list was
+    trained under a fixed prompt, and other architectures read no text.
+
+    Args:
+        model_id: Model id as the caller named it, for the message.
+        route: Resolved route of an action recognition model.
+        prompt: The caller's prompt, or ``None`` when none was sent.
+
+    Raises:
+        LegacyHTTPError: 400 for a blank prompt, or for a prompt sent to a
+            model that is not zero-shot Cosmos 3.
+    """
+    if prompt is None:
+        return
+    if not prompt.strip():
+        raise LegacyHTTPError(400, "prompt must not be blank.")
+    if route.model_class_name != _COSMOS_ACTION_RECOGNITION_CLASS:
+        raise LegacyHTTPError(
+            400,
+            f"Model {model_id!r} does not take a prompt; only zero-shot "
+            f"Cosmos 3 action recognition does.",
+        )
+    if route.class_names:
+        raise LegacyHTTPError(
+            400,
+            f"Model {model_id!r} is a fine-tuned Cosmos 3 model, which answers "
+            f"as trained only under its training prompt and does not take one.",
+        )
+
+
 async def classify_video(
     route: Route,
     api_key: Optional[str],
@@ -67,6 +103,7 @@ async def classify_video(
     video_type: str,
     video_value: Any,
     class_filter: Optional[List[str]],
+    prompt: Optional[str] = None,
 ) -> ActionRecognitionInferenceResponse:
     """Classify the actions in a clip with the model behind ``route``.
 
@@ -89,6 +126,8 @@ async def classify_video(
         video_value: The URL, or the base64 text of the clip.
         class_filter: Classes a fine-tuned model should report; ``None`` for
             all of them.
+        prompt: Instruction for zero-shot Cosmos 3, sent to the model only
+            when given; ``None`` keeps the model's own.
 
     Returns:
         The classified ranges covering the clip, sorted by start frame and
@@ -127,15 +166,15 @@ async def classify_video(
                     continue
 
                 windows_classified += 1
+                params = {
+                    "frames": frames,
+                    "class_names": class_filter,
+                    "fps": window.sample_fps,
+                }
+                if prompt is not None:
+                    params["prompt"] = prompt
                 segments = await bridge.infer_params_only(
-                    route,
-                    api_key,
-                    ACTION_RECOGNITION_ACTION,
-                    {
-                        "frames": frames,
-                        "class_names": class_filter,
-                        "fps": window.sample_fps,
-                    },
+                    route, api_key, ACTION_RECOGNITION_ACTION, params
                 )
                 merge_window_segments(
                     timeline=timeline,
