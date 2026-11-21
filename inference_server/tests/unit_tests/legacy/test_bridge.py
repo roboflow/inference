@@ -1610,6 +1610,19 @@ async def test_ensure_loaded_not_loaded_code_is_not_ready_with_retry_after(resul
 
 
 @pytest.mark.asyncio
+async def test_ensure_loaded_server_full_is_not_ready_without_polling(monkeypatch):
+    monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_POLL_INTERVAL_S", 0)
+    gateway = FakeGateway()
+    gateway.ensure_results = [("server_full", 1)] * 5
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await LegacyModelBridge(gateway).ensure_loaded(_route(), None)
+
+    _assert_not_ready(exc.value)
+    assert sum(1 for c in gateway.calls if c[0] == "ensure_loaded") == 1
+
+
+@pytest.mark.asyncio
 async def test_ensure_loaded_deadline_is_not_ready_with_retry_after(monkeypatch):
     monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_POLL_INTERVAL_S", 0)
     monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_TIMEOUT_S", 0)
@@ -1648,6 +1661,23 @@ async def test_explicit_load_answered_busy_is_not_ready_with_retry_after(fake_st
             return ("load_timeout", 1)
 
     bridge = LegacyModelBridge(_BusyGateway())
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")
+
+    _assert_not_ready(exc.value)
+    assert bridge._pending_requests == {"ds/1": ({"/model/add"}, set())}
+
+
+@pytest.mark.asyncio
+async def test_explicit_load_server_full_is_not_ready_with_retry_after(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    class _FullGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            return ("server_full", 1)
+
+    bridge = LegacyModelBridge(_FullGateway())
 
     with pytest.raises(LegacyHTTPError) as exc:
         await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")
