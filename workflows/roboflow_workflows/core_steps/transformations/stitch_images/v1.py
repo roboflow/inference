@@ -257,13 +257,12 @@ def stitch_images(
     [xmin, ymin] = np.int32(warped_image_corners.min(axis=0).ravel())
     [xmax, ymax] = np.int32(warped_image_corners.max(axis=0).ravel())
 
+    # Include the unwarped image, whose top-left corner is the origin.
+    xmin, ymin = min(xmin, 0), min(ymin, 0)
     xmax = max(xmax, w1)
     ymax = max(ymax, h1)
 
     translation_dist = [-xmin, -ymin]
-
-    if translation_dist[0] < 0 or translation_dist[1] < 0:
-        translation_dist = [max(0, translation_dist[0]), max(0, translation_dist[1])]
 
     H_translation = np.array(
         [[1, 0, translation_dist[0]], [0, 1, translation_dist[1]], [0, 0, 1]]
