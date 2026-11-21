@@ -16,9 +16,15 @@
   same code. Other subclasses raise `ModelImplementationNotFoundError`.
 - `ActionRecognitionModel.end_exclusive_spans` states whether predictions use
   half-open spans. V-JEPA 2.1 sets it.
+
+## `0.39.10`
+
+### Added
+
 - [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
   platform, single-label and multi-label, with their own default confidence
-  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). ONNX and PyTorch packages
+  also support image embeddings. See the
   [model page](models/convnext-classification.md).
 - The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
   `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
