@@ -1,85 +1,59 @@
-name: Test package install - inference-gpu
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
+name: Verify retained RC runtime wheels
+on: workflow_dispatch
 permissions:
-  id-token: write
   contents: read
-
-concurrency:
-  # One live run per workflow per ref. A newer push to the same PR, or a newer
-  # merge to main, cancels the older run. Manual dispatches get their own group
-  # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
-  # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
-
+  actions: read
 jobs:
-  call_is_mergeable:
-    uses: ./.github/workflows/check_if_branch_is_mergeable.yml
-    secrets: inherit
-  build:
-    needs: call_is_mergeable
-    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
+  smoke:
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: 15
+    timeout-minutes: 90
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v6
-      - name: 🐍 Set up Python 3.10 to create wheels
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v6
         with:
-          python-version: "3.10"
-      - name: 🛞 Create Wheels
-        run: |
-          make create_wheels
-      - name: 🐍 Set up Python ${{ matrix.python-version }} to test package install process
-        uses: actions/setup-python@v6
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44840889334
+          github-token: ${{ github.token }}
+          name: runtime-wheels-4
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44840889334
+          github-token: ${{ github.token }}
+          name: release-prepared-4
+          path: release-state
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
-      - name: 🔧 Install CUDA development toolkit
-        if: ${{ (github.event.inputs.extras == '' || github.event.inputs.extras == matrix.extras.marker) && (github.event.inputs.python_version == '' || github.event.inputs.python_version == matrix.python-version) }}
+          version: '0.12.21'
+          enable-cache: false
+      - run: uv pip install --system click==8.1.8 packaging==25.0
+      - name: Install CUDA build dependencies for PyCUDA
         run: |
-          mkdir -p ~/apt-cache
-
-          sudo mkdir -p /var/cache/apt/archives
-          sudo cp -r ~/apt-cache/* /var/cache/apt/archives/ 2>/dev/null || true
-
           sudo apt-get update
-          sudo apt-get install -y \
-              cuda-cudart-dev-12-5 \
-              cuda-nvcc-12-5 \
-              cuda-profiler-api-12-5 \
-              libcurand-dev-12-5 \
-              libvips-dev
-
-          sudo cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
-          sudo chown -R $(whoami):$(whoami) ~/apt-cache
-      - name: 📦 Installing `inference` package...
+          sudo apt-get install -y --no-install-recommends \
+            cuda-cudart-dev-12-5 cuda-nvcc-12-5 cuda-profiler-api-12-5 libcurand-dev-12-5 libvips-dev
+      - name: Install and smoke-test each exact runtime wheel
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+          CUDA_ROOT: /usr/local/cuda-12.5
         run: |
-          export CUDA_HOME=/usr/local/cuda-12.5
-          export PATH=/usr/local/cuda-12.5/bin:$PATH
-          export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
-          export CPATH=/usr/local/cuda-12.5/targets/x86_64-linux/include:$CPATH
-          export LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LIBRARY_PATH
-          pip install --find-links dist/ ./dist/inference_gpu-*-py3-none-any.whl ./dist/inference_sdk-*-py3-none-any.whl ./dist/inference_models-*-py3-none-any.whl "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
-          # Dependencies were resolved above; now replace any same-version
-          # build-environment installs with the exact checkout artifacts.
-          pip install --force-reinstall --no-deps ./dist/roboflow_workflows-*.whl ./dist/inference_sdk-*.whl ./dist/inference_models-*.whl ./dist/streamvision-*.whl
-      - name: 🧪 Testing package installation
-        working-directory: "/"
-        run: |
-          python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model; import psycopg; assert psycopg.pq.__impl__ == 'binary'"
+          export PATH="$CUDA_ROOT/bin:$PATH"
+          export CPATH="$CUDA_ROOT/include${CPATH:+:$CPATH}"
+          export LIBRARY_PATH="$CUDA_ROOT/lib64:$CUDA_ROOT/lib64/stubs${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          export LD_LIBRARY_PATH="$CUDA_ROOT/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          python .release/pypi/smoke.py dist/pypi --python "$PYTHON_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-${{ matrix.python-version }}-${{ github.run_attempt }}
+          path: release-state/smoke/
+          retention-days: 90
+          if-no-files-found: error
