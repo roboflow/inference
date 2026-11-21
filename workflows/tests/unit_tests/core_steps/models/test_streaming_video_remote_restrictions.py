@@ -1,8 +1,10 @@
 """The REMOTE step-execution prohibition of the stateful streaming-video blocks.
 
-SAM2 Video, SAM3 Video and Action Recognition keep per-video state in their own
-block instance. Their `run()` raises `NotImplementedError` before loading a
-model whenever the step execution mode is REMOTE - on every runtime, a
+SAM2 Video and SAM3 Video keep per-video state in their own block instance.
+Action Recognition keeps its state too, but sends only each window's model
+call to a server, so it runs under REMOTE and is not covered here. The two
+video blocks' `run()` raises `NotImplementedError` before loading a model
+whenever the step execution mode is REMOTE - on every runtime, a
 self-hosted GPU included. These tests pin that the declarations say so:
 
 * every numpy / tensor variant declares a HARD restriction whose ONLY
@@ -38,12 +40,6 @@ from roboflow_workflows.core_steps.models.foundation.segment_anything3_video imp
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     SAM3_CONCEPT_VIDEO_MODEL_ID,
 )
-from roboflow_workflows.core_steps.models.roboflow.action_recognition import (
-    v1 as action_recognition_v1,
-)
-from roboflow_workflows.core_steps.models.roboflow.action_recognition import (
-    v1_tensor as action_recognition_v1_tensor,
-)
 from roboflow_workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
@@ -77,7 +73,6 @@ from tests.unit_tests.workload_declaration_helpers import (
 REMOTE_CODE = "remote_step_execution_not_supported"
 SAM2_VIDEO = "roboflow_core/segment_anything_2_video@v1"
 SAM3_VIDEO = "roboflow_core/sam3_video@v1"
-ACTION_RECOGNITION = "roboflow_core/roboflow_action_recognition_model@v1"
 
 # Every code these blocks declare, in the canonical discovery order. The three
 # pre-existing caveats must survive next to the new one.
@@ -126,7 +121,6 @@ _SAM3_RUN_ARGUMENTS = {
     "model_id": SAM3_CONCEPT_VIDEO_MODEL_ID,
     "threshold": 0.5,
 }
-_ACTION_RECOGNITION_RUN_ARGUMENTS = {"model_id": "my-actions/2"}
 
 VARIANTS = {
     "sam2_video_numpy": _Variant(
@@ -161,22 +155,6 @@ VARIANTS = {
         run_arguments=_SAM3_RUN_ARGUMENTS,
         takes_platform_client=True,
     ),
-    "action_recognition_numpy": _Variant(
-        block_type=ACTION_RECOGNITION,
-        manifest_class=action_recognition_v1.BlockManifest,
-        block_class=action_recognition_v1.ActionRecognitionModelBlockV1,
-        manifest_fields={"model_id": "my-actions/2"},
-        run_arguments=_ACTION_RECOGNITION_RUN_ARGUMENTS,
-        takes_platform_client=False,
-    ),
-    "action_recognition_tensor": _Variant(
-        block_type=ACTION_RECOGNITION,
-        manifest_class=action_recognition_v1_tensor.BlockManifest,
-        block_class=action_recognition_v1_tensor.ActionRecognitionModelBlockV1,
-        manifest_fields={"model_id": "my-actions/2"},
-        run_arguments=_ACTION_RECOGNITION_RUN_ARGUMENTS,
-        takes_platform_client=False,
-    ),
 }
 
 variant_parameters = pytest.mark.parametrize(
@@ -187,10 +165,9 @@ variant_parameters = pytest.mark.parametrize(
 class _UntouchableModelsProvider:
     """A models provider that fails the test on any use.
 
-    Loading a model needs the provider (the artifact cache for SAM2 / SAM3,
-    `load_action_recognition_model()` for action recognition). Every attribute
-    request is recorded and raises, so a model load attempt cannot pass as the
-    expected `NotImplementedError`.
+    Loading a model needs the provider (the artifact cache for SAM2 / SAM3).
+    Every attribute request is recorded and raises, so a model load attempt
+    cannot pass as the expected `NotImplementedError`.
     """
 
     def __init__(self) -> None:
@@ -451,7 +428,7 @@ def test_the_legacy_declaration_carries_the_same_remote_prohibition(
 
 
 def test_workload_introspection_reports_the_remote_prohibition() -> None:
-    # given - the three families, as registered in this process
+    # given - the two families, as registered in this process
     definition = {
         "version": "1.0",
         "inputs": [{"type": "WorkflowImage", "name": "image"}],
@@ -463,12 +440,6 @@ def test_workload_introspection_reports_the_remote_prohibition() -> None:
                 "images": "$inputs.image",
                 "class_names": ["person"],
             },
-            {
-                "type": ACTION_RECOGNITION,
-                "name": "actions",
-                "images": "$inputs.image",
-                "model_id": "my-actions/2",
-            },
         ],
         "outputs": [],
     }
@@ -478,7 +449,7 @@ def test_workload_introspection_reports_the_remote_prohibition() -> None:
 
     # then
     steps = {step.node_id: step for step in introspection.steps}
-    for node_id in ("$steps.sam2", "$steps.sam3", "$steps.actions"):
+    for node_id in ("$steps.sam2", "$steps.sam3"):
         restrictions = steps[node_id].restrictions
         assert restrictions.complete is True, node_id
         assert [item.code for item in restrictions.items] == EXPECTED_CODES, node_id

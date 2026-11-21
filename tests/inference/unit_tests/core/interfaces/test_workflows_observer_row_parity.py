@@ -11,6 +11,7 @@ frozen clock, and compares the kwargs the collector was handed.
 frozen 0.25s to the serverless minimum in one arm and not the other.
 """
 
+import time
 from types import SimpleNamespace
 from unittest import mock
 
@@ -37,8 +38,13 @@ def _deterministic_collector():
 
 def _record_once(call) -> dict:
     """Run `call` with a frozen clock and return the kwargs the collector got."""
+    # Freeze only the collector's clock: patching global `time.time` lets
+    # MemoryCache expiry threads left by earlier tests consume the readings.
+    collector_clock = mock.Mock(
+        wraps=time, time=mock.Mock(side_effect=list(FROZEN_CLOCK))
+    )
     with mock.patch.object(
-        collector_module.time, "time", side_effect=list(FROZEN_CLOCK)
+        collector_module, "time", collector_clock
     ), mock.patch.object(usage_collector, "record_usage") as record_usage:
         call()
     return record_usage.call_args.kwargs
