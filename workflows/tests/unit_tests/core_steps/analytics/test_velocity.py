@@ -332,6 +332,50 @@ def test_velocity_block_missing_tracker_id() -> None:
         )
 
 
+@pytest.mark.parametrize("empty_tracker_ids", [None, np.empty(0, dtype=int)])
+def test_velocity_empty_frame_preserves_track_history(
+    empty_tracker_ids: np.ndarray | None,
+) -> None:
+    """Accept empty frames with either tracker ID representation."""
+    block = VelocityBlockV1()
+    frames = [
+        sv.Detections(
+            xyxy=np.array([[0.0, 0.0, 10.0, 10.0]]), tracker_id=np.array([1])
+        ),
+        sv.Detections(xyxy=np.empty((0, 4)), tracker_id=empty_tracker_ids),
+        sv.Detections(
+            xyxy=np.array([[20.0, 0.0, 30.0, 10.0]]), tracker_id=np.array([1])
+        ),
+    ]
+    outputs = []
+    for frame_number, detections in enumerate(frames, start=1):
+        result = block.run(
+            image=WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id="image"),
+                numpy_image=np.zeros((40, 40, 3), dtype=np.uint8),
+                video_metadata=VideoMetadata(
+                    video_identifier="video",
+                    frame_number=frame_number,
+                    frame_timestamp=datetime.datetime.fromtimestamp(
+                        frame_number, tz=datetime.timezone.utc
+                    ),
+                    fps=1.0,
+                    comes_from_video_file=True,
+                ),
+            ),
+            detections=detections,
+            smoothing_alpha=0.5,
+            pixels_per_meter=2.0,
+        )
+        outputs.append(result["velocity_detections"])
+
+    assert len(outputs[1]) == 0
+    assert outputs[1].data["velocity"].shape == (0, 2)
+    assert outputs[1].data["speed"].shape == (0,)
+    np.testing.assert_array_equal(outputs[2].data["velocity"], [[5.0, 0.0]])
+    np.testing.assert_array_equal(outputs[2].data["smoothed_speed"], [2.5])
+
+
 def test_velocity_block_invalid_smoothing_alpha() -> None:
     # given
     velocity_block = VelocityBlockV1()
