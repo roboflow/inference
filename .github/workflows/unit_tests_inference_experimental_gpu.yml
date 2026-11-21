@@ -4,12 +4,6 @@ permissions:
   contents: read
 
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   push:
     branches: [main]
   workflow_dispatch:
@@ -19,20 +13,17 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-unit_tests_inference_experimental_gpu-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   unit-tests-inference-models-gpu:
     name: trt_extras:3.12
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: ${{ inputs.release_source != '' && 47 || 15 }}
+    timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
-          persist-credentials: false
       - name: 📦 Cache Python packages
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -80,24 +71,12 @@ jobs:
           python -m pip install uv
           python -m uv venv
           python -m uv pip install -e .[test,trt10,torch-cu124] --python .venv
-      - name: "🧪 Run GPU-only TRT unit tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 17 || 5 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '300'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          working-directory: inference_models
-          command: |
-            source .venv/bin/activate
-            export CUDA_HOME=/usr/local/cuda-12.5
-            export PATH=/usr/local/cuda-12.5/bin:$PATH
-            export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
-            python -m pytest -v -m "gpu_only and trt_extras" tests/unit_tests
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-unit_tests_inference_experimental_gpu-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+      - name: 🧪 Run GPU-only TRT unit tests
+        working-directory: inference_models
+        timeout-minutes: 5
+        run: |
+          source .venv/bin/activate
+          export CUDA_HOME=/usr/local/cuda-12.5
+          export PATH=/usr/local/cuda-12.5/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-12.5/targets/x86_64-linux/lib64:$LD_LIBRARY_PATH
+          python -m pytest -v -m "gpu_only and trt_extras" tests/unit_tests
