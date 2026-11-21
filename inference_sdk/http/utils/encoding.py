@@ -34,7 +34,7 @@ def pillow_image_to_base64_jpeg(image: Image.Image) -> str:
     Returns:
         The base64 JPEG string.
     """
-    if image.mode == "I;16":
+    if image.mode in ("I;16", "I;16L", "I;16B"):
         # Scale unsigned 16-bit to 8-bit with a right shift instead of clipping.
         image = Image.fromarray((np.asarray(image) >> 8).astype(np.uint8), mode="L")
     elif image.mode in ("RGBA", "LA", "P", "PA"):

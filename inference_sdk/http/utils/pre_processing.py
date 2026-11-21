@@ -42,7 +42,7 @@ def resize_pillow_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[Image.Image, Optional[float]]:
-    """Resize a Pillow image.
+    """Resize a Pillow image, preserving unsigned 16-bit pixel values.
 
     Args:
         image: The image to resize.
@@ -63,9 +63,16 @@ def resize_pillow_image(
     )
     if scaling_ratio is None:
         return image, None
+
+    if image.mode in ("I;16L", "I;16B"):
+        # Normalize byte order before Pillow's unsigned 16-bit resampling.
+        image = Image.fromarray(np.asarray(image).astype(np.uint16))
+
     new_width = round(scaling_ratio * width)
     new_height = round(scaling_ratio * height)
-    return image.resize(size=(new_width, new_height)), scaling_ratio
+    resized_image = image.resize(size=(new_width, new_height))
+
+    return resized_image, scaling_ratio
 
 
 def determine_scaling_aspect_ratio(
