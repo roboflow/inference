@@ -34,6 +34,10 @@ EXPECTED_MODEL_NOT_FOUND_ERROR_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST: 403,
     PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST: 403,
 }
+SERVERLESS_ENVIRONMENTS = {
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS,
+}
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -813,3 +817,60 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
     assert isinstance(
         response["visualization"], np.ndarray
     ), "Expected np array with visualisation as response"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_image_embeddings_route_when_no_image_given(
+    classification_service_url: str,
+    auth_mode: str,
+) -> None:
+    # when
+    response = requests.post(
+        f"{classification_service_url}/infer/embeddings",
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {"api_key": ROBOFLOW_API_KEY},
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
+        json={"model_id": "resnet18", "image": []},
+    )
+
+    # then
+    assert (
+        response.status_code == 422
+    ), "Expected the embeddings route to reject a request without images"
+    assert (
+        "At least one image is required" in response.text
+    ), "Expected the error to come from the embeddings route, not the legacy model route"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_image_embeddings_route_when_too_many_images_given(
+    platform_environment: PlatformEnvironment,
+    classification_service_url: str,
+    auth_mode: str,
+) -> None:
+    if platform_environment not in SERVERLESS_ENVIRONMENTS:
+        pytest.skip("Only GCP Serverless limits how many images one request embeds")
+
+    # when
+    response = requests.post(
+        f"{classification_service_url}/infer/embeddings",
+        params=without_api_key_in_header_mode(
+            auth_mode,
+            {"api_key": ROBOFLOW_API_KEY},
+        ),
+        headers=api_key_auth_headers(auth_mode, ROBOFLOW_API_KEY),
+        json={
+            "model_id": "resnet18",
+            "image": [{"type": "url", "value": "https://example.invalid/a.jpg"}] * 1000,
+        },
+    )
+
+    # then
+    assert (
+        response.status_code == 413
+    ), "Expected the embeddings route to refuse a list above the Serverless limit"
+    assert (
+        "The maximum number of images that can be embedded at once is" in response.text
+    ), "Expected the error to name the limit"

@@ -75,6 +75,20 @@ def deserialize_image_kind(
     *,
     image_codec: Optional[ImageCodec] = None,
 ) -> WorkflowImageData:
+    """Deserialize a workflow image through its host's image codec.
+
+    Args:
+        parameter (str): The runtime input name, used as the default parent ID.
+        image (Any): Image pixels, an image declaration, or an image reference.
+        prevent_local_images_loading (bool): Whether to refuse local file inputs.
+        image_codec (Optional[ImageCodec]): Host codec; defaults to the registry.
+
+    Returns:
+        WorkflowImageData: Image pixels with their parent and video metadata.
+
+    Raises:
+        RuntimeInputError: If the input cannot be decoded as a workflow image.
+    """
     if isinstance(image, WorkflowImageData):
         return image
 
@@ -111,6 +125,24 @@ def deserialize_image_kind(
             video_metadata=video_metadata,
         )
     try:
+        if (
+            is_image_dict
+            and isinstance(image.get("type"), str)
+            and image["type"].lower() == "npy"
+        ):
+            codec = image_codec if image_codec is not None else get_image_codec()
+            pixels, is_bgr = codec.load_image(image)
+            if not is_bgr:
+                pixels = cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
+
+            # NPY base64 is not an encoded JPEG/PNG. Let WorkflowImageData
+            # produce its normal base64 image from pixels when requested.
+            return WorkflowImageData(
+                parent_metadata=parent_metadata,
+                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+                numpy_image=pixels,
+                video_metadata=video_metadata,
+            )
         if is_image_dict:
             image = image["value"]
         if isinstance(image, str):

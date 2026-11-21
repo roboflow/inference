@@ -204,6 +204,7 @@ definition; the last column is the new reader.
 | `PERCEPTION_ENCODER_VERSION_ID` | `env.py:245` | `configuration.py:175` | `PE-Core-L14-336` |
 | `OWLV2_VERSION_ID` | `env.py:259` | `configuration.py:184` | `owlv2-large-patch14-ensemble` |
 | `CLIP_MAX_BATCH_SIZE` | `env.py:292` | `configuration.py:173` | `8` |
+| `SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE` | `env.py:296` | `configuration.py:382` | `8` |
 | `CLASS_AGNOSTIC_NMS` | `env.py:295-299` | `configuration.py:185`; `streamvision/stream/configuration.py:29,34` | `False` |
 | `CORE_MODELS_ENABLED` | `env.py:307` | `configuration.py:195` | `True` |
 | `CORE_MODEL_CLIP_ENABLED` | `env.py:310` | `configuration.py:196` | `True` |
@@ -545,7 +546,7 @@ No new package reads these. They never get an alias or a default row.
 |---|---|---|
 | `ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES` | `env.py:413` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
 | `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES` | `env.py:410` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
-| `ALLOW_NUMPY_INPUT` | `env.py:48` | legacy pickled-numpy input type; the new server has no numpy input |
+| `ALLOW_NUMPY_INPUT` | `env.py:48` | none: pickled `numpy` input was removed from both servers; the flag only changes the legacy error text. Use `npy` |
 | `ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS` | `env.py:732` | legacy models-cache auth; unread by any new package (hosting summary) |
 | `API_DEBUG` | `env.py:219` | legacy debug flag with no consumer in the new stack |
 | `ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1335` | legacy assume-identity headers; unread (hosting summary) |

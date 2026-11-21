@@ -38,6 +38,7 @@ nav:
   - "Workflows": "https://docs.roboflow.com/workflows"
   - "Classifier Embeddings": workflows/classifier_embeddings.md
   - "Databricks SQL Image Source": workflows/databricks_sql_image_source.md
+  - "NumPy Image Inputs": server_configuration/numpy_image_inputs.md
   - "Reference": "https://docs.roboflow.com/reference/inference/choosing-the-right-tool"
   - "Changelog": "https://github.com/roboflow/inference/releases"
 
