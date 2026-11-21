@@ -39,13 +39,16 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
-- Action Recognition Model gains an `analyzed_until_frame` output: the source
-  index of the last frame a successful classification covered, null until the
-  first one. A consumer can tell "no action" from "not analyzed yet". Failed and
-  skipped windows do not advance it.
-- Action Recognition Model runs one extra classification on the last frame of a
-  video file that reports its frame count. The timeline on that frame covers
-  the tail of the clip, and a clip shorter than one stride now gets a result.
+- Action Recognition Model reports the inclusive end of the latest successful
+  window in `analyzed_until_frame`, or null before the first success. Cosmos
+  reports the last sampled source frame. Models that use the observed window
+  duration report the source frame that triggered the call. Earlier failed or
+  skipped windows can leave gaps before the mark.
+- Action Recognition Model can classify the buffered samples on the last frame
+  of a video file that reports its frame count. A clip shorter than one stride
+  can get a result if enough samples are buffered.
+  When the file ends between scheduled calls, the final window can overlap
+  the preceding window even when the configured overlap is zero.
   Live streams and files without a usable frame count behave as before, and
   so does a file whose last frame the source drops (for example with
   `max_fps`).
