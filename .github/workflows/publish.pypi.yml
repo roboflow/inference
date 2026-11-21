@@ -469,7 +469,7 @@ jobs:
 
   smoke:
     needs: [prepare, commit_locks, build_runtime]
-    runs-on: ubuntu-latest
+    runs-on: Roboflow-GPU-VM-Runner
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -496,10 +496,21 @@ jobs:
           version: '0.12.21'
           enable-cache: false
       - run: uv pip install --system click==8.1.8 packaging==25.0
+      - name: Install CUDA build dependencies for PyCUDA
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cuda-cudart-dev-12-5 cuda-nvcc-12-5 cuda-profiler-api-12-5 libcurand-dev-12-5 libvips-dev
       - name: Install and smoke-test each exact runtime wheel
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
-        run: python .release/pypi/smoke.py dist/pypi --python "$PYTHON_VERSION"
+          CUDA_ROOT: /usr/local/cuda-12.5
+        run: |
+          export PATH="$CUDA_ROOT/bin:$PATH"
+          export CPATH="$CUDA_ROOT/include${CPATH:+:$CPATH}"
+          export LIBRARY_PATH="$CUDA_ROOT/lib64:$CUDA_ROOT/lib64/stubs${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          export LD_LIBRARY_PATH="$CUDA_ROOT/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          python .release/pypi/smoke.py dist/pypi --python "$PYTHON_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: runtime-smoke-${{ matrix.python-version }}-${{ github.run_attempt }}

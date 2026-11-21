@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -1049,12 +1050,17 @@ def test_lock_metadata_normalizes_named_first_party_specifiers(specifier):
 def test_real_lock_first_party_metadata_survives_finalization():
     import tomllib
 
-    rc = (ROOT / "workflows/uv.lock").read_bytes()
-    assert b'name = "inference-models", specifier = ">=0.39.9rc1"' in rc
-    # Finalization changes only the two named first-party requirement spellings.
-    stable = rc.replace(
-        b'specifier = ">=0.39.9rc1"', b'specifier = ">=0.39.9"'
-    ).replace(b'specifier = ">=1.8.5rc1"', b'specifier = ">=1.8.5"')
+    lock = (ROOT / "workflows/uv.lock").read_bytes()
+    floor = re.compile(
+        rb'(name = "(inference-models|inference-sdk)", specifier = ">=)([0-9.]+)(?:rc[0-9]+)?(")'
+    )
+    assert {match[2] for match in floor.finditer(lock)} == {
+        b"inference-models",
+        b"inference-sdk",
+    }
+    # Exercise finalization even when the checked-in lock already has stable floors.
+    rc = floor.sub(rb"\1\3rc1\4", lock)
+    stable = floor.sub(rb"\1\3\4", lock)
     assert flow._canonical("workflows/uv.lock", rc) == flow._canonical(
         "workflows/uv.lock", stable
     )
