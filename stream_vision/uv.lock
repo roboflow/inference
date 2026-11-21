@@ -1562,7 +1562,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.39.9rc1"
+version = "0.39.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -1618,14 +1618,14 @@ dependencies = [
     { name = "transformers" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/4b/f3e8a2e9c79df310cb4de7ddf984278b0f73c515155b1f71fbb1c3912faa/inference_models-0.39.9rc1.tar.gz", hash = "sha256:76e0aba6b98a7bdd64c8fdff5591c9fd294c9612f3b46b51c5ca1ba42677cb63", size = 1995714, upload-time = "2026-11-05T19:00:59.71Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/e0/8594680345eb532b90d7576397e968210db47918c37a34dcf568243c571e/inference_models-0.39.10.tar.gz", hash = "sha256:394664f9880c1157954cc3c02bc7d85a27044ef12c2e4b95f290b71153e2cdbe", size = 2005959, upload-time = "2026-11-21T05:39:37.182Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/f3/c528b18d608cf0f6d1ca7bfb8ae0f3529432acba705123c49ffcda9317c1/inference_models-0.39.9rc1-py3-none-any.whl", hash = "sha256:218914e835a23e0929ff3f918f8e50d042c9899b80207f870ebd6f76f84ad4b9", size = 2254740, upload-time = "2026-11-05T19:00:57.437Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/30/b53428baeae553d3b584e898e567c3a6f3699fc3a8aaab2adc6d02447a16/inference_models-0.39.10-py3-none-any.whl", hash = "sha256:222a55a110bae6f74a92555943c8f68a1a5a167792ff095a724c047a934219e5", size = 2267087, upload-time = "2026-11-21T05:39:35.377Z" },
 ]
 
 [[package]]
 name = "inference-sdk"
-version = "1.8.5rc1"
+version = "1.8.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1643,7 +1643,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/59/6d6a2ba25e258745c88c63316d6014ee006ac7ae7053e409bd47e25e71c1/inference_sdk-1.8.5rc1-py3-none-any.whl", hash = "sha256:8286009893d1395905cd1663f11c25c9928b6aab8f4f90f04d2f496599864678", size = 109117, upload-time = "2026-11-05T19:02:27.522Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/22/9e7971d03689504f4f7017c252134a5ef6a927e381f00a44c2360453cf4f/inference_sdk-1.8.6-py3-none-any.whl", hash = "sha256:2f002215242ae44b094d7b3269d54d6ef2564797dd210c641c22fe4bf530950d", size = 109155, upload-time = "2026-11-21T05:39:59.282Z" },
 ]
 
 [[package]]
@@ -4235,7 +4235,7 @@ wheels = [
 
 [[package]]
 name = "roboflow-workflows"
-version = "0.2.16"
+version = "0.2.17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -4282,9 +4282,9 @@ dependencies = [
     { name = "zxing-cpp", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "zxing-cpp", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/96/b1/8e551684b31b2e725fa69c916b8824c2ad62dac17a0b08a47747e72821ff/roboflow_workflows-0.2.16.tar.gz", hash = "sha256:90a6b741960235d6a57a0769ca392cafb5490ed807fa396b2f89efc193e04882", size = 5483460, upload-time = "2026-11-13T22:25:33.862Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/0e/4164add67305c8e56a60442fd18bacf824520ad8d3ea088827093e12de65/roboflow_workflows-0.2.17.tar.gz", hash = "sha256:51d7ab37ee4ccf47d8fb5c9355a2fd97665a9eb4902095d09dd4e2b2e0ab671f", size = 5500956, upload-time = "2026-11-21T05:44:53.737Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/81/3075dfa7d7bdd012f79cd716ab05ef4621739859a4a54a765d5df1745d90/roboflow_workflows-0.2.16-py3-none-any.whl", hash = "sha256:67c24e31561743cffcee41832721c4f1154a0e642a3dff15ac9dd503c1771ca6", size = 6591307, upload-time = "2026-11-13T22:25:31.767Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/aa/2a2a0e6ad1b0e0910488c3d17677f9e306533891e9fd3465805713812c88/roboflow_workflows-0.2.17-py3-none-any.whl", hash = "sha256:e11e1319886807a138daff0eba4f4d2377a8e4dee3280d6d73e852a15f1cfb59", size = 6612014, upload-time = "2026-11-21T05:44:52.162Z" },
 ]
 
 [[package]]
@@ -4691,7 +4691,7 @@ wheels = [
 
 [[package]]
 name = "streamvision"
-version = "0.1.6.post1"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -4746,7 +4746,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.2.0" },
     { name = "requests", marker = "extra == 'webrtc'", specifier = ">=2.33.0,<3.0.0" },
     { name = "requests-mock", marker = "extra == 'test'", specifier = "~=1.12.1" },
-    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.16" },
+    { name = "roboflow-workflows", marker = "extra == 'workflows'", specifier = ">=0.2.17" },
     { name = "supervision", specifier = ">=0.30.6,<0.31.0" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2.0.0" },
     { name = "torch", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'nvdec') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'nvdec')", specifier = ">=2.0.1,<3.0.0" },
