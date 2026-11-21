@@ -2,12 +2,6 @@ name: "Validate Model License Listings"
 permissions:
   contents: read
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   pull_request:
     paths:
       - "inference/models/**"    # Run only if files in inference/models/ have changed
@@ -19,19 +13,17 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-check_model_licenses-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   validate-models:
     runs-on: ubuntu-latest
     steps:
-      - name: "Checkout repository [release-test]"
+      - name: "Checkout repository"
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
 
-      - name: "Validate model directories [release-test]"
+      - name: "Validate model directories"
         run: |
           set -e  # Exit immediately if a command exits with a non-zero status
 

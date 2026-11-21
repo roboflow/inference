@@ -1,16 +1,13 @@
-# Official releases are orchestrated by publish.pypi.yml / release.image.yml.
 name: Build and Push CPU Container Parallel
 permissions:
   contents: read
 on:
+  release:
+    types: [created]
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      custom_tag:
-        type: string
-        default: ""
-        description: Diagnostic tag suffix; stable release tags are reserved
       force_push:
         type: boolean
         description: "Do you want to push image after build?"
@@ -48,16 +45,6 @@ jobs:
         uses: actions/checkout@v6
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
-      - name: Determine diagnostic image tags
-        id: tags
-        uses: ./.github/actions/determine-tags
-        with:
-          official-release-only: 'true'
-          version: ${{ env.VERSION }}
-          base_image: ${{ env.BASE_IMAGE }}
-          token: ${{ github.token }}
-          force_push: ${{ inputs.force_push }}
-          custom_tag: ${{ inputs.custom_tag }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       # Publishing runs push amd64 by digest, test that exact image, then reuse
@@ -70,7 +57,7 @@ jobs:
           project: grl7ffzxd7
           context: .
           load: true
-          tags: ${{ steps.tags.outputs.image_tags }}
+          tags: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
       - name: Build and push CPU image by digest (amd64)
@@ -85,7 +72,7 @@ jobs:
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
       - name: Test CPU PyTorch runtime
         env:
-          IMAGE_TAGS: ${{ steps.tags.outputs.image_tags }}
+          IMAGE_TAGS: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
           AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
         run: |
           if [ "$PUBLISH" = "true" ]; then
@@ -111,7 +98,7 @@ jobs:
       - name: Publish tested amd64 and arm64 digests
         if: ${{ env.PUBLISH == 'true' }}
         env:
-          IMAGE_TAGS: ${{ steps.tags.outputs.image_tags }}
+          IMAGE_TAGS: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
           AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
           ARM64_DIGEST: ${{ steps.arm64.outputs.digest }}
         run: |

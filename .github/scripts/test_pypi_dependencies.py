@@ -724,17 +724,13 @@ def test_workflow_dependency_ownership_and_gate_boundaries():
 
     main = workflow("publish.pypi.yml")
     coordinator = main["jobs"]["prepare_dependencies"]
-    assert "actions" not in coordinator.get("permissions", {})
-    assert "validation" in coordinator["needs"]
+    assert coordinator["permissions"] == {"contents": "read", "actions": "write"}
+    assert "!cancelled()" in coordinator["if"]
+    assert (
+        "needs.prepare_dependencies.result == 'success'"
+        in main["jobs"]["publish_runtime"]["if"]
+    )
     assert "prepare_dependencies" in main["jobs"]["publish_runtime"]["needs"]
-    assert not any("coordinate" in step.get("run", "") for step in coordinator["steps"])
-    for suffix, previous in [
-        ("models", "publish_sdk"),
-        ("workflows", "publish_models"),
-        ("streamvision", "publish_workflows"),
-    ]:
-        assert previous in main["jobs"]["build_" + suffix]["needs"]
-        assert "build_" + suffix in main["jobs"]["publish_" + suffix]["needs"]
     for name, (_, filename) in dependencies.PROJECTS.items():
         config = workflow(filename)
         assert set(config["on"]) == {"workflow_dispatch"}

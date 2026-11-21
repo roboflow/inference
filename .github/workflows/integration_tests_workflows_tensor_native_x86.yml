@@ -2,12 +2,6 @@ name: INTEGRATION TESTS - workflows (tensor-native)
 permissions:
   contents: read
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   pull_request:
     branches: [main]
     paths-ignore:
@@ -36,7 +30,7 @@ on:
           - "3.13"
 
 concurrency:
-  group: ${{ github.workflow }}-integration_tests_workflows_tensor_native_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -45,7 +39,7 @@ jobs:
     secrets: inherit
   build-dev-test:
     needs: call_is_mergeable
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
+    if: ${{ (github.event.pull_request.head.repo.fork == false) && (github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean') }}
     # I/O-bound workflow integration tests. Measured on Depot over 2,360 jobs on the
     # 16c/64GB machine: ~15% average CPU and ~12.8GB peak RAM. 8c/32GB keeps the peak
     # at ~40% of memory; 4c/16GB would leave only ~3GB headroom.
@@ -53,15 +47,12 @@ jobs:
       labels: depot-ubuntu-22.04-8
       group: public-depot
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ${{ fromJSON((github.event.inputs.python-version || 'all') == 'all' && '["3.10","3.11","3.12","3.13"]' || format('["{0}"]', github.event.inputs.python-version)) }}
-    timeout-minutes: ${{ inputs.release_source != '' && 77 || 15 }}
+    timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -89,21 +80,7 @@ jobs:
         run: |
           make create_workflows_wheel create_streamvision_wheel
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
-      - name: "🧪 Integration Tests of Workflows (tensor-native) [release-test]"
+      - name: 🧪 Integration Tests of Workflows (tensor-native)
         # Tensor-native path only: ENABLE_TENSOR_DATA_REPRESENTATION is AND-gated with
         # USE_INFERENCE_MODELS, which defaults to True on Linux runners, so it is not set here.
-        timeout-minutes: ${{ inputs.release_source != '' && 47 || 15 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '900'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            ENABLE_TENSOR_DATA_REPRESENTATION=True ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-integration_tests_workflows_tensor_native_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+        run: ENABLE_TENSOR_DATA_REPRESENTATION=True ROBOFLOW_API_KEY=${{ secrets.API_KEY }} DEEP_LAB_V3_API_KEY=${{ secrets.DEEP_LAB_V3_API_KEY }} MODAL_TOKEN_ID=${{ secrets.MODAL_TOKEN_ID }} MODAL_TOKEN_SECRET=${{ secrets.MODAL_TOKEN_SECRET }} MODAL_ALLOW_ANONYMOUS_EXECUTION=True MODAL_ANONYMOUS_WORKSPACE_NAME=github-test MODAL_SKIP_FLORENCE2_TEST=FALSE LOAD_ENTERPRISE_BLOCKS=TRUE python -m pytest tests/workflows/integration_tests
