@@ -1517,6 +1517,9 @@ else:
         RichLabelVisualizationBlockV1,
     )
 
+from roboflow_workflows.core_steps.visualizations.action_recognition.v1 import (
+    ActionRecognitionVisualizationBlockV1,
+)
 from roboflow_workflows.core_steps.visualizations.text_display.v1 import (
     TextDisplayVisualizationBlockV1,
 )
@@ -1945,6 +1948,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TrackClassLockBlockV1,
         TriangleVisualizationBlockV1,
         TextDisplayVisualizationBlockV1,
+        ActionRecognitionVisualizationBlockV1,
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
