@@ -202,11 +202,25 @@ _P_SAM2_SEGMENT = _p(
 )
 
 IMAGE_EMBEDDINGS_ACTION = "embed_images"
+# Text-image models keep `embed_images` for their compact embeddings; this
+# action returns the same vectors with the description of their space.
+IMAGE_EMBEDDINGS_WITH_INFO_ACTION = "embed_images_with_info"
 IMAGE_EMBEDDINGS_RESPONSE_TYPE = "roboflow-image-embeddings-v1"
 _P_IMAGE_EMBEDDINGS = {
     "output_type": {"type": "str", "required": False},
     "input_color_format": {"type": "str", "required": False},
 }
+_E_TEXT_IMAGE_EMBEDDINGS_WITH_INFO = [
+    (
+        IMAGE_EMBEDDINGS_WITH_INFO_ACTION,
+        "embed_images",
+        False,
+        _p(_P_IMAGES, _P_IMAGE_EMBEDDINGS),
+        "validate_images_required",
+        "serialize_image_embeddings",
+        IMAGE_EMBEDDINGS_RESPONSE_TYPE,
+    ),
+]
 
 _E_OD_CONF_ONLY = [
     (
@@ -584,6 +598,10 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             IMAGE_EMBEDDINGS_RESPONSE_TYPE,
         ),
     ],
+    # Text-image models that describe their image embedding space; Perception
+    # Encoder does not, so it has no such action.
+    "ClipOnnx": _E_TEXT_IMAGE_EMBEDDINGS_WITH_INFO,
+    "ClipTorch": _E_TEXT_IMAGE_EMBEDDINGS_WITH_INFO,
     # --- Gaze ---
     "L2CSNetOnnx": [
         (

@@ -13,6 +13,10 @@ from inference_models.errors import (
     MissingDependencyError,
 )
 from inference_models.models.base.embeddings import TextImageEmbeddingModel
+from inference_models.models.clip.image_embeddings import (
+    describe_clip_image_embeddings,
+    describe_clip_preprocessing,
+)
 from inference_models.models.clip.preprocessing import (
     create_clip_preprocessor,
     tokenize_texts,
@@ -163,6 +167,30 @@ class ClipOnnx(TextImageEmbeddingModel):
                 max_batch_size=self._max_batch_size,
                 stream=self._inference_stream,
             )[0]
+
+    def get_embedding_info(self, output_type: Optional[str] = None) -> dict:
+        """Describe the image embeddings ``embed_images`` returns.
+
+        Args:
+            output_type: Requested representation; only ``feature_vector``
+                (or None) exists for CLIP.
+
+        Returns:
+            Feature definition, output type and normalization of the vectors.
+
+        Raises:
+            ModelInputError: If ``output_type`` is not ``feature_vector``.
+        """
+        info = describe_clip_image_embeddings(output_type=output_type)
+
+        return info
+
+    @property
+    def embedding_preprocessing(self) -> dict:
+        """Preprocessing ``embed_images`` applies, as JSON-serializable values."""
+        preprocessing = describe_clip_preprocessing(image_size=self._image_size)
+
+        return preprocessing
 
     @property
     def _pre_process_stream(self) -> Optional[torch.cuda.Stream]:

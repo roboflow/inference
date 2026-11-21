@@ -312,6 +312,12 @@ CORE_MODEL_CLIP_ENABLED = str2bool(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 # Flag to enable PE core model, default is True
 CORE_MODEL_PE_ENABLED = str2bool(os.getenv("CORE_MODEL_PE_ENABLED", True))
 
+# Flag to enable pretrained image embedding models (DINOv2, DINOv3, SigLIP2) on
+# /infer/embeddings. They require USE_INFERENCE_MODELS. Default is True
+CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED = str2bool(
+    os.getenv("CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED", True)
+)
+
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
 CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", True))
