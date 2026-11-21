@@ -31,7 +31,7 @@ def _native_detections(xyxy: np.ndarray, tracker_ids: np.ndarray) -> Detections:
     )
 
 
-def test_time_in_zone_v3_matches_supervision_and_old_bookkeeping() -> None:
+def test_time_in_zone_v3_matches_supervision_and_preserves_entry_time() -> None:
     zones = [
         [[10, 10], [10, 30], [30, 30], [30, 10]],
         [[50, 50], [50, 70], [70, 70], [70, 50]],
@@ -84,9 +84,6 @@ def test_time_in_zone_v3_matches_supervision_and_old_bookkeeping() -> None:
             if is_in_zone:
                 ts_start = tracked_ids_in_zone.setdefault(int(tracker_id), ts_end)
                 time_in_zone = ts_end - ts_start
-            elif int(tracker_id) in tracked_ids_in_zone:
-                # Keep the old reset=False deletion quirk as the oracle.
-                del tracked_ids_in_zone[int(tracker_id)]
             surviving_mask[index] = True
             surviving_times[index] = time_in_zone
 
