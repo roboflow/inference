@@ -112,6 +112,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
     )
     length: int = Field(
+        gt=0,
         description="Maximum number of elements to keep in the buffer. When the buffer exceeds this length, the oldest elements are automatically removed. Determines the size of the sliding window. Must be greater than 0. Typical values range from 2-10 for frame sequences, or higher for longer histories.",
         examples=[5, 10, 3],
     )

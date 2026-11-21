@@ -1,5 +1,36 @@
 import pytest
-from roboflow_workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
+from pydantic import ValidationError
+from roboflow_workflows.core_steps.fusion.buffer.v1 import BlockManifest, BufferBlockV1
+
+
+@pytest.mark.parametrize("length", [0, -1])
+def test_buffer_manifest_rejects_nonpositive_length(length: int) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/buffer@v1",
+                "name": "buffer",
+                "data": "$inputs.image",
+                "length": length,
+            }
+        )
+
+    errors = exc_info.value.errors()
+    assert [(error["loc"], error["type"]) for error in errors] == [
+        (("length",), "greater_than")
+    ]
+
+
+def test_buffer_manifest_accepts_length_one() -> None:
+    manifest = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/buffer@v1",
+            "name": "buffer",
+            "data": "$inputs.image",
+            "length": 1,
+        }
+    )
+    assert manifest.length == 1
 
 
 def test_buffer() -> None:
