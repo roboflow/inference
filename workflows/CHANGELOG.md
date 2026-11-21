@@ -50,6 +50,7 @@ Bundled execution engine: `1.17.3`.
 - The package now requires `inference-models>=0.39.10` and `inference-sdk>=1.8.6`.
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
+- `filelock` 4 is allowed (`filelock>=3.20.3,<5.0.0`), matching `inference-models`.
 
 ### Fixed
 

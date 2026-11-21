@@ -4434,7 +4434,7 @@ requires-dist = [
     { name = "confluent-kafka", marker = "extra == 'enterprise'", specifier = ">=2.5,<3" },
     { name = "databricks-sql-connector", marker = "extra == 'databricks'", specifier = "==4.8.0" },
     { name = "fastapi", marker = "extra == 'enterprise'", specifier = ">=0.134,<0.142" },
-    { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
+    { name = "filelock", specifier = ">=3.20.3,<5.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "inference-models", specifier = ">=0.39.10" },
     { name = "inference-sdk", specifier = ">=1.8.6" },
