@@ -1650,7 +1650,7 @@ wheels = [
 
 [[package]]
 name = "inference-models"
-version = "0.39.10rc1"
+version = "0.39.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -1706,14 +1706,14 @@ dependencies = [
     { name = "transformers" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ce/7e/158c481721880f45537771a3d3f5ef85d3841b57e213d84014d5057ea50c/inference_models-0.39.10rc1.tar.gz", hash = "sha256:422c76375e4ddacdff8026dbf19fa20fbc3cf5b3d501146256e1e7cb36734169", size = 2006292, upload-time = "2026-11-21T00:37:59.453Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/e0/8594680345eb532b90d7576397e968210db47918c37a34dcf568243c571e/inference_models-0.39.10.tar.gz", hash = "sha256:394664f9880c1157954cc3c02bc7d85a27044ef12c2e4b95f290b71153e2cdbe", size = 2005959, upload-time = "2026-11-21T05:39:37.182Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/e4/ff6d38115d0b88d5400abd1eace1ba2d0fa32d585f4bdbabf034198a9f57/inference_models-0.39.10rc1-py3-none-any.whl", hash = "sha256:cb6d7db1a1ce5b3fcc1877b0b579189c22569554c7d95d84198f3947d86baf46", size = 2267116, upload-time = "2026-11-21T00:37:53.58Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/30/b53428baeae553d3b584e898e567c3a6f3699fc3a8aaab2adc6d02447a16/inference_models-0.39.10-py3-none-any.whl", hash = "sha256:222a55a110bae6f74a92555943c8f68a1a5a167792ff095a724c047a934219e5", size = 2267087, upload-time = "2026-11-21T05:39:35.377Z" },
 ]
 
 [[package]]
 name = "inference-sdk"
-version = "1.8.6rc2"
+version = "1.8.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1731,7 +1731,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/70/cd61b15dc74a0c55fd9dcc8ed0096872b73ff79b2dcd9707492524658fc3/inference_sdk-1.8.6rc2-py3-none-any.whl", hash = "sha256:e0a5099f86176bae56317c466675ba7c800855942c45c53ff7c81a682919ebe1", size = 109197, upload-time = "2026-11-21T03:44:20.84Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/22/9e7971d03689504f4f7017c252134a5ef6a927e381f00a44c2360453cf4f/inference_sdk-1.8.6-py3-none-any.whl", hash = "sha256:2f002215242ae44b094d7b3269d54d6ef2564797dd210c641c22fe4bf530950d", size = 109155, upload-time = "2026-11-21T05:39:59.282Z" },
 ]
 
 [[package]]
@@ -4436,8 +4436,8 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'enterprise'", specifier = ">=0.134,<0.142" },
     { name = "filelock", specifier = ">=3.20.3,<=4.0.0" },
     { name = "httpx", specifier = "~=0.28.1" },
-    { name = "inference-models", specifier = ">=0.39.10rc1" },
-    { name = "inference-sdk", specifier = ">=1.8.6rc1" },
+    { name = "inference-models", specifier = ">=0.39.10" },
+    { name = "inference-sdk", specifier = ">=1.8.6" },
     { name = "matplotlib" },
     { name = "msgpack" },
     { name = "networkx", specifier = ">=3.0.0,<4.0.0" },
