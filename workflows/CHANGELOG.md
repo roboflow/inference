@@ -64,6 +64,10 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Action Recognition Model releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model
+  changes. A classification already running can finish.
+
 - Keypoint Visualization (`roboflow_core/keypoint_visualization@v1`) no longer
   fails the run when its `edges` name a keypoint that no instance has, as when
   a model left out every keypoint, or the last keypoints of a skeleton, in every
