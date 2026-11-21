@@ -3,10 +3,10 @@ import contextvars
 import json
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from enum import Enum
 from functools import partial
-from typing import List, Mapping, Optional, Tuple, Union
+from typing import Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import aiohttp
 import backoff
@@ -26,9 +26,11 @@ from inference_sdk.config import (
     remote_processing_times,
 )
 from inference_sdk.http.errors import RetryError
-from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData
-from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
+from inference_sdk.http.utils.requests import (
+    api_key_safe_raise_for_status,
+    deduct_api_key_from_string,
+)
 
 RETRYABLE_STATUS_CODES = {429, 503, 504}
 UNKNOWN_MODEL_ID = "unknown"
@@ -57,7 +59,17 @@ def execute_requests_packages(
     request_method: RequestMethod,
     max_concurrent_requests: int,
 ) -> List[Response]:
-    """Execute a list of requests in parallel.
+    """Execute a list of requests with bounded rolling concurrency.
+
+    Completed calls free slots immediately. Results are returned in input
+    order. A raised request error stops admission once observed, after any
+    retries. The scheduler cancels queued work, drains running work, and
+    raises the lowest-index failure it finds. HTTP error responses are
+    checked in input order after all requests complete.
+
+    A slow failure can allow the entire batch to be sent and metered.
+    The concurrency cap limits only simultaneous requests. Serial calls
+    and single-request batches reuse the caller thread's session.
 
     Args:
         requests_data: The list of requests to execute.
@@ -67,23 +79,91 @@ def execute_requests_packages(
     Returns:
         The list of responses.
     """
-    requests_data_packages = make_batches(
-        iterable=requests_data,
-        batch_size=max_concurrent_requests,
-    )
-    results = []
-    all_request_data = []
-    for requests_data_package in requests_data_packages:
-        responses = make_parallel_requests(
-            requests_data=requests_data_package,
+    if not requests_data:
+        return []
+
+    workers = max(1, max_concurrent_requests)
+    if workers == 1 or len(requests_data) == 1:
+        results = [
+            make_request(
+                request_data=request_data,
+                request_method=request_method,
+            )
+            for request_data in requests_data
+        ]
+    else:
+        results = _execute_requests_rolling(
+            requests_data=requests_data,
             request_method=request_method,
+            workers=workers,
         )
-        results.extend(responses)
-        all_request_data.extend(requests_data_package)
-    _collect_remote_processing_times(results, all_request_data)
+    _collect_remote_processing_times(results, requests_data)
     for response in results:
         api_key_safe_raise_for_status(response=response)
     return results
+
+
+def _execute_requests_rolling(
+    requests_data: List[RequestData],
+    request_method: RequestMethod,
+    workers: int,
+) -> List[Response]:
+    """Run a rolling window and drain running futures on failure."""
+    total_requests = len(requests_data)
+    results: Dict[int, Response] = {}
+    next_index = 0
+    in_flight: Dict[int, Future] = {}
+    run_request = _context_preserving_request_runner(
+        request_method=request_method,
+    )
+
+    def admit_requests(executor: ThreadPoolExecutor) -> None:
+        nonlocal next_index
+        while next_index < total_requests and len(in_flight) < workers:
+            index = next_index
+            in_flight[index] = executor.submit(run_request, requests_data[index])
+            next_index += 1
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        admit_requests(executor=executor)
+
+        while in_flight:
+            done, _ = wait(
+                list(in_flight.values()),
+                return_when=FIRST_COMPLETED,
+            )
+            iteration_failures: Dict[int, BaseException] = {}
+
+            for index, future in list(in_flight.items()):
+                if future not in done:
+                    continue
+                del in_flight[index]
+                try:
+                    results[index] = future.result()
+                except BaseException as error:
+                    iteration_failures[index] = error
+
+            if iteration_failures:
+                for future in in_flight.values():
+                    future.cancel()
+                # The drain intentionally waits for already-admitted work
+                # without a timeout, preserving the prior executor.map /
+                # shutdown behaviour; a request-level timeout policy is
+                # outside this scheduler change.
+                for index, future in in_flight.items():
+                    if future.cancelled():
+                        continue
+                    try:
+                        future.result()
+                    except BaseException as error:
+                        iteration_failures[index] = error
+                in_flight.clear()
+                raise iteration_failures[min(iteration_failures)]
+
+            admit_requests(executor=executor)
+
+    ordered_results = [results[index] for index in range(total_requests)]
+    return ordered_results
 
 
 def _extract_model_id_from_request_data(request_data: RequestData) -> str:
@@ -283,32 +363,41 @@ def make_parallel_requests(
             )
         ]
 
-    # Capture the current contextvars snapshot so OTel trace context
-    # propagates into the thread pool workers. Must capture here (caller
-    # thread) not inside the worker — workers run in fresh threads that
-    # don't inherit the caller's context.
-    parent_ctx = contextvars.copy_context()
+    run_request = _context_preserving_request_runner(
+        request_method=request_method,
+    )
     workers = len(requests_data)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(run_request, requests_data))
+
+
+def _context_preserving_request_runner(
+    request_method: RequestMethod,
+) -> Callable[[RequestData], Response]:
+    """Build a request runner that propagates caller contextvars to workers.
+
+    Captures the current contextvars snapshot so OTel trace context propagates
+    into the thread pool workers. Must capture here (caller thread) not inside
+    the worker — workers run in fresh threads that don't inherit the caller's
+    context. Each invocation runs on a fresh ``parent_ctx.copy()`` so context
+    changes made by a request — including variables absent from the parent
+    snapshot — are confined to that request and cannot leak into a later task
+    reusing the same worker thread.
+    """
+    parent_ctx = contextvars.copy_context()
     make_request_closure = partial(make_request, request_method=request_method)
 
     def _run_in_parent_context(rd: RequestData) -> Response:
-        # Restore all context vars from the parent thread snapshot.
-        # We iterate and set each var individually since Context.run()
-        # is not reentrant.
-        tokens = []
-        for var in parent_ctx:
-            tokens.append((var, var.set(parent_ctx[var])))
-        try:
-            return make_request_closure(rd)
-        finally:
+        def _request() -> Response:
             try:
-                _reset_thread_local_requests_session()
+                return make_request_closure(rd)
             finally:
-                for var, tok in tokens:
-                    var.reset(tok)
+                _reset_thread_local_requests_session()
 
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        return list(executor.map(_run_in_parent_context, requests_data))
+        return parent_ctx.copy().run(_request)
+
+    return _run_in_parent_context
 
 
 def _get_thread_local_requests_session() -> requests.Session:
@@ -375,7 +464,16 @@ async def execute_requests_packages_async(
     request_method: RequestMethod,
     max_concurrent_requests: int,
 ) -> List[Union[dict, bytes]]:
-    """Execute a list of requests in parallel asynchronously.
+    """Execute a list of requests with bounded rolling concurrency asynchronously.
+
+    Completed calls free slots immediately. Results are returned in input
+    order. Once a request failure is observed after any retries, including
+    an HTTP status error, pending tasks are cancelled and awaited. The
+    lowest-index failure in the observed completion set is raised after
+    session cleanup. Errors during cancellation do not replace it.
+
+    A slow failure can allow the entire batch to be sent and metered.
+    The concurrency cap limits only simultaneous requests.
 
     Args:
         requests_data: The list of requests to execute.
@@ -385,18 +483,90 @@ async def execute_requests_packages_async(
     Returns:
         The list of responses.
     """
-    requests_data_packages = make_batches(
-        iterable=requests_data,
-        batch_size=max_concurrent_requests,
+    if not requests_data:
+        return []
+
+    workers = max(1, max_concurrent_requests)
+    responses = await _execute_requests_rolling_async(
+        requests_data=requests_data,
+        request_method=request_method,
+        workers=workers,
     )
-    results = []
-    for requests_data_package in requests_data_packages:
-        responses = await make_parallel_requests_async(
-            requests_data=requests_data_package,
+    return responses
+
+
+async def _execute_requests_rolling_async(
+    requests_data: List[RequestData],
+    request_method: RequestMethod,
+    workers: int,
+) -> List[Union[dict, bytes]]:
+    """Run a rolling window and await owned tasks before closing the session."""
+    total_requests = len(requests_data)
+    results: Dict[int, Union[dict, bytes]] = {}
+    next_index = 0
+    pending: Dict[int, asyncio.Task] = {}
+
+    async with aiohttp.ClientSession() as session:
+        make_request_closure = partial(
+            make_request_async,
             request_method=request_method,
+            session=session,
         )
-        results.extend(responses)
-    return results
+
+        def admit_requests() -> None:
+            nonlocal next_index
+            while next_index < total_requests and len(pending) < workers:
+                index = next_index
+                pending[index] = asyncio.create_task(
+                    make_request_closure(requests_data[index])
+                )
+                next_index += 1
+
+        try:
+            admit_requests()
+
+            while pending:
+                done, _ = await asyncio.wait(
+                    tuple(pending.values()),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                iteration_failures: Dict[int, BaseException] = {}
+
+                for index, task in list(pending.items()):
+                    if task not in done:
+                        continue
+                    del pending[index]
+                    try:
+                        _, response_data = task.result()
+                        results[index] = response_data
+                    except BaseException as error:
+                        iteration_failures[index] = error
+
+                if iteration_failures:
+                    first_failure = iteration_failures[min(iteration_failures)]
+                    pending_items = list(pending.items())
+                    for _, task in pending_items:
+                        task.cancel()
+                    if pending_items:
+                        await asyncio.gather(
+                            *(task for _, task in pending_items),
+                            return_exceptions=True,
+                        )
+                    pending.clear()
+                    raise first_failure
+
+                admit_requests()
+
+            ordered_results = [results[index] for index in range(total_requests)]
+            return ordered_results
+        finally:
+            if pending:
+                for task in pending.values():
+                    task.cancel()
+                await asyncio.gather(
+                    *pending.values(),
+                    return_exceptions=True,
+                )
 
 
 async def make_parallel_requests_async(
@@ -430,10 +600,12 @@ def raise_client_error(details: dict) -> None:
         details: The details of the error.
     """
     status_code = details["value"][0]
-    request_data = details["kwargs"]["request_data"]
+    request_data = details["kwargs"].get("request_data")
+    if request_data is None:
+        request_data = details["args"][0]
     raise ClientResponseError(
         request_info=RequestInfo(
-            url=request_data.url,
+            url=deduct_api_key_from_string(value=request_data.url),
             method="POST",
             headers={},
         ),
