@@ -114,6 +114,35 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # A pushed image also goes to Google Artifact Registry, as the
+      # docker.*.yml release workflows do.
+      - name: Authenticate gcloud
+        if: inputs.push
+        uses: google-github-actions/auth@v2
+        id: auth
+        with:
+          workload_identity_provider: "projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github"
+          service_account: "gha-inference@roboflow-staging.iam.gserviceaccount.com"
+          token_format: access_token
+      - name: Login to Google Artifact Registry
+        if: inputs.push
+        uses: docker/login-action@v4
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Image tags
+        id: tags
+        env:
+          TAG: ${{ env.IMAGE }}:${{ matrix.name }}-${{ needs.setup.outputs.server_version }}${{ inputs.tag_suffix != '' && format('-{0}', inputs.tag_suffix) || '' }}
+          PUSH: ${{ inputs.push }}
+        run: |
+          set -euo pipefail
+          if [ "$PUSH" = "true" ]; then
+            echo "tags=${TAG},us-docker.pkg.dev/roboflow-artifacts/${TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${TAG}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build (and optionally push)
         uses: depot/build-push-action@v1
         with:
@@ -123,7 +152,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           pull: true
           push: ${{ inputs.push }}
-          tags: ${{ env.IMAGE }}:${{ matrix.name }}-${{ needs.setup.outputs.server_version }}${{ inputs.tag_suffix != '' && format('-{0}', inputs.tag_suffix) || '' }}
+          tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.version=${{ needs.setup.outputs.server_version }}
             org.opencontainers.image.revision=${{ github.sha }}

@@ -198,6 +198,18 @@
     "/sam3/embed_image": [
       "POST"
     ],
+    "/sam3/video/embed": [
+      "POST"
+    ],
+    "/sam3/video/propagate": [
+      "POST"
+    ],
+    "/sam3/video/propagate/stream": [
+      "POST"
+    ],
+    "/sam3/video/segment": [
+      "POST"
+    ],
     "/sam3/visual_segment": [
       "POST"
     ],
