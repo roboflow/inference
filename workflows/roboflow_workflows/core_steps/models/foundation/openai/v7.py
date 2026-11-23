@@ -1136,9 +1136,9 @@ class OpenAIBlockV7(WorkflowBlock):
                     classes=classes,
                     inference_id=inference_id,
                     coordinates=ABSOLUTE_XY,
-                upload_width=upload_width,
-                upload_height=upload_height,
-            )
+                    upload_width=upload_width,
+                    upload_height=upload_height,
+                )
             elif task_type == ORIENTED_OBJECT_DETECTION_TASK:
                 error_status, predictions = decode_oriented_detections(
                     content,
