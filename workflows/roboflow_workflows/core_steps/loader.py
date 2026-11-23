@@ -984,12 +984,18 @@ if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1 import (
         QRCodeDetectorBlockV1,
     )
+    from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v2 import (
+        QRCodeDetectorBlockV2,
+    )
 else:
     from roboflow_workflows.core_steps.models.third_party.barcode_detection.v1_tensor import (
         BarcodeDetectorBlockV1,
     )
     from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1_tensor import (
         QRCodeDetectorBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v2_tensor import (
+        QRCodeDetectorBlockV2,
     )
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.sampling.identify_changes.v1 import (
@@ -1910,6 +1916,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonVisualizationBlockV2,
         PolygonZoneVisualizationBlockV1,
         QRCodeDetectorBlockV1,
+        QRCodeDetectorBlockV2,
         RoboflowClassificationModelBlockV1,
         RoboflowCustomMetadataBlockV1,
         ModelMonitoringInferenceAggregatorBlockV1,

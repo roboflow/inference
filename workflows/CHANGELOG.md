@@ -16,6 +16,17 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- QR Code Detection v2 (`roboflow_core/qr_code_detector@v2`, both the numpy and
+  tensor-native variants) adds an optional `scale_factor`, from 1.0 (the default)
+  to 4.0. The block enlarges the image by that factor with cubic interpolation
+  before OpenCV looks for codes, so codes too small to read at the image's own
+  resolution can be read: a code drawn at 2 pixels per module is not found at 1.0
+  and is read at 2.0. Boxes are mapped back to the original image's coordinates.
+  At 1.0 the output matches v1. A selector can supply the factor, and a value
+  outside 1.0 to 4.0 fails the step. v1 is unchanged.
+
 ### Fixed
 
 - QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
