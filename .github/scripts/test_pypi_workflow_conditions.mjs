@@ -87,7 +87,7 @@ function check(wf) {
   equal(wf.on.workflow_dispatch.inputs.packages.options, modes, "supported package modes");
   equal(wf.on.workflow_dispatch.inputs.publish.type, "boolean", "typed publication input");
   equal(wf.on.workflow_dispatch.inputs.publish.default, false, "build-only by default");
-  equal(jobs.publish_sdk["timeout-minutes"], 30, "SDK preparation and verification budget");
+  equal(jobs.publish_sdk["timeout-minutes"], 50, "SDK preparation and verification budget");
   equal(jobs.publish_sdk.needs, "build_sdk", "SDK build ownership");
   equal(jobs.prepare_dependencies["timeout-minutes"], 210, "SDK gate, coordinator, planning and infrastructure budget");
   equal(jobs.publish_runtime["timeout-minutes"], 50, "SDK gate, dependency verification and upload budget");
@@ -272,9 +272,35 @@ function check(wf) {
   }
 }
 
+function checkRetention(job, profile) {
+  const selection = job.steps.find(step => step.id === "candidate");
+  const download = job.steps.find(step => step.name === `Download retained candidate ${profile}`);
+  const restore = job.steps.find(step => step.name === `Restore retained candidate ${profile}`);
+  const seal = job.steps.find(step => step.name === `Seal candidate ${profile}`);
+  const retain = job.steps.find(step => step.name === `Retain candidate ${profile}`);
+  const verify = job.steps.find(step => step.name === `Verify retained candidate ${profile}`);
+  assert.ok(selection.run.includes(`candidate.sh select --profile ${profile}`));
+  equal(retain.with.name, `candidate-${profile}`, "one immutable candidate across all attempts");
+  equal(retain.with["retention-days"], 90, "retain retry candidate for ninety days");
+  equal(retain.with.overwrite, undefined, "candidate artifact is never overwritten");
+  assert.ok(job.steps.indexOf(retain) < job.steps.indexOf(verify));
+  for (const reused of ["true", "false"]) for (const previous of ["success", "failure", "cancelled"]) {
+    const ctx = context();
+    ctx.steps.candidate = { outputs: { reused } };
+    for (const step of [download, restore]) {
+      equal(stepEnabled(step, ctx, previous), previous === "success" && reused === "true", "restore only the retained candidate after successful lookup");
+    }
+    for (const step of [seal, retain]) {
+      equal(stepEnabled(step, ctx, previous), previous === "success" && reused === "false", "never replace a retained candidate");
+    }
+    scenarios++;
+  }
+}
+
 function checkChildren(children) {
   for (const [name, { directory, workflow: wf }] of Object.entries(children)) {
     const job = wf.jobs.build;
+    checkRetention(job, name);
     equal(job["timeout-minutes"], 50, "child includes dependency gate, content verification and build/upload margin");
     const budget = job.steps.flatMap(step => [...(step.run || "").matchAll(/--wait-seconds (\d+)/g)]).reduce((sum, match) => sum + Number(match[1]), 0);
     equal(budget, 3 * 600, "child dependency, preparation and final verification budgets");
@@ -328,7 +354,14 @@ function checkChildren(children) {
 }
 
 check(workflow);
+for (const profile of ["sdk", "runtime"]) checkRetention(workflow.jobs[`build_${profile}`], profile);
+checkRetention(workflow.jobs.prepare_dependencies, "dependencies");
 checkChildren(upstreams);
+const sdkSmoke = workflow.jobs.publish_sdk.steps.find(step => step.run?.includes("run_sdk_tests.sh retained 3.12"));
+assert.ok(sdkSmoke, "SDK publication tests the retained wheel in the existing SDK image");
+const sdkFailure = runSteps(workflow.jobs.publish_sdk, context(), new Map([[sdkSmoke, "failure"]]));
+equal(sdkFailure.result, "failure", "SDK import failure blocks publication");
+assert.ok(!sdkFailure.ran.some(step => step.uses?.startsWith("pypa/")), "no SDK upload after failed import");
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
   ["stop on runtime duplicate upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],

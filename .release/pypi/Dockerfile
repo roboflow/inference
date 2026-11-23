@@ -9,4 +9,5 @@ RUN python -m pip install --no-cache-dir \
 COPY release.py /release.py
 COPY dependencies.py /dependencies.py
 COPY publish.py /publish.py
+COPY candidate.py /candidate.py
 WORKDIR /work

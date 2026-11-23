@@ -479,7 +479,8 @@ def _github(path, *, payload=None, deadline):
         with urllib.request.urlopen(
             request, timeout=min(30, _remaining(deadline))
         ) as response:
-            result = json.load(response)
+            body = response.read()
+            result = json.loads(body) if body else {}
         _remaining(deadline)
         return result
 
@@ -496,7 +497,16 @@ def _github(path, *, payload=None, deadline):
     return result
 
 
-def _dispatch(name, *, version, wait_seconds=9000, deadline=None):
+def _dispatch(
+    name,
+    *,
+    version,
+    wait_seconds=9000,
+    deadline=None,
+    started=False,
+    run_id=None,
+    on_started=None,
+):
     deadline = time.monotonic() + wait_seconds if deadline is None else deadline
     _remaining(deadline)
     workflow = PROJECTS[name][1]
@@ -505,25 +515,82 @@ def _dispatch(name, *, version, wait_seconds=9000, deadline=None):
     if not ref.startswith(("refs/heads/", "refs/tags/")):
         raise ValueError("Publishers require a branch or tag ref")
 
-    current = _github("commits/" + urllib.parse.quote(ref, safe=""), deadline=deadline)
-    if current["sha"] != revision:
-        raise ValueError("Candidate ref moved; freeze the ref before publishing")
+    parent = os.environ.get("GITHUB_RUN_ID")
+    original = _github(f"actions/runs/{run_id}", deadline=deadline) if run_id else None
+    if parent and original is None:
+        title = f"pypi-{name}-parent-{parent}"
+        matches = []
+        for page in range(1, 11):
+            response = _github(
+                f"actions/workflows/{workflow}/runs?event=workflow_dispatch"
+                f"&head_sha={revision}&per_page=100&page={page}",
+                deadline=deadline,
+            )
+            matches.extend(
+                run
+                for run in response["workflow_runs"]
+                if run.get("display_title") == title
+            )
+            if len(response["workflow_runs"]) < 100:
+                break
+        else:
+            raise ValueError(
+                "Publisher history exceeds lookup limit; inspect before retrying"
+            )
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous publisher runs for {title}")
+        if matches:
+            original = matches[0]
 
-    dispatched = _github(
-        f"actions/workflows/{workflow}/dispatches",
-        payload={
-            "ref": ref,
-            "inputs": {
-                "publish": "true",
-                "expected_version": version,
-                "expected_revision": revision,
-            },
-        },
-        deadline=deadline,
-    )
-    run_id = int(dispatched["workflow_run_id"])
+    if started and original is None:
+        raise ValueError(
+            f"Previously started publisher for {name} is missing; do not rebuild"
+        )
+    minimum_attempt = 1
+    if original:
+        run_id = int(original["id"])
+        if (
+            original["head_sha"] != revision
+            or original["path"] != f".github/workflows/{workflow}"
+            or original["event"] != "workflow_dispatch"
+        ):
+            raise ValueError(f"Unexpected publisher identity/revision in run {run_id}")
+        if original["status"] == "completed" and original["conclusion"] != "success":
+            if int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")) <= 1:
+                raise ValueError(
+                    f"Publisher run {run_id} failed; rerun it before retrying"
+                )
+            minimum_attempt = int(original["run_attempt"]) + 1
+            _github(
+                f"actions/runs/{run_id}/rerun-failed-jobs",
+                payload={},
+                deadline=deadline,
+            )
+    else:
+        current = _github(
+            "commits/" + urllib.parse.quote(ref, safe=""), deadline=deadline
+        )
+        if current["sha"] != revision:
+            raise ValueError("Candidate ref moved; freeze the ref before publishing")
+        inputs = {
+            "publish": "true",
+            "expected_version": version,
+            "expected_revision": revision,
+        }
+        if parent:
+            inputs["coordinator_run_id"] = parent
+        if on_started is not None:
+            on_started(None)  # Persist intent before the non-retryable POST.
+        dispatched = _github(
+            f"actions/workflows/{workflow}/dispatches",
+            payload={"ref": ref, "inputs": inputs},
+            deadline=deadline,
+        )
+        run_id = int(dispatched["workflow_run_id"])
+    if on_started is not None:
+        on_started(run_id)
     print(
-        f"Dispatched {name}=={version}: https://github.com/roboflow/inference/actions/runs/{run_id}",
+        f"Publisher {name}=={version}: https://github.com/roboflow/inference/actions/runs/{run_id}",
         flush=True,
     )
     try:
@@ -539,7 +606,10 @@ def _dispatch(name, *, version, wait_seconds=9000, deadline=None):
                     f"Unexpected publisher identity/revision in run {run_id}"
                 )
 
-            if run["status"] == "completed":
+            if (
+                run["status"] == "completed"
+                and int(run.get("run_attempt", 1)) >= minimum_attempt
+            ):
                 if run["conclusion"] != "success":
                     raise ValueError(
                         f"Publisher run {run_id} ended with {run['conclusion']}"
@@ -561,8 +631,22 @@ def _coordinate(plan, *, wait_seconds=9000, deadline=None, plan_file=None):
             _remaining(deadline)
             expected = plan["packages"][name]
             if expected["action"] == "publish":
+
+                def remember(run_id):
+                    expected["publisher_started"] = True
+                    if run_id is not None:
+                        expected["publisher_started_run_id"] = run_id
+                    if plan_file is not None:
+                        release._write_record(plan_file, **plan)
+
                 runs[name] = _dispatch(
-                    name, version=expected["version"], deadline=deadline
+                    name,
+                    version=expected["version"],
+                    deadline=deadline,
+                    started=expected.get("publisher_started", False),
+                    run_id=expected.get("publisher_started_run_id")
+                    or expected.get("publisher_run_id"),
+                    on_started=remember,
                 )
             actual = _verify_file(expected, registry=_Registry(deadline=deadline))
             if name in runs:
@@ -577,6 +661,31 @@ def _coordinate(plan, *, wait_seconds=9000, deadline=None, plan_file=None):
         raise ValueError(f"{error}; already-started publisher runs: {runs}") from error
 
     return runs
+
+
+def _resume_plan(original, checkpoint):
+    if {k: v for k, v in checkpoint.items() if k != "packages"} != {
+        k: v for k, v in original.items() if k != "packages"
+    }:
+        raise ValueError("Coordinator checkpoint differs from the retained plan")
+    if checkpoint["packages"].keys() != original["packages"].keys():
+        raise ValueError("Coordinator checkpoint changed package selection")
+    added = {
+        "publisher_started",
+        "publisher_started_run_id",
+        "publisher_run_id",
+        "sha256",
+        "content_sha256",
+        "published_files",
+    }
+    for name, expected in original["packages"].items():
+        actual = checkpoint["packages"][name]
+        if any(actual.get(key) != value for key, value in expected.items()):
+            raise ValueError(f"Coordinator checkpoint changed {name}")
+        allowed = added if expected["action"] == "publish" else set()
+        if actual.keys() - expected.keys() - allowed:
+            raise ValueError(f"Unexpected coordinator checkpoint fields for {name}")
+    return checkpoint
 
 
 def _guard(package):
@@ -598,7 +707,7 @@ def _guard(package):
 @click.command()
 @click.argument(
     "operation",
-    type=click.Choice(["plan", "coordinate", "verify", "gate", "guard"]),
+    type=click.Choice(["plan", "coordinate", "verify", "gate", "guard", "resume"]),
 )
 @click.option(
     "--directory",
@@ -609,6 +718,11 @@ def _guard(package):
     "--plan-file",
     type=click.Path(path_type=Path),
     default="dist/dependency-plan.json",
+)
+@click.option(
+    "--checkpoint-file",
+    type=click.Path(path_type=Path),
+    default="release-checkpoint/dependency-plan.json",
 )
 @click.option(
     "--package",
@@ -623,8 +737,15 @@ def _guard(package):
     default=600,
     show_default=True,
 )
-def _main(operation, *, directory, plan_file, package, wait_seconds):
+def _main(operation, *, directory, plan_file, checkpoint_file, package, wait_seconds):
     try:
+        if operation == "resume":
+            plan = _resume_plan(
+                json.loads(plan_file.read_text()),
+                json.loads(checkpoint_file.read_text()),
+            )
+            release._write_record(plan_file, **plan)
+            return
         if operation == "guard":
             if not package:
                 raise ValueError("guard requires --package")
@@ -676,9 +797,9 @@ def _main(operation, *, directory, plan_file, package, wait_seconds):
         EOFError,
     ) as error:
         runs = {
-            name: entry["publisher_run_id"]
+            name: entry.get("publisher_started_run_id") or entry["publisher_run_id"]
             for name, entry in locals().get("plan", {}).get("packages", {}).items()
-            if entry.get("publisher_run_id")
+            if entry.get("publisher_started_run_id") or entry.get("publisher_run_id")
         }
         raise click.ClickException(
             f"{error}; already-started publisher runs: {runs}"

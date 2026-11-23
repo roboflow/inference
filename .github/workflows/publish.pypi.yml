@@ -29,6 +29,9 @@ env:
 # No environment or reusable publishing workflow may change that OIDC identity.
 jobs:
   build_sdk:
+    permissions:
+      contents: read
+      actions: read
     if: ${{ github.event_name == 'release' || inputs.packages == 'sdk' || inputs.packages == 'all' || inputs.packages == 'dependencies' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
@@ -41,21 +44,44 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Select retained candidate sdk
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .release/pypi/candidate.sh select --profile sdk
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-sdk.json >> "$GITHUB_OUTPUT"
+      - name: Download retained candidate sdk
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/sdk
+      - name: Restore retained candidate sdk
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile sdk
       - name: Build and inspect the SDK wheel in Docker
         id: build
         run: |
-          bash .release/pypi/release.sh build-sdk
+          if [[ "${{ steps.candidate.outputs.reused }}" != true ]]; then
+            bash .release/pypi/release.sh build-sdk
+          fi
           echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
-          echo "artifact=sdk-wheel-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+          echo "artifact=candidate-sdk" >> "$GITHUB_OUTPUT"
+      - name: Seal candidate sdk
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh seal --profile sdk
+      - name: Retain candidate sdk
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.build.outputs.artifact }}
+          name: candidate-sdk
           retention-days: 90
           if-no-files-found: error
-          path: |
-            dist/sdk/*.whl
-            dist/sdk-manifest.json
-            dist/version.txt
+          path: release-candidate/sdk/
+      - name: Verify retained candidate sdk
+        run: bash .release/pypi/candidate.sh verify --profile sdk
       - name: Report build-only result
         if: ${{ env.PUBLISH == 'false' }}
         run: echo "SDK wheel built. Nothing was published (publish=false)." >> "$GITHUB_STEP_SUMMARY"
@@ -64,7 +90,7 @@ jobs:
     needs: build_sdk
     if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || inputs.publish == true) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     permissions:
       contents: read
       id-token: write
@@ -78,7 +104,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build_sdk.outputs.artifact }}
-          path: dist
+          path: release-candidate/sdk
+      - name: Restore verified sdk candidate
+        run: bash .release/pypi/candidate.sh restore --profile sdk
+      - name: Smoke the retained SDK wheel in the existing SDK test image
+        run: |
+          bash .github/scripts/run_sdk_tests.sh retained 3.12
+          bash .release/pypi/candidate.sh verify --profile sdk
       - name: Verify an existing SDK or stage the missing wheel
         id: prepare
         run: |
@@ -103,6 +135,9 @@ jobs:
             dist/sdk-receipt.json
 
   build_runtime:
+    permissions:
+      contents: read
+      actions: read
     if: ${{ github.event_name == 'release' || inputs.packages == 'runtime' || inputs.packages == 'all' || inputs.packages == 'dependencies' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
@@ -115,22 +150,44 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Select retained candidate runtime
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .release/pypi/candidate.sh select --profile runtime
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-runtime.json >> "$GITHUB_OUTPUT"
+      - name: Download retained candidate runtime
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/runtime
+      - name: Restore retained candidate runtime
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile runtime
       - name: Build five wheels and an SDK verification reference in Docker
         id: build
         run: |
-          bash .release/pypi/release.sh build-runtime
+          if [[ "${{ steps.candidate.outputs.reused }}" != true ]]; then
+            bash .release/pypi/release.sh build-runtime
+          fi
           echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
-          echo "artifact=runtime-wheels-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+          echo "artifact=candidate-runtime" >> "$GITHUB_OUTPUT"
+      - name: Seal candidate runtime
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh seal --profile runtime
+      - name: Retain candidate runtime
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.build.outputs.artifact }}
+          name: candidate-runtime
           retention-days: 90
           if-no-files-found: error
-          path: |
-            dist/pypi/*.whl
-            dist/sdk/*.whl
-            dist/*-manifest.json
-            dist/version.txt
+          path: release-candidate/runtime/
+      - name: Verify retained candidate runtime
+        run: bash .release/pypi/candidate.sh verify --profile runtime
       - name: Report build-only result
         if: ${{ env.PUBLISH == 'false' }}
         run: echo "Runtime wheels built. Nothing was published (publish=false)." >> "$GITHUB_STEP_SUMMARY"
@@ -161,15 +218,63 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build_runtime.outputs.artifact }}
-          path: dist
+          path: release-candidate/runtime
+      - name: Restore verified runtime candidate
+        run: bash .release/pypi/candidate.sh restore --profile runtime
       - name: Require the exact SDK before publishing upstream dependencies
         if: ${{ github.event_name == 'release' || inputs.publish == true }}
         run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
+      - name: Select retained candidate dependencies
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .release/pypi/candidate.sh select --profile dependencies
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-dependencies.json >> "$GITHUB_OUTPUT"
+      - name: Download retained candidate dependencies
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/dependencies
+      - name: Restore retained candidate dependencies
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile dependencies
+      - name: Download prior coordinator checkpoint
+        if: ${{ steps.candidate.outputs.checkpoint_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.checkpoint_id }}
+          merge-multiple: true
+          path: release-checkpoint
       - name: Resolve first-party dependency versions
         id: plan
         run: |
-          bash .release/pypi/dependencies.sh plan --wait-seconds 600
+          if [[ "${{ steps.candidate.outputs.reused }}" == true ]]; then
+            cp release-plan/dependency-plan.json dist/dependency-plan.json
+          else
+            bash .release/pypi/dependencies.sh plan --wait-seconds 600
+            mkdir release-plan
+            cp dist/dependency-plan.json release-plan/dependency-plan.json
+          fi
+          if [[ -f release-checkpoint/dependency-plan.json ]]; then
+            bash .release/pypi/dependencies.sh resume
+          fi
           echo "artifact=dependency-plan-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Seal candidate dependencies
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh seal --profile dependencies
+      - name: Retain candidate dependencies
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-dependencies
+          retention-days: 90
+          if-no-files-found: error
+          path: release-candidate/dependencies/
+      - name: Verify retained candidate dependencies
+        run: bash .release/pypi/candidate.sh verify --profile dependencies
       - name: Publish missing upstream versions in dependency order
         if: ${{ github.event_name == 'release' || inputs.publish == true }}
         env:
@@ -213,7 +318,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build_runtime.outputs.artifact }}
-          path: dist
+          path: release-candidate/runtime
+      - name: Restore verified runtime candidate
+        run: bash .release/pypi/candidate.sh restore --profile runtime
       - name: Verify the published SDK before uploading any consumer
         run: bash .release/pypi/release.sh gate-sdk --wait-seconds 600
       - uses: actions/download-artifact@v4

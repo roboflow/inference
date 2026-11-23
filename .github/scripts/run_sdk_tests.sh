@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-mode="${1:?Choose unit, integration, e2e or install}"
+mode="${1:?Choose unit, integration, e2e, install or retained}"
+run_options=()
 python_version="${2:-3.12}"
 case "$python_version" in 3.10|3.11|3.12|3.13) ;; *) exit 2 ;; esac
 case "$mode" in
@@ -20,9 +21,16 @@ case "$mode" in
         target=sdk-install
         command=(python -c 'from pathlib import Path; import inference_sdk; from inference_sdk import InferenceHTTPClient; from importlib.metadata import version; assert not Path(inference_sdk.__file__).is_relative_to("/work"); print(version("inference-sdk"), inference_sdk.__file__)')
         ;;
+    retained)
+        target=base
+        command=(python /work/.release/pypi/sdk_smoke.py)
+        ;;
     *) exit 2 ;;
 esac
 cd "$(git rev-parse --show-toplevel)"
+if [[ "$mode" == retained ]]; then
+    run_options=(-v "$PWD:/work:ro" -w /tmp)
+fi
 image="inference-sdk-validation:${python_version}-${mode}"
 docker build --file .github/docker/Dockerfile.sdk-tests \
     --build-arg "PYTHON_VERSION=$python_version" --target "$target" --tag "$image" .
@@ -30,4 +38,4 @@ image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 printf 'Source revision: %s\nDocker image: %s\nCommand:' "$(git rev-parse HEAD)" "$image_id"
 printf ' %q' "${command[@]}"
 printf '\n'
-docker run --rm --shm-size=1g "$image_id" "${command[@]}"
+docker run --rm --shm-size=1g "${run_options[@]}" "$image_id" "${command[@]}"
