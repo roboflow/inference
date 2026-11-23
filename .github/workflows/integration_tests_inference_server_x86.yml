@@ -33,9 +33,6 @@ on:
     # Called by fast_track_integration_tests.yml with a prebuilt image tag, so
     # the 15-minute in-job image build is skipped.
     inputs:
-      release_source:
-        type: string
-        default: ''
       use-inference-models:
         type: string
         default: all
@@ -106,7 +103,6 @@ jobs:
       SERVER_IMAGE: ${{ github.event.inputs.server-image || 'legacy' }}
       INFERENCE_SERVER_REPO: ${{ github.event.inputs.server-image == 'new' && 'inference-server-experimental' || 'roboflow-inference-server-cpu' }}
       PYTEST_EXTRA_ARGS: ${{ github.event.inputs.server-image == 'new' && '--ignore=tests/inference/integration_tests/test_video_processing_endpoints.py --ignore=tests/inference/integration_tests/yolo_world_test.py --deselect tests/inference/integration_tests/test_workflow_endpoints.py::test_compilation_endpoint_when_compilation_succeeds_with_custom_block' || '' }}
-      RELEASE_SOURCE: ${{ inputs.release_source }}
       MODEL_MODE: ${{ matrix.use-inference-models }}
       IMAGE_FAMILY: cpu
       IMAGE_TAG: ${{ inputs.image_tag }}
@@ -116,16 +112,16 @@ jobs:
       INFERENCE_TEST_CONTAINER: ci-cpu-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       INFERENCE_TEST_BIND: 127.0.0.1::9101
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
+      fail-fast: true
       matrix:
         use-inference-models: ${{ fromJSON(github.event.inputs.server-image == 'new' && '["true"]' || ((inputs.use-inference-models || 'all') == 'all' && '["true","false"]' || format('["{0}"]', inputs.use-inference-models))) }}
-    timeout-minutes: ${{ inputs.release_source != '' && 212 || 60 }}
+    timeout-minutes: 60
 
     steps:
       - name: Checkout candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ${{ inputs.release_source || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Validate image inputs before authentication
         env:
@@ -152,15 +148,9 @@ jobs:
       - name: 🔨 Build and Push Test Docker
         if: ${{ env.SERVER_IMAGE == 'legacy' && inputs.image_tag == '' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
-          if [ -n "$RELEASE_SOURCE" ]; then
-            image="inference-rc-test:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$MODEL_MODE"
-            docker build -t "$image" -f docker/dockerfiles/Dockerfile.onnx.cpu .
-            echo "INFERENCE_TEST_IMAGE=$image" >> "$GITHUB_ENV"
-          else
-            docker pull roboflow/roboflow-inference-server-cpu:test
-            docker build -t roboflow/roboflow-inference-server-cpu:test -f docker/dockerfiles/Dockerfile.onnx.cpu .
-            docker push roboflow/roboflow-inference-server-cpu:test
-          fi
+          docker pull roboflow/roboflow-inference-server-cpu:test
+          docker build -t roboflow/roboflow-inference-server-cpu:test -f docker/dockerfiles/Dockerfile.onnx.cpu .
+          docker push roboflow/roboflow-inference-server-cpu:test
       - name: Pull and verify prebuilt amd64 image
         if: ${{ (inputs.image_tag != '' || inputs.image_digest != '') && !inputs.private_image }}
         env:
@@ -178,11 +168,9 @@ jobs:
         if: ${{ env.SERVER_IMAGE == 'new' && inputs.image_digest == '' && !inputs.private_image }}
         run: |
           docker build -t roboflow/inference-server-experimental:test -f inference_server/docker/Dockerfile.cpu .
-      - name: "Run shared CPU server test stages [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 182 || 60 }}
+      - name: Run shared CPU server test stages
         uses: ./.github/actions/server-tests-cpu
         with:
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
           verify_runtime: ${{ inputs.private_image }}
           API_KEY: ${{ secrets.API_KEY }}
           ASL_INSTANCE_SEGMENTATION_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
@@ -193,11 +181,3 @@ jobs:
           COINS_XAZ9I_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
           MELEE_API_KEY: ${{ secrets.MELEE_API_KEY }}
           YOLONAS_TEST_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
-      - name: Retain RC server attempt exit codes
-        if: ${{ always() && inputs.release_source != '' && !inputs.private_image }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: rc-server-attempts-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/server-test-attempts/attempts.txt
-          if-no-files-found: warn

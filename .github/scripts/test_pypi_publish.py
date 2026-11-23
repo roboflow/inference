@@ -23,7 +23,7 @@ def test_runtime_upload_is_preflighted_and_stages_only_missing_files():
         i for i, step in enumerate(steps) if "publish.sh verify" in step.get("run", "")
     )
     assert prepare < upload < verify
-    assert steps[upload]["with"]["packages-dir"] == "release-upload/"
+    assert steps[upload]["with"]["packages-dir"] == "dist/runtime-upload/"
     assert "skip-existing" not in steps[upload]["with"]
 
 
@@ -881,41 +881,34 @@ def test_runtime_modes_and_dependency_gates_precede_recovery():
         Loader=yaml.BaseLoader,
     )
     job = config["jobs"]["publish_runtime"]
-    assert "prepare_dependencies" in job["needs"]
-    assert "validation" in config["jobs"]["prepare_dependencies"]["needs"]
-    for job_name in (
-        "prepare_dependencies",
-        "publish_runtime",
-        "docker",
-        "complete",
-        "notify-svis",
-    ):
-        guarded = config["jobs"][job_name]
-        assert "!cancelled()" in guarded["if"]
-        needs = guarded["needs"]
-        if isinstance(needs, str):
-            needs = [needs]
-        for dependency in needs:
-            assert f"needs.{dependency}.result == 'success'" in guarded["if"], job_name
+    assert "inputs.packages != 'dependencies'" in job["if"]
+    assert "inputs.publish == true" in job["if"]
     assert job["concurrency"]["cancel-in-progress"] == "false"
     steps = job["steps"]
     prepare = next(
         i for i, step in enumerate(steps) if "publish.sh prepare" in step.get("run", "")
     )
-    gate = next(
+    gates = [
         i
         for i, step in enumerate(steps)
-        if "dependencies.sh verify" in step.get("run", "")
-    )
-    assert gate < prepare
-    assert "gate-sdk" in steps[gate]["run"]
+        if "gate-sdk" in step.get("run", "")
+        or "dependencies.sh verify" in step.get("run", "")
+    ]
+    assert len(gates) == 2 and max(gates) < prepare
     assert any(
-        step.get("with", {}).get("path") == "release-state/runtime-receipt.json"
+        "always()" in step.get("if", "")
+        and "runtime-publication" in step.get("with", {}).get("name", "")
         for step in steps
     )
-    assert not any(
-        "dependencies.sh coordinate" in step.get("run", "")
-        for step in config["jobs"]["prepare_dependencies"]["steps"]
+    coordinator = config["jobs"]["prepare_dependencies"]["steps"]
+    coordinate = next(
+        step
+        for step in coordinator
+        if "dependencies.sh coordinate" in step.get("run", "")
+    )
+    assert (
+        coordinate["if"]
+        == "${{ github.event_name == 'release' || inputs.publish == true }}"
     )
 
 
@@ -927,10 +920,9 @@ def test_contract_workflow_covers_new_helper_and_tests():
     for trigger in ("pull_request", "push"):
         assert ".github/scripts/test_pypi_publish.py" in config["on"][trigger]["paths"]
     run = next(
-        step.get("run", step.get("with", {}).get("command", ""))
+        step["run"]
         for step in config["jobs"]["contracts"]["steps"]
-        if "python -m pytest"
-        in step.get("run", step.get("with", {}).get("command", ""))
+        if "python -m pytest" in step.get("run", "")
     )
     assert "docker run" in run
     assert run.count(".release/pypi/publish.py") == 2

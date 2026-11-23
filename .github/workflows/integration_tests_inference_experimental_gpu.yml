@@ -28,10 +28,6 @@ on:
     # Called by fast_track_integration_tests.yml when inference_models/ changed
     # on the fast-track branch.
     inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
       extras:
         type: string
         default: ""
@@ -53,9 +49,8 @@ jobs:
   integration-tests-inference-models-gpu:
     name: ${{ matrix.extras.marker }}:${{ matrix.python-version }}:cuda-graphs:${{ matrix.extras.enable_auto_cuda_graphs_for_trt }}
     runs-on: Roboflow-GPU-VM-Runner
-    timeout-minutes: ${{ inputs.release_source != '' && 107 || 30 }}
+    timeout-minutes: 30
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.12"]
         extras:
@@ -68,9 +63,6 @@ jobs:
       - name: 🛎️ Checkout
         if: ${{ (inputs.extras == '' || inputs.extras == matrix.extras.marker) && (inputs.python_version == '' || inputs.python_version == matrix.python-version) }}
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
-          persist-credentials: false
       - name: 📦 Cache Python packages
         if: ${{ (inputs.extras == '' || inputs.extras == matrix.extras.marker) && (inputs.python_version == '' || inputs.python_version == matrix.python-version) }}
         uses: actions/cache@v5
@@ -132,17 +124,13 @@ jobs:
         run: |
           source .venv/bin/activate
           python -c "import torch; print(torch.cuda.get_device_name(0))"
-      - name: "🧪 Run tests marked `${{ matrix.extras.marker }}` [release-test]"
+      - name: 🧪 Run tests marked `${{ matrix.extras.marker }}`
         if: ${{ (inputs.extras == '' || inputs.extras == matrix.extras.marker) && (inputs.python_version == '' || inputs.python_version == matrix.python-version) }}
-        timeout-minutes: ${{ inputs.release_source != '' && 77 || 25 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1500'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          working-directory: inference_models
-          command: |
-            source .venv/bin/activate
-            ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=${{ matrix.extras.enable_auto_cuda_graphs_for_trt }} python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
+        working-directory: inference_models
+        timeout-minutes: 25
+        run: |
+          source .venv/bin/activate
+          ENABLE_AUTO_CUDA_GRAPHS_FOR_TRT_BACKEND=${{ matrix.extras.enable_auto_cuda_graphs_for_trt }} python -m pytest -n ${{ matrix.extras.workers }} -m "${{ matrix.extras.marker }} and not cpu_only" tests/integration_tests
       - name: 🧠 CUDA memory probe results
         if: ${{ always() && (inputs.extras == '' || inputs.extras == matrix.extras.marker) && (inputs.python_version == '' || inputs.python_version == matrix.python-version) }}
         working-directory: inference_models
@@ -152,11 +140,3 @@ jobs:
             echo "===== $f (peak torch_reserved: $(grep -o 'torch_reserved=[0-9]*' "$f" | cut -d= -f2 | sort -n | tail -1)MiB) ====="
             cat "$f"
           done
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-integration_tests_inference_experimental_gpu-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn

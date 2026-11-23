@@ -8,11 +8,14 @@
   memory growth reported in #3302. Set
   `INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND=true` to try the temporary
   workaround on affected Apple Silicon deployments.
+## `0.39.10`
+
 ### Added
 
 - [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
   platform, single-label and multi-label, with their own default confidence
-  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). ONNX and PyTorch packages
+  also support image embeddings. See the
   [model page](models/convnext-classification.md).
 - The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
   `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
