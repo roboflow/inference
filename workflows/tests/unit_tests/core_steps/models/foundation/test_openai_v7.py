@@ -27,6 +27,7 @@ from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import
     resolve_keypoint_skeletons,
 )
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    REFERENCE_ORIENTED_CROPS_INTRO,
     SHARED_REFERENCE_PARTS_CACHE,
     ReferenceExample,
 )
@@ -1575,3 +1576,201 @@ def test_run_reports_an_error_for_an_oriented_answer_in_another_contract() -> No
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+def _oriented_reference_example(
+    box_class: str = "cat", obb: Optional[list] = None
+) -> dict:
+    return {
+        **_reference_example(),
+        "annotations": [{"class": box_class, "obb": obb or [100, 50, 60, 20, 0.5]}],
+    }
+
+
+def _run_oriented_with_mock(
+    reference_examples: Optional[list],
+    class_heading: Optional[dict] = None,
+    classes: Optional[List[str]] = None,
+    output_classes: Optional[List[str]] = None,
+    raw_output: str = ORIENTED_OUTPUT,
+) -> tuple:
+    block = OpenAIBlockV7(api_key="rf-key")
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(raw_output, 11, 3)]
+        results = block.run(
+            images=Batch(
+                content=[
+                    _build_image(
+                        width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT
+                    )
+                ],
+                indices=[(0,)],
+            ),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=classes or ["cat", "dog"],
+            output_classes=output_classes,
+            model_version="gpt-6-astra",
+            reasoning_effort=None,
+            image_detail="high",
+            max_tokens=None,
+            temperature=None,
+            max_concurrent_requests=None,
+            api_key="rf_key:account",
+            reference_examples=reference_examples,
+            class_heading=class_heading,
+        )
+    prompt = mock_execute.call_args[1]["openai_prompts"][0]
+    return results[0], prompt
+
+
+def test_manifest_accepts_reference_examples_for_oriented_object_detection() -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/open_ai@v7",
+            "name": "open_ai",
+            "images": "$inputs.image",
+            "task_type": "oriented-object-detection",
+            "classes": ["a forklift truck", "a scissor lift"],
+            "output_classes": ["forklift", "scissor-lift"],
+            "class_heading": {"forklift": True},
+            "reference_examples": [_oriented_reference_example(box_class="forklift")],
+        }
+    )
+
+    # then
+    assert result.reference_examples == [
+        ReferenceExample(**_oriented_reference_example(box_class="forklift"))
+    ]
+
+
+def test_manifest_checks_oriented_reference_labels_against_output_classes() -> None:
+    with pytest.raises(ValueError, match=r"does not have: \['a forklift truck'\]"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["a forklift truck", "a scissor lift"],
+                "output_classes": ["forklift", "scissor-lift"],
+                "reference_examples": [
+                    _oriented_reference_example(box_class="a forklift truck")
+                ],
+            }
+        )
+
+
+def test_manifest_rejects_oriented_reference_examples_without_an_obb() -> None:
+    with pytest.raises(ValueError, match="needs an `obb` on every annotation"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/open_ai@v7",
+                "name": "open_ai",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat", "dog"],
+                "reference_examples": [_reference_example()],
+            }
+        )
+
+
+def test_run_rejects_resolved_oriented_reference_examples_without_an_obb() -> None:
+    with pytest.raises(ValueError, match="needs an `obb` on every annotation"):
+        _run_oriented_with_mock([_reference_example()])
+
+
+def test_run_sends_upright_reference_crops_before_the_oriented_target() -> None:
+    # when
+    result, prompt = _run_oriented_with_mock(
+        [_oriented_reference_example()], class_heading={"cat": True}
+    )
+
+    # then
+    content = prompt["input"][0]["content"]
+    assert content[0] == {"type": "input_text", "text": REFERENCE_ORIENTED_CROPS_INTRO}
+    assert content[1] == {"type": "input_text", "text": 'Examples of "cat":'}
+    assert content[2]["image_url"].startswith("data:image/jpeg;base64,")
+    assert content[3] == {"type": "input_text", "text": "Target image:"}
+    assert content[4]["image_url"].startswith("data:image/png;base64,")
+    assert content[5]["text"].startswith(
+        "Detect all objects in the target image and return an oriented bounding box"
+    )
+    assert content[5]["text"].endswith("return detections for the target image only.")
+    assert len(content) == 6
+    assert prompt["text"]["format"]["name"] == "oriented_detections"
+    assert result["error_status"] is False
+
+
+@pytest.mark.parametrize(
+    "class_heading, crop_is_taller",
+    [({"forklift": True}, True), ({"forklift": False}, False), (None, False)],
+)
+def test_run_turns_the_crops_by_the_front_of_the_output_label(
+    class_heading, crop_is_taller
+) -> None:
+    # given: a box twice as long across as along its heading, so the crop stays tall
+    # only for a class with a front
+    example = _oriented_reference_example(
+        box_class="forklift", obb=[100, 50, 20, 60, 0.0]
+    )
+    forklift_output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "forklift",
+                    "cx": 1024.0,
+                    "cy": 512.0,
+                    "length": 600.0,
+                    "width": 200.0,
+                    "angle_deg": 30.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    _, prompt = _run_oriented_with_mock(
+        [example],
+        class_heading=class_heading,
+        classes=["a forklift truck", "a scissor lift"],
+        output_classes=["forklift", "scissor-lift"],
+        raw_output=forklift_output,
+    )
+
+    # then
+    crop_url = prompt["input"][0]["content"][2]["image_url"]
+    crop = cv2.imdecode(
+        np.frombuffer(base64.b64decode(crop_url.split(",", 1)[1]), dtype=np.uint8),
+        cv2.IMREAD_COLOR,
+    )
+    assert (crop.shape[0] > crop.shape[1]) is crop_is_taller
+
+
+@pytest.mark.parametrize("reference_examples", [None, []])
+def test_run_without_reference_examples_keeps_the_oriented_request(
+    reference_examples,
+) -> None:
+    # when
+    _, prompt = _run_oriented_with_mock(reference_examples)
+
+    # then
+    content = prompt["input"][0]["content"]
+    assert len(content) == 2
+    assert content[1]["text"].startswith(
+        "Detect all objects in this image and return an oriented bounding box"
+    )
+
+
+def test_manifest_shows_the_reference_examples_for_both_detection_tasks() -> None:
+    # when
+    schema = BlockManifest.model_json_schema()
+
+    # then
+    relevant_for = schema["properties"]["reference_examples"]["relevant_for"]
+    assert set(relevant_for["task_type"]["values"]) == {
+        "object-detection",
+        "oriented-object-detection",
+    }

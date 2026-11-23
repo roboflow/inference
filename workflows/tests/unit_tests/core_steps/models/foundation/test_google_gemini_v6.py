@@ -16,8 +16,8 @@ import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common import vlm_reference_examples
-from roboflow_workflows.core_steps.common.oriented import serialise_native_obb
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.oriented import serialise_native_obb
 from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
     OCCLUDED_KEYPOINT_CONFIDENCE,
     VISIBLE_KEYPOINT_CONFIDENCE,
@@ -25,6 +25,8 @@ from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import
     resolve_keypoint_skeletons,
 )
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    REFERENCE_FRONT_MARKER_RULE,
+    REFERENCE_ORIENTED_BOXED_INTRO,
     SHARED_REFERENCE_PARTS_CACHE,
     ReferenceExample,
 )
@@ -1481,3 +1483,162 @@ def test_run_reports_an_error_for_an_oriented_answer_in_another_contract() -> No
     # then
     assert result["error_status"] is True
     assert result["predictions"] is None
+
+
+def _oriented_reference_example(box_class: str = "cat") -> dict:
+    return {
+        **_reference_example(),
+        "annotations": [{"class": box_class, "obb": [100, 50, 60, 20, 0.5]}],
+    }
+
+
+def _run_oriented_with_mock(
+    reference_examples: Optional[list],
+    class_heading: Optional[dict] = None,
+) -> tuple:
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(ORIENTED_OUTPUT, 11, 3)]
+        results = block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat", "dog"],
+            model_version="gemini-4-argon",
+            max_tokens=16384,
+            temperature=None,
+            thinking_level="low",
+            google_code_execution=None,
+            max_concurrent_requests=None,
+            api_key="rf_key:account",
+            reference_examples=reference_examples,
+            class_heading=class_heading,
+        )
+    parts = mock_execute.call_args[1]["gemini_prompts"][0]["contents"]["parts"]
+    return results[0], parts
+
+
+def test_manifest_accepts_reference_examples_for_oriented_object_detection() -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/google_gemini@v6",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "oriented-object-detection",
+            "classes": ["cat", "dog"],
+            "class_heading": {"cat": True},
+            "reference_examples": [_oriented_reference_example()],
+        }
+    )
+
+    # then
+    assert result.reference_examples == [
+        ReferenceExample(**_oriented_reference_example())
+    ]
+
+
+def test_manifest_rejects_oriented_reference_examples_without_an_obb() -> None:
+    with pytest.raises(ValueError, match="needs an `obb` on every annotation"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat", "dog"],
+                "reference_examples": [_reference_example()],
+            }
+        )
+
+
+def test_run_rejects_resolved_oriented_reference_examples_without_an_obb() -> None:
+    with pytest.raises(ValueError, match="needs an `obb` on every annotation"):
+        _run_oriented_with_mock([_reference_example()])
+
+
+def test_run_sends_rotated_reference_images_before_the_oriented_target() -> None:
+    # when
+    result, parts = _run_oriented_with_mock(
+        [_oriented_reference_example()], class_heading={"cat": True}
+    )
+
+    # then
+    assert parts[0] == {
+        "text": REFERENCE_ORIENTED_BOXED_INTRO + REFERENCE_FRONT_MARKER_RULE
+    }
+    assert parts[1] == {"text": "Reference image 1:"}
+    assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[3] == {"text": "Target image:"}
+    assert parts[4]["inline_data"]["mime_type"] == "image/jpeg"
+    instructions = parts[5]["text"]
+    assert instructions.startswith(
+        "Detect all objects in the target image and return an oriented bounding box"
+    )
+    assert "Classes with a front: cat." in instructions
+    assert instructions.endswith(
+        "The reference images are not part of the task: return detections for "
+        "the target image only."
+    )
+    assert len(parts) == 6
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["class"] == "cat"
+
+
+def test_run_draws_the_reference_box_rotated() -> None:
+    # given: a 60x20 box turned 0.5 rad, whose top corner is near (78, 27) and whose
+    # axis-aligned box starts at x = 69
+    # when
+    _, parts = _run_oriented_with_mock([_oriented_reference_example()])
+
+    # then
+    boxed = cv2.imdecode(
+        np.frombuffer(
+            base64.b64decode(parts[2]["inline_data"]["data"]), dtype=np.uint8
+        ),
+        cv2.IMREAD_COLOR,
+    )
+    assert boxed[26:29, 77:80].min() < 200
+    assert boxed[26:29, 68:71].min() >= 235
+
+
+@pytest.mark.parametrize("class_heading", [None, {"cat": False}, {"dog": True}])
+def test_run_leaves_the_front_marker_out_when_no_example_class_has_a_front(
+    class_heading,
+) -> None:
+    # when
+    _, parts = _run_oriented_with_mock(
+        [_oriented_reference_example()], class_heading=class_heading
+    )
+
+    # then
+    assert parts[0] == {"text": REFERENCE_ORIENTED_BOXED_INTRO}
+
+
+@pytest.mark.parametrize("reference_examples", [None, []])
+def test_run_without_reference_examples_keeps_the_oriented_request(
+    reference_examples,
+) -> None:
+    # when
+    _, parts = _run_oriented_with_mock(reference_examples)
+
+    # then
+    assert len(parts) == 2
+    assert "inline_data" in parts[0]
+    assert parts[1]["text"].startswith(
+        "Detect all objects in this image and return an oriented bounding box"
+    )
+
+
+def test_manifest_shows_the_reference_examples_for_both_detection_tasks() -> None:
+    # when
+    schema = BlockManifest.model_json_schema()
+
+    # then
+    relevant_for = schema["properties"]["reference_examples"]["relevant_for"]
+    assert set(relevant_for["task_type"]["values"]) == {
+        "object-detection",
+        "oriented-object-detection",
+    }

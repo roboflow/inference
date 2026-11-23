@@ -90,7 +90,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_EXAMPLES_DESCRIPTION,
     REFERENCE_EXAMPLES_EXAMPLE,
-    REFERENCE_EXAMPLES_TASK,
+    REFERENCE_EXAMPLES_TASKS,
     SHARED_REFERENCE_PARTS_CACHE,
     TARGET_IMAGE_INTRO,
     ReferenceExamples,
@@ -540,14 +540,22 @@ The two lists are paired by position. Structured-output models constrain the
 returned label to `output_classes`, and decoded predictions use those stable
 labels. Omitting `output_classes` preserves the original `classes` contract.
 
-For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
-labeled example images. The block cuts up to {MAX_CROPS_PER_LABEL} crops per label
-from the examples' boxes (largest first) and sends them, grouped by label, before
-the image to label, so the model sees what each label looks like. Box labels are
-the output labels: `output_classes` when set, `classes` otherwise. The crops go
-with every image, so they add input tokens to each request; they come first, so
-the provider can cache them across a batch. Without examples the request is
-unchanged.
+For `object-detection` and `oriented-object-detection`, `reference_examples` takes
+up to {MAX_REFERENCE_EXAMPLES} labeled example images. The block cuts up to
+{MAX_CROPS_PER_LABEL} crops per label from the examples' boxes (largest first) and
+sends them, grouped by label, before the image to label, so the model sees what
+each label looks like. Box labels are the output labels: `output_classes` when set,
+`classes` otherwise. The crops go with every image, so they add input tokens to
+each request; they come first, so the provider can cache them across a batch.
+Without examples the request is unchanged.
+
+For `oriented-object-detection`, each annotation gives its box as `obb` instead of
+`x`, `y`, `width` and `height`: the native `[center x, center y, width, height,
+angle]` of an oriented prediction, in pixels of the example, with the angle in
+radians clockwise from +x and the width along the heading. Each crop follows the
+rotation of its box and is turned upright: the front of a class with a front
+(`class_heading`, keyed by the output labels) is on the right, and the long side of
+any other class is horizontal.
 
 A selector can provide the whole list, such as `$inputs.reference_examples`, but
 selectors inside an example are not resolved: to build the examples from a step's
@@ -826,7 +834,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "values": set(REFERENCE_EXAMPLES_TASKS),
                     "required": False,
                 },
             },
@@ -1254,8 +1262,9 @@ def run_openai_prompting(
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent OpenAI requests.
         service_tier: OpenAI service tier, omitted from the request when ``None``.
-        reference_examples: Optional labeled example images for object detection,
-            in the format ``validate_reference_examples`` accepts.
+        reference_examples: Optional labeled example images for object or
+            oriented object detection, in the format
+            ``validate_reference_examples`` accepts.
         reference_parts_cache: Keeps the parts built for the examples, the
             process-wide cache for the block; without one they load on every call.
         keypoint_schema: The skeleton of each class, for the keypoint task.
@@ -1285,7 +1294,11 @@ def run_openai_prompting(
             reference_examples, task_type=task_type, labels=labels
         )
         reference_parts = openai_reference_parts_for(
-            reference_examples, labels=labels, cache=reference_parts_cache
+            reference_examples,
+            labels=labels,
+            task_type=task_type,
+            class_heading=class_heading,
+            cache=reference_parts_cache,
         )
 
     openai_prompts = []

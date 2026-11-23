@@ -70,7 +70,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_EXAMPLES_DESCRIPTION,
     REFERENCE_EXAMPLES_EXAMPLE,
-    REFERENCE_EXAMPLES_TASK,
+    REFERENCE_EXAMPLES_TASKS,
     SHARED_REFERENCE_PARTS_CACHE,
     TARGET_IMAGE_INTRO,
     ReferenceExamples,
@@ -363,13 +363,21 @@ Separate `roboflow_core/vlm_as_detector@v2` and
 
 ### Reference examples
 
-For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
-labeled example images. The block draws each example's boxes and labels on the
-image (longest edge 1024 pixels) and sends the examples before the image to label,
-so Gemini sees what each class looks like and how tightly it is boxed. Box every
-object of the listed classes in each example. The examples go with every image, so
-they add input tokens to each request; they come first, so the provider can cache
-them across a batch. Without examples the request is unchanged.
+For `object-detection` and `oriented-object-detection`, `reference_examples` takes
+up to {MAX_REFERENCE_EXAMPLES} labeled example images. The block draws each example's
+boxes and labels on the image (longest edge 1024 pixels) and sends the examples
+before the image to label, so Gemini sees what each class looks like and how
+tightly it is boxed. Box every object of the listed classes in each example. The
+examples go with every image, so they add input tokens to each request; they come
+first, so the provider can cache them across a batch. Without examples the request
+is unchanged.
+
+For `oriented-object-detection`, each annotation gives its box as `obb` instead of
+`x`, `y`, `width` and `height`: the native `[center x, center y, width, height,
+angle]` of an oriented prediction, in pixels of the example, with the angle in
+radians clockwise from +x and the width along the heading. The boxes are drawn
+rotated, and a triangle on the front edge marks the objects of the classes with a
+front (`class_heading`).
 
 A selector can provide the whole list, such as `$inputs.reference_examples`, but
 selectors inside an example are not resolved: to build the examples from a step's
@@ -533,7 +541,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "values": set(REFERENCE_EXAMPLES_TASKS),
                     "required": False,
                 },
             },
@@ -924,7 +932,11 @@ def run_gemini_prompting(
             reference_examples, task_type=task_type, labels=classes
         )
         reference_parts = gemini_reference_parts_for(
-            reference_examples, labels=classes, cache=reference_parts_cache
+            reference_examples,
+            labels=classes,
+            task_type=task_type,
+            class_heading=class_heading,
+            cache=reference_parts_cache,
         )
 
     gemini_prompts = []
