@@ -61,7 +61,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_EXAMPLES_DESCRIPTION,
     REFERENCE_EXAMPLES_EXAMPLE,
-    REFERENCE_EXAMPLES_TASK,
+    REFERENCE_EXAMPLES_TASKS,
     SHARED_REFERENCE_PARTS_CACHE,
     TARGET_IMAGE_INTRO,
     ReferenceExamples,
@@ -333,13 +333,21 @@ Separate `roboflow_core/vlm_as_detector@v2` and
 
 ### Reference examples
 
-For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
-labeled example images. The block draws each example's boxes and labels on the
-image (longest edge 1024 pixels) and sends the examples before the image to label,
-so Gemini sees what each class looks like and how tightly it is boxed. Box every
-object of the listed classes in each example. The examples go with every image, so
-they add input tokens to each request; they come first, so the provider can cache
-them across a batch. Without examples the request is unchanged.
+For `object-detection` and `keypoint-detection`, `reference_examples` takes up to
+{MAX_REFERENCE_EXAMPLES} labeled example images. The block draws each example's
+boxes and labels on the image (longest edge 1024 pixels) and sends the examples
+before the image to label, so Gemini sees what each class looks like and how
+tightly it is boxed. Box every object of the listed classes in each example. The
+examples go with every image, so they add input tokens to each request; they come
+first, so the provider can cache them across a batch. Without examples the request
+is unchanged.
+
+For `keypoint-detection`, each annotation also lists its `keypoints` by name, and
+the block draws each instance's skeleton over its box: the edges, a filled dot for
+a visible keypoint and a hollow ring for an occluded one, each numbered by its
+position in the class skeleton. The text before the images maps the numbers to the
+keypoint names, so Gemini sees where each keypoint goes. Leave out the keypoints an
+instance does not show.
 
 A selector can provide the whole list, such as `$inputs.reference_examples`, but
 selectors inside an example are not resolved: to build the examples from a step's
@@ -483,7 +491,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "values": set(REFERENCE_EXAMPLES_TASKS),
                     "required": False,
                 },
             },
@@ -608,10 +616,11 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`keypoint_schema` parameter required to be set for task `{self.task_type}`"
             )
+        keypoint_skeletons = None
         if self.task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA and isinstance(
             self.keypoint_schema, dict
         ):
-            resolve_keypoint_skeletons(
+            keypoint_skeletons = resolve_keypoint_skeletons(
                 self.keypoint_schema,
                 classes=self.classes if isinstance(self.classes, list) else None,
             )
@@ -628,6 +637,7 @@ class BlockManifest(WorkflowBlockManifest):
                 self.reference_examples,
                 task_type=self.task_type,
                 labels=self.classes if isinstance(self.classes, list) else None,
+                keypoint_skeletons=keypoint_skeletons,
             )
         validate_reasoning_level(
             model=self.model_version,
@@ -832,10 +842,16 @@ def run_gemini_prompting(
     reference_parts = []
     if reference_examples:
         validate_reference_examples(
-            reference_examples, task_type=task_type, labels=classes
+            reference_examples,
+            task_type=task_type,
+            labels=classes,
+            keypoint_skeletons=keypoint_skeletons,
         )
         reference_parts = gemini_reference_parts_for(
-            reference_examples, labels=classes, cache=reference_parts_cache
+            reference_examples,
+            labels=classes,
+            cache=reference_parts_cache,
+            keypoint_skeletons=keypoint_skeletons,
         )
 
     gemini_prompts = []
