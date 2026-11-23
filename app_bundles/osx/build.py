@@ -216,6 +216,14 @@ def zip_app(app_path: str, zip_path: str):
 
 
 def notarize_app(zip_path):
+    """Submit the signed application using the configured notary keychain.
+
+    Args:
+        zip_path (str): Archive containing the signed application bundle.
+
+    Raises:
+        subprocess.CalledProcessError: If notarytool fails.
+    """
     print("📤 Submitting to Apple for notarization...")
     # subprocess.run([
     #     "xcrun", "notarytool", "submit", zip_path,
@@ -234,6 +242,11 @@ def notarize_app(zip_path):
         "--output-format",
         "plist",  # or 'json' for structured output
     ]
+    # CI stores credentials in its disposable keychain. notarytool's default
+    # lookup can miss that profile even when security made the keychain default.
+    keychain = os.getenv("NOTARY_KEYCHAIN_PATH")
+    if keychain:
+        cmd.extend(["--keychain", keychain])
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
