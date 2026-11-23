@@ -118,12 +118,16 @@ TARGET_ONLY_RULE = (
 
 REFERENCE_EXAMPLES_DESCRIPTION = (
     "Labeled example images that show the model what each class looks like and how "
-    "tightly it is boxed (object-detection only). Each example is "
-    '`{"image": <URL, base64 or {"type": ..., "value": ...}>, "annotations": '
-    '[{"class": ..., "x": ..., "y": ..., "width": ..., "height": ...}]}`, in the '
-    "Roboflow prediction format: box centers and sizes in pixels of that example "
-    "image, `class` one of the block's labels. Annotate every object of those labels "
-    "in each example. Local file paths are not read. At most "
+    "tightly it is boxed (object-detection and oriented-object-detection). Each "
+    'example is `{"image": <URL, base64 or {"type": ..., "value": ...}>, '
+    '"annotations": [{"class": ..., "x": ..., "y": ..., "width": ..., "height": '
+    "...}]}`, in the Roboflow prediction format: box centers and sizes in pixels of "
+    "that example image, `class` one of the block's labels. For "
+    "oriented-object-detection an annotation gives its box as `obb` instead: "
+    "`[center x, center y, width, height, angle]` in pixels of the example image, "
+    "the angle in radians clockwise from +x and the width along the heading, as in "
+    "a prediction of the oriented model block. Annotate every object of those "
+    "labels in each example. Local file paths are not read. At most "
     f"{MAX_REFERENCE_EXAMPLES} examples, sent with every image, so each request costs "
     "more input tokens. A selector can provide the whole list, but selectors inside "
     "an example are not resolved."

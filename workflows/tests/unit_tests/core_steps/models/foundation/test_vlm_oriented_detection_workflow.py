@@ -4,13 +4,16 @@ The per-block suites call ``run()`` directly. Two things only break in the real
 ``ExecutionEngine``: the compiler validating that ``predictions`` narrows to
 ``oriented_object_detection_prediction`` once a consumer of that kind is wired
 onto it, and the serializer of that kind turning the carrier into the native
-oriented response.
+oriented response. The reference examples reach the request the way the app sends
+them: as the workflow input the block's ``reference_examples`` selects.
 """
 
+import base64
 import math
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
+import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
@@ -42,6 +45,15 @@ BLOCKS = {
         ".execute_gemini_requests",
     },
 }
+
+
+def _first_text_of_the_request(block: str, mock_execute: MagicMock) -> str:
+    if block == "openai":
+        content = mock_execute.call_args[1]["openai_prompts"][0]["input"][0]["content"]
+        return content[0]["text"]
+
+    parts = mock_execute.call_args[1]["gemini_prompts"][0]["contents"]["parts"]
+    return parts[0]["text"]
 
 
 def _workflow_definition(block: str) -> Dict[str, Any]:
@@ -127,3 +139,59 @@ def test_oriented_predictions_feed_an_oriented_consumer_and_serialize_natively(
     assert row["heading"] is True
     assert row["confidence"] == 1.0
     assert result[0]["visualization"] is not None
+
+
+@pytest.mark.parametrize("block", sorted(BLOCKS))
+def test_reference_examples_from_a_workflow_input_describe_rotated_boxes(
+    block: str,
+) -> None:
+    # given
+    definition = _workflow_definition(block)
+    definition["inputs"].append(
+        {"type": "WorkflowParameter", "name": "reference_examples"}
+    )
+    definition["steps"][0]["reference_examples"] = "$inputs.reference_examples"
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=definition,
+        init_parameters={
+            "workflows_core.model_manager": MagicMock(),
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+    _, encoded = cv2.imencode(
+        ".png", np.full((IMAGE_HEIGHT, IMAGE_WIDTH, 3), 255, dtype=np.uint8)
+    )
+    reference_examples = [
+        {
+            "image": {
+                "type": "base64",
+                "value": base64.b64encode(encoded.tobytes()).decode("ascii"),
+            },
+            "annotations": [
+                {"class": "forklift", "obb": [100, 50, 80, 20, math.pi / 2]},
+                {"class": "scissor-lift", "obb": [50, 30, 40, 20, 0.3]},
+            ],
+        }
+    ]
+
+    # when
+    with patch(BLOCKS[block]["seam"]) as mock_execute:
+        mock_execute.return_value = [(VLM_ANSWER, 11, 3)]
+        result = execution_engine.run(
+            runtime_parameters={
+                "image": [np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8)],
+                "api_key": "sk-test",
+                "reference_examples": reference_examples,
+            },
+            serialize_results=True,
+        )
+
+    # then
+    assert result[0]["error_status"] is False
+    (row,) = result[0]["predictions"]["predictions"]
+    assert row["class"] == "forklift"
+    first_text = _first_text_of_the_request(block, mock_execute)
+    assert first_text.startswith("Reference examples:")
+    assert "rotated box" in first_text
