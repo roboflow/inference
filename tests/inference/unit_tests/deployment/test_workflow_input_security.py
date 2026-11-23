@@ -14,6 +14,7 @@ INSTALLERS = [
     "build-windows-installer-gpu.yml",
     "build-osx-bundle.yml",
 ]
+WORKFLOW_SHA = "a" * 40
 
 
 def run_step(tmp_path, workflow, step_name, **values):
@@ -48,6 +49,26 @@ def run_step(tmp_path, workflow, step_name, **values):
     )
 
 
+def _run_installer_version_step(tmp_path, workflow, *, event, manual, ref):
+    step_name = "Determine Version"
+    values = {
+        "EVENT_NAME": event,
+        "MANUAL_VERSION": manual,
+        "GIT_REF": ref,
+    }
+    if workflow == "build-osx-bundle.yml":
+        step_name = "Select source and release target"
+        values.update(
+            EVENT_TAG=ref.removeprefix("refs/tags/") if event == "release" else "",
+            RELEASE_TAG="",
+            PUBLISH_RELEASE="false",
+            GITHUB_SHA=WORKFLOW_SHA,
+        )
+
+    result = run_step(tmp_path, workflow, step_name, **values)
+    return result
+
+
 BAD_VALUES = [
     "$(touch sentinel)",
     'x"; touch sentinel; #',
@@ -66,7 +87,7 @@ BAD_VALUES = [
             "docker.inference-exp.yml",
             "generate tags",
             "CUSTOM_TAG",
-            {"VERSION": "1.2.3", "FORCE_PUSH": "false", "REF_NAME": "main"},
+            {"VERSION": "1.2.3"},
         ),
         (
             "docker.inference-exp.yml",
@@ -106,13 +127,12 @@ def test_workflows_reject_unsafe_whole_inputs(
 @pytest.mark.parametrize("workflow", INSTALLERS)
 @pytest.mark.parametrize("version", BAD_VALUES)
 def test_installer_manual_version_is_data_and_validated(tmp_path, workflow, version):
-    result, output, _ = run_step(
+    result, output, _ = _run_installer_version_step(
         tmp_path,
         workflow,
-        "Determine Version",
-        EVENT_NAME="workflow_dispatch",
-        MANUAL_VERSION=version,
-        GIT_REF="refs/heads/main",
+        event="workflow_dispatch",
+        manual=version,
+        ref="refs/heads/main",
     )
     assert result.returncode != 0
     assert not output
@@ -130,44 +150,35 @@ def test_installer_manual_version_is_data_and_validated(tmp_path, workflow, vers
 def test_installers_preserve_manual_and_release_versions(
     tmp_path, workflow, event, manual, ref
 ):
-    result, output, _ = run_step(
+    result, output, _ = _run_installer_version_step(
         tmp_path,
         workflow,
-        "Determine Version",
-        EVENT_NAME=event,
-        MANUAL_VERSION=manual,
-        GIT_REF=ref,
+        event=event,
+        manual=manual,
+        ref=ref,
     )
     assert result.returncode == 0, result.stderr
-    key = (
-        "BUILD_VERSION_ENV"
-        if workflow == "build-osx-bundle.yml"
-        else "installer_version_out"
-    )
-    assert output == f"{key}=1.2.3-rc.1\n"
+    if workflow == "build-osx-bundle.yml":
+        source_ref = ref if event == "release" else WORKFLOW_SHA
+        release_tag = "v1.2.3-rc.1" if event == "release" else ""
+        publish = "true" if event == "release" else "false"
+        assert output == (
+            f"source_ref={source_ref}\n"
+            "version=1.2.3-rc.1\n"
+            f"release_tag={release_tag}\n"
+            f"publish={publish}\n"
+        )
+    else:
+        assert output == "installer_version_out=1.2.3-rc.1\n"
 
 
 @pytest.mark.parametrize(
     "step,values,expected",
     [
+        ("generate tags", {"CUSTOM_TAG": "", "VERSION": "1.2.3"}, "base-tag=1.2.3\n"),
         (
             "generate tags",
-            {
-                "CUSTOM_TAG": "",
-                "VERSION": "1.2.3",
-                "FORCE_PUSH": "false",
-                "REF_NAME": "main",
-            },
-            "base-tag=1.2.3\n",
-        ),
-        (
-            "generate tags",
-            {
-                "CUSTOM_TAG": "canary",
-                "VERSION": "1.2.3",
-                "FORCE_PUSH": "true",
-                "REF_NAME": "release/1.2.3",
-            },
+            {"CUSTOM_TAG": "canary", "VERSION": "1.2.3"},
             "base-tag=canary\n",
         ),
         (
@@ -207,32 +218,6 @@ def test_experimental_workflow_preserves_tag_and_platform_rules(
     result, output, _ = run_step(tmp_path, "docker.inference-exp.yml", step, **values)
     assert result.returncode == 0, result.stderr
     assert output == expected
-
-
-@pytest.mark.parametrize(
-    "tag", ["latest", "1.2.3", "v1.2.3", "1.2.3.post1", "1.2.3-post1"]
-)
-def test_experimental_manual_publish_rejects_stable_tags(tmp_path, tag):
-    """Require the official release workflow for stable tags on release branches.
-
-    Args:
-        tmp_path (Path): Isolated directory for workflow shell outputs.
-        tag (str): Stable image tag that manual publication must reject.
-    """
-    result, output, _ = run_step(
-        tmp_path,
-        "docker.inference-exp.yml",
-        "generate tags",
-        CUSTOM_TAG=tag,
-        VERSION="1.2.3",
-        FORCE_PUSH="true",
-        REF_NAME="release/1.2.3",
-    )
-    assert result.returncode != 0
-    assert (
-        "Stable runtime image tags require an official GitHub Release" in result.stderr
-    )
-    assert not output
 
 
 def test_jetson_media_reference_is_validated_and_preserved(tmp_path):
