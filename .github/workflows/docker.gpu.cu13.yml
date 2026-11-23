@@ -1,8 +1,9 @@
-# Official releases are orchestrated by publish.pypi.yml / release.image.yml.
 name: Build and Push GPU CUDA 13 Container
 permissions:
   contents: read
 on:
+  release:
+    types: [created]
   push:
     branches: [main]
   workflow_dispatch:
@@ -46,7 +47,6 @@ jobs:
         id: tags
         uses: ./.github/actions/determine-tags
         with:
-          official-release-only: 'true'
           custom_tag: ${{ github.event.inputs.custom_tag }}
           version: ${{ env.VERSION }}
           base_image: ${{ env.BASE_IMAGE }}
