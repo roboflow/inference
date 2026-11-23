@@ -2,7 +2,7 @@ import json
 import os
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -12,7 +12,7 @@ import requests.exceptions
 from aioresponses import aioresponses
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
-from requests_mock import Mocker
+from requests_mock import ANY, Mocker
 from yarl import URL
 
 from inference.core import roboflow_api
@@ -5359,6 +5359,94 @@ def test_post_to_roboflow_api_does_not_use_api_proxy_base_url_for_other_endpoint
 
     assert result == {"status": "ok"}
     assert requests_mock.last_request.url == expected_url
+
+
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_REQUEST_TIMEOUT", 120)
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 330)
+@pytest.mark.parametrize(
+    "endpoint, expected_timeout, expected_client_timeout_header",
+    [
+        ("apiproxy/gemini/gemini-4-carbon", 330, "330"),
+        ("/api-proxy/openai/", 330, "330"),
+        ("apiproxy", 330, "330"),
+        ("some/endpoint", 120, None),
+        ("apiproxyfoo", 120, None),
+        ("x/apiproxy/y", 120, None),
+    ],
+)
+def test_post_to_roboflow_api_waits_and_declares_the_api_proxy_timeout(
+    requests_mock: Mocker,
+    endpoint: str,
+    expected_timeout: int,
+    expected_client_timeout_header: Optional[str],
+) -> None:
+    requests_mock.post(ANY, json={"status": "ok"})
+
+    post_to_roboflow_api(endpoint=endpoint, api_key="my_api_key")
+
+    assert requests_mock.last_request.timeout == expected_timeout
+    assert (
+        requests_mock.last_request.headers.get("X-Roboflow-Client-Timeout")
+        == expected_client_timeout_header
+    )
+
+
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 330)
+@pytest.mark.parametrize(
+    "extra_headers",
+    [
+        {"X-Roboflow-Client-Timeout": "10", "x-roboflow-client-timeout": "20"},
+        {"x-roboflow-client-timeout": "20", "X-Roboflow-Client-Timeout": "10"},
+    ],
+)
+def test_post_to_roboflow_api_sends_one_client_timeout_whatever_the_extra_headers(
+    requests_mock: Mocker,
+    extra_headers: Dict[str, str],
+) -> None:
+    requests_mock.post(ANY, json={"status": "ok"})
+
+    with mock.patch.object(
+        roboflow_api,
+        "ROBOFLOW_API_EXTRA_HEADERS",
+        json.dumps({**extra_headers, "x-allow-chunked": "false", "X-Other": "kept"}),
+    ):
+        post_to_roboflow_api(endpoint="apiproxy/gemini", api_key="my_api_key")
+
+    sent_headers = requests_mock.last_request.headers
+    client_timeouts = [
+        value
+        for name, value in sent_headers.items()
+        if name.lower() == "x-roboflow-client-timeout"
+    ]
+    assert client_timeouts == ["330"]
+    assert sent_headers["X-Allow-Chunked"] == "true"
+    assert sent_headers["X-Other"] == "kept"
+
+
+def test_build_roboflow_api_headers_drops_every_spelling_of_an_explicit_header() -> (
+    None
+):
+    with mock.patch.object(
+        roboflow_api,
+        "ROBOFLOW_API_EXTRA_HEADERS",
+        json.dumps(
+            {
+                "x-roboflow-client-timeout": "20",
+                "X-ROBOFLOW-INFERENCE-VERSION": "extra",
+                "X-Other": "kept",
+            }
+        ),
+    ):
+        headers = roboflow_api.build_roboflow_api_headers(
+            explicit_headers={"X-Roboflow-Client-Timeout": "330"}
+        )
+
+    assert headers == {
+        "X-Other": "kept",
+        "X-Roboflow-Client-Timeout": "330",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: roboflow_api.__version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+    }
 
 
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)

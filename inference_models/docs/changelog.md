@@ -2,11 +2,14 @@
 
 ## Unreleased
 
+## `0.39.10`
+
 ### Added
 
 - [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
   platform, single-label and multi-label, with their own default confidence
-  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). ONNX and PyTorch packages
+  also support image embeddings. See the
   [model page](models/convnext-classification.md).
 - The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
   `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
@@ -16,6 +19,14 @@
   work as for the DINOv2 sizes. Models fine-tuned at another resolution store a
   `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
   `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
+- The Torch RF-DETR object-detection and instance-segmentation loaders
+  (`RFDetrForObjectDetectionTorch.from_pretrained` and
+  `RFDetrForInstanceSegmentationTorch.from_pretrained`) accept an optional
+  `num_queries` in `model_type.json` and build the network with that decoder
+  query count. Packages trained with a non-default `num_queries`, which failed
+  with `size mismatch for query_feat.weight`, now load; packages without the key
+  keep the variant default. A malformed value (not an integer, a bool, or less
+  than 1) raises `CorruptedModelPackageError`.
 
 ### Changed
 

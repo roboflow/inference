@@ -9,7 +9,8 @@ import asyncio
 import contextvars
 import gc
 import threading
-from concurrent.futures import Future
+import weakref
+from concurrent.futures import Future, ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
@@ -282,6 +283,169 @@ class TestModelManagerInference:
         asyncio.run(_call())
 
         assert backends["model-a"].model.seen_request_ids == ["req-1"]
+
+    @pytest.mark.parametrize("cap, expected_max", [(1, 1), (0, 2)])
+    def test_process_async_per_model_cap_limits_overlap(
+        self, monkeypatch, cap, expected_max
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", cap)
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+        counter = {"now": 0, "max": 0}
+        lock = threading.Lock()
+
+        def slow_infer(images=None, **kwargs):
+            with lock:
+                counter["now"] += 1
+                counter["max"] = max(counter["max"], counter["now"])
+            threading.Event().wait(0.2)
+            with lock:
+                counter["now"] -= 1
+            return {"prediction": "fake"}
+
+        backends["model-a"].model.infer = slow_infer
+
+        async def _run():
+            await asyncio.gather(
+                mm.process_async("model-a", images="i"),
+                mm.process_async("model-a", images="i"),
+            )
+
+        asyncio.run(_run())
+
+        assert counter["max"] == expected_max
+
+    def test_process_async_per_model_cap_does_not_block_other_models(
+        self, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 1)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 2)
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+        mm.load("model-b", api_key="")
+        release = threading.Event()
+        entered = threading.Event()
+
+        def blocking_infer(images=None, **kwargs):
+            entered.set()
+            release.wait(5)
+            return {"prediction": "fake"}
+
+        backends["model-a"].model.infer = blocking_infer
+
+        async def _run():
+            slow = asyncio.create_task(mm.process_async("model-a", images="i"))
+            queued = asyncio.create_task(mm.process_async("model-a", images="i"))
+            while not entered.is_set():
+                await asyncio.sleep(0.01)
+            other = await asyncio.wait_for(
+                mm.process_async("model-b", images="i"), timeout=2
+            )
+            release.set()
+            await asyncio.gather(slow, queued)
+            return other
+
+        other = asyncio.run(_run())
+
+        assert other["data"]["model_id"] == "model-b"
+
+    def test_process_async_per_model_cap_survives_successive_event_loops(
+        self, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 1)
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+
+        async def _run():
+            await asyncio.gather(
+                mm.process_async("model-a", images="i"),
+                mm.process_async("model-a", images="i"),
+            )
+
+        asyncio.run(_run())
+        asyncio.run(_run())
+
+    def test_process_async_per_model_cap_holds_permit_after_caller_cancellation(
+        self, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 1)
+        monkeypatch.setattr(cfg, "INFERENCE_DIRECT_MAX_WORKERS", 2)
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+        release = threading.Event()
+        first_entered = threading.Event()
+        second_entered = threading.Event()
+        calls = []
+
+        def blocking_infer(images=None, **kwargs):
+            calls.append(images)
+            if images == "first":
+                first_entered.set()
+                release.wait(5)
+            else:
+                second_entered.set()
+            return {"prediction": "fake"}
+
+        backends["model-a"].model.infer = blocking_infer
+
+        async def _run():
+            first = asyncio.create_task(mm.process_async("model-a", images="first"))
+            while not first_entered.is_set():
+                await asyncio.sleep(0.005)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            second = asyncio.create_task(mm.process_async("model-a", images="second"))
+            await asyncio.sleep(0.2)
+            started_while_blocked = second_entered.is_set()
+            release.set()
+            result = await asyncio.wait_for(second, timeout=5)
+            return started_while_blocked, result
+
+        started_while_blocked, result = asyncio.run(_run())
+
+        assert started_while_blocked is False
+        assert result["data"]["prediction"] == "fake"
+        assert calls == ["first", "second"]
+
+    def test_process_async_per_model_cap_does_not_retain_finished_event_loops(
+        self, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 1)
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("model-a", api_key="")
+        loops = []
+
+        async def _run():
+            loops.append(weakref.ref(asyncio.get_running_loop()))
+            await asyncio.gather(
+                mm.process_async("model-a", images="i"),
+                mm.process_async("model-a", images="i"),
+            )
+
+        asyncio.run(_run())
+        asyncio.run(_run())
+        gc.collect()
+
+        assert loops[0]() is None
 
     def test_infer_routes_to_correct_model(self):
         mm = ModelManager()
@@ -1177,6 +1341,670 @@ class TestCapacityEviction:
         assert len(mm) == 12
 
 
+class _RejectingModel(FakeModel):
+    pass
+
+
+def _reject_invalid_images(kwargs: dict) -> dict:
+    if kwargs.get("images") == "INVALID":
+        raise ValueError("invalid input")
+
+    return kwargs
+
+
+_registry.register(
+    _RejectingModel,
+    "infer",
+    method="infer",
+    default=True,
+    params=["images"],
+    validator=_reject_invalid_images,
+    serializer=serialize_passthrough,
+    response_type="roboflow-generic-v1",
+)
+
+
+class _RecordingBackend(FakeBackend):
+    def __init__(self, model_id: str, **kwargs):
+        super().__init__(model_id, **kwargs)
+        self._fake_model = _RejectingModel(model_id)
+
+    def record_inference(self, t0: float, error: bool = False) -> None:
+        self.last_used_ts = t0
+
+
+class _ParkingExecutor:
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn):
+        future = Future()
+        self.jobs.append((fn, future))
+        return future
+
+    def shutdown(self, *args, **kwargs):
+        pass
+
+
+class TestUnservedModelProtection:
+    def _mm(self, monkeypatch, cap, grace_s=30.0):
+        import time as real_time
+
+        import inference_model_manager.configuration as cfg
+        import inference_model_manager.model_manager as mm_mod
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        monkeypatch.setattr(
+            cfg, "INFERENCE_UNSERVED_MODEL_GRACE_S", grace_s, raising=False
+        )
+        clock = [100.0]
+        monkeypatch.setattr(
+            mm_mod,
+            "time",
+            SimpleNamespace(
+                monotonic=lambda: clock[0], perf_counter=real_time.perf_counter
+            ),
+        )
+        mm = ModelManager()
+        backends: dict = {}
+
+        def create_loaded_now(model_id, api_key, backend, **kwargs):
+            fb = _RecordingBackend(model_id)
+            fb.last_used_ts = clock[0]
+            backends[model_id] = fb
+            return fb
+
+        mm._create_backend = create_loaded_now
+        return mm, backends, clock
+
+    @staticmethod
+    def _load(mm, clock, model_id, **kwargs):
+        clock[0] += 1.0
+        mm.load(model_id, api_key="", **kwargs)
+
+    @staticmethod
+    def _serve(mm, clock, model_id):
+        clock[0] += 1.0
+        mm.process(model_id, images="image")
+
+    def test_served_model_evicted_instead_of_unserved_within_grace(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"b", "c", "d"}
+
+    def test_repeated_unserved_loads_do_not_displace_hot_models(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 5)
+        hot = ("h1", "h2", "h3")
+        for model_id in hot:
+            self._load(mm, clock, model_id)
+            self._serve(mm, clock, model_id)
+        for i in range(5):
+            self._load(mm, clock, f"cold{i}")
+            for model_id in hot:
+                self._serve(mm, clock, model_id)
+            assert set(hot) <= set(mm.loaded_models)
+
+    def test_only_newest_unserved_model_is_protected(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 3)
+        for model_id in ("hot", "old", "new"):
+            self._load(mm, clock, model_id)
+        self._serve(mm, clock, "hot")
+        self._load(mm, clock, "incoming")
+        assert set(mm.loaded_models) == {"hot", "new", "incoming"}
+
+    def test_unserved_model_evicted_in_lru_order_after_grace(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        clock[0] += 30.0
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"a", "b", "d"}
+
+    def test_never_served_models_stop_displacing_served_models_after_grace(
+        self, monkeypatch
+    ):
+        mm, backends, clock = self._mm(monkeypatch, 3)
+        for model_id in ("junk0", "junk1", "junk2", "junk3"):
+            self._load(mm, clock, model_id)
+        clock[0] += 30.0
+        cold_loads = 0
+        for i in range(60):
+            model_id = "ab"[i % 2]
+            if model_id not in mm:
+                self._load(mm, clock, model_id)
+                cold_loads += 1
+            self._serve(mm, clock, model_id)
+        assert cold_loads == 2
+
+    def test_all_unserved_within_grace_evicts_oldest_loaded(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 2)
+        for model_id in ("y", "x", "z"):
+            self._load(mm, clock, model_id)
+        assert set(mm.loaded_models) == {"x", "z"}
+        assert backends["y"]._unloaded is True
+
+    def test_model_without_timestamp_is_protected(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 2)
+        create_loaded_now = mm._create_backend
+        _patch_create_backend(mm, backends)
+        self._load(mm, clock, "unknown")
+        mm._create_backend = create_loaded_now
+        self._load(mm, clock, "served")
+        self._serve(mm, clock, "served")
+        self._load(mm, clock, "new")
+        assert set(mm.loaded_models) == {"unknown", "new"}
+
+    def test_memory_pressure_takes_served_first_then_unserved(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 0)
+        for model_id in ("a", "b", "x", "y"):
+            self._load(mm, clock, model_id)
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        first = mm._select_and_pop_victims(incoming="new", pressure=True, count=3)
+        second = mm._select_and_pop_victims(incoming="new", pressure=True, count=3)
+        assert [victim for victim, _, _ in first] == ["x", "a", "b"]
+        assert [victim for victim, _, _ in second] == ["y"]
+
+    def test_unserved_model_evicted_when_no_other_candidate(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 2)
+        self._load(mm, clock, "keep", pinned=True)
+        self._load(mm, clock, "fresh")
+        self._load(mm, clock, "new")
+        assert set(mm.loaded_models) == {"keep", "new"}
+
+    def test_zero_grace_restores_plain_lru(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 3, grace_s=0.0)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"a", "b", "d"}
+
+    def test_load_time_dropped_on_eviction_and_unload(self, monkeypatch):
+        mm, backends, clock = self._mm(monkeypatch, 2)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        assert set(mm._loaded_ts) == {"b", "c"}
+        mm.unload("b")
+        assert set(mm._loaded_ts) == {"c"}
+
+    def test_direct_backend_counts_as_served_after_first_inference(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 3)
+        mm = ModelManager()
+        mm._create_backend = lambda model_id, api_key, backend, **kwargs: (
+            _direct_backend(model_id, FakeModel(model_id))
+        )
+        for model_id in ("a", "b", "c"):
+            mm.load(model_id, api_key="")
+        mm.process("a", images="image")
+        mm.process("b", images="image")
+        mm.load("d", api_key="")
+        assert set(mm.loaded_models) == {"b", "c", "d"}
+
+    @pytest.mark.parametrize(
+        ("offset", "expected_victim"), [(-0.5, "served"), (0.0, "fresh")]
+    )
+    def test_unserved_protection_ends_exactly_at_grace_deadline(
+        self, monkeypatch, offset, expected_victim
+    ):
+        mm, backends, clock = self._mm(monkeypatch, 0)
+        self._load(mm, clock, "fresh")
+        registered = clock[0]
+        self._load(mm, clock, "served")
+        self._serve(mm, clock, "served")
+        clock[0] = registered + 30.0 + offset
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == [expected_victim]
+
+    def test_failed_first_request_ends_protection(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        clock[0] += 1.0
+        with pytest.raises(ValueError):
+            mm.process("c", images="INVALID")
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"a", "b", "d"}
+
+    def test_first_request_for_unknown_action_ends_protection(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        with pytest.raises(ValueError):
+            mm.process("c", action="no_such_action", images="image")
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"a", "b", "d"}
+
+    def test_submit_counts_as_first_request(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        clock[0] += 1.0
+        mm.submit("c", images="image").result(timeout=5)
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"a", "b", "d"}
+
+    def test_request_waiting_for_a_worker_keeps_protection(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "b", "c"):
+            self._load(mm, clock, model_id)
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+        mm._executor.shutdown(wait=False)
+        mm._executor = _ParkingExecutor()
+
+        async def scenario():
+            task = asyncio.ensure_future(mm.process_async("c", images="image"))
+            for _ in range(5):
+                await asyncio.sleep(0)
+            assert len(mm._executor.jobs) == 1
+            self._load(mm, clock, "d")
+            loaded = set(mm.loaded_models)
+            fn, future = mm._executor.jobs.pop()
+            try:
+                future.set_result(fn())
+            except Exception as error:
+                future.set_exception(error)
+            result = await task
+            return loaded, result
+
+        loaded, result = asyncio.run(scenario())
+        assert loaded == {"b", "c", "d"}
+        assert result is not None
+
+    def test_abandoned_loads_cost_the_hot_set_at_most_one_reload_each(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 8)
+        hot = [f"hot{i}" for i in range(7)]
+        for model_id in hot:
+            self._load(mm, clock, model_id)
+            self._serve(mm, clock, model_id)
+        reloads = 0
+        for i in range(12):
+            clock[0] += 10.0
+            mm.load(f"abandoned{i}", api_key="")
+            for model_id in hot:
+                if model_id not in mm:
+                    mm.load(model_id, api_key="")
+                    reloads += 1
+                self._serve(mm, clock, model_id)
+        assert reloads <= 12
+        clock[0] += 30.0
+        for _ in range(3):
+            for model_id in hot:
+                assert model_id in mm
+                self._serve(mm, clock, model_id)
+
+    def test_backend_without_timestamp_is_spared_only_until_its_first_request(
+        self, monkeypatch
+    ):
+        mm, backends, clock = self._mm(monkeypatch, 2)
+        _patch_create_backend(mm, backends)
+        self._load(mm, clock, "a")
+        self._load(mm, clock, "b")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "c")
+        assert set(mm.loaded_models) == {"a", "c"}
+        self._serve(mm, clock, "a")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"c", "d"}
+
+    def test_first_request_at_the_registration_clock_reading_ends_protection(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 2)
+        self._load(mm, clock, "b")
+        self._load(mm, clock, "a")
+        mm.process("a", images="image")
+        self._serve(mm, clock, "b")
+        self._load(mm, clock, "c")
+        assert set(mm.loaded_models) == {"b", "c"}
+
+    def test_pinned_model_does_not_use_up_the_spared_slot(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        self._load(mm, clock, "a")
+        self._load(mm, clock, "fresh")
+        self._load(mm, clock, "pinned", pinned=True)
+        self._serve(mm, clock, "a")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"fresh", "pinned", "d"}
+
+    def test_direct_registration_awaits_first_request_and_removal_forgets_it(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 0)
+        with mm._lifecycle_lock:
+            mm._backends["z"] = _RecordingBackend("z")
+        assert set(mm._awaiting_first_request) == {"z"}
+        mm.process("z", images="image")
+        assert not mm._awaiting_first_request
+        for remove in (
+            lambda: mm._backends.pop("z"),
+            lambda: mm._backends.__delitem__("z"),
+            lambda: mm._backends.popitem(),
+            lambda: mm._backends.clear(),
+        ):
+            with mm._lifecycle_lock:
+                mm._backends["z"] = _RecordingBackend("z")
+                assert set(mm._awaiting_first_request) == {"z"}
+                remove()
+            assert not mm._awaiting_first_request
+        self._load(mm, clock, "a")
+        mm.unload("a")
+        assert not mm._awaiting_first_request
+
+    @staticmethod
+    async def _park_first_requests(mm, model_ids):
+        mm._executor.shutdown(wait=False)
+        mm._executor = _ParkingExecutor()
+        tasks = [
+            asyncio.ensure_future(mm.process_async(model_id, images="image"))
+            for model_id in model_ids
+        ]
+        for _ in range(5):
+            await asyncio.sleep(0)
+        return tasks
+
+    @staticmethod
+    async def _cancel(tasks):
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    def test_every_model_with_a_first_request_waiting_for_a_worker_is_spared(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 5)
+        for model_id in ("a", "b", "x", "y", "z"):
+            self._load(mm, clock, model_id)
+        self._serve(mm, clock, "a")
+        self._serve(mm, clock, "b")
+
+        async def scenario():
+            tasks = await self._park_first_requests(mm, ["x", "y", "z"])
+            self._load(mm, clock, "c")
+            self._load(mm, clock, "d")
+            loaded = set(mm.loaded_models)
+            await self._cancel(tasks)
+            return loaded
+
+        assert asyncio.run(scenario()) == {"x", "y", "z", "c", "d"}
+
+    def test_first_request_that_never_runs_stops_sparing_after_grace(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "x", "y"):
+            self._load(mm, clock, model_id)
+
+        async def scenario():
+            tasks = await self._park_first_requests(mm, ["x", "y"])
+            clock[0] += 30.0
+            self._serve(mm, clock, "a")
+            self._load(mm, clock, "c")
+            loaded = set(mm.loaded_models)
+            await self._cancel(tasks)
+            return loaded
+
+        assert asyncio.run(scenario()) == {"a", "y", "c"}
+
+    def test_cancelled_first_requests_stop_sparing(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 8, grace_s=300.0)
+        hot = [f"hot{i}" for i in range(6)]
+        for model_id in hot:
+            self._load(mm, clock, model_id)
+            self._serve(mm, clock, model_id)
+        self._load(mm, clock, "x")
+        self._load(mm, clock, "y")
+
+        async def scenario():
+            tasks = await self._park_first_requests(mm, ["x", "y"])
+            await self._cancel(tasks)
+
+        asyncio.run(scenario())
+        for model_id in hot:
+            self._serve(mm, clock, model_id)
+        for i in range(5):
+            self._load(mm, clock, f"cold{i}")
+            assert set(hot) <= set(mm.loaded_models)
+            for model_id in hot:
+                self._serve(mm, clock, model_id)
+        assert "x" not in mm and "y" not in mm
+
+    def test_first_request_timing_out_in_the_worker_queue_stops_sparing(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "x", "b"):
+            self._load(mm, clock, model_id)
+        mm._executor.shutdown(wait=False)
+        mm._executor = ThreadPoolExecutor(max_workers=1)
+        gate = threading.Event()
+        mm._executor.submit(gate.wait)
+
+        async def scenario():
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    mm.process_async("x", images="image"), timeout=0.05
+                )
+
+        try:
+            asyncio.run(scenario())
+        finally:
+            gate.set()
+            mm._executor.shutdown(wait=True)
+        self._serve(mm, clock, "a")
+        self._load(mm, clock, "d")
+        assert set(mm.loaded_models) == {"a", "b", "d"}
+
+    def test_model_stays_spared_until_its_last_queued_first_request_is_cancelled(
+        self, monkeypatch
+    ):
+        mm, _, clock = self._mm(monkeypatch, 3)
+        for model_id in ("a", "x", "b"):
+            self._load(mm, clock, model_id)
+
+        async def scenario():
+            first, second = await self._park_first_requests(mm, ["x", "x"])
+            await self._cancel([first])
+            self._serve(mm, clock, "a")
+            self._load(mm, clock, "d")
+            one_cancelled = set(mm.loaded_models)
+            await self._cancel([second])
+            self._load(mm, clock, "e")
+            both_cancelled = set(mm.loaded_models)
+            return one_cancelled, both_cancelled
+
+        one_cancelled, both_cancelled = asyncio.run(scenario())
+        assert one_cancelled == {"x", "b", "d"}
+        assert both_cancelled == {"b", "d", "e"}
+
+    def test_cancelled_request_leaves_a_reloaded_model_claim_alone(self, monkeypatch):
+        mm, _, clock = self._mm(monkeypatch, 0)
+        self._load(mm, clock, "x")
+
+        async def scenario():
+            (stale,) = await self._park_first_requests(mm, ["x"])
+            mm.unload("x")
+            self._load(mm, clock, "x")
+            (live,) = await self._park_first_requests(mm, ["x"])
+            await self._cancel([stale])
+            after_stale = mm._awaiting_first_request["x"]
+            await self._cancel([live])
+            after_live = mm._awaiting_first_request["x"]
+            return after_stale, after_live
+
+        assert asyncio.run(scenario()) == (1, 0)
+
+
+class TestUnservedGraceConfiguration:
+    @pytest.mark.parametrize("value", [float("inf"), float("nan")])
+    def test_non_finite_value_rejected(self, value):
+        from inference_model_manager.configuration import _require_finite
+
+        with pytest.raises(ValueError, match="INFERENCE_UNSERVED_MODEL_GRACE_S"):
+            _require_finite("INFERENCE_UNSERVED_MODEL_GRACE_S", value)
+
+    def test_finite_value_returned(self):
+        from inference_model_manager.configuration import _require_finite
+
+        assert _require_finite("INFERENCE_UNSERVED_MODEL_GRACE_S", 0.0) == 0.0
+
+
+class TestFreshLoadEvictionRank:
+    def _mm_at_cap(self, monkeypatch, cap):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", cap)
+        monkeypatch.setattr(cfg, "INFERENCE_UNSERVED_MODEL_GRACE_S", 0.0)
+        mm = ModelManager()
+        backends: dict = {}
+        _patch_create_backend(mm, backends)
+        return mm, backends
+
+    def test_never_used_models_evicted_in_load_order(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("z", api_key="")
+        mm.load("y", api_key="")
+        mm.load("x", api_key="")
+        assert set(mm.loaded_models) == {"y", "x"}
+
+    def test_just_loaded_model_outranks_older_use(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("b", api_key="")
+        backends["b"].last_used_ts = 1.0
+        mm.load("a", api_key="")
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["b"]
+
+    def test_use_after_load_outranks_later_load(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        clock = [10.0]
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: clock[0])
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("a", api_key="")
+        clock[0] = 20.0
+        mm.load("b", api_key="")
+        backends["a"].last_used_ts = 25.0
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["b"]
+
+    def test_recorded_load_time_dropped_on_eviction_and_unload(self, monkeypatch):
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+        mm.load("c", api_key="")
+        assert set(mm._loaded_ts) == {"b", "c"}
+        mm.unload("b")
+        assert set(mm._loaded_ts) == {"c"}
+
+    def test_subclass_registered_head_survives_older_ordinary_model(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        clock = [10.0]
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: clock[0])
+        mm, _ = self._mm_at_cap(monkeypatch, 2)
+        mm.load("a", api_key="")
+
+        # ServingModelManager.load_shared_head registers directly under this lock.
+        clock[0] = 20.0
+        with mm._lifecycle_lock:
+            mm._backends["z"] = FakeBackend("z")
+
+        clock[0] = 30.0
+        mm.load("m", api_key="")
+        assert set(mm.loaded_models) == {"z", "m"}
+        assert mm._loaded_ts == {"z": 20.0, "m": 30.0}
+
+    def test_direct_removal_and_reload_reset_timestamp(self, monkeypatch):
+        import inference_model_manager.model_manager as mm_module
+
+        clock = [10.0]
+        monkeypatch.setattr(mm_module.time, "monotonic", lambda: clock[0])
+        mm, _ = self._mm_at_cap(monkeypatch, 0)
+        with mm._lifecycle_lock:
+            mm._backends["z"] = FakeBackend("z")
+            mm._backends.pop("z")
+            assert mm._loaded_ts == {}
+            clock[0] = 20.0
+            mm._backends["a"] = FakeBackend("a")
+            clock[0] = 30.0
+            mm._backends["z"] = FakeBackend("z")
+
+        victims = mm._select_and_pop_victims("other", True, 1)
+        assert [mid for mid, _, _ in victims] == ["a"]
+        assert mm._loaded_ts == {"z": 30.0}
+        with mm._lifecycle_lock:
+            mm._backends.clear()
+        assert mm._loaded_ts == {}
+
+    def test_unlocked_pop_serializes_with_unload(self, monkeypatch):
+        mm, backends = self._mm_at_cap(monkeypatch, 0)
+        mm.load("z", api_key="")
+        read = threading.Event()
+        release = threading.Event()
+        checked = threading.Event()
+        acquired = []
+        cleanup_thread = []
+        getitem = type(mm._backends).__getitem__
+
+        def pause_cleanup(registry, model_id):
+            backend = getitem(registry, model_id)
+            if threading.get_ident() in cleanup_thread:
+                read.set()
+                assert release.wait(5)
+            return backend
+
+        monkeypatch.setattr(type(mm._backends), "__getitem__", pause_cleanup)
+
+        def cleanup():
+            cleanup_thread.append(threading.get_ident())
+            return mm._backends.pop("z", None)
+
+        def unload():
+            locked = mm._lifecycle_lock.acquire(blocking=False)
+            acquired.append(locked)
+            if locked:
+                mm._lifecycle_lock.release()
+            checked.set()
+            try:
+                mm.unload("z")
+            except KeyError:
+                pass  # Cleanup may have already removed the model.
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            cleanup_result = pool.submit(cleanup)
+            try:
+                assert read.wait(5)
+                unload_result = pool.submit(unload)
+                assert checked.wait(5)
+                if acquired == [True]:
+                    unload_result.result(timeout=5)
+            finally:
+                release.set()
+            assert cleanup_result.result(timeout=5) is backends["z"]
+            unload_result.result(timeout=5)
+
+        assert acquired == [False]
+        assert not mm._backends
+        assert not mm._loaded_ts
+
+
 class TestEvictionFailureSafety:
     def test_eviction_failure_does_not_leak_loading_id(self):
         mm = ModelManager()
@@ -1340,6 +2168,7 @@ class TestEvictionConvergenceAndDrainSafety:
         import inference_model_manager.model_manager as mm_mod
 
         monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 0)
+        monkeypatch.setattr(cfg, "INFERENCE_UNSERVED_MODEL_GRACE_S", 0.0)
         mm = ModelManager()
         backends: dict = {}
         _patch_create_backend(mm, backends)

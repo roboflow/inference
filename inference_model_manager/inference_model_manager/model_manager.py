@@ -6,6 +6,7 @@ import gc
 import logging
 import threading
 import time
+from collections.abc import Iterator, MutableMapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
@@ -100,6 +101,11 @@ def _retrieve_exception(future: "asyncio.Future") -> None:
         future.exception()
 
 
+def _release_inflight(semaphore: asyncio.Semaphore, task: "asyncio.Future") -> None:
+    semaphore.release()
+    _retrieve_exception(task)
+
+
 def _serialize_remote_result(
     backend: Any, action: Optional[str], result: Any, serialize: bool
 ) -> Any:
@@ -162,6 +168,61 @@ def _reset_entry_point_backends_for_tests() -> None:
         _ENTRY_POINT_BACKENDS_LOADED = False
 
 
+class _BackendRegistry(MutableMapping[str, Backend]):
+    """Keep load timestamps with registrations, including subclass insertions.
+
+    Mutations take the manager's reentrant lifecycle lock, including calls from
+    plugins that do not already hold it. Compound removals hold it throughout.
+    """
+
+    def __init__(
+        self,
+        loaded_ts: Dict[str, float],
+        awaiting_first_request: Dict[str, int],
+        lock: threading.RLock,
+    ) -> None:
+        self._data: Dict[str, Backend] = {}
+        self._loaded_ts = loaded_ts
+        self._awaiting_first_request = awaiting_first_request
+        self._lock = lock
+
+    def __getitem__(self, model_id: str) -> Backend:
+        return self._data[model_id]
+
+    def __setitem__(self, model_id: str, backend: Backend) -> None:
+        with self._lock:
+            loaded_ts = time.monotonic()
+            self._data[model_id] = backend
+            self._loaded_ts[model_id] = loaded_ts
+            self._awaiting_first_request[model_id] = 0
+
+    def __delitem__(self, model_id: str) -> None:
+        with self._lock:
+            del self._data[model_id]
+            self._loaded_ts.pop(model_id, None)
+            self._awaiting_first_request.pop(model_id, None)
+
+    def pop(self, model_id: str, *args):
+        with self._lock:
+            return super().pop(model_id, *args)
+
+    def popitem(self):
+        with self._lock:
+            return super().popitem()
+
+    def clear(self) -> None:
+        with self._lock:
+            self._data.clear()
+            self._loaded_ts.clear()
+            self._awaiting_first_request.clear()
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 class ModelManager:
     """Unified model management layer.
 
@@ -189,8 +250,12 @@ class ModelManager:
     """
 
     def __init__(self) -> None:
-        self._backends: Dict[str, Backend] = {}
-        self._lifecycle_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
+        self._loaded_ts: Dict[str, float] = {}
+        self._awaiting_first_request: Dict[str, int] = {}
+        self._backends = _BackendRegistry(
+            self._loaded_ts, self._awaiting_first_request, self._lifecycle_lock
+        )
         self.torchscript_state_global_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
@@ -199,6 +264,9 @@ class ModelManager:
         # Set by shutdown() before draining — closes admission so nothing new
         # is queued while in-flight work finishes.
         self._closed = False
+
+        self._inflight_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._inflight_semaphores: Dict[str, asyncio.Semaphore] = {}
 
         # Shared thread pool for DirectBackends and infer_async
         self._executor = ThreadPoolExecutor(
@@ -460,10 +528,30 @@ class ModelManager:
             if not over_capacity and not pressure:
                 return None
             candidates = sorted(
-                (getattr(b, "last_used_ts", None) or 0.0, mid)
+                (
+                    max(
+                        getattr(b, "last_used_ts", None) or 0.0,
+                        self._loaded_ts.get(mid, 0.0),
+                    ),
+                    mid,
+                )
                 for mid, b in self._backends.items()
                 if mid != incoming and mid not in self._pinned
             )
+            now = time.monotonic()
+            awaiting = sorted(
+                (self._loaded_ts[mid], mid)
+                for mid in self._awaiting_first_request
+                if mid != incoming
+                and mid not in self._pinned
+                and now - self._loaded_ts[mid] < cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
+            )
+            queued = {
+                mid for _, mid in awaiting if self._awaiting_first_request[mid] > 0
+            }
+            unrequested = [mid for _, mid in awaiting if mid not in queued]
+            spared = queued.union(unrequested[-1:])
+            candidates = [c for c in candidates if c[1] not in spared] or candidates
             popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)
@@ -502,14 +590,28 @@ class ModelManager:
             kwargs["mask_format"] = "rle"
         return kwargs, n_images
 
-    def _admit(self, model_id: str) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
+    def _admit(
+        self, model_id: str, queued: bool = False
+    ) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
         with self._lifecycle_lock:
             backend = self._backends.get(model_id)
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
+            if not queued:
+                self._awaiting_first_request.pop(model_id, None)
+            elif model_id in self._awaiting_first_request:
+                self._awaiting_first_request[model_id] += 1
             pipeline = self._stream_pipelines.get(model_id)
 
         return backend, pipeline
+
+    def _release_queued_claim(self, model_id: str, backend: Backend) -> None:
+        with self._lifecycle_lock:
+            if self._backends.get(model_id) is not backend:
+                return
+
+            if self._awaiting_first_request.get(model_id, 0) > 0:
+                self._awaiting_first_request[model_id] -= 1
 
     @staticmethod
     def _invoke(
@@ -705,45 +807,104 @@ class ModelManager:
             KeyError: If model_id is not loaded.
             ValueError: If action is not supported by the model.
         """
-        self._check_open()
-        loop = asyncio.get_running_loop()
-        context = contextvars.copy_context()
-        backend, _ = self._admit(model_id)
-        if hasattr(backend, "submit_request"):
-            raw_input = kwargs.pop("images", None)
-            future = await loop.run_in_executor(
-                self._executor,
-                lambda: context.run(
-                    self.submit,
-                    model_id,
-                    action=action,
-                    raw_input=raw_input,
-                    **kwargs,
-                ),
-            )
-            waiter = asyncio.wrap_future(future)
-            waiter.add_done_callback(_retrieve_exception)
-            result = await asyncio.wait_for(
-                asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
-            )
-            return await loop.run_in_executor(
-                self._executor,
-                lambda: context.run(
-                    _serialize_remote_result, backend, action, result, serialize
-                ),
-            )
-        return await loop.run_in_executor(
-            self._executor,
-            lambda: context.run(
-                self.process,
+        if cfg.INFERENCE_MAX_INFLIGHT_PER_MODEL <= 0:
+            return await self._process_async(
                 model_id,
-                action=action,
+                action,
                 serialize=serialize,
                 wire_marshalling=wire_marshalling,
                 timing=timing,
                 **kwargs,
-            ),
-        )
+            )
+
+        self._check_open()
+        semaphore = self._inflight_semaphore(model_id)
+        await semaphore.acquire()
+        try:
+            task = asyncio.ensure_future(
+                self._process_async(
+                    model_id,
+                    action,
+                    serialize=serialize,
+                    wire_marshalling=wire_marshalling,
+                    timing=timing,
+                    **kwargs,
+                )
+            )
+        except BaseException:
+            semaphore.release()
+            raise
+
+        task.add_done_callback(lambda done: _release_inflight(semaphore, done))
+        result = await asyncio.shield(task)
+
+        return result
+
+    def _inflight_semaphore(self, model_id: str) -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        if loop is not self._inflight_loop:
+            self._inflight_loop = loop
+            self._inflight_semaphores = {}
+
+        semaphore = self._inflight_semaphores.get(model_id)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(cfg.INFERENCE_MAX_INFLIGHT_PER_MODEL)
+            self._inflight_semaphores[model_id] = semaphore
+
+        return semaphore
+
+    async def _process_async(
+        self,
+        model_id: str,
+        action: Optional[str] = None,
+        *,
+        serialize: bool = True,
+        wire_marshalling: bool = False,
+        timing: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> Any:
+        self._check_open()
+        loop = asyncio.get_running_loop()
+        context = contextvars.copy_context()
+        backend, _ = self._admit(model_id, queued=True)
+        try:
+            if hasattr(backend, "submit_request"):
+                raw_input = kwargs.pop("images", None)
+                future = await loop.run_in_executor(
+                    self._executor,
+                    lambda: context.run(
+                        self.submit,
+                        model_id,
+                        action=action,
+                        raw_input=raw_input,
+                        **kwargs,
+                    ),
+                )
+                waiter = asyncio.wrap_future(future)
+                waiter.add_done_callback(_retrieve_exception)
+                result = await asyncio.wait_for(
+                    asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
+                )
+                return await loop.run_in_executor(
+                    self._executor,
+                    lambda: context.run(
+                        _serialize_remote_result, backend, action, result, serialize
+                    ),
+                )
+            return await loop.run_in_executor(
+                self._executor,
+                lambda: context.run(
+                    self.process,
+                    model_id,
+                    action=action,
+                    serialize=serialize,
+                    wire_marshalling=wire_marshalling,
+                    timing=timing,
+                    **kwargs,
+                ),
+            )
+        finally:
+            self._release_queued_claim(model_id, backend)
 
     def submit(
         self,
