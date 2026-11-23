@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- The `reference_examples` helpers shared by Google Gemini v6 and OpenAI v7 learn oriented boxes, as groundwork for oriented object detection with these blocks, which do not accept the task yet. An annotation takes an optional `obb`, the native `[center x, center y, width, height, angle]` of an oriented prediction: pixels of the example image, `angle` in radians clockwise from +x, `width` along the heading. A box given as `obb` alone gets the `x`, `y`, `width` and `height` of its axis-aligned box, so a whole oriented prediction is a valid annotation, and the manifest schema of both blocks lists the field. For the `oriented-object-detection` task the helpers draw the rotated outline on the Gemini example images, with a triangle on the front edge of the classes that have a front, and cut the OpenAI crops along the rotation, turned upright with the front on the right and the long side horizontal for classes without a front. An example needs an `obb` on every annotation for that task and keeps boxes that cross the edge of its image instead of clipping them. Object-detection requests and their cache keys are unchanged. An `obb` that is not five finite numbers with a positive width and height is now refused in every task.
+
 ## `0.2.17`
 
 Bundled execution engine: `1.17.3`.
