@@ -118,22 +118,34 @@ class QRCodeDetectorBlockV1(WorkflowBlock):
 
 
 def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
+    """Detect and decode the QR codes in an image.
+
+    Each box is the axis-aligned box around all four corners that OpenCV
+    reports, so a rotated or tilted code still gets a box that covers it.
+
+    Args:
+        image (WorkflowImageData): Image to search for QR codes.
+
+    Returns:
+        sv.Detections: One detection per QR code, with the decoded text under
+            ``DETECTED_CODE_KEY``. Empty when the image has no QR code.
+    """
     detector = cv2.QRCodeDetector()
     retval, detections, points_list, _ = detector.detectAndDecodeMulti(
         image.numpy_image
     )
+    if points_list is None:
+        # OpenCV returns no corner array at all when it finds no QR code.
+        points_list = []
+
     xyxy = []
     confidence = []
     class_id = []
     class_name = []
     extracted_data = []
     for data, points in zip(detections, points_list):
-        width = points[2][0] - points[0][0]
-        height = points[2][1] - points[0][1]
-        x_min = points[0][0]
-        y_min = points[0][1]
-        x_max = x_min + width
-        y_max = y_min + height
+        x_min, y_min = points.min(axis=0)
+        x_max, y_max = points.max(axis=0)
         xyxy.append([x_min, y_min, x_max, y_max])
         class_id.append(0)
         class_name.append("qr_code")

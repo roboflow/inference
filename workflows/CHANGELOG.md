@@ -16,6 +16,16 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Fixed
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
+  tensor-native variants) no longer fails the run when an image has no QR code.
+  OpenCV returns no corners in that case, and the block now returns empty
+  predictions. Each box now covers all four corners of its code. The box used to
+  be built from two corners on the assumption that the code was upright, so a
+  code turned 45 degrees or more either way got an empty or inverted box, and a
+  smaller tilt left part of the code outside the box.
+
 ## `0.2.17`
 
 Bundled execution engine: `1.17.3`.
