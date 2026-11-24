@@ -57,9 +57,9 @@ for contributor and maintainer responsibilities.
   due while the previous one has not finished waits and takes the newest
   window. When a call starts late, `error_status` names the frames no window
   covers between it and the previous call. A stream reads
-  `background_inference` on its first frame and keeps that mode. A step has
-  one worker, so its streams take turns. Video files always classify inside the step. The default
-  is unchanged.
+  `background_inference` on its first frame and keeps that mode until its
+  state resets. A step has one worker, so its streams take turns. Video files
+  always classify inside the step. The default is unchanged.
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
 

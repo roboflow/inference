@@ -132,7 +132,8 @@ between it and the previous call. The step has one worker, so its streams
 take turns: with several cameras on one step, each camera's results arrive
 less often. Video files always classify inside the step, so every window is
 analyzed and results are repeatable. A stream reads background_inference on
-its first frame and keeps that mode; later changes do not apply to it.
+its first frame and keeps that mode until its state resets, for example when
+a window input changes.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -325,7 +326,8 @@ class BlockManifest(WorkflowBlockManifest):
             "Classify live-stream windows on a worker thread, so the step "
             "returns at once and the video does not wait for the model. "
             "Results reach the timeline on a later frame. Video files always "
-            "classify inside the step. A stream keeps the mode it starts with."
+            "classify inside the step. A stream keeps the mode it starts with "
+            "until its state resets."
         ),
         examples=[False, "$inputs.background_inference"],
     )

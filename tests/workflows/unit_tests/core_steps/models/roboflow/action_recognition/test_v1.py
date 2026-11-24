@@ -2130,11 +2130,14 @@ def test_a_background_stream_keeps_its_mode_when_the_input_turns_off():
 
         _finish_pending_call(block, model)
         collected = _run(block, _make_frame(6))
+        # Frame 6 is due again: the window goes to the worker, not the step.
+        assert block._video_bookkeeping["stream-0"].pending is not None
     finally:
         model.gate.set()
         block.close()
 
     assert due["analyzed_until_frame"] is None
+    assert collected["error_status"] == ""
     assert collected["analyzed_until_frame"] == 3
     assert [entry["class_name"] for entry in _timeline_as_dicts(collected)] == ["walk"]
 
