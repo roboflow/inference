@@ -14,7 +14,7 @@ ARG PYTHON_VERSION=3.12.15
 
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
-FROM ubuntu:22.04 AS ffmpeg-builder
+FROM ubuntu:24.04 AS ffmpeg-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG FFMPEG_SHA256
@@ -52,7 +52,7 @@ COPY docker/scripts/verify_ffmpeg.sh /usr/local/bin/verify_ffmpeg
 
 RUN chmod +x /usr/local/bin/verify_ffmpeg && verify_ffmpeg
 
-FROM nvcr.io/nvidia/cuda:12.4.1-devel-ubuntu22.04 AS gstreamer-builder
+FROM nvcr.io/nvidia/cuda:12.6.3-devel-ubuntu24.04 AS gstreamer-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG GLIB_NETWORKING_SHA256
@@ -187,7 +187,7 @@ RUN PATH=/opt/opencv-build-tools/bin:$PATH \
     OPENCV_REQUIRE_CUDA_BUILD=true \
     verify_opencv
 
-FROM ubuntu:22.04 AS gstreamer-runtime
+FROM ubuntu:24.04 AS gstreamer-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
@@ -198,15 +198,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-gstream
     apt-get install -y --no-install-recommends \
         ca-certificates \
         libbz2-1.0 \
-        libcurl4 \
-        libglib2.0-0 \
-        libgnutls30 \
+        libcurl4t64 \
+        libglib2.0-0t64 \
+        libgnutls30t64 \
         libjpeg-turbo8 \
         libopus0 \
         libsrtp2-1 \
-        libssl3 \
-        libv4l-0 \
-        libvpx7 \
+        libssl3t64 \
+        libv4l-0t64 \
+        libvpx9 \
         liblzma5 \
         zlib1g
 
@@ -227,7 +227,7 @@ RUN --mount=type=bind,source=docker/scripts/verify_ffmpeg.sh,target=/tmp/verify_
     sh /tmp/verify_media_runtime && \
     rm -rf /root/.cache/gstreamer-1.0
 
-FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS builder
+FROM nvcr.io/nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04 AS builder
 
 ARG PYTHON_VERSION
 
@@ -325,7 +325,7 @@ RUN find /opt/venv/lib/python3.12 -type d \
     python3 -m pip uninstall -y uv && \
     python3 -m pip uninstall -y pip
 
-FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
+FROM nvcr.io/nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
@@ -342,26 +342,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-runtime
         gcc \
         libbz2-1.0 \
         libc6-dev \
-        libcurl4 \
+        libcurl4t64 \
         libegl1 \
         libexpat1 \
-        libgdal30 \
+        libgdal34t64 \
         libgl1 \
-        libglib2.0-0 \
-        libgnutls30 \
+        libglib2.0-0t64 \
+        libgnutls30t64 \
         libgomp1 \
         libjpeg-turbo8 \
         liblzma5 \
         libopenblas0 \
         libopus0 \
-        libpng16-16 \
+        libpng16-16t64 \
         libsm6 \
         libsrtp2-1 \
-        libssl3 \
-        libtiff5 \
-        libv4l-0 \
-        libvips42 \
-        libvpx7 \
+        libssl3t64 \
+        libtiff6 \
+        libv4l-0t64 \
+        libvips42t64 \
+        libvpx9 \
         libxext6 \
         zlib1g && \
     dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816
