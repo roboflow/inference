@@ -88,10 +88,10 @@ SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
-timeline. The first classification runs one stride after the stream starts.
-Later classifications run at each stride. By default, the stride equals the
-window, so consecutive windows tile the stream without overlap. Set a smaller
-stride to slide overlapping windows for finer range boundaries. Ranges can
+timeline. The first scheduled classification is due one stride after the stream
+starts. By default, scheduled windows use the overlap recorded by the model.
+With zero overlap, the stride equals the window length. Set a smaller stride
+to overlap scheduled windows for finer range boundaries. Ranges can
 overlap. Timeline ranges only grow when the block merges model evidence. The
 block does not extend ranges provisionally. The timeline holds at most 5000
 ranges per stream. A stream that passes that ceiling loses the ranges that
@@ -102,18 +102,27 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-analyzed_until_frame is the source index of the last frame that a successful
-classification covered, or null before the first one. An empty timeline after
-it means "not analyzed", not "no action". Failed and skipped windows do not
-advance it. Overlapping windows can still revise ranges before it.
+analyzed_until_frame is the last source frame for which the latest successful
+call could report an action, or null before the first success. For models
+like Cosmos that return sampled-frame indices, it is the last sampled frame.
+For models like V-JEPA that use the observed window duration, it is the source
+frame that triggered the call. Models can therefore report different values
+for the same input frame. To display file-processing progress when the frame
+count is known, use frame_number and total_frames from the video metadata.
+The mark updates even if no actions are detected.
+Earlier gaps can remain after failed or skipped windows, and overlapping
+windows can still revise earlier predictions.
 
-On a video file that reports its frame count, the block runs one extra
-classification on the last frame, so the timeline covers the whole clip, even
-one shorter than one stride. That call also needs the model's minimum number of
-sampled frames, and the file's last frame must reach the block: a source that
-drops frames to hold a lower rate, such as InferencePipeline with max_fps, can
-skip it. Live streams and files without a usable frame count get no extra
-call, so frames after the final scheduled call receive no result.
+On a video file that reports its frame count, the last frame can trigger a
+classification before the next scheduled call. This call uses the current
+sliding window, so it can overlap the previous call more than scheduled windows
+do. For example, with a 16-second window and a 16-second stride, a 20-second
+file has calls at about 16 and 20 seconds. Their windows share about 12 seconds.
+A file shorter than one stride can also trigger its first call on the last
+frame. The buffer must contain the model's minimum number of sampled frames,
+and the last frame must reach the block. A source such as InferencePipeline
+with max_fps can drop it. Live streams and files without a usable frame count
+get no extra call, so frames after the final scheduled call receive no result.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -212,10 +221,10 @@ class BlockManifest(WorkflowBlockManifest):
     stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
         description=(
-            "Time between classification calls. Leave empty to classify "
-            "windows with the model's recorded overlap. A smaller stride slides "
-            "overlapping windows for finer range boundaries at the cost of "
-            "more model calls."
+            "Time between scheduled classification calls. Leave empty to use "
+            "the model's recorded overlap. A smaller stride increases overlap "
+            "and runs the model more often. A video file's last frame can "
+            "trigger an earlier call with more overlap."
         ),
         examples=[None, 2.0],
     )
@@ -696,6 +705,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         frames = self._prepare_frames_for_model(
             [sample.frame for sample in bookkeeping.sampled]
         )
+        analyzed_until_frame = bookkeeping.sampled[-1].source_frame_number
         try:
             infer_kwargs = (
                 {"confidence": confidence}
@@ -709,6 +719,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 infer_kwargs["duration_seconds"] = min(
                     duration_seconds, model.video_sampling.window_seconds
                 )
+                analyzed_until_frame = frame_limit - 1
             segments = model.infer(
                 frames=frames,
                 class_names=block_filter,
@@ -747,10 +758,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             sample_stride=sampling_stride,
             frame_limit=frame_limit,
         )
-        if frame_limit is not None:
-            # Only a call that returned moves the mark, so a consumer can tell
-            # "no action" from "not analyzed".
-            bookkeeping.analyzed_until_frame = frame_limit - 1
+        bookkeeping.analyzed_until_frame = analyzed_until_frame
         return ""
 
     @staticmethod
