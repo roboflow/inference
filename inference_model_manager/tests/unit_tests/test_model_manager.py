@@ -2113,6 +2113,64 @@ class TestEvictionConcurrencySafety:
         assert len(errors) == 0
         assert len(mm) <= cap
 
+    def test_concurrent_cold_loads_keep_the_cap_filled(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        all_registered = threading.Barrier(3)
+
+        def gated_wire(model_id, backend):
+            all_registered.wait(timeout=5)
+
+        mm._wire_stream_pipeline = gated_wire
+        errors: list = []
+
+        def load_model(name):
+            try:
+                mm.load(name, api_key="")
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=load_model, args=(f"m{i}",)) for i in range(3)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert errors == []
+        assert not any(t.is_alive() for t in threads)
+        assert len(mm) == 2
+
+    def test_finished_load_reserves_no_slot_and_is_never_refused(self, monkeypatch):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 2)
+        mm = ModelManager()
+        _patch_create_backend(mm, {})
+        mm.load("a", api_key="")
+        mm.load("b", api_key="")
+
+        def trim(incoming: str) -> Optional[list]:
+            victims = mm._select_and_pop_victims(
+                incoming=incoming, pressure=False, count=1, load_finished=True
+            )
+
+            return victims
+
+        evicted_meanwhile = trim("gone")
+        mm._loading_ids.add("b")
+        reloading = trim("b")
+        with mm._pending_request("a"), mm._pending_request("b"):
+            monkeypatch.setattr(cfg, "INFERENCE_MAX_ACTIVE_MODELS", 1)
+            over_cap_busy = trim("gone")
+
+        assert (evicted_meanwhile, reloading, over_cap_busy) == (None, None, None)
+        assert set(mm.loaded_models) == {"a", "b"}
+
     def test_pin_race_during_eviction_selection(self, monkeypatch):
         import time as _time
 

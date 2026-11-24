@@ -391,7 +391,7 @@ class ModelManager:
             b.device,
         )
 
-        self._evict_for_capacity(incoming=model_id)
+        self._evict_for_capacity(incoming=model_id, load_finished=True)
 
     @property
     def executor(self) -> ThreadPoolExecutor:
@@ -486,11 +486,16 @@ class ModelManager:
                 raise KeyError(f"Model '{model_id}' is not loaded")
             self._pinned.add(model_id)
 
-    def _evict_for_capacity(self, incoming: str) -> None:
+    def _evict_for_capacity(
+        self, incoming: str, *, load_finished: bool = False
+    ) -> None:
         while True:
             pressure = _memory_pressure_detected()
             popped = self._select_and_pop_victims(
-                incoming=incoming, pressure=pressure, count=3 if pressure else 1
+                incoming=incoming,
+                pressure=pressure,
+                count=3 if pressure else 1,
+                load_finished=load_finished,
             )
             if popped is None:
                 return
@@ -517,15 +522,16 @@ class ModelManager:
             gc.collect()
 
     def _select_and_pop_victims(
-        self, incoming: str, pressure: bool, count: int
+        self, incoming: str, pressure: bool, count: int, *, load_finished: bool = False
     ) -> Optional[List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]]]:
         """Atomically decide whether eviction is needed and, if so, remove the
         victims from ``_backends`` in the same lock acquisition used to select
         them — so a concurrent ``pin()`` cannot land between selection and
         removal.
 
-        Capacity counts loaded models plus one slot for ``incoming`` while it
-        is not registered yet. Other loads still in ``_loading_ids`` are not
+        Capacity counts loaded models plus one slot for ``incoming``, except
+        in the pass a load runs after registering its model
+        (``load_finished``). Other loads still in ``_loading_ids`` are not
         counted, so concurrent loads never evict on each other's behalf; the
         cap may be exceeded by the number of concurrent loads until each
         load's post-registration pass trims back to it. Pinned models are
@@ -537,22 +543,22 @@ class ModelManager:
         and the newest unrequested one) are spared while another idle model
         remains. Busy models are taken only under memory pressure with no
         idle model left. Over the cap without pressure and with every
-        candidate busy, a load that is not registered yet is refused.
+        candidate busy, a load still in progress is refused.
 
-        Returns None if nothing needs to be evicted this pass, or if the
-        already registered ``incoming`` cannot trim because every candidate
+        Returns None if nothing needs to be evicted this pass, or if a
+        finished load of ``incoming`` cannot trim because every candidate
         is busy, otherwise the list of (model_id, backend, stream pipeline or
         None) triples already popped from ``_backends`` and
         ``_stream_pipelines`` (empty if every other model is pinned).
 
         Raises:
-            ModelCapacityExhaustedError: If ``incoming`` is not registered,
+            ModelCapacityExhaustedError: If ``incoming`` is still loading,
                 the cap is reached without memory pressure, and every
                 candidate is busy.
         """
         with self._lifecycle_lock:
             max_active = cfg.INFERENCE_MAX_ACTIVE_MODELS
-            incoming_slots = 0 if incoming in self._backends else 1
+            incoming_slots = 0 if load_finished else 1
             total_reserved = len(self._backends) + incoming_slots
             over_capacity = max_active > 0 and total_reserved > max_active
             if not over_capacity and not pressure:
@@ -579,7 +585,7 @@ class ModelManager:
             }
             idle = [c for c in pool if c[1] not in busy]
             if not idle and pool and not pressure:
-                if incoming in self._backends:
+                if load_finished:
                     return None
                 raise ModelCapacityExhaustedError(
                     f"Cannot load '{incoming}': INFERENCE_MAX_ACTIVE_MODELS="
