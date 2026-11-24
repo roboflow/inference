@@ -96,8 +96,9 @@ this block decides from the image itself and from what earlier steps found in it
 3. Continues to the step of the chosen case when the model gives it a probability of at least
    `min_confidence`, and terminates the other branches.
 4. Continues to `default_next_steps` when the model chooses "{NONE_OPTION}", stays below
-   `min_confidence`, returns an invalid probability, refuses to answer or returns an answer
-   the block cannot read. When `default_next_steps` is empty, the branch terminates for that image.
+   `min_confidence`, returns a probability that is not a number from 0 to 1, refuses to
+   answer or returns an answer the block cannot read. When `default_next_steps` is empty,
+   the branch terminates for that image.
 
 A failed request fails the workflow run, as it does in the other OpenAI blocks.
 
@@ -189,7 +190,8 @@ class BlockManifest(WorkflowBlockManifest):
         Field(
             title="Minimum Confidence",
             description="Probability the model must give the chosen case for its step to run. "
-            "Images below it go to `default_next_steps`.",
+            "Images below it go to `default_next_steps`. "
+            f"Default is {DEFAULT_MIN_CONFIDENCE}.",
             default=DEFAULT_MIN_CONFIDENCE,
             examples=[DEFAULT_MIN_CONFIDENCE, "$inputs.min_confidence"],
         )
@@ -201,7 +203,13 @@ class BlockManifest(WorkflowBlockManifest):
         "sent per image. The API rejects more than 10,000 values per image, which fails the "
         "run, so reduce large values such as segmentation masks with `context_operations`.",
         default_factory=dict,
-        examples=[{"label_text": "$steps.ocr.result", "line": "$inputs.line"}],
+        examples=[
+            {
+                "label_text": "$steps.ocr.result",
+                "line": "$inputs.line",
+                "boxes": "$steps.detector.predictions",
+            }
+        ],
     )
     context_operations: Dict[str, List[AllOperationsType]] = Field(
         title="Context Operations",
