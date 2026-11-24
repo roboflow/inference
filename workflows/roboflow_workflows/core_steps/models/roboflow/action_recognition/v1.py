@@ -5,7 +5,6 @@ import math
 import threading
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
-from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Callable, List, Literal, Optional, Set, Tuple, Type, Union
@@ -132,7 +131,8 @@ When a call starts late, error_status names the frames no window covers
 between it and the previous call. The step has one worker, so its streams
 take turns: with several cameras on one step, each camera's results arrive
 less often. Video files always classify inside the step, so every window is
-analyzed and results are repeatable.
+analyzed and results are repeatable. A stream reads background_inference on
+its first frame and keeps that mode; later changes do not apply to it.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -254,6 +254,7 @@ class _ActionRecognitionBookkeeping:
     tail_flushed: bool = False
     pending: Optional[_WindowCall] = None
     fire_deferred: bool = False
+    background: bool = False
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
     signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
@@ -324,7 +325,7 @@ class BlockManifest(WorkflowBlockManifest):
             "Classify live-stream windows on a worker thread, so the step "
             "returns at once and the video does not wait for the model. "
             "Results reach the timeline on a later frame. Video files always "
-            "classify inside the step."
+            "classify inside the step. A stream keeps the mode it starts with."
         ),
         examples=[False, "$inputs.background_inference"],
     )
@@ -607,7 +608,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         ):
             if bookkeeping is not None:
                 self._discard_pending_call(bookkeeping)
-            bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
+            # The mode holds for the stream's life, so a call left running by
+            # one mode never meets the other. A file is not paced by the clock,
+            # so a worker would fall behind it and leave most windows unclassified.
+            bookkeeping = _ActionRecognitionBookkeeping(
+                signature=signature,
+                background=background_inference and not metadata.comes_from_video_file,
+            )
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
                 evicted_video_id, evicted = self._video_bookkeeping.popitem(last=False)
@@ -723,6 +730,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             while len(bookkeeping.sampled) > video_sampling.max_frames:
                 bookkeeping.sampled.pop(0)
 
+        error_status = self._collect_finished_call(bookkeeping=bookkeeping)
         if bookkeeping.last_fire_frame_number is None:
             # A single frame has no temporal content to classify; anchor the
             # fire cadence at stream start and wait for a full stride.
@@ -748,15 +756,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         should_classify = has_enough_samples and (
             frame_number >= next_fire_frame_number or flushes_tail
         )
-        # A file is not paced by the clock, so a worker would fall behind it
-        # and leave most windows unclassified.
-        background = background_inference and not metadata.comes_from_video_file
-        # Synchronous mode classifies every due window, so a call left
-        # running by background mode must finish first.
-        error_status = self._collect_finished_call(
-            bookkeeping=bookkeeping,
-            wait=should_classify and not background,
-        )
         if should_classify and bookkeeping.pending is not None:
             # One call per stream at a time. The fire waits for the worker
             # and then takes the newest window, not the one it was due on.
@@ -775,7 +774,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 sampling_stride=sampling_stride,
                 confidence=confidence,
                 frame_limit=frame_number + 1,
-                background=background,
+                background=bookkeeping.background,
             )
             error_status = " ".join(
                 part for part in (error_status, gap_notice, call_error) if part
@@ -963,25 +962,14 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             # "no action" from "not analyzed".
             bookkeeping.analyzed_until_frame = call.frame_limit - 1
 
-    def _collect_finished_call(
-        self,
-        bookkeeping: _ActionRecognitionBookkeeping,
-        *,
-        wait: bool = False,
-    ) -> str:
+    def _collect_finished_call(self, bookkeeping: _ActionRecognitionBookkeeping) -> str:
         """Merge a finished background call on the step thread.
 
         The worker only runs the model. Every write to per-video state stays
-        on the thread that reads it, so the state needs no lock. With
-        ``wait``, a call that still runs is awaited instead of left pending.
+        on the thread that reads it, so the state needs no lock.
         """
         call = bookkeeping.pending
-        if call is None:
-            return ""
-
-        if wait:
-            futures_wait([call.future])
-        if not call.future.done():
+        if call is None or not call.future.done():
             return ""
 
         bookkeeping.pending = None
@@ -1011,9 +999,16 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             return ""
 
         first_uncovered = bookkeeping.last_fire_frame_number + 1
-        # The window's ranges start at its first retained sample, the origin
-        # the timeline merge uses, not at the nominal window start.
-        last_uncovered = math.floor(bookkeeping.sampled[0].intended_frame_number) - 1
+        # Predictions start at the window's first retained sample, not at the
+        # nominal window start. Its source frame is the later bound of the two
+        # origins the timeline merge uses, so no uncovered frame is left out.
+        first_sample = bookkeeping.sampled[0]
+        window_start = (
+            first_sample.source_frame_number
+            if first_sample.source_frame_number is not None
+            else math.ceil(first_sample.intended_frame_number - 1e-9)
+        )
+        last_uncovered = window_start - 1
         if last_uncovered < first_uncovered:
             return ""
 

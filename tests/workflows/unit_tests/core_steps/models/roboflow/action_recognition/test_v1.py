@@ -2091,34 +2091,6 @@ def test_close_cancels_waiting_windows_while_the_running_call_finishes():
         block.close()
 
 
-def test_switching_background_inference_off_classifies_the_next_due_window():
-    block, model = _make_background_block(
-        responses=[[_model_segment("walk")], [_model_segment("run")]]
-    )
-    try:
-        for number in (1, 2, 3):
-            _run_background(block, number)
-        assert model.entered.wait(timeout=5)
-
-        _run(block, _make_frame(4))
-        # Synchronous mode waits for the running call on the next due frame.
-        threading.Timer(0.2, model.gate.set).start()
-        due = _run(block, _make_frame(5))
-    finally:
-        model.gate.set()
-        block.close()
-
-    classified = [[frame[0, 0, 2] for frame in call["frames"]] for call in model.calls]
-    assert classified == [[1, 3], [3, 5]]
-    # The frame that came due carries both results, as synchronous mode does.
-    assert due["analyzed_until_frame"] == 5
-    assert [entry["class_name"] for entry in _timeline_as_dicts(due)] == [
-        "walk",
-        "run",
-    ]
-    assert due["error_status"] == ""
-
-
 def test_dropping_the_block_cancels_calls_that_have_not_started():
     block, model = _make_background_block()
     for number in (1, 2, 3):
@@ -2143,17 +2115,59 @@ def test_dropping_the_block_cancels_calls_that_have_not_started():
     assert len(model.calls) == 1
 
 
-def test_switching_background_inference_off_still_collects_the_running_call():
+def test_a_background_stream_keeps_its_mode_when_the_input_turns_off():
     block, model = _make_background_block(responses=[[_model_segment("walk")]])
     try:
         for number in (1, 2, 3):
             _run_background(block, number)
+        assert model.entered.wait(timeout=5)
+
+        # Frame 5 is due while the frame-3 call runs. The stream started in
+        # background mode, so it defers instead of waiting for the model.
+        for number in (4, 5):
+            due = _run(block, _make_frame(number))
+        assert model.calls == []
 
         _finish_pending_call(block, model)
-        switched = _run(block, _make_frame(4))
+        collected = _run(block, _make_frame(6))
     finally:
         model.gate.set()
         block.close()
 
-    assert switched["analyzed_until_frame"] == 3
-    assert [entry["class_name"] for entry in _timeline_as_dicts(switched)] == ["walk"]
+    assert due["analyzed_until_frame"] is None
+    assert collected["analyzed_until_frame"] == 3
+    assert [entry["class_name"] for entry in _timeline_as_dicts(collected)] == ["walk"]
+
+
+def test_a_synchronous_stream_keeps_its_mode_when_the_input_turns_on():
+    block, _ = _make_block(responses=[[_model_segment("run")]])
+
+    for number in (1, 2):
+        _run(block, _make_frame(number))
+    fired = _run(block, _make_frame(3), background_inference=True)
+
+    # The result is on the frame that fired: the call ran inside the step.
+    assert fired["analyzed_until_frame"] == 3
+    assert [entry["class_name"] for entry in _timeline_as_dicts(fired)] == ["run"]
+
+
+def test_late_call_gap_ends_at_the_first_retained_source_frame():
+    # 4 FPS sampled at 3 FPS: the late window's first sample is intended
+    # frame 7.67 and comes from source frame 8, where its ranges start.
+    run_kwargs = {
+        "stride_seconds": 1.0,
+        "sample_fps": 3.0,
+        "requires_regular_sampling": True,
+    }
+    block, model = _make_background_block()
+    try:
+        for number in range(1, 11):
+            _run_background(block, number, **run_kwargs)
+
+        _finish_pending_call(block, model)
+        late = _run_background(block, 11, **run_kwargs)
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert "No window covers source frames 6-7." in late["error_status"]
