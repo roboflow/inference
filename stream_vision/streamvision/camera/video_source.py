@@ -182,7 +182,7 @@ class CV2VideoFrameProducer(VideoFrameProducer):
         is_file = (
             total_frames > 0
             and self._file_path is not None
-            and Path(self._file_path).exists()
+            and Path(self._file_path).is_file()
         )
         timestamp_created = None
         if is_file:

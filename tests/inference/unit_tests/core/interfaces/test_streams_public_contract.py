@@ -68,6 +68,9 @@ _INVENTORY = json.loads(_INVENTORY_PATH.read_text())
 # Dropped by decontamination; restoring them would re-import host modules.
 _APPROVED_REMOVALS = {
     "inference.core.interfaces.camera.collection_policy": {"core_env"},
+    "inference.core.interfaces.camera.gstreamer_cuda_producer": {"unquote", "urlparse"},
+    "inference.core.interfaces.camera.jetson_producer": {"unquote", "urlparse"},
+    "inference.core.interfaces.camera.video_source": {"os"},
     "inference.core.interfaces.stream_manager.manager_app.app": {"Tuple"},
 }
 
