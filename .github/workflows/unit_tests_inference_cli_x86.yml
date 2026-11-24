@@ -2,12 +2,6 @@ name: UNIT TESTS - inference CLI
 permissions:
   contents: read
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   pull_request:
     branches: [main]
     paths-ignore:
@@ -29,7 +23,7 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-unit_tests_inference_cli_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -42,16 +36,13 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 122 || 10 }}
+    timeout-minutes: 10
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -73,19 +64,6 @@ jobs:
           make create_workflows_wheel create_streamvision_wheel
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]"
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
-      - name: "🧪 Unit Tests of Inference CLI [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 92 || 10 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1800'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            python -m pytest tests/inference_cli/unit_tests
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-unit_tests_inference_cli_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+      - name: 🧪 Unit Tests of Inference CLI
+        timeout-minutes: 30
+        run: python -m pytest tests/inference_cli/unit_tests

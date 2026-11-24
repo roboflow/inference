@@ -3,12 +3,6 @@ permissions:
   contents: read
 
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   pull_request:
     branches: [main]
   push:
@@ -26,7 +20,7 @@ concurrency:
   # merge to main, cancels the older run. Manual dispatches get their own group
   # (keyed by run id) so they never cancel, or get cancelled by, push-triggered
   # runs. Release runs are keyed by the tag ref and are never cancelled.
-  group: ${{ github.workflow }}-unit_tests_inference_x86-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
@@ -39,16 +33,13 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: ${{ inputs.release_source != '' && 179 || 20 }}
+    timeout-minutes: 20
     strategy:
-      fail-fast: ${{ inputs.release_source == '' }}
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_source || github.sha }}
       - name: 📦 Cache Python packages
         uses: actions/cache@v5
         with:
@@ -71,50 +62,22 @@ jobs:
           pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
           pip install --no-deps ./inference_model_manager
           pip install --no-deps ./inference_server
-      - name: "OpenCV build script regression tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 8 || 2 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '120'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            python -m pytest tests/docker/test_build_opencv.py -q
+      - name: OpenCV build script regression tests
+        timeout-minutes: 2
+        run: python -m pytest tests/docker/test_build_opencv.py -q
       - name: 🏗️ Build and install roboflow-workflows and streamvision wheels
         run: |
           make create_workflows_wheel create_streamvision_wheel
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise,databricks]"
           pip install --find-links "${{ github.workspace }}/dist" "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]"
-      - name: "🧪 Unit Tests of Inference [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 92 || 20 }}
+      - name: 🧪 Unit Tests of Inference
+        timeout-minutes: 30
         # The CPU dependency profile does not install SAM3/SAM3D extras.
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1800'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            python -m pytest -n auto --dist loadfile -m "not sam3_extras" tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
-      - name: "🧪 Development Profiling Tests [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 17 || 5 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '300'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            python -m pytest tests/development/profiling
+        run: python -m pytest -n auto --dist loadfile -m "not sam3_extras" tests/inference/unit_tests tests/unit/core/cache/test_air_gapped.py
+      - name: 🧪 Development Profiling Tests
+        timeout-minutes: 5
+        run: python -m pytest tests/development/profiling
       - name: 🧪 Stream Pipeline Benchmark Harness Tests
         if: github.event_name == 'workflow_dispatch' && inputs.run_stream_benchmark_checks
-        timeout-minutes: ${{ inputs.release_source != '' && 32 || 10 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '600'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            python -m pytest development/stream_interface/test_benchmark_pipeline_extraction.py
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-unit_tests_inference_x86-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+        timeout-minutes: 10
+        run: python -m pytest development/stream_interface/test_benchmark_pipeline_extraction.py
