@@ -20,6 +20,19 @@ for contributor and maintainer responsibilities.
 
 - Action Recognition Visualization (`roboflow_core/action_recognition_visualization@v1`) draws an Action Recognition Model's results on its video. `live` display shows the current frame with a strip of the last `history_seconds`: one lane per class, a bar per action range and a hatched zone for frames not analyzed yet. It keeps no frames. `synchronized` display plays the video late so each label sits on its frame; the delay follows the model's `analyzed_until_frame` instead of a fixed setting, capped by `max_delay_seconds`. Delayed frames are stored compressed within `max_buffer_mb`; a budget that is too small shortens the delay and reports the status `behind` instead of raising. Outputs the image, the displayed frame number, the actions and their frame number, and a status. Needs persistent video state; `synchronized` does not show the delayed tail of a video file.
 
+### Changed
+
+- Action Recognition Model gains an `analyzed_until_frame` output: the source
+  index of the last frame a successful classification covered, null until the
+  first one. A consumer can tell "no action" from "not analyzed yet". Failed and
+  skipped windows do not advance it.
+- Action Recognition Model runs one extra classification on the last frame of a
+  video file that reports its frame count. The timeline on that frame covers
+  the tail of the clip, and a clip shorter than one stride now gets a result.
+  Live streams and files without a usable frame count behave as before, and
+  so does a file whose last frame the source drops (for example with
+  `max_fps`).
+
 ### Fixed
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
