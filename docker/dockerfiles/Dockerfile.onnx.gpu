@@ -322,6 +322,7 @@ RUN find /opt/venv/lib/python3.12 -type d \
         -prune -exec rm -rf {} + && \
     rm -f /usr/local/bin/uv /usr/local/bin/uvx \
           /opt/venv/bin/ninja /opt/venv/bin/cmake /opt/venv/bin/meson && \
+    python3 -m pip uninstall -y uv && \
     python3 -m pip uninstall -y pip
 
 FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
