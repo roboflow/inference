@@ -33,6 +33,16 @@ from roboflow_workflows.core_steps.common.token_usage import (
     parse_gemini_usage_metadata,
 )
 from roboflow_workflows.core_steps.common.utils import run_in_parallel
+from roboflow_workflows.core_steps.common.vlm_class_guide import (
+    CLASS_GUIDE_DESCRIPTION,
+    CLASS_GUIDE_EXAMPLE,
+    CLASS_GUIDE_INTRO,
+    CLASS_GUIDE_TASK,
+    ClassGuide,
+    class_guide_text,
+    validate_class_guide,
+    with_class_guide,
+)
 from roboflow_workflows.core_steps.common.vlm_decoding import (
     actual_vlm_prediction_outputs,
     build_object_detection_prompt,
@@ -345,6 +355,18 @@ A selector can provide the whole list, such as `$inputs.reference_examples`, but
 selectors inside an example are not resolved: to build the examples from a step's
 predictions, that step has to output the list in this format.
 
+### Class guide
+
+For `object-detection`, `class_guide` takes a written guide to the classes:
+`{{"scene": ..., "classes": {{<class>: <guide>}}}}`. Each class guide says what the
+object looks like, how to tell it from the other classes and how its box is drawn.
+The block appends the guide to the detection instructions of every request: the
+line "{CLASS_GUIDE_INTRO}", the scene, then one `- <class>: <guide>` line per class
+in the order of `classes`. The class names stay the labels Gemini answers with. A
+guide costs a few hundred input tokens per request, where each reference example
+image costs about a thousand, so a guide written once from the examples can stand
+in for them. Without a guide the request is unchanged.
+
 ### API Key Options
 
 This block supports two API key modes:
@@ -484,6 +506,19 @@ class BlockManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "task_type": {
                     "values": {REFERENCE_EXAMPLES_TASK},
+                    "required": False,
+                },
+            },
+        },
+    )
+    class_guide: Optional[Union[Selector(kind=[DICTIONARY_KIND]), ClassGuide]] = Field(
+        default=None,
+        description=CLASS_GUIDE_DESCRIPTION,
+        examples=[CLASS_GUIDE_EXAMPLE, "$inputs.class_guide"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": {CLASS_GUIDE_TASK},
                     "required": False,
                 },
             },
@@ -629,6 +664,12 @@ class BlockManifest(WorkflowBlockManifest):
                 task_type=self.task_type,
                 labels=self.classes if isinstance(self.classes, list) else None,
             )
+        if isinstance(self.class_guide, ClassGuide):
+            validate_class_guide(
+                self.class_guide,
+                task_type=self.task_type,
+                labels=self.classes if isinstance(self.classes, list) else None,
+            )
         validate_reasoning_level(
             model=self.model_version,
             level=self.thinking_level,
@@ -725,6 +766,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
         api_key: str = "rf_key:account",
         reference_examples: Optional[List[Any]] = None,
         keypoint_schema: Optional[Dict[str, Any]] = None,
+        class_guide: Optional[Any] = None,
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         keypoint_skeletons = (
@@ -750,6 +792,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
             reference_examples=reference_examples,
             reference_parts_cache=self._reference_parts_cache,
             keypoint_schema=keypoint_skeletons,
+            class_guide=class_guide,
         )
         results = []
         for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
@@ -810,6 +853,7 @@ def run_gemini_prompting(
     reference_examples: Optional[List[Any]] = None,
     reference_parts_cache: Optional[ReferencePartsCache] = None,
     keypoint_schema: Optional[Dict[str, Any]] = None,
+    class_guide: Optional[Any] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
@@ -837,6 +881,8 @@ def run_gemini_prompting(
         reference_parts = gemini_reference_parts_for(
             reference_examples, labels=classes, cache=reference_parts_cache
         )
+    guide = validate_class_guide(class_guide, task_type=task_type, labels=classes)
+    guide_text = class_guide_text(guide, labels=classes or [])
 
     gemini_prompts = []
     for image in images:
@@ -868,6 +914,10 @@ def run_gemini_prompting(
                 reference_parts=reference_parts,
                 target_intro={"text": TARGET_IMAGE_INTRO},
                 is_image_part=lambda part: "inline_data" in part,
+            )
+        if guide_text:
+            generated_prompt["contents"]["parts"] = with_class_guide(
+                generated_prompt["contents"]["parts"], guide_text=guide_text
             )
 
         if (

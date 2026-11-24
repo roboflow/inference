@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common import vlm_reference_examples
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.vlm_class_guide import ClassGuide
 from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
     OCCLUDED_KEYPOINT_CONFIDENCE,
     VISIBLE_KEYPOINT_CONFIDENCE,
@@ -1210,3 +1211,247 @@ def test_keypoint_workflow_feeds_a_keypoint_consumer() -> None:
         EXPECTED_KEYPOINTS
     ]
     assert result[0]["visualization"]["type"] == "base64"
+
+
+CLASS_GUIDE = {
+    "scene": "Photos of pets indoors.",
+    "classes": {
+        "dog": "Any dog, puppies included. Box the whole body.",
+        "cat": "Any cat. Box it from the ears to the tail.",
+    },
+}
+DETECTION_INSTRUCTIONS = (
+    "Output a JSON list where each entry contains the 2D bounding box "
+    'in the key "box_2d" and the text label in the key "label". '
+    'The "box_2d" value must be [y_min, x_min, y_max, x_max]: integers '
+    "between 0 and 1000, normalized to the image height and width. "
+    "Return only the JSON list, with no extra text. "
+    "Only use these labels: cat, dog"
+)
+CLASS_GUIDE_TEXT = (
+    "\n\nWhat the labels mean, from labeled examples of this dataset:\n"
+    "Photos of pets indoors.\n"
+    "- cat: Any cat. Box it from the ears to the tail.\n"
+    "- dog: Any dog, puppies included. Box the whole body."
+)
+
+
+def _run_detection_with_class_guide(
+    class_guide: Optional[dict],
+    reference_examples: Optional[list] = None,
+) -> tuple:
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(DETECTION_OUTPUT, 11, 3)]
+        results = block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat", "dog"],
+            model_version="gemini-4-argon",
+            max_tokens=16384,
+            temperature=None,
+            thinking_level="low",
+            google_code_execution=None,
+            max_concurrent_requests=None,
+            api_key="rf_key:account",
+            reference_examples=reference_examples,
+            class_guide=class_guide,
+        )
+    request = mock_execute.call_args[1]["gemini_prompts"][0]
+    return results[0], request
+
+
+@pytest.mark.parametrize(
+    "class_guide, expected",
+    [
+        (CLASS_GUIDE, ClassGuide(**CLASS_GUIDE)),
+        ("$inputs.class_guide", "$inputs.class_guide"),
+        (None, None),
+    ],
+)
+def test_manifest_accepts_class_guide(class_guide, expected) -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/google_gemini@v6",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": ["cat", "dog"],
+            "class_guide": class_guide,
+        }
+    )
+
+    # then
+    assert result.class_guide == expected
+
+
+def test_manifest_rejects_class_guide_for_other_tasks() -> None:
+    with pytest.raises(ValueError, match="only supported for the object-detection"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "classification",
+                "classes": ["cat", "dog"],
+                "class_guide": CLASS_GUIDE,
+            }
+        )
+
+
+def test_manifest_rejects_class_guide_with_unknown_classes() -> None:
+    with pytest.raises(ValueError, match=r"does not have: \['bird'\]"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": ["cat", "dog"],
+                "class_guide": {"classes": {"bird": "Any bird."}},
+            }
+        )
+
+
+def test_run_appends_class_guide_to_the_detection_instructions() -> None:
+    # when
+    result, request = _run_detection_with_class_guide(CLASS_GUIDE)
+
+    # then
+    parts = request["contents"]["parts"]
+    assert len(parts) == 2
+    assert parts[0]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[1]["text"] == (
+        "Detect all objects in this image. " + DETECTION_INSTRUCTIONS + CLASS_GUIDE_TEXT
+    )
+    label_schema = request["generationConfig"]["response_schema"]["items"][
+        "properties"
+    ]["label"]
+    assert label_schema["enum"] == ["cat", "dog"]
+    assert detection_boxes(result["predictions"])[0] == EXPECTED_XYXY
+    assert detection_class_names(result["predictions"]) == ["cat"]
+
+
+def test_run_puts_class_guide_after_the_reference_examples_rule() -> None:
+    # when
+    _, request = _run_detection_with_class_guide(
+        CLASS_GUIDE, reference_examples=[_reference_example()]
+    )
+
+    # then
+    parts = request["contents"]["parts"]
+    assert len(parts) == 6
+    assert parts[3] == {"text": "Target image:"}
+    assert parts[5]["text"] == (
+        "Detect all objects in the target image. "
+        + DETECTION_INSTRUCTIONS
+        + "\nThe reference images are not part of the task: return detections "
+        "for the target image only." + CLASS_GUIDE_TEXT
+    )
+
+
+@pytest.mark.parametrize(
+    "class_guide", [None, {"classes": {}}, {"scene": " ", "classes": {"cat": ""}}]
+)
+def test_run_without_class_guide_text_keeps_the_request(class_guide) -> None:
+    # when
+    _, request = _run_detection_with_class_guide(class_guide)
+
+    # then
+    parts = request["contents"]["parts"]
+    assert parts[1]["text"] == "Detect all objects in this image. " + (
+        DETECTION_INSTRUCTIONS
+    )
+
+
+def test_run_rejects_resolved_class_guide_with_unknown_classes() -> None:
+    with pytest.raises(ValueError, match=r"does not have: \['bird'\]"):
+        _run_detection_with_class_guide({"classes": {"bird": "Any bird."}})
+
+
+def test_run_rejects_resolved_class_guide_for_other_tasks() -> None:
+    with pytest.raises(ValueError, match="only supported for the object-detection"):
+        block = GoogleGeminiBlockV6(api_key="rf-key")
+        with patch(EXECUTE_REQUESTS_SEAM):
+            block.run(
+                images=Batch(content=[_build_image()], indices=[(0,)]),
+                task_type="classification",
+                prompt=None,
+                output_structure=None,
+                classes=["cat", "dog"],
+                model_version="gemini-4-argon",
+                max_tokens=None,
+                temperature=None,
+                thinking_level=None,
+                google_code_execution=None,
+                max_concurrent_requests=None,
+                class_guide=CLASS_GUIDE,
+            )
+
+
+def test_class_guide_workflow_input_reaches_the_request() -> None:
+    # given
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "classes"},
+            {"type": "WorkflowParameter", "name": "class_guide", "default_value": None},
+        ],
+        "steps": [
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "google_gemini",
+                "images": "$inputs.image",
+                "task_type": "object-detection",
+                "classes": "$inputs.classes",
+                "model_version": "gemini-4-argon",
+                "thinking_level": "low",
+                "max_tokens": 16384,
+                "class_guide": "$inputs.class_guide",
+                "api_key": "google-key",
+            }
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.google_gemini.predictions",
+            }
+        ],
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=definition,
+        init_parameters={
+            "workflows_core.model_manager": MagicMock(),
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+    image = np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8)
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(DETECTION_OUTPUT, 11, 3)]
+        execution_engine.run(
+            runtime_parameters={
+                "image": [image],
+                "classes": ["cat", "dog"],
+                "class_guide": CLASS_GUIDE,
+            }
+        )
+        with_guide = mock_execute.call_args[1]["gemini_prompts"][0]
+        execution_engine.run(
+            runtime_parameters={"image": [image], "classes": ["cat", "dog"]}
+        )
+        without_guide = mock_execute.call_args[1]["gemini_prompts"][0]
+
+    # then
+    assert with_guide["contents"]["parts"][1]["text"].endswith(CLASS_GUIDE_TEXT)
+    assert without_guide["contents"]["parts"][1]["text"].endswith(
+        "Only use these labels: cat, dog"
+    )

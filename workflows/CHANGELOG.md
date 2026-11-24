@@ -16,6 +16,12 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- **Class guide for object detection.** `roboflow_core/google_gemini@v6` accepts `class_guide`, `{"scene": ..., "classes": {<class>: <guide>}}`: a written guide to the classes that the block appends to the detection instructions of every request, the scene first and then one `- <class>: <guide>` line per class. The class names stay the labels Gemini answers with, and every class the guide names must be one of them.
+  - Written once from labeled example images, a guide can stand in for `reference_examples` at a few hundred input tokens per request instead of about a thousand per example image.
+  - Object-detection only, like `reference_examples`; requests without a guide are unchanged.
+
 ### Fixed
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
