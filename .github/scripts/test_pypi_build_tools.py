@@ -145,6 +145,53 @@ def test_build_target_runs_shared_installer_before_build(target, installer):
     assert install in result.stdout
     build = "-m uv build" if installer == "frontend" else "bdist_wheel"
     assert result.stdout.index(install) < result.stdout.index(build)
+    if target in {"create_workflows_wheel", "create_streamvision_wheel"}:
+        lock_check = "selected-python -m uv lock --check"
+        assert result.stdout.index(install) < result.stdout.index(lock_check)
+        assert result.stdout.index(lock_check) < result.stdout.index(build)
+
+
+def test_gpu_runtime_cleanup_removes_pip_installed_uv(tmp_path):
+    """Exercise the GPU builder's cleanup against an installed frontend.
+
+    Args:
+        tmp_path (Path): Directory for the disposable caller environment.
+    """
+    python, env = _environment(tmp_path)
+    subprocess.run(
+        ["make", "install_pypi_build_frontend", f"PYTHON={python}"],
+        cwd=ROOT,
+        env=env,
+        check=True,
+    )
+    assert _versions(python)["uv"] == _pins()["uv"]
+    assert (python.parent / "uv").is_file()
+    assert (python.parent / "uvx").is_file()
+
+    dockerfile = (ROOT / "docker/dockerfiles/Dockerfile.onnx.gpu").read_text()
+    builder = dockerfile.split(" AS builder\n", 1)[1].split("\nFROM ", 1)[0]
+    cleanup = next(
+        line.removeprefix("RUN ")
+        for line in builder.replace("\\\n", "").splitlines()
+        if line.startswith("RUN find /opt/venv/")
+    )
+    # Run the real cleanup with its absolute paths confined to this fixture.
+    cleanup = cleanup.replace("/opt/venv", str(python.parent.parent)).replace(
+        "/usr/local/bin", str(tmp_path / "standalone-bin")
+    )
+    subprocess.run(["sh", "-ec", cleanup], env=env, check=True)
+
+    assert _versions(python)["uv"] is None
+    assert not (python.parent / "uv").exists()
+    assert not (python.parent / "uvx").exists()
+    subprocess.run(
+        [
+            str(python),
+            "-c",
+            "import importlib.util; assert importlib.util.find_spec('uv') is None",
+        ],
+        check=True,
+    )
 
 
 @pytest.mark.parametrize(

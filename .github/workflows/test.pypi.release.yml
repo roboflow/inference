@@ -18,9 +18,13 @@ on:
       - .github/scripts/test_pypi_system_python.py
       - .github/docker/Dockerfile.pypi-system-python-tests
       - docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0
+      - docker/dockerfiles/Dockerfile.onnx.gpu
       - inference_models/pyproject.toml
+      - inference_models/uv.lock
       - workflows/pyproject.toml
+      - workflows/uv.lock
       - stream_vision/pyproject.toml
+      - stream_vision/uv.lock
       - Makefile
       - requirements/**
       - inference/core/version.py
@@ -44,9 +48,13 @@ on:
       - .github/scripts/test_pypi_system_python.py
       - .github/docker/Dockerfile.pypi-system-python-tests
       - docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0
+      - docker/dockerfiles/Dockerfile.onnx.gpu
       - inference_models/pyproject.toml
+      - inference_models/uv.lock
       - workflows/pyproject.toml
+      - workflows/uv.lock
       - stream_vision/pyproject.toml
+      - stream_vision/uv.lock
       - Makefile
       - requirements/**
       - inference/core/version.py
