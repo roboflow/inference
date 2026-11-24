@@ -5,6 +5,7 @@ import math
 import threading
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Callable, List, Literal, Optional, Set, Tuple, Type, Union
@@ -722,7 +723,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             while len(bookkeeping.sampled) > video_sampling.max_frames:
                 bookkeeping.sampled.pop(0)
 
-        error_status = self._collect_finished_call(bookkeeping=bookkeeping)
         if bookkeeping.last_fire_frame_number is None:
             # A single frame has no temporal content to classify; anchor the
             # fire cadence at stream start and wait for a full stride.
@@ -748,15 +748,21 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         should_classify = has_enough_samples and (
             frame_number >= next_fire_frame_number or flushes_tail
         )
+        # A file is not paced by the clock, so a worker would fall behind it
+        # and leave most windows unclassified.
+        background = background_inference and not metadata.comes_from_video_file
+        # Synchronous mode classifies every due window, so a call left
+        # running by background mode must finish first.
+        error_status = self._collect_finished_call(
+            bookkeeping=bookkeeping,
+            wait=should_classify and not background,
+        )
         if should_classify and bookkeeping.pending is not None:
             # One call per stream at a time. The fire waits for the worker
             # and then takes the newest window, not the one it was due on.
             bookkeeping.fire_deferred = True
         elif should_classify:
-            gap_notice = self._describe_deferral_gap(
-                bookkeeping=bookkeeping,
-                cutoff_frame_number=cutoff_frame_number,
-            )
+            gap_notice = self._describe_deferral_gap(bookkeeping=bookkeeping)
             bookkeeping.fire_deferred = False
             bookkeeping.tail_flushed = is_last_file_frame
             bookkeeping.last_fire_frame_number = frame_number
@@ -769,9 +775,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 sampling_stride=sampling_stride,
                 confidence=confidence,
                 frame_limit=frame_number + 1,
-                # A file is not paced by the clock, so a worker would fall
-                # behind it and leave most windows unclassified.
-                background=background_inference and not metadata.comes_from_video_file,
+                background=background,
             )
             error_status = " ".join(
                 part for part in (error_status, gap_notice, call_error) if part
@@ -959,14 +963,25 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             # "no action" from "not analyzed".
             bookkeeping.analyzed_until_frame = call.frame_limit - 1
 
-    def _collect_finished_call(self, bookkeeping: _ActionRecognitionBookkeeping) -> str:
+    def _collect_finished_call(
+        self,
+        bookkeeping: _ActionRecognitionBookkeeping,
+        *,
+        wait: bool = False,
+    ) -> str:
         """Merge a finished background call on the step thread.
 
         The worker only runs the model. Every write to per-video state stays
-        on the thread that reads it, so the state needs no lock.
+        on the thread that reads it, so the state needs no lock. With
+        ``wait``, a call that still runs is awaited instead of left pending.
         """
         call = bookkeeping.pending
-        if call is None or not call.future.done():
+        if call is None:
+            return ""
+
+        if wait:
+            futures_wait([call.future])
+        if not call.future.done():
             return ""
 
         bookkeeping.pending = None
@@ -990,17 +1005,16 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return ""
 
     @staticmethod
-    def _describe_deferral_gap(
-        bookkeeping: _ActionRecognitionBookkeeping,
-        *,
-        cutoff_frame_number: int,
-    ) -> str:
+    def _describe_deferral_gap(bookkeeping: _ActionRecognitionBookkeeping) -> str:
         """Name the frames between a late call and the one before it, if any."""
         if not bookkeeping.fire_deferred:
             return ""
 
         first_uncovered = bookkeeping.last_fire_frame_number + 1
-        if cutoff_frame_number < first_uncovered:
+        # The window's ranges start at its first retained sample, the origin
+        # the timeline merge uses, not at the nominal window start.
+        last_uncovered = math.floor(bookkeeping.sampled[0].intended_frame_number) - 1
+        if last_uncovered < first_uncovered:
             return ""
 
         # The whole gap, not only the part lost to the wait: with a stride
@@ -1008,7 +1022,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return (
             f"The previous classification had not finished, so this one started "
             f"late. No window covers source frames "
-            f"{first_uncovered}-{cutoff_frame_number}."
+            f"{first_uncovered}-{last_uncovered}."
         )
 
     def _get_worker(self) -> _WindowWorker:

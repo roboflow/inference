@@ -1,5 +1,6 @@
 """Tests for the stateful Action Recognition Model workflow block."""
 
+import gc
 import importlib
 import math
 import threading
@@ -1863,8 +1864,9 @@ def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
     assert classified == [[1, 3], [5, 7]]
     assert late["analyzed_until_frame"] == 3
     assert after["analyzed_until_frame"] == 7
-    # Frames 4-7 sit inside the one-second window ending on 7: no gap.
-    assert late["error_status"] == ""
+    # The late window's first sample is frame 5, so frame 4 is in no window:
+    # the skipped call on 5 was the one that covered it.
+    assert "No window covers source frames 4-4." in late["error_status"]
 
 
 @pytest.mark.parametrize(
@@ -1877,6 +1879,10 @@ def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
         # runs until frame 20, so the next window covers 17-20. The stride
         # skips 10-13 anyway; the notice names the whole gap.
         (2.0, 20, "10-16", 9),
+        # The stride equals the window: the first call ends on frame 5 and
+        # runs until frame 11. The next window's first sample is frame 9, so
+        # frame 8 is uncovered even though the nominal window starts there.
+        (1.0, 11, "6-8", 5),
     ],
 )
 def test_late_background_call_names_the_frames_no_window_covers(
@@ -2083,6 +2089,58 @@ def test_close_cancels_waiting_windows_while_the_running_call_finishes():
     finally:
         model.gate.set()
         block.close()
+
+
+def test_switching_background_inference_off_classifies_the_next_due_window():
+    block, model = _make_background_block(
+        responses=[[_model_segment("walk")], [_model_segment("run")]]
+    )
+    try:
+        for number in (1, 2, 3):
+            _run_background(block, number)
+        assert model.entered.wait(timeout=5)
+
+        _run(block, _make_frame(4))
+        # Synchronous mode waits for the running call on the next due frame.
+        threading.Timer(0.2, model.gate.set).start()
+        due = _run(block, _make_frame(5))
+    finally:
+        model.gate.set()
+        block.close()
+
+    classified = [[frame[0, 0, 2] for frame in call["frames"]] for call in model.calls]
+    assert classified == [[1, 3], [3, 5]]
+    # The frame that came due carries both results, as synchronous mode does.
+    assert due["analyzed_until_frame"] == 5
+    assert [entry["class_name"] for entry in _timeline_as_dicts(due)] == [
+        "walk",
+        "run",
+    ]
+    assert due["error_status"] == ""
+
+
+def test_dropping_the_block_cancels_calls_that_have_not_started():
+    block, model = _make_background_block()
+    for number in (1, 2, 3):
+        for video_id in ("camera-a", "camera-b"):
+            _run(
+                block,
+                _make_frame(number, video_id=video_id),
+                background_inference=True,
+            )
+    assert model.entered.wait(timeout=5)
+    running = block._video_bookkeeping["camera-a"].pending.future
+    queued = block._video_bookkeeping["camera-b"].pending.future
+    block_reference = weakref.ref(block)
+
+    del block
+    gc.collect()
+    model.gate.set()
+    running.result(timeout=5)
+
+    assert block_reference() is None
+    assert queued.cancelled()
+    assert len(model.calls) == 1
 
 
 def test_switching_background_inference_off_still_collects_the_running_call():

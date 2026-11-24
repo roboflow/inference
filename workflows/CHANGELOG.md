@@ -56,7 +56,9 @@ for contributor and maintainer responsibilities.
   stops is not reported. One call runs per stream at a time; a call that comes
   due while the previous one has not finished waits and takes the newest
   window. When a call starts late, `error_status` names the frames no window
-  covers between it and the previous call. A step has one worker, so its
+  covers between it and the previous call. Turning `background_inference` off
+  makes the next due window wait for a call that still runs and then classify
+  inside the step. A step has one worker, so its
   streams take turns. Video files always classify inside the step. The default
   is unchanged.
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
