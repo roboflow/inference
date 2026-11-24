@@ -624,7 +624,9 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
                 availability=UNAVAILABLE_SINKS_DISABLED,
             )
 
-        if not _carries_video_metadata(image=image):
+        # Stored metadata only. `video_metadata` above synthesises a default for
+        # still images and does not store it, so it cannot answer this check.
+        if not image.has_video_metadata:
             return self._unavailable_anchor(
                 video_identifier=video_identifier,
                 frame_timestamp=frame_timestamp,
@@ -946,15 +948,6 @@ def _start_nvenc_warm_up() -> None:
             nvenc_ring.start_warm_up()
     except Exception as error:
         logger.debug(f"NVENC warm-up could not start: {error}")
-
-
-def _carries_video_metadata(image: WorkflowImageData) -> bool:
-    # `WorkflowImageData.video_metadata` synthesises metadata for still images; a
-    # recorder fed only such images has no stream to record (stateless HTTP).
-    # Reviewer note: there is no public accessor that tells real metadata from the
-    # synthesised default without side effects, so this reads the private field on
-    # purpose. A public `has_video_metadata` on `WorkflowImageData` would remove it.
-    return getattr(image, "_video_metadata", None) is not None
 
 
 def _frame_resolution(image: WorkflowImageData) -> Optional[Tuple[int, int]]:

@@ -743,6 +743,19 @@ class WorkflowImageData:
         return self._base64_image
 
     @property
+    def has_video_metadata(self) -> bool:
+        """Whether video metadata is already stored on this image.
+
+        ``True`` when metadata was supplied. ``False`` when it is unset, which
+        is the case for still images. Reading ``video_metadata`` in that case
+        synthesises a default and does not store it; this property does neither.
+
+        Returns:
+            Whether stored video metadata is present.
+        """
+        return self._video_metadata is not None
+
+    @property
     def video_metadata(self) -> VideoMetadata:
         if self._video_metadata is not None:
             return self._video_metadata
