@@ -7,9 +7,11 @@ This is the canonical changelog for the `streamvision` package.
 ### Fixed
 
 - The OpenCV video source treats a `file://` URI as a video file, like the
-  equivalent local path. Before, frames from `file://` sources had
+  equivalent local path. It opens the decoded path, so percent-encoded and
+  `file://localhost/` URIs also open. Before, frames from `file://` sources had
   `comes_from_video_file=False`, so the pipeline buffered and dropped them as for
-  a live stream.
+  a live stream. Such a source now ends at the end of the file. Before, with
+  stream reconnection on (the default), it reconnected and replayed the file.
 
 ## `0.1.7`
 

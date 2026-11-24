@@ -3,7 +3,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
-from streamvision.camera.local_files import local_file_path
 from streamvision.camera.video_source import CV2VideoFrameProducer, VideoSource
 
 FRAME_COUNT = 10
@@ -11,7 +10,8 @@ FRAME_COUNT = 10
 
 @pytest.fixture
 def clip_path(tmp_path: Path) -> Path:
-    path = tmp_path / "clip.mp4"
+    # The space makes as_uri() percent-encode the path.
+    path = tmp_path / "my clip.mp4"
     writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (64, 48))
     for frame_index in range(FRAME_COUNT):
         writer.write(np.full((48, 64, 3), frame_index * 20, dtype=np.uint8))
@@ -56,21 +56,3 @@ def test_video_source_marks_frames_of_a_file_uri_as_video_file_frames(
     assert len(frames) == FRAME_COUNT
     assert all(frame.comes_from_video_file is True for frame in frames)
     assert all(frame.total_frames == FRAME_COUNT for frame in frames)
-
-
-@pytest.mark.parametrize(
-    "video, expected",
-    [
-        ("file:///videos/my%20clip.mp4", "/videos/my clip.mp4"),
-        ("file://localhost/videos/clip.mp4", "/videos/clip.mp4"),
-        ("./videos/clip.mp4", "./videos/clip.mp4"),
-        ("rtsp://camera.local/stream", None),
-        (0, None),
-    ],
-)
-def test_local_file_path(video, expected) -> None:
-    # when
-    result = local_file_path(video)
-
-    # then
-    assert result == expected

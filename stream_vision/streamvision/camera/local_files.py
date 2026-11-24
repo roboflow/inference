@@ -2,7 +2,8 @@
 
 from pathlib import Path
 from typing import Optional, Union
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 
 def local_file_path(video: Union[str, int]) -> Optional[str]:
@@ -19,11 +20,15 @@ def local_file_path(video: Union[str, int]) -> Optional[str]:
     """
     if not isinstance(video, str):
         return None
+
     if video.startswith("file://"):
-        decoded_path = unquote(urlparse(video).path)
+        # url2pathname also maps "/C:/clip.mp4" to a Windows drive path.
+        decoded_path = url2pathname(urlparse(video).path)
         return decoded_path
+
     if "://" in video:
         return None
+
     return video
 
 
