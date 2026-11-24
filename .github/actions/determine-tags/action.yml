@@ -137,7 +137,9 @@ runs:
               echo "Cannot verify the selected stable release. Check GitHub API availability/access and release metadata, then rerun this job; no tags were emitted." >&2
               exit 1
             fi
-            if [ "$NORMALIZED_RELEASE" = "$(normalize_version "$LATEST_RELEASE")" ]; then
+            # Equivalent package versions can identify different Git tags.
+            # Only the exact release selected by GitHub may move latest.
+            if [ "$BRANCH" = "$LATEST_RELEASE" ]; then
               ALLOW_LATEST=true
               IMAGE_TAGS="$IMAGE_TAGS,$BASE_IMAGE:${TAG_PREFIX}latest"
             fi

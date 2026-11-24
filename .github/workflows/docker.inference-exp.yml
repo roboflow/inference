@@ -60,9 +60,22 @@ jobs:
         id: tags
         env:
           CUSTOM_TAG: ${{ github.event.inputs.custom_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_VERSION: ${{ steps.runtime-version.outputs.version }}
         run: |
           set -euo pipefail
           BASE_TAG="${CUSTOM_TAG:-$VERSION}"
+          if [ "${EVENT_NAME:-}" = "workflow_dispatch" ] && [ -z "$CUSTOM_TAG" ]; then
+            if [[ ! "$RELEASE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "Invalid runtime version." >&2
+              exit 1
+            fi
+            # A runtime candidate must not replace an unchanged final Models image.
+            stable_version='^[0-9]+\.[0-9]+(\.[0-9]+)?([.-]?post[0-9]+)?$'
+            if [[ "$VERSION" =~ $stable_version && ! "$RELEASE_VERSION" =~ $stable_version ]]; then
+              BASE_TAG="${VERSION}-${RELEASE_VERSION}"
+            fi
+          fi
           if [[ ! "$BASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
             echo "Invalid image tag." >&2
             exit 1

@@ -97,6 +97,31 @@ def test_only_selected_stable_release_gets_latest(tmp_path, latest, expected):
     assert queried
 
 
+@pytest.mark.parametrize("prefix", ["", "cu124-"])
+@pytest.mark.parametrize(
+    "version,release,latest",
+    [
+        ("1.8.7.post1", "v1.8.7-post1", "v1.8.7.post1"),
+        ("1.8.7.post1", "v1.8.7.post1", "v1.8.7post1"),
+        ("1.8.7", "v1.8.7", "1.8.7"),
+        ("1.8.0", "v1.8", "v1.8.0"),
+    ],
+)
+def test_latest_requires_exact_release_tag_identity(
+    tmp_path, prefix, version, release, latest
+):
+    result, tags, queried = _tags(
+        tmp_path,
+        VERSION=version,
+        BRANCH=release,
+        latest=latest,
+        TAG_PREFIX=prefix,
+    )
+    assert result.returncode == 0, result.stderr
+    assert tags == f"roboflow/image:{prefix}{version}"
+    assert queried
+
+
 @pytest.mark.parametrize(
     "version,release,prerelease",
     [
@@ -435,3 +460,74 @@ def test_experimental_non_release_tags_remain_separate(
     else:
         assert result.returncode == 0, result.stderr
         assert output.read_text().strip() == f"tags=roboflow/inference-exp:{expected}"
+
+
+@pytest.mark.parametrize("platform", ["cu124", "linux/amd64"])
+@pytest.mark.parametrize(
+    "runtime,models,custom,expected",
+    [
+        ("1.8.7rc1", "0.39.10", "", "0.39.10-1.8.7rc1"),
+        ("1.8.7a1", "0.39.10", "", "0.39.10-1.8.7a1"),
+        ("1.8.7b1", "0.39.10", "", "0.39.10-1.8.7b1"),
+        ("1.8.7.dev1", "0.39.10", "", "0.39.10-1.8.7.dev1"),
+        ("1.8.7rc1", "0.39.10rc1", "", "0.39.10rc1"),
+        ("1.8.7", "0.39.10", "", "0.39.10"),
+        ("1.8.7.post1", "0.39.10", "", "0.39.10"),
+        ("1.8.7rc1", "0.39.10", "staging-rc1", "staging-rc1"),
+    ],
+)
+def test_manual_models_workflow_protects_final_version_tag(
+    tmp_path, platform, runtime, models, custom, expected
+):
+    config = yaml.safe_load(
+        (ROOT / ".github/workflows/docker.inference-exp.yml").read_text()
+    )
+    steps = {
+        step["id"]: step
+        for job in config["jobs"].values()
+        for step in job["steps"]
+        if "id" in step
+    }
+    env = {
+        "PATH": os.environ["PATH"],
+        "EVENT_NAME": "workflow_dispatch",
+        "GIT_REF": "refs/heads/release/1.8.7rc1",
+        "VERSION": models,
+        "RELEASE_VERSION": runtime,
+        "CUSTOM_TAG": custom,
+        "IMAGE_VARIANT": "cpu" if platform == "linux/amd64" else platform,
+        "PLATFORM": platform,
+        "FORCE_PUSH": "true",
+    }
+    outputs = {}
+    for step_id in ("tags", "should-build", "image-tags"):
+        output = tmp_path / step_id
+        result = subprocess.run(
+            ["bash", "-c", steps[step_id]["run"]],
+            env={**env, "GITHUB_OUTPUT": str(output)},
+            cwd=tmp_path,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, result.stderr
+        outputs.update(line.split("=", 1) for line in output.read_text().splitlines())
+        env["BASE_TAG"] = outputs["base-tag"]
+
+    prefix = "cpu" if platform == "linux/amd64" else platform
+    assert outputs["should-build"] == "true"
+    assert outputs["tags"] == f"roboflow/inference-exp:{prefix}-{expected}"
+    assert steps["tags"]["env"]["EVENT_NAME"] == "${{ github.event_name }}"
+    assert (
+        steps["tags"]["env"]["RELEASE_VERSION"]
+        == "${{ steps.runtime-version.outputs.version }}"
+    )
+    publisher = next(
+        step
+        for step in config["jobs"]["build"]["steps"]
+        if step.get("uses") == "depot/build-push-action@v1"
+    )
+    assert publisher["with"]["tags"] == "${{ steps.image-tags.outputs.tags }}"
+    assert publisher["with"]["push"] == (
+        "${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}"
+    )
