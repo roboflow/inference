@@ -93,6 +93,19 @@ for contributor and maintainer responsibilities.
   Invalid values fall back to the default with a warning. `docs/workflows/video_clips.md`
   describes the clip contract, host support and the measured performance envelope.
 
+### Changed
+
+- Action Recognition Model gains an `analyzed_until_frame` output: the source
+  index of the last frame a successful classification covered, null until the
+  first one. A consumer can tell "no action" from "not analyzed yet". Failed and
+  skipped windows do not advance it.
+- Action Recognition Model runs one extra classification on the last frame of a
+  video file that reports its frame count. The timeline on that frame covers
+  the tail of the clip, and a clip shorter than one stride now gets a result.
+  Live streams and files without a usable frame count behave as before, and
+  so does a file whose last frame the source drops (for example with
+  `max_fps`).
+
 ### Fixed
 
 - Video Clip Recorder, NVENC backend: the first frame of a GPU stream no longer stalls the pipeline thread. The process-wide NVENC start-up (the PyNvVideoCodec import, the CUDA context, the conversion kernels and a throwaway encoder session) now runs once per process on a background thread that the recorder starts when it is constructed on a CUDA host (torch already imported with CUDA image tensors or an initialised CUDA context, and PyNvVideoCodec installed); CPU hosts and hosts without PyNvVideoCodec do nothing and never import torch. Frames that arrive before it finishes are not buffered and are reported in a new `startup_dropped` loss count (clip report `loss.startup_dropped`, ring stats `startup_dropped`); the recorder never falls back to x264 while NVENC is still starting, and uses x264 only if the start-up finds NVENC unavailable or does not finish within 60 s. Until a stream's encoder session is open, its GPU frame pool may grow to 32 frames (at most 192 MiB of device memory, freed once the backlog drains), so the frames that arrive while NVENC opens the session are kept instead of dropped; frames refused in that window also count as `startup_dropped`, and a full pool afterwards still counts `queue_drops`.
@@ -101,6 +114,8 @@ for contributor and maintainer responsibilities.
 - Video Clip Recorder, NVENC backend: once a stream's encoder session is open and the start-up backlog is encoded, the start-up frame pool's extra block (up to 192 MiB) is handed back to the driver with one `torch.cuda.empty_cache()` per stream start-up; before, torch's caching allocator kept it reserved for the life of the process. Ring stats report `startup_pool_released` and `startup_pool_release_ms`.
 - Video clips: clips are muxed one at a time per process with a short pause every 32 packets, and a clip held in memory is uploaded as one buffer (file-backed clips stream in 1 MiB reads instead of 8 KiB), so clips that finish together compete less with the pipeline.
 - The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
+- OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+- OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
 
 ## `0.2.17`
 
