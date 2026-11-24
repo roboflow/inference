@@ -434,7 +434,7 @@ class ModelManagerGateway:
             return _load_failure(future.exception())
         except ModelCapacityExhaustedError as error:
             logger.warning("ModelManagerGateway: load refused: %s", error)
-            return ("load_timeout", 1)
+            return ("server_full", 1)
         except Exception as error:
             logger.warning("ModelManagerGateway: load failed", exc_info=True)
             return _load_failure(error)
@@ -484,8 +484,8 @@ class ModelManagerGateway:
 
         Returns:
             ``("model_ready",)``; ``("load_timeout", seconds)`` while the load
-            keeps running, or ``("load_timeout", 1)`` when the manager refused
-            the load because every model that could make room is busy; or the
+            keeps running, ``("server_full", 1)`` when the manager refused the
+            load because every model that could make room is busy, or the
             failure tuple of a failed load.
         """
         key = routing_key(model_id, instance)
@@ -705,6 +705,8 @@ class ModelManagerGateway:
                     )
                     if status[0] == "load_timeout":
                         raise ServerBusyError(f"reload timed out for '{key}'")
+                    if status[0] == "server_full":
+                        raise ServerBusyError(f"reload refused for '{key}'")
                     if status[0] == "error":
                         raise ReloadAfterEvictionError("reload after eviction failed")
                     try:
