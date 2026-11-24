@@ -55,7 +55,11 @@ from inference_models.models.common.trt import (
     infer_from_trt_engine,
     load_trt_model,
 )
-from inference_models.models.yolact.common import prepare_dense_masks, prepare_rle_masks
+from inference_models.models.yolact.common import (
+    prepare_dense_masks,
+    prepare_rle_masks,
+    prepare_grid_masks,
+)
 from inference_models.weights_providers.entities import RecommendedParameters
 
 try:
@@ -220,7 +224,7 @@ class YOLOACTForInstanceSegmentationTRT(
 
     @property
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
-        return {"dense", "rle"}
+        return {"dense", "rle", "grid"}
 
     def pre_process(
         self,
@@ -299,6 +303,27 @@ class YOLOACTForInstanceSegmentationTRT(
         masks_resolution_factor: float = 1.0,
         **kwargs,
     ) -> List[InstanceDetections]:
+        """Post-process detections into the requested mask representation.
+
+        Args:
+            model_results: Raw backend detections and native mask outputs.
+            pre_processing_meta: Per-image preprocessing geometry.
+            confidence: Detection confidence threshold or model-default selector.
+            iou_threshold: Intersection-over-union threshold used by NMS.
+            max_detections: Maximum retained detections per image.
+            class_agnostic_nms: Whether NMS suppresses boxes across classes.
+            mask_format: Dense masks, RLE masks, or compact native-score ``grid`` masks.
+            masks_resolution_factor: Dense/RLE interpolation factor; grid output requires 1.0.
+            **kwargs: Additional backend options.
+
+        Returns:
+            Instance detections; grid masks retain native scores while boxes
+            and outer size fields describe the original image.
+
+        Raises:
+            ModelInputError: For unsupported formats or a grid resolution factor
+                other than 1.0.
+        """
         if mask_format not in self.supported_mask_formats:
             raise ModelInputError(
                 message=f"YOLA-CT Instance Segmentation models support the following mask "
@@ -309,6 +334,13 @@ class YOLOACTForInstanceSegmentationTRT(
                 f"value of `mask_format` parameter is set.",
                 help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
+        if mask_format == "grid" and masks_resolution_factor != 1.0:
+            raise ModelInputError(
+                message="mask_format='grid' retains native scores; masks_resolution_factor "
+                "must be 1.0. Apply the resolution factor during mask materialization.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,
@@ -367,6 +399,12 @@ class YOLOACTForInstanceSegmentationTRT(
                     all_proto_data=all_proto_data,
                     pre_processing_meta=pre_processing_meta,
                     masks_resolution_factor=masks_resolution_factor,
+                )
+            elif mask_format == "grid":
+                final_results = prepare_grid_masks(
+                    nms_results=nms_results,
+                    all_proto_data=all_proto_data,
+                    pre_processing_meta=pre_processing_meta,
                 )
             else:
                 final_results = prepare_rle_masks(

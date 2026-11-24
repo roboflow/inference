@@ -3,6 +3,9 @@ from typing import List
 import torch
 
 from inference_models import InstanceDetections, InstancesRLEMasks
+from inference_models.models.common.roboflow.instance_segmentation_grid import (
+    build_instance_segmentation_grid,
+)
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
@@ -153,3 +156,49 @@ def prepare_rle_masks(
                 )
             )
     return final_results
+
+
+def prepare_grid_masks(
+    nms_results: List[torch.Tensor],
+    all_proto_data: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+) -> List[InstanceDetections]:
+    """Keep selected instance scores on their native grid.
+
+    Args:
+        nms_results: Selected network-space boxes, scores, classes and coefficients.
+        all_proto_data: Native mask prototypes for each image.
+        pre_processing_meta: Per-image preprocessing geometry.
+
+    Returns:
+        Detections in original-image coordinates with compact score-grid masks.
+    """
+    results = []
+    for image_bboxes, image_protos, image_meta in zip(
+        nms_results, all_proto_data, pre_processing_meta
+    ):
+        masks = image_protos @ image_bboxes[:, 6:].T
+        masks = 1 / (1 + torch.exp(-masks))
+        masks = torch.permute(masks, (2, 0, 1))
+        masks = crop_masks_to_boxes(image_bboxes[:, :4], masks)
+        xyxy, grid = build_instance_segmentation_grid(
+            image_bboxes=image_bboxes[:, :4],
+            masks=masks,
+            metadata=image_meta,
+            score_type="probabilities",
+            binarization_threshold=0.5,
+        )
+        image_size = tuple(image_meta.original_size)
+        results.append(
+            InstanceDetections(
+                xyxy=xyxy,
+                class_id=image_bboxes[:, 5].int(),
+                confidence=image_bboxes[:, 4],
+                mask=grid,
+                mask_size=image_size,
+                image_size=image_size,
+                mask_frame_size=image_size,
+            )
+        )
+
+    return results

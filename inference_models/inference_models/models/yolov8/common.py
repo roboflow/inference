@@ -3,6 +3,9 @@ from typing import List
 import torch
 
 from inference_models import InstanceDetections, InstancesRLEMasks
+from inference_models.models.common.roboflow.instance_segmentation_grid import (
+    build_instance_segmentation_grid,
+)
 from inference_models.models.common.roboflow.model_packages import PreProcessingMetadata
 from inference_models.models.common.roboflow.post_processing import (
     align_instance_segmentation_results,
@@ -164,3 +167,57 @@ def prepare_rle_masks(
                 )
             )
     return final_results
+
+
+def prepare_grid_masks(
+    nms_results: List[torch.Tensor],
+    protos: torch.Tensor,
+    pre_processing_meta: List[PreProcessingMetadata],
+    masks_smoothing_enabled: bool,
+    masks_binarization_threshold: float,
+) -> List[InstanceDetections]:
+    """Keep selected instance scores on their native grid.
+
+    Args:
+        nms_results: Selected network-space boxes, scores, classes and coefficients.
+        protos: Native mask prototypes for each image.
+        pre_processing_meta: Per-image preprocessing geometry.
+        masks_smoothing_enabled: Apply sigmoid before storing native scores.
+        masks_binarization_threshold: Threshold for later score materialization.
+
+    Returns:
+        Detections in original-image coordinates with compact score-grid masks.
+    """
+    results = []
+    for image_bboxes, image_protos, image_meta in zip(
+        nms_results, protos, pre_processing_meta
+    ):
+        masks = preprocess_segmentation_masks(
+            protos=image_protos,
+            masks_in=image_bboxes[:, 6:],
+        )
+        if masks_smoothing_enabled:
+            masks = torch.nn.functional.sigmoid(masks)
+
+        masks = crop_masks_to_boxes(image_bboxes[:, :4], masks)
+        xyxy, grid = build_instance_segmentation_grid(
+            image_bboxes=image_bboxes[:, :4],
+            masks=masks,
+            metadata=image_meta,
+            score_type="probabilities" if masks_smoothing_enabled else "logits",
+            binarization_threshold=masks_binarization_threshold,
+        )
+        image_size = tuple(image_meta.original_size)
+        results.append(
+            InstanceDetections(
+                xyxy=xyxy,
+                class_id=image_bboxes[:, 5].int(),
+                confidence=image_bboxes[:, 4],
+                mask=grid,
+                mask_size=image_size,
+                image_size=image_size,
+                mask_frame_size=image_size,
+            )
+        )
+
+    return results

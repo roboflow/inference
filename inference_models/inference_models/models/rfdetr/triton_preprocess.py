@@ -45,7 +45,6 @@ from typing import Optional, Tuple
 
 import numpy as np
 import torch
-
 from inference_models.errors import (
     MissingDependencyError,
     ModelInputError,
@@ -271,6 +270,7 @@ if TRITON_AVAILABLE:
         dst_ptr,
         ymin_ptr,
         wy_ptr,
+        normalization_lut_ptr,
         src_h,
         dst_stride_c,
         dst_stride_h,
@@ -282,6 +282,7 @@ if TRITON_AVAILABLE:
         offset_r,
         offset_g,
         offset_b,
+        EXACT_NORMALIZATION: tl.constexpr,
         KSIZE_Y: tl.constexpr,
         PRECISION_BITS_C: tl.constexpr,
         HALF_C: tl.constexpr,
@@ -304,6 +305,8 @@ if TRITON_AVAILABLE:
             target_h/target_w: Resized network input shape.
             inv_std_255_*: Precomputed ``1 / (255 * std[channel])`` values.
             offset_*: Precomputed ``-mean[channel] / std[channel]`` values.
+            normalization_lut_ptr: Optional exact CPU normalization table.
+            EXACT_NORMALIZATION: Read the table instead of fused arithmetic.
 
         Output:
             Writes normalized fp32 NCHW data into ``dst_ptr``. This is the
@@ -353,7 +356,14 @@ if TRITON_AVAILABLE:
             offset_r,
             tl.where(pid_c == 1, offset_g, offset_b),
         )
-        out = q.to(tl.float32) * inv_std_255 + offset
+        if EXACT_NORMALIZATION:
+            # PIL has already rounded to a byte. Read the exact CPU torchvision
+            # to_tensor + normalize result for that byte and output channel.
+            out = tl.load(
+                normalization_lut_ptr + pid_c * 256 + q, mask=mask_out, other=0.0
+            )
+        else:
+            out = q.to(tl.float32) * inv_std_255 + offset
 
         out_row = offs_y[:, None] * dst_stride_h + offs_x[None, :]
         tl.store(dst_ptr + pid_c * dst_stride_c + out_row, out, mask=mask_out)
@@ -467,6 +477,7 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
     crop_offset_x: int = 0,
     crop_h: Optional[int] = None,
     crop_w: Optional[int] = None,
+    normalization_lut: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Launch the fast two-pass preprocessor using caller-owned buffers.
 
@@ -491,11 +502,16 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
         crop_offset_y/crop_offset_x: Optional top-left crop offset in ``src``.
         crop_h/crop_w: Optional logical source shape after crop. When omitted,
             the full source tensor shape is used.
+        normalization_lut: Optional contiguous (3, 256) FP32 CUDA table of
+            CPU torchvision normalized byte values, in output-channel order.
+            None preserves the original fused normalization arithmetic.
 
     Returns:
         The same ``out`` tensor after scheduling both kernels on the current
         CUDA stream.
     """
+    if normalization_lut is not None:
+        normalization_lut.record_stream(torch.cuda.current_stream(src.device))
     raw_src_h, raw_src_w = int(src.shape[0]), int(src.shape[1])
     src_h = crop_h if crop_h is not None else raw_src_h
     src_w = crop_w if crop_w is not None else raw_src_w
@@ -557,6 +573,7 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
         out,
         tables.ymin_gpu,
         tables.wy_gpu,
+        normalization_lut if normalization_lut is not None else out,
         src_h,
         dst_stride_c,
         dst_stride_h,
@@ -568,6 +585,7 @@ def triton_preprocess_rfdetr_stretch_two_pass_preallocated(
         float(offset_r),
         float(offset_g),
         float(offset_b),
+        EXACT_NORMALIZATION=normalization_lut is not None,
         KSIZE_Y=tables.ksize_y,
         PRECISION_BITS_C=PRECISION_BITS,
         HALF_C=_HALF,

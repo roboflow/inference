@@ -1,10 +1,10 @@
-"""The two direct Python callers must install the server's workflow services.
+"""The direct Python example must install the server's workflow services.
 
 `test_workflows_composition_roots.py` pins the inventory of engine
 construction sites; the four server/CLI roots are driven in
 `test_image_codec_binding.py`.
-This drives the callers' own code - model loading, video decode, the platform
-fetch and `ExecutionEngine.init` stubbed - captures the arguments that actually
+This drives the example's own code - model loading and `ExecutionEngine.init`
+stubbed - captures the arguments that actually
 reach the engine, and then uses the dictionary the caller built: a real model
 block through the compiler, and both image injection paths. A hand-written copy
 of the intended dictionary would not cover that seam, which is the one the
@@ -18,7 +18,6 @@ caller overrides of the platform bindings to
 of what is bound, plus one execution through each path it enables.
 """
 
-import importlib.util
 import runpy
 import sys
 from pathlib import Path
@@ -81,9 +80,6 @@ from inference.core.workflows.prototypes.image_codec import (
 # tests/inference/unit_tests/core/interfaces/<this file> -> five levels up is the repo root
 REPO_ROOT = Path(__file__).resolve().parents[5]
 EXAMPLE = REPO_ROOT / "examples" / "run_perspective_correction.py"
-BENCHMARK = (
-    REPO_ROOT / "development" / "stream_interface" / "benchmark_engine_throughput.py"
-)
 API_KEY = "direct-caller-key"
 MODEL_ID = "some-project/1"
 OBJECT_DETECTION_BLOCK = "roboflow_core/roboflow_object_detection_model@v1"
@@ -283,77 +279,3 @@ def test_example_binds_the_server_services_and_reaches_a_real_model_block(
     assert image_input == {"type": "file", "value": str(source)}
     _exercise_both_image_paths(init_parameters, image_input)
     _run_real_detection_block(init_parameters, manager)
-
-
-@pytest.mark.parametrize("tensor_mode", [False, True])
-def test_benchmark_binds_the_server_services_and_reuses_predecoded_input(
-    monkeypatch, tmp_path, tensor_mode: bool
-) -> None:
-    torch = pytest.importorskip("torch")  # the script imports it at module scope
-    spec = importlib.util.spec_from_file_location(
-        "benchmark_engine_throughput_under_test", BENCHMARK
-    )
-    benchmark = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(benchmark)
-
-    manager = _fake_manager()
-    video = tmp_path / "clip.mp4"
-    video.write_bytes(b"")
-    frames = [np.zeros((4, 4, 3), dtype=np.uint8)]
-    # Both data representations, on the CPU: the tensor branch is the benchmark's
-    # reason to exist and must survive the rewiring without a GPU.
-    monkeypatch.setattr(benchmark, "ENABLE_TENSOR_DATA_REPRESENTATION", tensor_mode)
-    monkeypatch.setattr(benchmark, "WORKFLOWS_IMAGE_TENSOR_DEVICE", torch.device("cpu"))
-    monkeypatch.setattr(benchmark, "build_model_manager", lambda: manager)
-    monkeypatch.setattr(benchmark, "decode_frames", lambda video_path, count: frames)
-    monkeypatch.setattr(
-        benchmark,
-        "get_workflow_specification",
-        lambda **kwargs: {"version": "1.0", "inputs": [], "steps": [], "outputs": []},
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark_engine_throughput.py",
-            "--video",
-            str(video),
-            "--workspace",
-            "some-workspace",
-            "--workflow-id",
-            "some-workflow",
-            "--api-key",
-            API_KEY,
-            "--decoded-frames",
-            "1",
-            "--engine-runs",
-            "2",
-            "--warmup",
-            "0",
-        ],
-    )
-    captured = _capture_engine_init(monkeypatch)
-
-    benchmark.main()
-
-    assert len(captured) == 1
-    engine = captured[0]
-    init_parameters = _assert_server_services_are_bound(engine.init_kwargs, manager)
-    assert engine.init_kwargs["workflow_id"] == "some-workflow"
-
-    assert len(engine.runs) == 2
-    prepared = engine.runs[0]["runtime_parameters"]["image"][0]
-    if tensor_mode:
-        assert isinstance(prepared, torch.Tensor)
-        assert tuple(prepared.shape) == (3, 4, 4)
-        assert prepared.dtype is torch.uint8
-        assert prepared.device.type == "cpu"
-    else:
-        assert prepared is frames[0]
-    # The materialization stays out of the timed loop: the same object again.
-    assert engine.runs[1]["runtime_parameters"]["image"][0] is prepared
-
-    if not tensor_mode:
-        # Once is enough - the provider path does not depend on this caller's
-        # image representation, and the example already covers the other one.
-        _run_real_detection_block(init_parameters, manager)

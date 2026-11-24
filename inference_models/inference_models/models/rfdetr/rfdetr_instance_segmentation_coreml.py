@@ -39,6 +39,7 @@ from inference_models.models.rfdetr.class_remapping import (
 from inference_models.models.rfdetr.common import (
     post_process_instance_segmentation_results,
     post_process_instance_segmentation_results_to_rle_masks,
+    post_process_instance_segmentation_results_to_grid,
 )
 from inference_models.models.rfdetr.coreml_forward import (
     align_network_input_with_model,
@@ -166,7 +167,7 @@ class RFDetrForInstanceSegmentationCoreML(
 
     @property
     def supported_mask_formats(self) -> Set[InstanceSegmentationMaskFormat]:
-        return {"dense", "rle"}
+        return {"dense", "rle", "grid"}
 
     def pre_process(
         self,
@@ -235,13 +236,13 @@ class RFDetrForInstanceSegmentationCoreML(
             model_results (tuple): Raw boxes, class logits and mask logits.
             pre_processing_meta (list[PreProcessingMetadata]): Per-image transforms.
             confidence (Confidence): Detection threshold or model-default selector.
-            mask_format (InstanceSegmentationMaskFormat): ``dense`` masks or ``rle`` encoded masks.
-            masks_resolution_factor (float): Mask-grid interpolation factor in [0, 1].
+            mask_format (InstanceSegmentationMaskFormat): ``dense``, ``rle``, or native-score ``grid`` masks.
+            masks_resolution_factor (float): Dense/RLE interpolation factor in [0, 1]; grid requires 1.0.
             max_detections (int, optional): Cap on detections per image, applied before masks are aligned.
             **kwargs: Other shared inference options, ignored here.
 
         Returns:
-            list[InstanceDetections]: Filtered detections and masks in original-image coordinates.
+            list[InstanceDetections]: Detections in original-image coordinates; grid masks retain native scores.
 
         Raises:
             ModelInputError: If ``mask_format`` is not supported.
@@ -256,11 +257,32 @@ class RFDetrForInstanceSegmentationCoreML(
                 f"value of `mask_format` parameter is set.",
                 help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
             )
+        if mask_format == "grid" and masks_resolution_factor != 1.0:
+            raise ModelInputError(
+                message="mask_format='grid' retains native scores; masks_resolution_factor "
+                "must be 1.0. Apply the resolution factor during mask materialization.",
+                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+            )
+
         confidence_filter = ConfidenceFilter(
             confidence=confidence,
             recommended_parameters=self.recommended_parameters,
             default_confidence=INFERENCE_MODELS_RFDETR_DEFAULT_CONFIDENCE,
         )
+        if mask_format == "grid":
+            bboxes, logits, masks = model_results
+            results = post_process_instance_segmentation_results_to_grid(
+                bboxes=bboxes,
+                logits=logits,
+                masks=masks,
+                pre_processing_meta=pre_processing_meta,
+                threshold=confidence_filter.get_threshold(self.class_names),
+                num_classes=len(self.class_names),
+                classes_re_mapping=self._classes_re_mapping,
+                max_detections=max_detections,
+            )
+            return results
+
         post_process = (
             post_process_instance_segmentation_results
             if mask_format == "dense"

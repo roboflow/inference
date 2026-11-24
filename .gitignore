@@ -223,6 +223,7 @@ openspec*/
 opsx/
 checkpoints/
 development/_private
+development/workflows-2.0
 # Local credential material — never commit. Both of these were found untracked
 # but NOT ignored, so a single `git add -A` would have committed them.
 *.key

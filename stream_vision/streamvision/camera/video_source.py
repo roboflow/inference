@@ -509,10 +509,26 @@ class VideoSource:
         self._last_frame_timestamp: int = time.time_ns()
         self._fps: Optional[float] = None
         self._is_file: Optional[bool] = None
+        self._release_error: Optional[str] = None
 
     @property
     def source_id(self) -> Optional[int]:
         return self._source_id
+
+    @property
+    def release_error(self) -> Optional[str]:
+        """Return the latest producer release failure observed by this source.
+
+        A successful release or restart does not erase a previous failure.
+        Reading this observation does not wait for startup or cleanup; callers
+        must finish cleanup before treating ``None`` as a clean release.
+        Existing status events and exception behavior are unchanged.
+
+        Returns:
+            Exception type and credential-redacted message, or ``None`` if no
+            producer release failure has been observed during this object's life.
+        """
+        return self._release_error
 
     @lock_state_transition
     def restart(
@@ -839,6 +855,9 @@ class VideoSource:
         try:
             self._video.release()
         except Exception as error:  # noqa: BLE001
+            self._release_error = redact_credentials_in_text(
+                f"{type(error).__name__}: {error}"
+            )
             logger.warning(
                 "Could not release video source: "
                 f"{redact_credentials_in_text(str(error))}"
