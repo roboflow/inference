@@ -1,11 +1,11 @@
 import logging
 import math
-import os
 import random
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Union
@@ -31,6 +31,7 @@ from streamvision.camera.exceptions import (
     StreamOperationNotAllowedError,
 )
 from streamvision.camera.fourcc import parse_fourcc
+from streamvision.camera.local_files import local_file_path
 from streamvision.camera.source_reference_sanitizer import (
     redact_credentials_in_text,
     sanitize_source_reference,
@@ -175,11 +176,15 @@ class CV2VideoFrameProducer(VideoFrameProducer):
         height = int(self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = self.stream.get(cv2.CAP_PROP_FPS)
         total_frames = int(self.stream.get(cv2.CAP_PROP_FRAME_COUNT))
-        is_file = total_frames > 0 and os.path.exists(self._source_ref)
+        # OpenCV also opens file:// URIs, so resolve them before the path checks.
+        file_path = local_file_path(self._source_ref)
+        is_file = (
+            total_frames > 0 and file_path is not None and Path(file_path).exists()
+        )
         timestamp_created = None
         if is_file:
             file_length_seconds = total_frames / fps
-            last_modified = datetime.fromtimestamp(os.path.getmtime(self._source_ref))
+            last_modified = datetime.fromtimestamp(Path(file_path).stat().st_mtime)
             timestamp_created = last_modified - timedelta(seconds=file_length_seconds)
 
         return SourceProperties(

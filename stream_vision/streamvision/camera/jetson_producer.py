@@ -9,7 +9,6 @@ from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
-from urllib.parse import unquote, urlparse
 
 from streamvision.camera.entities import (
     FrameImage,
@@ -17,6 +16,7 @@ from streamvision.camera.entities import (
     VideoFrameProducer,
 )
 from streamvision.camera.fourcc import parse_fourcc
+from streamvision.camera.local_files import local_file_path
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
@@ -181,9 +181,9 @@ def required_gstreamer_elements(
             + list(_RTSP_ELEMENTS)
         )
     elements.extend(_URI_DECODE_ELEMENTS)
-    local_file_path = _local_file_path(video)
-    if local_file_path is not None:
-        demuxer = _FILE_DEMUXERS.get(Path(local_file_path).suffix.lower())
+    file_path = local_file_path(video)
+    if file_path is not None:
+        demuxer = _FILE_DEMUXERS.get(Path(file_path).suffix.lower())
         if demuxer is not None:
             elements.append(demuxer)
     return tuple(elements)
@@ -576,7 +576,7 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             if frame_info.duration_ns > 0 and fps > 0
             else 0
         )
-        local_path = _local_file_path(self._source_ref)
+        local_path = local_file_path(self._source_ref)
         is_file = local_path is not None
         timestamp_created = None
         if is_file and fps > 0 and total_frames > 0 and os.path.isfile(local_path):
@@ -646,21 +646,10 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
 
 
 def _source_uri(video: Union[str, int]) -> str:
-    local_path = _local_file_path(video)
+    local_path = local_file_path(video)
     if local_path is not None:
         return Path(local_path).resolve().as_uri()
     return str(video)
-
-
-def _local_file_path(video: Union[str, int]) -> Optional[str]:
-    if not isinstance(video, str):
-        return None
-    if video.startswith("file://"):
-        parsed = urlparse(video)
-        return unquote(parsed.path)
-    if "://" in video:
-        return None
-    return video
 
 
 def _is_rtsp_source(video: Union[str, int]) -> bool:
@@ -695,7 +684,7 @@ def _is_live_source(video: Union[str, int]) -> bool:
     return (
         _is_csi_source(video)
         or _is_v4l2_source(video)
-        or _local_file_path(video) is None
+        or local_file_path(video) is None
     )
 
 

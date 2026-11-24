@@ -4,6 +4,13 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Fixed
+
+- The OpenCV video source treats a `file://` URI as a video file, like the
+  equivalent local path. Before, frames from `file://` sources had
+  `comes_from_video_file=False`, so the pipeline buffered and dropped them as for
+  a live stream.
+
 ## `0.1.7`
 
 ### Added
