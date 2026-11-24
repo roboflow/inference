@@ -469,3 +469,394 @@ def test_coordinator_requires_checkpoint_after_started_attempt(
     else:
         with pytest.raises(ValueError, match="checkpoint"):
             retained._checkpoint(artifacts, run_id="100", deadline=9999999999)
+
+
+@pytest.mark.parametrize("new_execution", [False, True])
+@pytest.mark.parametrize("new_checkpoint", [False, True])
+def test_checkpoint_uses_execution_attempt_not_copied_job_attempt(
+    retained, monkeypatch, new_execution, new_checkpoint
+):
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "4")
+    job = {
+        "name": "prepare_dependencies",
+        "started_at": "2026-11-21T00:00:52Z",
+        "run_attempt": 1,
+        "steps": [
+            {
+                "name": "Publish missing upstream versions in dependency order",
+                "status": "completed",
+                "conclusion": "success",
+            }
+        ],
+    }
+    # GitHub gives copied jobs different IDs and later attempt numbers, but
+    # preserves their start time. Put the original on the second API page.
+    later = {**job, "id": 200, "run_attempt": 2}
+    if new_execution:
+        later["started_at"] = "2026-11-21T01:00:52Z"
+    jobs = [{**later, "id": 300, "run_attempt": 3}, later]
+    jobs += [{"run_attempt": 1, "steps": []}] * 98
+    calls = []
+
+    def github(path, **kwargs):
+        calls.append(path)
+        return {"jobs": jobs if path.endswith("page=1") else [job]}
+
+    monkeypatch.setattr(dependencies, "_github", github)
+    artifacts = [{"name": "dependency-plan-1", "id": 51, "expired": False}]
+    if new_checkpoint:
+        artifacts.append({"name": "dependency-plan-2", "id": 52, "expired": False})
+    if new_execution and not new_checkpoint:
+        with pytest.raises(ValueError, match="dependency-plan-2"):
+            retained._checkpoint(artifacts, run_id="100", deadline=9999999999)
+    else:
+        assert retained._checkpoint(artifacts, run_id="100", deadline=9999999999) == (
+            52 if new_execution else 51
+        )
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out"])
+@pytest.mark.parametrize("earlier_success", [False, True])
+def test_failed_retention_without_artifact_can_retry_unless_previously_retained(
+    retained, monkeypatch, conclusion, earlier_success
+):
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "3")
+    step = {
+        "name": "Retain candidate sdk",
+        "status": "completed",
+        "conclusion": conclusion,
+    }
+    jobs = [{"run_attempt": 2, "steps": [step]}]
+    if earlier_success:
+        jobs.append({"run_attempt": 1, "steps": [{**step, "conclusion": "success"}]})
+    monkeypatch.setattr(
+        dependencies,
+        "_github",
+        lambda path, **kwargs: (
+            {"artifacts": []} if "/artifacts?" in path else {"jobs": jobs}
+        ),
+    )
+    if earlier_success:
+        with pytest.raises(ValueError, match="do not rebuild"):
+            retained._select("sdk")
+    else:
+        assert retained._select("sdk")["reused"] is False
+
+
+def test_fork_candidate_lookup_is_read_only(retained, monkeypatch):
+    import io
+
+    monkeypatch.setenv("GITHUB_REPOSITORY", "contributor/inference")
+    monkeypatch.setenv("GH_TOKEN", "test-only")
+    requests = []
+
+    def open_url(request, **kwargs):
+        requests.append((request.full_url, request.get_method()))
+        return io.BytesIO(b'{"artifacts": []}')
+
+    monkeypatch.setattr(dependencies.urllib.request, "urlopen", open_url)
+    assert retained._select("sdk")["reused"] is False
+    assert requests == [
+        (
+            "https://api.github.com/repos/contributor/inference/actions/runs/100/artifacts?&per_page=100&page=1",
+            "GET",
+        )
+    ]
+    with pytest.raises(ValueError, match="restricted"):
+        dependencies._github(
+            "actions/workflows/publisher.yml/dispatches",
+            payload={},
+            deadline=9999999999,
+        )
+    assert len(requests) == 1
+
+
+def test_candidate_rejects_symlink_even_with_identical_bytes(retained):
+    wheel = Path("dist/sdk/sdk.whl")
+    target = Path("original.whl").resolve()
+    target.write_bytes(wheel.read_bytes())
+    wheel.unlink()
+    wheel.symlink_to(target)
+    with pytest.raises(ValueError, match="Symlink"):
+        retained._seal("sdk")
+
+
+def test_empty_candidate_cannot_be_sealed(retained):
+    Path("dist/sdk/sdk.whl").unlink()
+    with pytest.raises(ValueError, match="Empty candidate"):
+        retained._seal("sdk")
+
+
+def test_restore_preserves_existing_directory(retained):
+    retained._seal("sdk")
+    Path("dist/sdk/sdk.whl").write_bytes(b"unrelated existing bytes")
+    with pytest.raises(ValueError, match="overwrite"):
+        retained._restore("sdk")
+    assert Path("dist/sdk/sdk.whl").read_bytes() == b"unrelated existing bytes"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("head_sha", "b" * 40),
+        ("path", ".github/workflows/unrelated.yml"),
+        ("event", "push"),
+        ("display_title", "pypi-inference-models-parent-999"),
+    ],
+)
+def test_supplied_publisher_identity_is_checked_before_rerun(monkeypatch, field, value):
+    monkeypatch.setenv("SOURCE_REVISION", "a" * 40)
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/candidate")
+    monkeypatch.setenv("GITHUB_RUN_ID", "100")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    original = {
+        "id": 42,
+        "head_sha": "a" * 40,
+        "path": ".github/workflows/publish.pypi.inference_exp.yml",
+        "event": "workflow_dispatch",
+        "display_title": "pypi-inference-models-parent-100",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        field: value,
+    }
+    calls = []
+
+    def github(path, *, payload=None, **kwargs):
+        calls.append(path)
+        assert payload is None, "Reject another publisher before requesting a rerun"
+        return original
+
+    monkeypatch.setattr(dependencies, "_github", github)
+    with pytest.raises(ValueError, match="identity"):
+        dependencies._dispatch("inference-models", version="2", run_id=42)
+    assert calls == ["actions/runs/42"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "top-level",
+        "packages",
+        "unexpected",
+        "reuse-progress",
+        "id",
+        "bool-id",
+        "started-type",
+    ],
+)
+def test_checkpoint_rejects_changes_outside_valid_publisher_progress(change):
+    import copy
+
+    original = {
+        "source_revision": "a" * 40,
+        "order": ["inference-models"],
+        "packages": {"inference-models": {"action": "publish", "version": "2"}},
+    }
+    progress = copy.deepcopy(original)
+    entry = progress["packages"]["inference-models"]
+    if change == "top-level":
+        progress["source_revision"] = "b" * 40
+    elif change == "packages":
+        progress["packages"]["streamvision"] = entry.copy()
+    elif change == "unexpected":
+        entry["arbitrary"] = True
+    elif change == "reuse-progress":
+        original["packages"]["inference-models"]["action"] = "reuse"
+        entry.update(action="reuse", publisher_run_id=42)
+    elif change == "started-type":
+        entry["publisher_started"] = "false"
+    else:
+        entry["publisher_started_run_id"] = True if change == "bool-id" else -42
+    with pytest.raises(ValueError):
+        dependencies._resume_plan(original, progress)
+
+
+@pytest.mark.parametrize("case", ["unrelated", "ambiguous", "first-attempt"])
+def test_publisher_lookup_does_not_adopt_or_rerun_wrong_execution(monkeypatch, case):
+    monkeypatch.setenv("SOURCE_REVISION", "a" * 40)
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/candidate")
+    monkeypatch.setenv("GITHUB_RUN_ID", "100")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1" if case == "first-attempt" else "2")
+    original = {
+        "id": 42,
+        "head_sha": "a" * 40,
+        "path": ".github/workflows/publish.pypi.inference_exp.yml",
+        "event": "workflow_dispatch",
+        "display_title": "pypi-inference-models-parent-100",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1,
+    }
+    runs = [original]
+    if case == "ambiguous":
+        runs.append({**original, "id": 43})
+    elif case == "unrelated":
+        runs = [{**original, "display_title": "manual publish"}]
+
+    def github(path, *, payload=None, **kwargs):
+        assert payload is None, "No mutation allowed for ambiguous or missing history"
+        assert "/runs?" in path
+        return {"workflow_runs": runs}
+
+    monkeypatch.setattr(dependencies, "_github", github)
+    with pytest.raises(ValueError, match="missing|Ambiguous|rerun it"):
+        dependencies._dispatch("inference-models", version="2", started=True)
+
+
+@pytest.mark.parametrize("run_id", [True, False, 0, -1, "42", "../../runs/42"])
+def test_invalid_checkpoint_run_id_is_rejected_before_network(monkeypatch, run_id):
+    monkeypatch.setenv("SOURCE_REVISION", "a" * 40)
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/candidate")
+    monkeypatch.setattr(
+        dependencies,
+        "_github",
+        lambda *args, **kwargs: pytest.fail("Invalid ID reached network"),
+    )
+    with pytest.raises(ValueError, match="run ID"):
+        dependencies._dispatch("inference-models", version="2", run_id=run_id)
+
+
+@pytest.mark.parametrize(
+    "failure", ["unsent", 401, 403, 404, 422, 408, 429, 503, "lost-response"]
+)
+def test_dispatch_intent_cleared_only_when_request_definitely_not_started(
+    tmp_path, monkeypatch, failure
+):
+    import io
+    import json
+    import urllib.error
+
+    monkeypatch.setenv("GH_TOKEN", "test-only")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "roboflow/inference")
+    monkeypatch.setenv("SOURCE_REVISION", "a" * 40)
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/candidate")
+    monkeypatch.setenv("GITHUB_RUN_ID", "100")
+    clock = [0]
+    monkeypatch.setattr(dependencies.time, "monotonic", lambda: clock[0])
+    path = tmp_path / "plan.json"
+    plan = {
+        "order": ["inference-models"],
+        "packages": {"inference-models": {"action": "publish", "version": "2"}},
+    }
+    write = dependencies.release._write_record
+
+    def write_record(path, **record):
+        write(path, **record)
+        if failure == "unsent" and record["packages"]["inference-models"].get(
+            "publisher_started"
+        ):
+            clock[0] = 21
+
+    monkeypatch.setattr(dependencies.release, "_write_record", write_record)
+    posts = []
+
+    def open_url(request, **kwargs):
+        if request.get_method() == "GET":
+            body = (
+                {"workflow_runs": []}
+                if "/runs?" in request.full_url
+                else {"sha": "a" * 40}
+            )
+            return io.BytesIO(json.dumps(body).encode())
+        posts.append(request.full_url)
+        assert (
+            json.loads(path.read_text())["packages"]["inference-models"][
+                "publisher_started"
+            ]
+            is True
+        )
+        if failure == "lost-response":
+            raise ConnectionResetError("lost")
+        assert (
+            failure != "unsent"
+        ), "Deadline must be checked before opening the request"
+        raise urllib.error.HTTPError(request.full_url, failure, "fixture", None, None)
+
+    monkeypatch.setattr(dependencies.urllib.request, "urlopen", open_url)
+    with pytest.raises(ValueError):
+        dependencies._coordinate(plan, deadline=20, plan_file=path)
+    expected_started = failure in {408, 429, 503, "lost-response"}
+    assert (
+        plan["packages"]["inference-models"].get("publisher_started", False)
+        is expected_started
+    )
+    saved = json.loads(path.read_text())
+    assert saved["packages"] == plan["packages"]
+    assert saved["order"] == plan["order"]
+    assert len(posts) == (0 if failure == "unsent" else 1)
+
+
+def test_sdk_smoke_checks_digest_after_install_and_import(tmp_path, monkeypatch):
+    import zipfile
+
+    import sdk_smoke
+
+    wheel = tmp_path / "inference_sdk-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "inference_sdk-1.0.dist-info/METADATA",
+            "Name: inference-sdk\nVersion: 1.0\n",
+        )
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if "-I" in argv:
+            wheel.write_bytes(wheel.read_bytes() + b"changed during import")
+
+    monkeypatch.setattr(sdk_smoke.subprocess, "run", run)
+    with pytest.raises(ValueError, match="changed during smoke"):
+        sdk_smoke.smoke(tmp_path)
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize(
+    "mode,target",
+    [
+        ("unit", "sdk-tests"),
+        ("integration", "sdk-tests"),
+        ("e2e", "sdk-e2e"),
+        ("install", "sdk-install"),
+        ("retained", "base"),
+    ],
+)
+def test_sdk_launcher_preserves_docker_arguments(tmp_path, mode, target):
+    import json
+    import os
+    import subprocess
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log = tmp_path / "docker.jsonl"
+    docker = fake_bin / "docker"
+    docker.write_text(
+        f"#!{sys.executable}\nimport json, sys\nwith open({str(log)!r}, 'a') as log: log.write(json.dumps(sys.argv[1:]) + '\\n')\nif sys.argv[1:3] == ['image', 'inspect']: print('sha256:fixture')\n"
+    )
+    git = fake_bin / "git"
+    git.write_text(
+        f"#!/bin/sh\nif [ \"$2\" = --show-toplevel ]; then printf '%s\\n' '{ROOT}'; else printf '%s\\n' fixture; fi\n"
+    )
+    docker.chmod(0o755)
+    git.chmod(0o755)
+    subprocess.run(
+        [
+            os.environ.get("SDK_TEST_BASH", "bash"),
+            str(ROOT / ".github/scripts/run_sdk_tests.sh"),
+            mode,
+        ],
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert calls[0][calls[0].index("--target") + 1] == target
+    run = calls[-1]
+    assert run[:3] == ["run", "--rm", "--shm-size=1g"]
+    expected_options = (
+        ["-v", f"{ROOT}:/work:ro", "-w", "/tmp"] if mode == "retained" else []
+    )
+    assert run[3 : 4 + len(expected_options)] == [*expected_options, "sha256:fixture"]
+    assert run[4 + len(expected_options)] == "python"

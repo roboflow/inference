@@ -11,6 +11,15 @@ from pathlib import Path
 
 
 def smoke(directory):
+    """Install and import one retained SDK wheel without changing its bytes.
+
+    Args:
+        directory: Directory containing exactly one inference-sdk wheel.
+
+    Raises:
+        ValueError: The wheel inventory, metadata, or final digest is invalid.
+        subprocess.CalledProcessError: Environment setup, installation, or import fails.
+    """
     wheels = list(directory.glob("*.whl"))
     if len(wheels) != 1:
         raise ValueError("SDK smoke requires exactly one retained wheel")

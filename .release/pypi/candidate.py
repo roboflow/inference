@@ -47,7 +47,7 @@ def _files(directory):
 def _pages(path, key, *, deadline):
     for page in range(1, 101):
         result = dependencies._github(
-            f"{path}&per_page=100&page={page}", deadline=deadline
+            f"{path}&per_page=100&page={page}", deadline=deadline, candidate_read=True
         )
         entries = result[key]
         yield from entries
@@ -89,7 +89,8 @@ def _select(profile):
             for step in job["steps"]:
                 if step["name"] == f"Retain candidate {profile}" and (
                     step["status"] == "in_progress"
-                    or step.get("conclusion") not in {None, "skipped"}
+                    or step.get("conclusion")
+                    not in {None, "skipped", "failure", "cancelled", "timed_out"}
                 ):
                     raise ValueError(
                         f"Retained candidate missing: {name}; do not rebuild. "
@@ -108,9 +109,24 @@ def _checkpoint(artifacts, *, run_id, deadline):
     previous = [job for job in jobs if job["run_attempt"] < attempt]
     if not previous:
         raise ValueError("Missing coordinator history; cannot safely resume")
+
+    # Re-run failed jobs copies untouched successful jobs into later attempts.
+    # Their start time stays unchanged; only an actual execution writes a new
+    # checkpoint. Keep the first attempt for each execution, across all pages.
+    executions = {}
+    for index, job in enumerate(previous):
+        identity = (
+            (job["name"], job["started_at"])
+            if job.get("name") and job.get("started_at")
+            else index
+        )
+        if identity not in executions or (
+            job["run_attempt"] < executions[identity]["run_attempt"]
+        ):
+            executions[identity] = job
     started = [
         job["run_attempt"]
-        for job in previous
+        for job in executions.values()
         if any(
             step["name"] == "Publish missing upstream versions in dependency order"
             and (
@@ -126,7 +142,8 @@ def _checkpoint(artifacts, *, run_id, deadline):
     matches = [artifact for artifact in artifacts if artifact["name"] == name]
     if len(matches) != 1 or matches[0]["expired"]:
         raise ValueError(
-            f"Missing coordinator checkpoint {name}; inspect original publishers, do not redispatch"
+            f"Missing coordinator checkpoint {name}; inspect original publishers, do not redispatch. "
+            "If it cannot be restored, reconcile those publishers before starting a new coordinator run."
         )
     return matches[0]["id"]
 

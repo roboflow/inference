@@ -130,6 +130,41 @@ def test_failed_latest_lookup_does_not_publish(tmp_path):
     result, tags, _ = _tags(tmp_path, api_failure=True)
     assert result.returncode != 0
     assert not tags
+    assert "then rerun this job" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "version,release,prerelease,expected",
+    [
+        ("0.25.0", "v0.25", "false", "roboflow/image:0.25.0,roboflow/image:latest"),
+        ("0.25", "v0.25.0", "false", "roboflow/image:0.25,roboflow/image:latest"),
+        ("0.9.7rc2", "v0.9.7.rc2", "true", "roboflow/image:0.9.7rc2"),
+        ("0.9.7.rc2", "v0.9.7rc2", "true", "roboflow/image:0.9.7.rc2"),
+    ],
+)
+def test_historical_equivalent_version_spellings(
+    tmp_path, version, release, prerelease, expected
+):
+    result, tags, queried = _tags(
+        tmp_path,
+        VERSION=version,
+        BRANCH=release,
+        RELEASE_PRERELEASE=prerelease,
+        latest=release,
+    )
+    assert result.returncode == 0, result.stderr
+    assert tags == expected
+    assert queried is (prerelease == "false")
+
+
+@pytest.mark.parametrize("latest", ["v1.8.7", "v1.8.7.post2"])
+def test_post_release_normalization_keeps_post_number(tmp_path, latest):
+    result, tags, queried = _tags(
+        tmp_path, VERSION="1.8.7post1", BRANCH="v1.8.7.post1", latest=latest
+    )
+    assert result.returncode == 0, result.stderr
+    assert tags == "roboflow/image:1.8.7post1"
+    assert queried
 
 
 @pytest.mark.parametrize("workflow", LEGACY)

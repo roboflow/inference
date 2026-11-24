@@ -82,17 +82,25 @@ runs:
         ALLOW_LATEST=false
         if [ "$EVENT_NAME" = "release" ]; then
           RELEASE="${BRANCH#v}"
-          # These post-release spellings describe the same Python version.
+          # Accept historical short final and dotted RC spellings, as well as
+          # equivalent post-release spellings. Never discard a release suffix.
           # Keep the checkout's image version spelling in the published tag.
           normalize_version() {
             local value="${1#v}"
+            if [[ "$value" =~ ^([0-9]+\.[0-9]+)$ ]]; then
+              value="${BASH_REMATCH[1]}.0"
+            elif [[ "$value" =~ ^([0-9]+\.[0-9]+\.[0-9]+)[.-]?rc[.-]?([0-9]+)$ ]]; then
+              value="${BASH_REMATCH[1]}rc${BASH_REMATCH[2]}"
+            fi
             if [[ "$value" =~ ^([0-9]+\.[0-9]+\.[0-9]+)[.-]?post([0-9]+)$ ]]; then
               value="${BASH_REMATCH[1]}.post${BASH_REMATCH[2]}"
             fi
             printf '%s' "$value"
           }
-          if [ "$(normalize_version "$RELEASE")" != "$(normalize_version "$RELEASE_VERSION")" ]; then
-            echo "Release tag does not match the checked-out runtime version." >&2
+          NORMALIZED_RELEASE="$(normalize_version "$RELEASE")"
+          NORMALIZED_VERSION="$(normalize_version "$VERSION")"
+          if [ "$NORMALIZED_RELEASE" != "$(normalize_version "$RELEASE_VERSION")" ]; then
+            echo "Release tag does not match the checked-out runtime version. Correct the tag/source pairing, or use workflow_dispatch for a version-only historical image." >&2
             exit 1
           fi
           # Positive final-version allowlist: alpha, beta, RC and development
@@ -100,18 +108,18 @@ runs:
           stable_version='^[0-9]+\.[0-9]+\.[0-9]+([.-]?post[0-9]+)?$'
           IMAGE_VERSION="$VERSION"
           if [ "$RELEASE_PRERELEASE" = "true" ]; then
-            if [[ "$RELEASE" =~ $stable_version ]]; then
-              echo "A prerelease requires a prerelease runtime version." >&2
+            if [[ "$NORMALIZED_RELEASE" =~ $stable_version ]]; then
+              echo "A prerelease requires a prerelease runtime version. Correct the GitHub prerelease flag or use a candidate version, then rerun." >&2
               exit 1
             fi
-            if [[ "$VERSION" =~ $stable_version ]]; then
+            if [[ "$NORMALIZED_VERSION" =~ $stable_version ]]; then
               # An unchanged Models package can accompany a runtime RC. Give
               # its image a distinct RC tag instead of replacing the final tag.
               IMAGE_VERSION="${VERSION}-${RELEASE}"
             fi
           elif [ "$RELEASE_PRERELEASE" = "false" ]; then
-            if [[ ! "$RELEASE" =~ $stable_version || ! "$VERSION" =~ $stable_version ]]; then
-              echo "A candidate version must be marked as a GitHub prerelease." >&2
+            if [[ ! "$NORMALIZED_RELEASE" =~ $stable_version || ! "$NORMALIZED_VERSION" =~ $stable_version ]]; then
+              echo "A candidate version must be marked as a GitHub prerelease. Correct the release metadata, then rerun; no tags were emitted." >&2
               exit 1
             fi
           else
@@ -121,11 +129,15 @@ runs:
 
           IMAGE_TAGS="$BASE_IMAGE:${TAG_PREFIX}${IMAGE_VERSION}"
           if [ "$RELEASE_PRERELEASE" = "false" ]; then
-            LATEST_RELEASE=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+            if ! LATEST_RELEASE=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+              --retry 3 --retry-all-errors --retry-max-time 90 \
               -H "Authorization: Bearer $TOKEN" \
               "https://api.github.com/repos/$REPOSITORY/releases/latest" \
-              | jq -er 'select(.prerelease == false and .draft == false) | .tag_name | select(type == "string" and length > 0)')
-            if [ "$(normalize_version "$RELEASE")" = "$(normalize_version "$LATEST_RELEASE")" ]; then
+              | jq -er 'select(.prerelease == false and .draft == false) | .tag_name | select(type == "string" and length > 0)'); then
+              echo "Cannot verify the selected stable release. Check GitHub API availability/access and release metadata, then rerun this job; no tags were emitted." >&2
+              exit 1
+            fi
+            if [ "$NORMALIZED_RELEASE" = "$(normalize_version "$LATEST_RELEASE")" ]; then
               ALLOW_LATEST=true
               IMAGE_TAGS="$IMAGE_TAGS,$BASE_IMAGE:${TAG_PREFIX}latest"
             fi

@@ -38,4 +38,4 @@ image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 printf 'Source revision: %s\nDocker image: %s\nCommand:' "$(git rev-parse HEAD)" "$image_id"
 printf ' %q' "${command[@]}"
 printf '\n'
-docker run --rm --shm-size=1g "${run_options[@]}" "$image_id" "${command[@]}"
+docker run --rm --shm-size=1g ${run_options[@]+"${run_options[@]}"} "$image_id" "${command[@]}"

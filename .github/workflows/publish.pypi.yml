@@ -202,7 +202,7 @@ jobs:
             (inputs.packages == 'runtime' || inputs.publish != true) &&
             needs.publish_sdk.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 210
+    timeout-minutes: 240
     permissions:
       contents: read
       actions: write

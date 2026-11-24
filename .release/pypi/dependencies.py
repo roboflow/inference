@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import tarfile
 import time
 import tomllib
@@ -459,10 +460,20 @@ def _verify_plan(plan, *, registry, consumers):
     return files
 
 
-def _github(path, *, payload=None, deadline):
+class _RequestNotStarted(ValueError):
+    """The API rejected a mutation, or its deadline expired before sending it."""
+
+
+def _github(path, *, payload=None, deadline, candidate_read=False):
     token = os.environ["GH_TOKEN"]
     repository = os.environ.get("GITHUB_REPOSITORY")
-    if repository != "roboflow/inference":
+    read_only_candidate = (
+        candidate_read
+        and payload is None
+        and re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository or "")
+        and re.fullmatch(r"actions/runs/[0-9]+/(artifacts|jobs)\?[A-Za-z0-9_=&]*", path)
+    )
+    if repository != "roboflow/inference" and not read_only_candidate:
         raise ValueError("Publishing coordination is restricted to roboflow/inference")
 
     request = urllib.request.Request(
@@ -475,9 +486,10 @@ def _github(path, *, payload=None, deadline):
         },
     )
 
-    def read():
+    def read(*, timeout=None):
         with urllib.request.urlopen(
-            request, timeout=min(30, _remaining(deadline))
+            request,
+            timeout=min(30, _remaining(deadline)) if timeout is None else timeout,
         ) as response:
             body = response.read()
             result = json.loads(body) if body else {}
@@ -487,7 +499,23 @@ def _github(path, *, payload=None, deadline):
     # Never retry POST: a lost response may have already started a publisher.
     if payload is not None:
         try:
-            result = read()
+            timeout = min(30, _remaining(deadline))
+        except ValueError as error:
+            raise _RequestNotStarted(
+                "Dispatch deadline expired before sending"
+            ) from error
+        try:
+            result = read(timeout=timeout)
+        except urllib.error.HTTPError as error:
+            # Explicit client rejections did not enqueue a publisher. Treat
+            # timeouts/rate limits/server errors conservatively as ambiguous.
+            if error.code in {400, 401, 403, 404, 405, 410, 422}:
+                raise _RequestNotStarted(
+                    f"Dispatch rejected with HTTP {error.code}; fix the request/access before retrying"
+                ) from error
+            raise ValueError(
+                "Dispatch response failed; a publisher may have started; inspect workflow runs before retrying"
+            ) from error
         except (OSError, HTTPException, ValueError) as error:
             raise ValueError(
                 "Dispatch response failed; a publisher may have started; inspect workflow runs before retrying"
@@ -506,6 +534,7 @@ def _dispatch(
     started=False,
     run_id=None,
     on_started=None,
+    on_not_started=None,
 ):
     deadline = time.monotonic() + wait_seconds if deadline is None else deadline
     _remaining(deadline)
@@ -516,6 +545,8 @@ def _dispatch(
         raise ValueError("Publishers require a branch or tag ref")
 
     parent = os.environ.get("GITHUB_RUN_ID")
+    if run_id is not None and (type(run_id) is not int or run_id <= 0):
+        raise ValueError("Invalid publisher run ID in coordinator checkpoint")
     original = _github(f"actions/runs/{run_id}", deadline=deadline) if run_id else None
     if parent and original is None:
         title = f"pypi-{name}-parent-{parent}"
@@ -553,6 +584,10 @@ def _dispatch(
             original["head_sha"] != revision
             or original["path"] != f".github/workflows/{workflow}"
             or original["event"] != "workflow_dispatch"
+            or (
+                parent
+                and original.get("display_title") != f"pypi-{name}-parent-{parent}"
+            )
         ):
             raise ValueError(f"Unexpected publisher identity/revision in run {run_id}")
         if original["status"] == "completed" and original["conclusion"] != "success":
@@ -581,11 +616,16 @@ def _dispatch(
             inputs["coordinator_run_id"] = parent
         if on_started is not None:
             on_started(None)  # Persist intent before the non-retryable POST.
-        dispatched = _github(
-            f"actions/workflows/{workflow}/dispatches",
-            payload={"ref": ref, "inputs": inputs},
-            deadline=deadline,
-        )
+        try:
+            dispatched = _github(
+                f"actions/workflows/{workflow}/dispatches",
+                payload={"ref": ref, "inputs": inputs},
+                deadline=deadline,
+            )
+        except _RequestNotStarted:
+            if on_not_started is not None:
+                on_not_started()
+            raise
         run_id = int(dispatched["workflow_run_id"])
     if on_started is not None:
         on_started(run_id)
@@ -601,6 +641,10 @@ def _dispatch(
                 run["head_sha"] != revision
                 or run["path"] != f".github/workflows/{workflow}"
                 or run["event"] != "workflow_dispatch"
+                or (
+                    parent
+                    and run.get("display_title") != f"pypi-{name}-parent-{parent}"
+                )
             ):
                 raise ValueError(
                     f"Unexpected publisher identity/revision in run {run_id}"
@@ -639,6 +683,12 @@ def _coordinate(plan, *, wait_seconds=9000, deadline=None, plan_file=None):
                     if plan_file is not None:
                         release._write_record(plan_file, **plan)
 
+                def forget_unsent():
+                    expected.pop("publisher_started", None)
+                    expected.pop("publisher_started_run_id", None)
+                    if plan_file is not None:
+                        release._write_record(plan_file, **plan)
+
                 runs[name] = _dispatch(
                     name,
                     version=expected["version"],
@@ -647,6 +697,7 @@ def _coordinate(plan, *, wait_seconds=9000, deadline=None, plan_file=None):
                     run_id=expected.get("publisher_started_run_id")
                     or expected.get("publisher_run_id"),
                     on_started=remember,
+                    on_not_started=forget_unsent,
                 )
             actual = _verify_file(expected, registry=_Registry(deadline=deadline))
             if name in runs:
@@ -685,6 +736,16 @@ def _resume_plan(original, checkpoint):
         allowed = added if expected["action"] == "publish" else set()
         if actual.keys() - expected.keys() - allowed:
             raise ValueError(f"Unexpected coordinator checkpoint fields for {name}")
+        if (
+            "publisher_started" in actual
+            and type(actual["publisher_started"]) is not bool
+        ):
+            raise ValueError(f"Invalid publisher intent for {name}")
+        for field in ("publisher_started_run_id", "publisher_run_id"):
+            if field in actual and (
+                type(actual[field]) is not int or actual[field] <= 0
+            ):
+                raise ValueError(f"Invalid publisher run ID for {name}")
     return checkpoint
 
 

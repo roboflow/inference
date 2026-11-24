@@ -89,14 +89,14 @@ function check(wf) {
   equal(wf.on.workflow_dispatch.inputs.publish.default, false, "build-only by default");
   equal(jobs.publish_sdk["timeout-minutes"], 50, "SDK preparation and verification budget");
   equal(jobs.publish_sdk.needs, "build_sdk", "SDK build ownership");
-  equal(jobs.prepare_dependencies["timeout-minutes"], 210, "SDK gate, coordinator, planning and infrastructure budget");
+  equal(jobs.prepare_dependencies["timeout-minutes"], 240, "SDK gate, coordinator, planning and infrastructure budget");
   equal(jobs.publish_runtime["timeout-minutes"], 50, "SDK gate, dependency verification and upload budget");
   equal(jobs.build_runtime["timeout-minutes"], 20, "runtime build keeps its existing budget");
   function networkBudget(job) {
     return job.steps.flatMap(step => [...(step.run || "").matchAll(/--wait-seconds (\d+)/g)]).reduce((sum, match) => sum + Number(match[1]), 0);
   }
   equal(networkBudget(jobs.prepare_dependencies), 600 + 600 + 10800, "SDK gate plus planning plus coordination total network budget");
-  equal(jobs.prepare_dependencies["timeout-minutes"] * 60 - networkBudget(jobs.prepare_dependencies), 600, "ten-minute coordinator infrastructure and in-flight allowance");
+  equal(jobs.prepare_dependencies["timeout-minutes"] * 60 - networkBudget(jobs.prepare_dependencies), 2400, "forty-minute coordinator infrastructure and in-flight allowance");
   equal(networkBudget(jobs.publish_runtime), 4 * 600, "runtime gates, preparation and final verification budgets");
   equal(jobs.publish_runtime["timeout-minutes"] * 60 - networkBudget(jobs.publish_runtime), 600, "runtime upload and infrastructure allowance");
 
