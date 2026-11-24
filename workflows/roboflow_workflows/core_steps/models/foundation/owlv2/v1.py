@@ -151,6 +151,12 @@ class OwlV2ModelBlockV1(WorkflowBlock):
                 ),
                 api_key=self._api_key,
             )
+            if not hasattr(client, "infer_from_owlv2"):
+                raise RuntimeError(
+                    "Remote OWLv2 execution requires an inference-sdk release with "
+                    "infer_from_owlv2. Upgrade inference-sdk or use local execution."
+                )
+
             client.configure(
                 InferenceConfiguration(
                     api_key_transport=WORKFLOWS_REMOTE_API_KEY_TRANSPORT,

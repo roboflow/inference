@@ -856,7 +856,7 @@ class GatewayModelsProvider:
             text=text_prompts,
             confidence=confidence,
             api_key=api_key,
-            source="workflow",
+            source=_WORKFLOW_SOURCE,
         )
         return self._dump(self._run_open_vocabulary(model_id, request, api_key))
 

@@ -534,7 +534,7 @@ class ModelManagerModelsProvider:
             text=text_prompts,
             confidence=confidence,
             api_key=api_key,
-            source="workflow",
+            source=_WORKFLOW_SOURCE,
         )
         return self._dump(self._infer(model_id=model_id, request=request))
 

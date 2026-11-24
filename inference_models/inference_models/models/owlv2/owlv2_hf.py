@@ -262,27 +262,44 @@ class OWLv2HF(
     def forward(
         self,
         pre_processed_images: torch.Tensor,
-        classes: List[str],
+        classes: Union[str, List[str]],
         **kwargs,
     ) -> Owlv2ObjectDetectionOutput:
-        max_tokens = self._model.config.text_config.max_position_embeddings
-        too_long = [
-            query
-            for query, token_ids in zip(
-                classes, self._processor.tokenizer(classes)["input_ids"]
-            )
-            if len(token_ids) > max_tokens
-        ]
-        if too_long:
-            raise ModelInputError(
-                message=f"OWLv2 text queries can have at most {max_tokens} tokens, "
-                f"including the start and end tokens. Shorten these queries: {too_long}",
-                help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
-            )
-        input_ids = self._processor(text=[classes], return_tensors="pt")[
-            "input_ids"
-        ].to(self._device)
+        """Detect objects that match the text prompts.
+
+        Args:
+            pre_processed_images: Pixel values from the image processor.
+            classes: A single prompt or a list of prompts.
+            **kwargs: Additional arguments from the inference interface.
+
+        Returns:
+            Detector outputs for the image and prompt inputs.
+
+        Raises:
+            ModelInputError: A prompt exceeds the text encoder's token limit.
+        """
+        if isinstance(classes, str):
+            classes = [classes]
+
+        # The fast tokenizer shares its padding configuration across calls.
         with self._lock, torch.inference_mode():
+            max_tokens = self._model.config.text_config.max_position_embeddings
+            too_long = [
+                query
+                for query, token_ids in zip(
+                    classes, self._processor.tokenizer(classes)["input_ids"]
+                )
+                if len(token_ids) > max_tokens
+            ]
+            if too_long:
+                raise ModelInputError(
+                    message=f"OWLv2 text queries can have at most {max_tokens} tokens, "
+                    f"including the start and end tokens. Shorten these queries: {too_long}",
+                    help_url="https://inference-models.roboflow.com/errors/input-validation/#modelinputerror",
+                )
+            input_ids = self._processor(text=[classes], return_tensors="pt")[
+                "input_ids"
+            ].to(self._device)
             return self._model(input_ids=input_ids, pixel_values=pre_processed_images)
 
     def post_process(
