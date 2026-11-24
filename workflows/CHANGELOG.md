@@ -16,6 +16,24 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Action Recognition Model gains an `analyzed_until_frame` output: the source
+  index of the last frame a successful classification covered, null until the
+  first one. A consumer can tell "no action" from "not analyzed yet". Failed and
+  skipped windows do not advance it.
+- Action Recognition Model runs one extra classification on the last frame of a
+  video file that reports its frame count. The timeline on that frame covers
+  the tail of the clip, and a clip shorter than one stride now gets a result.
+  Live streams and files without a usable frame count behave as before, and
+  so does a file whose last frame the source drops (for example with
+  `max_fps`).
+
+### Fixed
+
+- OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+- OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
 ## `0.2.17`
 
 Bundled execution engine: `1.17.3`.
