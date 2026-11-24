@@ -1673,8 +1673,7 @@ def test_frame_rollback_clears_analyzed_until_frame():
 
 
 def test_last_file_frame_classifies_the_tail_between_scheduled_calls():
-    # Scheduled calls land on 3 and 5. Frame 6 is the last one and sits off
-    # the cadence, so without the tail call its range has no result.
+    # Frame 6 triggers the tail call with samples 3 and 5.
     block, model = _make_block(
         responses=[[], [], [_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]
     )
@@ -1683,10 +1682,31 @@ def test_last_file_frame_classifies_the_tail_between_scheduled_calls():
 
     assert len(model.calls) == 3
     assert results[-2]["analyzed_until_frame"] == 5
-    assert results[-1]["analyzed_until_frame"] == 6
-    assert [entry["class_name"] for entry in _timeline_as_dicts(results[-1])] == [
-        "walk"
-    ]
+    assert results[-1]["analyzed_until_frame"] == 5
+    (action,) = results[-1]["timeline"]
+    assert (action.class_name, action.start_frame_idx, action.end_frame_idx) == (
+        "walk",
+        3,
+        5,
+    )
+
+
+@pytest.mark.parametrize(
+    "supports_observed_duration, expected_mark", [(False, 3), (True, 4)]
+)
+def test_scheduled_call_reports_coverage_without_detections(
+    supports_observed_duration, expected_mark
+):
+    block, model = _make_block()
+    model.supports_observed_duration = supports_observed_duration
+
+    for number in range(1, 5):
+        result = _run(block, _make_frame(number), stride_seconds=0.75)
+
+    assert len(model.calls) == 1
+    assert result["error_status"] == ""
+    assert result["timeline"] == []
+    assert result["analyzed_until_frame"] == expected_mark
 
 
 def test_file_shorter_than_one_stride_still_gets_a_result():
@@ -1700,7 +1720,7 @@ def test_file_shorter_than_one_stride_still_gets_a_result():
     )
 
     assert len(model.calls) == 1
-    assert results[-1]["analyzed_until_frame"] == 6
+    assert results[-1]["analyzed_until_frame"] == 5
     assert len(results[-1]["timeline"]) == 1
 
 
@@ -1811,31 +1831,37 @@ def _run_background(block, frame_number, **run_kwargs):
     return result
 
 
-def test_background_call_returns_at_once_and_lands_on_a_later_frame():
+@pytest.mark.parametrize(
+    "supports_observed_duration, expected_mark", [(False, 3), (True, 4)]
+)
+def test_background_call_returns_at_once_and_lands_on_a_later_frame(
+    supports_observed_duration, expected_mark
+):
     block, model = _make_background_block(
         responses=[[_model_segment("walk", start_frame_idx=0, end_frame_idx=1)]]
     )
+    model.supports_observed_duration = supports_observed_duration
     try:
-        for number in (1, 2):
-            _run_background(block, number)
+        for number in (1, 2, 3):
+            _run_background(block, number, stride_seconds=0.75)
 
-        fired = _run_background(block, 3)
+        fired = _run_background(block, 4, stride_seconds=0.75)
         assert model.entered.wait(timeout=5)
         # The model is still inside its call: the step did not wait for it.
         assert fired["timeline"] == []
         assert fired["analyzed_until_frame"] is None
 
         _finish_pending_call(block, model)
-        landed = _run_background(block, 4)
+        landed = _run_background(block, 5, stride_seconds=0.75)
     finally:
         model.gate.set()
         block.close()
         # A second close() must be a no-op.
         block.close()
 
-    # The result belongs to the window that ended on frame 3, not to the
-    # frame that picked it up.
-    assert landed["analyzed_until_frame"] == 3
+    # Frame 3 was the last sample, frame 4 triggered the call, and frame 5
+    # collected the result.
+    assert landed["analyzed_until_frame"] == expected_mark
     assert [entry["class_name"] for entry in _timeline_as_dicts(landed)] == ["walk"]
     assert landed["error_status"] == ""
 
