@@ -42,6 +42,7 @@ import zipfile
 
 import pytest
 from click.testing import CliRunner
+from packaging.requirements import Requirement
 
 sys.path.insert(0, str(ROOT / ".release/pypi"))
 SPEC = importlib.util.spec_from_file_location(
@@ -87,47 +88,136 @@ def test_zero_publication_budget_stops_before_network(
     assert api.calls == []
 
 
-@pytest.mark.parametrize("profile", list(publish.PROJECTS))
-def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
-    tmp_path, monkeypatch, profile
-):
+def _build_pins():
+    pins = {}
+    for line in (
+        (ROOT / ".release/pypi/build-requirements.txt").read_text().splitlines()
+    ):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+
+        requirement = Requirement(line)
+        specs = list(requirement.specifier)
+        assert len(specs) == 1 and specs[0].operator == "=="
+        pins[requirement.name] = specs[0].version
+    return pins
+
+
+def _standalone_build(checkout, *, profile, models_make=False):
     project = publish.PROJECTS[profile]
     shutil.copytree(
         ROOT / project,
-        tmp_path / project,
+        checkout / project,
         ignore=shutil.ignore_patterns(".venv", "dist", "build", "*.egg-info", "tests"),
     )
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("EXPECTED_VERSION", raising=False)
-    monkeypatch.delenv("EXPECTED_REVISION", raising=False)
-    version = publish._version(profile)
-    if profile == "inference-models":
+    constraints = checkout / ".release/pypi/build-requirements.txt"
+    constraints.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / ".release/pypi/build-requirements.txt", constraints)
+    if profile == "inference-models" and not models_make:
         workflow = yaml.safe_load(
             (ROOT / ".github/workflows/publish.pypi.inference_exp.yml").read_text()
         )
         command = next(
             line.strip()
             for step in workflow["jobs"]["build"]["steps"]
+            if step.get("name") == "🔨 Build package"
             for line in step.get("run", "").splitlines()
             if "uv build" in line
         )
-        directory = tmp_path / project / "dist"
+        directory = checkout / project / "dist"
     else:
         command = next(
             line.split("&&", 1)[1].strip()
             for line in (ROOT / "Makefile").read_text().splitlines()
-            if line.strip().startswith(f"cd {project} && uv build ")
+            if line.strip().startswith(f"cd {project} && ") and "uv build " in line
         )
-        directory = tmp_path / "dist"
+        directory = checkout / "dist"
 
-    # Use the real publisher command and backend, with installed build tools offline.
+    argv = shlex.split(command.replace("${PYTHON}", sys.executable))
+    argv.extend(["--offline", "--no-index", "--find-links", "/build-wheels"])
+    return argv, directory, constraints
+
+
+@pytest.mark.parametrize(
+    "profile,backend",
+    [(profile, "setuptools") for profile in publish.PROJECTS]
+    + [
+        (profile, backend)
+        for profile in ("roboflow-workflows", "streamvision")
+        for backend in ("wheel", "packaging")
+    ],
+)
+def test_uv_isolated_build_rejects_unsatisfiable_backend_pin(
+    tmp_path, profile, backend
+):
+    argv, _, constraints = _standalone_build(tmp_path, profile=profile)
+    constraints.write_text(
+        constraints.read_text().replace(
+            f"{backend}=={_build_pins()[backend]}", f"{backend}==0.0.0"
+        )
+    )
     result = subprocess.run(
-        [*shlex.split(command), "--offline", "--no-build-isolation"],
-        cwd=tmp_path / project,
+        argv, cwd=tmp_path / publish.PROJECTS[profile], capture_output=True, text=True
+    )
+    assert result.returncode != 0, "Build ignored the configured backend constraint"
+    assert f"{backend}==0.0.0" in result.stderr
+
+
+def test_models_make_build_rejects_unsatisfiable_backend_pin(tmp_path):
+    argv, _, constraints = _standalone_build(
+        tmp_path, profile="inference-models", models_make=True
+    )
+    constraints.write_text("setuptools==0.0.0\n")
+    result = subprocess.run(
+        argv, cwd=tmp_path / "inference_models", capture_output=True, text=True
+    )
+    assert result.returncode != 0, "Models Make build ignored the backend constraint"
+    assert "setuptools==0.0.0" in result.stderr
+
+
+@pytest.mark.parametrize("profile", list(publish.PROJECTS))
+def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
+    tmp_path, monkeypatch, profile
+):
+    argv, directory, _ = _standalone_build(tmp_path, profile=profile)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("EXPECTED_VERSION", raising=False)
+    monkeypatch.delenv("EXPECTED_REVISION", raising=False)
+    version = publish._version(profile)
+    result = subprocess.run(
+        argv, cwd=tmp_path / publish.PROJECTS[profile], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    with zipfile.ZipFile(next(directory.glob("*.whl"))) as archive:
+        metadata = next(
+            name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")
+        )
+        assert (
+            f"Generator: setuptools ({_build_pins()['setuptools']})"
+            in archive.read(metadata).decode()
+        )
+
+    # Repeatability in this fixed environment, not cross-platform reproducibility.
+    retry = tmp_path / "repeat"
+    retry_argv, retry_directory, _ = _standalone_build(retry, profile=profile)
+    repeated = subprocess.run(
+        retry_argv,
+        cwd=retry / publish.PROJECTS[profile],
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert repeated.returncode == 0, repeated.stdout + repeated.stderr
+    for path in directory.iterdir():
+        original = publish._artifact(
+            path.read_bytes(), filename=path.name, version=version
+        )
+        rebuilt = publish._artifact(
+            (retry_directory / path.name).read_bytes(),
+            filename=path.name,
+            version=version,
+        )
+        assert original["content_sha256"] == rebuilt["content_sha256"]
     calls = []
 
     def absent(url, **kwargs):
