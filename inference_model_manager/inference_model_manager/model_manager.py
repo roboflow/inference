@@ -175,9 +175,15 @@ class _BackendRegistry(MutableMapping[str, Backend]):
     plugins that do not already hold it. Compound removals hold it throughout.
     """
 
-    def __init__(self, loaded_ts: Dict[str, float], lock: threading.RLock) -> None:
+    def __init__(
+        self,
+        loaded_ts: Dict[str, float],
+        awaiting_first_request: Dict[str, int],
+        lock: threading.RLock,
+    ) -> None:
         self._data: Dict[str, Backend] = {}
         self._loaded_ts = loaded_ts
+        self._awaiting_first_request = awaiting_first_request
         self._lock = lock
 
     def __getitem__(self, model_id: str) -> Backend:
@@ -188,11 +194,13 @@ class _BackendRegistry(MutableMapping[str, Backend]):
             loaded_ts = time.monotonic()
             self._data[model_id] = backend
             self._loaded_ts[model_id] = loaded_ts
+            self._awaiting_first_request[model_id] = 0
 
     def __delitem__(self, model_id: str) -> None:
         with self._lock:
             del self._data[model_id]
             self._loaded_ts.pop(model_id, None)
+            self._awaiting_first_request.pop(model_id, None)
 
     def pop(self, model_id: str, *args):
         with self._lock:
@@ -206,6 +214,7 @@ class _BackendRegistry(MutableMapping[str, Backend]):
         with self._lock:
             self._data.clear()
             self._loaded_ts.clear()
+            self._awaiting_first_request.clear()
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._data)
@@ -243,7 +252,10 @@ class ModelManager:
     def __init__(self) -> None:
         self._lifecycle_lock = threading.RLock()
         self._loaded_ts: Dict[str, float] = {}
-        self._backends = _BackendRegistry(self._loaded_ts, self._lifecycle_lock)
+        self._awaiting_first_request: Dict[str, int] = {}
+        self._backends = _BackendRegistry(
+            self._loaded_ts, self._awaiting_first_request, self._lifecycle_lock
+        )
         self.torchscript_state_global_lock = threading.Lock()
         # model_ids reserved by an in-progress load (built outside the lock)
         self._loading_ids: set[str] = set()
@@ -526,6 +538,20 @@ class ModelManager:
                 for mid, b in self._backends.items()
                 if mid != incoming and mid not in self._pinned
             )
+            now = time.monotonic()
+            awaiting = sorted(
+                (self._loaded_ts[mid], mid)
+                for mid in self._awaiting_first_request
+                if mid != incoming
+                and mid not in self._pinned
+                and now - self._loaded_ts[mid] < cfg.INFERENCE_UNSERVED_MODEL_GRACE_S
+            )
+            queued = {
+                mid for _, mid in awaiting if self._awaiting_first_request[mid] > 0
+            }
+            unrequested = [mid for _, mid in awaiting if mid not in queued]
+            spared = queued.union(unrequested[-1:])
+            candidates = [c for c in candidates if c[1] not in spared] or candidates
             popped: List[Tuple[str, Backend, Optional["StreamPipelinedModel"]]] = []
             for _, mid in candidates[:count]:
                 backend = self._backends.pop(mid, None)
@@ -564,14 +590,28 @@ class ModelManager:
             kwargs["mask_format"] = "rle"
         return kwargs, n_images
 
-    def _admit(self, model_id: str) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
+    def _admit(
+        self, model_id: str, queued: bool = False
+    ) -> Tuple[Backend, Optional["StreamPipelinedModel"]]:
         with self._lifecycle_lock:
             backend = self._backends.get(model_id)
             if backend is None:
                 raise KeyError(f"Model '{model_id}' is not loaded")
+            if not queued:
+                self._awaiting_first_request.pop(model_id, None)
+            elif model_id in self._awaiting_first_request:
+                self._awaiting_first_request[model_id] += 1
             pipeline = self._stream_pipelines.get(model_id)
 
         return backend, pipeline
+
+    def _release_queued_claim(self, model_id: str, backend: Backend) -> None:
+        with self._lifecycle_lock:
+            if self._backends.get(model_id) is not backend:
+                return
+
+            if self._awaiting_first_request.get(model_id, 0) > 0:
+                self._awaiting_first_request[model_id] -= 1
 
     @staticmethod
     def _invoke(
@@ -780,6 +820,7 @@ class ModelManager:
         self._check_open()
         semaphore = self._inflight_semaphore(model_id)
         await semaphore.acquire()
+        executor_jobs: List[Future] = []
         try:
             task = asyncio.ensure_future(
                 self._process_async(
@@ -788,6 +829,7 @@ class ModelManager:
                     serialize=serialize,
                     wire_marshalling=wire_marshalling,
                     timing=timing,
+                    executor_jobs=executor_jobs,
                     **kwargs,
                 )
             )
@@ -796,7 +838,13 @@ class ModelManager:
             raise
 
         task.add_done_callback(lambda done: _release_inflight(semaphore, done))
-        result = await asyncio.shield(task)
+        try:
+            result = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Future.cancel() fails once the job runs, so a running job keeps its permit
+            if executor_jobs and executor_jobs[0].cancel():
+                await asyncio.wait([task])
+            raise
 
         return result
 
@@ -821,47 +869,56 @@ class ModelManager:
         serialize: bool = True,
         wire_marshalling: bool = False,
         timing: Optional[dict] = None,
+        executor_jobs: Optional[List[Future]] = None,
         **kwargs: Any,
     ) -> Any:
         self._check_open()
         loop = asyncio.get_running_loop()
         context = contextvars.copy_context()
-        backend, _ = self._admit(model_id)
-        if hasattr(backend, "submit_request"):
-            raw_input = kwargs.pop("images", None)
-            future = await loop.run_in_executor(
-                self._executor,
+        backend, _ = self._admit(model_id, queued=True)
+        try:
+            if hasattr(backend, "submit_request"):
+                raw_input = kwargs.pop("images", None)
+                future = await loop.run_in_executor(
+                    self._executor,
+                    lambda: context.run(
+                        self.submit,
+                        model_id,
+                        action=action,
+                        raw_input=raw_input,
+                        **kwargs,
+                    ),
+                )
+                waiter = asyncio.wrap_future(future)
+                waiter.add_done_callback(_retrieve_exception)
+                result = await asyncio.wait_for(
+                    asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
+                )
+                return await loop.run_in_executor(
+                    self._executor,
+                    lambda: context.run(
+                        _serialize_remote_result, backend, action, result, serialize
+                    ),
+                )
+            job = self._executor.submit(
                 lambda: context.run(
-                    self.submit,
+                    self.process,
                     model_id,
                     action=action,
-                    raw_input=raw_input,
+                    serialize=serialize,
+                    wire_marshalling=wire_marshalling,
+                    timing=timing,
                     **kwargs,
-                ),
+                )
             )
-            waiter = asyncio.wrap_future(future)
-            waiter.add_done_callback(_retrieve_exception)
-            result = await asyncio.wait_for(
-                asyncio.shield(waiter), timeout=cfg.INFERENCE_PROCESS_TIMEOUT_S
-            )
-            return await loop.run_in_executor(
-                self._executor,
-                lambda: context.run(
-                    _serialize_remote_result, backend, action, result, serialize
-                ),
-            )
-        return await loop.run_in_executor(
-            self._executor,
-            lambda: context.run(
-                self.process,
-                model_id,
-                action=action,
-                serialize=serialize,
-                wire_marshalling=wire_marshalling,
-                timing=timing,
-                **kwargs,
-            ),
-        )
+            if executor_jobs is not None:
+                executor_jobs.append(job)
+
+            result = await asyncio.wrap_future(job)
+
+            return result
+        finally:
+            self._release_queued_claim(model_id, backend)
 
     def submit(
         self,

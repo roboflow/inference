@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 from roboflow_workflows.prototypes.platform_client import OFFLINE_PLATFORM_CLIENT
 
 from inference.core.workflows.execution_engine.entities.base import (
@@ -90,6 +91,13 @@ def test_manifest_accepts_image_selectors_keyed_by_label(sink: ModuleType) -> No
     manifest = _manifest(sink, extra_images={"raw_crop": "$steps.cropping.crops"})
 
     assert manifest.extra_images == {"raw_crop": "$steps.cropping.crops"}
+
+
+def test_manifest_rejects_empty_extra_image_label(sink: ModuleType) -> None:
+    with pytest.raises(ValidationError) as error:
+        _manifest(sink, extra_images={"": "$steps.cropping.crops"})
+
+    assert error.value.errors()[0]["loc"] == ("extra_images", "", "[key]")
 
 
 def test_manifest_rejects_non_selector_extra_image(sink: ModuleType) -> None:
