@@ -92,6 +92,12 @@ from roboflow_workflows.utils.images import (
 
 CLAUDE_MODELS = [
     {
+        "id": "claude-fable-5-2",
+        "name": "Claude Fable 5.2",
+        "exact_version": "claude-fable-5-2",
+        "max_output_tokens": 128000,
+    },
+    {
         "id": "claude-opus-5-5",
         "name": "Claude Opus 5.5",
         "exact_version": "claude-opus-5-5",

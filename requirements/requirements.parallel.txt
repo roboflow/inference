@@ -1,2 +1,4 @@
-celery>=5.4.0,<6.0.0
+# Keep Celery/Kombu on the Redis 5-compatible line; Kombu 5.7 requires redis-py >=6.1.
+celery>=5.4.0,<5.7.0
+kombu>=5.6.2,<5.7.0
 gunicorn~=23.0.0

@@ -425,3 +425,43 @@ def test_float_tensor_with_histogram_equalization_is_scaled_back_to_unit_range()
     )
     assert actual_tensor.is_floating_point()
     torch.testing.assert_close(actual_tensor, expected, atol=1e-6, rtol=0)
+
+
+def test_one_step_stretch_numpy_returns_float32_when_default_dtype_is_bfloat16() -> (
+    None
+):
+    # Overlapping transformers loads can leave the process default dtype at
+    # bfloat16; RF-DETR inputs must not follow it.
+    image_pre_processing = ImagePreProcessing()
+    network_input = _build_network_input(
+        training_h=64,
+        training_w=64,
+        resize_mode=ResizeMode.STRETCH_TO,
+        dataset_version_dims=None,
+    )
+    rng = np.random.default_rng(seed=42)
+    image = rng.integers(0, 256, size=(192, 168, 3), dtype=np.uint8)
+    expected_tensor, _ = pre_process_network_input(
+        images=image,
+        image_pre_processing=image_pre_processing,
+        network_input=network_input,
+        target_device=torch.device("cpu"),
+        input_color_format="rgb",
+    )
+    original_dtype = torch.get_default_dtype()
+
+    torch.set_default_dtype(torch.bfloat16)
+    try:
+        actual_tensor, _ = pre_process_network_input(
+            images=image,
+            image_pre_processing=image_pre_processing,
+            network_input=network_input,
+            target_device=torch.device("cpu"),
+            input_color_format="rgb",
+        )
+    finally:
+        torch.set_default_dtype(original_dtype)
+
+    assert expected_tensor.dtype == torch.float32
+    assert actual_tensor.dtype == torch.float32
+    assert torch.equal(actual_tensor, expected_tensor)

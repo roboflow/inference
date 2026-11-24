@@ -15,6 +15,11 @@ on:
           - ''
           - regression_without_torch
           - regression_with_torch
+      run_iobinding_benchmark:
+        description: 'Compare NumPy and ONNX Runtime output allocation in Docker.'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   # One live run per workflow per ref. A newer push to the same PR, or a newer
@@ -38,53 +43,106 @@ jobs:
         uses: docker/setup-buildx-action@v4
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
-      - name: 🦾 Install dependencies
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements/requirements.test.integration.txt -r requirements/requirements.test.unit.txt
-      - name: 🔨 Build and Push Test Docker - Parallel GPU
+      - name: 🔨 Build Test Docker - Parallel GPU
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu-parallel:test -f docker/dockerfiles/Dockerfile.onnx.gpu.parallel .
+      - name: 🔨 Build Docker test runner
+        run: |
+          docker build -t inference-parallel-tests:local -f docker/dockerfiles/Dockerfile.parallel.tests .
+      - name: 🧪 Shared-memory and CUDA worker startup tests
+        id: parallel_unit_tests
+        run: |
+          docker run --rm --gpus all --entrypoint python3 inference-parallel-tests:local \
+            -c 'import torch; assert torch.cuda.is_available(), "CUDA device required for T4 coverage"'
+          docker run --rm --gpus all -e PARALLEL_IMAGE_TEST=true -e PARALLEL_TEST_DEVICE=cuda \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
+            inference-parallel-tests:local -p no:cacheprovider \
+            tests/inference/unit_tests/enterprise/parallel tests/docker/test_parallel_worker_startup.py \
+            tests/inference/unit_tests/core/utils/test_onnx_iobinding.py
+      - name: Benchmark ONNX output allocation in Docker
+        if: ${{ inputs.run_iobinding_benchmark }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/onnx-iobinding-benchmark"
+          docker run --rm --gpus all --entrypoint python3 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/onnx-iobinding-benchmark,dst=/evidence" \
+            inference-parallel-tests:local \
+            -m development.benchmark_scripts.benchmark_onnx_iobinding \
+            --device cuda --output /evidence/results.json
+      - name: Upload ONNX allocation benchmark
+        if: ${{ !cancelled() && inputs.run_iobinding_benchmark }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: onnx-iobinding-benchmark
+          path: ${{ runner.temp }}/onnx-iobinding-benchmark/
+          if-no-files-found: error
       
       - name: 🔋 Start Test Docker without Torch Preprocessing - Parallel GPU
+        id: start_without_torch
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
         run: |
-          USE_INFERENCE_MODELS=false PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=False INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          USE_INFERENCE_MODELS=false PORT=9101 INFERENCE_TEST_DOCKER_ARGS='-e USE_PYTORCH_FOR_PREPROCESSING=False' INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          docker exec inference-test python3 -c 'from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING; assert USE_PYTORCH_FOR_PREPROCESSING is False'
       - name: 🧪 Regression Tests without Torch Preprocessing - Parallel GPU
-        id: regression_tests_with_python_preprocessing
+        id: regression_tests_without_torch_preprocessing
         if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          asl_instance_segmentation_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          asl_poly_instance_seg_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          bccd_favz3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          bccd_i4nym_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          cats_and_dogs_smnpl_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          coins_xaz9i_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          yolonas_test_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
         run: |
-          source venv/bin/activate
-          IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
+          docker run --rm --network container:inference-test \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
+            -e IS_PARALLEL_SERVER=true -e SKIP_VISUALISATION_TESTS=true -e FUNCTIONAL=true -e PORT=9101 \
+            -e API_KEY -e asl_instance_segmentation_API_KEY -e asl_poly_instance_seg_API_KEY \
+            -e bccd_favz3_API_KEY -e bccd_i4nym_API_KEY -e cats_and_dogs_smnpl_API_KEY \
+            -e coins_xaz9i_API_KEY -e melee_API_KEY -e yolonas_test_API_KEY \
+            inference-parallel-tests:local -p no:cacheprovider \
+            tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
       - name: 🚨 Show server logs on error
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' || failure() }}
+        if: ${{ always() && steps.start_without_torch.outcome != 'skipped' }}
         run: docker logs inference-test
       - name: 🧹 Cleanup Test Docker - Parallel GPU
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_without_torch' }}
+        if: ${{ always() && steps.start_without_torch.outcome != 'skipped' }}
         run: make stop_test_docker
       
       - name: 🔋 Start Test Docker with Torch Preprocessing - Parallel GPU
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
+        id: start_with_torch
+        if: ${{ !cancelled() && steps.parallel_unit_tests.outcome == 'success' && (github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch') }}
         run: |
-          USE_INFERENCE_MODELS=false PORT=9101 USE_PYTORCH_FOR_PREPROCESSING=True INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          USE_INFERENCE_MODELS=false PORT=9101 INFERENCE_TEST_DOCKER_ARGS='-e USE_PYTORCH_FOR_PREPROCESSING=True' INFERENCE_SERVER_REPO=roboflow-inference-server-gpu-parallel make start_test_docker_gpu
+          docker exec inference-test python3 -c 'from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING; assert USE_PYTORCH_FOR_PREPROCESSING is True'
       - name: 🧪 Regression Tests with Torch Preprocessing - Parallel GPU
-        id: regression_tests_without_python_preprocessing
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' }}
+        id: regression_tests_with_torch_preprocessing
+        if: ${{ !cancelled() && steps.start_with_torch.outcome == 'success' }}
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          asl_instance_segmentation_API_KEY: ${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+          asl_poly_instance_seg_API_KEY: ${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }}
+          bccd_favz3_API_KEY: ${{ secrets.BCCD_FAVZ3_API_KEY }}
+          bccd_i4nym_API_KEY: ${{ secrets.BCCD_I4NYM_API_KEY }}
+          cats_and_dogs_smnpl_API_KEY: ${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }}
+          coins_xaz9i_API_KEY: ${{ secrets.COINS_XAZ9I_API_KEY }}
+          melee_API_KEY: ${{ secrets.MELEE_API_KEY }}
+          yolonas_test_API_KEY: ${{ secrets.YOLONAS_TEST_API_KEY }}
         run: |
-          source venv/bin/activate
-          IS_PARALLEL_SERVER=true SKIP_VISUALISATION_TESTS=true FUNCTIONAL=true PORT=9101 API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
+          docker run --rm --network container:inference-test \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/app,readonly" \
+            -e IS_PARALLEL_SERVER=true -e SKIP_VISUALISATION_TESTS=true -e FUNCTIONAL=true -e PORT=9101 \
+            -e API_KEY -e asl_instance_segmentation_API_KEY -e asl_poly_instance_seg_API_KEY \
+            -e bccd_favz3_API_KEY -e bccd_i4nym_API_KEY -e cats_and_dogs_smnpl_API_KEY \
+            -e coins_xaz9i_API_KEY -e melee_API_KEY -e yolonas_test_API_KEY \
+            inference-parallel-tests:local -p no:cacheprovider \
+            tests/inference/integration_tests/regression_test.py tests/inference/integration_tests/batch_regression_test.py
       - name: 🚨 Show server logs on error
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' || failure() }}
+        if: ${{ always() && steps.start_with_torch.outcome != 'skipped' }}
         run: docker logs inference-test
       - name: 🧹 Cleanup Test Docker - Parallel GPU
-        if: ${{ github.event.inputs.test_name == '' || github.event.inputs.test_name == 'regression_with_torch' || failure() }}
+        if: ${{ always() && steps.start_with_torch.outcome != 'skipped' }}
         run: make stop_test_docker

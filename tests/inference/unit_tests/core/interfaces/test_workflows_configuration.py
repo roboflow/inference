@@ -72,6 +72,26 @@ FIELDS = [
         lambda c: c.engine.allow_postgresql_sink_to_non_global_addresses,
     ),
     (
+        "DATABRICKS_SQL_IMAGE_SOURCE_ENABLED",
+        lambda c: c.engine.databricks_sql_image_source_enabled,
+    ),
+    (
+        "ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES",
+        lambda c: c.engine.allow_databricks_source_to_non_global_addresses,
+    ),
+    (
+        "DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES",
+        lambda c: c.engine.databricks_sql_image_source_max_run_bytes,
+    ),
+    (
+        "DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES",
+        lambda c: c.engine.databricks_sql_image_source_max_image_bytes,
+    ),
+    (
+        "DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS",
+        lambda c: c.engine.databricks_sql_image_source_max_image_pixels,
+    ),
+    (
         "POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES",
         lambda c: (
             None
@@ -239,7 +259,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
         "missing_from_table": sorted(exported - tabled),
         "missing_from_facade": sorted(tabled - exported),
     }
-    assert len(tabled) == 81, len(tabled)
+    assert len(tabled) == 86, len(tabled)
 
 
 def test_every_name_workflows_imports_from_the_facade_is_exported() -> None:
@@ -292,6 +312,11 @@ def test_server_configuration_equals_env_field_by_field(name, reader) -> None:
         ("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", set()),
         ("OPENAI_COMPATIBLE_ALLOWED_BASE_URLS", {"https://approved.example/v1"}),
         ("ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES", False),
+        ("DATABRICKS_SQL_IMAGE_SOURCE_ENABLED", False),
+        ("ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES", True),
+        ("DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES", 256 * 1024 * 1024),
+        ("DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES", 8 * 1024 * 1024),
+        ("DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS", 12_000_000),
         ("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", None),
         ("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", set()),
         ("POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES", {"localhost", "127.0.0.1"}),

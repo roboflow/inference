@@ -13,6 +13,9 @@ gateway's responsibility: the in-process gateway calls
 load it runs for the request that started it, and an out-of-process gateway
 must record its own loads the same way, or no cold-start headers appear for
 it. Callers record the attempted model id before the load themselves.
+A gateway reports a load refused for lack of capacity as
+``("server_full", retry_after_s)`` from ``ensure_loaded`` and ``load``;
+callers answer it with 503 and Retry-After, without polling.
 
 A failed load is reported as ``("error", code)`` by ``ensure_loaded`` and
 ``load``. A gateway may append a third element, a dict of JSON-serialisable
