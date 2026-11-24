@@ -12,6 +12,9 @@ This is the canonical changelog for the `streamvision` package.
   `comes_from_video_file=False`, so the pipeline buffered and dropped them as for
   a live stream. Such a source now ends at the end of the file. Before, with
   stream reconnection on (the default), it reconnected and replayed the file.
+- All video producers read `file://` URIs the same way. `#` and `?` stay part of
+  the file name, and the scheme is case-insensitive. A URI with a remote host or
+  an invalid percent escape is not treated as a local file.
 
 ## `0.1.7`
 
