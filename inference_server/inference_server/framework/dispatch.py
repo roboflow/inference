@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from typing import Any
@@ -42,6 +43,7 @@ _RESERVED_QUERY_KEYS: frozenset[str] = frozenset(
         "action",
         "style",
         "response_style",
+        "memory_estimate_selection",
         "instance",
         "device",
         "image",
@@ -64,6 +66,7 @@ _NON_MODEL_PARAMS: frozenset[str] = frozenset(
         "service_secret",
         "stream_pipeline_context_id",
         "stream_pipeline_producer_id",
+        "memory_estimate_selection",
     }
 )
 
@@ -223,6 +226,18 @@ async def handle_model_inference_request(
         return error_response(
             400, "INVALID_PARAM", "response_style must be 'compact' or 'rich'"
         )
+    selections = request.query_params.getlist("memory_estimate_selection")
+    selection = selections[0] if selections else "first_containing"
+    if len(selections) > 1 or selection not in (
+        "first_containing",
+        "next_containing",
+        "maximum",
+    ):
+        return error_response(
+            400,
+            "INVALID_PARAM",
+            "memory_estimate_selection must be first_containing, next_containing or maximum",
+        )
     if has_capability_marker(common.model_id):
         return error_response(404, "MODEL_NOT_FOUND", "unknown model_id")
     if has_capability_marker(common.instance):
@@ -249,7 +264,9 @@ async def handle_model_inference_request(
         logger.warning("Model not found: %s", exc)
         return error_response(404, "MODEL_NOT_FOUND", "unknown model_id")
     except RuntimeError as exc:
-        logger.warning("Runtime error when calling stat_model_while_checking_auth: %s", exc)
+        logger.warning(
+            "Runtime error when calling stat_model_while_checking_auth: %s", exc
+        )
         return error_response(
             503,
             "REGISTRY_UNAVAILABLE",
@@ -294,8 +311,19 @@ async def handle_model_inference_request(
     _apply_param_defaults(params_spec, input_data["params"])
 
     record_model_load(common.model_id, cold_start=False, load_time_s=0.0)
-    status = await proxy.ensure_loaded(
-        common.model_id, common.instance, common.api_key, common.device
+    load = proxy.ensure_loaded
+    workload_args = {}
+    if (model_type, action) == ("instance-segmentation", "infer"):
+        load_with_workload = getattr(proxy, "ensure_loaded_for_request", None)
+        if load_with_workload is not None:
+            load = load_with_workload
+            workload_args = {
+                "images": input_data["images"],
+                "params": params,
+                "selection": selection,
+            }
+    status = await load(
+        common.model_id, common.instance, common.api_key, common.device, **workload_args
     )
     if status[0] == "load_timeout":
         return error_response(
@@ -306,6 +334,24 @@ async def handle_model_inference_request(
             headers={"Retry-After": str(status[1])},
         )
     if status[0] == "error":
+        # Only the structured coverage result has a public diagnostic. Other load
+        # failures can include backend diagnostics and keep their generic response.
+        if len(status) == 3 and isinstance(status[2], bytes):
+            try:
+                failure = json.loads(status[2])
+            except (ValueError, UnicodeDecodeError):
+                failure = None
+            if (
+                isinstance(failure, dict)
+                and failure.get("status") == "failure"
+                and isinstance(failure.get("error"), dict)
+                and failure["error"].get("code") == "outside_profile_envelope"
+            ):
+                return error_response(
+                    422,
+                    "outside_profile_envelope",
+                    "The requested workload or range is outside published memory coverage",
+                )
         return error_response(500, "LOAD_FAILED", "model load failed")
 
     try:

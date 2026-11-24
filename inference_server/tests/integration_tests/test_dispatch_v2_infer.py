@@ -102,6 +102,114 @@ async def test_object_detection_dispatch_returns_envelope(client, app_with_fake_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query, expected_selection",
+    [
+        ("", "first_containing"),
+        ("&memory_estimate_selection=next_containing", "next_containing"),
+        ("&memory_estimate_selection=maximum", "maximum"),
+    ],
+)
+async def test_segmentation_admission_receives_the_effective_infer_inputs(
+    client, app_with_fake_proxy, query, expected_selection
+):
+    _, proxy = app_with_fake_proxy
+    proxy.ensure_loaded_for_request = AsyncMock(return_value=("model_ready",))
+    proxy.infer.return_value = object()
+    with (
+        patch(
+            "inference_server.handlers.instance_segmentation.output_serializer."
+            "serialize_instance_segmentation_compact",
+            return_value={},
+        ),
+        _patch_stat("instance-segmentation"),
+    ):
+        response = await client.post(
+            "/v2/models/infer?model_id=acme/1&instance=one&device=cuda"
+            "&confidence=0.2&max_detections=50" + query,
+            content=_JPEG,
+            headers={"authorization": "Bearer k", "content-type": "image/jpeg"},
+        )
+
+    assert response.status_code == 200
+    proxy.ensure_loaded.assert_not_awaited()
+    params = {"confidence": 0.2, "max_detections": 50}
+    proxy.ensure_loaded_for_request.assert_awaited_once_with(
+        "acme/1",
+        "one",
+        "k",
+        "cuda",
+        images=[_JPEG],
+        params=params,
+        selection=expected_selection,
+    )
+    assert proxy.infer.await_args.kwargs["params"] == params
+
+
+@pytest.mark.asyncio
+async def test_segmentation_gateway_without_admission_keeps_existing_load_call(
+    client, app_with_fake_proxy
+):
+    _, proxy = app_with_fake_proxy
+    proxy.ensure_loaded.return_value = ("error", 1)
+    with _patch_stat("instance-segmentation"):
+        response = await client.post(
+            "/v2/models/infer?model_id=acme/1",
+            content=_JPEG,
+            headers={"authorization": "Bearer k", "content-type": "image/jpeg"},
+        )
+
+    proxy.ensure_loaded.assert_awaited_once_with("acme/1", "", "k", "")
+    assert response.json()["error_code"] == "LOAD_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_invalid_memory_estimate_selection_rejects_before_model_load(
+    client, app_with_fake_proxy
+):
+    _, proxy = app_with_fake_proxy
+    response = await client.post(
+        "/v2/models/infer?model_id=m&memory_estimate_selection=unknown",
+        content=_JPEG,
+        headers={"authorization": "Bearer k", "content-type": "image/jpeg"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "INVALID_PARAM"
+    proxy.ensure_loaded.assert_not_awaited()
+    proxy.infer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "diagnostic, status, code",
+    [
+        (
+            b'{"status":"failure","error":{"code":"outside_profile_envelope","message":"private"}}',
+            422,
+            "outside_profile_envelope",
+        ),
+        (b"private", 500, "LOAD_FAILED"),
+    ],
+)
+async def test_segmentation_admission_reports_coverage_without_internal_details(
+    client, app_with_fake_proxy, diagnostic, status, code
+):
+    _, proxy = app_with_fake_proxy
+    proxy.ensure_loaded_for_request = AsyncMock(return_value=("error", 1, diagnostic))
+    with _patch_stat("instance-segmentation"):
+        response = await client.post(
+            "/v2/models/infer?model_id=acme/1",
+            content=_JPEG,
+            headers={"authorization": "Bearer k", "content-type": "image/jpeg"},
+        )
+
+    assert response.status_code == status
+    assert response.json()["error_code"] == code
+    assert "private" not in response.text
+    proxy.infer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_classification_dispatch_returns_envelope(client, app_with_fake_proxy):
     _, proxy = app_with_fake_proxy
     proxy.infer.return_value = object()

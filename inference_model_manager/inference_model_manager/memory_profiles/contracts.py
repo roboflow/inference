@@ -364,7 +364,19 @@ class Catalog(Contract):
     )
 
 
-class Request(Contract):
+class WorkloadQuery(Contract):
+    """Workload and range selection carried from the gateway to admission."""
+
+    workload: Workload | None = Field(
+        default=None,
+        description="Optional normalized joint workload; absent selects the maximum.",
+    )
+    selection: Selection = Field(
+        default="first_containing", description="Requested workload range selection."
+    )
+
+
+class Request(WorkloadQuery):
     """Authorized pre-load facts supplied by a server-side family adapter."""
 
     request_id: str = Field(description="Correlation ID.")
@@ -379,10 +391,3 @@ class Request(Contract):
         description="Current selected GPU observations."
     )
     runtime: RuntimeIdentity = Field(description="Serving runtime identity.")
-    workload: Workload | None = Field(
-        default=None,
-        description="Optional normalized joint workload; absent selects the maximum.",
-    )
-    selection: Selection = Field(
-        default="first_containing", description="Requested workload range selection."
-    )

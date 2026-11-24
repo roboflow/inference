@@ -65,6 +65,17 @@ accepts `confidence=best` or `confidence=default`, those pass through; any other
 confidence must be a number. A value that does
 not match its declared type is answered with 400 `INVALID_PARAM`.
 
+With a process gateway that supports memory-template admission,
+`POST /v2/models/infer` for instance segmentation accepts the optional query
+parameter `memory_estimate_selection`. Its default, `first_containing`, uses the
+first published range covering the supplied workload. Use `next_containing` to
+request the next strictly broader range, or `maximum` to request the highest
+measured peak across compatible ranges. All three require coverage for the
+supplied workload. The gateway receives the parsed images and effective model
+parameters before starting the worker. An explicit load without workload
+information uses the maximum. Other gateways continue using their existing
+load method.
+
 ## Extension points
 
 `inference-server` and `inference-model-manager` resolve additional
