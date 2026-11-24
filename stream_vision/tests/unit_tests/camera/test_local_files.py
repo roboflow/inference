@@ -9,6 +9,13 @@ from streamvision.camera.local_files import local_file_path, source_uri
     [
         ("file:///videos/my%20clip.mp4", "/videos/my clip.mp4"),
         ("file://localhost/videos/clip.mp4", "/videos/clip.mp4"),
+        ("FILE:///videos/clip.mp4", "/videos/clip.mp4"),
+        ("file:///videos/cam#1.mp4", "/videos/cam#1.mp4"),
+        ("file:///videos/clip?v=1.mp4", "/videos/clip?v=1.mp4"),
+        ("file:///videos/100%.mp4", "/videos/100%.mp4"),
+        ("file:///C:/videos/clip.mp4", "C:/videos/clip.mp4"),
+        ("file:///videos/bad%FF.mp4", None),
+        ("file://server/share/clip.mp4", None),
         ("./videos/clip.mp4", "./videos/clip.mp4"),
         ("rtsp://camera.local/stream", None),
         (0, None),
