@@ -9,11 +9,20 @@ Use an authorized server-side family adapter to construct `Request`, then call
 
 - Separate one-model process, closed structural fields and known behavior keys.
 - Exact GPU-level environment matching; broader cross-GPU claims are deferred.
-- Finite explicitly validated **joint** workload points. No interpolation,
-  monotonicity assumption or Cartesian product of independent maxima.
-- Published priority order chooses designated template versions. The default band
-  is resolved independently; hints only add required points. The result is the
-  larger of the default and covering estimates and retains both evidence sets.
+- Families declare workload parameters and their directions (`higher`, `lower`
+  or `exact`). A versioned envelope lists inclusive lower/upper joint bounds in
+  publisher selection order. Each v2 template supplies an observed boundary
+  peak and its source evidence for every range. Runtime input consists of the
+  effective values for all axes, including applied defaults.
+- `first_containing` uses the first compatible range containing every supplied
+  value. `next_containing` advances to the next strictly broader range covering
+  the *entire* first range, and uses at least the first peak. No such range
+  returns a coverage gap. Catalog template priority followed by envelope order
+  breaks ties between eligible ranges.
+- `maximum` selects the highest peak across all compatible published ranges.
+  Omitting the workload automatically selects this mode. All modes reject a
+  supplied workload outside coverage. No independent admission floor applies.
+  The manager uses the returned `estimatedGpuPeakBytes` as its capacity input.
 - Used-library versions match exactly unless an explicit reviewed directional
   range/operator permits transfer. Lists support exceptions. Denies win.
   Prereleases are included in explicit ranges; same-minor patch operators exclude
@@ -54,5 +63,5 @@ This draft provides no inferred descriptor from an alias and no measured catalog
 The full campaign and its matrix remain pending user review. Test fixtures are
 synthetic and must never be published as measurements. Physical JSON uses Python
 snake_case storage fields; success responses retain the documented C15 names.
-Broader environment claims, interval containment, composites and offline snapshots
+Broader environment claims, composite models and offline snapshots
 require separate implementations and are rejected by this M1 subset.

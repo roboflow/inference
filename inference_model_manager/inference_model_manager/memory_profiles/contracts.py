@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 Identifier = Annotated[str, Field(min_length=1, pattern=r"^[A-Za-z0-9_.:-]+$")]
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -35,38 +35,117 @@ class Reference(Contract):
     sha256: Digest = Field(description="SHA256 of canonical-json/v1 content.")
 
 
-class Workload(Contract):
-    """One correlated workload point; independent axis maxima imply no coverage."""
+WorkloadValue = str | int | FiniteFloat | bool
+Direction = Literal["exact", "higher", "lower"]
+Selection = Literal["first_containing", "next_containing", "maximum"]
 
-    values: dict[str, str | int | bool] = Field(
-        min_length=1, description="Normalized family-owned joint input/settings values."
+
+def _equal_axis(left, right):
+    # Firestore preserves integers and doubles; both represent numeric settings.
+    if type(left) in (int, float) and type(right) in (int, float):
+        return left == right
+    return type(left) is type(right) and left == right
+
+
+class Workload(Contract):
+    """One joint observation of the effective request inputs."""
+
+    values: dict[Identifier, WorkloadValue] = Field(
+        min_length=1, description="All family-owned input and execution settings."
     )
+
+
+class WorkloadRange(Contract):
+    """Inclusive joint bounds, published in selection order."""
+
+    id: Identifier = Field(description="Range identifier within its envelope.")
+    lower: Workload = Field(description="Inclusive lower values for all parameters.")
+    upper: Workload = Field(description="Inclusive upper values for all parameters.")
+
+    def profiled_values(
+        self, directions: dict[str, Direction]
+    ) -> dict[str, WorkloadValue]:
+        """Resolve the joint boundary the producer must measure.
+
+        Args:
+            directions: Family policy for every parameter in the range.
+
+        Returns:
+            Effective values at the profiled boundary.
+
+        Raises:
+            ValueError: If bounds are incomplete, reversed, or incorrectly typed.
+        """
+        if (
+            self.lower.values.keys() != directions.keys()
+            or self.upper.values.keys() != directions.keys()
+        ):
+            raise ValueError("Range must define both bounds for every family parameter")
+
+        boundary = {}
+        for key, direction in directions.items():
+            low, high = self.lower.values[key], self.upper.values[key]
+            if direction == "exact":
+                if not _equal_axis(low, high):
+                    raise ValueError("Exact parameters require identical bounds")
+                boundary[key] = low
+            elif (
+                direction in ("higher", "lower")
+                and type(low) in (float, int)
+                and type(high) in (float, int)
+                and low <= high
+            ):
+                boundary[key] = high if direction == "higher" else low
+            else:
+                raise ValueError(
+                    "Directional parameters require ordered numeric bounds"
+                )
+
+        return boundary
+
+    def contains(self, workload: Workload, *, directions: dict[str, Direction]) -> bool:
+        """Check all inputs against this validated range.
+
+        Args:
+            workload: Effective inputs to compare.
+            directions: Parameter comparison rules from the family.
+
+        Returns:
+            Whether every required input is present and within bounds.
+        """
+        if workload.values.keys() != directions.keys():
+            return False
+
+        for key, value in workload.values.items():
+            low, high = self.lower.values[key], self.upper.values[key]
+            if directions[key] == "exact":
+                if not _equal_axis(value, low):
+                    return False
+            elif type(value) not in (float, int) or not low <= value <= high:
+                return False
+        return True
 
 
 class Envelope(Contract):
-    """A finite validated workload set; M1 never assumes monotonic memory use."""
+    """Reviewed workload ranges in order of selection."""
 
     id: Identifier = Field(description="Envelope identifier.")
-    workloads: list[Workload] = Field(min_length=1, description="Covered joint cases.")
-    required_scenario_names: list[Identifier] = Field(
-        min_length=1, description="All scenarios required before numeric derivation."
+    ranges: list[WorkloadRange] = Field(
+        min_length=1, description="Ordered joint workload ranges."
     )
 
     @model_validator(mode="after")
-    def unique_scenarios(self) -> "Envelope":
-        """Require distinct scenario names and workload points.
+    def unique_range_ids(self) -> "Envelope":
+        """Check each range has an unambiguous identifier.
 
         Returns:
-            This validated envelope.
+            The checked envelope.
 
         Raises:
-            ValueError: If scenarios or workload points repeat.
+            ValueError: If a range identifier repeats.
         """
-        if len(set(self.required_scenario_names)) != len(self.required_scenario_names):
-            raise ValueError("Duplicate required scenarios")
-        points = [tuple(sorted(w.values.items())) for w in self.workloads]
-        if len(set(points)) != len(points):
-            raise ValueError("Duplicate workload points")
+        if len({item.id for item in self.ranges}) != len(self.ranges):
+            raise ValueError("Duplicate workload range ID")
         return self
 
 
@@ -154,11 +233,23 @@ class Evidence(Contract):
     )
 
 
+class RangeEstimate(Contract):
+    """Measured peak and source records for one workload range."""
+
+    range_id: Identifier = Field(description="Range in the template envelope.")
+    estimated_gpu_peak_bytes: Positive = Field(
+        description="Maximum measured process GPU peak for this range."
+    )
+    evidence: list[Evidence] = Field(
+        min_length=1, description="Records contributing to this range."
+    )
+
+
 class Template(Contract):
     """A validated numeric estimate plus closed applicability and evidence."""
 
-    schema_version: Literal["memory-template/v1"] = Field(
-        default="memory-template/v1", description="Contract version."
+    schema_version: Literal["memory-template/v2"] = Field(
+        default="memory-template/v2", description="Contract version."
     )
     id: Identifier = Field(description="Template identifier.")
     version: Identifier = Field(description="Immutable template version.")
@@ -172,17 +263,14 @@ class Template(Contract):
         min_length=1, description="Exact M1 GPU claim fields."
     )
     envelope_id: Identifier = Field(description="Catalog-owned serving envelope.")
-    estimated_gpu_peak_bytes: Positive = Field(
-        description="Maximum complete process peak across required evidence."
+    range_estimates: list[RangeEstimate] = Field(
+        min_length=1, description="Peaks and supporting evidence for each range."
     )
     allowed_deployment_policy_id: Identifier = Field(
         description="Trusted deployment cohort authorized to use this template."
     )
     validation_status: Literal["validated"] = Field(
         description="Successful evidence and applicability validation."
-    )
-    evidence: list[Evidence] = Field(
-        min_length=1, description="Every contributing source record."
     )
     limitations: list[str] = Field(description="Accepted limitation registry tags.")
 
@@ -215,8 +303,9 @@ class Family(Contract):
     behavior_keys: list[str] = Field(
         min_length=1, description="Reviewed pre-load execution behaviors."
     )
-    default_envelope_id: Identifier = Field(
-        description="Initial admission floor workload."
+    workload_parameters: dict[Identifier, Direction] = Field(
+        min_length=1,
+        description="Exact match or direction of increasing memory demand for each workload parameter.",
     )
 
 
@@ -290,7 +379,10 @@ class Request(Contract):
         description="Current selected GPU observations."
     )
     runtime: RuntimeIdentity = Field(description="Serving runtime identity.")
-    input_hints: list[Workload] = Field(
-        default_factory=list,
-        description="Additional correlated cases; never shrink the default band.",
+    workload: Workload | None = Field(
+        default=None,
+        description="Optional normalized joint workload; absent selects the maximum.",
+    )
+    selection: Selection = Field(
+        default="first_containing", description="Requested workload range selection."
     )

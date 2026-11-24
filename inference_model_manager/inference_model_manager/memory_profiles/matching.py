@@ -12,9 +12,12 @@ from inference_model_manager.memory_profiles.contracts import (
     Catalog,
     Contract,
     Policy,
+    RangeEstimate,
+    Reference,
     Request,
     Template,
     VersionRule,
+    WorkloadRange,
 )
 
 _REQUIRED_STRUCTURE = {
@@ -154,11 +157,10 @@ def validate_snapshot(snapshot: Snapshot) -> None:
             "memory_publication_invalid", "Duplicate template references"
         )
     for family in families.values():
-        if (
-            family.default_envelope_id not in envelopes
-            or not _REQUIRED_STRUCTURE <= set(family.required_fields)
-            or not {"cuda", "nvidia.driver"} <= set(family.runtime_components)
-        ):
+        if not _REQUIRED_STRUCTURE <= set(family.required_fields) or not {
+            "cuda",
+            "nvidia.driver",
+        } <= set(family.runtime_components):
             raise MemoryProfileError(
                 "memory_publication_invalid", "Incomplete family definition"
             )
@@ -197,26 +199,51 @@ def validate_snapshot(snapshot: Snapshot) -> None:
             raise MemoryProfileError(
                 "memory_publication_invalid", "Incomplete GPU claim"
             )
-        # Each source package/entrypoint in the reviewed derivation must have ALL cases.
-        groups: dict[tuple[str, str, str], set[str]] = {}
-        for evidence in template.evidence:
-            if {file.role for file in evidence.source_files} != {
-                "batch",
-                "run_metadata",
-            } or len(evidence.source_files) != 2:
-                raise MemoryProfileError(
-                    "memory_evidence_invalid",
-                    "Incomplete or duplicate source file references",
-                )
-            group = (evidence.model_id, evidence.package_id, evidence.entrypoint_name)
-            groups.setdefault(group, set()).add(evidence.scenario_name)
-        if any(
-            not set(envelope.required_scenario_names) <= names
-            for names in groups.values()
+        if sorted(r.id for r in envelope.ranges) != sorted(
+            e.range_id for e in template.range_estimates
         ):
             raise MemoryProfileError(
-                "memory_evidence_invalid", "Required source scenarios are missing"
+                "memory_publication_invalid", "Each range requires exactly one estimate"
             )
+        try:
+            for workload_range in envelope.ranges:
+                workload_range.profiled_values(family.workload_parameters)
+        except ValueError as error:
+            raise MemoryProfileError(
+                "memory_publication_invalid", str(error)
+            ) from error
+
+        source_groups = None
+        for estimate in template.range_estimates:
+            groups = set()
+            for evidence in estimate.evidence:
+                if len(evidence.source_files) != 2 or {
+                    file.role for file in evidence.source_files
+                } != {"batch", "run_metadata"}:
+                    raise MemoryProfileError(
+                        "memory_evidence_invalid",
+                        "Incomplete or duplicate source file references",
+                    )
+                if set(evidence.runtime.components) != set(family.runtime_components):
+                    raise MemoryProfileError(
+                        "memory_evidence_invalid",
+                        "Evidence lacks the family's exact runtime components",
+                    )
+                groups.add(
+                    (
+                        evidence.source_provider,
+                        evidence.source_registry_project,
+                        evidence.model_id,
+                        evidence.package_id,
+                        evidence.entrypoint_name,
+                    )
+                )
+            if source_groups is not None and groups != source_groups:
+                raise MemoryProfileError(
+                    "memory_evidence_invalid",
+                    "Every range requires evidence for the same source packages and entrypoints",
+                )
+            source_groups = groups
     for rule in snapshot.policy.version_rules:
         try:
             SpecifierSet(rule.source)
@@ -287,10 +314,10 @@ def _coverage(
 
 
 def _runtime_checks(
-    template: Template, request: Request, policy: Policy
+    template_id: str, estimate: RangeEstimate, *, request: Request, policy: Policy
 ) -> tuple[bool, list[dict]]:
     checks = []
-    for evidence in template.evidence:
+    for evidence in estimate.evidence:
         source = evidence.runtime
         if not source.components or not set(source.components) <= set(
             request.runtime.components
@@ -324,7 +351,7 @@ def _runtime_checks(
             return False, []
         checks.append(
             {
-                "templateId": template.id,
+                "templateId": template_id,
                 "profileId": evidence.profile_id,
                 "mode": policy.runtime_coverage_mode,
                 "coverage": statuses,
@@ -333,18 +360,70 @@ def _runtime_checks(
     return True, checks
 
 
+@dataclass
+class _MeasuredRange:
+    template: Template
+    ref: Reference
+    bounds: WorkloadRange
+    estimate: RangeEstimate
+    checks: list[dict]
+
+
+def _select_ranges(candidates, *, request, directions):
+    if request.workload is None or request.selection == "maximum":
+        peak = max(candidates, key=lambda item: item.estimate.estimated_gpu_peak_bytes)
+        if request.workload is None or peak.bounds.contains(
+            request.workload, directions=directions
+        ):
+            return [peak]
+        for item in candidates:
+            if item.bounds.contains(request.workload, directions=directions):
+                return [item, peak]
+        raise MemoryProfileError(
+            "outside_profile_envelope",
+            "No published range covers the supplied workload",
+        )
+
+    for index, candidate in enumerate(candidates):
+        if candidate.bounds.contains(request.workload, directions=directions):
+            break
+    else:
+        raise MemoryProfileError(
+            "outside_profile_envelope",
+            "No published range covers the supplied workload",
+        )
+
+    if request.selection == "first_containing":
+        return [candidate]
+
+    for other in candidates[index + 1 :]:
+        if (
+            other.bounds.contains(candidate.bounds.lower, directions=directions)
+            and other.bounds.contains(candidate.bounds.upper, directions=directions)
+            and not (
+                candidate.bounds.contains(other.bounds.lower, directions=directions)
+                and candidate.bounds.contains(other.bounds.upper, directions=directions)
+            )
+        ):
+            return [candidate, other]
+    raise MemoryProfileError(
+        "outside_profile_envelope",
+        "No strictly broader published range covers the selected range",
+    )
+
+
 def resolve(snapshot: Snapshot, *, request: Request) -> dict[str, Any]:
-    """Resolve the default floor and a covering template without shrinking coverage.
+    """Select a compatible measured range for a resolved model load.
 
     Authorization and family normalization happen in the caller before this method.
-    Only finite, explicitly validated correlated workload points are supported in M1.
+    The family defines exact and directional axes for joint workload containment.
 
     Args:
         snapshot: One project-local verified publication.
         request: Authorized effective pre-load facts.
 
     Returns:
-        C15 success including both source references, limitations and runtime checks.
+        C15 success including the measured range, evidence, limitations and runtime checks.
 
     Raises:
         MemoryProfileError: Typed C16 failure, never a zero-valued estimate.
@@ -374,10 +453,8 @@ def resolve(snapshot: Snapshot, *, request: Request) -> dict[str, Any]:
             "Required runtime GPU observations are missing",
         )
     envelopes = {e.id: e for e in snapshot.catalog.envelopes}
-    default = envelopes[family.default_envelope_id]
-    compatible = []
-    checks = {}
-    for template in snapshot.templates:
+    candidates = []
+    for ref, template in zip(snapshot.catalog.templates, snapshot.templates):
         if (
             template.family_contract_id != family.id
             or not _same(template.structural_key, request.structural_key)
@@ -390,62 +467,44 @@ def resolve(snapshot: Snapshot, *, request: Request) -> dict[str, Any]:
             for field in snapshot.policy.environment_fields
         ):
             continue
-        accepted, details = _runtime_checks(template, request, snapshot.policy)
-        if accepted:
-            compatible.append(template)
-            checks[(template.id, template.version)] = details
-    if not compatible:
+        estimates = {e.range_id: e for e in template.range_estimates}
+        for bounds in envelopes[template.envelope_id].ranges:
+            estimate = estimates[bounds.id]
+            accepted, checks = _runtime_checks(
+                template.id, estimate, request=request, policy=snapshot.policy
+            )
+            if accepted:
+                candidates.append(
+                    _MeasuredRange(template, ref, bounds, estimate, checks)
+                )
+
+    if not candidates:
         raise MemoryProfileError(
             "no_compatible_template",
             "No template matches the selected package behavior and environment",
         )
 
-    def covering(points):
-        for candidate in compatible:
-            if all(
-                any(
-                    _same(p.values, w.values)
-                    for w in envelopes[candidate.envelope_id].workloads
-                )
-                for p in points
-            ):
-                return candidate
-        return None
-
-    floor = covering(default.workloads)
-    selected = covering(default.workloads + request.input_hints)
-    if floor is None:
-        raise MemoryProfileError(
-            "serving_band_not_defined", "No compatible template covers the default band"
-        )
-    if selected is None:
-        raise MemoryProfileError(
-            "outside_profile_envelope",
-            "No template covers the default band plus requested hints",
-        )
-    contributions = [floor] if selected == floor else [floor, selected]
-    runtime_checks = [
-        check for t in contributions for check in checks[(t.id, t.version)]
-    ]
+    selected = _select_ranges(
+        candidates, request=request, directions=family.workload_parameters
+    )
+    chosen = selected[-1]
+    covering = selected[0] if request.selection == "maximum" else chosen
+    runtime_checks = [check for item in selected for check in item.checks]
     limitations = {"family_template"}.union(
-        *(set(t.limitations) for t in contributions)
+        *(set(item.template.limitations) for item in selected)
     )
     if any(any(s != "covered" for s in check["coverage"]) for check in runtime_checks):
         limitations.add("runtime_version_unvalidated")
-    refs = {
-        t.id + ":" + t.version: r.model_dump()
-        for r, t in zip(snapshot.catalog.templates, snapshot.templates)
-    }
     evidence = {
         json.dumps(e.model_dump(), sort_keys=True): e.model_dump()
-        for t in contributions
-        for e in t.evidence
+        for item in selected
+        for e in item.estimate.evidence
     }
     result = {
         "status": "success",
         "requestId": request.request_id,
         "estimatedGpuPeakBytes": max(
-            floor.estimated_gpu_peak_bytes, selected.estimated_gpu_peak_bytes
+            item.estimate.estimated_gpu_peak_bytes for item in selected
         ),
         "packageContext": request.package_context,
         "publication": {
@@ -454,9 +513,19 @@ def resolve(snapshot: Snapshot, *, request: Request) -> dict[str, Any]:
             "catalogVersion": snapshot.catalog.id,
             "matchingPolicyVersion": snapshot.policy.id,
         },
-        "defaultTemplate": refs[floor.id + ":" + floor.version],
-        "coveringTemplate": refs[selected.id + ":" + selected.version],
-        "servingEnvelopeId": selected.envelope_id,
+        "coveringTemplate": covering.ref.model_dump(),
+        "servingEnvelopeId": covering.template.envelope_id,
+        "rangeId": covering.bounds.id,
+        "contributingRanges": [
+            {
+                "template": item.ref.model_dump(),
+                "envelopeId": item.template.envelope_id,
+                "rangeId": item.bounds.id,
+                "estimatedGpuPeakBytes": item.estimate.estimated_gpu_peak_bytes,
+            }
+            for item in selected
+        ],
+        "selection": request.selection if request.workload is not None else "maximum",
         "evidenceRefs": list(evidence.values()),
         "runtimeCompatibility": runtime_checks,
         "limitations": sorted(limitations),

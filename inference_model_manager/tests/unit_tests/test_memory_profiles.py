@@ -11,12 +11,14 @@ from inference_model_manager.memory_profiles.contracts import (
     Evidence,
     Family,
     Policy,
+    RangeEstimate,
     Reference,
     Request,
     RuntimeIdentity,
     Template,
     VersionRule,
     Workload,
+    WorkloadRange,
 )
 from inference_model_manager.memory_profiles.firestore import FirestoreCatalog
 from inference_model_manager.memory_profiles.matching import (
@@ -25,6 +27,18 @@ from inference_model_manager.memory_profiles.matching import (
     content_digest,
     resolve,
 )
+
+
+def workload(width=1920, batch=1, confidence=0.2):
+    return Workload(values={"width": width, "batch": batch, "confidence": confidence})
+
+
+def band(range_id, *, width=1920, confidence=0.1, batch=1):
+    return WorkloadRange(
+        id=range_id,
+        lower=workload(width, 1, confidence),
+        upper=workload(width, batch, 1.0),
+    )
 
 
 @pytest.fixture
@@ -82,40 +96,53 @@ def snapshot():
             for role in ("batch", "run_metadata")
         ],
     )
+
+    def measured(range_id, peak):
+        return RangeEstimate(
+            range_id=range_id,
+            estimated_gpu_peak_bytes=peak,
+            evidence=[
+                evidence.model_copy(
+                    update={
+                        "profile_id": range_id,
+                        "scenario_name": "capture-" + range_id,
+                    }
+                )
+            ],
+        )
+
     envelope = Envelope(
-        id="default",
-        workloads=[Workload(values={"width": 3840, "batch": 1})],
-        required_scenario_names=["base"],
-    )
-    wider = Envelope(
-        id="wide",
-        workloads=envelope.workloads + [Workload(values={"width": 3840, "batch": 32})],
-        required_scenario_names=["base", "wide"],
+        id="hd",
+        ranges=[
+            band("r1", confidence=0.4),
+            band("r2"),
+            band("4k", width=3840),
+            band("r3", confidence=0.01, batch=4),
+        ],
     )
     first = Template(
-        id="floor",
+        id="hd-template",
         version="1",
         family_contract_id="rfdetr-seg-v1",
         structural_key=structural,
         environment=environment,
-        envelope_id="default",
-        estimated_gpu_peak_bytes=9000,
+        envelope_id=envelope.id,
+        range_estimates=[
+            measured("r1", 2000),
+            measured("r2", 3000),
+            measured("4k", 7000),
+            measured("r3", 2800),
+        ],
         allowed_deployment_policy_id="staging",
         validation_status="validated",
-        evidence=[evidence],
         limitations=["sampled_peak", "bounded_workload"],
     )
+    wider = Envelope(id="large-batch", ranges=[band("r4", confidence=0.01, batch=32)])
     second = first.model_copy(
         update={
-            "id": "covering",
-            "envelope_id": "wide",
-            "estimated_gpu_peak_bytes": 8000,
-            "evidence": [
-                evidence,
-                evidence.model_copy(
-                    update={"scenario_name": "wide", "profile_id": "wide-profile"}
-                ),
-            ],
+            "id": "large-template",
+            "envelope_id": wider.id,
+            "range_estimates": [measured("r4", 9000)],
             "limitations": ["finite_content_samples"],
         }
     )
@@ -124,7 +151,11 @@ def snapshot():
         required_fields=list(structural),
         runtime_components=list(runtime.components),
         behavior_keys=[structural["memoryBehaviorKey"]],
-        default_envelope_id="default",
+        workload_parameters={
+            "width": "exact",
+            "batch": "higher",
+            "confidence": "lower",
+        },
     )
     refs = [
         Reference(id=t.id, version=t.version, sha256=content_digest(t))
@@ -152,44 +183,121 @@ def request_for(snapshot, **changes):
         family_contract_id=template.family_contract_id,
         structural_key=template.structural_key,
         environment=template.environment,
-        runtime=template.evidence[0].runtime,
+        runtime=template.range_estimates[0].evidence[0].runtime,
     )
     values.update(changes)
     return Request(**values)
 
 
-def test_floor_retains_both_refs_and_does_not_select_lowest_bytes(snapshot):
-    default = resolve(snapshot, request=request_for(snapshot))
-    assert default["defaultTemplate"]["id"] == "floor"
-    assert default["coveringTemplate"]["id"] == "floor"
-    expanded = resolve(
+@pytest.mark.parametrize(
+    ("value", "range_id", "peak"),
+    [(0.4, "r1", 2000), (0.2, "r2", 3000), (0.1, "r2", 3000), (0.01, "r3", 2800)],
+)
+def test_first_joint_range_in_declared_order(snapshot, value, range_id, peak):
+    result = resolve(
+        snapshot, request=request_for(snapshot, workload=workload(confidence=value))
+    )
+    assert result["rangeId"] == range_id
+    assert result["estimatedGpuPeakBytes"] == peak
+    assert [item["profile_id"] for item in result["evidenceRefs"]] == [range_id]
+
+
+def test_next_range_must_contain_the_entire_current_range_and_never_reduce_estimate(
+    snapshot,
+):
+    result = resolve(
+        snapshot,
+        request=request_for(snapshot, workload=workload(), selection="next_containing"),
+    )
+    assert result["rangeId"] == "r3"
+    assert result["estimatedGpuPeakBytes"] == 3000
+    assert {e["profile_id"] for e in result["evidenceRefs"]} == {"r2", "r3"}
+    with pytest.raises(MemoryProfileError, match="No strictly broader"):
+        resolve(
+            snapshot,
+            request=request_for(
+                snapshot, workload=workload(batch=32), selection="next_containing"
+            ),
+        )
+
+
+@pytest.mark.parametrize("supplied", [True, False])
+def test_maximum_includes_all_compatible_templates(snapshot, supplied):
+    fields = {"workload": workload(), "selection": "maximum"} if supplied else {}
+    result = resolve(snapshot, request=request_for(snapshot, **fields))
+    assert result["selection"] == "maximum"
+    assert result["estimatedGpuPeakBytes"] == 9000
+    assert "finite_content_samples" in result["limitations"]
+
+
+def test_maximum_retains_coverage_and_measurement_from_distinct_ranges(snapshot):
+    result = resolve(
         snapshot,
         request=request_for(
-            snapshot, input_hints=[Workload(values={"width": 3840, "batch": 32})]
+            snapshot, workload=workload(width=3840), selection="maximum"
         ),
     )
-    assert expanded["estimatedGpuPeakBytes"] == 9000
-    assert expanded["coveringTemplate"]["id"] == "covering"
-    assert "finite_content_samples" in expanded["limitations"]
-    assert len(expanded["evidenceRefs"]) == 2
+    assert result["estimatedGpuPeakBytes"] == 9000
+    assert (result["servingEnvelopeId"], result["rangeId"]) == ("hd", "4k")
+    assert [item["rangeId"] for item in result["contributingRanges"]] == ["4k", "r4"]
+    assert {e["profile_id"] for e in result["evidenceRefs"]} == {"4k", "r4"}
 
 
 @pytest.mark.parametrize(
+    "selection", ["maximum", "next_containing", "first_containing"]
+)
+@pytest.mark.parametrize(
     "values",
     [
-        {"width": 1920, "batch": 32},
-        {"width": 3840, "batch": 8},
-        {"width": 7680, "batch": 1},
+        {"width": 3840, "batch": 32, "confidence": 0.1},
+        {"width": 1920, "batch": False, "confidence": 0.1},
+        {"width": 1920, "batch": 1},
+        {"width": 1920, "batch": 1, "confidence": 0.001},
+        {"width": 1920, "batch": 1, "confidence": 1.1},
+        {"width": 1920, "batch": 1, "confidence": 0.1, "extra": 5},
     ],
 )
-def test_unmeasured_interiors_and_cross_products_are_not_coverage(snapshot, values):
-    with pytest.raises(MemoryProfileError, match="No template covers") as error:
+def test_uncovered_workload_never_returns_an_estimate(snapshot, selection, values):
+    with pytest.raises(MemoryProfileError) as error:
         resolve(
             snapshot,
-            request=request_for(snapshot, input_hints=[Workload(values=values)]),
+            request=request_for(
+                snapshot, workload=Workload(values=values), selection=selection
+            ),
         )
     assert error.value.code == "outside_profile_envelope"
-    assert not hasattr(error.value, "estimated_gpu_peak_bytes")
+
+
+def test_snapshot_requires_an_estimate_for_every_range(snapshot):
+    changed = snapshot.templates[0].model_copy(
+        update={"range_estimates": snapshot.templates[0].range_estimates[:-1]}
+    )
+    ref = snapshot.catalog.templates[0].model_copy(
+        update={"sha256": content_digest(changed)}
+    )
+    broken = replace(
+        snapshot,
+        templates=(changed, snapshot.templates[1]),
+        catalog=snapshot.catalog.model_copy(
+            update={"templates": [ref, snapshot.catalog.templates[1]]}
+        ),
+    )
+    with pytest.raises(MemoryProfileError, match="exactly one estimate"):
+        resolve(broken, request=request_for(broken))
+
+
+def test_range_boundaries_require_all_axes_and_finite_numbers(snapshot):
+    directions = snapshot.catalog.families[0].workload_parameters
+    with pytest.raises(ValueError, match="every family parameter"):
+        band("invalid").profiled_values({**directions, "extra": "exact"})
+    with pytest.raises(ValueError, match="identical bounds"):
+        band("invalid").profiled_values({**directions, "confidence": "exact"})
+    with pytest.raises(ValueError, match="ordered numeric bounds"):
+        band("invalid", confidence=2.0).profiled_values(directions)
+    with pytest.raises(ValueError):
+        workload(confidence=float("nan"))
+    with pytest.raises(ValueError):
+        workload(confidence=float("inf"))
 
 
 def test_unknown_behavior_and_missing_fields_reject(snapshot):
@@ -221,6 +329,7 @@ def test_gpu_mismatch_cannot_relax_policy(snapshot):
 def test_uncovered_runtime_is_observe_only_but_known_incompatibility_rejects(snapshot):
     runtime = (
         snapshot.templates[0]
+        .range_estimates[0]
         .evidence[0]
         .runtime.model_copy(
             update={
@@ -250,11 +359,15 @@ def test_uncovered_runtime_is_observe_only_but_known_incompatibility_rejects(sna
 def test_library_patch_changes_need_explicit_rule_and_deny_wins(snapshot):
     runtime = (
         snapshot.templates[0]
+        .range_estimates[0]
         .evidence[0]
         .runtime.model_copy(
             update={
                 "components": {
-                    **snapshot.templates[0].evidence[0].runtime.components,
+                    **snapshot.templates[0]
+                    .range_estimates[0]
+                    .evidence[0]
+                    .runtime.components,
                     "pytorch": "2.9.2",
                 }
             }
@@ -283,7 +396,7 @@ def test_library_patch_changes_need_explicit_rule_and_deny_wins(snapshot):
 
 
 def test_changed_template_bytes_reject(snapshot):
-    corrupt = snapshot.templates[0].model_copy(update={"estimated_gpu_peak_bytes": 1})
+    corrupt = snapshot.templates[0].model_copy(update={"limitations": []})
     with pytest.raises(MemoryProfileError, match="hash mismatch"):
         resolve(
             replace(snapshot, templates=(corrupt, snapshot.templates[1])),
