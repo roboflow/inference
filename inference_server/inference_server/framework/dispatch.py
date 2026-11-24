@@ -43,7 +43,6 @@ _RESERVED_QUERY_KEYS: frozenset[str] = frozenset(
         "action",
         "style",
         "response_style",
-        "memory_estimate_selection",
         "instance",
         "device",
         "image",
@@ -66,7 +65,6 @@ _NON_MODEL_PARAMS: frozenset[str] = frozenset(
         "service_secret",
         "stream_pipeline_context_id",
         "stream_pipeline_producer_id",
-        "memory_estimate_selection",
     }
 )
 
@@ -226,17 +224,9 @@ async def handle_model_inference_request(
         return error_response(
             400, "INVALID_PARAM", "response_style must be 'compact' or 'rich'"
         )
-    selections = request.query_params.getlist("memory_estimate_selection")
-    selection = selections[0] if selections else "first_containing"
-    if len(selections) > 1 or selection not in (
-        "first_containing",
-        "next_containing",
-        "maximum",
-    ):
+    if "memory_estimate_selection" in request.query_params:
         return error_response(
-            400,
-            "INVALID_PARAM",
-            "memory_estimate_selection must be first_containing, next_containing or maximum",
+            400, "INVALID_PARAM", "memory_estimate_selection is configured by the server"
         )
     if has_capability_marker(common.model_id):
         return error_response(404, "MODEL_NOT_FOUND", "unknown model_id")
@@ -302,6 +292,10 @@ async def handle_model_inference_request(
         return Response(status_code=499)
 
     params = input_data.setdefault("params", {})
+    if "memory_estimate_selection" in params:
+        return error_response(
+            400, "INVALID_PARAM", "memory_estimate_selection is configured by the server"
+        )
     for name in _NON_MODEL_PARAMS:
         params.pop(name, None)
     params_spec = description.interface_provider().params
@@ -320,7 +314,6 @@ async def handle_model_inference_request(
             workload_args = {
                 "images": input_data["images"],
                 "params": params,
-                "selection": selection,
             }
     status = await load(
         common.model_id, common.instance, common.api_key, common.device, **workload_args

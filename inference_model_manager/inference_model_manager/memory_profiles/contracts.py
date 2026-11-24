@@ -365,19 +365,21 @@ class Catalog(Contract):
 
 
 class WorkloadQuery(Contract):
-    """Workload and range selection carried from the gateway to admission."""
+    """Workload observations carried from the gateway to admission."""
 
     workload: Workload | None = Field(
         default=None,
         description="Optional normalized joint workload; absent selects the maximum.",
     )
-    selection: Selection = Field(
-        default="first_containing", description="Requested workload range selection."
-    )
 
 
 class Request(WorkloadQuery):
     """Authorized pre-load facts supplied by a server-side family adapter."""
+
+    selection: Selection = Field(
+        default="first_containing",
+        description="Range selection supplied by the serving deployment.",
+    )
 
     request_id: str = Field(description="Correlation ID.")
     package_context: dict[str, str] = Field(
