@@ -11,6 +11,8 @@ frozen clock, and compares the kwargs the collector was handed.
 frozen 0.25s to the serverless minimum in one arm and not the other.
 """
 
+import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest import mock
 
@@ -37,9 +39,12 @@ def _deterministic_collector():
 
 def _record_once(call) -> dict:
     """Run `call` with a frozen clock and return the kwargs the collector got."""
+    # Replace the collector's reference, not time.time on the shared module:
+    # background cache threads must not consume this finite sequence.
     with mock.patch.object(
-        collector_module.time, "time", side_effect=list(FROZEN_CLOCK)
-    ), mock.patch.object(usage_collector, "record_usage") as record_usage:
+        collector_module, "time", wraps=collector_module.time
+    ) as clock, mock.patch.object(usage_collector, "record_usage") as record_usage:
+        clock.time.side_effect = list(FROZEN_CLOCK)
         call()
     return record_usage.call_args.kwargs
 
@@ -147,6 +152,20 @@ def test_block_row_is_identical_to_the_decorated_entry_point() -> None:
     # then
     assert adapted == legacy
     assert adapted["execution_duration"] == pytest.approx(0.25)
+
+
+def test_frozen_collector_clock_does_not_leak_into_background_threads() -> None:
+    # Cache expiry and other background services must keep their real clock
+    # while the collector consumes its two deterministic timestamps.
+    def call():
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            readings = executor.submit(lambda: [time.time() for _ in range(3)]).result()
+        assert all(reading > FROZEN_CLOCK[-1] for reading in readings)
+        _legacy_metered_run(_FakeBlock(), block_args=(), block_kwargs={})
+
+    row = _record_once(call)
+
+    assert row["execution_duration"] == pytest.approx(0.25)
 
 
 def test_block_row_is_identical_when_a_duration_was_measured() -> None:
