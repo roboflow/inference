@@ -1,5 +1,6 @@
 """Resolve video references that point to local files."""
 
+from pathlib import Path
 from typing import Optional, Union
 from urllib.parse import unquote, urlparse
 
@@ -24,3 +25,20 @@ def local_file_path(video: Union[str, int]) -> Optional[str]:
     if "://" in video:
         return None
     return video
+
+
+def source_uri(video: Union[str, int]) -> str:
+    """Return a URI that GStreamer ``uridecodebin`` can open.
+
+    Args:
+        video: Video reference: a camera index, a path, or a URL.
+
+    Returns:
+        An absolute ``file://`` URI for local files, else the reference as text.
+    """
+    file_path = local_file_path(video)
+    if file_path is None:
+        return str(video)
+
+    file_uri = Path(file_path).resolve().as_uri()
+    return file_uri

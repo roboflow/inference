@@ -16,7 +16,7 @@ from streamvision.camera.entities import (
     VideoFrameProducer,
 )
 from streamvision.camera.fourcc import parse_fourcc
-from streamvision.camera.local_files import local_file_path
+from streamvision.camera.local_files import local_file_path, source_uri
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
@@ -300,7 +300,7 @@ def build_gstreamer_pipeline(
             "wait-on-eos=false"
         )
 
-    uri = _source_uri(video)
+    uri = source_uri(video)
     return (
         f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
         'caps="video/x-raw(memory:NVMM)" ! '
@@ -643,13 +643,6 @@ class JetsonVideoFrameProducer(VideoFrameProducer):
             self._decoder_validated = True
             return
         raise RuntimeError("Jetson pipeline did not instantiate an NVIDIA decoder")
-
-
-def _source_uri(video: Union[str, int]) -> str:
-    local_path = local_file_path(video)
-    if local_path is not None:
-        return Path(local_path).resolve().as_uri()
-    return str(video)
 
 
 def _is_rtsp_source(video: Union[str, int]) -> bool:

@@ -11,7 +11,7 @@ from streamvision.camera.entities import (
     SourceProperties,
     VideoFrameProducer,
 )
-from streamvision.camera.local_files import local_file_path
+from streamvision.camera.local_files import local_file_path, source_uri
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
@@ -244,7 +244,7 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
             'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
             f"{tail}"
         )
-    uri = _source_uri(video)
+    uri = source_uri(video)
     return (
         f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
         'caps="video/x-raw(memory:CUDAMemory)" ! '
@@ -513,13 +513,6 @@ def _appsink_sync_enabled() -> bool:
         "yes",
         "on",
     }
-
-
-def _source_uri(video: str) -> str:
-    local_path = local_file_path(video)
-    if local_path is not None:
-        return Path(local_path).resolve().as_uri()
-    return video
 
 
 def _file_demuxer(video: str) -> Optional[str]:
