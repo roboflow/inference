@@ -881,6 +881,7 @@ class ModelManager:
         self._check_open()
         semaphore = self._inflight_semaphore(model_id)
         await semaphore.acquire()
+        executor_jobs: List[Future] = []
         try:
             task = asyncio.ensure_future(
                 self._process_async(
@@ -889,6 +890,7 @@ class ModelManager:
                     serialize=serialize,
                     wire_marshalling=wire_marshalling,
                     timing=timing,
+                    executor_jobs=executor_jobs,
                     **kwargs,
                 )
             )
@@ -897,7 +899,13 @@ class ModelManager:
             raise
 
         task.add_done_callback(lambda done: _release_inflight(semaphore, done))
-        result = await asyncio.shield(task)
+        try:
+            result = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Future.cancel() fails once the job runs, so a running job keeps its permit
+            if executor_jobs and executor_jobs[0].cancel():
+                await asyncio.wait([task])
+            raise
 
         return result
 
@@ -922,6 +930,7 @@ class ModelManager:
         serialize: bool = True,
         wire_marshalling: bool = False,
         timing: Optional[dict] = None,
+        executor_jobs: Optional[List[Future]] = None,
         **kwargs: Any,
     ) -> Any:
         self._check_open()
@@ -953,8 +962,7 @@ class ModelManager:
                             _serialize_remote_result, backend, action, result, serialize
                         ),
                     )
-                return await loop.run_in_executor(
-                    self._executor,
+                job = self._executor.submit(
                     lambda: context.run(
                         self.process,
                         model_id,
@@ -963,8 +971,14 @@ class ModelManager:
                         wire_marshalling=wire_marshalling,
                         timing=timing,
                         **kwargs,
-                    ),
+                    )
                 )
+                if executor_jobs is not None:
+                    executor_jobs.append(job)
+
+                result = await asyncio.wrap_future(job)
+
+                return result
             finally:
                 self._release_queued_claim(model_id, backend)
 

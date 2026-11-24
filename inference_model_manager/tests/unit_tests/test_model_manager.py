@@ -423,6 +423,50 @@ class TestModelManagerInference:
         assert result["data"]["prediction"] == "fake"
         assert calls == ["first", "second"]
 
+    def test_process_async_per_model_cap_drops_a_queued_job_on_caller_cancellation(
+        self, monkeypatch
+    ):
+        import inference_model_manager.configuration as cfg
+
+        monkeypatch.setattr(cfg, "INFERENCE_MAX_INFLIGHT_PER_MODEL", 1)
+        mm = ModelManager()
+        backends = {}
+        _patch_create_backend(mm, backends)
+        mm.load("model-a", api_key="")
+        mm._executor.shutdown(wait=False)
+        mm._executor = ThreadPoolExecutor(max_workers=1)
+        gate = threading.Event()
+        mm._executor.submit(gate.wait)
+        calls = []
+
+        def recording_infer(images=None, **kwargs):
+            calls.append(images)
+            return {"prediction": "fake"}
+
+        backends["model-a"].model.infer = recording_infer
+
+        async def _run():
+            first = asyncio.create_task(mm.process_async("model-a", images="first"))
+            for _ in range(5):
+                await asyncio.sleep(0)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            permit_free = not mm._inflight_semaphores["model-a"].locked()
+            second = asyncio.create_task(mm.process_async("model-a", images="second"))
+            gate.set()
+            await asyncio.wait_for(second, timeout=5)
+            return permit_free
+
+        try:
+            permit_free = asyncio.run(_run())
+        finally:
+            gate.set()
+            mm._executor.shutdown(wait=True)
+
+        assert permit_free is True
+        assert calls == ["second"]
+
     def test_process_async_per_model_cap_does_not_retain_finished_event_loops(
         self, monkeypatch
     ):
@@ -2490,11 +2534,26 @@ class TestCapacityChurn:
         mm.process("idle", images="i")
         backends["busy"].last_used_ts = 1.0
         backends["idle"].last_used_ts = 2.0
-        release = _occupy_executor(mm)
+        started = threading.Event()
+        release = threading.Event()
+        plain_infer = backends["busy"].model.infer
+
+        def blocking_infer(images=None, **kwargs) -> Any:
+            started.set()
+            release.wait()
+            result = plain_infer(images=images, **kwargs)
+
+            return result
+
+        backends["busy"].model.infer = blocking_infer
 
         async def _scenario() -> set:
             request = asyncio.ensure_future(mm.process_async("busy", images="i"))
             await _until_pending(mm, {"busy": 1})
+            running = await asyncio.get_running_loop().run_in_executor(
+                None, started.wait, 5
+            )
+            assert running
             request.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await request
