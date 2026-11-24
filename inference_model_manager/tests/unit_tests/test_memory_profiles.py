@@ -326,6 +326,51 @@ def test_gpu_mismatch_cannot_relax_policy(snapshot):
     assert error.value.code == "no_compatible_template"
 
 
+@pytest.mark.parametrize("value", ["unknown", "unavailable", "", " Unavailable "])
+def test_unknown_gpu_fact_rejects_request_and_publication(snapshot, value):
+    template = snapshot.templates[0]
+    environment = {**template.environment, "gpuSku": value}
+    request = request_for(snapshot, environment=environment)
+    with pytest.raises(MemoryProfileError) as error:
+        resolve(snapshot, request=request)
+    assert error.value.code == "environment_metadata_unavailable"
+
+    changed = template.model_copy(update={"environment": environment})
+    snapshot.catalog.templates[0] = snapshot.catalog.templates[0].model_copy(
+        update={"sha256": content_digest(changed)}
+    )
+    with pytest.raises(MemoryProfileError) as error:
+        resolve(
+            replace(snapshot, templates=(changed, *snapshot.templates[1:])),
+            request=request,
+        )
+    assert error.value.code == "memory_publication_invalid"
+
+
+@pytest.mark.parametrize("build", ["unknown", "unavailable"])
+def test_identical_unknown_build_is_observed_or_rejected_when_enforced(snapshot, build):
+    for index, template in enumerate(snapshot.templates):
+        for estimate in template.range_estimates:
+            evidence = estimate.evidence[0]
+            runtime = evidence.runtime.model_copy(
+                update={"inference_models_build": build}
+            )
+            estimate.evidence[0] = evidence.model_copy(update={"runtime": runtime})
+        ref = snapshot.catalog.templates[index]
+        snapshot.catalog.templates[index] = ref.model_copy(
+            update={"sha256": content_digest(template)}
+        )
+
+    request = request_for(snapshot)
+    result = resolve(snapshot, request=request)
+    assert "runtime_version_unvalidated" in result["limitations"]
+    assert result["runtimeCompatibility"][0]["coverage"] == ["covered", "unknown"]
+    policy = snapshot.policy.model_copy(update={"runtime_coverage_mode": "enforce"})
+    with pytest.raises(MemoryProfileError) as error:
+        resolve(replace(snapshot, policy=policy), request=request)
+    assert error.value.code == "no_compatible_template"
+
+
 def test_uncovered_runtime_is_observe_only_but_known_incompatibility_rejects(snapshot):
     runtime = (
         snapshot.templates[0]

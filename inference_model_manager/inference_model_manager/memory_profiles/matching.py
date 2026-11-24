@@ -120,10 +120,10 @@ def content_digest(value: Contract) -> str:
     return digest
 
 
-def _known(values):
-    return all(
-        value is not None and value not in ("", "unknown", "unavailable")
-        for value in values.values()
+def _known(value):
+    return value is not None and (
+        not isinstance(value, str)
+        or value.strip().lower() not in ("", "unknown", "unavailable")
     )
 
 
@@ -179,7 +179,7 @@ def validate_snapshot(snapshot: Snapshot) -> None:
             family is None
             or envelope is None
             or set(template.structural_key) != set(family.required_fields)
-            or not _known(template.structural_key)
+            or not all(map(_known, template.structural_key.values()))
         ):
             raise MemoryProfileError(
                 "memory_publication_invalid",
@@ -195,7 +195,7 @@ def validate_snapshot(snapshot: Snapshot) -> None:
             )
         if set(template.environment) != set(
             snapshot.policy.environment_fields
-        ) or not all(template.environment.values()):
+        ) or not all(map(_known, template.environment.values())):
             raise MemoryProfileError(
                 "memory_publication_invalid", "Incomplete GPU claim"
             )
@@ -294,7 +294,7 @@ def _rule_matches(rule: VersionRule, source: str, target: str) -> bool:
 def _coverage(
     component: str, source: str | None, target: str | None, policy: Policy
 ) -> str:
-    if not source or not target:
+    if not _known(source) or not _known(target):
         return "unknown"
     applicable = [
         r
@@ -436,7 +436,7 @@ def resolve(snapshot: Snapshot, *, request: Request) -> dict[str, Any]:
     if (
         family is None
         or set(request.structural_key) != set(family.required_fields)
-        or not _known(request.structural_key)
+        or not all(map(_known, request.structural_key.values()))
         or request.structural_key.get("memoryBehaviorKey") not in family.behavior_keys
         or request.structural_key.get("processLayout") != "one-new-model-process"
     ):
@@ -445,7 +445,7 @@ def resolve(snapshot: Snapshot, *, request: Request) -> dict[str, Any]:
             "Required structural facts or execution behavior are unknown",
         )
     if any(
-        not request.environment.get(field)
+        not _known(request.environment.get(field))
         for field in snapshot.policy.environment_fields
     ):
         raise MemoryProfileError(
