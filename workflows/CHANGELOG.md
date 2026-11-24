@@ -16,6 +16,31 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Changed
+
+- Action Recognition Model reports the inclusive end of the latest successful
+  window in `analyzed_until_frame`, or null before the first success. Cosmos
+  reports the last sampled source frame. Models that use the observed window
+  duration report the source frame that triggered the call. Earlier failed or
+  skipped windows can leave gaps before the mark.
+- Action Recognition Model can classify the buffered samples on the last frame
+  of a video file that reports its frame count. A clip shorter than one stride
+  can get a result if enough samples are buffered.
+  When the file ends between scheduled calls, the final window can overlap
+  the preceding window even when the configured overlap is zero.
+  Live streams and files without a usable frame count behave as before, and
+  so does a file whose last frame the source drops (for example with
+  `max_fps`).
+
+### Fixed
+
+- OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+- OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
+## `0.2.17`
+
+Bundled execution engine: `1.17.3`.
+
 ### Execution engine
 
 - **Successful Modal syntax checks of custom Python blocks are reused.**
@@ -28,10 +53,38 @@ for contributor and maintainer responsibilities.
   skip the cache so `MODAL_ALLOW_ANONYMOUS_EXECUTION` still applies. No
   migration is needed.
 
+### Added
+
+- OpenAI Decisions Switch block (`roboflow_core/open_ai_decisions_switch@v1`): routes each image to a branch by asking OpenAI's Decisions API one `choice` question over `cases`.
+  - The model always has a "none of these" option. That answer, a probability below `min_confidence` (0.9 by default), a non-finite probability or one outside [0, 1], a refusal or an answer the block cannot read runs `default_next_steps`, or terminates the branch for that image when there are none.
+  - `case_descriptions` tells the model what a case means, and `context` sends values from earlier steps with each image as JSON, per image for batch-oriented values. Nested NumPy arrays and scalars are converted to JSON-compatible lists and values.
+  - Like every flow control block it has no outputs; use the OpenAI Decisions block with Switch Case to keep the probabilities.
+- Roboflow Vision Events (`roboflow_core/roboflow_vision_events@v1`, both the numpy and tensor-native variants) gains an optional `extra_images` input: images keyed by label, each stored with the event as its own entry under that label, without annotations. Cloud events upload each one at JPEG quality 95, like the input image; local event store events embed them as base64. Labels must be non-empty. Omitting the field or using an empty mapping sends the event without extra images. If a configured image selector resolves to no image, the workflow skips the event for that frame. The Vision Events Bundle block is unchanged.
+- Google Gemini v6 (`roboflow_core/google_gemini@v6`) gains a `keypoint-detection` task. It takes `classes` and a new `keypoint_schema` input, which maps each class to its skeleton: the keypoint names, the edges between them and, optionally, a template with where each keypoint sits on a reference instance, as (x, y) fractions of its box. A response schema has Gemini return one list of instances per class, each with its `box_2d` and one `{"point": [y, x], "occluded": bool}` per keypoint, normalized to 0-1000, or `null` for a keypoint outside the image. `predictions` holds keypoint detections, in the format of keypoint models in both data representations: a visible keypoint gets confidence 1.0, an occluded one (position estimated) 0.5, and a keypoint the model could not place is left out of its instance. Instances get confidence 1.0. Code execution is refused for this task.
+- OpenAI v7 (`roboflow_core/open_ai@v7`) gains the same `keypoint-detection` task, with the same `classes` and `keypoint_schema` inputs and the same predictions. Strict structured outputs have the model return each instance's `box_2d` and one `{"x": int, "y": int, "occluded": bool}` per keypoint, in absolute pixels of the uploaded image, or `null` for a keypoint outside the image. As for `instance-segmentation`, the image is uploaded at its original resolution as JPEG with the `image_detail` hint, and an unset `model_version` runs `gpt-6-astra`.
+- Add Gemini 4 Neon to the Google Gemini v6 block with low, medium, high, xhigh and max thinking levels and instance segmentation.
+- GPT-6.2 Astra and GPT-6.2 Sol in the OpenAI v7 block (`roboflow_core/open_ai@v7`), with `low`, `medium`, `high`, `xhigh`, and `max` reasoning levels and the existing structured absolute-pixel detection format.
+- Qwen 4 Max via OpenRouter in the Qwen v4 block (`roboflow_core/qwen_vlm@v4`), with the `none`, `low`, `high` and `xhigh` reasoning levels.
+
 ### Changed
 
+- The package now requires `inference-models>=0.39.10` and `inference-sdk>=1.8.6`.
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
+
+### Fixed
+
+- Keypoint Visualization (`roboflow_core/keypoint_visualization@v1`) no longer
+  fails the run when its `edges` name a keypoint that no instance has, as when
+  a model left out every keypoint, or the last keypoints of a skeleton, in every
+  instance. Edges to such a keypoint are skipped like edges to any missing
+  keypoint. Its `edges` description now says keypoints are numbered from 1, as
+  supervision requires; `keypoint_schema` edges in the Gemini v6 and OpenAI v7
+  `keypoint-detection` task stay 0-based, and their descriptions say so. The
+  block also draws the `edges` each run gets: its cached annotator kept the
+  first run's edges, so edges from a runtime input that changed between runs
+  were ignored.
+- Mistral Large 4 now defaults to low reasoning and supports medium and high; saved workflows using none send low instead of disabling unsupported reasoning. OpenRouter errors retain upstream messages from metadata.raw on direct and managed-key paths.
 
 ## `0.2.16`
 
@@ -58,10 +111,6 @@ Bundled execution engine: `1.17.2`.
   - `classification` asks one `choice` question over `classes` and `multi-label-classification` one `predicate` per class. Both decode into the classification `predictions` of `roboflow_core/open_ai@v7`, with OpenAI's probabilities as the confidences; a multi-label class is in `predicted_classes` from probability 0.5. `questions` sends the given `predicate`, `choice` and `score` questions, and `predictions` is `None`.
   - `answers` holds OpenAI's answers in question order, next to `error_status` (a refused question or answers that cannot be decoded), `inference_id`, `input_tokens` and `output_tokens`. The optional `prompt` goes with each image as context for every question.
   - An `rf_key:` key goes through Roboflow's `apiproxy/openai/decisions` route; an OpenAI key calls `client.decisions.create`, with prompt caching off since each request carries a different image.
-- OpenAI Decisions Switch block (`roboflow_core/open_ai_decisions_switch@v1`): routes each image to a branch by asking OpenAI's Decisions API one `choice` question over `cases`.
-  - The model always has a "none of these" option. That answer, a probability below `min_confidence` (0.9 by default), a non-finite probability or one outside [0, 1], a refusal or an answer the block cannot read runs `default_next_steps`, or terminates the branch for that image when there are none.
-  - `case_descriptions` tells the model what a case means, and `context` sends values from earlier steps with each image as JSON, per image for batch-oriented values. Nested NumPy arrays and scalars are converted to JSON-compatible lists and values.
-  - Like every flow control block it has no outputs; use the OpenAI Decisions block with Switch Case to keep the probabilities.
 - Databricks SQL Image Source block (`roboflow_core/databricks_sql_image_source@v1`): reads selected columns from a Databricks SQL table or view and emits Workflow images (`images`), optional column-based `image_names`, explicitly selected non-binary `metadata`, and bounded per-row `errors`. The block has no image input and produces batch outputs for downstream blocks such as Roboflow Dataset Upload. Operator guide: `docs/workflows/databricks_sql_image_source.md`.
   - Query interface: `catalog`, `schema_name`, `table`, image/name columns and explicit metadata columns feed a fixed SELECT with native identifier and LIMIT parameters. Arbitrary SQL is not accepted; customers can define filters and joins in Databricks views. Credentials are `server_hostname`, `http_path` and `access_token` (reference a Workflow input or secret); `max_rows`, `timeout_seconds` and `skip_undecodable` control the run.
   - Metadata validation: rows exceeding string, nesting, collection or row-byte limits are skipped and reported through bounded `errors` diagnostics, including when every row is rejected. Accepted metadata is preserved without truncation or deep-container stringification. Success and error outputs use aligned null positions so image consumers skip rejected rows and a separate branch can report errors.

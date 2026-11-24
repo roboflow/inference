@@ -524,6 +524,17 @@ async def test_ensure_loaded_load_timeout_returns_503(fake_handler_entry):
 
 
 @pytest.mark.asyncio
+async def test_ensure_loaded_server_full_returns_503_server_busy(fake_handler_entry):
+    proxy = _mock_proxy()
+    proxy.ensure_loaded = AsyncMock(return_value=("server_full", 1))
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 503
+    assert r.headers["Retry-After"] == "1"
+    assert b"SERVER_BUSY" in r.body
+
+
+@pytest.mark.asyncio
 async def test_ensure_loaded_error_returns_500(fake_handler_entry):
     proxy = _mock_proxy()
     proxy.ensure_loaded = AsyncMock(return_value=("error", "x"))

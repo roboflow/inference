@@ -152,6 +152,10 @@ requires the private caller and deployment-verification adapter. The repository
 manual workflows are now connected to sharding; live rollout still requires
 maintainer review and load/isolation validation.
 
+Repository Actions logs show redacted test results, skips and failure/retry
+details, without per-test duration tables. Actions timestamps and overall
+elapsed time remain visible.
+
 See [PR #3211](https://github.com/roboflow/inference/pull/3211) for the repository
 activation approach, validation and rollout requirements. Timing profiles are
 optional; without them, the four shards use case-count balancing. Rerun the

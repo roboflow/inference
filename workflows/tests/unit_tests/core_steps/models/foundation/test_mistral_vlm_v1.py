@@ -64,9 +64,8 @@ EXPECTED_XYXY = [[200.0, 250.0, 1998.0, 999.0]]
 
 CLASSIFICATION_OUTPUT = '{"class_name": "cat", "confidence": 0.9}'
 
-# Effort names OpenRouter accepts for other models; Mistral Large 4 maps all
-# of them onto the same budget as `high`, so the block refuses them.
-UNEXPOSED_REASONING_LEVELS = ["minimal", "low", "medium", "xhigh"]
+# Effort names not supported by Mistral Large 4.
+UNEXPOSED_REASONING_LEVELS = ["minimal", "xhigh", "max"]
 
 # Minimum extra inputs each task needs to pass manifest validation and build
 # a prompt; `output_structure` / `classes` double as the decode inputs.
@@ -139,7 +138,7 @@ def test_manifest_defaults():
     manifest = _manifest()
 
     assert manifest.model_version == "Mistral Large 4"
-    assert manifest.reasoning_effort == "none"
+    assert manifest.reasoning_effort == "low"
     assert manifest.max_tokens is None
     assert manifest.temperature is None
     assert manifest.api_key == "rf_key:account"
@@ -231,7 +230,7 @@ def test_run_sends_vlm_exam_request_contract(mock_or):
 
     kwargs = mock_or.call_args.kwargs
     assert kwargs["model"] == "mistralai/mistral-large-4-0"
-    assert kwargs["reasoning"] == {"enabled": False}
+    assert kwargs["reasoning"] == {"effort": "low"}
     assert kwargs["max_tokens"] is None
     assert kwargs["temperature"] is None
     assert kwargs["privacy_level"] == "deny"
@@ -243,7 +242,12 @@ def test_run_sends_vlm_exam_request_contract(mock_or):
     assert content[1] == {"type": "text", "text": EXPECTED_DETECTION_PROMPT}
 
 
-EXPECTED_REASONING_CONFIG = {"none": {"enabled": False}, "high": {"effort": "high"}}
+EXPECTED_REASONING_CONFIG = {
+    "none": {"effort": "low"},
+    "low": {"effort": "low"},
+    "medium": {"effort": "medium"},
+    "high": {"effort": "high"},
+}
 
 
 @pytest.mark.parametrize(
