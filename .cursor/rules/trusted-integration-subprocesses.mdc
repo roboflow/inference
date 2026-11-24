@@ -1,0 +1,29 @@
+---
+description: Supervising trusted integration workers
+globs: workflows/roboflow_workflows/**/*.py
+alwaysApply: false
+---
+
+# Trusted integration workers
+
+Reuse `roboflow_workflows.utils.subprocess_supervisor.run_in_subprocess` for
+trusted Python integration workers. The module name must be application-owned,
+never supplied by a Workflow. Pass an absolute monotonic deadline, bounded JSON
+inputs and a result-validation callback. The callback runs before temporary
+files are removed and must validate schema, file type, sizes and allocation
+bounds before loading results. It must check the deadline between bounded work.
+
+Keep destination validation, connector policy, remote cancellation and result
+semantics in the integration. The supervisor owns request serialization, process
+launch, terminate/kill/reap, bounded error reports and temporary cleanup. Secrets
+travel over stdin, never argv; supply them for error redaction too.
+
+This is process isolation for trusted code, not an OS sandbox, a hard RSS cap,
+or proof of remote query cancellation. Only the direct child is terminated.
+Workers that spawn descendants require an explicit process-group/job policy.
+Allow for the documented cleanup interval after the request deadline and size
+memory and temporary storage for concurrent workers.
+
+Test success, launch failure, timeout, a child ignoring termination, cleanup
+after invalid results, bounded requests and errors, and integration-specific
+result validation. Verify that connector hooks never affect the parent.

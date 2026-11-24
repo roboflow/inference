@@ -24,6 +24,7 @@ from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.enterprise.parallel.utils import (
     SUCCESS_STATE,
     SharedMemoryMetadata,
+    _image_to_numpy,
     failure_handler,
     shm_manager,
 )
@@ -50,7 +51,7 @@ def preprocess(request: Dict):
             request.model_id, request
         )
         # multi image requests are split into single image requests upstream and rebatched later
-        image = image[0]
+        image = _image_to_numpy(image[0])
         request.image.value = None  # avoid writing image again since it's in memory
         shm = shared_memory.SharedMemory(create=True, size=image.nbytes)
         with shm_manager(shm):

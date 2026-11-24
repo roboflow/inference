@@ -85,8 +85,9 @@ without a code change here:
 | `PORT` | `9001` | HTTP port (`__main__` dev runner) |
 | `NUM_WORKERS` | `1` | uvicorn worker processes (`__main__` dev runner) |
 | `INFERENCE_GATEWAY` | `direct` | Gateway resolved by `gateway_resolver.resolve_gateway()` |
-| `INFERENCE_PRELOAD_MODELS` | | Comma-separated model IDs loaded unpinned at server startup, two at a time; an entry may carry its own key as `model_id:api_key`. `/readiness` and `/v2/server/ready` report not-ready until the startup loads have finished, whether or not they succeeded |
-| `PINNED_MODELS` | | Comma-separated model IDs loaded at startup like `INFERENCE_PRELOAD_MODELS` but pinned against eviction; same `model_id:api_key` form |
+| `INFERENCE_PRELOAD_MODELS` | | Comma-separated model IDs loaded unpinned at server startup, two at a time; an entry may carry its own key as `model_id:api_key`. `/readiness` and `/v2/server/ready` report not-ready until the startup loads have finished, whether or not these unpinned loads succeeded |
+| `PINNED_MODELS` | | Comma-separated model IDs loaded at startup like `INFERENCE_PRELOAD_MODELS` but pinned against eviction; same `model_id:api_key` form; a failed pinned load is retried every 15 s within `PINNED_PRELOAD_MAX_WAIT_S` while both readiness routes stay not-ready |
+| `PINNED_PRELOAD_MAX_WAIT_S` | `300.0` | Hard cap in seconds on how long startup waits for each `PINNED_MODELS` load, retries included; every attempt's wait is cut to the remaining budget. Afterwards the failure is logged and the server reports ready without that model, and a later on-demand load of it is still pinned; a load still running in the model manager continues in the background and the model is served once it finishes. Keep it below the deployment's startup probe window |
 | `PRELOAD_HF_IDS` | | Comma-separated OWLv2 Hugging Face IDs loaded unpinned at startup as `owlv2/<name>` (the part after the last `/`); readiness does not wait for them |
 | `INFERENCE_DECODER` | `imagecodecs` | Image decoder of the serving workers. `imagecodecs` is CPU decode and matches the legacy server's predictions; `nvjpeg` is opt-in GPU decode and currently changes predictions relative to the legacy server, so parity-gated deployments must not set it |
 | `INFERENCE_LOAD_WAIT_S` | `10.0` | Seconds `ensure_loaded()` waits before reporting a load timeout |
@@ -97,6 +98,9 @@ without a code change here:
 | `ENABLE_CONTROL_PLANE_ROUTES` | `false` | Enables model list/load/unload and server info/metrics routes; they accept any valid key without workspace scoping |
 | `INFERENCE_MAX_ACTIVE_MODELS` | `8` | Max concurrently loaded models (direct gateway); LRU drain-unload on overflow, `<=0` unbounded |
 | `INFERENCE_MEMORY_FREE_THRESHOLD` | `0` | Free-VRAM fraction below which loads evict LRU models first; `0` off |
+| `INFERENCE_UNSERVED_MODEL_GRACE_S` | `30.0` | Seconds a freshly loaded model is spared from LRU eviction until its first request runs (models with a queued first request, plus the newest model not yet requested); `0` off. Keep it longer than the expected client retry interval |
+| `INFERENCE_MAX_INFLIGHT_PER_MODEL` | `0` | Max concurrent in-flight requests per model (excess waits without holding a worker thread); set e.g. `4` when slow models (e.g. VLMs) share the pool with fast ones; `0` off |
+| `INFERENCE_DIRECT_MAX_WORKERS` | `8` | Threads in the pool shared by all direct-backend models; with the in-flight cap off, slow models (e.g. VLMs) can hold every thread |
 | `PRELOAD_API_KEY` | `ROBOFLOW_API_KEY` | API key for `INFERENCE_PRELOAD_MODELS`, `PINNED_MODELS` and `PRELOAD_HF_IDS` startup loads when an entry carries no key of its own |
 | `MAX_INFERENCE_MODELS_CACHE_SIZE_MB` | `-1` | Disk cache watchdog size cap; `-1` off |
 | `INFERENCE_MODELS_CACHE_WATCHDOG_INTERVAL_MINUTES` | `60` | Disk cache watchdog interval |

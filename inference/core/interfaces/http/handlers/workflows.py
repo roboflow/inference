@@ -2,6 +2,7 @@
 import copy
 from typing import Any, List, Optional
 
+from fastapi import BackgroundTasks
 from roboflow_workflows.execution_engine.introspection.workload import (
     describe_workflow_workload,
 )
@@ -124,6 +125,30 @@ def _get_air_gapped_info_for_block(
         available=True,
         compatible_task_types=task_types,
     )
+
+
+def schedule_execution_engine_close(
+    execution_engine: Any,
+    background_tasks: Optional[BackgroundTasks],
+) -> None:
+    """Close a per-request execution engine once the response has been sent.
+
+    Blocks may hold resources between runs (an OPC UA Reader's session and thread, for
+    example) that would otherwise wait for garbage collection. The close is queued as
+    the last background task, after the fire-and-forget sink tasks the run queued, so
+    those still find their blocks open. Without background tasks (the hosted platform)
+    nothing is scheduled and garbage collection releases the blocks as before.
+
+    Args:
+        execution_engine: The engine the request built and ran.
+        background_tasks: The request's background tasks, or None.
+    """
+    if background_tasks is None:
+        return None
+
+    close_execution_engine = getattr(execution_engine, "close", None)
+    if callable(close_execution_engine):
+        background_tasks.add_task(close_execution_engine)
 
 
 def handle_describe_workflow_workload(

@@ -105,6 +105,10 @@ INTERNAL_ERROR = {"message": "Internal error."}
 REGISTRY_UNREACHABLE = {"message": "Internal error. Could not connect to Roboflow API."}
 REGISTRY_REQUEST_FAILED = {"message": "Internal error. Request to Roboflow API failed."}
 REGISTRY_TIMEOUT = {"message": "Timeout when attempting to connect to Roboflow API."}
+VLLM_UNAVAILABLE = {
+    "message": "Model serving backend is temporarily unavailable - retry request."
+}
+VLLM_TIMEOUT = {"message": "Timed out waiting for the model serving backend."}
 
 
 def _jpeg_b64():
@@ -499,7 +503,13 @@ LEGACY_MATRIX = [
     ),
     pytest.param(VLLMProxyError("x"), 500, INTERNAL_ERROR, id="vllm-proxy"),
     pytest.param(
-        VLLMConnectionError("refused"), 500, INTERNAL_ERROR, id="vllm-connection"
+        VLLMConnectionError("refused"), 503, VLLM_UNAVAILABLE, id="vllm-connection"
+    ),
+    pytest.param(
+        VLLMConnectionError("timed out", status_code=504),
+        504,
+        VLLM_TIMEOUT,
+        id="vllm-connection-timeout",
     ),
     pytest.param(
         VLLMHTTPError("bad gateway", 502, "body"),

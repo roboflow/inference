@@ -67,6 +67,38 @@ def parse_model_type(config_path: str) -> str:
         ) from error
 
 
+def parse_num_queries(config_path: str) -> Optional[int]:
+    """The decoder query count the package was trained with, if it records one.
+
+    `model_type.json` may carry `num_queries` next to `model_type` when the model
+    was trained with a query count other than its variant's default; the query
+    embeddings in the weights are sized by it. Absent means the variant default.
+    """
+    try:
+        parsed_config = read_json(path=config_path)
+        if not isinstance(parsed_config, dict):
+            raise ValueError(
+                f"decoded value is {type(parsed_config)}, but dictionary expected"
+            )
+        num_queries = parsed_config.get("num_queries")
+        if num_queries is None:
+            return None
+        # bool is an int subclass; `true` is not a query count.
+        if isinstance(num_queries, bool) or not isinstance(num_queries, int):
+            raise ValueError("'num_queries' field is not an integer")
+        if num_queries < 1:
+            raise ValueError("'num_queries' field must be positive")
+        return num_queries
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            message=f"Model type config file is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs.",
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        ) from error
+
+
 def post_process_object_detection_results(
     bboxes: torch.Tensor,
     logits: torch.Tensor,

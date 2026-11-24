@@ -1,9 +1,9 @@
 """Google Gemini workflow block (v6).
 
-Extends v5 by decoding the model answer inside the block: object-detection
-and classification answers are turned into workflow ``predictions`` next to
-the raw ``output`` string, so no separate "VLM as Detector" / "VLM as
-Classifier" formatter step is needed.
+Extends v5 by decoding the model answer inside the block: object-detection,
+instance-segmentation, keypoint-detection and classification answers are
+turned into workflow ``predictions`` next to the raw ``output`` string, so no
+separate "VLM as Detector" / "VLM as Classifier" formatter step is needed.
 
 The object-detection contract is unchanged from v5: Gemini is asked for its
 native ``box_2d`` boxes as ``[y_min, x_min, y_max, x_max]`` integers
@@ -44,6 +44,32 @@ from roboflow_workflows.core_steps.common.vlm_decoding.argon_segmentation import
     ARGON_SEGMENTATION_SCHEMA,
     decode_argon_segmentations,
 )
+from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
+    KEYPOINT_DETECTION_TASK,
+    KEYPOINT_SCHEMA_DESCRIPTION,
+    KEYPOINT_SCHEMA_EXAMPLE,
+    OCCLUDED_KEYPOINT_CONFIDENCE,
+    VISIBLE_KEYPOINT_CONFIDENCE,
+    KeypointSchema,
+    KeypointSkeleton,
+    build_keypoint_detection_prompt,
+    build_keypoint_response_schema,
+    decode_keypoint_detections,
+    resolve_keypoint_skeletons,
+)
+from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    MAX_REFERENCE_EXAMPLES,
+    REFERENCE_EXAMPLES_DESCRIPTION,
+    REFERENCE_EXAMPLES_EXAMPLE,
+    REFERENCE_EXAMPLES_TASK,
+    SHARED_REFERENCE_PARTS_CACHE,
+    TARGET_IMAGE_INTRO,
+    ReferenceExamples,
+    ReferencePartsCache,
+    gemini_reference_parts_for,
+    validate_reference_examples,
+    with_reference_parts,
+)
 from roboflow_workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from roboflow_workflows.environment import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
@@ -55,6 +81,7 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    DICTIONARY_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -98,6 +125,24 @@ MODEL_ALIASES = {
 # `minimal`. 2.5 pages contradict (`thinking_level` vs `thinking_budget` only);
 # we keep 2.5 unsupported.
 GEMINI_MODELS = [
+    {
+        "id": "gemini-4-hydrogen",
+        "name": "Gemini 4 Hydrogen",
+        "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
+        "supports_native_code_execution": False,
+    },
+    {
+        "id": "gemini-4-carbon",
+        "name": "Gemini 4 Carbon",
+        "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
+        "supports_native_code_execution": False,
+    },
+    {
+        "id": "gemini-4-neon",
+        "name": "Gemini 4 Neon",
+        "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
+        "supports_native_code_execution": False,
+    },
     {
         "id": "gemini-4-argon",
         "name": "Gemini 4 Argon",
@@ -172,6 +217,13 @@ GEMINI_MODELS = [
     },
 ]
 
+SEGMENTATION_MODEL_IDS = {
+    "gemini-4-argon",
+    "gemini-4-carbon",
+    "gemini-4-hydrogen",
+    "gemini-4-neon",
+}
+
 MODEL_VERSION_IDS = [model["id"] for model in GEMINI_MODELS]
 
 MODEL_THINKING_LEVELS = {
@@ -193,7 +245,7 @@ MODELS_NOT_SUPPORTING_THINKING_LEVEL = [
     model["id"] for model in GEMINI_MODELS if not model["thinking_levels"]
 ]
 
-THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high"]
+THINKING_LEVEL_VALUES = ["minimal", "low", "medium", "high", "xhigh", "max"]
 
 DETECTION_BOX_FORMAT = "yxyx_0_1000"
 """Box coordinate contract requested from Gemini for object detection.
@@ -214,6 +266,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     "detailed-caption",
     "object-detection",
     "instance-segmentation",
+    KEYPOINT_DETECTION_TASK,
 ]
 SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 
@@ -228,7 +281,7 @@ RELEVANT_TASKS_METADATA["object-detection"] = {
 }
 RELEVANT_TASKS_METADATA["instance-segmentation"] = {
     "name": "Instance Segmentation",
-    "description": "Gemini 4 Argon only: predict masks with detached components and holes, decoded to RLE predictions.",
+    "description": "Gemini 4 Argon, Gemini 4 Carbon and Gemini 4 Hydrogen only: predict masks with detached components and holes, decoded to RLE predictions.",
 }
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -244,17 +297,30 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 ## Version Differences
 
-Instance segmentation is available only for `gemini-4-argon`. It uses lossless PNG
+Instance segmentation is available for supported Gemini 4 models. It uses lossless PNG
 images up to 1600 pixels on the long edge and normalized YX polygons with
 detached components and holes. Predictions use RLE masks; bounding boxes are
 derived from the masks. Other Gemini models reject this task.
+
+Keypoint detection takes the skeleton of every class in `keypoint_schema`: its
+keypoint names, the edges between them and, optionally, where each keypoint sits
+on a reference instance. Its edges are 0-based indices into the keypoint names,
+while Keypoint Visualization numbers keypoints from 1 in its `edges`, so add 1 to
+each index to draw the skeleton with that block. A response schema has Gemini
+return each instance's `box_2d` and one `[y, x]` point per keypoint, normalized
+to 0-1000, or null for a keypoint outside the image. Predictions are keypoint
+detections: a keypoint the model sees gets confidence
+{VISIBLE_KEYPOINT_CONFIDENCE}, one it marks occluded (hidden, its position
+estimated) {OCCLUDED_KEYPOINT_CONFIDENCE}, and one it could not place is left
+out.
 
 This version (v6) decodes the model answer inside the block, adding
 `predictions`, `error_status` and `inference_id` outputs next to the raw
 `output` string:
 
 * `predictions` holds object detections for `object-detection`, RLE instance
-masks for `instance-segmentation`, and a classification prediction for `classification` /
+masks for `instance-segmentation`, keypoint detections for `keypoint-detection`,
+and a classification prediction for `classification` /
 `multi-label-classification` tasks - the kind of the output follows the
 selected task type.
 * `predictions` is `None` for every other task (unconstrained prompting, OCR,
@@ -264,6 +330,20 @@ captioning, structured answering, visual question answering).
 
 Separate `roboflow_core/vlm_as_detector@v2` and
 `roboflow_core/vlm_as_classifier@v2` steps are no longer needed.
+
+### Reference examples
+
+For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
+labeled example images. The block draws each example's boxes and labels on the
+image (longest edge 1024 pixels) and sends the examples before the image to label,
+so Gemini sees what each class looks like and how tightly it is boxed. Box every
+object of the listed classes in each example. The examples go with every image, so
+they add input tokens to each request; they come first, so the provider can cache
+them across a batch. Without examples the request is unchanged.
+
+A selector can provide the whole list, such as `$inputs.reference_examples`, but
+selectors inside an example are not resolved: to build the examples from a step's
+predictions, that step has to output the list in this format.
 
 ### API Key Options
 
@@ -296,6 +376,11 @@ TASKS_REQUIRING_CLASSES = {
     "multi-label-classification",
     "object-detection",
     "instance-segmentation",
+    KEYPOINT_DETECTION_TASK,
+}
+
+TASKS_REQUIRING_KEYPOINT_SCHEMA = {
+    KEYPOINT_DETECTION_TASK,
 }
 
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
@@ -374,6 +459,36 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
+    keypoint_schema: Optional[
+        Union[Selector(kind=[DICTIONARY_KIND]), KeypointSchema]
+    ] = Field(
+        default=None,
+        description=KEYPOINT_SCHEMA_DESCRIPTION,
+        examples=[KEYPOINT_SCHEMA_EXAMPLE, "$inputs.keypoint_schema"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_KEYPOINT_SCHEMA,
+                    "required": True,
+                },
+            },
+        },
+    )
+    reference_examples: Optional[
+        Union[Selector(kind=[LIST_OF_VALUES_KIND]), ReferenceExamples]
+    ] = Field(
+        default=None,
+        description=REFERENCE_EXAMPLES_DESCRIPTION,
+        examples=[REFERENCE_EXAMPLES_EXAMPLE, "$inputs.reference_examples"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "required": False,
+                },
+            },
+        },
+    )
     api_key: Union[
         Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
     ] = Field(
@@ -400,14 +515,10 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ] = Field(
         default=None,
-        description="Controls the depth of internal reasoning for Gemini 3+ models. "
-        "'minimal' matches no-thinking for most queries, 'low' minimizes latency and cost, "
-        "'medium' balances both, 'high' maximizes reasoning depth. Supported values differ "
-        "per model (see the model dropdown): Gemini 3.1 Pro and Gemini 3.7/3.8 Flash have "
-        "no 'minimal'; Gemini 3.1 Pro also cannot disable thinking. When unset, the Google "
-        "API default for the selected model is used (e.g. 'high' for Gemini 3.1 Pro, "
-        "'medium' for Gemini 3.5/3.6 Flash). "
-        "Not supported by the Gemini 2.5 series.",
+        description="Controls the depth of internal reasoning. Higher levels allow more "
+        "reasoning at the cost of latency and tokens. Supported values differ per "
+        "model (see the model dropdown). When unset, the Google API default for "
+        "the selected model is used. Not supported by the Gemini 2.5 series.",
         json_schema_extra={
             "relevant_for": {
                 "model_version": {
@@ -471,12 +582,10 @@ class BlockManifest(WorkflowBlockManifest):
     def validate(self) -> "BlockManifest":
         if (
             self.task_type == "instance-segmentation"
-            and self.model_version != "gemini-4-argon"
+            and self.model_version not in SEGMENTATION_MODEL_IDS
             and not self.model_version.startswith("$")
         ):
-            raise ValueError(
-                "Instance segmentation is supported only for gemini-4-argon"
-            )
+            raise ValueError("Instance segmentation is not supported for this model")
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(
                 f"`prompt` parameter required to be set for task `{self.task_type}`"
@@ -491,6 +600,34 @@ class BlockManifest(WorkflowBlockManifest):
         ):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
+            )
+        if (
+            self.task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA
+            and self.keypoint_schema is None
+        ):
+            raise ValueError(
+                f"`keypoint_schema` parameter required to be set for task `{self.task_type}`"
+            )
+        if self.task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA and isinstance(
+            self.keypoint_schema, dict
+        ):
+            resolve_keypoint_skeletons(
+                self.keypoint_schema,
+                classes=self.classes if isinstance(self.classes, list) else None,
+            )
+        if (
+            self.task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA
+            and self.google_code_execution is True
+        ):
+            raise ValueError(
+                f"`google_code_execution` is not supported for task `{self.task_type}`, "
+                "whose answer follows a JSON response schema"
+            )
+        if isinstance(self.reference_examples, list):
+            validate_reference_examples(
+                self.reference_examples,
+                task_type=self.task_type,
+                labels=self.classes if isinstance(self.classes, list) else None,
             )
         validate_reasoning_level(
             model=self.model_version,
@@ -558,6 +695,7 @@ class GoogleGeminiBlockV6(WorkflowBlock):
     ):
         self._api_key = api_key
         self._platform_client = platform_client
+        self._reference_parts_cache = SHARED_REFERENCE_PARTS_CACHE
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -585,8 +723,15 @@ class GoogleGeminiBlockV6(WorkflowBlock):
         google_code_execution: Optional[bool],
         max_concurrent_requests: Optional[int],
         api_key: str = "rf_key:account",
+        reference_examples: Optional[List[Any]] = None,
+        keypoint_schema: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
+        keypoint_skeletons = (
+            resolve_keypoint_skeletons(keypoint_schema, classes=classes)
+            if task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA
+            else None
+        )
         raw_outputs = run_gemini_prompting(
             platform_client=self._platform_client,
             roboflow_api_key=self._api_key,
@@ -602,6 +747,9 @@ class GoogleGeminiBlockV6(WorkflowBlock):
             thinking_level=thinking_level,
             google_code_execution=google_code_execution,
             max_concurrent_requests=max_concurrent_requests,
+            reference_examples=reference_examples,
+            reference_parts_cache=self._reference_parts_cache,
+            keypoint_schema=keypoint_skeletons,
         )
         results = []
         for image, (content, input_tokens, output_tokens) in zip(images, raw_outputs):
@@ -610,6 +758,14 @@ class GoogleGeminiBlockV6(WorkflowBlock):
                 error_status, predictions = decode_argon_segmentations(
                     content,
                     image=image,
+                    classes=classes,
+                    inference_id=inference_id,
+                )
+            elif task_type == KEYPOINT_DETECTION_TASK:
+                error_status, predictions = decode_keypoint_detections(
+                    content,
+                    image=image,
+                    skeletons=keypoint_skeletons,
                     classes=classes,
                     inference_id=inference_id,
                 )
@@ -651,15 +807,37 @@ def run_gemini_prompting(
     thinking_level: Optional[str],
     google_code_execution: Optional[bool],
     max_concurrent_requests: Optional[int],
+    reference_examples: Optional[List[Any]] = None,
+    reference_parts_cache: Optional[ReferencePartsCache] = None,
+    keypoint_schema: Optional[Dict[str, Any]] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
-    if task_type == "instance-segmentation" and model_version != "gemini-4-argon":
-        raise ValueError("Instance segmentation is supported only for gemini-4-argon")
+    if (
+        task_type == "instance-segmentation"
+        and model_version not in SEGMENTATION_MODEL_IDS
+    ):
+        raise ValueError("Instance segmentation is not supported for this model")
     if task_type == "instance-segmentation" and google_code_execution:
         raise ValueError(
             "Code execution is not supported with segmentation JSON output"
         )
+    if task_type == KEYPOINT_DETECTION_TASK and google_code_execution:
+        raise ValueError("Code execution is not supported with keypoint JSON output")
+    keypoint_skeletons = (
+        resolve_keypoint_skeletons(keypoint_schema, classes=classes)
+        if task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA
+        else None
+    )
+    reference_parts = []
+    if reference_examples:
+        validate_reference_examples(
+            reference_examples, task_type=task_type, labels=classes
+        )
+        reference_parts = gemini_reference_parts_for(
+            reference_examples, labels=classes, cache=reference_parts_cache
+        )
+
     gemini_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
@@ -682,7 +860,15 @@ def run_gemini_prompting(
             temperature=temperature,
             thinking_level=thinking_level,
             max_tokens=max_tokens,
+            keypoint_skeletons=keypoint_skeletons,
         )
+        if reference_parts:
+            generated_prompt["contents"]["parts"] = with_reference_parts(
+                generated_prompt["contents"]["parts"],
+                reference_parts=reference_parts,
+                target_intro={"text": TARGET_IMAGE_INTRO},
+                is_image_part=lambda part: "inline_data" in part,
+            )
 
         if (
             google_code_execution
@@ -1229,12 +1415,12 @@ def prepare_instance_segmentation_prompt(
     max_tokens: Optional[int],
     **kwargs,
 ) -> dict:
-    """Build an Argon-only structured request for components and holes.
+    """Build a structured request for components and holes.
 
     Args:
         base64_image (str): Lossless PNG image encoded as base64.
         classes (List[str]): Allowed instance labels.
-        model_version (str): Must be gemini-4-argon.
+        model_version (str): A model in SEGMENTATION_MODEL_IDS.
         temperature (Optional[float]): Sampling temperature.
         thinking_level (Optional[str]): Model reasoning level.
         max_tokens (Optional[int]): Output token budget.
@@ -1246,8 +1432,8 @@ def prepare_instance_segmentation_prompt(
     Raises:
         ValueError: If model or classes do not support segmentation.
     """
-    if model_version != "gemini-4-argon" or not classes:
-        raise ValueError("Argon segmentation requires gemini-4-argon and classes")
+    if model_version not in SEGMENTATION_MODEL_IDS or not classes:
+        raise ValueError("Segmentation requires a supported model and classes")
 
     config = prepare_generation_config(
         max_tokens=max_tokens,
@@ -1273,6 +1459,68 @@ def prepare_instance_segmentation_prompt(
         },
         "generationConfig": config,
     }
+    return payload
+
+
+def prepare_keypoint_detection_prompt(
+    base64_image: str,
+    keypoint_skeletons: Dict[str, KeypointSkeleton],
+    model_version: str,
+    temperature: Optional[float],
+    thinking_level: Optional[str],
+    max_tokens: Optional[int],
+    **kwargs,
+) -> dict:
+    """Build a keypoint request whose answer a response schema constrains.
+
+    Args:
+        base64_image (str): JPEG image encoded as base64.
+        keypoint_skeletons (Dict[str, KeypointSkeleton]): The skeleton of each class
+            to detect, as ``resolve_keypoint_skeletons`` returns them.
+        model_version (str): Gemini model to run.
+        temperature (Optional[float]): Sampling temperature.
+        thinking_level (Optional[str]): Model reasoning level.
+        max_tokens (Optional[int]): Output token budget.
+        **kwargs: Unused shared prompt-builder arguments.
+
+    Returns:
+        dict: Gemini generateContent payload with one list of instances per class in
+            its response schema.
+
+    Raises:
+        ValueError: If no skeleton is given.
+    """
+    if not keypoint_skeletons:
+        raise ValueError("Keypoint detection requires the skeleton of each class")
+
+    generation_config = prepare_generation_config(
+        max_tokens=max_tokens,
+        temperature=temperature,
+        thinking_level=thinking_level,
+        model_version=model_version,
+        response_mime_type="application/json",
+    )
+    generation_config["response_schema"] = build_keypoint_response_schema(
+        keypoint_skeletons
+    )
+    payload = {
+        "contents": {
+            "parts": [
+                {
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": base64_image,
+                    }
+                },
+                {
+                    "text": build_keypoint_detection_prompt(keypoint_skeletons),
+                },
+            ],
+            "role": "user",
+        },
+        "generationConfig": generation_config,
+    }
+
     return payload
 
 
@@ -1336,4 +1584,5 @@ PROMPT_BUILDERS = {
     "structured-answering": prepare_structured_answering_prompt,
     "object-detection": prepare_object_detection_prompt,
     "instance-segmentation": prepare_instance_segmentation_prompt,
+    KEYPOINT_DETECTION_TASK: prepare_keypoint_detection_prompt,
 }

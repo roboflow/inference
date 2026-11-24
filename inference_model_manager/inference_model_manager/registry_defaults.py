@@ -188,8 +188,16 @@ _P_SAM_SEGMENT = _p(
 _P_SAM2_SEGMENT = _p(
     _P_SAM_SEGMENT_COMMON,
     {
-        "load_from_mask_input_cache": {"type": "bool", "required": False, "default": False},
-        "save_to_mask_input_cache": {"type": "bool", "required": False, "default": False},
+        "load_from_mask_input_cache": {
+            "type": "bool",
+            "required": False,
+            "default": False,
+        },
+        "save_to_mask_input_cache": {
+            "type": "bool",
+            "required": False,
+            "default": False,
+        },
     },
 )
 
@@ -413,6 +421,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             _p(
                 _P_IMAGES,
                 {"include_anomaly_map": {"type": "bool", "required": False}},
+                _P_CONFIDENCE,
                 _K_PREPROC,
             ),
             "validate_images_required",
@@ -639,7 +648,13 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             True,
             _p(
                 _P_VLM_PROMPT,
-                {"enable_thinking": {"type": "bool", "required": False, "default": False}},
+                {
+                    "enable_thinking": {
+                        "type": "bool",
+                        "required": False,
+                        "default": False,
+                    }
+                },
             ),
             "validate_images_and_prompt",
             "serialize_text",
@@ -653,7 +668,13 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             True,
             _p(
                 _P_VLM_PROMPT,
-                {"images_to_single_prompt": {"type": "bool", "required": False, "default": True}},
+                {
+                    "images_to_single_prompt": {
+                        "type": "bool",
+                        "required": False,
+                        "default": True,
+                    }
+                },
             ),
             "validate_images_and_prompt",
             "serialize_text",
@@ -677,7 +698,11 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "caption",
             "caption_image",
             True,
-            _p(_P_IMAGES, {"granularity": {"type": "str", "required": False}}, _P_MAX_NEW_TOKENS),
+            _p(
+                _P_IMAGES,
+                {"granularity": {"type": "str", "required": False}},
+                _P_MAX_NEW_TOKENS,
+            ),
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
@@ -829,7 +854,11 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "caption",
             "caption",
             True,
-            _p(_P_IMAGES, {"length": {"type": "str", "required": False}}, _P_MAX_NEW_TOKENS),
+            _p(
+                _P_IMAGES,
+                {"length": {"type": "str", "required": False}},
+                _P_MAX_NEW_TOKENS,
+            ),
             "validate_images_required",
             "serialize_text",
             "roboflow-text-v1",
@@ -921,8 +950,16 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
                 "image": {"type": "image", "required": True},
                 "bboxes": {"type": "list", "required": True},
                 "state_dict": {"type": "dict", "required": False},
-                "clear_old_points": {"type": "bool", "required": False, "default": True},
-                "normalize_coords": {"type": "bool", "required": False, "default": True},
+                "clear_old_points": {
+                    "type": "bool",
+                    "required": False,
+                    "default": True,
+                },
+                "normalize_coords": {
+                    "type": "bool",
+                    "required": False,
+                    "default": True,
+                },
                 "frame_idx": {"type": "int", "required": False, "default": 0},
             },
             "validate_passthrough",
@@ -1074,9 +1111,16 @@ def lazy_register_by_names(mro_names: list[str]) -> None:
                 continue
             placeholder = type(name, (), {})
             for cfg in config:
-                action_name, method, default, params, val_name, ser_name, resp_type, aliases = (
-                    _unpack_config(cfg)
-                )
+                (
+                    action_name,
+                    method,
+                    default,
+                    params,
+                    val_name,
+                    ser_name,
+                    resp_type,
+                    aliases,
+                ) = _unpack_config(cfg)
                 registry.register(
                     placeholder,
                     action_name,

@@ -9,7 +9,8 @@ fastapi>=0.134,<0.142  # be careful with upper pin - fastapi might remove suppor
 numpy>=2.0.0,<2.4.0
 opencv-python>=4.8.1.78,<4.13.0
 opencv-contrib-python>=4.8.1.78,<4.13.0  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
-pillow>=12.3.0,<13.0.0
+pillow>=12.3.0,<13.0.0; python_version < "3.11"
+pillow>=13.0.0,<14.0.0; python_version >= "3.11"
 prometheus-fastapi-instrumentator<=6.0.0
 psutil>=7.0.0
 redis~=5.0.0
@@ -20,11 +21,11 @@ pybase64~=1.0.0
 scikit-image>=0.19.0,<=0.25.2
 requests-toolbelt~=1.0.0
 wheel>=0.38.1,<=0.45.1
-setuptools>=83.0.0  # lack of upper-bound to ensure compatibility with Google Colab (builds to define one if needed)
+setuptools>=84.1.0  # lack of upper-bound to ensure compatibility with Google Colab (builds to define one if needed)
 networkx>=3.0.0,<4.0.0
 pydantic>=2.8.0,<2.12.0
 pydantic-settings<2.8
-openai>=1.17.0,<2.0.0
+openai>=3.32.0,<4.0.0
 structlog>=24.1.0,<25.0.0
 zxing-cpp~=2.2.0; python_version < "3.13"
 zxing-cpp==2.3.0; python_version >= "3.13"

@@ -48,6 +48,7 @@ from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1_tensor import
     TensorNativePrediction,
     _build_event_data,
     _convert_predictions_to_annotations,
+    _normalize_value_base_units,
 )
 from roboflow_workflows.environment import ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE
 from roboflow_workflows.execution_engine.entities.base import (
@@ -344,6 +345,23 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
+    # --- Event value (shared across schemas) ---
+    value_base_units: Optional[
+        Union[Selector(kind=[INTEGER_KIND, FLOAT_KIND]), int]
+    ] = Field(
+        default=None,
+        title="Event Value",
+        description="What this event is worth, in base units of the use case's "
+        "currency, e.g. cents for USD (1999 = $19.99). The currency always comes "
+        "from the use case. Leave empty to use the use case's default value, if it "
+        "has one. Negative values record a cost. A typed value or workflow input "
+        "must be a whole number; a value from another step is rounded to the "
+        "nearest base unit. Values outside -10,000,000,000 to 10,000,000,000 are "
+        "ignored.",
+        examples=[1999, "$steps.expression.output"],
+        json_schema_extra={"relevant_for": ALL_DATA_SCHEMAS_RELEVANT},
+    )
+
     # --- Quality Check fields ---
     qc_result: Optional[
         Union[Selector(kind=[STRING_KIND]), Literal["pass", "fail"]]
@@ -488,6 +506,15 @@ class BlockManifest(WorkflowBlockManifest):
     def ensure_file_name_is_safe(cls, value: Any) -> Any:
         if isinstance(value, str) and not is_workflow_selector(value):
             validate_bundle_file_name(value)
+        return value
+
+    @field_validator("value_base_units", mode="before")
+    @classmethod
+    def reject_boolean_value_base_units(cls, value: Any) -> Any:
+        # Lax int validation would turn true/false into 1/0 and record a value (or
+        # replace the use case default with 0) instead of rejecting the mistake.
+        if isinstance(value, bool):
+            raise ValueError("value_base_units must be a number, not true or false")
         return value
 
     @classmethod
@@ -648,6 +675,7 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
         # Appended last on purpose: inserting it earlier would silently
         # rebind any positional caller's event-data arguments.
         file_name: Optional[str] = None,
+        value_base_units: Optional[Union[int, float]] = None,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -731,6 +759,13 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
             related_event_id=related_event_id,
             feedback=feedback,
         )
+        # Operator feedback never carries a value. The cloud and the local event store
+        # drop one too, but omitting it here holds for every destination and version.
+        value_base_units = (
+            None
+            if event_type == "operator_feedback"
+            else _normalize_value_base_units(value_base_units)
+        )
         task = partial(
             _write_event_bundle,
             target_directory=target_directory,
@@ -744,6 +779,7 @@ class VisionEventBundleSinkBlockV1(WorkflowBlock):
             solution=solution,
             event_data=event_data,
             custom_metadata=custom_metadata,
+            value_base_units=value_base_units,
         )
 
         self._last_event_fired = datetime.now()
@@ -914,6 +950,7 @@ def _write_event_bundle(
     solution: Optional[str],
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    value_base_units: Optional[int] = None,
 ) -> Tuple[bool, str, str, str]:
     try:
         annotations = _cap_annotation_lists(
@@ -946,6 +983,7 @@ def _write_event_bundle(
             images=[image_entry] if image_entry else [],
             event_data=event_data,
             custom_metadata=custom_metadata,
+            value_base_units=value_base_units,
         )
 
         tar_bytes = _build_tar_bytes(
@@ -980,6 +1018,7 @@ def _build_bundle_payload(
     images: List[dict],
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    value_base_units: Optional[int] = None,
 ) -> dict:
     payload: Dict[str, Any] = {
         "bundleFormatVersion": BUNDLE_FORMAT_VERSION,
@@ -994,6 +1033,8 @@ def _build_bundle_payload(
         payload["eventData"] = event_data
     if custom_metadata:
         payload["customMetadata"] = custom_metadata
+    if value_base_units is not None:
+        payload["valueBaseUnits"] = value_base_units
     # Output image is at position 0 (first in images array), always display it
     if len(images) > 0:
         payload["displayImagePosition"] = 0

@@ -8,6 +8,17 @@ from roboflow_workflows.core_steps.transformations.bounding_rect.v1 import (
 )
 
 
+def _assert_rectangle_matches(actual: np.ndarray, expected: np.ndarray) -> None:
+    # The starting corner and winding do not change the rectangle. Require a
+    # cyclic traversal of the expected corners, rather than an unordered set.
+    assert actual.shape == expected.shape == (4, 2)
+    assert any(
+        np.allclose(actual, np.roll(vertices, shift, axis=0))
+        for vertices in (expected, expected[::-1])
+        for shift in range(4)
+    ), f"Expected rectangle {expected}, but got {actual}"
+
+
 def test_calculate_minimum_bounding_rectangle():
     # given
     polygon = np.array([[10, 10], [10, 1], [20, 1], [20, 10], [15, 5]])
@@ -20,9 +31,7 @@ def test_calculate_minimum_bounding_rectangle():
 
     # then
     expected_box = np.array([[10, 1], [20, 1], [20, 10], [10, 10]])
-    assert np.allclose(
-        box, expected_box
-    ), f"Expected bounding box to be {expected_box}, but got {box}"
+    _assert_rectangle_matches(actual=box, expected=expected_box)
     assert np.isclose(width, 9), f"Expected width to be 9, but got {width}"
     assert np.isclose(height, 10), f"Expected height to be 10, but got {height}"
     assert (
@@ -73,10 +82,10 @@ def test_bounding_box_block() -> None:
     assert "detections_with_rect" in output
     assert output["detections_with_rect"].data["height"][0] == 90
     assert output["detections_with_rect"].data["width"][0] == 90
-    assert output["detections_with_rect"].data["angle"][0] == 90
-    np.allclose(
-        np.array([[10, 10], [10, 100], [100, 100], [100, 10]]),
-        output["detections_with_rect"].data["rect"][0],
+    assert np.isclose(abs(output["detections_with_rect"].data["angle"][0]), 90)
+    _assert_rectangle_matches(
+        actual=output["detections_with_rect"].data["rect"][0],
+        expected=np.array([[10, 10], [10, 100], [100, 100], [100, 10]]),
     )
     # check if the image is modified
     assert detections != output["detections_with_rect"]
@@ -131,7 +140,11 @@ def test_bounding_box_block_drops_stale_host_mirror_tensor_native() -> None:
     assert result_meta["detection_id"] == "abc", "Non-mirror keys must be kept"
     assert result_meta["height"] == 90
     assert result_meta["width"] == 90
-    assert result_meta["angle"] == 90
+    assert np.isclose(abs(result_meta["angle"]), 90)
+    _assert_rectangle_matches(
+        actual=np.asarray(result_meta["rect"]),
+        expected=np.array([[10, 10], [10, 100], [100, 100], [100, 10]]),
+    )
     assert output["detections_with_rect"].xyxy[0].tolist() == [10, 10, 100, 100]
     # the caller-shared input dict must not be mutated by the strip
     assert all(key in input_meta for key in HOST_MIRROR_KEYS)

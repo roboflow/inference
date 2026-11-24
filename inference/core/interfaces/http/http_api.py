@@ -164,6 +164,7 @@ from inference.core.env import (
     API_BASE_URL,
     API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
+    CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT,
     CONFIDENCE_LOWER_BOUND_OOM_PREVENTION,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
@@ -200,6 +201,7 @@ from inference.core.env import (
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
+    MAX_CONCURRENT_INFERENCE_REQUESTS,
     MAX_INFERENCE_MODELS_CACHE_SIZE_MB,
     METRICS_ENABLED,
     MOONDREAM2_ENABLED,
@@ -267,6 +269,10 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflow_workload,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
+    schedule_execution_engine_close,
+)
+from inference.core.interfaces.http.middlewares.concurrency_limit import (
+    ConcurrencyLimitMiddleware,
 )
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
@@ -367,6 +373,7 @@ from inference.core.utils.depth_encoding import (
 )
 from inference.core.utils.notebooks import start_notebook
 from inference.core.utils.requests import (
+    _redact_credentials,
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
 )
@@ -403,6 +410,7 @@ from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 from inference.usage_tracking.decorator_helpers import (
     non_billable_intent_is_authenticated,
+    request_billing_context_query,
 )
 
 if LAMBDA and not OFFLINE_MODE:
@@ -726,9 +734,15 @@ class HttpInterface(BaseInterface):
             # metadata (_model_request_paths in ModelManagerBase), so a
             # Host-poisoned path would surface in model-info responses.
             token = current_request_path.set(request.scope["path"])
+            # Usage tracking reads the batch rate from here on handlers that
+            # do not bind `request`; it is trusted only with a valid secret.
+            billing_token = request_billing_context_query.set(
+                request.query_params.get("billing_context")
+            )
             try:
                 return await call_next(request)
             finally:
+                request_billing_context_query.reset(billing_token)
                 current_request_path.reset(token)
 
         @app.on_event("shutdown")
@@ -1673,67 +1687,74 @@ class HttpInterface(BaseInterface):
                     workflow_id=workflow_request.workflow_id,
                     step_error_handler=resolve_step_error_handler(),
                 )
-            is_preview = False
-            if hasattr(workflow_request, "is_preview"):
-                is_preview = workflow_request.is_preview
-            # Capture python-block stdout/stderr only when the caller explicitly
-            # opts in via `debug=True` (clients must set the flag - preview runs
-            # do not enable it implicitly).
-            debug_requested = getattr(workflow_request, "debug", False)
-            if debug_requested:
-                # Session state is published via ContextVars; the execution engine
-                # re-binds them inside every worker thread spawned by its
-                # ThreadPoolExecutor (see `safe_execute_step`).
-                debug_ctx = register_debug_session()
-            else:
-                debug_ctx = nullcontext()
-            with debug_ctx as debug_session:
-                try:
-                    workflow_results = execution_engine.run(
-                        runtime_parameters=workflow_request.inputs,
-                        serialize_results=True,
-                        _is_preview=is_preview,
+            try:
+                is_preview = False
+                if hasattr(workflow_request, "is_preview"):
+                    is_preview = workflow_request.is_preview
+                # Capture python-block stdout/stderr only when the caller explicitly
+                # opts in via `debug=True` (clients must set the flag - preview runs
+                # do not enable it implicitly).
+                debug_requested = getattr(workflow_request, "debug", False)
+                if debug_requested:
+                    # Session state is published via ContextVars; the execution engine
+                    # re-binds them inside every worker thread spawned by its
+                    # ThreadPoolExecutor (see `safe_execute_step`).
+                    debug_ctx = register_debug_session()
+                else:
+                    debug_ctx = nullcontext()
+                with debug_ctx as debug_session:
+                    try:
+                        workflow_results = execution_engine.run(
+                            runtime_parameters=workflow_request.inputs,
+                            serialize_results=True,
+                            _is_preview=is_preview,
+                        )
+                    except Exception as error:
+                        # The error response is built outside this route (see
+                        # `with_route_exceptions`), after the session ContextVars
+                        # scope is gone - so carry snapshots on the exception to
+                        # surface debug output from steps that ran before the failure.
+                        if debug_session is not None:
+                            logs_snapshot = debug_session.output_streams.snapshot()
+                            if logs_snapshot:
+                                error.python_blocks_output_streams = logs_snapshot
+                            trace_entries = debug_session.debug_traces.snapshot()
+                            if trace_entries:
+                                error.python_blocks_debug_traces = trace_entries
+                        raise
+                    # Empty snapshots serialize as null in the response.
+                    python_blocks_output_streams = (
+                        debug_session.output_streams.snapshot()
+                        if debug_requested and debug_session is not None
+                        else None
+                    ) or None
+                    python_blocks_debug_traces = (
+                        debug_session.debug_traces.snapshot()
+                        if debug_requested and debug_session is not None
+                        else None
+                    ) or None
+                with profiler.profile_execution_phase(
+                    name="workflow_results_filtering",
+                    categories=["inference_package_operation"],
+                ):
+                    outputs = filter_out_unwanted_workflow_outputs(
+                        workflow_results=workflow_results,
+                        excluded_fields=workflow_request.excluded_fields,
                     )
-                except Exception as error:
-                    # The error response is built outside this route (see
-                    # `with_route_exceptions`), after the session ContextVars
-                    # scope is gone - so carry snapshots on the exception to
-                    # surface debug output from steps that ran before the failure.
-                    if debug_session is not None:
-                        logs_snapshot = debug_session.output_streams.snapshot()
-                        if logs_snapshot:
-                            error.python_blocks_output_streams = logs_snapshot
-                        trace_entries = debug_session.debug_traces.snapshot()
-                        if trace_entries:
-                            error.python_blocks_debug_traces = trace_entries
-                    raise
-                # Empty snapshots serialize as null in the response.
-                python_blocks_output_streams = (
-                    debug_session.output_streams.snapshot()
-                    if debug_requested and debug_session is not None
-                    else None
-                ) or None
-                python_blocks_debug_traces = (
-                    debug_session.debug_traces.snapshot()
-                    if debug_requested and debug_session is not None
-                    else None
-                ) or None
-            with profiler.profile_execution_phase(
-                name="workflow_results_filtering",
-                categories=["inference_package_operation"],
-            ):
-                outputs = filter_out_unwanted_workflow_outputs(
-                    workflow_results=workflow_results,
-                    excluded_fields=workflow_request.excluded_fields,
+                profiler_trace = profiler.export_trace()
+                response = WorkflowInferenceResponse(
+                    outputs=outputs,
+                    profiler_trace=profiler_trace,
+                    python_blocks_output_streams=python_blocks_output_streams,
+                    python_blocks_debug_traces=python_blocks_debug_traces,
                 )
-            profiler_trace = profiler.export_trace()
-            response = WorkflowInferenceResponse(
-                outputs=outputs,
-                profiler_trace=profiler_trace,
-                python_blocks_output_streams=python_blocks_output_streams,
-                python_blocks_debug_traces=python_blocks_debug_traces,
-            )
-            return orjson_response(response=response)
+                return orjson_response(response=response)
+            finally:
+                # after the run, so the close is queued behind the sink tasks it added
+                schedule_execution_engine_close(
+                    execution_engine=execution_engine,
+                    background_tasks=background_tasks,
+                )
 
         def load_core_model(
             inference_request: InferenceRequest,
@@ -2032,7 +2053,10 @@ class HttpInterface(BaseInterface):
                 "/model/clear",
                 response_model=ModelsDescriptions,
                 summary="Remove all models",
-                description="Remove all loaded models",
+                description=(
+                    "Remove all loaded models. Cached weights stay on disk "
+                    "when DISK_CACHE_CLEANUP=False."
+                ),
             )
             @with_route_exceptions
             def model_clear():
@@ -2197,7 +2221,7 @@ class HttpInterface(BaseInterface):
                 "/infer/embeddings",
                 response_model=ImageEmbeddingResponse,
                 summary="Image embeddings",
-                description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+                description="Extract raw features from a ResNet, ConvNeXt, ViT or DINOv3 classification model",
             )
             @with_route_exceptions
             @usage_collector("request")
@@ -2773,13 +2797,16 @@ class HttpInterface(BaseInterface):
                     }
                 )
                 bind_image_codec(workflow_init_parameters)
-                _ = ExecutionEngine.init(
+                execution_engine = ExecutionEngine.init(
                     workflow_definition=specification,
                     init_parameters=workflow_init_parameters,
                     max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                     prevent_local_images_loading=True,
                     step_error_handler=resolve_step_error_handler(),
                 )
+                # Validation never runs the workflow, so no sink task can still need
+                # a block: release what the initialised blocks hold right away.
+                execution_engine.close()
                 return WorkflowValidationStatus(status="ok")
 
         if WEBRTC_WORKER_ENABLED:
@@ -3095,6 +3122,13 @@ class HttpInterface(BaseInterface):
                     logger.info(
                         f"Preload: starting model load for '{model_id}' (resolved: '{de_aliased}')"
                     )
+                    if (
+                        PINNED_MODELS
+                        and model_id in PINNED_MODELS
+                        and hasattr(self.model_manager, "pin_model")
+                    ):
+                        self.model_manager.pin_model(loaded_model_id)
+
                     try:
                         self.model_manager.add_model(
                             de_aliased,
@@ -3107,19 +3141,18 @@ class HttpInterface(BaseInterface):
                         )
                     except Exception as e:
                         load_time = time.perf_counter() - t_start
-                        error_msg = f"Preload: error loading model '{model_id}' after {load_time:.1f}s: {e}"
+                        reason = _redact_credentials(
+                            str(e),
+                            credentials=(
+                                PRELOAD_API_KEY,
+                                ROBOFLOW_INTERNAL_SERVICE_SECRET,
+                            ),
+                        )
+                        error_msg = f"Preload: error loading model '{model_id}' after {load_time:.1f}s: {reason}"
                         logger.error(error_msg)
                         with state.lock:
-                            state.initialization_errors.append((model_id, str(e)))
+                            state.initialization_errors.append((model_id, reason))
                         return
-
-                    # Pin if this model is in PINNED_MODELS
-                    if (
-                        PINNED_MODELS
-                        and model_id in PINNED_MODELS
-                        and hasattr(self.model_manager, "pin_model")
-                    ):
-                        self.model_manager.pin_model(loaded_model_id)
 
                 all_models = list(
                     dict.fromkeys((PRELOAD_MODELS or []) + (PINNED_MODELS or []))
@@ -3150,11 +3183,18 @@ class HttpInterface(BaseInterface):
                             )
                             future.cancel()
                         except Exception as e:
+                            reason = _redact_credentials(
+                                str(e),
+                                credentials=(
+                                    PRELOAD_API_KEY,
+                                    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+                                ),
+                            )
                             logger.error(
-                                f"Preload: unexpected error for model '{model_id}': {e}"
+                                f"Preload: unexpected error for model '{model_id}': {reason}"
                             )
                             with state.lock:
-                                state.initialization_errors.append((model_id, str(e)))
+                                state.initialization_errors.append((model_id, reason))
 
                 # Update the readiness state in a thread-safe manner
                 with state.lock:
@@ -3989,6 +4029,12 @@ class HttpInterface(BaseInterface):
                             )
 
                     if SAM3_EXEC_MODE == "remote":
+                        if inference_request.format == "binary":
+                            # The proxy answers JSON, which cannot carry binary masks.
+                            raise HTTPException(
+                                status_code=501,
+                                detail="Binary SAM3 masks are not supported in remote execution mode.",
+                            )
                         endpoint = f"{API_BASE_URL}/inferenceproxy/seg-preview"
 
                         # Construct payload for remote API
@@ -4040,6 +4086,8 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": http_prompts,
                             "output_prob_thresh": inference_request.output_prob_thresh,
+                            "nms_iou_threshold": inference_request.nms_iou_threshold,
+                            "format": inference_request.format,
                             "source": inference_request.source,
                             "source_info": inference_request.source_info,
                         }
@@ -4159,6 +4207,12 @@ class HttpInterface(BaseInterface):
                         inference_request.api_key = api_key
 
                     if SAM3_EXEC_MODE == "remote":
+                        if inference_request.format == "binary":
+                            # The proxy answers JSON, which cannot carry binary masks.
+                            raise HTTPException(
+                                status_code=501,
+                                detail="Binary SAM3 masks are not supported in remote execution mode.",
+                            )
                         endpoint = f"{API_BASE_URL}/inferenceproxy/sam3-pvs"
 
                         http_image = {
@@ -4176,6 +4230,7 @@ class HttpInterface(BaseInterface):
                             "image": http_image,
                             "prompts": prompts_data,
                             "multimask_output": inference_request.multimask_output,
+                            "format": inference_request.format,
                             "source": inference_request.source,
                             "source_info": inference_request.source_info,
                         }
@@ -4406,6 +4461,13 @@ class HttpInterface(BaseInterface):
                                 f"specifies '{inference_request.model_id}'",
                             )
                         inference_request.model_id = model_id
+                    elif (
+                        inference_request.model_id is None
+                        and inference_request.depth_version_id is not None
+                    ):
+                        inference_request.model_id = (
+                            f"depth-anything-v2/{inference_request.depth_version_id}"
+                        )
                     api_key = api_key_fallback(api_key)
                     if api_key is not None:
                         inference_request.api_key = api_key
@@ -4751,6 +4813,13 @@ class HttpInterface(BaseInterface):
             # Attach all routes from builder to the /build prefix
             app.include_router(builder_router, prefix="/build", tags=["builder"])
 
+        if MAX_CONCURRENT_INFERENCE_REQUESTS > 0:
+            app.add_middleware(
+                ConcurrencyLimitMiddleware,
+                max_concurrent_requests=MAX_CONCURRENT_INFERENCE_REQUESTS,
+                queue_timeout=CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT,
+            )
+
         if LEGACY_ROUTE_ENABLED:
             # Legacy object detection inference path for backwards compatibility
             @app.get(
@@ -5072,11 +5141,17 @@ class HttpInterface(BaseInterface):
                     args = {"keypoint_confidence": keypoint_confidence}
                 elif task_type == "semantic-segmentation":
                     inference_request_type = SemanticSegmentationInferenceRequest
+                # Leave an omitted confidence unset so anomaly detection models can
+                # tell it apart from an explicit one and use the model-eval value.
+                if (
+                    task_type != "classification"
+                    or "confidence" in request.query_params
+                ):
+                    args["confidence"] = confidence
                 inference_request = inference_request_type(
                     api_key=api_key,
                     model_id=model_id,
                     image=request_image,
-                    confidence=confidence,
                     iou_threshold=overlap,
                     max_detections=max_detections,
                     visualization_labels=labels,

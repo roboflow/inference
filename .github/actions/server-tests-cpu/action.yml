@@ -1,0 +1,81 @@
+name: Server CPU regression steps
+description: Shared server test stages for legacy and saved-image workflows
+inputs:
+  private_logs:
+    description: Suppress runtime and test output in public CI logs
+    default: "false"
+  verify_runtime:
+    description: Verify the producer CPU PyTorch runtime
+    default: "false"
+  API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  ASL_INSTANCE_SEGMENTATION_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  ASL_POLY_INSTANCE_SEG_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  BCCD_FAVZ3_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  BCCD_I4NYM_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  CATS_AND_DOGS_SMNPL_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  COINS_XAZ9I_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  MELEE_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+  YOLONAS_TEST_API_KEY:
+    description: Test credential supplied by the calling workflow
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: Verify CPU PyTorch runtime from the producer image
+      if: ${{ inputs.verify_runtime == 'true' }}
+      shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
+      run: |
+        docker run --rm --pull=never --entrypoint /bin/sh \
+          -e CPU_IMAGE_TEST=true \
+          -v "$PWD/tests/docker/test_cpu_torch_runtime.py:/test_cpu_torch_runtime.py:ro" \
+          "$INFERENCE_TEST_IMAGE" -c 'python3 -m pip install pytest && python3 -m pytest /test_cpu_torch_runtime.py -v'
+    # INFERENCE_SERVER_REPO and PYTEST_EXTRA_ARGS come from the calling job's
+    # env when it selects the new inference_server image; defaults keep the
+    # legacy image for callers that set neither (saved-image trial).
+    - name: 🔋 Start Test Docker
+      shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
+      run: |
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT=9101 INFERENCE_SERVER_REPO="${INFERENCE_SERVER_REPO:-roboflow-inference-server-cpu}" make start_test_docker_cpu
+        CI_IMAGE_ACTION=port python3 .github/scripts/ci_image.py
+    - name: 🧪 Integration Tests of inference server [x86 CPU]
+      env:
+        API_KEY: ${{ inputs.API_KEY }}
+        asl_instance_segmentation_API_KEY: ${{ inputs.ASL_INSTANCE_SEGMENTATION_API_KEY }}
+        asl_poly_instance_seg_API_KEY: ${{ inputs.ASL_POLY_INSTANCE_SEG_API_KEY }}
+        bccd_favz3_API_KEY: ${{ inputs.BCCD_FAVZ3_API_KEY }}
+        bccd_i4nym_API_KEY: ${{ inputs.BCCD_I4NYM_API_KEY }}
+        cats_and_dogs_smnpl_API_KEY: ${{ inputs.CATS_AND_DOGS_SMNPL_API_KEY }}
+        coins_xaz9i_API_KEY: ${{ inputs.COINS_XAZ9I_API_KEY }}
+        melee_API_KEY: ${{ inputs.MELEE_API_KEY }}
+        yolonas_test_API_KEY: ${{ inputs.YOLONAS_TEST_API_KEY }}
+      shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
+      run: |
+        USE_INFERENCE_MODELS="$MODEL_MODE" PORT="${TEST_PORT:-9101}" SKIP_LMM_TEST=True python -m pytest tests/inference/integration_tests $PYTEST_EXTRA_ARGS
+        make stop_test_docker
+    - name: 📜 Dump server logs on failure
+      if: failure()
+      shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
+      run: |
+        docker logs "$INFERENCE_TEST_CONTAINER" --tail 1000 || true
+        make stop_test_docker || true
+    - name: Remove this job's test container
+      if: ${{ always() }}
+      shell: ${{ inputs.private_logs == 'true' && 'python3 .github/scripts/ci_private_shell.py {0}' || 'bash' }}
+      run: |
+        docker rm -f "$INFERENCE_TEST_CONTAINER" > /dev/null 2>&1 || true

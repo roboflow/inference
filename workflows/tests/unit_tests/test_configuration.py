@@ -67,7 +67,7 @@ def test_configuration_is_frozen_in_every_group() -> None:
         total_fields += len(dataclasses.fields(value))
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(value, dataclasses.fields(value)[0].name, "mutated")
-    assert total_fields == 81, total_fields
+    assert total_fields == 86, total_fields
 
 
 def test_default_configuration_matches_env_pys_empty_environment_defaults() -> None:
@@ -87,6 +87,13 @@ def test_default_configuration_matches_env_pys_empty_environment_defaults() -> N
     assert configuration.engine.allow_postgresql_sink_to_non_global_addresses is True
     assert configuration.engine.postgresql_sink_blacklisted_addresses is None
     assert configuration.engine.postgresql_sink_whitelisted_addresses is None
+    assert configuration.engine.databricks_sql_image_source_enabled is True
+    assert configuration.engine.allow_databricks_source_to_non_global_addresses is False
+    assert configuration.engine.databricks_sql_image_source_max_run_bytes == 2**30
+    assert configuration.engine.databricks_sql_image_source_max_image_bytes == 2**25
+    assert (
+        configuration.engine.databricks_sql_image_source_max_image_pixels == 25_000_000
+    )
     assert (
         configuration.engine.allow_kafka_sinks_user_provided_bootstrap_servers is True
     )
@@ -461,7 +468,7 @@ def test_environment_facade_exports_every_owned_symbol() -> None:
         for name in vars(workflows_environment)
         if name.isupper() and not name.startswith("_")
     }
-    assert len(exported) == 81, sorted(exported)
+    assert len(exported) == 86, sorted(exported)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_TYPES, list)
     assert isinstance(workflows_environment.WORKFLOW_DISABLED_BLOCK_PATTERNS, list)
     assert isinstance(workflows_environment.ENABLE_TENSOR_DATA_REPRESENTATION, bool)

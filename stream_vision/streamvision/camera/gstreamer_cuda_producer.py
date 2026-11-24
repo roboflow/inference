@@ -38,13 +38,14 @@ _LIVE_APPSINK_MAX_BUFFERS_LIMIT = 4
 _FILE_APPSINK_MAX_BUFFERS = 4
 _DEFAULT_RTSP_PROTOCOLS = "tcp"
 _DEFAULT_RTSP_LATENCY_MS = 200
-_RTSP_VIDEO_CODECS = ("h264", "h265")
+RTSP_CUDA_VIDEO_CODECS = ("h264", "h265", "vp8")
 _BASE_ELEMENTS = ("appsink", "cudaconvertscale", "queue", "uridecodebin")
 _RTSP_ELEMENTS = (
     "h264parse",
     "h265parse",
     "rtph264depay",
     "rtph265depay",
+    "rtpvp8depay",
     "rtspsrc",
 )
 _FILE_DEMUXERS = {
@@ -179,7 +180,7 @@ def required_gstreamer_cuda_elements(
     if not isinstance(video, str):
         return tuple(elements)
     if _is_rtsp_source(video):
-        # RTSP uses an explicit rtspsrc ! depay ! parse ! decodebin chain
+        # RTSP uses an explicit rtspsrc ! depay ! [parse] ! decodebin chain
         # (no uridecodebin autoplugging), so uridecodebin is not required.
         return tuple(
             ["appsink", "cudaconvertscale", "queue", "decodebin"] + list(_RTSP_ELEMENTS)
@@ -254,12 +255,13 @@ def build_gstreamer_cuda_pipeline(
         # instead of silently falling back — and _validate_pipeline re-checks
         # the instantiated factories after the first frame either way.
         codec = _rtsp_video_codec()
+        parser = "" if codec == "vp8" else f"{codec}parse ! "
         return (
             f'rtspsrc location="{_quote_gstreamer_value(video)}" '
             f"protocols={_rtsp_protocols()} latency={_rtsp_latency_ms()} ! "
             "application/x-rtp,media=video ! "
             "queue ! "
-            f"rtp{codec}depay ! {codec}parse ! "
+            f"rtp{codec}depay ! {parser}"
             'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
             f"{tail}"
         )
@@ -525,11 +527,11 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
 
 
 def _rtsp_video_codec() -> str:
-    codec = os.getenv(_RTSP_CODEC_ENV_VAR, _RTSP_VIDEO_CODECS[0]).strip().lower()
-    if codec not in _RTSP_VIDEO_CODECS:
+    codec = os.getenv(_RTSP_CODEC_ENV_VAR, RTSP_CUDA_VIDEO_CODECS[0]).strip().lower()
+    if codec not in RTSP_CUDA_VIDEO_CODECS:
         raise ValueError(
             f"Unsupported RTSP video codec {codec!r} in {_RTSP_CODEC_ENV_VAR} "
-            f"(supported: {', '.join(_RTSP_VIDEO_CODECS)})"
+            f"(supported: {', '.join(RTSP_CUDA_VIDEO_CODECS)})"
         )
     return codec
 

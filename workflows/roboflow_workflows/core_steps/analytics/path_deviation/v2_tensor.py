@@ -19,10 +19,10 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     Selector,
-    WorkflowImageSelector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
@@ -140,7 +140,7 @@ class PathDeviationManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/path_deviation_analytics@v2"]
-    image: WorkflowImageSelector = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image with embedded video metadata. The video_metadata contains video_identifier to maintain separate path tracking state for different videos. Required for persistent path accumulation across frames.",
     )
     detections: Selector(

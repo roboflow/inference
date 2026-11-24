@@ -159,7 +159,11 @@ class ModelManagerModelsProvider:
         disable_active_learning: Optional[bool] = None,
         active_learning_target_dataset: Optional[str] = None,
         inference_kwargs: Optional[Dict[str, Any]] = None,
+        include_anomaly_map: bool = False,
     ) -> List[dict]:
+        # Set only when asked, so the request a classification block builds is
+        # field-for-field what it was before the anomaly block existed.
+        anomaly_arguments = {"include_anomaly_map": True} if include_anomaly_map else {}
         request = ClassificationInferenceRequest(
             api_key=api_key,
             model_id=model_id,
@@ -168,6 +172,7 @@ class ModelManagerModelsProvider:
             disable_active_learning=disable_active_learning,
             source=_WORKFLOW_SOURCE,
             active_learning_target_dataset=active_learning_target_dataset,
+            **anomaly_arguments,
         )
         return self._dump(
             self._infer(model_id=model_id, request=request, **(inference_kwargs or {}))
@@ -558,11 +563,13 @@ class ModelManagerModelsProvider:
         request_model_id: Union[str, None, _Unset] = UNSET,
         multimask_output: Union[bool, None, _Unset] = UNSET,
         threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
     ) -> List[Any]:
         # segment_anything2/v1.py passes sam2_version_id, threshold and
         # multimask_output; segment_anything3_interactive/v1.py passes model_id
-        # and multimask_output. Each is forwarded exactly as passed - None
-        # included: `multimask_output: bool` rejects it, as it did inline.
+        # and multimask_output, plus format="rle" for RLE output. Each is
+        # forwarded exactly as passed - None included: `multimask_output: bool`
+        # rejects it, as it did inline.
         request = Sam2SegmentationRequest(
             image=image,
             api_key=api_key,
@@ -573,6 +580,7 @@ class ModelManagerModelsProvider:
                 model_id=request_model_id,
                 multimask_output=multimask_output,
                 threshold=threshold,
+                format=format,
             ),
         )
         return self._infer(model_id=model_id, request=request)

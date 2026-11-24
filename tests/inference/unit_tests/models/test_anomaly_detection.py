@@ -30,6 +30,7 @@ def prediction(anomalous_confidence=0.5, is_anomalous=True, anomaly_map=None):
     metadata = {
         "anomaly_score": 2.0,
         "anomaly_threshold": 2.0,
+        "anomaly_scale": 0.5,
         "is_anomalous": is_anomalous,
     }
     if anomaly_map is not None:
@@ -94,6 +95,7 @@ def test_http_serialization_keeps_anomaly_fields():
     assert body["anomaly_score"] == 2.0
     assert body["is_anomalous"] is True
     assert body["anomaly_threshold"] == 2.0
+    assert body["anomaly_scale"] == 0.5
     assert body["anomaly_map"]["shape"] == [10, 20]
     assert body["anomaly_map"]["dtype"] == "float32"
     # The map is served at network resolution, never at the image size.
@@ -102,17 +104,24 @@ def test_http_serialization_keeps_anomaly_fields():
     )
 
 
-def test_request_and_sdk_forward_optional_map_to_the_model():
+def anomaly_adapter() -> InferenceModelsAnomalyDetectionAdapter:
     model = object.__new__(InferenceModelsAnomalyDetectionAdapter)
     model.class_names = CLASS_NAMES
     model._model = Mock(resolved_model=None)
     model._model.post_process.return_value = prediction()
+    return model
+
+
+def png_image() -> dict:
     image = BytesIO()
     Image.new("RGB", (20, 10)).save(image, format="PNG")
+    return {"type": "base64", "value": base64.b64encode(image.getvalue()).decode()}
+
+
+def test_request_and_sdk_forward_optional_map_to_the_model():
+    model = anomaly_adapter()
     request = ClassificationInferenceRequest(
-        model_id="defects/1",
-        image={"type": "base64", "value": base64.b64encode(image.getvalue()).decode()},
-        include_anomaly_map=True,
+        model_id="defects/1", image=png_image(), include_anomaly_map=True
     )
     response = model.infer_from_request(request)
     assert response.top == "anomalous"
@@ -121,7 +130,10 @@ def test_request_and_sdk_forward_optional_map_to_the_model():
     bgr_images = model._model.pre_process.call_args.args[0]
     assert bgr_images[0].shape == (10, 20, 3)
     assert model._model.pre_process.call_args.kwargs["input_color_format"] == "bgr"
-    assert model._model.post_process.call_args.kwargs == {"include_anomaly_map": True}
+    assert model._model.post_process.call_args.kwargs == {
+        "include_anomaly_map": True,
+        "confidence": "best",
+    }
     assert (
         InferenceConfiguration(include_anomaly_map=True).to_classification_parameters()[
             "include_anomaly_map"
@@ -132,3 +144,15 @@ def test_request_and_sdk_forward_optional_map_to_the_model():
         "include_anomaly_map"
         not in InferenceConfiguration().to_classification_parameters()
     )
+
+
+def test_explicit_request_confidence_decides_the_verdict():
+    model = anomaly_adapter()
+    # 0.4 is also the request default; sent explicitly it must not become "best".
+    request = ClassificationInferenceRequest(
+        model_id="defects/1", image=png_image(), confidence=0.4
+    )
+
+    model.infer_from_request(request)
+
+    assert model._model.post_process.call_args.kwargs["confidence"] == 0.4

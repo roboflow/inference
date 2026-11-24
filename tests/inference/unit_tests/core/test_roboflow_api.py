@@ -2,7 +2,7 @@ import json
 import os
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -12,7 +12,7 @@ import requests.exceptions
 from aioresponses import aioresponses
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
-from requests_mock import Mocker
+from requests_mock import ANY, Mocker
 from yarl import URL
 
 from inference.core import roboflow_api
@@ -4771,8 +4771,11 @@ def test_get_workflow_specification_when_not_found_returned_and_ephemeral_cache_
 
 def test_get_workflow_specification_when_internal_error_returned_and_cache_disabled(
     requests_mock: Mocker,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     # given
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         status_code=500,
@@ -4793,8 +4796,11 @@ def test_get_workflow_specification_when_internal_error_returned_and_cache_disab
 
 def test_get_workflow_specification_when_internal_error_returned_and_ephemeral_cache_miss_detected(
     requests_mock: Mocker,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     # given
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
     requests_mock.get(
         url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
         status_code=500,
@@ -5355,6 +5361,94 @@ def test_post_to_roboflow_api_does_not_use_api_proxy_base_url_for_other_endpoint
     assert requests_mock.last_request.url == expected_url
 
 
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_REQUEST_TIMEOUT", 120)
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 330)
+@pytest.mark.parametrize(
+    "endpoint, expected_timeout, expected_client_timeout_header",
+    [
+        ("apiproxy/gemini/gemini-4-carbon", 330, "330"),
+        ("/api-proxy/openai/", 330, "330"),
+        ("apiproxy", 330, "330"),
+        ("some/endpoint", 120, None),
+        ("apiproxyfoo", 120, None),
+        ("x/apiproxy/y", 120, None),
+    ],
+)
+def test_post_to_roboflow_api_waits_and_declares_the_api_proxy_timeout(
+    requests_mock: Mocker,
+    endpoint: str,
+    expected_timeout: int,
+    expected_client_timeout_header: Optional[str],
+) -> None:
+    requests_mock.post(ANY, json={"status": "ok"})
+
+    post_to_roboflow_api(endpoint=endpoint, api_key="my_api_key")
+
+    assert requests_mock.last_request.timeout == expected_timeout
+    assert (
+        requests_mock.last_request.headers.get("X-Roboflow-Client-Timeout")
+        == expected_client_timeout_header
+    )
+
+
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 330)
+@pytest.mark.parametrize(
+    "extra_headers",
+    [
+        {"X-Roboflow-Client-Timeout": "10", "x-roboflow-client-timeout": "20"},
+        {"x-roboflow-client-timeout": "20", "X-Roboflow-Client-Timeout": "10"},
+    ],
+)
+def test_post_to_roboflow_api_sends_one_client_timeout_whatever_the_extra_headers(
+    requests_mock: Mocker,
+    extra_headers: Dict[str, str],
+) -> None:
+    requests_mock.post(ANY, json={"status": "ok"})
+
+    with mock.patch.object(
+        roboflow_api,
+        "ROBOFLOW_API_EXTRA_HEADERS",
+        json.dumps({**extra_headers, "x-allow-chunked": "false", "X-Other": "kept"}),
+    ):
+        post_to_roboflow_api(endpoint="apiproxy/gemini", api_key="my_api_key")
+
+    sent_headers = requests_mock.last_request.headers
+    client_timeouts = [
+        value
+        for name, value in sent_headers.items()
+        if name.lower() == "x-roboflow-client-timeout"
+    ]
+    assert client_timeouts == ["330"]
+    assert sent_headers["X-Allow-Chunked"] == "true"
+    assert sent_headers["X-Other"] == "kept"
+
+
+def test_build_roboflow_api_headers_drops_every_spelling_of_an_explicit_header() -> (
+    None
+):
+    with mock.patch.object(
+        roboflow_api,
+        "ROBOFLOW_API_EXTRA_HEADERS",
+        json.dumps(
+            {
+                "x-roboflow-client-timeout": "20",
+                "X-ROBOFLOW-INFERENCE-VERSION": "extra",
+                "X-Other": "kept",
+            }
+        ),
+    ):
+        headers = roboflow_api.build_roboflow_api_headers(
+            explicit_headers={"X-Roboflow-Client-Timeout": "330"}
+        )
+
+    assert headers == {
+        "X-Other": "kept",
+        "X-Roboflow-Client-Timeout": "330",
+        roboflow_api.ROBOFLOW_INFERENCE_VERSION_HEADER: roboflow_api.__version__,
+        roboflow_api.ALLOW_CHUNKED_RESPONSE_HEADER: "true",
+    }
+
+
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
 @mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
 def test_get_from_url_when_no_retires_possible(
@@ -5371,6 +5465,46 @@ def test_get_from_url_when_no_retires_possible(
     # when
     with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
         _ = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+
+@pytest.mark.parametrize("retry_connections", [False, True])
+def test_get_from_url_retries_interrupted_body(
+    requests_mock: Mocker, monkeypatch, retry_connections: bool
+) -> None:
+    monkeypatch.setattr(
+        roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", retry_connections
+    )
+    monkeypatch.setattr(roboflow_api, "MD5_VERIFICATION_ENABLED", False)
+    url = wrap_url(f"{API_BASE_URL}/weights")
+    requests_mock.get(
+        url,
+        response_list=[
+            {"exc": requests.exceptions.ChunkedEncodingError("incomplete body")},
+            {"content": b"complete weights"},
+        ],
+    )
+
+    response = get_from_url(url, json_response=False)
+
+    assert response.content == b"complete weights"
+    assert requests_mock.call_count == 2
+
+
+def test_get_from_url_stops_retrying_interrupted_body(
+    requests_mock: Mocker, monkeypatch
+) -> None:
+    monkeypatch.setattr(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+    url = wrap_url(f"{API_BASE_URL}/weights")
+    requests_mock.get(
+        url, exc=requests.exceptions.ChunkedEncodingError("incomplete body")
+    )
+
+    with pytest.raises(requests.exceptions.ChunkedEncodingError):
+        get_from_url(url, json_response=False)
+
+    assert (
+        requests_mock.call_count == roboflow_api.TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES
+    )
 
 
 @mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
@@ -5569,6 +5703,77 @@ def test_get_workflow_specification_raises_timeout_when_no_cache(
             workflow_id="timeout_no_cache_workflow",
             use_cache=False,
         )
+
+
+@pytest.mark.parametrize("status_code", [500, 502, 503, 504])
+@pytest.mark.parametrize("retried", [False, True])
+def test_workflow_file_cache_survives_server_errors(
+    monkeypatch, tmp_path, status_code, retried
+) -> None:
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(roboflow_api, "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", True)
+    response = requests.Response()
+    response.status_code = status_code
+    error = requests.exceptions.HTTPError(response=response)
+    if retried:
+        error = RetryRequestError(message="Retries exhausted", inner_error=error)
+    fetch = MagicMock(
+        side_effect=[
+            {"workflow": {"config": json.dumps({"specification": {"steps": []}})}},
+            error,
+        ]
+    )
+    monkeypatch.setattr(roboflow_api, "_get_from_url", fetch)
+    params = dict(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        workflow_version_id="pinned-version",
+        use_cache=False,
+    )
+    expected = get_workflow_specification(**params)
+
+    result = get_workflow_specification(**params)
+
+    assert result == expected
+    assert fetch.call_count == 2
+
+
+@pytest.mark.parametrize("status_code", [401, 403, 404, 429, 500, 503])
+@pytest.mark.parametrize("has_cache", [False, True])
+def test_workflow_server_error_fallback_preserves_other_failures(
+    monkeypatch, tmp_path, status_code, has_cache
+) -> None:
+    monkeypatch.setattr(roboflow_api, "MODEL_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(roboflow_api, "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", True)
+    params = dict(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        use_cache=False,
+    )
+    fetch = MagicMock(
+        return_value={"workflow": {"config": json.dumps({"specification": {}})}}
+    )
+    monkeypatch.setattr(roboflow_api, "_get_from_url", fetch)
+    if has_cache:
+        get_workflow_specification(**params)
+
+    response = requests.Response()
+    response.status_code = status_code
+    fetch.side_effect = requests.exceptions.HTTPError(response=response)
+    # A cached workflow must not bypass an authorization/resource error, and a
+    # missing cache must preserve a server error. Disabled file caching also
+    # preserves server errors even when an older cache entry exists.
+    if status_code >= 500 and has_cache:
+        monkeypatch.setattr(
+            roboflow_api, "USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", False
+        )
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError) as exc_info:
+        get_workflow_specification(**params)
+
+    assert isinstance(exc_info.value.__cause__, requests.exceptions.HTTPError)
+    assert exc_info.value.__cause__.response.status_code == status_code
 
 
 @mock.patch.object(roboflow_api.requests, "get")

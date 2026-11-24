@@ -2,8 +2,135 @@
 
 ## Unreleased
 
+## `0.39.10`
+
 ### Added
 
+- [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
+  platform, single-label and multi-label, with their own default confidence
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). ONNX and PyTorch packages
+  also support image embeddings. See the
+  [model page](models/convnext-classification.md).
+- The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
+  `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
+  packages previously failed with `CorruptedModelPackageError`. The new encoder is a timm
+  `vit_pe_core_tiny_patch16_384` trunk with windowed rotary attention; it needs `timm>=1.0.18`
+  and raises `MissingDependencyError` with an older timm. Inputs other than the trained size
+  work as for the DINOv2 sizes. Models fine-tuned at another resolution store a
+  `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
+  `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
+- The Torch RF-DETR object-detection and instance-segmentation loaders
+  (`RFDetrForObjectDetectionTorch.from_pretrained` and
+  `RFDetrForInstanceSegmentationTorch.from_pretrained`) accept an optional
+  `num_queries` in `model_type.json` and build the network with that decoder
+  query count. Packages trained with a non-default `num_queries`, which failed
+  with `size mismatch for query_feat.weight`, now load; packages without the key
+  keep the variant default. A malformed value (not an integer, a bool, or less
+  than 1) raises `CorruptedModelPackageError`.
+
+### Changed
+
+- `VLLMConnectionError` (vLLM proxy backend) carries a `status_code`: `504` when
+  the vLLM sidecar does not answer within `VLLM_REQUEST_TIMEOUT_S`, `503` when
+  the connection cannot be established or is dropped. Hosting servers read it to
+  tag usage rows with `error_status_code` and to answer with that status instead
+  of a generic `500`, also when the failure happens while a model loads (a
+  fine-tuned model registers its LoRA adapter with the sidecar on first use).
+  The exception type and message are unchanged, and the constructor still takes
+  `help_url`; `status_code` is keyword-only.
+- Clients that retry `503` and `504` now retry these failures. `inference_sdk`
+  makes up to 3 attempts, so a sidecar that keeps timing out holds a caller for
+  up to 3 × `VLLM_REQUEST_TIMEOUT_S` (6 minutes at the default 120 s) where the
+  former `500` failed after one attempt. Lower `VLLM_REQUEST_TIMEOUT_S` where
+  that wait is too long.
+
+## `0.39.9`
+
+### Changed
+
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
+
+### Fixed
+
+- RF-DETR pre-processing keeps Pillow's horizontal-first resize order. Pillow 13
+  runs the vertical pass first when height shrinks far more than width, which
+  changed 8-bit rounding and shifted predicted boxes.
+- RF-DETR ONNX models with static input shapes (object detection, instance
+  segmentation, semantic segmentation and keypoints) no longer run out of GPU
+  memory at high input resolution on the CUDA execution provider. When
+  `CUDAExecutionProvider` is the first provider, the loader rewrites each unmasked
+  exported `MatMul -> Softmax -> MatMul` attention block into ONNX Runtime's
+  `com.microsoft.MultiHeadAttention` op, which runs a memory-efficient CUDA kernel
+  instead of building the full attention score tensor. The rewritten model is
+  cached in an `attention_fusion/` directory inside the model package and reused
+  on later loads. Other provider lists, models without a matching block, and a
+  fusion that fails (logged as a warning) load the original model.
+
+## `0.39.8`
+
+### Fixed
+
+- Pre-processing casts integer images to `torch.float32` before dividing by
+  `scaling_factor` in the stretch, center-crop and fit-longer-edge paths (numpy,
+  tensor and list inputs, and the letterbox batch). Integer division returned
+  `torch.get_default_dtype()`, so a process whose default dtype had been left at
+  `torch.bfloat16` sent bfloat16 inputs to ONNX models, which failed with
+  `ModelRuntimeError: model requires the input type to be torch.float32`.
+- RF-DETR pre-processing builds its numpy-path input tensor in `torch.float32`
+  instead of `TF.to_tensor`'s default dtype. With the default left at
+  `torch.bfloat16`, RF-DETR models were fed bfloat16-rounded inputs and returned
+  lower-precision predictions without raising an error.
+- Hugging Face model loads run inside a process-wide lock
+  (`torch_default_dtype_lock()` in `inference_models.models.common.torch`).
+  transformers' `from_pretrained` sets the process-global default dtype while it
+  builds a model and restores it afterwards. That is not thread-safe, and
+  overlapping loads (for example several bfloat16 VLMs loaded at once) could leave
+  the default stuck at `torch.bfloat16` for the rest of the process.
+- `AutoModel` loads check the default dtype after each model is built. If it is not
+  `torch.float32`, they log a warning naming the model and reset it.
+  `ModelManager` does not perform an additional reset after arbitrary model loads:
+  legacy Hugging Face loaders do not acquire the shared dtype lock, so another
+  model finishing could otherwise reset their temporary dtype mid-construction.
+  Legacy loader locking and recovery remain a follow-up.
+
+## `0.39.7`
+
+### Fixed
+
+- TensorRT CUDA graph capture and replay wait on the caller's CUDA stream and
+  record the input tensor on the graph stream before copying or executing it.
+  Previously, an input still being produced on the caller stream without a
+  tensor readiness event (RF-DETR tracker-based preprocessing, batch padding)
+  could be read too early and yield predictions for stale input when CUDA
+  graphs were enabled.
+
+### Changed
+
+- `FILE_LOCK_ACQUIRE_TIMEOUT` (`INFERENCE_MODELS_FILE_LOCK_ACQUIRE_TIMEOUT`) defaults to
+  600 seconds instead of 20, so a model whose weights package is being downloaded by
+  another process waits for that download instead of failing on the package
+  materialization lock.
+
+## `0.39.6`
+
+### Changed
+
+- Security maintenance release, no functional change. Dependency floors move to the first release that fixes each advisory and the lockfile is refreshed to match:
+  - `GitPython>=3.2.1` (was `>=3.1.59`): GHSA-83vg-56qc-22m7, a submodule `.git` path was validated only after cloning into it (remote code execution). Lockfile: 3.1.62 -> 3.2.1.
+  - `onnx>=1.22.0` (was `>=1.21.0`) in every `onnx-*` extra: GHSA-hwpq-hmq9-wj77 (null dereference in the Upsample version-converter adapter) and GHSA-p893-rvq9-2xf9 (heap over-read in the Gemm version-converter adapter). Lockfile: 1.21.0 -> 1.23.2.
+  - `setuptools>=84.1.0` (was `>=83.0.0`): GHSA-xmj3-9gf7-h52w, Windows path escape through `namespace_packages.txt` during legacy wheel installation. Lockfile: 83.0.0 -> 84.2.1.
+  - `nbconvert>=7.17.2` (was `>=7.17.1`) in the `docs` group: GHSA-pjvx-prjx-h659, arbitrary file write through cell output filenames when exporting to Markdown. Lockfile: 7.17.1 -> 7.17.2.
+
+## `0.39.5`
+
+### Added
+
+- Anomaly detection models put `anomaly_scale` in `images_metadata[i]`, next to `anomaly_score`, `anomaly_threshold` and `is_anomalous`, so a caller can re-decide against its own threshold with the same rule.
 - `RoboflowModelMetadata.model_latency_ms` exposes the registry's `modelLatencyMs`.
   A non-numeric value is read as `None` instead of failing the metadata parse.
 - `SAM3Torch.segment_with_visual_prompts(...)` accepts `mask_format="rle"` to return
@@ -45,6 +172,14 @@
   image channels are reversed before inference; the default keeps treating
   inputs as RGB.
 - GLM-OCR table recognition sent the formula-recognition prompt.
+
+### Changed
+
+- Anomaly detection (PatchCore, FoundAD): `is_anomalous` and `class_id` are decided by the request `confidence` — `sigmoid((anomaly_score - anomaly_threshold) / anomaly_scale) >= confidence` — instead of always `anomaly_score >= anomaly_threshold`. `post_process(..., confidence=...)` accepts a number in `[0, 1]`, `"best"` (the model-eval recommendation through `recommended_parameters`, which both models now accept at load) or `"default"` (0.5, the calibrated decision, identical to the previous rule).
+
+### Fixed
+
+- PatchCore bounds its nearest-neighbour distance matrix by elements (`NEAREST_NEIGHBOURS_CHUNK_ELEMENTS = 2**26`, 256 MiB in fp32) instead of 4096 rows, and computes it in place. A 640 px model with a ~140k-entry memory bank allocated about 2 GiB per chunk per request and ran out of GPU memory under concurrent requests.
 
 ## `0.39.4`
 

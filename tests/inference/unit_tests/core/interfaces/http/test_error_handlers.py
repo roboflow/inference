@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from inference.core.exceptions import (
@@ -9,6 +11,8 @@ from inference.core.interfaces.http.error_handlers import (
     with_route_exceptions,
     with_route_exceptions_async,
 )
+from inference.core.utils import image_utils
+from inference.core.utils.image_utils import load_image_base64
 from inference.core.workflows.errors import (
     ClientCausedStepExecutionError,
     RuntimeLimitsCausedStepExecutionError,
@@ -18,6 +22,7 @@ from inference.core.workflows.execution_engine.v1.inner_workflow.errors import (
     InnerWorkflowInliningStructureError,
     InnerWorkflowParameterBindingsUnknownInputError,
 )
+from inference.models.vllm_proxy.errors import VLLMConnectionError, VLLMHTTPError
 from inference_models.errors import (
     FileHashSumMissmatch,
     ModelInputError,
@@ -37,6 +42,32 @@ class ModelRetrievalErrorWithStatus(ModelRetrievalError):
     def __init__(self, message: str, status_code: int):
         super().__init__(message)
         self.status_code = status_code
+
+
+def test_with_route_exceptions_reports_non_ascii_image_as_bad_request():
+    @with_route_exceptions
+    def image_route():
+        load_image_base64(value="not-base64-猫")
+
+    response = image_route()
+
+    assert response.status_code == 400
+    assert "Malformed base64 input image" in response.body.decode()
+
+
+def test_with_route_exceptions_reports_non_ascii_inferred_image_as_bad_request(
+    monkeypatch,
+):
+    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", True)
+
+    @with_route_exceptions
+    def image_route():
+        image_utils.load_image("not-base64-猫")
+
+    response = image_route()
+
+    assert response.status_code == 400
+    assert "not-base64-猫" not in response.body.decode()
 
 
 def test_with_route_exceptions_when_usage_paused_error_raised():
@@ -584,3 +615,203 @@ async def test_with_route_exceptions_async_when_runtime_limits_step_execution_er
 
     assert resp.status_code == 507
     assert "runtime limit" in resp.body.decode().lower()
+
+
+def test_with_route_exceptions_does_not_echo_credentials_from_a_rejected_workflow(
+    monkeypatch,
+):
+    # compiling a step with credentials in its URL fails validation; neither the
+    # response nor the logged traceback may carry them
+    import io
+    import logging
+
+    from inference.core.interfaces.http import error_handlers
+    from inference.core.workflows.execution_engine.core import ExecutionEngine
+    from inference.core.workflows.execution_engine.introspection import blocks_loader
+
+    monkeypatch.setenv(
+        "WORKFLOWS_PLUGINS", "roboflow_workflows.enterprise_blocks.loader"
+    )
+    blocks_loader.clear_caches()
+    log_buffer = io.StringIO()
+    capture_logger = logging.getLogger("test-workflow-syntax-error-capture")
+    capture_logger.propagate = False
+    capture_logger.setLevel(logging.DEBUG)
+    capture_handler = logging.StreamHandler(log_buffer)
+    capture_logger.addHandler(capture_handler)
+    monkeypatch.setattr(error_handlers, "logger", capture_logger)
+    definition = {
+        "version": "1.0",
+        "inputs": [],
+        "steps": [
+            {
+                # first, where a rendered input (truncated in the middle) shows it
+                "url": "opc.tcp://Qz7u:Xk9p@h",
+                "type": "roboflow_enterprise/opc_reader@v1",
+                "name": "reader",
+                "namespace": "2",
+                "object_name": "Line1",
+                "variable_name": "LineRunning",
+            }
+        ],
+        "outputs": [
+            {"type": "JsonField", "name": "out", "selector": "$steps.reader.*"}
+        ],
+    }
+
+    @with_route_exceptions
+    def my_route():
+        ExecutionEngine.init(workflow_definition=definition, init_parameters={})
+
+    try:
+        resp = my_route()
+    finally:
+        capture_logger.removeHandler(capture_handler)
+        blocks_loader.clear_caches()
+
+    body = resp.body.decode()
+    logged = log_buffer.getvalue()
+    assert resp.status_code == 400
+    assert "credentials in the url are not accepted" in body
+    assert "WorkflowSyntaxError" in logged
+    assert "input_value" not in body
+    assert "input_value" not in logged
+    for secret in ("Qz7u", "Xk9p"):
+        assert secret not in body
+        assert secret not in logged
+
+
+def test_with_route_exceptions_does_not_echo_a_password_from_describe_interface(
+    monkeypatch,
+):
+    # input discovery validates each block manifest directly, outside the compiler;
+    # a step with a literal password that fails validation must not be echoed
+    import io
+    import logging
+
+    from inference.core.interfaces.http import error_handlers
+    from inference.core.interfaces.http.handlers.workflows import (
+        handle_describe_workflows_interface,
+    )
+    from inference.core.workflows.execution_engine.introspection import blocks_loader
+
+    monkeypatch.setenv(
+        "WORKFLOWS_PLUGINS", "roboflow_workflows.enterprise_blocks.loader"
+    )
+    blocks_loader.clear_caches()
+    log_buffer = io.StringIO()
+    capture_logger = logging.getLogger("test-describe-interface-capture")
+    capture_logger.propagate = False
+    capture_logger.setLevel(logging.DEBUG)
+    capture_handler = logging.StreamHandler(log_buffer)
+    capture_logger.addHandler(capture_handler)
+    monkeypatch.setattr(error_handlers, "logger", capture_logger)
+    definition = {
+        "version": "1.0",
+        "inputs": [],
+        "steps": [
+            {
+                # a step-level check fails (hierarchical lookup without a variable),
+                # so the rendered input is the whole step; the credentials sit at
+                # either end, where a rendered input (truncated in the middle) shows it
+                "user_name": "Qz7u",
+                "type": "roboflow_enterprise/opc_reader@v1",
+                "name": "reader",
+                "url": "opc.tcp://host:4840",
+                "namespace": "2",
+                "object_name": "Line1",
+                "password": "Xk9p",
+            }
+        ],
+        "outputs": [
+            {"type": "JsonField", "name": "out", "selector": "$steps.reader.*"}
+        ],
+    }
+
+    @with_route_exceptions
+    def my_route():
+        handle_describe_workflows_interface(definition=definition)
+
+    try:
+        resp = my_route()
+    finally:
+        capture_logger.removeHandler(capture_handler)
+        blocks_loader.clear_caches()
+
+    body = resp.body.decode()
+    logged = log_buffer.getvalue()
+    assert resp.status_code == 400
+    assert "variable_name is required" in body
+    assert "input_value" not in body
+    assert "input_value" not in logged
+    for secret in ("Qz7u", "Xk9p"):
+        assert secret not in body
+        assert secret not in logged
+
+
+@pytest.mark.parametrize(
+    "status_code, expected_message",
+    [
+        (504, "Timed out waiting for the model serving backend."),
+        (
+            503,
+            "Model serving backend is temporarily unavailable - retry request.",
+        ),
+    ],
+)
+def test_with_route_exceptions_when_vllm_connection_error_raised(
+    status_code: int, expected_message: str
+):
+    @with_route_exceptions
+    def my_route():
+        raise VLLMConnectionError(
+            "Could not reach vLLM sidecar at http://vllm:8000/v1/chat/completions",
+            status_code=status_code,
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == status_code
+    assert json.loads(resp.body) == {"message": expected_message}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status_code, expected_message",
+    [
+        (504, "Timed out waiting for the model serving backend."),
+        (
+            503,
+            "Model serving backend is temporarily unavailable - retry request.",
+        ),
+    ],
+)
+async def test_with_route_exceptions_async_when_vllm_connection_error_raised(
+    status_code: int, expected_message: str
+):
+    @with_route_exceptions_async
+    async def my_route():
+        raise VLLMConnectionError(
+            "Could not reach vLLM sidecar at http://vllm:8000/v1/chat/completions",
+            status_code=status_code,
+        )
+
+    resp = await my_route()
+
+    assert resp.status_code == status_code
+    assert json.loads(resp.body) == {"message": expected_message}
+
+
+def test_with_route_exceptions_when_vllm_http_error_raised():
+    @with_route_exceptions
+    def my_route():
+        raise VLLMHTTPError(
+            message="vLLM sidecar returned HTTP 502",
+            status_code=502,
+            response_body="bad gateway",
+        )
+
+    resp = my_route()
+
+    assert resp.status_code == 500
+    assert json.loads(resp.body) == {"message": "Internal error."}

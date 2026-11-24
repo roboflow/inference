@@ -11,7 +11,7 @@ dependencies = [
   "uvicorn[standard]>=0.30.0",
   "orjson>=3.9.0",
   "filetype>=1.2.0",
-  "aiohttp>=3.9.0",
+  "aiohttp>=3.14.4",
   "python-multipart>=0.0.9",
   "prometheus-client>=0.16.0",
   "prometheus-fastapi-instrumentator>=8.1.0,<9.0.0",
@@ -32,9 +32,10 @@ onnx-cu118 = ["inference-model-manager[onnx-cu118]"]
 onnx-cu12 = ["inference-model-manager[onnx-cu12]"]
 onnx-jp6-cu126 = ["inference-model-manager[onnx-jp6-cu126]"]
 trt10-runtime = ["inference-model-manager[trt10-runtime]"]
-workflows = ["roboflow-workflows>=0.2.11rc1"]
-streams = ["streamvision[webrtc,workflows]>=0.1.2rc3"]
-enterprise = ["roboflow-workflows[enterprise]>=0.2.11rc1"]
+workflows = ["roboflow-workflows>=0.2.17"]
+streams = ["streamvision[webrtc,workflows]>=0.1.7"]
+enterprise = ["roboflow-workflows[enterprise]>=0.2.17"]
+databricks = ["roboflow-workflows[databricks]>=0.2.17"]
 redis = ["redis~=5.0.0"]
 otel = [
   "opentelemetry-api~=1.41.1",
@@ -45,6 +46,7 @@ otel = [
   "opentelemetry-instrumentation-requests",
 ]
 test = [
+  "opentelemetry-sdk~=1.45.2",
   "pytest>=8.0.0",
   "pytest-asyncio>=1.0.0",
   "pytest-timeout>=2.3.0",

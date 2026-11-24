@@ -21,8 +21,15 @@ from starlette.datastructures import UploadFile
 
 from inference_model_manager.registry_defaults import IMAGE_EMBEDDINGS_ACTION
 from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
-from inference_server import configuration, platform_http, server_identity, telemetry
+from inference_server import (
+    configuration,
+    pingback,
+    platform_http,
+    server_identity,
+    telemetry,
+)
 from inference_server.dependencies import get_model_manager
+from inference_server.hosted.common import service_secret_is_valid
 from inference_server.legacy.action_recognition import (
     ACTION_RECOGNITION_TASK,
     classify_video,
@@ -145,8 +152,6 @@ from inference_server.legacy.visualization import (
     encode_image_to_jpeg_bytes,
     render_visualization,
 )
-from inference_server import pingback
-from inference_server.hosted.common import service_secret_is_valid
 from inference_server.prometheus import measure_inference
 from inference_server.routing import (
     IMAGE_EMBEDDINGS,
@@ -220,9 +225,12 @@ SAM3_VISUAL_REMOTE_FAILURE_MESSAGE = "SAM3 visual_segment remote request failed.
 SAM3_EMBEDDING_REMOTE_UNSUPPORTED_MESSAGE = (
     "SAM3 embedding is not supported in remote execution mode."
 )
+SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE = (
+    "Binary SAM3 masks are not supported in remote execution mode."
+)
 _DEPTH_SINGLE_IMAGE_MESSAGE = "Depth estimation accepts a single image."
 _IMAGE_EMBEDDINGS_UNSUPPORTED_MESSAGE = (
-    "Image embeddings require a ResNet, ViT or DINOv3 classifier."
+    "Image embeddings require a ResNet, ConvNeXt, ViT or DINOv3 classifier."
 )
 FINE_TUNED_SAM3_DEPLOYMENT_ERROR = (
     "Fine-tuned SAM 3 models are not supported on Serverless. "
@@ -568,24 +576,30 @@ async def _infer_and_repack(
         model_monitoring=_model_monitoring_enabled(inference_request),
     )
     elapsed = time.perf_counter() - started
-    responses = []
-    for prediction, payload in zip(predictions, payloads):
-        response = repack_prediction(
-            route.task_type,
-            route.action,
-            prediction,
-            (payload.width, payload.height),
-            route,
-            inference_request,
-        )
-        response.time = elapsed
-        response.inference_id = inference_request.id
-        response.resolved_model = resolved_model_for(route)
-        if visualize:
-            response.visualization = render_visualization(
-                route, inference_request, response, payload
+
+    def _repack_all():
+        repacked = []
+        for prediction, payload in zip(predictions, payloads):
+            response = repack_prediction(
+                route.task_type,
+                route.action,
+                prediction,
+                (payload.width, payload.height),
+                route,
+                inference_request,
             )
-        responses.append(response)
+            response.time = elapsed
+            response.inference_id = inference_request.id
+            response.resolved_model = resolved_model_for(route)
+            if visualize:
+                response.visualization = render_visualization(
+                    route, inference_request, response, payload
+                )
+            repacked.append(response)
+
+        return repacked
+
+    responses = await asyncio.to_thread(_repack_all)
     pingback.record_inference(route.registry_id, inference_request, responses)
     if image_format == "image":
         http_response = Response(
@@ -721,7 +735,7 @@ async def infer_classification(
     "/infer/embeddings",
     response_model=ImageEmbeddingResponse,
     summary="Image embeddings",
-    description="Extract raw features from a ResNet, ViT or DINOv3 classification model",
+    description="Extract raw features from a ResNet, ConvNeXt, ViT or DINOv3 classification model",
     response_model_exclude_none=True,
 )
 @with_legacy_errors
@@ -1132,12 +1146,15 @@ async def legacy_infer_from_request(
         extra_args = {"keypoint_confidence": keypoint_confidence}
     elif route.task_type == "semantic-segmentation":
         request_type = SemanticSegmentationInferenceRequest
+    # Leave an omitted confidence unset so anomaly detection models can tell it
+    # apart from an explicit one and use the model-eval value.
+    if route.task_type != "classification" or "confidence" in request.query_params:
+        extra_args["confidence"] = confidence
     try:
         inference_request = request_type(
             api_key=resolved_key,
             model_id=model_id,
             image=request_image,
-            confidence=confidence,
             iou_threshold=overlap,
             max_detections=max_detections,
             visualization_labels=labels,
@@ -1923,6 +1940,10 @@ async def _sam3_remote(
 
 
 def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> dict:
+    # The proxy answers JSON, which cannot carry binary masks.
+    if inference_request.format == "binary":
+        raise LegacyHTTPError(501, SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE)
+
     prompts = []
     for prompt in inference_request.prompts:
         prompt_data = prompt.model_dump(exclude_none=True)
@@ -1936,6 +1957,8 @@ def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> 
         },
         "prompts": prompts,
         "output_prob_thresh": inference_request.output_prob_thresh,
+        "nms_iou_threshold": inference_request.nms_iou_threshold,
+        "format": inference_request.format,
         "source": inference_request.source,
         "source_info": inference_request.source_info,
     }
@@ -1944,6 +1967,10 @@ def _sam3_concept_remote_payload(inference_request: Sam3SegmentationRequest) -> 
 
 
 def _sam3_visual_remote_payload(inference_request: Sam2SegmentationRequest) -> dict:
+    # The proxy answers JSON, which cannot carry binary masks.
+    if inference_request.format == "binary":
+        raise LegacyHTTPError(501, SAM3_BINARY_REMOTE_UNSUPPORTED_MESSAGE)
+
     prompts = (
         inference_request.prompts.model_dump(exclude_none=True)
         if inference_request.prompts
@@ -1956,6 +1983,7 @@ def _sam3_visual_remote_payload(inference_request: Sam2SegmentationRequest) -> d
         },
         "prompts": prompts,
         "multimask_output": inference_request.multimask_output,
+        "format": inference_request.format,
         "source": inference_request.source,
         "source_info": inference_request.source_info,
     }

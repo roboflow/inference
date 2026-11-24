@@ -1,0 +1,7 @@
+[
+  "tests/inference/hosted_platform_tests/test_workflows.py::test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks",
+  "tests/inference/hosted_platform_tests/test_workflows.py::test_workflow_run_with_dynamic_blocks[legacy]",
+  "tests/inference/hosted_platform_tests/test_workflows.py::test_workflow_run_with_dynamic_blocks[header]",
+  "tests/inference/hosted_platform_tests/test_workflows.py::test_workflow_validate_with_dynamic_blocks[legacy]",
+  "tests/inference/hosted_platform_tests/test_workflows.py::test_workflow_validate_with_dynamic_blocks[header]"
+]

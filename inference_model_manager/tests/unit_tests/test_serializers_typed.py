@@ -205,6 +205,7 @@ class TestSingleOutputsUnchanged:
 
 def test_serialize_gaze_compact():
     from types import SimpleNamespace
+
     from inference_model_manager.serializers_typed import serialize_gaze_compact
 
     out = SimpleNamespace(yaw=[0.1, 0.2], pitch=[-0.3, 0.0])
@@ -218,6 +219,7 @@ def test_serialize_gaze_compact():
 
 def test_serialize_gaze_compact_batch():
     from types import SimpleNamespace
+
     from inference_model_manager.serializers_typed import serialize_gaze_compact
 
     outs = [
@@ -234,6 +236,7 @@ def test_serialize_gaze_compact_batch():
 
 def test_serialize_structured_ocr_compact():
     from types import SimpleNamespace
+
     from inference_model_manager.serializers_typed import (
         serialize_structured_ocr_compact,
     )
@@ -264,6 +267,7 @@ def test_serialize_structured_ocr_compact():
 
 def test_serialize_sam_segmentation_compact():
     from types import SimpleNamespace
+
     from inference_model_manager.serializers_typed import (
         serialize_sam_segmentation_compact,
     )
@@ -282,6 +286,7 @@ def test_serialize_sam_segmentation_compact():
 
 def test_serialize_sam_segmentation_compact_single():
     from types import SimpleNamespace
+
     from inference_model_manager.serializers_typed import (
         serialize_sam_segmentation_compact,
     )
@@ -388,6 +393,7 @@ def _anomaly(include_map: bool, *, is_anomalous: bool = True):
     metadata = {
         "anomaly_score": 3.5,
         "anomaly_threshold": 2.0,
+        "anomaly_scale": 0.5,
         "is_anomalous": is_anomalous,
     }
     if include_map:
@@ -465,6 +471,8 @@ def _two_image_anomaly_prediction(include_anomaly_map: bool):
         raw,
         calibration=AnomalyCalibration(threshold=2.0, scale=1.0),
         include_anomaly_map=include_anomaly_map,
+        confidence="default",
+        recommended_parameters=None,
     )
 
     return prediction
@@ -480,6 +488,7 @@ class TestClassificationCompactMultiRowAnomaly:
         assert [first["anomaly_score"], second["anomaly_score"]] == [0.5, 3.0]
         assert [first["is_anomalous"], second["is_anomalous"]] == [False, True]
         assert first["anomaly_threshold"] == second["anomaly_threshold"] == 2.0
+        assert first["anomaly_scale"] == second["anomaly_scale"] == 1.0
         assert np.asarray(first["anomaly_map"]).tolist() == [[0.0, 0.5], [0.5, 0.5]]
         assert np.asarray(second["anomaly_map"]).tolist() == [[1.0, 2.0], [3.0, 3.0]]
 

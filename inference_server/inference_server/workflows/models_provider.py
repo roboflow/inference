@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
-from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from roboflow_workflows import environment
 from roboflow_workflows.prototypes.models_provider import (
     UNSET,
@@ -27,6 +26,7 @@ from inference_models.models.base.async_handoff import (
     get_async_response_future,
 )
 from inference_models.utils import model_blob_cache
+from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
 from inference_server import pingback, telemetry
 from inference_server.gateway import _load_failure
 from inference_server.legacy.action_recognition import (
@@ -323,7 +323,11 @@ class GatewayModelsProvider:
         disable_active_learning: Optional[bool] = None,
         active_learning_target_dataset: Optional[str] = None,
         inference_kwargs: Optional[Dict[str, Any]] = None,
+        include_anomaly_map: bool = False,
     ) -> List[dict]:
+        # Set only when asked, so the request a classification block builds is
+        # field-for-field what it was before the anomaly block existed.
+        anomaly_arguments = {"include_anomaly_map": True} if include_anomaly_map else {}
         request = ClassificationInferenceRequest(
             api_key=api_key,
             model_id=model_id,
@@ -332,6 +336,7 @@ class GatewayModelsProvider:
             source=_WORKFLOW_SOURCE,
             active_learning_target_dataset=active_learning_target_dataset,
             confidence=confidence,
+            **anomaly_arguments,
         )
         return self._dump(
             self._run_cv(model_id, request, api_key, extra_params=inference_kwargs)
@@ -881,6 +886,7 @@ class GatewayModelsProvider:
         request_model_id: Union[str, None, _Unset] = UNSET,
         multimask_output: Union[bool, None, _Unset] = UNSET,
         threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
     ) -> List[Any]:
         request = Sam2SegmentationRequest(
             image=image,
@@ -892,6 +898,7 @@ class GatewayModelsProvider:
                 model_id=request_model_id,
                 multimask_output=multimask_output,
                 threshold=threshold,
+                format=format,
             ),
         )
         return [self._run_interactive_segmentation(model_id, request, api_key)]

@@ -7,6 +7,7 @@ on:
       - ".github/actions/**"
       - ".github/actionlint.y*"
       - ".github/scripts/**"
+      - "app_bundles/osx/**"
   push:
     branches:
       - main
@@ -15,6 +16,7 @@ on:
       - ".github/actions/**"
       - ".github/actionlint.y*"
       - ".github/scripts/**"
+      - "app_bundles/osx/**"
   workflow_dispatch:
 
 permissions:
@@ -65,8 +67,14 @@ jobs:
       - name: Test maintainer review handoff
         run: python -m unittest discover -s .github/scripts -p 'test_maintainer_review*.py'
       - name: Test CI image reuse without network or credentials
-        run: python -m unittest discover -s .github/scripts -p 'test_ci_image.py'
+        run: |
+          python -m unittest discover -s .github/scripts -p 'test_ci_image.py'
+          python -m unittest discover -s .github/scripts -p 'test_depot_ci_image.py'
       - name: Test hosted E2E accounting without network or credentials
         run: |
-          uv pip install --system 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8'
-          python -m unittest discover -s .github/scripts -p 'test_hosted_e2e.py'
+          uv pip install --system 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
+          python -m unittest discover -s .github/scripts -p 'test_hosted_e2e*.py'
+      - name: Test macOS release recovery without Apple credentials
+        run: |
+          uv pip install --system 'pyinstaller==6.22.3'
+          python -m unittest discover -s .github/scripts -p 'test_macos_bundle.py'

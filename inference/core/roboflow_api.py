@@ -54,6 +54,7 @@ from inference.core.env import (
     OFFLINE_MODE,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
+    ROBOFLOW_API_PROXY_REQUEST_TIMEOUT,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
@@ -183,6 +184,10 @@ NOT_FOUND_ERROR_MESSAGE = (
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
+# Seconds this client waits for an API proxy call. The proxy keeps waiting on the
+# model provider for up to a little less than that, so a deployment that waits
+# longer (ROBOFLOW_API_PROXY_REQUEST_TIMEOUT) gets answers that take longer.
+ROBOFLOW_CLIENT_TIMEOUT_HEADER = "X-Roboflow-Client-Timeout"
 API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 
 
@@ -247,19 +252,23 @@ def wrap_roboflow_api_errors(
                         return function(*args, **kwargs)
                     except RetryRequestError as error:
                         raise error.inner_error
-                except Timeout as error:
-                    record_error(error)
-                    raise RoboflowAPITimeoutError(
+                except Timeout:
+                    # Transport exceptions can include credentialed URLs. Keep
+                    # their raw messages/chains out of spans and public traces.
+                    safe_error = RoboflowAPITimeoutError(
                         "Timeout when attempting to connect to Roboflow API."
-                    ) from error
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 except (
                     requests.exceptions.ConnectionError,
                     ConnectionError,
-                ) as error:
-                    record_error(error)
-                    raise RoboflowAPIConnectionError(
+                ):
+                    safe_error = RoboflowAPIConnectionError(
                         "Could not connect to Roboflow API."
-                    ) from error
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 except requests.exceptions.HTTPError as error:
                     record_error(error)
                     user_handler_override = (
@@ -280,6 +289,18 @@ def wrap_roboflow_api_errors(
                     raise MalformedRoboflowAPIResponseError(
                         "Could not decode JSON response from Roboflow API."
                     ) from error
+                except (
+                    requests.exceptions.MissingSchema,
+                    requests.exceptions.InvalidSchema,
+                    requests.exceptions.InvalidURL,
+                ):
+                    # requests puts the whole URL, with api_key and
+                    # service_secret, in the text of these errors.
+                    safe_error = RoboflowAPIConnectionError(
+                        "Could not build a valid Roboflow API URL. Check API_BASE_URL."
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 finally:
                     record_api_call(function.__name__, time.perf_counter() - t_start)
 
@@ -305,16 +326,20 @@ def wrap_roboflow_api_errors_async(
                         return await function(*args, **kwargs)
                     except RetryRequestError as error:
                         raise error.inner_error
-                except asyncio.TimeoutError as error:
-                    record_error(error)
-                    raise RoboflowAPITimeoutError(
+                except asyncio.TimeoutError:
+                    # Match the sync wrapper: neither telemetry nor formatted
+                    # exception chains may contain raw transport credentials.
+                    safe_error = RoboflowAPITimeoutError(
                         "Timeout when attempting to connect to Roboflow API."
-                    ) from error
-                except (aiohttp.ClientConnectionError, ConnectionError) as error:
-                    record_error(error)
-                    raise RoboflowAPIConnectionError(
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
+                except (aiohttp.ClientConnectionError, ConnectionError):
+                    safe_error = RoboflowAPIConnectionError(
                         "Could not connect to Roboflow API."
-                    ) from error
+                    )
+                    record_error(safe_error)
+                    raise safe_error from None
                 except (aiohttp.ContentTypeError, JSONDecodeError) as error:
                     record_error(error)
                     raise MalformedRoboflowAPIResponseError(
@@ -594,14 +619,30 @@ def get_roboflow_model_data(
     device_id: str,
     countinference: Optional[bool] = None,
     service_secret: Optional[str] = None,
+    use_cache: bool = True,
 ) -> dict:
+    """Fetch model metadata and artifact URLs from Roboflow.
+
+    Args:
+        api_key (str): API key used to authorize the request.
+        model_id (str): Model identifier.
+        endpoint_type (Union[str, ModelEndpointType]): Model API endpoint type.
+        device_id (str): Identifier of the requesting device.
+        countinference (Optional[bool]): Whether to count inference usage.
+        service_secret (Optional[str]): Secret authorizing internal usage settings.
+        use_cache (bool): Whether cached metadata may satisfy the request. Set
+            to False to obtain fresh signed artifact URLs after a download fails.
+
+    Returns:
+        dict: Model metadata, also stored in the metadata cache.
+    """
     # Workflow blocks pass the plain string `core_model` so they do not have to
     # import this enum (prototypes/models_provider.CORE_MODEL_ENDPOINT_TYPE).
     # `ModelEndpointType(member)` is the identity for real members.
     endpoint_type = ModelEndpointType(endpoint_type)
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = None
-    if not MODELS_CACHE_AUTH_ENABLED:
+    if use_cache and not MODELS_CACHE_AUTH_ENABLED:
         api_data = cache.get(api_data_cache_key)
     if api_data is not None:
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
@@ -1629,6 +1670,8 @@ def get_workflow_specification(
 
     When ephemeral cache (Redis/Dragonfly) is enabled but unreachable, falls back
     to the Roboflow API instead of failing the request.
+    When file caching is enabled, connection failures, timeouts and server errors
+    fall back to the cached response for the same workflow, version and API key.
 
     Args:
         api_key: Roboflow API key, or None for unauthenticated fetches.
@@ -1707,8 +1750,21 @@ def get_workflow_specification(
             requests.exceptions.ConnectionError,
             ConnectionError,
             requests.exceptions.Timeout,
+            requests.exceptions.HTTPError,
+            RetryRequestError,
         ) as error:
-            if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+            failure = (
+                error.inner_error if isinstance(error, RetryRequestError) else error
+            )
+            unavailable = isinstance(
+                failure,
+                (requests.exceptions.ConnectionError, ConnectionError, Timeout),
+            ) or (
+                isinstance(failure, requests.exceptions.HTTPError)
+                and failure.response is not None
+                and 500 <= failure.response.status_code < 600
+            )
+            if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS or not unavailable:
                 raise error
             response = load_cached_workflow_response(
                 workspace_id=workspace_id,
@@ -1894,7 +1950,7 @@ def get_from_url(
 
 @backoff.on_exception(
     backoff.constant,
-    exception=RetryRequestError,
+    exception=(RetryRequestError, requests.exceptions.ChunkedEncodingError),
     max_tries=TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES,
     interval=TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL,
 )
@@ -2106,12 +2162,17 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     return f"{url}?{parameters_string}"
 
 
-def _api_base_url_for_endpoint(endpoint: str) -> str:
+def _is_api_proxy_endpoint(endpoint: str) -> bool:
     endpoint_path = endpoint.strip("/")
-    if any(
+    is_api_proxy_endpoint = any(
         endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
         for prefix in API_PROXY_ENDPOINT_PREFIXES
-    ):
+    )
+    return is_api_proxy_endpoint
+
+
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    if _is_api_proxy_endpoint(endpoint=endpoint):
         return API_PROXY_BASE_URL
     return API_BASE_URL
 
@@ -2170,8 +2231,15 @@ def build_roboflow_api_headers(
         return explicit_headers
     try:
         extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
-        if explicit_headers:
-            extra_headers.update(explicit_headers)
+        # Header names are case-insensitive: drop every spelling an explicit
+        # header replaces, or requests could send the extra one instead.
+        explicit_names = {name.lower() for name in explicit_headers}
+        extra_headers = {
+            name: value
+            for name, value in extra_headers.items()
+            if name.lower() not in explicit_names
+        }
+        extra_headers.update(explicit_headers)
         return extra_headers
     except ValueError:
         logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
@@ -2187,7 +2255,14 @@ def post_to_roboflow_api(
         Dict[int, Callable[[Union[requests.exceptions.HTTPError]], None]]
     ] = None,
 ) -> dict:
-    """Generic function to make a POST request to the Roboflow API.
+    """Make a JSON POST request to the Roboflow API.
+
+    The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
+    waiting one and then two seconds. Other endpoints make one attempt.
+    An attempt on an API proxy endpoint (``apiproxy/...``, ``api-proxy/...``)
+    waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds and sends that wait
+    in ``X-Roboflow-Client-Timeout``; any other one waits
+    ``ROBOFLOW_API_REQUEST_TIMEOUT``.
 
     Args:
         endpoint: API endpoint path
@@ -2195,6 +2270,12 @@ def post_to_roboflow_api(
         payload: JSON payload
         params: Additional URL parameters
         http_errors_handlers: Optional custom HTTP error handlers by status code
+
+    Returns:
+        dict: The decoded JSON response.
+
+    Raises:
+        RoboflowAPIRequestError: If the request or response fails.
     """
 
     if OFFLINE_MODE:
@@ -2216,15 +2297,38 @@ def post_to_roboflow_api(
         )
         wrapped_url = wrap_url(full_url)
 
-        headers = build_roboflow_api_headers()
-
-        response = requests.post(
-            url=wrapped_url,
-            json=payload,
-            headers=headers,
-            timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
-            verify=ROBOFLOW_API_VERIFY_SSL,
+        is_api_proxy_endpoint = _is_api_proxy_endpoint(endpoint=endpoint)
+        timeout = (
+            ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
+            if is_api_proxy_endpoint
+            else ROBOFLOW_API_REQUEST_TIMEOUT
         )
+        headers = build_roboflow_api_headers(
+            explicit_headers=(
+                {ROBOFLOW_CLIENT_TIMEOUT_HEADER: str(timeout)}
+                if is_api_proxy_endpoint
+                else None
+            )
+        )
+
+        for attempt in range(3):
+            response = requests.post(
+                url=wrapped_url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+                verify=ROBOFLOW_API_VERIFY_SSL,
+            )
+            if (
+                endpoint.strip("/") != "apiproxy/google_vision_ocr"
+                or response.status_code not in (502, 503, 504)
+                or attempt == 2
+            ):
+                break
+
+            response.close()
+            time.sleep(attempt + 1)
+
         api_key_safe_raise_for_status(response=response)
         return response.json()
 

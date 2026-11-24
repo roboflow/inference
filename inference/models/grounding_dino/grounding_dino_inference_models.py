@@ -131,8 +131,8 @@ class InferenceModelsGroundingDINOAdapter(Model):
         detections = self._model.infer(
             images=image,
             classes=text,
-            box_threshold=box_threshold,
-            text_threshold=text_threshold,
+            box_confidence=box_threshold,
+            text_confidence=text_threshold,
             class_agnostic_nms=class_agnostic_nms,
         )[0]
         t2 = perf_counter() - t1

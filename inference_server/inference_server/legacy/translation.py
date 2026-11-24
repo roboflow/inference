@@ -110,7 +110,13 @@ def roboflow_confidence(value: Any) -> Optional[Union[float, str]]:
 def build_task_params(task_type: str, action: str, request: Any, route: Route) -> dict:
     params: dict = {}
     confidence = roboflow_confidence(getattr(request, "confidence", None))
-    if confidence is not None:
+    # Single-label classifiers ignore confidence in the model; anomaly detection
+    # models decide with it, and use the model-eval value when the caller sent none
+    # (the request field defaults to 0.4).
+    caller_sent_confidence = task_type != "classification" or (
+        "confidence" in getattr(request, "model_fields_set", ())
+    )
+    if confidence is not None and caller_sent_confidence:
         params["confidence"] = confidence
     for field in _DISABLE_PREPROC_FIELDS:
         if getattr(request, field, False):
@@ -446,6 +452,7 @@ def _repack_anomaly_detection_response(
         confidence=class_predictions[0]["confidence"],
         anomaly_score=metadata["anomaly_score"],
         anomaly_threshold=metadata["anomaly_threshold"],
+        anomaly_scale=metadata["anomaly_scale"],
         is_anomalous=metadata["is_anomalous"],
         anomaly_map=(
             np.asarray(anomaly_map).tolist() if anomaly_map is not None else None

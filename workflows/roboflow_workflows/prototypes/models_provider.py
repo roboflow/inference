@@ -105,6 +105,7 @@ class ModelsProvider(Protocol):
         disable_active_learning: Optional[bool] = None,
         active_learning_target_dataset: Optional[str] = None,
         inference_kwargs: Optional[Dict[str, Any]] = None,
+        include_anomaly_map: bool = False,
     ) -> List[dict]: ...
 
     def run_image_embeddings(
@@ -294,6 +295,7 @@ class ModelsProvider(Protocol):
         request_model_id: Union[str, None, _Unset] = UNSET,
         multimask_output: Union[bool, None, _Unset] = UNSET,
         threshold: Union[float, None, _Unset] = UNSET,
+        format: Union[str, None, _Unset] = UNSET,
     ) -> List[Any]: ...
 
     def run_sam3_segmentation(

@@ -10,6 +10,7 @@ from inference_cli.lib.enterprise.core import enterprise_app
 from inference_cli.lib.roboflow_cloud.core import rf_cloud_app
 from inference_cli.server import server_app
 from inference_cli.workflows import workflows_app
+from inference_sdk.http.errors import HTTPServerConnectionError
 
 app = typer.Typer()
 app.add_typer(server_app, name="server")
@@ -133,6 +134,17 @@ def infer(
             visualisation_config=visualisation_config,
             model_configuration=model_config,
         )
+    except HTTPServerConnectionError as error:
+        typer.echo(
+            f"Command failed. Cause: {error}\n"
+            "\n"
+            f"Could not reach an inference server at {host}.\n"
+            "`inference infer` sends requests to a server; it does not run the model in this\n"
+            "process. Start one locally with `inference server start` (requires Docker or Podman),\n"
+            "or pass --host to use a server you already have, for example\n"
+            "--host https://serverless.roboflow.com for Roboflow's Serverless Cloud API."
+        )
+        raise typer.Exit(code=1)
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")
         raise typer.Exit(code=1)

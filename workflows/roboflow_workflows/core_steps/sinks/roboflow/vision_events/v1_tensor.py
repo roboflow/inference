@@ -1,14 +1,24 @@
 import logging
+import math
+import numbers
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
 import requests
-from pydantic import ConfigDict, Field, NonNegativeFloat, NonNegativeInt
+from pydantic import (
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 from roboflow_workflows.core_steps.common.keypoints import real_keypoints_count
 from roboflow_workflows.core_steps.common.serializers import mask_to_polygon
 from roboflow_workflows.core_steps.common.tensor_native import (
@@ -124,6 +134,15 @@ ALL_DATA_SCHEMAS_RELEVANT = {
     },
 }
 
+# The cloud's bound on an event value (+/-$100M per event in USD). The local
+# event store applies the same bound and rejects the whole event past it.
+MAX_ABS_VALUE_BASE_UNITS = 10_000_000_000
+
+# Parses a string event value with the manifest's own lax ``int`` rule, so a
+# workflow input such as "1999" that passed input validation is sent, not
+# dropped (the block receives the raw input, not the validated one).
+_WHOLE_NUMBER_STRING = TypeAdapter(int)
+
 SHORT_DESCRIPTION = "Send vision events to the Roboflow Vision Events API."
 
 LONG_DESCRIPTION = """
@@ -137,7 +156,8 @@ creating structured events that can be queried, filtered, and visualized in the 
 dashboard.
 
 1. Optionally uploads an input image and/or output image (visualization) to the Vision Events
-   image storage via the public API
+   image storage via the public API, plus any extra images (each stored under its own label,
+   without annotations)
 2. Converts model predictions (object detection, classification, instance segmentation, or
    keypoint detection) into the Vision Events annotation format and attaches them to the
    input image
@@ -220,6 +240,18 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.visualization.image"],
         json_schema_extra={"always_visible": True},
     )
+    extra_images: Dict[
+        Annotated[str, Field(min_length=1)], Selector(kind=[IMAGE_KIND])
+    ] = Field(
+        default_factory=dict,
+        title="Extra Images",
+        description="Additional images keyed by a non-empty label, such as raw_crop. "
+        "Each image is stored under its label without annotations. Omit this field "
+        "or use an empty mapping to send the event without extra images. If any "
+        "configured image selector resolves to no image, the workflow skips the "
+        "event for that frame.",
+        examples=[{"raw_crop": "$steps.cropping.crops"}],
+    )
     predictions: Optional[
         Selector(
             kind=[
@@ -292,6 +324,23 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": ALL_DATA_SCHEMAS_RELEVANT,
         },
+    )
+
+    # --- Event value (shared across schemas) ---
+    value_base_units: Optional[
+        Union[Selector(kind=[INTEGER_KIND, FLOAT_KIND]), int]
+    ] = Field(
+        default=None,
+        title="Event Value",
+        description="What this event is worth, in base units of the use case's "
+        "currency, e.g. cents for USD (1999 = $19.99). The currency always comes "
+        "from the use case. Leave empty to use the use case's default value, if it "
+        "has one. Negative values record a cost. A typed value or workflow input "
+        "must be a whole number; a value from another step is rounded to the "
+        "nearest base unit. Values outside -10,000,000,000 to 10,000,000,000 are "
+        "ignored.",
+        examples=[1999, "$steps.expression.output"],
+        json_schema_extra={"relevant_for": ALL_DATA_SCHEMAS_RELEVANT},
     )
 
     # --- Quality Check fields ---
@@ -458,6 +507,15 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
+    @field_validator("value_base_units", mode="before")
+    @classmethod
+    def reject_boolean_value_base_units(cls, value: Any) -> Any:
+        # Lax int validation would turn true/false into 1/0 and record a value (or
+        # replace the use case default with 0) instead of rejecting the mistake.
+        if isinstance(value, bool):
+            raise ValueError("value_base_units must be a number, not true or false")
+        return value
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -561,6 +619,10 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         custom_value: Optional[str] = None,
         related_event_id: Optional[str] = None,
         feedback: Optional[str] = None,
+        # Appended last on purpose: inserting it earlier would silently
+        # rebind any positional caller's arguments.
+        value_base_units: Optional[Union[int, float]] = None,
+        extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -603,6 +665,13 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
             related_event_id=related_event_id,
             feedback=feedback,
         )
+        # Operator feedback never carries a value. The cloud and the local event store
+        # drop one too, but omitting it here holds for every destination and version.
+        value_base_units = (
+            None
+            if event_type == "operator_feedback"
+            else _normalize_value_base_units(value_base_units)
+        )
 
         if write_to_event_store:
             task = partial(
@@ -615,6 +684,8 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 solution=solution,
                 event_data=event_data,
                 custom_metadata=custom_metadata,
+                value_base_units=value_base_units,
+                extra_images=extra_images,
             )
         else:
             if self._api_key is None:
@@ -636,6 +707,8 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 solution=solution,
                 event_data=event_data,
                 custom_metadata=custom_metadata,
+                value_base_units=value_base_units,
+                extra_images=extra_images,
             )
 
         self._last_event_fired = datetime.now()
@@ -710,6 +783,48 @@ def _build_event_data(
     return {k: v for k, v in data.items() if v is not None}
 
 
+def _normalize_value_base_units(value_base_units: Any) -> Optional[int]:
+    """Coerce the event value to a whole number of base units, or None to omit it.
+
+    Literals and workflow inputs are validated against the manifest, so they are
+    whole numbers, but a workflow input arrives raw and may still be a string
+    such as "1999"; strings are parsed with the manifest's own rule. Step
+    outputs bypass that validation, so any real number is accepted (numpy
+    scalars too, which the JSON encoder would reject) and a fractional amount is
+    rounded to the nearest base unit. Anything else, or an amount past
+    ``MAX_ABS_VALUE_BASE_UNITS``, is dropped with a warning instead of failing
+    the event: cloud ingestion drops such a value and keeps the event, while the
+    local event store would reject the whole event.
+    """
+    if value_base_units is None:
+        return None
+
+    normalized: Optional[int] = None
+    if isinstance(value_base_units, str):
+        try:
+            normalized = _WHOLE_NUMBER_STRING.validate_python(value_base_units)
+        except ValidationError:
+            normalized = None
+    elif not isinstance(value_base_units, bool):
+        if isinstance(value_base_units, numbers.Integral):
+            normalized = int(value_base_units)
+        elif isinstance(value_base_units, numbers.Real) and math.isfinite(
+            value_base_units
+        ):
+            normalized = int(round(value_base_units))
+    if normalized is not None and abs(normalized) <= MAX_ABS_VALUE_BASE_UNITS:
+        return normalized
+
+    logger.warning(
+        "Ignoring value_base_units %r: expected a finite number of base units "
+        "between -%d and %d.",
+        value_base_units,
+        MAX_ABS_VALUE_BASE_UNITS,
+        MAX_ABS_VALUE_BASE_UNITS,
+    )
+    return None
+
+
 def _convert_predictions_to_annotations(
     prediction: Optional[TensorNativePrediction],
 ) -> Dict[str, List[dict]]:
@@ -764,6 +879,8 @@ def _execute_vision_event(
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
     platform_client: Optional[RoboflowPlatformClient] = None,
+    value_base_units: Optional[int] = None,
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
 ) -> Tuple[bool, str, str]:
     try:
         # Step 1: Convert predictions to vision events annotation format
@@ -794,6 +911,17 @@ def _execute_vision_event(
             image_entry.update(annotations)
 
         images_payload: List[dict] = [image_entry] if image_entry else []
+        # Extra images are unannotated originals (e.g. a clean crop kept for
+        # relabelling), so they keep the input image's quality.
+        for label, image in _present_extra_images(extra_images):
+            extra_source_id, _ = _upload_image(
+                api_base_url,
+                api_key,
+                image,
+                jpeg_quality=95,
+                platform_client=platform_client,
+            )
+            images_payload.append({"sourceId": extra_source_id, "label": label})
 
         # Step 3: Build and send event
         payload = _build_event_payload(
@@ -802,6 +930,7 @@ def _execute_vision_event(
             images=images_payload,
             event_data=event_data,
             custom_metadata=custom_metadata,
+            value_base_units=value_base_units,
         )
 
         error_status, message = _send_event(
@@ -829,6 +958,8 @@ def _execute_local_event(
     solution: str,
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    value_base_units: Optional[int] = None,
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
 ) -> Tuple[bool, str, str]:
     """Send an event to a local Event Ingestion Service (v2 API).
 
@@ -853,6 +984,8 @@ def _execute_local_event(
             image_entry.update(annotations)
 
         images_payload: List[dict] = [image_entry] if image_entry else []
+        for label, image in _present_extra_images(extra_images):
+            images_payload.append({"base64Image": image.base64_image, "label": label})
 
         payload: Dict[str, Any] = {
             "inference_timestamp": datetime.now(timezone.utc).isoformat(),
@@ -863,6 +996,8 @@ def _execute_local_event(
         }
         if custom_metadata:
             payload["custom_metadata"] = custom_metadata
+        if value_base_units is not None:
+            payload["value_base_units"] = value_base_units
         if images_payload:
             payload["displayImagePosition"] = 0
 
@@ -875,6 +1010,19 @@ def _execute_local_event(
             f"Error writing event to event store: {type(error).__name__}: {error}",
             "",
         )
+
+
+def _present_extra_images(
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]],
+) -> List[Tuple[str, WorkflowImageData]]:
+    """Return the extra images that resolved to an image, as (label, image) pairs."""
+    present_images = [
+        (label, image)
+        for label, image in (extra_images or {}).items()
+        if image is not None
+    ]
+
+    return present_images
 
 
 def _send_local_event(
@@ -1122,6 +1270,7 @@ def _build_event_payload(
     images: List[dict],
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
+    value_base_units: Optional[int] = None,
 ) -> dict:
     """Build the full event payload for the Vision Events API."""
     event_id = str(uuid4())
@@ -1139,6 +1288,8 @@ def _build_event_payload(
         payload["eventData"] = event_data
     if custom_metadata:
         payload["customMetadata"] = custom_metadata
+    if value_base_units is not None:
+        payload["valueBaseUnits"] = value_base_units
     # Output image is at position 0 (first in images array), always display it
     if len(images) > 0:
         payload["displayImagePosition"] = 0

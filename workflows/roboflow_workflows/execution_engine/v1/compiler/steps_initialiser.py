@@ -1,5 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
@@ -15,6 +16,8 @@ from roboflow_workflows.execution_engine.v1.compiler.entities import (
 )
 from roboflow_workflows.offline import ensure_workflow_step_execution_mode_allowed
 from roboflow_workflows.prototypes.block import WorkflowBlockManifest
+
+logger = get_logger(__name__)
 
 
 @execution_phase(
@@ -32,22 +35,46 @@ def initialise_steps(
         block.manifest_class: block for block in available_blocks
     }
     initialised_steps = []
-    for step_manifest in steps_manifest:
-        if type(step_manifest) not in available_blocks_by_manifest_class:
-            raise UnknownManifestType(
-                public_message=f"Provided step manifest of type ({type(step_manifest)}) "
-                f"which is not compatible with registered workflow blocks.",
-                context="workflow_compilation | steps_initialisation",
+    try:
+        for step_manifest in steps_manifest:
+            if type(step_manifest) not in available_blocks_by_manifest_class:
+                raise UnknownManifestType(
+                    public_message=f"Provided step manifest of type ({type(step_manifest)}) "
+                    f"which is not compatible with registered workflow blocks.",
+                    context="workflow_compilation | steps_initialisation",
+                )
+            block_specification = available_blocks_by_manifest_class[
+                type(step_manifest)
+            ]
+            initialised_step = initialise_step(
+                step_manifest=step_manifest,
+                block_specification=block_specification,
+                explicit_init_parameters=explicit_init_parameters,
+                initializers=initializers,
             )
-        block_specification = available_blocks_by_manifest_class[type(step_manifest)]
-        initialised_step = initialise_step(
-            step_manifest=step_manifest,
-            block_specification=block_specification,
-            explicit_init_parameters=explicit_init_parameters,
-            initializers=initializers,
-        )
-        initialised_steps.append(initialised_step)
+            initialised_steps.append(initialised_step)
+    except BaseException:
+        # Nothing will own these blocks once compilation fails, so release what they
+        # already hold (threads, connections) instead of leaving it to garbage
+        # collection.
+        _close_initialised_steps(initialised_steps=initialised_steps)
+        raise
+
     return initialised_steps
+
+
+def _close_initialised_steps(initialised_steps: List[InitialisedStep]) -> None:
+    for initialised_step in initialised_steps:
+        close_fn = getattr(initialised_step.step, "close", None)
+        if not callable(close_fn):
+            continue
+        try:
+            close_fn()
+        except Exception as error:
+            logger.warning(
+                f"Could not close workflow step `{initialised_step.manifest.name}` "
+                f"after a failed initialisation: {error}"
+            )
 
 
 def initialise_step(

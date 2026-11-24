@@ -269,6 +269,8 @@ definition; the last column is the new reader.
 | `PINNED_MODELS` | `env.py:1351` | `configuration.py:133,163-174`; loaded pinned in `app.py:66-99,133-142` | unset |
 | `PRELOAD_HF_IDS` | `env.py:281` | `configuration.py:134,177-185`; loaded as `owlv2/<name>` in `hf_preload.py:27-52`, started by `app.py:134,143-151` | unset |
 | `CONFIDENCE_LOWER_BOUND_OOM_PREVENTION` | `env.py:1478` | `configuration.py:170` | `0.01` |
+| `MAX_CONCURRENT_INFERENCE_REQUESTS` | `env.py:1082` | `configuration.py:479`; `app.py` adds the limiter only when `>0` | `0` |
+| `CONCURRENT_INFERENCE_REQUESTS_QUEUE_TIMEOUT` | `env.py:1085` | `configuration.py:482`; used by the limiter in `app.py` | `30` |
 | `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_WORKERS` | `env.py:1651` | `configuration.py:374` | `16` |
 | `HTTP_API_SHARED_WORKFLOWS_THREAD_POOL_ENABLED` | `env.py:1648` | `configuration.py:377`; `app.py` lifespan: `False` creates no shared pool and the workflow routes pass `executor=None`, as legacy does | `True` |
 | `HTTP_API_THREADPOOL_WORKERS` | `env.py:1657` | `configuration.py:380`; `app.py` lifespan: when set, resizes the anyio default thread limiter and logs one line; a non-positive or non-integer value stops startup | unset (anyio default left untouched) |
@@ -315,6 +317,11 @@ definition; the last column is the new reader.
 |---|---|---|---|
 | `PROJECT` | `env.py:42` | `host.py:127`; `configuration.py:121` | `roboflow-platform` |
 | `ALLOW_POSTGRESQL_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES` | `env.py:97` | `host.py:177` | `True` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_ENABLED` | `env.py` | `host.py` | `not (GCP_SERVERLESS or LAMBDA)` |
+| `ALLOW_DATABRICKS_WORKFLOWS_SOURCE_TO_NON_GLOBAL_ADDRESSES` | `env.py` | `host.py` | `False` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_MAX_RUN_BYTES` | `env.py` | `host.py` | `1073741824` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_BYTES` | `env.py` | `host.py` | `33554432` |
+| `DATABRICKS_SQL_IMAGE_SOURCE_MAX_IMAGE_PIXELS` | `env.py` | `host.py` | `25000000` |
 | `ALLOW_WEBHOOK_WORKFLOWS_SINK_TO_NON_GLOBAL_ADDRESSES` | `env.py:103` | `host.py:174` | `True` |
 | `POSTGRESQL_WORKFLOWS_SINK_BLACKLISTED_ADDRESSES` | `env.py:110` | `host.py:180` | unset |
 | `POSTGRESQL_WORKFLOWS_SINK_WHITELISTED_ADDRESSES` | `env.py:122` | `host.py:183` | unset |
@@ -365,6 +372,7 @@ definition; the last column is the new reader.
 | `ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES` | `env.py:1316` | `host.py:164` | `True` |
 | `WORKFLOW_BLOCKS_WRITE_DIRECTORY` | `env.py:1327` | `host.py:167` | unset |
 | `ROBOFLOW_API_REQUEST_TIMEOUT` | `env.py:1415-1417` | `host.py:420-421` | `120` |
+| `ROBOFLOW_API_PROXY_REQUEST_TIMEOUT` | `env.py:1423-1428` | `platform_http.py:28-32`; `workflows/host.py`: timeout of the platform POSTs whose endpoint is under `apiproxy/` or `api-proxy/` | `ROBOFLOW_API_REQUEST_TIMEOUT` (also when empty) |
 | `WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT` | `env.py:1473` | `host.py:148` | `60.0` |
 | `OPENAI_COMPATIBLE_ALLOWED_BASE_URLS` | `env.py:1665-1670` | `host.py:268-277` | `*` |
 | `WORKFLOW_DISABLED_BLOCK_TYPES` | `env.py:1674-1680` | `host.py:168` | empty |
@@ -558,7 +566,7 @@ No new package reads these. They never get an alias or a default row.
 | `DISABLE_PREPROC_STATIC_CROP` | `env.py:502` | legacy ORT preprocessing |
 | `DISABLE_VERSION_CHECK` | `env.py:546` | legacy GitHub version check; none in the new stack |
 | `DISABLE_WORKFLOW_WORKLOAD_ENDPOINTS` | `env.py:1037` | legacy `describe_workload` routes; not in the new server |
-| `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals |
+| `DISK_CACHE_CLEANUP` | `env.py:1424` | legacy artifact cache internals; `False` also keeps weights on disk across `/model/clear` and hot-cache eviction |
 | `ELASTICACHE_ENDPOINT` | `env.py:551` | legacy AWS-era setting |
 | `ENABLE_BYTE_TRACK` | `env.py:561` | legacy stream-mode setting |
 | `ENABLE_HTTPS` | `env.py:587` | legacy uvicorn TLS; the new entrypoints (Task 5.7) own TLS |

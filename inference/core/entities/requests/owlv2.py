@@ -90,6 +90,6 @@ class OwlV2InferenceRequest(BaseRequest):
     def validate_model_id(cls, value, values):
         if value is not None:
             return value
-        if values.get("owl2_version_id") is None:
+        if values.get("owlv2_version_id") is None:
             return None
-        return f"google/{values['owl2_version_id']}"
+        return f"owlv2/{values['owlv2_version_id']}"

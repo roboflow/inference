@@ -18,6 +18,7 @@ from inference_models.errors import (
     UsagePausedModelAccessError,
 )
 
+from inference_models.models.vllm_proxy.errors import VLLMConnectionError
 from inference_server.framework.model_stat import ModelStat
 from inference_server.gateway import ModelManagerGateway
 from inference_server.legacy import bridge as bridge_mod
@@ -311,6 +312,25 @@ async def test_describe_lists_models_loaded_outside_the_bridge(fake_stat):
     assert [(r.model_id, r.task_type) for r in routes] == [
         ("other/2", "object-detection")
     ]
+
+
+@pytest.mark.asyncio
+async def test_describe_excludes_unloaded_directory_entries(fake_stat):
+    class _DirectoryGateway(FakeGateway):
+        async def stats(self):
+            return {
+                "models": {
+                    "ds/1": {"state": "loaded", "loaded": True},
+                    "ds/2": {"state": "loading", "loaded": False, "loading": True},
+                    "ds/3": {"state": "unloaded", "loaded": False, "loading": False},
+                }
+            }
+
+    bridge = LegacyModelBridge(_DirectoryGateway())
+    routes = await bridge.describe()
+    assert [r.model_id for r in routes] == ["ds/1", "ds/2"]
+    assert bridge._loaded_ids == {"ds/1", "ds/2"}
+    assert "ds/3" not in bridge
 
 
 @pytest.mark.asyncio
@@ -1437,6 +1457,32 @@ def test_load_failure_error_keeps_a_status_the_class_does_not_carry():
     assert type(error) is ModelRetrievalError
     assert error.status_code == 403
     assert str(error) == "boom"
+
+
+@pytest.mark.parametrize("status_code", [503, 504])
+def test_load_failure_error_rebuilds_a_vllm_connection_error_with_its_status(
+    status_code,
+):
+    error = load_failure_error(
+        _failure(
+            "VLLMConnectionError",
+            "sidecar down",
+            help_url=HELP_URL,
+            status_code=status_code,
+        )
+    )
+
+    assert type(error) is VLLMConnectionError
+    assert error.args == ("sidecar down",)
+    assert error.help_url == HELP_URL
+    assert error.status_code == status_code
+
+
+def test_load_failure_error_of_a_vllm_connection_error_without_a_status_is_503():
+    error = load_failure_error(_failure("VLLMConnectionError", "sidecar down"))
+
+    assert type(error) is VLLMConnectionError
+    assert error.status_code == 503
 
 
 @pytest.mark.parametrize("restricted", [True, False])

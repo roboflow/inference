@@ -74,8 +74,10 @@ from .decorator_helpers import (
     get_workflow_block_resource_details_from_kwargs,
     get_workflow_block_resource_id_from_kwargs,
     get_workflow_resource_details_from_kwargs,
+    read_batch_billing_context,
     read_source_tags_bound_to_call,
     resolve_workflow_block_execution,
+    usage_batch_billing_context,
     usage_billing_suppressed,
     usage_source_tags,
     usage_workflow_is_preview,
@@ -412,6 +414,11 @@ class UsageCollector:
         ]
         if any(tag is not None for tag in source_tags):
             usage_key = f"{usage_key}:source_tags={sha256_hash(json.dumps(source_tags), length=64)}"
+        billing_context = (resource_details or {}).get("billing_context")
+        if billing_context is not None:
+            usage_key = (
+                f"{usage_key}:billing_context={sha256_hash(billing_context, length=64)}"
+            )
         if stream_session_id:
             usage_key = f"{usage_key}:{stream_session_id}"
         return usage_key
@@ -441,6 +448,18 @@ class UsageCollector:
         resource_id: str = "",
         api_key: str = "",
     ):
+        """Cache resource metadata without per-call origins or batch billing.
+
+        Args:
+            category: Usage category owning the resource.
+            resource_details: Metadata to cache; the caller's mapping is unchanged.
+            resource_id: Resource identifier, derived from cacheable metadata
+                when omitted.
+            api_key: API key whose resource metadata is cached.
+
+        Raises:
+            ValueError: The usage category is empty.
+        """
         if not category:
             raise ValueError("Category is compulsory when recording resource details.")
         if not resource_details or not isinstance(resource_details, dict):
@@ -449,9 +468,11 @@ class UsageCollector:
             )
             return
         resource_details = self._normalize_error_metadata(resource_details)
-        # Origins belong to the current call, not the persistent metadata cache.
+        # Origins and batch billing belong to the current call. Caching a job's
+        # context would retain it indefinitely or attach it to another call.
         resource_details.pop("source", None)
         resource_details.pop("source_info", None)
+        resource_details.pop("billing_context", None)
 
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
@@ -570,11 +591,13 @@ class UsageCollector:
             resource_details or {}
         )
         if not resource_id and provided_resource_details:
+            # Match the cache's resource ID; a batch job does not define a new
+            # resource. Its context still partitions the usage key below.
             resource_id = UsageCollector._calculate_resource_hash(
                 resource_details={
                     key: value
                     for key, value in provided_resource_details.items()
-                    if key not in {"source", "source_info"}
+                    if key not in {"source", "source_info", "billing_context"}
                 }
             )
         resource_details_key = self._resource_details_key(
@@ -948,6 +971,10 @@ class UsageCollector:
             resource_id = "unknown"
             category = "unknown"
 
+        billing_context = usage_batch_billing_context.get()
+        if billing_context is not None:
+            resource_details["billing_context"] = billing_context
+
         source_info = get_source_info_from_kwargs(func_kwargs)
         if source_info:
             resource_details["source_info"] = source_info
@@ -1090,6 +1117,12 @@ class UsageCollector:
             ) -> T:
                 # Bound once, then held for the call and its usage recording, so
                 # nested decorators inherit the caller's billing intent.
+                batch_context = read_batch_billing_context(func, args, kwargs)
+                batch_token = (
+                    usage_batch_billing_context.set(batch_context)
+                    if batch_context is not None
+                    else None
+                )
                 authenticated_opt_out = call_carries_authenticated_non_billable_intent(
                     func, args, kwargs
                 )
@@ -1173,6 +1206,8 @@ class UsageCollector:
                         usage_workflow_is_preview.reset(preview_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
+                    if batch_token is not None:
+                        usage_batch_billing_context.reset(batch_token)
                     if source_token is not None:
                         usage_source_tags.reset(source_token)
 
@@ -1189,6 +1224,12 @@ class UsageCollector:
             ) -> T:
                 # Bound once, then held for the call and its usage recording, so
                 # nested decorators inherit the caller's billing intent.
+                batch_context = read_batch_billing_context(func, args, kwargs)
+                batch_token = (
+                    usage_batch_billing_context.set(batch_context)
+                    if batch_context is not None
+                    else None
+                )
                 authenticated_opt_out = call_carries_authenticated_non_billable_intent(
                     func, args, kwargs
                 )
@@ -1272,6 +1313,8 @@ class UsageCollector:
                         usage_workflow_is_preview.reset(preview_token)
                     if outbound_token is not None:
                         outbound_service_secret.reset(outbound_token)
+                    if batch_token is not None:
+                        usage_batch_billing_context.reset(batch_token)
                     if source_token is not None:
                         usage_source_tags.reset(source_token)
 

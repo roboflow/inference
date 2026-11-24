@@ -98,7 +98,13 @@ def serialize_detections_compact(output: Any, model: Any) -> dict:
 # Classification (single-label)
 # ---------------------------------------------------------------------------
 
-_ANOMALY_FIELDS = ("anomaly_score", "anomaly_threshold", "is_anomalous", "anomaly_map")
+_ANOMALY_FIELDS = (
+    "anomaly_score",
+    "anomaly_threshold",
+    "anomaly_scale",
+    "is_anomalous",
+    "anomaly_map",
+)
 
 
 def _anomaly_fields(output: Any, index: int = 0) -> dict:
