@@ -26,6 +26,11 @@ for contributor and maintainer responsibilities.
 
 - `roboflow_core/embedding_model@v1` can reach the hosted Serverless API in remote step execution: Inference servers now expose `POST /infer/embeddings` on GCP Serverless, and bill each embedded image as a `model` usage row. One request carries at most 8 images there (`SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE`). No block code changes; the block needs a server with this route.
 
+### Fixed
+
+- OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+- OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
 ## `0.2.17`
 
 Bundled execution engine: `1.17.3`.
