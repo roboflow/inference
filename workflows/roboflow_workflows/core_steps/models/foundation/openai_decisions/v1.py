@@ -120,8 +120,7 @@ back instead of generated text.
 The Decisions API runs on GPT-6 Luna and answers three kinds of questions: a
 `predicate` returns the probability that a statement about the image is true, a
 `choice` picks one of the supplied values and returns the probability of each,
-and a `score` rates the image against ordered levels. It bills input tokens
-only.
+and a `score` rates the image against ordered levels.
 
 The block supports the following tasks:
 

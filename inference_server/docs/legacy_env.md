@@ -372,6 +372,7 @@ definition; the last column is the new reader.
 | `ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES` | `env.py:1316` | `host.py:164` | `True` |
 | `WORKFLOW_BLOCKS_WRITE_DIRECTORY` | `env.py:1327` | `host.py:167` | unset |
 | `ROBOFLOW_API_REQUEST_TIMEOUT` | `env.py:1415-1417` | `host.py:420-421` | `120` |
+| `ROBOFLOW_API_PROXY_REQUEST_TIMEOUT` | `env.py:1423-1428` | `platform_http.py:28-32`; `workflows/host.py`: timeout of the platform POSTs whose endpoint is under `apiproxy/` or `api-proxy/` | `ROBOFLOW_API_REQUEST_TIMEOUT` (also when empty) |
 | `WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT` | `env.py:1473` | `host.py:148` | `60.0` |
 | `OPENAI_COMPATIBLE_ALLOWED_BASE_URLS` | `env.py:1665-1670` | `host.py:268-277` | `*` |
 | `WORKFLOW_DISABLED_BLOCK_TYPES` | `env.py:1674-1680` | `host.py:168` | empty |

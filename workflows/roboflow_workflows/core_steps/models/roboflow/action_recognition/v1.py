@@ -35,6 +35,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
@@ -87,10 +88,10 @@ SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
-timeline. The first classification runs one stride after the stream starts.
-Later classifications run at each stride. By default, the stride equals the
-window, so consecutive windows tile the stream without overlap. Set a smaller
-stride to slide overlapping windows for finer range boundaries. Ranges can
+timeline. The first scheduled classification is due one stride after the stream
+starts. By default, scheduled windows use the overlap recorded by the model.
+With zero overlap, the stride equals the window length. Set a smaller stride
+to overlap scheduled windows for finer range boundaries. Ranges can
 overlap. Timeline ranges only grow when the block merges model evidence. The
 block does not extend ranges provisionally. The timeline holds at most 5000
 ranges per stream. A stream that passes that ceiling loses the ranges that
@@ -101,11 +102,27 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-The block does not run an extra classification when a stream ends, so frames
-after the final scheduled call do not receive a result. On a finite clip, keep
-the stride shorter than the clip: the first classification waits one full
-stride, so a longer stride never runs. Tail classification requires an
-end-of-stream signal and is planned separately.
+analyzed_until_frame is the last source frame for which the latest successful
+call could report an action, or null before the first success. For models
+like Cosmos that return sampled-frame indices, it is the last sampled frame.
+For models like V-JEPA that use the observed window duration, it is the source
+frame that triggered the call. Models can therefore report different values
+for the same input frame. To display file-processing progress when the frame
+count is known, use frame_number and total_frames from the video metadata.
+The mark updates even if no actions are detected.
+Earlier gaps can remain after failed or skipped windows, and overlapping
+windows can still revise earlier predictions.
+
+On a video file that reports its frame count, the last frame can trigger a
+classification before the next scheduled call. This call uses the current
+sliding window, so it can overlap the previous call more than scheduled windows
+do. For example, with a 16-second window and a 16-second stride, a 20-second
+file has calls at about 16 and 20 seconds. Their windows share about 12 seconds.
+A file shorter than one stride can also trigger its first call on the last
+frame. The buffer must contain the model's minimum number of sampled frames,
+and the last frame must reach the block. A source such as InferencePipeline
+with max_fps can drop it. Live streams and files without a usable frame count
+get no extra call, so frames after the final scheduled call receive no result.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -145,6 +162,8 @@ class _ActionRecognitionBookkeeping:
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
+    analyzed_until_frame: Optional[int] = None
+    tail_flushed: bool = False
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
     signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
@@ -202,10 +221,10 @@ class BlockManifest(WorkflowBlockManifest):
     stride_seconds: Union[Optional[float], Selector(kind=[FLOAT_KIND])] = Field(
         default=None,
         description=(
-            "Time between classification calls. Leave empty to classify "
-            "windows with the model's recorded overlap. A smaller stride slides "
-            "overlapping windows for finer range boundaries at the cost of "
-            "more model calls."
+            "Time between scheduled classification calls. Leave empty to use "
+            "the model's recorded overlap. A smaller stride increases overlap "
+            "and runs the model more often. A video file's last frame can "
+            "trigger an earlier call with more overlap."
         ),
         examples=[None, 2.0],
     )
@@ -232,6 +251,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
+            OutputDefinition(name="analyzed_until_frame", kind=[INTEGER_KIND]),
         ]
 
     @classmethod
@@ -394,7 +414,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 built-in default with "default" or None.
 
         Returns:
-            A timeline and error status for each input frame.
+            A timeline, error status and analyzed-frame mark for each
+            input frame.
         """
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
@@ -591,11 +612,26 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # The model declares the fewest frames worth classifying; a fire
         # waits until the buffer reaches it.
         next_fire_frame_number = bookkeeping.last_fire_frame_number + stride_frames
-        should_classify = (
-            len(bookkeeping.sampled) >= max(1, int(video_sampling.min_frames))
-            and frame_number >= next_fire_frame_number
+        is_last_file_frame = bool(
+            metadata.comes_from_video_file
+            and metadata.total_frames is not None
+            and frame_number >= metadata.total_frames
+        )
+        # A file ends between two scheduled calls, so its tail gets one call
+        # of its own. The flag holds it to one when the count is too low.
+        flushes_tail = (
+            is_last_file_frame
+            and not bookkeeping.tail_flushed
+            and frame_number > bookkeeping.last_fire_frame_number
+        )
+        has_enough_samples = len(bookkeeping.sampled) >= max(
+            1, int(video_sampling.min_frames)
+        )
+        should_classify = has_enough_samples and (
+            frame_number >= next_fire_frame_number or flushes_tail
         )
         if should_classify:
+            bookkeeping.tail_flushed = is_last_file_frame
             bookkeeping.last_fire_frame_number = frame_number
             error_status = self._classify_buffer(
                 model=model,
@@ -669,6 +705,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         frames = self._prepare_frames_for_model(
             [sample.frame for sample in bookkeeping.sampled]
         )
+        analyzed_until_frame = bookkeeping.sampled[-1].source_frame_number
         try:
             infer_kwargs = (
                 {"confidence": confidence}
@@ -682,6 +719,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 infer_kwargs["duration_seconds"] = min(
                     duration_seconds, model.video_sampling.window_seconds
                 )
+                analyzed_until_frame = frame_limit - 1
             segments = model.infer(
                 frames=frames,
                 class_names=block_filter,
@@ -720,6 +758,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             sample_stride=sampling_stride,
             frame_limit=frame_limit,
         )
+        bookkeeping.analyzed_until_frame = analyzed_until_frame
         return ""
 
     @staticmethod
@@ -834,4 +873,5 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
+            "analyzed_until_frame": bookkeeping.analyzed_until_frame,
         }

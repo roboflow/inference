@@ -4,10 +4,21 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.7`
+
 ### Added
 
 - The GStreamer CUDA producer supports VP8 over RTSP with
   `ROBOFLOW_RTSP_VIDEO_CODEC=vp8` on GPUs with a VP8 decoder.
+
+### Changed
+
+- The `workflows` extra now requires `roboflow-workflows>=0.2.17`.
+
+### Fixed
+
+- Preserve declared and measured FPS on replacement frames with `DROP_OLDEST`
+  and `ADAPTIVE_DROP_OLDEST`.
 
 ## `0.1.6`
 

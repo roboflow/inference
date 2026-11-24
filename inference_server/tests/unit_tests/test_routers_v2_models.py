@@ -10,6 +10,7 @@ from inference_server.framework import model_stat
 from inference_server.framework.entities import CommonRequestParams
 from inference_server.routers.v2_models import (
     _interface_from_registry,
+    v2_load_model,
     v2_model_interface,
 )
 
@@ -37,6 +38,20 @@ def _registry(calls: list):
         "inference_server.framework.model_stat.get_one_page_of_model_metadata",
         side_effect=_metadata,
     )
+
+
+@pytest.mark.asyncio
+async def test_load_answers_503_server_busy_when_server_is_full():
+    mm = MagicMock()
+    mm.load = AsyncMock(return_value=("server_full", 1))
+    response = await v2_load_model(
+        request=MagicMock(query_params={"model_id": "acme/1"}),
+        api_key="key-1",
+        mm=mm,
+    )
+    assert response.status_code == 503
+    assert b"SERVER_BUSY" in response.body
+    assert response.headers["Retry-After"] == "1"
 
 
 @pytest.mark.asyncio

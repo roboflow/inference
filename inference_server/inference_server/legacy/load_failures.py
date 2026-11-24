@@ -16,6 +16,14 @@ class ModelLoadFailedError(Exception):
     """Model load failure of a kind the legacy server answers as an internal error."""
 
 
+# A fine-tuned vLLM model registers its LoRA adapter with the sidecar while it
+# loads, so a sidecar that is down or slow fails the load with
+# VLLMConnectionError. Rebuilt as itself, it answers 503 / 504, not 500.
+_VLLM_PROXY_LOAD_ERRORS = (
+    "NotServableOnVLLMError",
+    "AdapterNotServableError",
+    "VLLMConnectionError",
+)
 _MAX_LOAD_FAILURE_CLASS_NAME_LENGTH = 64
 _MAX_LOAD_FAILURE_CLASSES = 128
 _LOAD_FAILURE_CLASSES: dict[str, type] = {}
@@ -46,7 +54,7 @@ def _models_error_class(error_type: str) -> Any:
     error_class = getattr(models_errors, error_type, None)
     if error_class is not None:
         return error_class
-    if error_type not in ("NotServableOnVLLMError", "AdapterNotServableError"):
+    if error_type not in _VLLM_PROXY_LOAD_ERRORS:
         return None
     from inference_models.models.vllm_proxy import errors as vllm_proxy_errors
 

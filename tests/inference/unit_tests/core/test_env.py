@@ -181,3 +181,46 @@ def test_openai_compatible_allowed_base_urls_configuration(
             assert env_module.OPENAI_COMPATIBLE_ALLOWED_BASE_URLS == expected
     finally:
         importlib.reload(env_module)
+
+
+def _resolve_api_proxy_request_timeout(
+    monkeypatch, request_timeout=None, proxy_request_timeout=None
+):
+    with monkeypatch.context() as env_context:
+        for name, value in (
+            ("ROBOFLOW_API_REQUEST_TIMEOUT", request_timeout),
+            ("ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", proxy_request_timeout),
+        ):
+            if value is None:
+                env_context.delenv(name, raising=False)
+            else:
+                env_context.setenv(name, value)
+        importlib.reload(env_module)
+        result = env_module.ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
+    importlib.reload(env_module)
+    return result
+
+
+@pytest.mark.parametrize(
+    "request_timeout, proxy_request_timeout, expected",
+    [
+        (None, None, 120),
+        ("90", None, 90),
+        (None, "330", 330),
+        ("90", "330", 330),
+        ("90", "", 90),
+        (None, "  ", 120),
+        ("90", "  ", 90),
+    ],
+)
+def test_api_proxy_request_timeout_is_the_api_request_timeout_unless_set(
+    monkeypatch, request_timeout, proxy_request_timeout, expected
+) -> None:
+    assert (
+        _resolve_api_proxy_request_timeout(
+            monkeypatch,
+            request_timeout=request_timeout,
+            proxy_request_timeout=proxy_request_timeout,
+        )
+        == expected
+    )
