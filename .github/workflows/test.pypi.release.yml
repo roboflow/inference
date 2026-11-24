@@ -14,9 +14,17 @@ on:
       - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - .github/scripts/test_pypi_publish.py
+      - .github/scripts/test_pypi_build_tools.py
+      - .github/scripts/test_pypi_system_python.py
+      - .github/docker/Dockerfile.pypi-system-python-tests
+      - docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0
+      - docker/dockerfiles/Dockerfile.onnx.gpu
       - inference_models/pyproject.toml
+      - inference_models/uv.lock
       - workflows/pyproject.toml
+      - workflows/uv.lock
       - stream_vision/pyproject.toml
+      - stream_vision/uv.lock
       - Makefile
       - requirements/**
       - inference/core/version.py
@@ -36,9 +44,17 @@ on:
       - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - .github/scripts/test_pypi_publish.py
+      - .github/scripts/test_pypi_build_tools.py
+      - .github/scripts/test_pypi_system_python.py
+      - .github/docker/Dockerfile.pypi-system-python-tests
+      - docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0
+      - docker/dockerfiles/Dockerfile.onnx.gpu
       - inference_models/pyproject.toml
+      - inference_models/uv.lock
       - workflows/pyproject.toml
+      - workflows/uv.lock
       - stream_vision/pyproject.toml
+      - stream_vision/uv.lock
       - Makefile
       - requirements/**
       - inference/core/version.py
@@ -71,8 +87,16 @@ jobs:
           docker build --tag inference-pypi-tests --file .release/pypi/Dockerfile .release/pypi
           image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-tests)
           echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
-          docker run --rm -e SOURCE_REVISION="$GITHUB_SHA" \
+          docker run --rm --network none -e PIP_NO_INDEX=1 -e PIP_FIND_LINKS=/build-wheels -e SOURCE_REVISION="$GITHUB_SHA" \
             -v "$GITHUB_WORKSPACE:/work" -w /work "$image_id" \
-            sh -c 'python -m black --check .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py &&
-              python -m isort --check-only .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py &&
+            sh -c 'python -m black --check .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
+              python -m isort --check-only .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
+              python -m pytest .github/scripts/test_pypi_build_tools.py -v &&
               python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py -v'
+      - name: Test the Jetson package build on protected system Python
+        run: |
+          docker build --tag inference-pypi-system-python-tests --file .github/docker/Dockerfile.pypi-system-python-tests .
+          image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-system-python-tests)
+          echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -w /work "$image_id" \
+            python -m pytest .github/scripts/test_pypi_system_python.py -v
