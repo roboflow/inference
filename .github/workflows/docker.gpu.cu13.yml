@@ -1,18 +1,13 @@
 name: Build and Push GPU CUDA 13 Container
 permissions:
   contents: read
-  actions: read
 on:
   release:
-    types: [published]
+    types: [created]
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      release_run_id:
-        type: string
-        description: Original coordinator run supplying prepared locks (optional for non-release builds)
-        default: ""
       force_push:
         type: boolean
         description: "Do you want to push image after build?"
@@ -36,33 +31,16 @@ env:
   DOCKERFILE: "./docker/dockerfiles/Dockerfile.onnx.cu13.gpu"
 
 jobs:
-  release_inputs:
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/prepare.release-image-inputs.yml
-    with:
-      coordinator_run_id: ${{ inputs.release_run_id || '' }}
-
   docker:
-    needs: release_inputs
     runs-on:
       labels: ubuntu-latest
     timeout-minutes: 120
     permissions:
       id-token: write
       contents: read
-      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Restore prepared release image inputs
-        id: prepared_inputs
-        if: ${{ needs.release_inputs.outputs.run_id != '' }}
-        uses: ./.github/actions/restore-release-inputs
-        with:
-          run_id: ${{ needs.release_inputs.outputs.run_id }}
-          artifact_id: ${{ needs.release_inputs.outputs.artifact_id }}
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Determine Image Tags
@@ -115,10 +93,6 @@ jobs:
       - name: Build and push (Docker Hub and GCP from one build)
         uses: depot/build-push-action@v1
         with:
-          labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
-            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
-          context: .
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
           project: grl7ffzxd7
           tags: ${{ steps.all_tags.outputs.all_tags }}
