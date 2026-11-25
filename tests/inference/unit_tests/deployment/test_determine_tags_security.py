@@ -96,7 +96,12 @@ def test_preserves_release_tag_rules_without_network(tmp_path, release, expected
         executable.write_text(body)
         executable.chmod(0o755)
     result, output = run_tags(
-        tmp_path, EVENT_NAME="release", BRANCH=release, PATH=f"{fake_bin}:/usr/bin:/bin"
+        tmp_path,
+        EVENT_NAME="release",
+        BRANCH=release,
+        VERSION=release.removeprefix("v"),
+        RELEASE_PRERELEASE="true" if "rc" in release else "false",
+        PATH=f"{fake_bin}:/usr/bin:/bin",
     )
     assert result.returncode == 0, result.stderr
     assert output == f"image_tags=roboflow/inference:{expected}\n"
