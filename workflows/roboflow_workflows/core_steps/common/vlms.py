@@ -39,6 +39,10 @@ VLM_TASKS_METADATA = {
         "name": "Unprompted Object Detection",
         "description": "Model detects and returns the bounding boxes for prominent objects in the image",
     },
+    "oriented-object-detection": {
+        "name": "Oriented Object Detection",
+        "description": "Model finds every instance of the provided classes and returns a rotated rectangle per instance, with the direction of its front for the classes that have one (`class_heading`)",
+    },
     "instance-segmentation": {
         "name": "Instance Segmentation",
         "description": "Model segments every instance of the provided classes and returns a polygon outline per instance",

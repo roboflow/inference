@@ -34,6 +34,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     Kind,
 )
@@ -41,6 +42,7 @@ from roboflow_workflows.execution_engine.entities.types import (
 logger = get_logger(__name__)
 
 DETECTION_TASKS = {"object-detection"}
+ORIENTED_DETECTION_TASKS = {"oriented-object-detection"}
 SEGMENTATION_TASKS = {"instance-segmentation"}
 KEYPOINT_TASKS = {"keypoint-detection"}
 CLASSIFICATION_TASKS = {"classification", "multi-label-classification"}
@@ -64,14 +66,16 @@ def prediction_kinds_for_tasks(task_types: Iterable[str]) -> List[Kind]:
         task_types: Every task the block can be configured to run.
 
     Returns:
-        Kinds in the stable detection / segmentation / keypoints /
-        classification order, limited to the families present in
+        Kinds in the stable detection / oriented detection / segmentation /
+        keypoints / classification order, limited to the families present in
         ``task_types``.
     """
     task_types = set(task_types)
     kinds = []
     if task_types & DETECTION_TASKS:
         kinds.append(OBJECT_DETECTION_PREDICTION_KIND)
+    if task_types & ORIENTED_DETECTION_TASKS:
+        kinds.append(ORIENTED_OBJECT_DETECTION_PREDICTION_KIND)
     if task_types & SEGMENTATION_TASKS:
         # RLE first: it is what the decoder emits; the dense kind is kept so
         # consumers declared on it still connect (they decode lazily).
@@ -130,6 +134,8 @@ def actual_vlm_prediction_outputs(
     """
     if task_type in DETECTION_TASKS:
         prediction_kind = [OBJECT_DETECTION_PREDICTION_KIND]
+    elif task_type in ORIENTED_DETECTION_TASKS:
+        prediction_kind = [ORIENTED_OBJECT_DETECTION_PREDICTION_KIND]
     elif task_type in SEGMENTATION_TASKS:
         prediction_kind = [
             RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,

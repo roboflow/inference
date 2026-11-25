@@ -8,7 +8,8 @@ the block from Gemini's native ``yxyx_0_1000`` boxes.
 
 import base64
 import json
-from typing import List, Optional
+import math
+from typing import Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import cv2
@@ -16,6 +17,7 @@ import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common import vlm_reference_examples
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.oriented import serialise_native_obb
 from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
     OCCLUDED_KEYPOINT_CONFIDENCE,
     VISIBLE_KEYPOINT_CONFIDENCE,
@@ -23,6 +25,8 @@ from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import
     resolve_keypoint_skeletons,
 )
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    REFERENCE_FRONT_MARKER_RULE,
+    REFERENCE_ORIENTED_BOXED_INTRO,
     SHARED_REFERENCE_PARTS_CACHE,
     ReferenceExample,
 )
@@ -39,6 +43,7 @@ from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     prepare_generation_config,
     prepare_instance_segmentation_prompt,
     prepare_object_detection_prompt,
+    prepare_oriented_object_detection_prompt,
     run_gemini_prompting,
 )
 from roboflow_workflows.execution_engine.core import ExecutionEngine
@@ -54,6 +59,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
 
@@ -107,6 +113,7 @@ def _run_block(
     prompt: Optional[str] = None,
     model_version: str = "gemini-2.5-pro",
     keypoint_schema: Optional[dict] = None,
+    class_heading: Optional[Dict[str, bool]] = None,
 ) -> dict:
     block = GoogleGeminiBlockV6(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
@@ -125,6 +132,7 @@ def _run_block(
             max_concurrent_requests=None,
             api_key="google-key",
             keypoint_schema=keypoint_schema,
+            class_heading=class_heading,
         )
     assert len(results) == 1
     return results[0]
@@ -157,6 +165,7 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     # then
     assert outputs["predictions"] == [
         OBJECT_DETECTION_PREDICTION_KIND,
+        ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
         RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -171,6 +180,10 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
     "task_type, expected_kind",
     [
         ("object-detection", [OBJECT_DETECTION_PREDICTION_KIND]),
+        (
+            "oriented-object-detection",
+            [ORIENTED_OBJECT_DETECTION_PREDICTION_KIND],
+        ),
         ("classification", [CLASSIFICATION_PREDICTION_KIND]),
         ("multi-label-classification", [CLASSIFICATION_PREDICTION_KIND]),
     ],
@@ -1210,3 +1223,422 @@ def test_keypoint_workflow_feeds_a_keypoint_consumer() -> None:
         EXPECTED_KEYPOINTS
     ]
     assert result[0]["visualization"]["type"] == "base64"
+
+
+ORIENTED_OUTPUT = json.dumps(
+    {
+        "oriented_detections": [
+            {
+                "label": "cat",
+                "cx": 400.0,
+                "cy": 200.0,
+                "length": 300.0,
+                "width": 100.0,
+                "angle_deg": -60.0,
+            }
+        ]
+    }
+)
+
+
+def test_manifest_accepts_oriented_object_detection_with_class_heading() -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/google_gemini@v6",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "oriented-object-detection",
+            "classes": ["forklift", "scissor-lift"],
+            "class_heading": {"forklift": True, "scissor-lift": False},
+        }
+    )
+
+    # then
+    assert result.task_type == "oriented-object-detection"
+    assert result.class_heading == {"forklift": True, "scissor-lift": False}
+
+
+def test_manifest_rejects_a_class_heading_that_is_not_class_to_boolean() -> None:
+    with pytest.raises(ValueError):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat"],
+                "class_heading": {"cat": "front"},
+            }
+        )
+
+
+def test_manifest_rejects_code_execution_for_oriented_object_detection() -> None:
+    with pytest.raises(ValueError, match="google_code_execution"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat"],
+                "google_code_execution": True,
+            }
+        )
+
+
+def test_oriented_object_detection_prompt_sends_the_image_and_a_response_schema() -> (
+    None
+):
+    # when
+    prompt = prepare_oriented_object_detection_prompt(
+        base64_image="base64-image",
+        classes=["cat", "dog"],
+        class_heading={"cat": True, "dog": False},
+        image_width=800,
+        image_height=400,
+        model_version="gemini-2.5-pro",
+        temperature=None,
+        thinking_level=None,
+        max_tokens=None,
+    )
+
+    # then
+    image_part, text_part = prompt["contents"]["parts"]
+    assert image_part == {
+        "inline_data": {"mime_type": "image/jpeg", "data": "base64-image"}
+    }
+    assert "the image is 800x400 pixels" in text_part["text"]
+    assert "Classes with a front: cat." in text_part["text"]
+    assert "Classes without a front: dog." in text_part["text"]
+    generation_config = prompt["generationConfig"]
+    assert generation_config["response_mime_type"] == "application/json"
+    item = generation_config["response_schema"]["properties"]["oriented_detections"][
+        "items"
+    ]
+    assert item["properties"]["label"]["enum"] == ["cat", "dog"]
+
+
+def test_run_decodes_oriented_object_detection_into_original_image_pixels() -> None:
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=ORIENTED_OUTPUT,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then: the upload is the original image, so the geometry is kept as answered
+    assert result["error_status"] is False
+    native = serialise_native_obb(result["predictions"])
+    assert native["class_heading"] == {"cat": True, "dog": False}
+    assert native["image"] == {"width": IMAGE_WIDTH, "height": IMAGE_HEIGHT}
+    (row,) = native["predictions"]
+    assert row["obb"] == pytest.approx([400.0, 200.0, 300.0, 100.0, math.radians(-60)])
+    assert row["class"] == "cat"
+    assert row["heading"] is True
+
+
+def test_run_prompts_oriented_object_detection_with_the_image_size_and_heading() -> (
+    None
+):
+    # given
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(ORIENTED_OUTPUT, 11, 3)]
+        block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat", "dog"],
+            model_version="gemini-2.5-pro",
+            max_tokens=None,
+            temperature=None,
+            thinking_level=None,
+            google_code_execution=None,
+            max_concurrent_requests=None,
+            api_key="google-key",
+            class_heading={"dog": True},
+        )
+
+    # then
+    (prompt,) = mock_execute.call_args[1]["gemini_prompts"]
+    text = prompt["contents"]["parts"][1]["text"]
+    assert f"the image is {IMAGE_WIDTH}x{IMAGE_HEIGHT} pixels" in text
+    assert "Classes with a front: dog." in text
+    assert "Classes without a front: cat." in text
+
+
+def test_run_rejects_code_execution_for_oriented_object_detection() -> None:
+    # given
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM), pytest.raises(
+        ValueError, match="Code execution"
+    ):
+        block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat"],
+            model_version="gemini-2.5-pro",
+            max_tokens=None,
+            temperature=None,
+            thinking_level=None,
+            google_code_execution=True,
+            max_concurrent_requests=None,
+            api_key="google-key",
+        )
+
+
+def test_run_requires_classes_for_oriented_object_detection() -> None:
+    with pytest.raises(ValueError, match="`classes` must be provided"):
+        _run_block(
+            task_type="oriented-object-detection",
+            raw_output=ORIENTED_OUTPUT,
+            image=_build_image(),
+            classes=None,
+        )
+
+
+def test_run_skips_an_oriented_box_that_collapses_and_keeps_the_others() -> None:
+    # given: the first entry's length vanishes next to its center of 100
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                },
+                json.loads(ORIENTED_OUTPUT)["oriented_detections"][0],
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["obb"] == pytest.approx([400.0, 200.0, 300.0, 100.0, math.radians(-60)])
+
+
+def test_run_reports_an_error_when_every_oriented_box_collapses() -> None:
+    # given
+    output = json.dumps(
+        {
+            "oriented_detections": [
+                {
+                    "label": "cat",
+                    "cx": 100.0,
+                    "cy": 50.0,
+                    "length": 1e-15,
+                    "width": 20.0,
+                    "angle_deg": 0.0,
+                }
+            ]
+        }
+    )
+
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=output,
+        image=_build_image(),
+        classes=["cat", "dog"],
+        class_heading={"cat": True},
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+def test_run_reports_an_error_for_an_oriented_answer_in_another_contract() -> None:
+    # when
+    result = _run_block(
+        task_type="oriented-object-detection",
+        raw_output=DETECTION_OUTPUT,
+        image=_build_image(),
+        classes=["cat"],
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+def _oriented_reference_example(box_class: str = "cat") -> dict:
+    return {
+        **_reference_example(),
+        "annotations": [{"class": box_class, "obb": [100, 50, 60, 20, 0.5]}],
+    }
+
+
+def _run_oriented_with_mock(
+    reference_examples: Optional[list],
+    class_heading: Optional[dict] = None,
+) -> tuple:
+    block = GoogleGeminiBlockV6(api_key="rf-key")
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(ORIENTED_OUTPUT, 11, 3)]
+        results = block.run(
+            images=Batch(content=[_build_image()], indices=[(0,)]),
+            task_type="oriented-object-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["cat", "dog"],
+            model_version="gemini-4-argon",
+            max_tokens=16384,
+            temperature=None,
+            thinking_level="low",
+            google_code_execution=None,
+            max_concurrent_requests=None,
+            api_key="rf_key:account",
+            reference_examples=reference_examples,
+            class_heading=class_heading,
+        )
+    parts = mock_execute.call_args[1]["gemini_prompts"][0]["contents"]["parts"]
+    return results[0], parts
+
+
+def test_manifest_accepts_reference_examples_for_oriented_object_detection() -> None:
+    # when
+    result = BlockManifest.model_validate(
+        {
+            "type": "roboflow_core/google_gemini@v6",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "oriented-object-detection",
+            "classes": ["cat", "dog"],
+            "class_heading": {"cat": True},
+            "reference_examples": [_oriented_reference_example()],
+        }
+    )
+
+    # then
+    assert result.reference_examples == [
+        ReferenceExample(**_oriented_reference_example())
+    ]
+
+
+def test_manifest_rejects_oriented_reference_examples_without_an_obb() -> None:
+    with pytest.raises(ValueError, match="needs an `obb` on every annotation"):
+        BlockManifest.model_validate(
+            {
+                "type": "roboflow_core/google_gemini@v6",
+                "name": "gemini",
+                "images": "$inputs.image",
+                "task_type": "oriented-object-detection",
+                "classes": ["cat", "dog"],
+                "reference_examples": [_reference_example()],
+            }
+        )
+
+
+def test_run_rejects_resolved_oriented_reference_examples_without_an_obb() -> None:
+    with pytest.raises(ValueError, match="needs an `obb` on every annotation"):
+        _run_oriented_with_mock([_reference_example()])
+
+
+def test_run_sends_rotated_reference_images_before_the_oriented_target() -> None:
+    # when
+    result, parts = _run_oriented_with_mock(
+        [_oriented_reference_example()], class_heading={"cat": True}
+    )
+
+    # then
+    assert parts[0] == {
+        "text": REFERENCE_ORIENTED_BOXED_INTRO + REFERENCE_FRONT_MARKER_RULE
+    }
+    assert parts[1] == {"text": "Reference image 1:"}
+    assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[3] == {"text": "Target image:"}
+    assert parts[4]["inline_data"]["mime_type"] == "image/jpeg"
+    instructions = parts[5]["text"]
+    assert instructions.startswith(
+        "Detect all objects in the target image and return an oriented bounding box"
+    )
+    assert "Classes with a front: cat." in instructions
+    assert instructions.endswith(
+        "The reference images are not part of the task: return detections for "
+        "the target image only."
+    )
+    assert len(parts) == 6
+    assert result["error_status"] is False
+    (row,) = serialise_native_obb(result["predictions"])["predictions"]
+    assert row["class"] == "cat"
+
+
+def test_run_draws_the_reference_box_rotated() -> None:
+    # given: a 60x20 box turned 0.5 rad, whose top corner is near (78, 27) and whose
+    # axis-aligned box starts at x = 69
+    # when
+    _, parts = _run_oriented_with_mock([_oriented_reference_example()])
+
+    # then
+    boxed = cv2.imdecode(
+        np.frombuffer(
+            base64.b64decode(parts[2]["inline_data"]["data"]), dtype=np.uint8
+        ),
+        cv2.IMREAD_COLOR,
+    )
+    assert boxed[26:29, 77:80].min() < 200
+    assert boxed[26:29, 68:71].min() >= 235
+
+
+@pytest.mark.parametrize("class_heading", [None, {"cat": False}, {"dog": True}])
+def test_run_leaves_the_front_marker_out_when_no_example_class_has_a_front(
+    class_heading,
+) -> None:
+    # when
+    _, parts = _run_oriented_with_mock(
+        [_oriented_reference_example()], class_heading=class_heading
+    )
+
+    # then
+    assert parts[0] == {"text": REFERENCE_ORIENTED_BOXED_INTRO}
+
+
+@pytest.mark.parametrize("reference_examples", [None, []])
+def test_run_without_reference_examples_keeps_the_oriented_request(
+    reference_examples,
+) -> None:
+    # when
+    _, parts = _run_oriented_with_mock(reference_examples)
+
+    # then
+    assert len(parts) == 2
+    assert "inline_data" in parts[0]
+    assert parts[1]["text"].startswith(
+        "Detect all objects in this image and return an oriented bounding box"
+    )
+
+
+def test_manifest_shows_the_reference_examples_for_both_detection_tasks() -> None:
+    # when
+    schema = BlockManifest.model_json_schema()
+
+    # then
+    relevant_for = schema["properties"]["reference_examples"]["relevant_for"]
+    assert set(relevant_for["task_type"]["values"]) == {
+        "object-detection",
+        "oriented-object-detection",
+    }
