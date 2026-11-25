@@ -12,7 +12,7 @@ import backoff
 import requests
 from filelock import FileLock
 from requests import Response, Timeout
-from requests.exceptions import ChunkedEncodingError
+from requests.exceptions import ChunkedEncodingError, HTTPError
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -57,6 +57,41 @@ DownloadUrl = str
 MD5Hash = Optional[str]
 
 _MD5_HASH_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+class _ArtifactDownloadForbiddenError(HTTPError):
+    """An artifact 403 with diagnostics that never retain a signed URL."""
+
+    def __init__(self, *, byte_range: Optional[str], request_id: Optional[str]):
+        response = Response()
+        response.status_code = 403
+        response.reason = "Forbidden"
+        super().__init__("Artifact download returned HTTP 403", response=response)
+        self.byte_range = byte_range
+        self.request_id = request_id
+        self.file_handle: Optional[str] = None
+
+    def __str__(self) -> str:
+        return (
+            f"Artifact download returned HTTP 403 (artifact={self.file_handle}, "
+            f"range={self.byte_range}, request_id={self.request_id})"
+        )
+
+
+def _raise_for_artifact_status(
+    response: Response, *, byte_range: Optional[str] = None
+) -> None:
+    if response.status_code != 403:
+        response.raise_for_status()
+        return
+
+    request_id = None
+    for header in ("x-goog-request-id", "x-guploader-uploadid", "x-amz-request-id"):
+        value = response.headers.get(header)
+        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", value):
+            request_id = value
+            break
+    raise _ArtifactDownloadForbiddenError(byte_range=byte_range, request_id=request_id)
 
 
 def is_valid_md5_hash(value: object) -> bool:
@@ -269,6 +304,7 @@ def download_files_to_directory(
     with progress:
         with ThreadPoolExecutor(max_workers=max_parallel_downloads) as executor:
             futures = []
+            file_handles = {}
             for file_handle, download_url, md5_hash in files_specs:
                 future = executor.submit(
                     safe_download_file,
@@ -287,6 +323,7 @@ def download_files_to_directory(
                     content_addressed_artifact_cache=content_addressed_artifact_cache,
                 )
                 futures.append(future)
+                file_handles[future] = file_handle
             done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
             for pending_future in pending_futures:
                 pending_future.cancel()
@@ -294,6 +331,8 @@ def download_files_to_directory(
             for future in done_futures:
                 future_exception = future.exception()
                 if future_exception:
+                    if isinstance(future_exception, _ArtifactDownloadForbiddenError):
+                        future_exception.file_handle = file_handles[future]
                     raise future_exception
         return files_mapping
 
@@ -508,7 +547,9 @@ def safe_check_range_download_option(
             url=url, timeout=timeout, response_codes_to_retry=response_codes_to_retry
         )
     except Exception:
-        LOGGER.warning(f"Cannot use range requests for {url}")
+        LOGGER.warning(
+            "Cannot use range requests; falling back to a streaming download"
+        )
         return None
 
 
@@ -534,7 +575,7 @@ def check_range_download_option(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
-    response.raise_for_status()
+    _raise_for_artifact_status(response)
     accept_ranges = response.headers.get("accept-ranges", "none")
     content_length = response.headers.get("content-length")
     if "bytes" not in accept_ranges.lower():
@@ -572,7 +613,7 @@ def get_content_length(
             message=f"Remote server returned response code {response.status_code} for URL {url}",
             help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
         )
-    response.raise_for_status()
+    _raise_for_artifact_status(response)
     content_length = response.headers.get("content-length")
     if content_length is None:
         return None
@@ -756,7 +797,9 @@ def download_chunk(
                     _chunk_download_backoff_sleep(attempt)
                     continue
 
-                response.raise_for_status()
+                _raise_for_artifact_status(
+                    response, byte_range=f"bytes={current_start}-{end}"
+                )
 
                 if response.status_code != 206:
                     raise RangeRequestNotSupportedError(
@@ -855,7 +898,7 @@ def stream_download(
                     message=f"File hosting returned {response.status_code}",
                     help_url="https://inference-models.roboflow.com/errors/file-download/#retryerror",
                 )
-            response.raise_for_status()
+            _raise_for_artifact_status(response)
             _handle_stream_download(
                 response=response,
                 target_path=target_path,
