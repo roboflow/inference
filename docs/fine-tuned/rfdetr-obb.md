@@ -189,9 +189,9 @@ by the local build checks above.
    root distributions requiring its exact version become consumable.
 4. Release the root packages after their consumer changes merge and build
    server images. `make create_wheels` builds the root release set, including the
-   SDK; the root workflow handles the SDK upload separately. Full CPU/GPU builds
-   explicitly install their checkout Models wheel; slim builds resolve the new
-   registry pin. Verify installed model registration and a CPU ONNX fixture in
+   SDK; the root workflow handles the SDK upload separately. Every image gets the
+   native OBB Models code from the released `inference-models` through its
+   requirements pin. Verify installed model registration and a CPU ONNX fixture in
    actual deployed images and US/EU targets.
 5. Deploy compatible serving and queue workers before enabling platform native
    producers. Native custom Auto Label jobs use direct HTTP and require no queue
