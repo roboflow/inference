@@ -4,6 +4,8 @@ permissions:
 on:
   release:
     types: [created]
+  push:
+    branches: [ubuntu-24-04] # TEMP: build-only test run, remove before merge
   workflow_dispatch:
     inputs:
       force_push:
@@ -31,7 +33,7 @@ env:
 
 jobs:
   docker:
-    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'workflow_dispatch' || github.event_name == 'release') }}
+    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'push') }}
     runs-on:
       labels: depot-ubuntu-24.04
       group: public-depot
