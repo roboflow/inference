@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - .release/pypi/**
+      - .dockerignore
+      - .github/workflows/prepare.release-image-inputs.yml
+      - .github/workflows/docker*.yml
+      - .github/actions/restore-release-inputs/**
       - .github/workflows/publish.pypi*.yml
       - .github/workflows/test.pypi.release.yml
       - .github/workflows/*inference_sdk*.yml
@@ -14,6 +18,10 @@ on:
       - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - .github/scripts/test_pypi_publish.py
+      - .github/scripts/test_pypi_image_inputs.py
+      - .github/scripts/test_pypi_preparation.py
+      - .github/scripts/test_pypi_recovery.py
+      - .github/scripts/test_pypi_candidate_ownership.py
       - .github/scripts/test_pypi_build_tools.py
       - .github/scripts/test_pypi_system_python.py
       - .github/docker/Dockerfile.pypi-system-python-tests
@@ -33,6 +41,10 @@ on:
     branches: [main]
     paths:
       - .release/pypi/**
+      - .dockerignore
+      - .github/workflows/prepare.release-image-inputs.yml
+      - .github/workflows/docker*.yml
+      - .github/actions/restore-release-inputs/**
       - .github/workflows/publish.pypi*.yml
       - .github/workflows/test.pypi.release.yml
       - .github/workflows/*inference_sdk*.yml
@@ -44,6 +56,10 @@ on:
       - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - .github/scripts/test_pypi_publish.py
+      - .github/scripts/test_pypi_image_inputs.py
+      - .github/scripts/test_pypi_preparation.py
+      - .github/scripts/test_pypi_recovery.py
+      - .github/scripts/test_pypi_candidate_ownership.py
       - .github/scripts/test_pypi_build_tools.py
       - .github/scripts/test_pypi_system_python.py
       - .github/docker/Dockerfile.pypi-system-python-tests
@@ -89,10 +105,10 @@ jobs:
           echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
           docker run --rm --network none -e PIP_NO_INDEX=1 -e PIP_FIND_LINKS=/build-wheels -e SOURCE_REVISION="$GITHUB_SHA" \
             -v "$GITHUB_WORKSPACE:/work" -w /work "$image_id" \
-            sh -c 'python -m black --check .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
-              python -m isort --check-only .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
+            sh -c 'python -m black --check .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .release/pypi/candidate.py .release/pypi/prepare.py .release/pypi/image_inputs.py .release/pypi/sdk_smoke.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_recovery.py .github/scripts/test_pypi_preparation.py .github/scripts/test_pypi_image_inputs.py .github/scripts/test_pypi_candidate_ownership.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
+              python -m isort --check-only .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .release/pypi/candidate.py .release/pypi/prepare.py .release/pypi/image_inputs.py .release/pypi/sdk_smoke.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_recovery.py .github/scripts/test_pypi_preparation.py .github/scripts/test_pypi_image_inputs.py .github/scripts/test_pypi_candidate_ownership.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
               python -m pytest .github/scripts/test_pypi_build_tools.py -v &&
-              python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py -v'
+              python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_recovery.py .github/scripts/test_pypi_preparation.py .github/scripts/test_pypi_image_inputs.py .github/scripts/test_pypi_candidate_ownership.py -v'
       - name: Test the Jetson package build on protected system Python
         run: |
           docker build --tag inference-pypi-system-python-tests --file .github/docker/Dockerfile.pypi-system-python-tests .
@@ -100,3 +116,7 @@ jobs:
           echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
           docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -w /work "$image_id" \
             python -m pytest .github/scripts/test_pypi_system_python.py -v
+      - name: Smoke the exact SDK wheel in the existing SDK test image
+        run: |
+          bash .release/pypi/release.sh build-sdk
+          bash .github/scripts/run_sdk_tests.sh retained 3.12
