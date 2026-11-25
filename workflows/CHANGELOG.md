@@ -18,18 +18,37 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
-- Action Recognition Model gains an `analyzed_until_frame` output: the source
-  index of the last frame a successful classification covered, null until the
-  first one. A consumer can tell "no action" from "not analyzed yet". Failed and
-  skipped windows do not advance it.
-- Action Recognition Model runs one extra classification on the last frame of a
-  video file that reports its frame count. The timeline on that frame covers
-  the tail of the clip, and a clip shorter than one stride now gets a result.
+- Action Recognition Model reports the inclusive end of the latest successful
+  window in `analyzed_until_frame`, or null before the first success. Cosmos
+  reports the last sampled source frame. Models that use the observed window
+  duration report the source frame that triggered the call. Earlier failed or
+  skipped windows can leave gaps before the mark.
+- Action Recognition Model can classify the buffered samples on the last frame
+  of a video file that reports its frame count. A clip shorter than one stride
+  can get a result if enough samples are buffered.
+  When the file ends between scheduled calls, the final window can overlap
+  the preceding window even when the configured overlap is zero.
   Live streams and files without a usable frame count behave as before, and
   so does a file whose last frame the source drops (for example with
   `max_fps`).
+- Action Recognition Model gains `background_inference`. A live stream then
+  hands each window to a worker thread, so the step returns at once and the
+  video does not wait for the model. The result reaches the timeline on the
+  stream's next frame after the call ends, so the last call of a stream that
+  stops is not reported. One call runs per stream at a time; a call that comes
+  due while the previous one has not finished waits and takes the newest
+  window. When a call starts late, `error_status` names the frames no window
+  covers between it and the previous call. A stream reads
+  `background_inference` on its first frame and keeps that mode until its
+  state resets. A step has one worker, so its streams take turns. Video files
+  always classify inside the step. The default is unchanged.
 
 ### Fixed
+
+- Action Recognition Model releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model
+  changes. A classification already running can finish. A failed call on one
+  camera no longer keeps another camera's completed window in memory.
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.

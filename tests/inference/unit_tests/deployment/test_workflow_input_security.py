@@ -22,7 +22,7 @@ def run_step(tmp_path, workflow, step_name, **values):
     step = next(
         step
         for job in config["jobs"].values()
-        for step in job["steps"]
+        for step in job.get("steps", [])
         if step.get("name") == step_name
     )
     assert "${{" not in step["run"]
@@ -197,6 +197,7 @@ def test_installers_preserve_manual_and_release_versions(
                 "PLATFORM": "linux/amd64",
                 "EVENT_NAME": "release",
                 "GIT_REF": "refs/tags/v1.2.3",
+                "RELEASE_IMAGE_TAGS": "roboflow/inference-exp:cpu-1.2.3,roboflow/inference-exp:cpu-latest",
             },
             "tags=roboflow/inference-exp:cpu-1.2.3,roboflow/inference-exp:cpu-latest\n",
         ),

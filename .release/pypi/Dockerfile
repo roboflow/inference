@@ -1,6 +1,6 @@
 FROM python:3.12-slim-bookworm
 
-RUN apt-get update && apt-get install -y --no-install-recommends make git \
+RUN apt-get update && apt-get install -y --no-install-recommends make git jq \
     && rm -rf /var/lib/apt/lists/*
 # Match the existing setuptools build path; do not install runtime packages.
 COPY build-requirements.txt /build-requirements.txt
@@ -18,4 +18,7 @@ RUN python -m pip download --no-deps --only-binary=:all: --dest /build-wheels \
 COPY release.py /release.py
 COPY dependencies.py /dependencies.py
 COPY publish.py /publish.py
+COPY candidate.py /candidate.py
+COPY prepare.py /prepare.py
+COPY image_inputs.py /image_inputs.py
 WORKDIR /work
