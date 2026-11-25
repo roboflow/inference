@@ -62,7 +62,14 @@ _MD5_HASH_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 class _ArtifactDownloadForbiddenError(HTTPError):
     """An artifact 403 with diagnostics that never retain a signed URL."""
 
-    def __init__(self, *, byte_range: Optional[str], request_id: Optional[str]):
+    def __init__(
+        self,
+        *_args,
+        byte_range: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ):
+        # BaseException unpickling supplies the message positionally, then
+        # restores the diagnostic attributes from the instance state.
         response = Response()
         response.status_code = 403
         response.reason = "Forbidden"

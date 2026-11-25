@@ -133,6 +133,7 @@ from inference_models.utils.onnx_embeddings import (
     TRANSFORM_VERSION,
     embedding_definition,
 )
+from inference_models.utils.secure_gateway import validate_secure_gateway_url
 from inference_models.weights_providers import offline_registry
 from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import (
@@ -2885,6 +2886,30 @@ def _prepare_library_model_init_kwargs(
     return {**model_init_kwargs, "local_files_only": True}
 
 
+def _canonicalize_artifact_refresh_source(download_url: str) -> str:
+    """Compare signing credentials inside the configured gateway envelope only."""
+    gateway_prefix = None
+    if configuration.SECURE_GATEWAY:
+        gateway_base = validate_secure_gateway_url(configuration.SECURE_GATEWAY)
+        prefix = f"{gateway_base}/proxy?url="
+        if download_url.startswith(prefix):
+            parsed_url = urllib.parse.urlsplit(download_url)
+            query = urllib.parse.parse_qsl(parsed_url.query, keep_blank_values=True)
+            # The provider emits exactly one encoded URL. Ambiguous or extended
+            # envelopes retain their full identity instead of being unwrapped.
+            if len(query) == 1 and query[0][0] == "url" and not parsed_url.fragment:
+                gateway_prefix = prefix
+                download_url = query[0][1]
+
+    source = _canonicalize_download_source(
+        download_url, additional_auth_params={"keyname"}
+    )
+    if gateway_prefix is not None:
+        source = gateway_prefix + urllib.parse.quote(source, safe="~()*!'")
+
+    return source
+
+
 def _refresh_roboflow_model_package(
     model_package: ModelPackageMetadata,
     *,
@@ -2912,8 +2937,8 @@ def _refresh_roboflow_model_package(
             (
                 replace(
                     artifact,
-                    download_url=_canonicalize_download_source(
-                        artifact.download_url, additional_auth_params={"keyname"}
+                    download_url=_canonicalize_artifact_refresh_source(
+                        artifact.download_url
                     ),
                 )
                 if isinstance(artifact, FileDownloadSpecs)
@@ -2927,6 +2952,8 @@ def _refresh_roboflow_model_package(
         )
         return package_identity
 
+    # Keep the complete negotiated contract, including constructor recommendations,
+    # fixed during recovery; metadata changes require a fresh model load.
     if (
         replace(refreshed, model_packages=[])
         != replace(model_metadata, model_packages=[])
@@ -2935,8 +2962,8 @@ def _refresh_roboflow_model_package(
     ):
         raise CorruptedModelPackageError(
             message=(
-                "Refreshed artifact metadata changed the selected model or package "
-                "identity. Refusing to retry the download with a different contract."
+                "Refreshed metadata changed the selected model or package contract. "
+                "Refusing to retry the download with different metadata."
             ),
             help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
         )

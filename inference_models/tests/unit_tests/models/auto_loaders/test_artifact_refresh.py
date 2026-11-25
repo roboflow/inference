@@ -1,4 +1,5 @@
 import hashlib
+import pickle
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Barrier, Event, Lock, Thread
@@ -16,6 +17,7 @@ from inference_models.errors import (
 from inference_models.models.auto_loaders import core, model_cache_paths
 from inference_models.models.auto_loaders.entities import BackendType
 from inference_models.utils import download
+from inference_models.weights_providers import roboflow as roboflow_provider
 from inference_models.weights_providers.entities import (
     FileDownloadSpecs,
     ModelDependency,
@@ -29,8 +31,8 @@ def artifact_server():
     payload = bytes(range(256)) * 32
     state = SimpleNamespace(
         mode="one-range",
-        threaded=True,
         requests=[],
+        request_paths=[],
         heads=0,
         lock=Lock(),
         barrier=Barrier(8),
@@ -39,7 +41,12 @@ def artifact_server():
         config_completed=Event(),
         with_config=False,
         head_forbidden=False,
+        request_id="test-request-123",
     )
+
+    class ArtifactServer(ThreadingHTTPServer):
+        # All eight range requests must connect before their barrier releases.
+        request_queue_size = 64
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -86,7 +93,10 @@ def artifact_server():
                 first_pass = state.heads == 1
             if byte_range:
                 state.barrier.wait(timeout=10)
-            signature = parse_qs(urlparse(self.path).query)["Signature"][0]
+            request_url = self.path
+            if urlparse(request_url).path.endswith("/proxy"):
+                request_url = parse_qs(urlparse(request_url).query)["url"][0]
+            signature = parse_qs(urlparse(request_url).query)["Signature"][0]
             forbidden = (
                 state.mode == "permanent"
                 or (state.mode == "expired" and signature == "old-secret")
@@ -96,8 +106,9 @@ def artifact_server():
             status = 403 if forbidden else (206 if byte_range else 200)
             with state.lock:
                 state.requests.append((signature, byte_range, status))
+                state.request_paths.append(self.path)
             self.send_response(status)
-            self.send_header("x-goog-request-id", "test-request-123")
+            self.send_header("x-goog-request-id", state.request_id)
             body = b"forbidden" if forbidden else payload[start : end + 1]
             self.send_header("Content-Length", str(len(body)))
             if byte_range and not forbidden:
@@ -105,7 +116,7 @@ def artifact_server():
             self.end_headers()
             self.wfile.write(body)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = ArtifactServer(("127.0.0.1", 0), Handler)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     state.url = f"http://127.0.0.1:{server.server_port}/model.safetensors"
@@ -153,7 +164,9 @@ def model_load(artifact_server, monkeypatch, tmp_path):
         provider_calls=[],
         refresh_error=None,
         model=MagicMock(),
+        retry_sleep=MagicMock(),
     )
+    monkeypatch.setattr(core, "time", SimpleNamespace(sleep=state.retry_sleep))
 
     def provider(**kwargs):
         state.provider_calls.append(kwargs)
@@ -200,7 +213,6 @@ def test_artifact_403_refreshes_once_and_finishes_download(
     if mode == "head":
         server.head_forbidden = True
     if mode == "stream":
-        server.threaded = False
         monkeypatch.setattr(download, "MIN_SIZE_FOR_THREADED_DOWNLOAD", 10**9)
     if mode == "expired":
         new_artifact = replace(
@@ -215,6 +227,7 @@ def test_artifact_403_refreshes_once_and_finishes_download(
     assert model_load.load() is model_load.model
 
     assert len(model_load.provider_calls) == 2
+    model_load.retry_sleep.assert_called_once_with(1.0)
     assert model_load.provider_calls[1] == {
         **model_load.provider_calls[0],
         "model_id": model_load.metadata.model_id,
@@ -355,7 +368,10 @@ def test_model_constructor_403_does_not_refresh(artifact_server, model_load):
     assert len(model_load.provider_calls) == 1
 
 
-def test_refresh_reuses_completed_verified_file(artifact_server, model_load):
+@pytest.mark.parametrize("reverse_artifacts", [False, True])
+def test_refresh_reuses_completed_verified_file(
+    artifact_server, model_load, reverse_artifacts
+):
     artifact_server.with_config = True
     config = FileDownloadSpecs(
         file_handle="config.json",
@@ -369,7 +385,21 @@ def test_refresh_reuses_completed_verified_file(artifact_server, model_load):
     model_load.metadata = replace(
         model_load.metadata, model_packages=[model_load.package]
     )
-    model_load.refreshed_metadata = model_load.metadata
+    model_load.refreshed_metadata = replace(
+        model_load.metadata,
+        model_packages=[
+            (
+                replace(
+                    model_load.package,
+                    package_artefacts=list(
+                        reversed(model_load.package.package_artefacts)
+                    ),
+                )
+                if reverse_artifacts
+                else model_load.package
+            )
+        ],
+    )
 
     model_load.load()
 
@@ -411,3 +441,172 @@ def test_refresh_bypasses_warm_up_metadata(artifact_server, model_load, monkeypa
 
     assert len(model_load.provider_calls) == 2
     assert len(artifact_server.requests) == 16
+
+
+@pytest.fixture
+def gateway_model(artifact_server, model_load, monkeypatch):
+    artifact_server.mode = "expired"
+    gateway = artifact_server.url.removesuffix("/model.safetensors") + "/edge/"
+    monkeypatch.setattr(core.configuration, "SECURE_GATEWAY", gateway)
+    monkeypatch.setattr(roboflow_provider, "SECURE_GATEWAY", gateway)
+
+    def wrap(url):
+        return roboflow_provider.roboflow_secure_gateway_proxy_url_builder(
+            url, query=None
+        )
+
+    artifact = model_load.package.package_artefacts[0]
+    model_load.package = replace(
+        model_load.package,
+        package_artefacts=[replace(artifact, download_url=wrap(artifact.download_url))],
+    )
+    model_load.metadata = replace(
+        model_load.metadata, model_packages=[model_load.package]
+    )
+    refreshed_artifact = replace(
+        artifact,
+        download_url=wrap(
+            f"{artifact_server.url}?Expires=2&KeyName=new-key&Signature=new-secret"
+        ),
+    )
+    refreshed_package = replace(
+        model_load.package, package_artefacts=[refreshed_artifact]
+    )
+    model_load.refreshed_metadata = replace(
+        model_load.metadata, model_packages=[refreshed_package]
+    )
+    return model_load
+
+
+def test_secure_gateway_refresh_downloads_resigned_artifact(
+    artifact_server, gateway_model, caplog
+):
+    assert gateway_model.load() is gateway_model.model
+
+    assert len(gateway_model.provider_calls) == 2
+    assert gateway_model.provider_calls[1] == {
+        **gateway_model.provider_calls[0],
+        "model_id": gateway_model.metadata.model_id,
+    }
+    assert sum(status == 403 for _, _, status in artifact_server.requests) == 8
+    assert sum(status == 206 for _, _, status in artifact_server.requests) == 8
+    assert all(
+        path.startswith("/edge/proxy?url=") for path in artifact_server.request_paths
+    )
+    assert {signature for signature, _, _ in artifact_server.requests} == {
+        "old-secret",
+        "new-secret",
+    }
+    assert (
+        next(gateway_model.root.rglob("model.safetensors")).read_bytes()
+        == artifact_server.payload
+    )
+    assert "old-secret" not in caplog.text
+    assert "new-secret" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "host",
+        "gateway_path",
+        "artifact_path",
+        "content_query",
+        "outer_query",
+        "duplicate_url",
+        "fragment",
+        "gateway_disabled",
+    ],
+)
+def test_secure_gateway_refresh_rejects_changed_source(
+    artifact_server, gateway_model, monkeypatch, change
+):
+    package = gateway_model.refreshed_metadata.model_packages[0]
+    artifact = package.package_artefacts[0]
+    url = artifact.download_url
+    if change == "host":
+        url = url.replace("127.0.0.1", "localhost", 1)
+    elif change == "gateway_path":
+        url = url.replace("/edge/proxy", "/another/proxy")
+    elif change == "artifact_path":
+        url = url.replace("model.safetensors", "another.safetensors")
+    elif change == "content_query":
+        url += "%26generation%3Ddifferent"
+    elif change == "outer_query":
+        url += "&route=different"
+    elif change == "duplicate_url":
+        url += "&url=https%3A%2F%2Fother.example%2Fweights"
+    elif change == "fragment":
+        url += "#different"
+    else:
+        monkeypatch.setattr(core.configuration, "SECURE_GATEWAY", None)
+    package = replace(package, package_artefacts=[replace(artifact, download_url=url)])
+    gateway_model.refreshed_metadata = replace(
+        gateway_model.metadata, model_packages=[package]
+    )
+
+    with pytest.raises(ModelPackageAlternativesExhaustedError) as error:
+        gateway_model.load()
+
+    assert isinstance(error.value.alternatives_errors[0], CorruptedModelPackageError)
+    assert len(gateway_model.provider_calls) == 2
+    assert len(artifact_server.requests) == 8
+    gateway_model.model_class.from_pretrained.assert_not_called()
+
+
+def test_refresh_rejects_duplicate_package_ids(artifact_server, model_load):
+    model_load.refreshed_metadata = replace(
+        model_load.metadata,
+        model_packages=[model_load.package, model_load.package],
+    )
+
+    with pytest.raises(ModelPackageAlternativesExhaustedError) as error:
+        model_load.load()
+
+    assert isinstance(error.value.alternatives_errors[0], CorruptedModelPackageError)
+    assert len(model_load.provider_calls) == 2
+    assert len(artifact_server.requests) == 8
+    model_load.model_class.from_pretrained.assert_not_called()
+
+
+@pytest.mark.parametrize("request_id", ["untrusted id", "<script>", "x" * 201])
+def test_artifact_error_omits_invalid_request_id(
+    artifact_server, model_load, caplog, request_id
+):
+    artifact_server.mode = "permanent"
+    artifact_server.request_id = request_id
+
+    with pytest.raises(ModelPackageAlternativesExhaustedError) as error:
+        model_load.load()
+
+    artifact_error = error.value.alternatives_errors[0]
+    assert artifact_error.request_id is None
+    assert artifact_error.response.status_code == 403
+    assert request_id not in str(error.value) + caplog.text
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_artifact_error_round_trips_through_pickle(wrapped):
+    artifact_error = download._ArtifactDownloadForbiddenError(
+        byte_range="bytes=0-1023", request_id="request-123"
+    )
+    artifact_error.file_handle = "model.safetensors"
+    error = (
+        ModelPackageAlternativesExhaustedError(
+            "package exhausted", alternatives_errors=[artifact_error]
+        )
+        if wrapped
+        else artifact_error
+    )
+
+    restored = pickle.loads(pickle.dumps(error))
+
+    assert type(restored) is type(error)
+    restored_artifact = restored.alternatives_errors[0] if wrapped else restored
+    assert type(restored_artifact) is type(artifact_error)
+    assert str(restored_artifact) == str(artifact_error)
+    assert restored_artifact.file_handle == "model.safetensors"
+    assert restored_artifact.byte_range == "bytes=0-1023"
+    assert restored_artifact.request_id == "request-123"
+    assert restored_artifact.response.status_code == 403
+    assert restored_artifact.response.url is None

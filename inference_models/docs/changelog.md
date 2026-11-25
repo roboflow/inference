@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retry a Roboflow artifact download once after HTTP 403 by refreshing its signed
+  URL, including through `SECURE_GATEWAY`, while preserving the selected package
+  contract and cached files.
+
 ## `0.39.10`
 
 ### Added
