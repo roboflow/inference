@@ -26,9 +26,11 @@ The four images below run Python 3.10 and stay on Pillow 12.3 without the Pillow
 | `roboflow/roboflow-inference-server-trt` | `roboflow/roboflow-inference-server-gpu` |
 | `roboflow/roboflow-inference-server-udp-gpu` | `roboflow/roboflow-inference-server-gpu` |
 
-## GPU host driver
+## GPU image on Ubuntu 24.04
 
-`roboflow/roboflow-inference-server-gpu` is built on Ubuntu 24.04 with CUDA 12.6.3 and needs NVIDIA driver 560 or newer. The container can start on older datacenter drivers (R535, R550), but the code it compiles at runtime (GStreamer CUDA converters and OpenCV CUDA kernels on GPUs other than compute 7.5 and 8.9) needs a driver that supports CUDA 12.6.
+`Dockerfile.onnx.gpu.ubuntu24` builds the same image as `Dockerfile.onnx.gpu` on Ubuntu 24.04 and CUDA 12.6.3. It is published to the same repository with an `-ubuntu24.04` tag suffix, for example `roboflow/roboflow-inference-server-gpu:<version>-ubuntu24.04` and `roboflow/roboflow-inference-server-gpu:latest-ubuntu24.04`.
+
+It needs NVIDIA driver 560 or newer. The default image (Ubuntu 22.04, CUDA 12.4.1) is unchanged. Keep the two Dockerfiles in sync: only the base images and the Ubuntu 24.04 package names differ.
 
 ## Base image
 
