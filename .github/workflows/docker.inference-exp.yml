@@ -3,6 +3,10 @@ name: Build and Push Inference Experimental Images
 on:
   workflow_dispatch:
     inputs:
+      release_run_id:
+        type: string
+        description: Original coordinator run supplying prepared locks (optional for non-release builds)
+        default: ""
       image_variant:
         type: string
         description: "Image variant to build (e.g., 'cpu', 'cu124', 'jp61') or 'all' for all images. Run 'ls inference_models/dockerfiles/' to see available options."
@@ -34,6 +38,14 @@ env:
   DEPOT_PROJECT_ID: grl7ffzxd7
 
 jobs:
+  release_inputs:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/prepare.release-image-inputs.yml
+    with:
+      coordinator_run_id: ${{ inputs.release_run_id || '' }}
+
   determine-tags:
     runs-on: ubuntu-latest
     permissions:
@@ -84,13 +96,14 @@ jobs:
 
   build:
     name: ${{ matrix.dockerfile }}:${{ matrix.platform }}
-    needs: determine-tags
+    needs: [determine-tags, release_inputs]
     runs-on: ubuntu-latest
     timeout-minutes: 240
     permissions:
       # permission lets the workflow issue OIDC tokens, required by depot.dev auth
       id-token: write
       contents: read
+      actions: read
     strategy:
       matrix:
         include:
@@ -139,6 +152,13 @@ jobs:
         if: steps.should-build.outputs.should-build == 'true'
         uses: actions/checkout@v6
 
+      - name: Restore prepared release image inputs
+        id: prepared_inputs
+        if: ${{ steps.should-build.outputs.should-build == 'true' && needs.release_inputs.outputs.run_id != '' }}
+        uses: ./.github/actions/restore-release-inputs
+        with:
+          run_id: ${{ needs.release_inputs.outputs.run_id }}
+          artifact_id: ${{ needs.release_inputs.outputs.artifact_id }}
       - name: Select release image tags
         if: steps.should-build.outputs.should-build == 'true' && github.event_name == 'release'
         id: release-tags
@@ -207,6 +227,9 @@ jobs:
         if: steps.should-build.outputs.should-build == 'true'
         uses: depot/build-push-action@v1
         with:
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
           tags: ${{ steps.image-tags.outputs.tags }}

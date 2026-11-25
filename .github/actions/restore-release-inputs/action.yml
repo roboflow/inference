@@ -1,0 +1,38 @@
+name: Restore prepared release image inputs
+description: Verify the coordinator's source-bound lock bundle before an image build
+inputs:
+  run_id:
+    required: true
+    description: Original successful coordinator run
+  artifact_id:
+    required: true
+    description: Retained candidate-image-inputs artifact ID
+outputs:
+  digest:
+    description: SHA-256 of the prepared input manifest
+    value: ${{ steps.restore.outputs.inputs_sha256 }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        run-id: ${{ inputs.run_id }}
+        artifact-ids: ${{ inputs.artifact_id }}
+        github-token: ${{ github.token }}
+        merge-multiple: true
+        path: release-candidate/image-inputs
+    - name: Verify and restore prepared locks
+      id: restore
+      shell: bash
+      env:
+        PARENT_RUN_ID: ${{ inputs.run_id }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        bash .release/pypi/image_inputs.sh restore --parent-run-id "$PARENT_RUN_ID"
+        jq -r '"inputs_sha256=" + .inputs_sha256' release-evidence/image-inputs.json >> "$GITHUB_OUTPUT"
+        {
+          echo 'Prepared release image inputs:'
+          echo '```json'
+          cat release-evidence/image-inputs.json
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

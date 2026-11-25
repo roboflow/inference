@@ -1,13 +1,18 @@
 name: Build and Push CPU Container Parallel
 permissions:
   contents: read
+  actions: read
 on:
   release:
-    types: [created]
+    types: [published]
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
+      release_run_id:
+        type: string
+        description: Original coordinator run supplying prepared locks (optional for non-release builds)
+        default: ""
       force_push:
         type: boolean
         description: "Do you want to push image after build?"
@@ -26,13 +31,23 @@ env:
   BASE_IMAGE: "roboflow/roboflow-inference-server-cpu-parallel"
 
 jobs:
+  release_inputs:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/prepare.release-image-inputs.yml
+    with:
+      coordinator_run_id: ${{ inputs.release_run_id || '' }}
+
   docker:
+    needs: release_inputs
     runs-on:
       labels: ubuntu-latest
     timeout-minutes: 120
     permissions:
       id-token: write
       contents: read
+      actions: read
     env:
       PUBLISH: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
     steps:
@@ -43,6 +58,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+      - name: Restore prepared release image inputs
+        id: prepared_inputs
+        if: ${{ needs.release_inputs.outputs.run_id != '' }}
+        uses: ./.github/actions/restore-release-inputs
+        with:
+          run_id: ${{ needs.release_inputs.outputs.run_id }}
+          artifact_id: ${{ needs.release_inputs.outputs.artifact_id }}
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Determine image tags
@@ -61,6 +83,9 @@ jobs:
         if: ${{ env.PUBLISH != 'true' }}
         uses: depot/build-push-action@v1
         with:
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
           push: false
           project: grl7ffzxd7
           context: .
@@ -73,6 +98,9 @@ jobs:
         if: ${{ env.PUBLISH == 'true' }}
         uses: depot/build-push-action@v1
         with:
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
           project: grl7ffzxd7
           context: .
           outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
@@ -98,6 +126,9 @@ jobs:
         id: arm64
         uses: depot/build-push-action@v1
         with:
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
           project: grl7ffzxd7
           context: .
           outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH }}
