@@ -1108,3 +1108,45 @@ def test_native_carrier_header_wins_without_mutating_input(monkeypatch):
     assert source.metadata == before.metadata
     for key in source.data:
         np.testing.assert_array_equal(source.data[key], before.data[key])
+
+
+def test_native_model_block_refuses_hosted_remote_steps(monkeypatch):
+    """No hosted API serves native OBB; a remote step must not fall back to a local URL."""
+    from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+    from roboflow_workflows.core_steps.models.roboflow.oriented_object_detection import (
+        v1,
+    )
+
+    monkeypatch.setattr(v1, "WORKFLOWS_REMOTE_API_TARGET", "hosted")
+    block = v1.RoboflowOrientedObjectDetectionModelBlockV1(
+        model_manager=None, api_key="key", step_execution_mode=StepExecutionMode.REMOTE
+    )
+
+    with pytest.raises(ValueError, match="WORKFLOWS_REMOTE_API_TARGET=hosted"):
+        block.run(
+            [],
+            model_id="workspace/project/1",
+            confidence=0.5,
+            max_detections=300,
+            class_filter=None,
+        )
+
+
+def test_native_model_block_declares_hosted_remote_steps_unsupported():
+    from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+    from roboflow_workflows.core_steps.models.roboflow.oriented_object_detection import (
+        v1,
+    )
+    from roboflow_workflows.execution_engine.entities.workload import Severity
+
+    (restriction,) = v1.BlockManifest.get_restrictions()
+
+    assert (
+        restriction.severity,
+        restriction.applies_to_step_execution_modes,
+        restriction.applies_to_configuration,
+    ) == (
+        Severity.HARD,
+        [StepExecutionMode.REMOTE],
+        {"WORKFLOWS_REMOTE_API_TARGET": "hosted"},
+    )

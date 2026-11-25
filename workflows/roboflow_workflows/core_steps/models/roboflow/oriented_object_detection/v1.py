@@ -14,6 +14,7 @@ from roboflow_workflows.core_steps.common.utils import (
 from roboflow_workflows.environment import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     LOCAL_INFERENCE_API_URL,
+    WORKFLOWS_REMOTE_API_TARGET,
 )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
@@ -31,17 +32,32 @@ from roboflow_workflows.execution_engine.entities.types import (
 from roboflow_workflows.execution_engine.entities.workload import (
     Discovery,
     RuntimeRestriction,
+    Severity,
     WorkOperation,
 )
 from roboflow_workflows.prototypes.block import (
     DependentResource,
     WorkflowBlock,
     WorkflowBlockManifest,
+    actual_restrictions_of,
     roboflow_platform_model,
 )
 from roboflow_workflows.prototypes.models_provider import ModelsProvider
 
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+# Native OBB runs on API v1 only (/infer/oriented_object_detection); the hosted per-task model APIs (detect.roboflow.com
+# and the like) are API v0 and serve no oriented-box model, so a remote step needs a self-hosted inference server.
+HOSTED_REMOTE_UNSUPPORTED_RESTRICTION = RuntimeRestriction(
+    code="oriented_object_detection_hosted_remote_unsupported",
+    severity=Severity.HARD,
+    note=(
+        "Block raises ValueError as a remote step with WORKFLOWS_REMOTE_API_TARGET=hosted: no hosted API serves "
+        "native oriented-box models; run it locally or against a self-hosted inference server."
+    ),
+    applies_to_step_execution_modes=[StepExecutionMode.REMOTE],
+    applies_to_configuration={"WORKFLOWS_REMOTE_API_TARGET": "hosted"},
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -97,19 +113,25 @@ class BlockManifest(WorkflowBlockManifest):
         """
         return [WorkOperation.MODEL_INFERENCE]
 
+    @classmethod
+    def get_restrictions(cls) -> List[RuntimeRestriction]:
+        return [HOSTED_REMOTE_UNSUPPORTED_RESTRICTION]
+
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        """Declare unrestricted execution.
+        """Declare that remote steps need a self-hosted inference server.
 
         Args:
             ignore_environment_restrictions: Whether to omit host restrictions.
 
         Returns:
-            A complete empty restriction declaration.
+            The hosted-remote restriction, for this step.
         """
-        return Discovery[RuntimeRestriction](
-            items=[], complete=True, unknown_reasons=[]
+        return actual_restrictions_of(
+            declared=[HOSTED_REMOTE_UNSUPPORTED_RESTRICTION],
+            node_id=f"$steps.{getattr(self, 'name', '')}",
+            ignore_environment_restrictions=ignore_environment_restrictions,
         )
 
     def discover_dependent_resources(self) -> List[DependentResource]:
@@ -168,6 +190,12 @@ class RoboflowOrientedObjectDetectionModelBlockV1(WorkflowBlock):
                 class_filter=class_filter,
             )
         elif self._mode is StepExecutionMode.REMOTE:
+            if WORKFLOWS_REMOTE_API_TARGET == "hosted":
+                raise ValueError(
+                    "Oriented object detection cannot run as a remote step with WORKFLOWS_REMOTE_API_TARGET=hosted: "
+                    "no hosted API serves native oriented-box models. Run the step locally, or set "
+                    "WORKFLOWS_REMOTE_API_TARGET to target a self-hosted inference server (LOCAL_INFERENCE_API_URL)."
+                )
             client = InferenceHTTPClient(
                 api_url=LOCAL_INFERENCE_API_URL, api_key=self._api_key
             )
