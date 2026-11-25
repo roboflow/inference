@@ -65,6 +65,14 @@ accepts `confidence=best` or `confidence=default`, those pass through; any other
 confidence must be a number. A value that does
 not match its declared type is answered with 400 `INVALID_PARAM`.
 
+For instance segmentation with process admission enabled, the server passes
+the parsed image and effective model parameters to the manager before worker
+startup. Set `INFERENCE_MEMORY_ESTIMATE_SELECTION` on the manager deployment
+to choose `first_containing` (default), `next_containing`, or `maximum`.
+A load without a workload uses the maximum. A supplied workload must be
+covered under every mode. HTTP requests that supply `memory_estimate_selection`
+receive 400 `INVALID_PARAM`.
+
 ## Extension points
 
 `inference-server` and `inference-model-manager` resolve additional
