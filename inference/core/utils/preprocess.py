@@ -283,12 +283,23 @@ def resize_image_keeping_aspect_ratio(
         new_height = desired_size[1]
         new_width = int(desired_size[1] * img_ratio)
 
-    # Resize the image to new dimensions
+    # Resize the image to new dimensions. INTER_AREA averages over the full
+    # source region and avoids the aliasing bilinear produces on large
+    # downscales; keep bilinear when upscaling, where INTER_AREA degenerates to
+    # nearest-neighbor.
     if isinstance(image, np.ndarray):
-        return cv2.resize(image, (new_width, new_height))
+        downscaling = new_width < image.shape[1] or new_height < image.shape[0]
+        return cv2.resize(
+            image,
+            (new_width, new_height),
+            interpolation=cv2.INTER_AREA if downscaling else cv2.INTER_LINEAR,
+        )
     elif USE_PYTORCH_FOR_PREPROCESSING:
         return torch.nn.functional.interpolate(
-            image, size=(new_height, new_width), mode="bilinear"
+            image,
+            size=(new_height, new_width),
+            mode="bilinear",
+            antialias=new_width < image.shape[-1] or new_height < image.shape[-2],
         )
     else:
         raise ValueError(
