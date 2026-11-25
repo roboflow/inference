@@ -4,6 +4,8 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+## `0.1.8rc1`
+
 ### Fixed
 
 - Cap the WebRTC extra's aiortc dependency below 1.17 while retaining PyAV 14.2.0.

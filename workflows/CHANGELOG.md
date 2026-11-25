@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.2.18rc1`
+
+Bundled execution engine: `1.17.3`.
+
 ### Changed
 
 - Action Recognition Model reports the inclusive end of the latest successful
