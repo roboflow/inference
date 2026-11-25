@@ -1,3 +1,4 @@
+import gc
 import json
 from unittest.mock import MagicMock, call, patch
 
@@ -5,16 +6,51 @@ import pytest
 from botocore.exceptions import ClientError
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.sinks.s3.v1 import (
+    MAX_CACHED_S3_CLIENTS,
     MAX_UPLOAD_RETRIES,
     NON_RETRYABLE_CLIENT_ERROR_CODES,
     BlockManifest,
     S3SinkBlockV1,
+    _close_live_blocks,
     create_s3_client,
     deduct_csv_header,
     dump_json_inline,
     generate_s3_key,
     upload_content_to_s3,
 )
+from roboflow_workflows.utils.lru_cache import LRUCache
+
+
+@pytest.fixture(autouse=True)
+def empty_s3_clients_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    # clients are shared process-wide, so each test starts without cached clients
+    monkeypatch.setattr(
+        "roboflow_workflows.core_steps.sinks.s3.v1._s3_clients",
+        LRUCache(capacity=MAX_CACHED_S3_CLIENTS),
+    )
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def clock():
+    fake_clock = FakeClock()
+    with patch("roboflow_workflows.core_steps.sinks.s3.v1.monotonic", new=fake_clock):
+        yield fake_clock
+
+
+def _access_denied_error() -> ClientError:
+    return ClientError(
+        error_response={"Error": {"Code": "AccessDenied", "Message": "Access denied."}},
+        operation_name="PutObject",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Manifest validation
@@ -40,6 +76,7 @@ def test_manifest_parsing_when_input_is_valid() -> None:
     assert result.s3_prefix == "logs/detections"
     assert result.file_name_prefix == "run"
     assert result.max_entries_per_file == 512
+    assert result.upload_interval_seconds == 30
     assert result.aws_access_key_id is None
     assert result.aws_secret_access_key is None
     assert result.aws_region is None
@@ -56,6 +93,7 @@ def test_manifest_parsing_with_selector_credentials() -> None:
         "s3_prefix": "",
         "file_name_prefix": "workflow_output",
         "max_entries_per_file": "$inputs.max_entries",
+        "upload_interval_seconds": "$inputs.upload_interval",
         "aws_access_key_id": "$steps.secrets.aws_key_id",
         "aws_secret_access_key": "$steps.secrets.aws_secret",
         "aws_region": "us-east-1",
@@ -67,6 +105,7 @@ def test_manifest_parsing_with_selector_credentials() -> None:
     assert result.aws_secret_access_key == "$steps.secrets.aws_secret"
     assert result.aws_region == "us-east-1"
     assert result.max_entries_per_file == "$inputs.max_entries"
+    assert result.upload_interval_seconds == "$inputs.upload_interval"
 
 
 def test_manifest_parsing_rejects_max_entries_per_file_of_zero() -> None:
@@ -93,6 +132,37 @@ def test_manifest_parsing_rejects_negative_max_entries_per_file() -> None:
         "output_mode": "separate_files",
         "bucket_name": "my-bucket",
         "max_entries_per_file": -5,
+    }
+
+    with pytest.raises(ValidationError):
+        BlockManifest.model_validate(raw_manifest)
+
+
+def test_manifest_parsing_accepts_zero_upload_interval_seconds() -> None:
+    raw_manifest = {
+        "type": "roboflow_core/s3_sink@v1",
+        "name": "s3_sink",
+        "content": "$steps.formatter.output",
+        "file_type": "csv",
+        "output_mode": "append_log",
+        "bucket_name": "my-bucket",
+        "upload_interval_seconds": 0,
+    }
+
+    result = BlockManifest.model_validate(raw_manifest)
+
+    assert result.upload_interval_seconds == 0
+
+
+def test_manifest_parsing_rejects_negative_upload_interval_seconds() -> None:
+    raw_manifest = {
+        "type": "roboflow_core/s3_sink@v1",
+        "name": "s3_sink",
+        "content": "$steps.formatter.output",
+        "file_type": "csv",
+        "output_mode": "append_log",
+        "bucket_name": "my-bucket",
+        "upload_interval_seconds": -1,
     }
 
     with pytest.raises(ValidationError):
@@ -288,6 +358,41 @@ def test_create_s3_client_passes_explicit_credentials(mock_boto3_client) -> None
     )
 
 
+@patch("roboflow_workflows.core_steps.sinks.s3.v1.boto3.client")
+def test_run_reuses_one_s3_client_per_credentials_and_region(
+    mock_boto3_client,
+) -> None:
+    us_client, eu_client, other_key_client = MagicMock(), MagicMock(), MagicMock()
+    mock_boto3_client.side_effect = [us_client, eu_client, other_key_client]
+    runs = [
+        ("AKIA_TEST", "SECRET_TEST", "us-east-1"),
+        ("AKIA_TEST", "SECRET_TEST", "us-east-1"),
+        ("AKIA_TEST", "SECRET_TEST", "eu-west-1"),
+        ("AKIA_OTHER", "SECRET_OTHER", "us-east-1"),
+        ("AKIA_TEST", "SECRET_TEST", "us-east-1"),
+    ]
+
+    # a new block per run, as each HTTP request builds its own
+    for aws_access_key_id, aws_secret_access_key, aws_region in runs:
+        S3SinkBlockV1().run(
+            content="data",
+            file_type="txt",
+            output_mode="separate_files",
+            bucket_name="my-bucket",
+            s3_prefix="",
+            file_name_prefix="output",
+            max_entries_per_file=1024,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            aws_region=aws_region,
+        )
+
+    assert mock_boto3_client.call_count == 3
+    assert us_client.put_object.call_count == 3
+    assert eu_client.put_object.call_count == 1
+    assert other_key_client.put_object.call_count == 1
+
+
 def test_deduct_csv_header_removes_first_line() -> None:
     content = "col_a,col_b\n1,2\n3,4\n"
     result = deduct_csv_header(content)
@@ -327,6 +432,8 @@ def _run_block(block, mock_s3, **kwargs):
         s3_prefix="",
         file_name_prefix="output",
         max_entries_per_file=1024,
+        aws_access_key_id="AKIA_TEST",
+        aws_secret_access_key="SECRET_TEST",
     )
     defaults.update(kwargs)
     with patch(
@@ -406,12 +513,31 @@ def test_separate_files_propagates_s3_error() -> None:
     assert "InvalidAccessKeyId" in result["message"]
 
 
+def test_separate_files_uploads_every_entry_regardless_of_upload_interval(
+    clock,
+) -> None:
+    block, mock_s3 = _make_block_with_mock_s3()
+
+    for i in range(3):
+        _run_block(
+            block,
+            mock_s3,
+            content=f"content-{i}",
+            output_mode="separate_files",
+            upload_interval_seconds=3600,
+        )
+    block.close()
+
+    bodies = [c.kwargs["Body"] for c in mock_s3.put_object.call_args_list]
+    assert bodies == [b"content-0", b"content-1", b"content-2"]
+
+
 # ---------------------------------------------------------------------------
 # S3SinkBlockV1 — append_log mode
 # ---------------------------------------------------------------------------
 
 
-def test_append_log_txt_accumulates_entries_in_single_object() -> None:
+def test_append_log_txt_accumulates_entries_in_single_object(clock) -> None:
     block, mock_s3 = _make_block_with_mock_s3()
 
     for i in range(3):
@@ -424,10 +550,11 @@ def test_append_log_txt_accumulates_entries_in_single_object() -> None:
             max_entries_per_file=10,
         )
         assert result["error_status"] is False
+    block.close()
 
-    assert mock_s3.put_object.call_count == 3
-    # All three calls must use the same key (same S3 object, growing content)
+    # The first entry and the teardown upload write the same S3 object
     keys = [c.kwargs["Key"] for c in mock_s3.put_object.call_args_list]
+    assert len(keys) == 2
     assert len(set(keys)) == 1, "All entries before rotation should share one key"
 
     # Final upload has the full accumulated content
@@ -435,9 +562,10 @@ def test_append_log_txt_accumulates_entries_in_single_object() -> None:
     assert final_body == b"content-0\ncontent-1\ncontent-2\n"
 
 
-def test_append_log_txt_rotates_to_new_key_after_limit() -> None:
+def test_append_log_txt_rotates_to_new_key_after_limit(clock) -> None:
     block, mock_s3 = _make_block_with_mock_s3()
 
+    uploads_after_each_run = []
     for i in range(5):
         _run_block(
             block,
@@ -447,24 +575,27 @@ def test_append_log_txt_rotates_to_new_key_after_limit() -> None:
             output_mode="append_log",
             max_entries_per_file=3,
         )
+        uploads_after_each_run.append(mock_s3.put_object.call_count)
+    block.close()
 
-    assert mock_s3.put_object.call_count == 5
-    keys = [c.kwargs["Key"] for c in mock_s3.put_object.call_args_list]
-    # Entries 0-2 share the first key; entries 3-4 share the second key
-    assert keys[0] == keys[1] == keys[2]
-    assert keys[3] == keys[4]
-    assert keys[0] != keys[3], "Rotated object must use a new key"
+    # the run that fills the object uploads it, not the run that rotates
+    assert uploads_after_each_run == [1, 1, 2, 3, 3]
+    calls = mock_s3.put_object.call_args_list
+    keys = [c.kwargs["Key"] for c in calls]
+    # First object: its first entry, then the entry that fills it. Second object:
+    # its first entry, then the teardown upload.
+    assert keys[0] == keys[1]
+    assert keys[2] == keys[3]
+    assert keys[0] != keys[2], "Rotated object must use a new key"
+    assert [c.kwargs["Body"] for c in calls] == [
+        b"content-0\n",
+        b"content-0\ncontent-1\ncontent-2\n",
+        b"content-3\n",
+        b"content-3\ncontent-4\n",
+    ]
 
-    # Final content of the first object
-    body_at_rotation = mock_s3.put_object.call_args_list[2].kwargs["Body"]
-    assert body_at_rotation == b"content-0\ncontent-1\ncontent-2\n"
 
-    # Final content of the second object
-    final_body = mock_s3.put_object.call_args_list[4].kwargs["Body"]
-    assert final_body == b"content-3\ncontent-4\n"
-
-
-def test_append_log_json_converts_to_jsonl() -> None:
+def test_append_log_json_converts_to_jsonl(clock) -> None:
     block, mock_s3 = _make_block_with_mock_s3()
 
     for i in range(2):
@@ -477,6 +608,7 @@ def test_append_log_json_converts_to_jsonl() -> None:
             max_entries_per_file=10,
         )
         assert result["error_status"] is False
+    block.close()
 
     call_kwargs = mock_s3.put_object.call_args.kwargs
     assert call_kwargs["Key"].endswith(".jsonl")
@@ -488,7 +620,7 @@ def test_append_log_json_converts_to_jsonl() -> None:
     assert json.loads(lines[1]) == {"data": 1}
 
 
-def test_append_log_csv_strips_header_on_subsequent_entries() -> None:
+def test_append_log_csv_strips_header_on_subsequent_entries(clock) -> None:
     block, mock_s3 = _make_block_with_mock_s3()
 
     _run_block(
@@ -507,6 +639,7 @@ def test_append_log_csv_strips_header_on_subsequent_entries() -> None:
         output_mode="append_log",
         max_entries_per_file=10,
     )
+    block.close()
 
     final_body = mock_s3.put_object.call_args.kwargs["Body"].decode()
     # Header appears only once (from the first write)
@@ -588,6 +721,148 @@ def test_append_log_uses_correct_bucket_name() -> None:
 
     call_kwargs = mock_s3.put_object.call_args.kwargs
     assert call_kwargs["Bucket"] == "production-bucket"
+
+
+def test_append_log_uploads_again_once_upload_interval_has_passed(clock) -> None:
+    block, mock_s3 = _make_block_with_mock_s3()
+    start = clock.now
+
+    results = []
+    for i, elapsed in enumerate([0, 10, 29, 30, 45]):
+        clock.now = start + elapsed
+        result = _run_block(
+            block,
+            mock_s3,
+            content=f"content-{i}",
+            output_mode="append_log",
+            upload_interval_seconds=30,
+        )
+        results.append(result)
+
+    assert [r["error_status"] for r in results] == [False] * 5
+    assert [r["message"].startswith("Data buffered") for r in results] == [
+        False,
+        True,
+        True,
+        False,
+        True,
+    ]
+    bodies = [c.kwargs["Body"] for c in mock_s3.put_object.call_args_list]
+    assert bodies == [
+        b"content-0\n",
+        b"content-0\ncontent-1\ncontent-2\ncontent-3\n",
+    ]
+
+
+def test_append_log_with_zero_upload_interval_uploads_on_every_run(clock) -> None:
+    block, mock_s3 = _make_block_with_mock_s3()
+
+    for i in range(3):
+        _run_block(
+            block,
+            mock_s3,
+            content=f"content-{i}",
+            output_mode="append_log",
+            upload_interval_seconds=0,
+        )
+
+    bodies = [c.kwargs["Body"] for c in mock_s3.put_object.call_args_list]
+    assert bodies == [
+        b"content-0\n",
+        b"content-0\ncontent-1\n",
+        b"content-0\ncontent-1\ncontent-2\n",
+    ]
+
+
+def test_append_log_retries_a_failed_upload_on_the_next_run(clock) -> None:
+    block, mock_s3 = _make_block_with_mock_s3()
+    mock_s3.put_object.side_effect = [
+        _access_denied_error(),
+        None,
+        _access_denied_error(),
+        None,
+    ]
+    start = clock.now
+
+    statuses = []
+    # a failed first upload, then a failed interval upload, each retried by the
+    # next run although the interval has not passed again
+    for i, elapsed in enumerate([0, 1, 31, 32]):
+        clock.now = start + elapsed
+        result = _run_block(
+            block,
+            mock_s3,
+            content=f"content-{i}",
+            output_mode="append_log",
+            upload_interval_seconds=30,
+        )
+        statuses.append(result["error_status"])
+
+    assert statuses == [True, False, True, False]
+    assert mock_s3.put_object.call_count == 4
+    final_body = mock_s3.put_object.call_args.kwargs["Body"]
+    assert final_body == b"content-0\ncontent-1\ncontent-2\ncontent-3\n"
+
+
+def test_append_log_retries_failed_full_object_upload_before_rotating(clock) -> None:
+    block, mock_s3 = _make_block_with_mock_s3()
+    mock_s3.put_object.side_effect = [None, _access_denied_error(), None, None]
+
+    for i in range(3):
+        _run_block(
+            block,
+            mock_s3,
+            content=f"content-{i}",
+            output_mode="append_log",
+            max_entries_per_file=2,
+        )
+
+    calls = mock_s3.put_object.call_args_list
+    assert [c.kwargs["Body"] for c in calls] == [
+        b"content-0\n",
+        b"content-0\ncontent-1\n",
+        b"content-0\ncontent-1\n",
+        b"content-2\n",
+    ]
+    assert calls[1].kwargs["Key"] == calls[2].kwargs["Key"]
+    assert calls[2].kwargs["Key"] != calls[3].kwargs["Key"]
+
+
+def test_append_log_uploads_buffered_entries_when_block_is_released(clock) -> None:
+    block, mock_s3 = _make_block_with_mock_s3()
+    for i in range(3):
+        _run_block(block, mock_s3, content=f"content-{i}", output_mode="append_log")
+
+    del block
+    gc.collect()
+
+    bodies = [c.kwargs["Body"] for c in mock_s3.put_object.call_args_list]
+    assert bodies == [b"content-0\n", b"content-0\ncontent-1\ncontent-2\n"]
+
+
+def test_append_log_uploads_buffered_entries_of_live_blocks_at_exit(clock) -> None:
+    block, mock_s3 = _make_block_with_mock_s3()
+    for i in range(2):
+        _run_block(block, mock_s3, content=f"content-{i}", output_mode="append_log")
+
+    _close_live_blocks()
+
+    assert mock_s3.put_object.call_count == 2
+    assert mock_s3.put_object.call_args.kwargs["Body"] == b"content-0\ncontent-1\n"
+
+
+def test_append_log_teardown_does_not_upload_again_when_nothing_is_buffered(
+    clock,
+) -> None:
+    # e.g. an HTTP request with a single image: its first entry is already in S3
+    block, mock_s3 = _make_block_with_mock_s3()
+    _run_block(block, mock_s3, content="content-0", output_mode="append_log")
+
+    block.close()
+    del block
+    gc.collect()
+
+    mock_s3.put_object.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -735,3 +1010,27 @@ def test_run_does_not_fall_back_to_server_aws_credentials(
         )
 
     mock_aws_api_call.assert_not_called()
+
+
+def test_run_rejects_missing_credentials_before_consulting_the_client_cache(
+    monkeypatch,
+) -> None:
+    cached_clients = LRUCache(capacity=MAX_CACHED_S3_CLIENTS)
+    cached_client = MagicMock()
+    cached_clients.set((None, None, None), cached_client)
+    monkeypatch.setattr(
+        "roboflow_workflows.core_steps.sinks.s3.v1._s3_clients", cached_clients
+    )
+
+    with pytest.raises(ValueError):
+        S3SinkBlockV1().run(
+            content="workflow output",
+            file_type="txt",
+            output_mode="separate_files",
+            bucket_name="caller-chosen-bucket",
+            s3_prefix="caller",
+            file_name_prefix="output",
+            max_entries_per_file=1024,
+        )
+
+    cached_client.put_object.assert_not_called()
