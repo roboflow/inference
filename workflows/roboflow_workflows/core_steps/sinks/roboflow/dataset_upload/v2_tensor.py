@@ -6,6 +6,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 from roboflow_workflows.core_steps.common.tensor_native import KeyPointPrediction
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_message
 from roboflow_workflows.core_steps.sinks.roboflow.dataset_upload.v1_tensor import (
+    register_batch_of_datapoints_at_roboflow,
     register_datapoint_at_roboflow,
 )
 from roboflow_workflows.execution_engine.entities.base import (
@@ -68,6 +69,8 @@ TensorNativePrediction = Union[
 ]
 
 FloatZeroToHundred = Annotated[float, Field(ge=0.0, le=100.0)]
+
+SAMPLING_SKIPPED_STATUS = "Registration skipped due to sampling settings"
 
 SHORT_DESCRIPTION = "Save images and predictions to your Roboflow Dataset."
 
@@ -381,36 +384,141 @@ class RoboflowDatasetUploadBlockV2(WorkflowBlock):
                 }
                 for _ in range(len(images))
             ]
-        result = []
         predictions = [None] * len(images) if predictions is None else predictions
         image_names = [None] * len(images) if image_name is None else image_name
-        for image, prediction, img_name in zip(images, predictions, image_names):
-            error_status, message = maybe_register_datapoint_at_roboflow(
-                image=image,
-                prediction=prediction,
-                target_project=target_project,
-                usage_quota_name=usage_quota_name,
-                data_percentage=data_percentage,
-                persist_predictions=persist_predictions,
-                minutely_usage_limit=minutely_usage_limit,
-                hourly_usage_limit=hourly_usage_limit,
-                daily_usage_limit=daily_usage_limit,
-                max_image_size=max_image_size,
-                compression_level=compression_level,
-                registration_tags=registration_tags,
-                fire_and_forget=fire_and_forget,
-                labeling_batch_prefix=labeling_batch_prefix,
-                new_labeling_batch_frequency=labeling_batches_recreation_frequency,
-                cache=self._cache,
-                background_tasks=self._background_tasks,
-                thread_pool_executor=self._thread_pool_executor,
-                api_key=self._api_key,
-                platform_client=self._platform_client,
-                image_name=img_name,
-                metadata=metadata,
-            )
-            result.append({"error_status": error_status, "message": message})
-        return result
+        registration_results = maybe_register_batch_of_datapoints_at_roboflow(
+            images=list(images),
+            predictions=list(predictions),
+            image_names=list(image_names),
+            target_project=target_project,
+            usage_quota_name=usage_quota_name,
+            data_percentage=data_percentage,
+            persist_predictions=persist_predictions,
+            minutely_usage_limit=minutely_usage_limit,
+            hourly_usage_limit=hourly_usage_limit,
+            daily_usage_limit=daily_usage_limit,
+            max_image_size=max_image_size,
+            compression_level=compression_level,
+            registration_tags=registration_tags,
+            fire_and_forget=fire_and_forget,
+            labeling_batch_prefix=labeling_batch_prefix,
+            new_labeling_batch_frequency=labeling_batches_recreation_frequency,
+            cache=self._cache,
+            background_tasks=self._background_tasks,
+            thread_pool_executor=self._thread_pool_executor,
+            api_key=self._api_key,
+            platform_client=self._platform_client,
+            metadata=metadata,
+        )
+        return [
+            {"error_status": error_status, "message": message}
+            for error_status, message in registration_results
+        ]
+
+
+def maybe_register_batch_of_datapoints_at_roboflow(
+    images: List[WorkflowImageData],
+    predictions: List[Optional[TensorNativePrediction]],
+    image_names: List[Optional[str]],
+    target_project: str,
+    usage_quota_name: str,
+    data_percentage: float,
+    persist_predictions: bool,
+    minutely_usage_limit: int,
+    hourly_usage_limit: int,
+    daily_usage_limit: int,
+    max_image_size: Tuple[int, int],
+    compression_level: int,
+    registration_tags: List[str],
+    fire_and_forget: bool,
+    labeling_batch_prefix: str,
+    new_labeling_batch_frequency: BatchCreationFrequency,
+    cache: WorkflowsCache,
+    background_tasks: Optional[BackgroundTaskScheduler],
+    thread_pool_executor: Optional[ThreadPoolExecutor],
+    api_key: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    platform_client: Optional[RoboflowPlatformClient] = None,
+) -> List[Tuple[bool, str]]:
+    """Sample a batch of datapoints and register the sampled ones at Roboflow.
+
+    Each datapoint is sampled in batch order with probability
+    `data_percentage` / 100, as in `maybe_register_datapoint_at_roboflow`.
+    The sampled datapoints are registered together with
+    `register_batch_of_datapoints_at_roboflow`.
+
+    Args:
+        images (List[WorkflowImageData]): Images to register.
+        predictions (List[Optional[TensorNativePrediction]]): Prediction for
+            each image; `None` registers the image alone.
+        image_names (List[Optional[str]]): Name for each image; `None` uses a
+            random UUID.
+        target_project (str): Project receiving the datapoints.
+        usage_quota_name (str): Quota whose limits apply.
+        data_percentage (float): Percentage of datapoints to register.
+        persist_predictions (bool): Whether predictions are saved as
+            annotations.
+        minutely_usage_limit (int): Registrations allowed per minute.
+        hourly_usage_limit (int): Registrations allowed per hour.
+        daily_usage_limit (int): Registrations allowed per day.
+        max_image_size (Tuple[int, int]): Width and height an image is
+            downscaled to fit.
+        compression_level (int): JPEG quality of the uploaded images.
+        registration_tags (List[str]): Tags attached to each image.
+        fire_and_forget (bool): Whether to register in the background when a
+            scheduler or thread pool is available.
+        labeling_batch_prefix (str): Prefix of the labeling batch name.
+        new_labeling_batch_frequency (BatchCreationFrequency): How often a new
+            labeling batch is started.
+        cache (WorkflowsCache): Cache holding the workspace name and the usage
+            counters.
+        background_tasks (Optional[BackgroundTaskScheduler]): Scheduler for
+            fire-and-forget registration.
+        thread_pool_executor (Optional[ThreadPoolExecutor]): Thread pool for
+            fire-and-forget registration.
+        api_key (str): Roboflow API key.
+        metadata (Optional[Dict[str, Any]]): User metadata attached to each
+            image.
+        platform_client (Optional[RoboflowPlatformClient]): Client reaching
+            the Roboflow API.
+
+    Returns:
+        List[Tuple[bool, str]]: Error status and message for each datapoint,
+        in the order of `images`.
+    """
+    normalised_probability = data_percentage / 100
+    sampled_indices = [
+        index
+        for index in range(len(images))
+        if random.random() < normalised_probability
+    ]
+    sampled_results = register_batch_of_datapoints_at_roboflow(
+        images=[images[index] for index in sampled_indices],
+        predictions=[predictions[index] for index in sampled_indices],
+        image_names=[image_names[index] for index in sampled_indices],
+        target_project=target_project,
+        usage_quota_name=usage_quota_name,
+        persist_predictions=persist_predictions,
+        minutely_usage_limit=minutely_usage_limit,
+        hourly_usage_limit=hourly_usage_limit,
+        daily_usage_limit=daily_usage_limit,
+        max_image_size=max_image_size,
+        compression_level=compression_level,
+        registration_tags=registration_tags,
+        fire_and_forget=fire_and_forget,
+        labeling_batch_prefix=labeling_batch_prefix,
+        new_labeling_batch_frequency=new_labeling_batch_frequency,
+        cache=cache,
+        background_tasks=background_tasks,
+        thread_pool_executor=thread_pool_executor,
+        api_key=api_key,
+        metadata=metadata,
+        platform_client=platform_client,
+    )
+    registration_results = [(False, SAMPLING_SKIPPED_STATUS)] * len(images)
+    for index, sampled_result in zip(sampled_indices, sampled_results):
+        registration_results[index] = sampled_result
+    return registration_results
 
 
 def maybe_register_datapoint_at_roboflow(
@@ -462,4 +570,4 @@ def maybe_register_datapoint_at_roboflow(
             image_name=image_name,
             metadata=metadata,
         )
-    return False, "Registration skipped due to sampling settings"
+    return False, SAMPLING_SKIPPED_STATUS
