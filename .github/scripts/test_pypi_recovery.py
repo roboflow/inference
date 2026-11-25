@@ -179,6 +179,28 @@ def test_missing_or_ambiguous_artifact_never_rebuilds(retained, monkeypatch, pro
         retained._select("sdk")
 
 
+def test_full_rerun_after_retention_names_the_safe_retry(retained, monkeypatch):
+    # Observed with "Re-run all jobs": every job starts again and the artifacts
+    # of the attempt that retained the candidate are gone.
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    step = {
+        "name": "Retain candidate sdk",
+        "status": "completed",
+        "conclusion": "success",
+    }
+    monkeypatch.setattr(
+        dependencies,
+        "_github",
+        lambda path, **kwargs: (
+            {"artifacts": []}
+            if "/artifacts?" in path
+            else {"jobs": [{"run_attempt": 1, "steps": [step]}]}
+        ),
+    )
+    with pytest.raises(ValueError, match="do not rebuild.*'Re-run failed jobs'"):
+        retained._select("sdk")
+
+
 def test_failed_build_before_retention_can_be_retried(retained, monkeypatch):
     monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
 
