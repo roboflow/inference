@@ -16,6 +16,17 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Custom Python requests to Modal no longer follow redirects.** The syntax
+  check and the HTTP execution request to the Modal `execute-block` endpoint,
+  and the websocket connection to `wsapp`, used to follow a 3xx response and
+  resend the `Modal-Key` and `Modal-Secret` headers to the host it named. A
+  3xx response now fails the check or the block with `DynamicBlockError`, as
+  any other unexpected status does. An endpoint set with
+  `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
+  rather than redirect.
+
 ### Changed
 
 - Action Recognition Model reports the inclusive end of the latest successful

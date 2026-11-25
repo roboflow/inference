@@ -749,6 +749,8 @@ class ModalExecutor:
                 "Content-Type": "application/json",
                 "Content-Encoding": "gzip",
             },
+            # A followed redirect would resend the Modal credentials to its host.
+            allow_redirects=False,
         )
 
         if response.status_code != 200:
@@ -1239,6 +1241,8 @@ class WebSocketModalExecutor:
             url,
             header=[f"{k}: {v}" for k, v in headers.items()],
             timeout=WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
+            # A followed redirect would resend the Modal credentials to its host.
+            redirect_limit=0,
         )
         # New container -> no compiled namespaces cached yet.
         self._hashes_sent_on_ws = set()
