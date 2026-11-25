@@ -111,6 +111,7 @@ def compile_and_register_default_model(
             target_directory=source_packages_directory,
             expected_files=expected_files,
             verify_model=compilation_config.verify_model,
+            oriented_box_metadata=model_metadata.oriented_box_metadata,
         )
     else:
         print_to_console(
@@ -124,6 +125,7 @@ def compile_and_register_default_model(
             target_directory=source_packages_directory,
             expected_files=expected_files,
             verify_model=compilation_config.verify_model,
+            oriented_box_metadata=model_metadata.oriented_box_metadata,
         )
     print_to_console(message="Artefacts downloaded.", console=console)
     training_size = get_training_input_size(
@@ -343,6 +345,7 @@ def compile_and_register_default_model_trt_variant(
         class_names_path=local_files[CLASS_NAMES_FILE],
         compilation_directory=compilation_directory,
         keypoints_metadata_path=local_files.get(KEYPOINTS_METADATA_FILE),
+        oriented_box_metadata=model_metadata.oriented_box_metadata,
     )
 
     pipeline_result = CompilationPipelineResult(
@@ -434,6 +437,11 @@ def verify_model_package(
                 "task_type": model_metadata.task_type,
                 "backend_type": "trt",
             }
+            if model_metadata.oriented_box_metadata is not None:
+                # Native OBB models load only with their frozen class heading policy.
+                model_config["oriented_box_metadata"] = (
+                    model_metadata.oriented_box_metadata.model_dump(mode="json")
+                )
             dump_json(path=model_config_path, content=model_config)
             if keypoints_metadata_path is not None:
                 local_keypoints_metadata_path = os.path.join(

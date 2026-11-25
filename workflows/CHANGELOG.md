@@ -16,7 +16,19 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- Add native `oriented_object_detection_prediction` with original-image float geometry and frozen class heading semantics. Native model, visualization, row filters, combination, crop offsets and serialization retain ordered fronts in NumPy and tensor carriers. Projective transforms retain ordered quadrilaterals instead of silently fitting new rectangle annotations.
+
+### Added
+
+- Oriented Object Detection Model (`roboflow_core/roboflow_oriented_object_detection_model@v1`) runs native oriented-box models and outputs `oriented_object_detection_prediction`; Oriented Box Visualization (`roboflow_core/oriented_box_visualization@v1`) draws their footprints and class fronts. As a remote step the model block needs a self-hosted inference server: with `WORKFLOWS_REMOTE_API_TARGET=hosted` it declares a hard restriction and raises, since no hosted API serves native oriented boxes.
+
+- Opt-in Detections Consensus v2 ports mask/rotated overlap voting from contributor PR #2420 and preserves a winning native OBB contributor, front, identity and frozen class policy through NumPy and tensor transport. Ordinary tensor inputs remain explicitly unsupported by v2.
+
 ### Changed
+
+- Native oriented object detection needs the `inference-models` and `inference-sdk` releases that add it; Supervision `<0.31.0` support is unchanged.
 
 - Action Recognition Model reports the inclusive end of the latest successful
   window in `analyzed_until_frame`, or null before the first success. Cosmos
@@ -44,6 +56,20 @@ for contributor and maintainer responsibilities.
   always classify inside the step. The default is unchanged.
 
 ### Fixed
+
+- Keep native OBB image headers through filtering, combination, crop/scale/root transforms and empty selections; derive Perspective bounds from ordered corners.
+
+- Preserve native class names across colliding model-local IDs, initialize external native input lineage, render empty tensor predictions, admit native perspective connections without rounding corners, and declare native blocks in workload discovery.
+
+- Keep legacy oriented-corner scaling and perspective rounding unchanged; float corner transport is specific to native OBB metadata.
+
+- Reject native oriented detections at ordinary detection conversion and input boundaries; use the dedicated native kind and model block.
+
+- Reject native oriented detections in query-language `DetectionsShift`, `DetectionsOffset`, and `DetectionsRename` before mutation; these operations are excluded from native kind compatibility.
+
+- Clip native Dynamic Crop extraction windows to image boundaries while retaining the complete ordered geometry relative to the visible crop.
+
+- Detections Consensus v2 compares complete segmentation masks even when foreground extends beyond the detector boxes.
 
 - Action Recognition Model releases queued background windows when a stream
   restarts, its configuration changes, its state is evicted, or the model

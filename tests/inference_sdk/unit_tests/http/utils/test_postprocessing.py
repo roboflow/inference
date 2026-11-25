@@ -731,3 +731,37 @@ def test_client_downsizing_preserves_mask_coordinate_contract(mask_format):
             "size": [50, 100],
             "counts": "fixture",
         }
+
+
+def test_adjust_prediction_to_client_scaling_factor_when_scaling_is_enabled_against_oriented_object_detection() -> (
+    None
+):
+    # given
+    prediction = {
+        "task_type": "oriented-object-detection",
+        "image": {"width": 200, "height": 100},
+        "class_heading": {"ship": True},
+        "predictions": [
+            {
+                "obb": [50.0, 40.0, 30.0, 10.0, 2.5],
+                "class": "ship",
+                "class_id": 0,
+                "confidence": 0.9,
+                "heading": True,
+                "detection_id": "a",
+            },
+        ],
+    }
+
+    # when
+    result = adjust_prediction_to_client_scaling_factor(
+        prediction=prediction, scaling_factor=0.5
+    )
+
+    # then
+    assert result["image"] == {"width": 400, "height": 200}
+    assert result["predictions"][0]["obb"] == [100.0, 80.0, 60.0, 20.0, 2.5]
+    assert (result["predictions"][0]["class"], result["predictions"][0]["heading"]) == (
+        "ship",
+        True,
+    )

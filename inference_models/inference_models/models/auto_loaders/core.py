@@ -116,6 +116,9 @@ from inference_models.models.auto_loaders.presentation_utils import (
 )
 from inference_models.models.auto_loaders.ranking import rank_model_packages
 from inference_models.models.base.image_embeddings import ImageEmbeddingModel
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 from inference_models.models.common.torch import reset_leaked_torch_default_dtype
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
 from inference_models.utils.content_addressed_artifact_cache import (
@@ -2310,6 +2313,7 @@ class AutoModel:
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
                 recommended_parameters=model_metadata.recommended_parameters,
+                oriented_box_metadata=model_metadata.oriented_box_metadata,
                 max_package_loading_attempts=max_package_loading_attempts,
                 model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                 verify_hash_while_download=verify_hash_while_download,
@@ -2651,6 +2655,14 @@ def attempt_loading_model_with_auto_load_cache(
         if cache_entry.recommended_parameters is not None:
             model_init_kwargs["recommended_parameters"] = (
                 cache_entry.recommended_parameters
+            )
+        if cache_entry.oriented_box_metadata != package_config.oriented_box_metadata:
+            raise CorruptedModelPackageError(
+                message="Cached oriented-box semantics differ from package manifest."
+            )
+        if cache_entry.oriented_box_metadata is not None:
+            model_init_kwargs["oriented_box_metadata"] = (
+                cache_entry.oriented_box_metadata
             )
         model = load_model_with_capabilities(
             model_class,
@@ -2997,6 +3009,7 @@ def attempt_loading_matching_model_packages(
     refresh_model_package: Optional[
         Callable[[ModelPackageMetadata], ModelPackageMetadata]
     ] = None,
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None,
 ) -> AnyModel:
     """Load the first usable negotiated package.
 
@@ -3065,6 +3078,7 @@ def attempt_loading_matching_model_packages(
                 model_dependencies_instances=model_dependencies_instances,
                 model_dependencies_directories=model_dependencies_directories,
                 recommended_parameters=recommended_parameters,
+                oriented_box_metadata=oriented_box_metadata,
                 verify_hash_while_download=verify_hash_while_download,
                 download_files_without_hash=download_files_without_hash,
                 content_addressed_artifact_cache=content_addressed_artifact_cache,
@@ -3261,6 +3275,7 @@ def initialize_model(
     refresh_model_package: Optional[
         Callable[[ModelPackageMetadata], ModelPackageMetadata]
     ] = None,
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None,
 ) -> Tuple[AnyModel, str]:
     """Materialize and initialize a selected model package.
 
@@ -3364,6 +3379,10 @@ def initialize_model(
         "dynamic_batch_size_supported": (model_package.dynamic_batch_size_supported),
         "static_batch_size": model_package.static_batch_size,
     }
+    if oriented_box_metadata is not None:
+        expected_manifest_fields["oriented_box_metadata"] = (
+            oriented_box_metadata.model_dump(mode="json")
+        )
     if model_package.package_source == PackageSourceType.LOCAL_CACHE:
         package_path_for_lock = resolve_existing_model_package_cache_path(
             model_id=cache_model_id,
@@ -3431,6 +3450,7 @@ def initialize_model(
                     model_dependencies_instances=model_dependencies_instances,
                     model_dependencies_directories=model_dependencies_directories,
                     recommended_parameters=recommended_parameters,
+                    oriented_box_metadata=oriented_box_metadata,
                     model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
                     verify_hash_while_download=verify_hash_while_download,
                     download_files_without_hash=download_files_without_hash,
@@ -3634,6 +3654,14 @@ def initialize_model(
     model_init_kwargs[MODEL_DEPENDENCIES_KEY] = model_dependencies_instances
     if resolved_recommended_parameters is not None:
         model_init_kwargs["recommended_parameters"] = resolved_recommended_parameters
+    if oriented_box_metadata is not None:
+        if OFFLINE_MODE:
+            cached_config = parse_model_config(config_path=config_path)
+            if cached_config.oriented_box_metadata != oriented_box_metadata:
+                raise CorruptedModelPackageError(
+                    message="Offline oriented-box semantics differ from package manifest."
+                )
+        model_init_kwargs["oriented_box_metadata"] = oriented_box_metadata
     model = load_model_with_capabilities(
         model_class,
         model_package_cache_dir,
@@ -3669,6 +3697,7 @@ def initialize_model(
         trusted_source=model_package.trusted_source,
         model_dependencies=model_dependencies_manifest,
         recommended_parameters=recommended_parameters_manifest,
+        oriented_box_metadata=oriented_box_metadata,
         quantization=quantization,
         dynamic_batch_size_supported=model_package.dynamic_batch_size_supported,
         static_batch_size=model_package.static_batch_size,
@@ -3696,6 +3725,7 @@ def initialize_model(
         model_dependencies=model_dependencies,
         model_features=model_package.model_features,
         recommended_parameters=resolved_recommended_parameters,
+        oriented_box_metadata=oriented_box_metadata,
         trusted_source=model_package.trusted_source,
         api_key=api_key,
     )
@@ -3782,6 +3812,7 @@ def dump_model_config_for_offline_use(
     canonical_model_id: Optional[str] = None,
     package_artifacts: Optional[List[dict]] = None,
     dependency_package_paths: Optional[List[dict]] = None,
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None,
 ) -> str:
     """Persist a versioned manifest used for safe offline package loading."""
     if not isinstance(model_id, str) or not model_id.strip():
@@ -3822,6 +3853,10 @@ def dump_model_config_for_offline_use(
         "dependency_package_paths": dependency_package_paths,
         "model_id": model_id,
     }
+    if oriented_box_metadata is not None:
+        published_fields["oriented_box_metadata"] = oriented_box_metadata.model_dump(
+            mode="json"
+        )
     target_file_dir, target_file_name = os.path.split(config_path)
     target_file_dir = target_file_dir or "."
     lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
@@ -4031,6 +4066,7 @@ def dump_auto_resolution_cache(
     trusted_source: Optional[bool] = None,
     canonical_model_id: Optional[str] = None,
     api_key: Optional[str] = None,
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None,
 ) -> None:
     if not use_auto_resolution_cache:
         return None
@@ -4064,6 +4100,7 @@ def dump_auto_resolution_cache(
         model_dependencies=model_dependencies,
         model_features=model_features,
         recommended_parameters=recommended_parameters,
+        oriented_box_metadata=oriented_box_metadata,
         trusted_source=trusted_source,
     )
     auto_resolution_cache.register(
@@ -4309,6 +4346,12 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
     model_features = raw_config.get("model_features")
     model_dependencies = raw_config.get("model_dependencies")
     recommended_parameters = raw_config.get("recommended_parameters")
+    raw_oriented_box_metadata = raw_config.get("oriented_box_metadata")
+    oriented_box_metadata = (
+        OrientedBoxMetadata.model_validate(raw_oriented_box_metadata)
+        if raw_oriented_box_metadata is not None
+        else None
+    )
     trusted_source = raw_config.get("trusted_source")
     package_artifacts = raw_config.get("package_artifacts")
     dependency_package_paths = raw_config.get("dependency_package_paths")
@@ -4402,6 +4445,7 @@ def parse_model_config(config_path: str) -> InferenceModelConfig:
         trusted_source=trusted_source,
         model_dependencies=model_dependencies,
         recommended_parameters=recommended_parameters,
+        oriented_box_metadata=oriented_box_metadata,
         quantization=raw_config.get("quantization"),
         dynamic_batch_size_supported=dynamic_batch_size_supported,
         static_batch_size=static_batch_size,
@@ -4427,6 +4471,8 @@ def load_library_model_from_local_dir(
             set(model_config.model_features) if model_config.model_features else None
         ),
     )
+    if model_config.oriented_box_metadata is not None:
+        model_init_kwargs["oriented_box_metadata"] = model_config.oriented_box_metadata
     return load_model_with_capabilities(
         model_class,
         model_dir,

@@ -62,6 +62,7 @@ def _run_installer(
     model_id: str,
     compilation_directory: str,
     with_keypoints_metadata: bool = False,
+    **installer_options,
 ):
     os.makedirs(compilation_directory, exist_ok=True)
     engine_path = os.path.join(compilation_directory, "compiled.plan")
@@ -93,12 +94,11 @@ def _run_installer(
         class_names_path=class_names_path,
         compilation_directory=compilation_directory,
         keypoints_metadata_path=keypoints_metadata_path,
+        **installer_options,
     )
 
 
-def test_install_materializes_all_artefacts_as_regular_files(
-    inference_home, tmp_path
-):
+def test_install_materializes_all_artefacts_as_regular_files(inference_home, tmp_path):
     # when
     package_id, install_dir = _run_installer(
         model_id="workspace/rfdetr-nano",
@@ -226,3 +226,25 @@ def test_reinstall_of_same_package_is_idempotent(inference_home, tmp_path):
     assert [package["package_id"] for package in record["packages"]] == [
         first_package_id
     ]
+
+
+def test_install_records_the_oriented_box_class_heading_policy(
+    inference_home, tmp_path
+):
+    """A native OBB model loads only with its frozen class heading policy, offline loads included."""
+    from inference_models.models.common.roboflow.oriented_box_metadata import (
+        OrientedBoxMetadata,
+    )
+
+    policy = OrientedBoxMetadata.model_validate(
+        {"classHeading": {"class-a": True}, "classHeadingRevision": 2}
+    )
+
+    _run_installer(
+        model_id="workspace/rfdetr-obb",
+        compilation_directory=str(tmp_path / "compilation"),
+        oriented_box_metadata=policy,
+    )
+
+    metadata = offline_registry.load_model_metadata(model_id="workspace/rfdetr-obb")
+    assert metadata.oriented_box_metadata == policy

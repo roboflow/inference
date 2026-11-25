@@ -34,6 +34,7 @@ from inference_sdk.http.entities import (
     INSTANCE_SEGMENTATION_TASK,
     KEYPOINTS_DETECTION_TASK,
     OBJECT_DETECTION_TASK,
+    ORIENTED_OBJECT_DETECTION_TASK,
     ApiKeyTransport,
     HTTPClientMode,
     ImagesReference,
@@ -138,6 +139,7 @@ def _warn_about_default_api_key_transport_once() -> None:
 NEW_INFERENCE_ENDPOINTS = {
     INSTANCE_SEGMENTATION_TASK: "/infer/instance_segmentation",
     OBJECT_DETECTION_TASK: "/infer/object_detection",
+    ORIENTED_OBJECT_DETECTION_TASK: "/infer/oriented_object_detection",
     CLASSIFICATION_TASK: "/infer/classification",
     KEYPOINTS_DETECTION_TASK: "/infer/keypoints_detection",
 }
@@ -3548,7 +3550,10 @@ def _determine_client_downsizing_parameters(
     model_description: Optional[ModelDescription],
     default_max_input_size: int,
 ) -> Tuple[Optional[int], Optional[int]]:
-    if client_downsizing_disabled:
+    if client_downsizing_disabled or (
+        model_description is not None
+        and model_description.task_type == ORIENTED_OBJECT_DETECTION_TASK
+    ):
         return None, None
     if (
         model_description is None

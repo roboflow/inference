@@ -93,6 +93,9 @@
     "/infer/object_detection": [
       "POST"
     ],
+    "/infer/oriented_object_detection": [
+      "POST"
+    ],
     "/infer/semantic_segmentation": [
       "POST"
     ],

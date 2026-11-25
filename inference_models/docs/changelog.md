@@ -6,6 +6,20 @@
   URL, including through `SECURE_GATEWAY`, while preserving the selected package
   contract and cached files.
 
+### Added
+
+- RF-DETR oriented object detection (preview, RF-DETR 2X Large): task `oriented-object-detection` (also registered
+  as `obb-detection`, the training task name) for the `onnx` and `trt` backends, as
+  `RFDetrForOrientedObjectDetectionONNX` and `RFDetrForOrientedObjectDetectionTRT`. They return
+  `OrientedDetections`: `[cx, cy, width, height, theta]` boxes in original-image pixels (clockwise radians), with
+  each class's front along the box's +x axis where the class has one. Preprocessing follows the package's declared
+  `letterbox` or `center-crop` resize; other resize modes are refused. The ONNX model runs on the TensorRT, CUDA or
+  CPU execution provider. See the [model page](models/rfdetr-oriented-object-detection.md).
+- `oriented_box_metadata` (the model's frozen class heading policy, `orientedBoxMetadata` in the Roboflow model
+  metadata) on `ModelMetadata`, `InferenceModelConfig`, the auto-resolution cache and offline manifests. The
+  oriented-box models need it to load, and a cached package whose stored policy differs from its manifest raises
+  `CorruptedModelPackageError`.
+
 ## `0.39.10`
 
 ### Added

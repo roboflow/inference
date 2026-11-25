@@ -72,6 +72,8 @@ nav:
           - TrOCR: models/trocr.md
           - GLM-OCR: models/glm-ocr.md
           - PP-OCRv6: models/pp-ocrv6.md
+      - Oriented Object Detection:
+          - RF-DETR: models/rfdetr-oriented-object-detection.md
       - Keypoint Detection:
           - YOLOv8: models/yolov8-keypoint-detection.md
           - YOLOv11: models/yolov11-keypoint-detection.md

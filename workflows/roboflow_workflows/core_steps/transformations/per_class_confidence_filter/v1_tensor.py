@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import torch
 from pydantic import ConfigDict, Field
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
 from roboflow_workflows.core_steps.common.tensor_native import (
     TensorNativeDetections,
     TensorNativePrediction,
@@ -20,6 +21,7 @@ from roboflow_workflows.execution_engine.entities.tensor_native_types import (
 from roboflow_workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -90,6 +92,7 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
@@ -121,6 +124,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     TENSOR_NATIVE_OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     TENSOR_NATIVE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     TENSOR_NATIVE_KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
@@ -209,7 +213,11 @@ def _resolve_class_names(
 ) -> List[Optional[str]]:
     """Per-box class name, preferring the ``image_metadata[CLASS_NAMES_KEY]``
     (class_id -> name) map and falling back to ``bboxes_metadata[i]["class"]``
-    when the map is absent or lacks the id."""
+    when the map is absent or lacks the id. Native OBB uses authoritative row
+    names because numeric class IDs can collide across models."""
+    if (detections.image_metadata or {}).get(NATIVE_OBB):
+        return [entry["class_name"] for entry in detections.bboxes_metadata or []]
+
     number_of_detections = int(detections.confidence.shape[0])
     name_by_class_id: Dict[int, str] = {}
     if detections.image_metadata:

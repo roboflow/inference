@@ -7,6 +7,7 @@ The `inference-models` library supports a wide range of computer vision models a
 - **Object Detection**: Detect and localize objects in images
 - **Instance Segmentation**: Detect objects with pixel-level masks
 - **Semantic Segmentation**: Classify every pixel in an image
+- **Oriented Object Detection**: Detect rotated boxes, with the front of classes that have one
 - **Keypoint Detection**: Detect objects with keypoints
 - **Classification**: Classify entire images or image regions
 - **Embeddings**: Generate vector representations for images and text
@@ -49,6 +50,12 @@ The `inference-models` library supports a wide range of computer vision models a
 | [YOLOv8 Seg](yolov8-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [YOLOv11 Seg](yolov11-instance-segmentation.md) | `onnx`, `torch-script`, `trt` | AGPL-3.0 | Enterprise add-on | ✅ | ✅ |
 | [YOLACT](yolact-instance-segmentation.md) | `onnx` | MIT | N/A | ❌ | ✅ |
+
+### Oriented Object Detection
+
+| Model | Backends | License | Self-hosted commercial license | Pre-trained Weights | Trainable at RF |
+|-------|--------|---------|-------------------------------|---------------------|-----------------|
+| [RF-DETR Oriented](rfdetr-oriented-object-detection.md) | `onnx`, `trt` | Platform Model License 1.0 | N/A | ❌ | ✅ |
 
 ### Keypoint Detection
 

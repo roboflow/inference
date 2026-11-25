@@ -5,6 +5,10 @@ import cv2
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from roboflow_workflows.core_steps.common.oriented import NATIVE_OBB
+from roboflow_workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
 from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
@@ -21,6 +25,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
     Selector,
@@ -104,6 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
@@ -165,6 +171,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
@@ -220,6 +227,21 @@ def crop_image(
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> List[Dict[str, any]]:
+    """Crop each detection and translate its geometry to the extraction origin.
+
+    Args:
+        image: Source image and lineage.
+        detections: Predictions defining the crop windows and identities.
+        mask_opacity: Background-removal strength for segmentation predictions.
+        background_color: Background color used by mask overlays.
+        detection_id_key: Metadata key identifying each crop's parent detection.
+
+    Returns:
+        Crop images and translated predictions, or null entries for empty windows.
+
+    Raises:
+        ValueError: If detections lack crop identities.
+    """
     if len(detections) == 0:
         return []
     if detection_id_key not in detections.data:
@@ -227,10 +249,18 @@ def crop_image(
             f"sv.Detections object passed to crop step do not fulfill contract - lack of {detection_id_key} key "
             f"in data dictionary."
         )
+    native = bool(detections.metadata.get(NATIVE_OBB)) or np.any(
+        detections.data.get(NATIVE_OBB, False)
+    )
     crops = []
     for idx, ((x_min, y_min, x_max, y_max), detection_id) in enumerate(
         zip(detections.xyxy.round().astype(dtype=int), detections[detection_id_key])
     ):
+        if native:
+            # Clip the extraction window, retaining the complete ordered geometry.
+            height, width = image.numpy_image.shape[:2]
+            x_min, x_max = np.clip([x_min, x_max], 0, width)
+            y_min, y_max = np.clip([y_min, y_max], 0, height)
         cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
         if not cropped_image.size:
             crops.append({"crops": None, "predictions": None})
@@ -284,6 +314,13 @@ def crop_image(
                 ORIENTED_BOX_COORDINATES
             ] - np.array([x_min, y_min])
 
+        if translated_detection.metadata.get(NATIVE_OBB):
+            dimensions = list(result.numpy_image.shape[:2])
+            translated_detection.metadata["image_dimensions"] = dimensions
+            translated_detection.data["image_dimensions"] = np.asarray([dimensions])
+            translated_detection = attach_parents_coordinates_to_sv_detections(
+                detections=translated_detection, image=result
+            )
         crops.append(
             {
                 "crops": result,

@@ -10,6 +10,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from roboflow_workflows.execution_engine.entities.workload import (
@@ -80,6 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
@@ -111,6 +113,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
+                    ORIENTED_OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
