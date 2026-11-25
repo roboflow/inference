@@ -238,15 +238,21 @@ class _WindowWorker:
                     return
 
                 future, classify = self._waiting.popitem(last=False)
-                if not future.set_running_or_notify_cancel():
-                    continue
+                should_run = future.set_running_or_notify_cancel()
 
             try:
+                if not should_run:
+                    continue
+
                 result = classify()
             except BaseException as error:
                 future.set_exception(error)
             else:
                 future.set_result(result)
+            finally:
+                # A failed future keeps this loop's frame through its traceback.
+                # Drop each window's references before moving on or going idle.
+                future = classify = result = None
 
     def close(self) -> None:
         with self._lock:

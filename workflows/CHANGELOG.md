@@ -45,6 +45,11 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Action Recognition Model releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model
+  changes. A classification already running can finish. A failed call on one
+  camera no longer keeps another camera's completed window in memory.
+
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
 
@@ -84,10 +89,6 @@ Bundled execution engine: `1.17.3`.
   `compatible_model_architectures`.
 
 ### Fixed
-
-- Action Recognition Model releases queued background windows when a stream
-  restarts, its configuration changes, its state is evicted, or the model
-  changes. A classification already running can finish.
 
 - Keypoint Visualization (`roboflow_core/keypoint_visualization@v1`) no longer
   fails the run when its `edges` name a keypoint that no instance has, as when

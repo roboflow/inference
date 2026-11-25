@@ -2037,6 +2037,37 @@ def _submit_camera_window(block, video_id, *, bgr_color=None):
     return block._video_bookkeeping[video_id].pending
 
 
+def test_failed_camera_does_not_retain_another_cameras_completed_window():
+    block, model = _make_background_block(
+        responses=[RuntimeError("camera A failed"), []]
+    )
+    try:
+        _submit_camera_window(block, "camera-a")
+        assert model.entered.wait(timeout=5)
+        pending = _submit_camera_window(block, "camera-b")
+        frame_refs = [weakref.ref(sample.frame) for sample in pending.sampled]
+        del pending
+
+        model.gate.set()
+        # The single worker reaches this task after it finishes draining both calls.
+        block._worker._pool.submit(lambda: None).result(timeout=5)
+        landed = _run(
+            block, _make_frame(4, video_id="camera-b"), background_inference=True
+        )
+        assert landed["analyzed_until_frame"] == 3
+
+        _run(block, _make_frame(1, video_id="camera-b"), background_inference=True)
+        assert all(frame_ref() is None for frame_ref in frame_refs)
+
+        failed = _run(
+            block, _make_frame(4, video_id="camera-a"), background_inference=True
+        )
+        assert failed["error_status"] == "camera A failed"
+    finally:
+        model.gate.set()
+        block.close()
+
+
 def test_repeated_restarts_release_queued_frames_while_another_camera_runs():
     block, model = _make_background_block()
     try:
