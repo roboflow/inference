@@ -47,8 +47,18 @@ function context(packages = "all", publish = true, event = "workflow_dispatch", 
     needs: {}, steps: {}, env: {},
   };
 }
-function jobEnabled(job, ctx, cancelled = false) {
-  const dependencies = [].concat(job.needs || []).map(name => ctx.needs[name]?.result);
+function jobEnabled(job, ctx, cancelled = false, jobs = workflow.jobs) {
+  // Job status includes the transitive dependency graph, unlike the needs context.
+  const ancestors = new Set();
+  function visit(current) {
+    for (const name of [].concat(current?.needs || [])) {
+      if (ancestors.has(name)) continue;
+      ancestors.add(name);
+      visit(jobs[name]);
+    }
+  }
+  visit(job);
+  const dependencies = [...ancestors].map(name => ctx.needs[name]?.result);
   return evaluate(job.if, ctx, {
     success: !cancelled && dependencies.every(result => result === "success"),
     failure: dependencies.includes("failure"), cancelled,
@@ -111,6 +121,12 @@ function check(wf) {
   equal(coordinate.env.GH_TOKEN, "${{ github.token }}", "only coordination receives a dispatch token");
   assert.ok(coordinate.run.includes("--wait-seconds 12600"), "one budget covers all publishers and final verification");
   assert.ok(jobs.prepare_dependencies.steps.indexOf(plan) < jobs.prepare_dependencies.steps.indexOf(coordinate));
+  const sourceGate = jobs.prepare_dependencies.steps.find(step => step.run?.includes("image_inputs.sh validate"));
+  assert.ok(sourceGate, "validate reused package source before any companion or runtime publication");
+  assert.ok(jobs.prepare_dependencies.steps.indexOf(sourceGate) < jobs.prepare_dependencies.steps.indexOf(coordinate));
+  const sourceFailure = runSteps(jobs.prepare_dependencies, context(), new Map([[sourceGate, "failure"]]));
+  equal(sourceFailure.result, "failure", "changed image source fails dependency preparation");
+  assert.ok(!sourceFailure.ran.includes(coordinate), "source mismatch prevents coordination");
   for (const publish of [false, true]) for (const event of ["release", "workflow_dispatch"]) for (const previous of results) for (const cancelled of [false, true]) {
     equal(stepEnabled(coordinate, context("all", publish, event), previous, cancelled),
       (publish || event === "release") && !["failure", "cancelled"].includes(previous) && !cancelled,
@@ -135,8 +151,9 @@ function check(wf) {
         prepare_dependencies: runtime && repository === "roboflow/inference",
         publish_runtime: runtime && publishing && (release || packages !== "dependencies"),
       };
-      for (const name of ["build_sdk", "publish_sdk", "build_runtime", "prepare_dependencies", "publish_runtime"]) {
-        const enabled = jobEnabled(jobs[name], ctx);
+      expected.prepare_image_inputs = expected.publish_runtime;
+      for (const name of ["build_sdk", "publish_sdk", "build_runtime", "prepare_dependencies", "publish_runtime", "prepare_image_inputs"]) {
+        const enabled = jobEnabled(jobs[name], ctx, false, jobs);
         equal(enabled, expected[name], `${packages}/${publish}/${event}/${repository}: ${name}`);
         ctx.needs[name] = { result: enabled ? "success" : "skipped" };
       }
@@ -390,6 +407,8 @@ equal(sdkFailure.result, "failure", "SDK import failure blocks publication");
 assert.ok(!sdkFailure.ran.some(step => step.uses?.startsWith("pypa/")), "no SDK upload after failed import");
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
+  ["implicit status skips runtime-only image inputs", wf => { delete wf.jobs.prepare_image_inputs.if; }],
+  ["drop early image source validation", wf => { wf.jobs.prepare_dependencies.steps = wf.jobs.prepare_dependencies.steps.filter(step => !step.run?.includes("image_inputs.sh validate")); }],
   ["stop on runtime duplicate upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
   ["unconditional runtime upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
   ["drop runtime final verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],
@@ -440,12 +459,24 @@ console.log(`Child workflow mutations: ${childMutations.length}/${childMutations
 
 // Image preparation succeeds only after publication, and retained inputs skip resolution.
 checkRetention(workflow.jobs.prepare_image_inputs, "image-inputs");
-for (const result of results) {
-  const ctx = context();
-  ctx.needs = { build_runtime: { result: "success" }, prepare_dependencies: { result: "success" }, publish_runtime: { result } };
-  equal(jobEnabled(workflow.jobs.prepare_image_inputs, ctx), result === "success", "never release image inputs before verified runtime publication");
+for (const build of results) for (const dependencies of results) for (const published of results) for (const cancelled of [false, true]) {
+  const ctx = context("runtime");
+  ctx.needs = { build_sdk: { result: "skipped" }, publish_sdk: { result: "skipped" }, build_runtime: { result: build }, prepare_dependencies: { result: dependencies }, publish_runtime: { result: published } };
+  const expected = !cancelled && [build, dependencies, published].every(result => result === "success");
+  equal(jobEnabled(workflow.jobs.prepare_image_inputs, ctx, cancelled), expected, "runtime-only image inputs tolerate skipped SDK ancestors but require all direct needs and no cancellation");
+  if (expected) {
+    const implicit = structuredClone(workflow.jobs.prepare_image_inputs);
+    delete implicit.if;
+    equal(jobEnabled(implicit, ctx), false, "regression: implicit success skips image inputs after a skipped SDK ancestor");
+  }
+  scenarios++;
 }
 const imageGate = parse(fs.readFileSync("/work/.github/workflows/prepare.release-image-inputs.yml", "utf8")).jobs.select;
+for (const repository of ["roboflow/inference", "fork/inference"]) for (const event of ["release", "push", "workflow_dispatch"]) for (const coordinator of ["", "123"]) {
+  const ctx = context("all", true, event, repository);
+  ctx.inputs.coordinator_run_id = coordinator;
+  equal(evaluate(imageGate.env.ENABLED, ctx), repository === "roboflow/inference" && (event === "release" || coordinator !== ""), "forks and non-release builds without opt-in perform no API polling");
+}
 for (const enabled of ["true", "false"]) for (const reused of ["true", "false"]) for (const previous of results) {
   const ctx = context();
   ctx.env = { ENABLED: enabled };

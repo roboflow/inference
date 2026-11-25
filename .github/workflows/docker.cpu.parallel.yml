@@ -4,7 +4,7 @@ permissions:
   actions: read
 on:
   release:
-    types: [created]
+    types: [published]
   push:
     branches: [main]
   workflow_dispatch:

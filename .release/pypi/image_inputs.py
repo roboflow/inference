@@ -20,6 +20,7 @@ def _release_tag():
     tag = os.environ.get("RELEASE_TAG", "")
     if os.environ.get("GITHUB_EVENT_NAME") == "release" and not tag:
         raise ValueError("Release event is missing its exact tag")
+
     return tag
 
 
@@ -43,6 +44,7 @@ def _select_parent(*, parent_run_id=None, wait_seconds=600):
         tag = _release_tag()
         if not tag:
             raise ValueError("Manual image builds require an explicit release_run_id")
+
         while True:
             query = urllib.parse.urlencode(
                 {"event": "release", "head_sha": os.environ["SOURCE_REVISION"]}
@@ -115,15 +117,11 @@ def _wait(*, parent_run_id=None, wait_seconds=21000):
     )
 
 
-def _assemble():
-    plan_path = Path("dist/dependency-plan.json")
-    plan = json.loads(plan_path.read_text())
+def _validate_source():
+    plan = json.loads(Path("dist/dependency-plan.json").read_text())
     dependencies._validate_plan(
         plan, consumers=dependencies._local_wheels(Path("dist/pypi"))
     )
-    output = Path("release-inputs")
-    output.mkdir(exist_ok=False)
-    origins = {}
     catalog = dependencies._catalog()
     for profile in dependencies.PROJECTS:
         entry = plan["packages"][profile]
@@ -133,6 +131,17 @@ def _assemble():
             raise ValueError(
                 f"Image source for {profile} differs from the selected release package"
             )
+
+    return plan
+
+
+def _assemble():
+    plan = _validate_source()
+    output = Path("release-inputs")
+    output.mkdir(exist_ok=False)
+    origins = {}
+    for profile in dependencies.PROJECTS:
+        entry = plan["packages"][profile]
         if entry["action"] == "publish":
             origin = entry["publisher_run_id"]
             candidate._verify(profile, run_id=origin)
@@ -144,8 +153,7 @@ def _assemble():
             publisher.parent.mkdir(exist_ok=True)
             shutil.copyfile(bundle / "manifest.json", publisher)
         elif entry["action"] == "reuse":
-            # Reused PyPI packages have no child run in this release. Their image
-            # sources still need a fresh, retained lock with the selected versions.
+            # Reused packages need retained image locks but have no child publisher.
             origin = int(os.environ["GITHUB_RUN_ID"])
             prepare._prepare(profile, plan=plan)
         else:
@@ -157,7 +165,7 @@ def _assemble():
             shutil.copyfile(path, target)
         origins[profile] = {"run_id": origin, "action": entry["action"]}
 
-    shutil.copyfile(plan_path, output / "dependency-plan.json")
+    shutil.copyfile("dist/dependency-plan.json", output / "dependency-plan.json")
     release._write_record(
         output / "release-inputs.json",
         source_ref=os.environ["GITHUB_REF"],
@@ -180,8 +188,7 @@ def _restore(*, parent_run_id):
     ):
         raise ValueError("Prepared image inputs do not match the release/source")
 
-    # Validate ALL metadata before changing any checkout lock. No arbitrary
-    # archive paths become overlays; only the three known lock paths are copied.
+    # Validate every input before restoring only the three known lock paths.
     for profile, origin in record["profiles"].items():
         prepare._verify(profile, root=files / "inputs", run_id=origin["run_id"])
         project, _, _ = prepare._paths(profile)
@@ -205,7 +212,8 @@ def _restore(*, parent_run_id):
 
 @click.command()
 @click.argument(
-    "operation", type=click.Choice(["select", "wait", "assemble", "restore"])
+    "operation",
+    type=click.Choice(["select", "wait", "validate", "assemble", "restore"]),
 )
 @click.option(
     "--parent-run-id",
@@ -222,11 +230,14 @@ def _main(operation, *, parent_run_id, wait_seconds):
             _select_parent(parent_run_id=parent_run_id, wait_seconds=wait_seconds)
         elif operation == "wait":
             _wait(parent_run_id=parent_run_id, wait_seconds=wait_seconds)
+        elif operation == "validate":
+            _validate_source()
         elif operation == "assemble":
             _assemble()
         else:
             if not parent_run_id:
                 raise ValueError("restore requires --parent-run-id")
+
             _restore(parent_run_id=parent_run_id)
     except (OSError, ValueError, KeyError) as error:
         raise click.ClickException(str(error)) from error

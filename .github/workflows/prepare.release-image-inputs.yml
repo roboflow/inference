@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
-      ENABLED: ${{ github.event_name == 'release' || inputs.coordinator_run_id != '' }}
+      ENABLED: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'release' || inputs.coordinator_run_id != '') }}
       RELEASE_TAG: ${{ github.event.release.tag_name }}
       PARENT_RUN_ID: ${{ inputs.coordinator_run_id }}
       GH_TOKEN: ${{ github.token }}
@@ -28,7 +28,7 @@ jobs:
       run_id: ${{ steps.ready.outputs.run_id }}
       artifact_id: ${{ steps.ready.outputs.artifact_id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         if: ${{ env.ENABLED == 'true' }}
         with:
           persist-credentials: false
@@ -40,7 +40,7 @@ jobs:
           jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-image-selection.json >> "$GITHUB_OUTPUT"
       - name: Download original coordinator selection
         if: ${{ env.ENABLED == 'true' && steps.candidate.outputs.reused == 'true' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           artifact-ids: ${{ steps.candidate.outputs.id }}
           merge-multiple: true
@@ -57,7 +57,7 @@ jobs:
           bash .release/pypi/candidate.sh seal --profile image-selection
       - name: Retain candidate image-selection
         if: ${{ env.ENABLED == 'true' && steps.candidate.outputs.reused != 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: candidate-image-selection
           retention-days: 90

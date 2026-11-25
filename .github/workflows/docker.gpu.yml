@@ -4,7 +4,7 @@ permissions:
   actions: read
 on:
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
     inputs:
       release_run_id:

@@ -206,8 +206,7 @@ def _restore(profile):
             f"Refusing to overwrite existing candidate directory: {directory}"
         )
     if profile in dependencies.PROJECTS:
-        # The checkout intentionally still has its original lock. Restore the
-        # tested lock and receipt, never resolve dependencies on a retry.
+        # Restore the tested lock and receipt without resolving on a retry.
         for path in prepare._paths(profile)[1:]:
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(Path("release-candidate") / profile / "inputs" / path, path)

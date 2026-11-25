@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from click.testing import CliRunner
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / ".release/pypi"))
@@ -44,6 +45,7 @@ def _publish(wheelhouse, package):
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(prepare, "sleep", lambda seconds: None)
     for name in dependencies.PROJECTS:
         _project(name)
     wheelhouse = tmp_path / "index"
@@ -286,3 +288,135 @@ def test_coordinator_prepares_only_after_upstream_publication(
         for name in events:
             assert plan["packages"][name]["publisher_run_id"]
             assert plan["packages"][name]["sha256"]
+
+
+@pytest.mark.parametrize("fault", [None, "parent", "source", "version", "edges"])
+def test_coordinator_cli_verifies_plan_before_real_resolution(
+    workspace, monkeypatch, fault
+):
+    sdk = _package("inference-sdk", "2.0rc1")
+    _publish(workspace, sdk)
+    _project("roboflow-workflows", requirements=["inference-sdk==2.0rc1"])
+    plan = {"packages": {**dependencies._catalog(), "inference-sdk": sdk}}
+    if fault == "version":
+        plan["packages"]["roboflow-workflows"]["version"] = "2.1"
+    elif fault == "edges":
+        plan["packages"]["roboflow-workflows"]["requires_dist"] = []
+
+    Path("release-plan").mkdir()
+    Path("release-plan/dependency-plan.json").write_text(json.dumps(plan))
+    candidate._seal("dependencies")
+    monkeypatch.setenv("GITHUB_RUN_ID", "200")
+    monkeypatch.setenv("COORDINATOR_RUN_ID", "101" if fault == "parent" else "100")
+    if fault == "source":
+        monkeypatch.setenv("SOURCE_REVISION", "b" * 40)
+
+    if fault:
+
+        def no_resolution(*args, **kwargs):
+            pytest.fail("Invalid coordinator inputs must fail before resolving")
+
+        monkeypatch.setattr(subprocess, "run", no_resolution)
+
+    result = CliRunner().invoke(prepare._main, ["--profile", "roboflow-workflows"])
+    assert result.exit_code == (1 if fault else 0), result.output
+    if fault:
+        assert "Lock preparation failed" in result.output
+        assert not Path("workflows/uv.lock").exists()
+        assert not prepare._paths("roboflow-workflows")[2].exists()
+    else:
+        lock = _lock(Path("workflows"))
+        sdk_versions = {
+            p["version"] for p in lock["package"] if p["name"] == "inference-sdk"
+        }
+        assert sdk_versions == {"2.0rc1"}
+        prepare._verify("roboflow-workflows", run_id=200)
+
+
+@pytest.mark.parametrize("fault", ["cycle", "version", "extras", "python"])
+def test_invalid_upstream_graph_fails_before_resolution(workspace, monkeypatch, fault):
+    _project("streamvision", requirements=["roboflow-workflows==2.0rc1"])
+    entry = _package("roboflow-workflows", "2.0rc1")
+    if fault == "cycle":
+        entry["requires_dist"] = ["streamvision==2.0rc1"]
+    elif fault == "version":
+        entry["version"] = "2.1"
+    elif fault == "extras":
+        _project("streamvision", requirements=["roboflow-workflows[missing]==2.0rc1"])
+    elif fault == "python":
+        entry["requires_python"] = ">=4"
+
+    def no_resolution(*args, **kwargs):
+        pytest.fail("Invalid dependency graphs must not reach the resolver")
+
+    monkeypatch.setattr(subprocess, "run", no_resolution)
+    with pytest.raises(ValueError, match="Cyclic|different"):
+        prepare._prepare(
+            "streamvision", plan={"packages": {"roboflow-workflows": entry}}
+        )
+    assert not prepare._paths("streamvision")[2].exists()
+
+
+@pytest.mark.parametrize("versions", [["1.0"], ["1.0", "2.0rc1"], ["2.0rc1", "1.0"]])
+def test_every_resolved_first_party_version_must_match_plan(
+    workspace, monkeypatch, versions
+):
+    _project("streamvision", requirements=["inference-sdk>=1.0rc1"])
+    sdk = _package("inference-sdk", "2.0rc1")
+    lock = Path("stream_vision/uv.lock")
+    lock.write_text("# original checkout lock\n")
+    original = lock.read_bytes()
+
+    def resolved_lock(command, **kwargs):
+        if "--check" not in command:
+            lock.write_text(
+                "\n".join(
+                    f'[[package]]\nname = "inference-sdk"\nversion = "{v}"\n'
+                    for v in versions
+                )
+            )
+
+    monkeypatch.setattr(subprocess, "run", resolved_lock)
+    with pytest.raises(ValueError, match="differs from the release dependency plan"):
+        prepare._prepare("streamvision", plan={"packages": {"inference-sdk": sdk}})
+    assert lock.read_bytes() == original
+    assert not prepare._paths("streamvision")[2].exists()
+
+
+def test_resolver_retries_after_upstream_becomes_visible(workspace, monkeypatch):
+    sdk = _package("inference-sdk", "2.0rc1")
+    _project("streamvision", requirements=["inference-sdk==2.0rc1"])
+    sleeps = []
+
+    def publish_during_backoff(seconds):
+        sleeps.append(seconds)
+        _publish(workspace, sdk)
+
+    monkeypatch.setattr(prepare, "sleep", publish_during_backoff)
+    prepare._prepare("streamvision", plan={"packages": {"inference-sdk": sdk}})
+    assert sleeps == [10]
+    assert prepare._paths("streamvision")[2].exists()
+
+
+def test_resolver_attempts_share_one_deadline(workspace, monkeypatch):
+    now = [0]
+    timeouts = []
+    monkeypatch.setattr(prepare.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        prepare, "sleep", lambda seconds: now.__setitem__(0, now[0] + seconds)
+    )
+
+    def fail(command, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        now[0] += min(200, kwargs["timeout"])
+        if kwargs["timeout"] < 200:
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    with pytest.raises(subprocess.TimeoutExpired):
+        prepare._prepare("streamvision")
+    assert timeouts == [600, 390, 170]
+    assert now[0] == 600
+    assert not prepare._paths("streamvision")[2].exists()

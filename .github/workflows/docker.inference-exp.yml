@@ -50,7 +50,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read
     outputs:
       base-tag: ${{ steps.tags.outputs.base-tag }}
       release-version: ${{ steps.runtime-version.outputs.version }}

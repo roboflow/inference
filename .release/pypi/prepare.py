@@ -6,8 +6,10 @@ import json
 import os
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
+from time import sleep
 
 import click
 import dependencies
@@ -53,11 +55,14 @@ def _upstreams(profile, *, plan):
             name = dependencies.canonicalize_name(requirement.name)
             if name == profile or name in visiting:
                 raise ValueError("Cyclic first-party release dependency")
+
             entry = plan["packages"][name]
             if not dependencies._compatible(entry, [requirement]):
                 raise ValueError(f"Prepared source requires a different {name} version")
+
             if name in selected:
                 continue
+
             visiting.add(name)
             visit(entry)
             visiting.remove(name)
@@ -65,6 +70,26 @@ def _upstreams(profile, *, plan):
 
     visit(dependencies._catalog()[profile])
     return selected
+
+
+def _resolve(command, *, directory):
+    deadline = time.monotonic() + 600
+    for attempt in range(3):
+        try:
+            subprocess.run(
+                command,
+                cwd=directory,
+                check=True,
+                timeout=dependencies._remaining(deadline),
+            )
+            return
+        except subprocess.CalledProcessError:
+            if attempt == 2:
+                raise
+
+            delay = min(10 * (attempt + 1), dependencies._remaining(deadline))
+            click.echo(f"Lock resolution failed; retrying in {delay:g}s", err=True)
+            sleep(delay)
 
 
 def _prepare(profile, *, plan=None):
@@ -79,9 +104,7 @@ def _prepare(profile, *, plan=None):
     original = lock.read_bytes() if lock.exists() else None
     project_bytes = project.read_bytes()
     command = [sys.executable, "-m", "uv", "lock", "--python", sys.executable]
-    # uv otherwise prefers an existing RC even when a final version now fits.
-    # Keep unrelated locked versions; refresh direct AND transitive first-party
-    # dependencies. The coordinator verifies upstream publication before dispatch.
+    # Targeted upgrades replace compatible RCs while retaining unrelated pins.
     upstreams = _upstreams(profile, plan=plan) if plan is not None else None
     for name in sorted(dependencies.OWNED - {profile}):
         requirement = (
@@ -90,7 +113,7 @@ def _prepare(profile, *, plan=None):
         command.extend(["--upgrade-package", requirement])
 
     try:
-        subprocess.run(command, cwd=project.parent, check=True, timeout=600)
+        _resolve(command, directory=project.parent)
         subprocess.run(
             [sys.executable, "-m", "uv", "lock", "--check", "--offline"],
             cwd=project.parent,
@@ -101,12 +124,11 @@ def _prepare(profile, *, plan=None):
             raise ValueError("Lock preparation changed package metadata")
 
         if upstreams is not None:
-            resolved = {
-                p["name"]: p["version"]
-                for p in tomllib.loads(lock.read_text())["package"]
-                if p["name"] in dependencies.OWNED - {profile}
-            }
-            if resolved != upstreams:
+            resolved = {}
+            for package in tomllib.loads(lock.read_text())["package"]:
+                if package["name"] in dependencies.OWNED - {profile}:
+                    resolved.setdefault(package["name"], set()).add(package["version"])
+            if resolved != {name: {version} for name, version in upstreams.items()}:
                 raise ValueError(
                     "Prepared lock differs from the release dependency plan"
                 )
@@ -123,8 +145,7 @@ def _prepare(profile, *, plan=None):
         )
         _verify(profile)
     except (OSError, ValueError, subprocess.SubprocessError):
-        # No build/seal/upload follows a failed preparation. A fresh attempt can
-        # retry after dependencies become visible, without a half-prepared lock.
+        # Failed preparation leaves no candidate and restores the original lock.
         if original is None:
             lock.unlink(missing_ok=True)
         else:
@@ -159,7 +180,7 @@ def _main(*, profile):
             ) != dependencies._edges(current):
                 raise ValueError("Publisher source differs from the coordinator plan")
         _prepare(profile, plan=plan)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         raise click.ClickException(
             f"Lock preparation failed for {profile}: {error}. "
             "Required upstream versions must be published before this publisher; "

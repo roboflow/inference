@@ -1,7 +1,7 @@
 name: Publish Wheels to PyPi
 on:
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
     inputs:
       packages:
@@ -275,6 +275,8 @@ jobs:
           path: release-candidate/dependencies/
       - name: Verify retained candidate dependencies
         run: bash .release/pypi/candidate.sh verify --profile dependencies
+      - name: Validate image source against dependency selection
+        run: bash .release/pypi/image_inputs.sh validate
       - name: Publish missing upstream versions in dependency order
         if: ${{ github.event_name == 'release' || inputs.publish == true }}
         env:
@@ -363,6 +365,10 @@ jobs:
 
   prepare_image_inputs:
     needs: [build_runtime, prepare_dependencies, publish_runtime]
+    if: >-
+      ${{ !cancelled() && needs.build_runtime.result == 'success' &&
+          needs.prepare_dependencies.result == 'success' &&
+          needs.publish_runtime.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

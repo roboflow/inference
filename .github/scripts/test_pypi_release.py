@@ -631,7 +631,7 @@ def test_workflow_ownership_and_credential_boundaries():
         Loader=yaml.BaseLoader,
     )
     assert not (ROOT / ".github/workflows/publish.pypi.inference_sdk.yml").exists()
-    assert workflow["on"]["release"]["types"] == ["created"]
+    assert workflow["on"]["release"]["types"] == ["published"]
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert inputs["publish"]["default"] == "false"
     assert inputs["packages"]["default"] == "all"

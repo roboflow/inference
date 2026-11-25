@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from click.testing import CliRunner
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / ".github/scripts"))
@@ -255,6 +256,8 @@ def test_all_release_image_builds_wait_restore_then_use_local_context():
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         if "release" not in workflow["on"]:
             continue
+
+        assert workflow["on"]["release"]["types"] == ["published"]
         covered.append(path.name)
         gate = workflow["jobs"]["release_inputs"]
         assert gate["uses"] == "./.github/workflows/prepare.release-image-inputs.yml"
@@ -298,8 +301,46 @@ def test_input_bundle_requires_successful_runtime_publication():
     )
     job = workflow["jobs"]["prepare_image_inputs"]
     assert "publish_runtime" in job["needs"]
-    assert "if" not in job  # Default success() blocks failed/skipped publication.
+    condition = " ".join(job["if"].split())
+    assert "!cancelled()" in condition
+    for prerequisite in ("build_runtime", "prepare_dependencies", "publish_runtime"):
+        assert f"needs.{prerequisite}.result == 'success'" in condition
     step = next(
         s for s in job["steps"] if s.get("name") == "Assemble prepared image inputs"
     )
     assert step["if"] == "${{ steps.candidate.outputs.reused != 'true' }}"
+
+
+@pytest.mark.parametrize("change", [None, "version", "dependencies"])
+def test_reused_source_is_validated_before_any_publication(
+    image_event, monkeypatch, change
+):
+    catalog = dependencies._catalog()
+    _PyPI(monkeypatch, list(catalog.values()))
+    runtime = _package("inference", "2.0rc1", [f"{name}==2.0rc1" for name in catalog])
+    directory = Path("dist/pypi")
+    directory.mkdir(parents=True)
+    filename, data = _wheel(runtime)
+    (directory / filename).write_bytes(data)
+    plan = planner._plan(
+        dependencies._local_wheels(directory),
+        catalog=catalog,
+        registry=planner._Registry(wait_seconds=120),
+    )
+    release._write_record(Path("dist/dependency-plan.json"), **plan)
+    if change == "version":
+        _project("streamvision", version="2.1")
+    elif change == "dependencies":
+        _project("streamvision", requirements=["roboflow-workflows==2.0rc1"])
+
+    def no_publication(*args, **kwargs):
+        pytest.fail("Source validation must not resolve or publish anything")
+
+    monkeypatch.setattr(subprocess, "run", no_publication)
+    monkeypatch.setattr(planner, "_dispatch", no_publication)
+    result = CliRunner().invoke(image_inputs._main, ["validate"])
+    assert result.exit_code == (1 if change else 0), result.output
+    if change:
+        assert "Image source for streamvision differs" in result.output
+
+    assert not Path("release-inputs").exists()
