@@ -1015,16 +1015,18 @@ def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> 
         "on_file_created",
         "model_id",
     ]
-    assert list(inspect.signature(initialize_model).parameters)[-3:] == [
+    assert list(inspect.signature(initialize_model).parameters)[-4:] == [
         "requested_model_id",
         "api_key",
         "content_addressed_artifact_cache",
+        "refresh_model_package",
     ]
     assert list(inspect.signature(attempt_loading_matching_model_packages).parameters)[
-        -2:
+        -3:
     ] == [
         "requested_model_id",
         "content_addressed_artifact_cache",
+        "refresh_model_package",
     ]
     assert list(inspect.signature(dump_auto_resolution_cache).parameters)[-2:] == [
         "canonical_model_id",

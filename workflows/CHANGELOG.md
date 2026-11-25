@@ -31,10 +31,25 @@ for contributor and maintainer responsibilities.
   Live streams and files without a usable frame count behave as before, and
   so does a file whose last frame the source drops (for example with
   `max_fps`).
+- Action Recognition Model gains `background_inference`. A live stream then
+  hands each window to a worker thread, so the step returns at once and the
+  video does not wait for the model. The result reaches the timeline on the
+  stream's next frame after the call ends, so the last call of a stream that
+  stops is not reported. One call runs per stream at a time; a call that comes
+  due while the previous one has not finished waits and takes the newest
+  window. When a call starts late, `error_status` names the frames no window
+  covers between it and the previous call. A stream reads
+  `background_inference` on its first frame and keeps that mode until its
+  state resets. A step has one worker, so its streams take turns. Video files
+  always classify inside the step. The default is unchanged.
 
 ### Fixed
 
 - Rate Limiter (`roboflow_core/rate_limiter@v1`) falls back to wall-clock time when `video_reference_image` carries no video metadata, for example a still image sent over HTTP or the output of a step that builds a new image (`stitch_images@v1`, `grid_visualization@v1`, the Stability AI blocks). The block used to read the placeholder metadata such images report (frame 0 at 30 FPS), so its time never advanced and it suppressed `next_steps` on every run after the first. Video time (`frame_number / fps`) is now used only for frames from a video file with a known, non-zero FPS; stream frames, frames whose source is unknown and video files without FPS use the frame timestamp, as Time in Zone and Velocity do. Streams that report FPS used to be timed by `frame_number / fps`. The new `WorkflowImageData.has_video_metadata()` tells real video metadata from the placeholder.
+- Action Recognition Model releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model
+  changes. A classification already running can finish. A failed call on one
+  camera no longer keeps another camera's completed window in memory.
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
 

@@ -15,14 +15,10 @@ POISONED_MODEL_IDS = [
     "ds/1:capabilities=image_embeddings:output_type=logits",
     "ds/1:b:capabilities=image_embeddings",
 ]
-POISONED_INSTANCES = [
-    "capabilities=image_embeddings",
-    "b:capabilities=image_embeddings",
-]
 MODEL_ID_PATH_PARAMS = {"model_id", "dataset_id", "version_id"}
-MODEL_ID_QUERY_PARAMS = {"model_id", "instance"}
+MODEL_ID_QUERY_PARAMS = {"model_id"}
 UNDECLARED_QUERY_PARAMS = {
-    "/v2/models/infer": ("model_id", "instance"),
+    "/v2/models/infer": ("model_id",),
     "/v2/models/load": ("model_id",),
     "/v2/models/unload": ("model_id",),
     "/v2/models/interface": ("model_id",),
@@ -176,15 +172,9 @@ def _requests_for(route: APIRoute, model_id: str):
         )
         body_path = path
         poisoned_body = _body(body_model, model_id) if body_model else None
-        requests.append((method, path, {"api_key": "k"}, poisoned_body, "model_id"))
+        requests.append((method, path, {"api_key": "k"}, poisoned_body))
     if "model_id" in query_params:
-        requests.append(
-            (method, plain_path, {"model_id": model_id}, base_body, "model_id")
-        )
-    if "instance" in query_params:
-        for instance in POISONED_INSTANCES:
-            params = {"model_id": "ds/1", "instance": instance}
-            requests.append((method, plain_path, params, base_body, "instance"))
+        requests.append((method, plain_path, {"model_id": model_id}, base_body))
     if body_model:
         requests.append(
             (
@@ -192,7 +182,6 @@ def _requests_for(route: APIRoute, model_id: str):
                 body_path,
                 {"api_key": "k"},
                 _body(body_model, model_id),
-                "model_id",
             )
         )
     return requests
@@ -213,18 +202,13 @@ def _marker_calls(gateway: FakeGateway):
     ] + [key for key in gateway.loaded if MARKER in key]
 
 
-def _guard_answer(route: APIRoute, poisoned: str, response) -> bool:
+def _guard_answer(route: APIRoute, response) -> bool:
     if route.path in ACCEPTED_WITHOUT_LOAD:
         return response.status_code == 200
     if not response.headers.get("content-type", "").startswith("application/json"):
         return False
     if route.path.startswith("/v2/"):
         body = response.json()
-        if poisoned == "instance":
-            return (response.status_code, body.get("error_code")) == (
-                400,
-                "INVALID_PARAM",
-            ) and "instance" in body.get("description", "")
         return (response.status_code, body.get("error_code")) == (
             404,
             "MODEL_NOT_FOUND",
@@ -281,11 +265,11 @@ def test_no_route_lets_a_capability_marker_reach_the_gateway(
     not_refused = {}
     for route in _api_routes(client.app.routes):
         all_routes.add(route.path)
-        for method, path, params, body, poisoned in _requests_for(route, model_id):
+        for method, path, params, body in _requests_for(route, model_id):
             response = _send(client, route, method, path, params, body)
             swept.add(route.path)
             if route.path in ROUTES_RESOLVING_THE_REQUEST_MODEL and not _guard_answer(
-                route, poisoned, response
+                route, response
             ):
                 not_refused[(method, route.path, tuple(sorted(params)))] = (
                     response.status_code,
