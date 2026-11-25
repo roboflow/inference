@@ -34,6 +34,7 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- ByteTrack blocks (`roboflow_core/byte_tracker@v1`, `@v2`, `@v3` and their tensor-native variants) initialize a video's tracker at 30 fps when its `VideoMetadata.fps` is missing, zero, negative or not finite, matching the blocks in `core_steps/trackers`. v2 and v3 used to build the tracker with `frame_rate=0`, which makes supervision remove a lost track almost immediately, so an object missed for three frames came back with a new tracker ID and line counters, time in zone and similar logic could miss or double-count it. v1 used to raise `ValueError` on every such frame. The warning is now logged once per `video_identifier`, when its tracker is created, instead of on every frame. Videos that declare a frame rate are unchanged.
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
 
