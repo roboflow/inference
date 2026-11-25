@@ -42,7 +42,6 @@ _RESERVED_QUERY_KEYS: frozenset[str] = frozenset(
         "action",
         "style",
         "response_style",
-        "instance",
         "device",
         "image",
     }
@@ -101,7 +100,6 @@ def decode_common_request_params(request: Request) -> CommonRequestParams:
         action=qp.get("action") or "",
         response_style=response_style,
         model_package_id=qp.get("model_package_id") or None,
-        instance=qp.get("instance", ""),
         device=qp.get("device", ""),
         extra=extra,
     )
@@ -225,8 +223,6 @@ async def handle_model_inference_request(
         )
     if has_capability_marker(common.model_id):
         return error_response(404, "MODEL_NOT_FOUND", "unknown model_id")
-    if has_capability_marker(common.instance):
-        return error_response(400, "INVALID_PARAM", "param 'instance'")
 
     max_body = configuration.MAX_BODY_BYTES
     content_length = request.headers.get("content-length")
@@ -295,7 +291,7 @@ async def handle_model_inference_request(
 
     record_model_load(common.model_id, cold_start=False, load_time_s=0.0)
     status = await proxy.ensure_loaded(
-        common.model_id, common.instance, common.api_key, common.device
+        common.model_id, api_key=common.api_key, device=common.device
     )
     if status[0] == "load_timeout":
         return error_response(
@@ -318,7 +314,7 @@ async def handle_model_inference_request(
 
     try:
         with measure_inference(
-            routing_key(common.model_id, common.instance),
+            routing_key(common.model_id),
             responses=max(len(input_data.get("images") or ()), 1),
         ):
             prediction = await description.handler(
