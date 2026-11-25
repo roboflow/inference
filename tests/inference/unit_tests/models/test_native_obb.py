@@ -22,8 +22,8 @@ def metadata():
     return {"classHeading": {"plane": True, "stone": False}, "classHeadingRevision": 3}
 
 
-def inference_config(size=64):
-    return {
+def inference_config(size=64, **network_input):
+    config = {
         "image_pre_processing": {},
         "network_input": {
             "training_input_size": {"height": size, "width": size},
@@ -39,10 +39,19 @@ def inference_config(size=64):
             {"type": "class_name_removal", "class_name": "background_class83422"}
         ],
     }
+    config["network_input"].update(network_input)
+    return config
 
 
 def package(
-    tmp_path, *, side=0, box=(0.5, 0.5, 0.4, 0.2, 0.3), malformed=None, class_index=1
+    tmp_path,
+    *,
+    side=0,
+    box=(0.5, 0.5, 0.4, 0.2, 0.3),
+    malformed=None,
+    class_index=1,
+    network_input=None,
+    **loader_options,
 ):
     dets = np.array([[box]], np.float32)
     labels = np.array([[[100.0, -12.0, -12.0]]], np.float32)
@@ -70,10 +79,25 @@ def package(
     )
     onnx.save(model, tmp_path / "weights.onnx")
     (tmp_path / "class_names.txt").write_text("background_class83422\nplane\nstone\n")
-    (tmp_path / "inference_config.json").write_text(json.dumps(inference_config()))
-    return RFDetrForOrientedObjectDetectionONNX.from_pretrained(
-        str(tmp_path), oriented_box_metadata=metadata()
+    (tmp_path / "inference_config.json").write_text(
+        json.dumps(inference_config(**(network_input or {})))
     )
+    return RFDetrForOrientedObjectDetectionONNX.from_pretrained(
+        str(tmp_path), oriented_box_metadata=metadata(), **loader_options
+    )
+
+
+def model_input_pixels(model, image):
+    """The RGB uint8 image the model receives, undoing the ImageNet normalization."""
+    inputs, metas = model.pre_process([image])
+    rgb = np.rint(
+        (
+            inputs[0].transpose(1, 2, 0) * np.array([0.229, 0.224, 0.225])
+            + np.array([0.485, 0.456, 0.406])
+        )
+        * 255
+    ).astype(np.uint8)
+    return rgb, metas[0]
 
 
 @pytest.mark.parametrize("side", range(4))
@@ -645,3 +669,82 @@ def test_request_factory_preserves_native_or_ordinary_request(task):
     restored = request_from_type(task, original.model_dump())
     assert type(restored) is request_class
     assert restored.model_dump() == original.model_dump()
+
+
+@pytest.mark.parametrize("padding", [0, 255])
+def test_letterbox_pads_with_the_declared_value(tmp_path, padding):
+    """A Fit (black/white edges) in version trains on black/white bars, so inference pads the same."""
+    model = package(tmp_path, network_input={"padding_value": padding})
+
+    rgb, meta = model_input_pixels(model, np.full((32, 64, 3), 77, np.uint8))
+
+    assert meta.pad_top == 16
+    assert rgb[0, 0].tolist() == [padding] * 3 and rgb[32, 32].tolist() == [77] * 3
+
+
+def test_center_crop_crops_and_pads_without_scaling(tmp_path):
+    """Fill (with center crop) in: the 80 x 48 image keeps its scale, 8 px are cut left and right, 8 px padded black."""
+    model = package(
+        tmp_path, network_input={"resize_mode": "center-crop", "padding_value": None}
+    )
+    image = np.zeros((48, 80, 3), np.uint8)
+    image[:, 8] = 200
+
+    rgb, meta = model_input_pixels(model, image)
+
+    assert (meta.scale_width, meta.scale_height, meta.pad_left, meta.pad_top) == (
+        1.0,
+        1.0,
+        -8,
+        8,
+    )
+    assert rgb[8:56, 0].tolist() == [[200, 200, 200]] * 48 and rgb[0, 0].tolist() == [
+        0,
+        0,
+        0,
+    ]
+
+
+def test_center_crop_maps_boxes_back_to_the_image(tmp_path):
+    model = package(
+        tmp_path,
+        box=(0.5, 0.5, 0.25, 0.125, 0.3),
+        network_input={"resize_mode": "center-crop", "padding_value": None},
+    )
+
+    result = model(np.zeros((48, 80, 3), np.uint8))[0]
+
+    assert result.obb[0].tolist() == pytest.approx(
+        [40.0, 24.0, 16.0, 8.0, 0.3], abs=1e-5
+    )
+
+
+def test_resize_modes_that_change_the_aspect_ratio_are_refused(tmp_path):
+    with pytest.raises(Exception, match="(?i)resize"):
+        package(
+            tmp_path, network_input={"resize_mode": "stretch", "padding_value": None}
+        )
+
+
+def test_unvalidated_execution_providers_are_refused(tmp_path):
+    with pytest.raises(ValueError, match="TensorrtExecutionProvider"):
+        package(tmp_path, onnx_execution_providers=["CoreMLExecutionProvider"])
+
+
+@pytest.mark.skipif(
+    "CUDAExecutionProvider" not in __import__("onnxruntime").get_available_providers(),
+    reason="needs onnxruntime-gpu with CUDA",
+)
+def test_cuda_execution_provider_gives_the_cpu_result(tmp_path):
+    image = (np.arange(48 * 80 * 3) % 251).astype(np.uint8).reshape(48, 80, 3)
+    (tmp_path / "cpu").mkdir()
+    (tmp_path / "cuda").mkdir()
+    cpu = package(tmp_path / "cpu", onnx_execution_providers=["CPUExecutionProvider"])
+    cuda = package(
+        tmp_path / "cuda", onnx_execution_providers=["CUDAExecutionProvider"]
+    )
+
+    assert cuda._session.get_providers()[0] == "CUDAExecutionProvider"
+    assert cuda(image)[0].obb[0].tolist() == pytest.approx(
+        cpu(image)[0].obb[0].tolist()
+    )

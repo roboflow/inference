@@ -8,16 +8,21 @@ import numpy as np
 import torch
 from PIL import Image
 
+from inference_models.configuration import DEFAULT_DEVICE
 from inference_models.entities import ImageDimensions
 from inference_models.models.base.object_detection import (
     Detections,
     ObjectDetectionModel,
 )
 from inference_models.models.common.model_packages import get_model_package_contents
-from inference_models.models.common.onnx import create_onnx_inference_session
+from inference_models.models.common.onnx import (
+    create_onnx_inference_session,
+    set_onnx_execution_provider_defaults,
+)
 from inference_models.models.common.roboflow.model_packages import (
     ColorMode,
     ImagePreProcessing,
+    NetworkInputDefinition,
     ResizeMode,
     align_training_input_size_with_model,
     ensure_input_size_within_limit,
@@ -31,6 +36,16 @@ from inference_models.models.common.roboflow.pre_processing import (
     apply_pre_processing_to_numpy_image,
 )
 from inference_models.models.rfdetr.class_remapping import prepare_class_remapping
+from inference_models.utils.onnx_introspection import (
+    get_selected_onnx_execution_providers,
+)
+
+# Execution providers the native OBB graph runs on. OpenVINO and CoreML have not been validated with it.
+SUPPORTED_EXECUTION_PROVIDERS = (
+    "TensorrtExecutionProvider",
+    "CUDAExecutionProvider",
+    "CPUExecutionProvider",
+)
 
 
 @dataclass
@@ -77,7 +92,11 @@ def _corners(obb):
 
 @dataclass(frozen=True)
 class OrientedPreprocessingMetadata:
-    """Realized integer letterbox transform used by the trained model."""
+    """Realized input transform: per-axis scale, then the offset of the image's origin in the model input.
+
+    A letterbox scales and pads (offsets >= 0); a center crop keeps the scale at 1 and offsets by the crop (< 0) or
+    the padding (> 0).
+    """
 
     original_size: ImageDimensions
     scale_width: float
@@ -90,11 +109,12 @@ class OrientedPreprocessingMetadata:
 
 
 class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
-    """Run the three-output native OBB artifact on the ONNX CPU execution provider.
+    """Run the three-output native OBB artifact with ONNX Runtime on TensorRT, CUDA or CPU.
 
-    CPU ONNX is the advertised initial backend. Other backends require their own
-    validation before registration. Model preprocessing is the training Letterbox:
-    rounded max-side resize, integer centered padding and unchanged angle.
+    Model preprocessing follows the package's declared resize, as the training images saw it: ``letterbox`` is the
+    training Letterbox (rounded max-side resize, integer centered padding in the declared ``padding_value``) and
+    ``center-crop`` is the version's Fill (with center crop) in (no scaling, centered crop, black padding when the
+    image is smaller). Angles are unchanged by either.
     """
 
     @classmethod
@@ -103,7 +123,9 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
 
         Args:
             model_name_or_path: Local package directory with standard RF-DETR ONNX files.
-            **kwargs: Shared loader options; onnx_execution_providers can select CPU only.
+            **kwargs: Shared loader options. onnx_execution_providers (TensorRT, CUDA and/or CPU; default: the
+                environment's ONNXRUNTIME_EXECUTION_PROVIDERS among those), device and default_onnx_trt_options
+                as for other ONNX models.
 
         Returns:
             Initialized native model.
@@ -115,9 +137,26 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         if raw_metadata is None:
             raise ValueError("Native OBB requires frozen orientedBoxMetadata from Core")
         metadata = OrientedBoxMetadata.model_validate(raw_metadata)
-        providers = kwargs.get("onnx_execution_providers") or ["CPUExecutionProvider"]
-        if providers != ["CPUExecutionProvider"]:
-            raise ValueError("Native OBB currently supports CPUExecutionProvider only")
+        providers = kwargs.get("onnx_execution_providers")
+        if providers is None:
+            providers = get_selected_onnx_execution_providers()
+        providers = [
+            provider
+            for provider in providers
+            if (provider[0] if isinstance(provider, tuple) else provider)
+            in SUPPORTED_EXECUTION_PROVIDERS
+        ]
+        if not providers:
+            raise ValueError(
+                "Native OBB runs on TensorrtExecutionProvider, CUDAExecutionProvider or CPUExecutionProvider; "
+                "none of them is selected"
+            )
+        providers = set_onnx_execution_provider_defaults(
+            providers=providers,
+            model_package_path=model_name_or_path,
+            device=kwargs.get("device") or DEFAULT_DEVICE,
+            default_onnx_trt_options=kwargs.get("default_onnx_trt_options", True),
+        )
         package = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=["class_names.txt", "inference_config.json", "weights.onnx"],
@@ -126,7 +165,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         maximum = kwargs.get("rf_detr_max_input_resolution")
         config = parse_inference_config(
             config_path=package["inference_config.json"],
-            allowed_resize_modes={ResizeMode.LETTERBOX},
+            allowed_resize_modes={ResizeMode.LETTERBOX, ResizeMode.CENTER_CROP},
             max_allowed_input_size=maximum,
         )
         indices = list(range(len(class_names)))
@@ -152,6 +191,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             class_names=class_names,
             output_indices=indices,
             image_pre_processing=config.image_pre_processing,
+            network_input=config.network_input,
         )
         config = align_training_input_size_with_model(
             config,
@@ -165,7 +205,13 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         if (
             network.color_mode != ColorMode.RGB
             or network.input_channels != 3
-            or network.padding_value != 114
+            or (
+                network.resize_mode == ResizeMode.LETTERBOX
+                and (
+                    not isinstance(network.padding_value, int)
+                    or not 0 <= network.padding_value <= 255
+                )
+            )
             or network.scaling_factor != 255
             or network.normalization != ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ):
@@ -180,10 +226,13 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         class_names: List[str],
         output_indices: List[int],
         image_pre_processing: ImagePreProcessing,
+        network_input: NetworkInputDefinition,
     ):
         self._session = session
         self.metadata = metadata
         self.image_pre_processing = image_pre_processing
+        self._resize_mode = network_input.resize_mode
+        self._padding_value = network_input.padding_value
         inputs = session.get_inputs()
         if len(inputs) != 1 or len(inputs[0].shape) != 4:
             raise ValueError("OBB ONNX must have one BCHW image input")
@@ -216,7 +265,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         return self._class_names
 
     def pre_process(self, images, **kwargs):
-        """Apply the same rounded letterbox and ImageNet normalization as training.
+        """Apply the package's resize (letterbox or center crop) and ImageNet normalization, as in training.
 
         Args:
             images: RGB uint8 HWC NumPy images or CHW tensors; lists/batches accepted.
@@ -247,14 +296,24 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
             )
             h, w = image.shape[:2]
             size = self.resolution
-            scale = size / max(h, w)
-            resized_width = max(1, round(w * scale))
-            resized_height = max(1, round(h * scale))
-            left, top = (size - resized_width) // 2, (size - resized_height) // 2
-            resized = Image.fromarray(image).resize(
-                (resized_width, resized_height), resample=Image.Resampling.BILINEAR
-            )
-            canvas = Image.new("RGB", (size, size), (114, 114, 114))
+            if self._resize_mode == ResizeMode.CENTER_CROP:
+                # The version's Fill (with center crop) in: no scaling; the image is centered on the input, cropped
+                # where larger and padded black where smaller, with the extra odd pixel on the right / bottom.
+                resized_width, resized_height = w, h
+                left = (size - w) // 2 if size >= w else -((w - size) // 2)
+                top = (size - h) // 2 if size >= h else -((h - size) // 2)
+                resized = Image.fromarray(image)
+                fill = (0, 0, 0)
+            else:
+                scale = size / max(h, w)
+                resized_width = max(1, round(w * scale))
+                resized_height = max(1, round(h * scale))
+                left, top = (size - resized_width) // 2, (size - resized_height) // 2
+                resized = Image.fromarray(image).resize(
+                    (resized_width, resized_height), resample=Image.Resampling.BILINEAR
+                )
+                fill = (self._padding_value,) * 3
+            canvas = Image.new("RGB", (size, size), fill)
             canvas.paste(resized, (left, top))
             array = np.asarray(canvas).astype(np.float32) / 255.0
             array = (
@@ -309,7 +368,7 @@ class RFDetrForOrientedObjectDetectionONNX(ObjectDetectionModel):
         return result
 
     def post_process(self, model_results, pre_processing_meta, **kwargs):
-        """Select class/query rows and invert the exact training letterbox in float.
+        """Select class/query rows and invert the input transform (letterbox or center crop) in float.
 
         Args:
             model_results: Three raw ONNX arrays in dets, labels, heading order.

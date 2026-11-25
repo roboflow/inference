@@ -33,11 +33,23 @@ width/height iff `k` is odd. This preserves the exact footprint and designates t
 predicted front. Undirected classes retain the raw ordered rectangle axis.
 No independent front vector is persisted.
 
-The package declares letterbox resizing, RGB padding 114, division by 255 and
-ImageNet normalization. For an image of width `w`, height `h` and square model
-input size `S`, the runtime resizes to `round(w*S/max(w,h))` by
-`round(h*S/max(w,h))`, with each dimension at least one pixel. Pillow bilinear
-resizing and integer centered padding match the producer's training transform.
+The package declares the dataset version's resize, division by 255 and ImageNet
+normalization. Oriented-box versions are resized to a square with Fit (black or
+white edges) in or Fill (with center crop) in, so the declared resize is what the
+training images went through:
+
+- `letterbox` with `padding_value` 0 or 255 (Fit (black/white edges) in), or 114
+  (no resize; the trainer's own letterbox). For an image of width `w`, height `h`
+  and square model input size `S`, the runtime resizes to `round(w*S/max(w,h))` by
+  `round(h*S/max(w,h))`, with each dimension at least one pixel, and pads to a
+  centered square in the declared value. Pillow bilinear resizing and integer
+  centered padding match the producer's training transform.
+- `center-crop` (Fill (with center crop) in): no scaling; the image is centered on
+  the `S` x `S` input, cut where larger and padded black where smaller, with the
+  odd pixel on the right/bottom, as the version's crop.
+
+Other resize modes change the aspect ratio, which a rotated rectangle cannot
+follow, and are refused.
 
 Rounding can make the realized width and height ratios differ. The inverse maps
 centers using their respective ratios and ordered sides using the mean of those
@@ -105,7 +117,8 @@ workspace admission checks; ordinary AABB upload paths are not advertised for OB
 | Local Workflow model, transport and visualization | Implemented; NumPy/tensor semantic and coordinate tests |
 | Query-language `DetectionsShift` / `DetectionsOffset` | Excluded; native NumPy/tensor inputs reject before geometry mutation |
 | Hosted production serving | Requires compatible package releases, trained artifact registration and serving deployment; no hosted/cloud run claimed |
-| CUDA, TensorRT, CoreML, browser inferencejs | Excluded from this initial backend registration |
+| ONNX Runtime CUDA and TensorRT execution providers | Implemented; the ONNX package runs on TensorRT, CUDA or CPU providers (environment selection, TensorRT FP16 engine cached in the package directory). On a trained 2XL export (1024 px, L4) CUDA and TensorRT match CPU within 0.24 px and 0.0005 rad |
+| Compiled TRT packages (TRT compilation job), CoreML, OpenVINO, browser inferencejs | Excluded; no native TRT model class is registered, so TRT compilation verification fails for this task |
 | Legacy `roboflow-python` `version.model` | Excluded; current Inference SDK support does not add legacy task dispatch |
 
 Synthetic fixtures establish package and transport compatibility; they do not
