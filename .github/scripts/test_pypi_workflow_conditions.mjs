@@ -47,8 +47,18 @@ function context(packages = "all", publish = true, event = "workflow_dispatch", 
     needs: {}, steps: {}, env: {},
   };
 }
-function jobEnabled(job, ctx, cancelled = false) {
-  const dependencies = [].concat(job.needs || []).map(name => ctx.needs[name]?.result);
+function jobEnabled(job, ctx, cancelled = false, jobs = workflow.jobs) {
+  // Job status includes the transitive dependency graph, unlike the needs context.
+  const ancestors = new Set();
+  function visit(current) {
+    for (const name of [].concat(current?.needs || [])) {
+      if (ancestors.has(name)) continue;
+      ancestors.add(name);
+      visit(jobs[name]);
+    }
+  }
+  visit(job);
+  const dependencies = [...ancestors].map(name => ctx.needs[name]?.result);
   return evaluate(job.if, ctx, {
     success: !cancelled && dependencies.every(result => result === "success"),
     failure: dependencies.includes("failure"), cancelled,
@@ -89,13 +99,13 @@ function check(wf) {
   equal(wf.on.workflow_dispatch.inputs.publish.default, false, "build-only by default");
   equal(jobs.publish_sdk["timeout-minutes"], 50, "SDK preparation and verification budget");
   equal(jobs.publish_sdk.needs, "build_sdk", "SDK build ownership");
-  equal(jobs.prepare_dependencies["timeout-minutes"], 240, "SDK gate, coordinator, planning and infrastructure budget");
+  equal(jobs.prepare_dependencies["timeout-minutes"], 270, "SDK gate, coordinator, planning and infrastructure budget");
   equal(jobs.publish_runtime["timeout-minutes"], 50, "SDK gate, dependency verification and upload budget");
   equal(jobs.build_runtime["timeout-minutes"], 20, "runtime build keeps its existing budget");
   function networkBudget(job) {
     return job.steps.flatMap(step => [...(step.run || "").matchAll(/--wait-seconds (\d+)/g)]).reduce((sum, match) => sum + Number(match[1]), 0);
   }
-  equal(networkBudget(jobs.prepare_dependencies), 600 + 600 + 10800, "SDK gate plus planning plus coordination total network budget");
+  equal(networkBudget(jobs.prepare_dependencies), 600 + 600 + 12600, "SDK gate plus planning plus coordination total network budget");
   equal(jobs.prepare_dependencies["timeout-minutes"] * 60 - networkBudget(jobs.prepare_dependencies), 2400, "forty-minute coordinator infrastructure and in-flight allowance");
   equal(networkBudget(jobs.publish_runtime), 4 * 600, "runtime gates, preparation and final verification budgets");
   equal(jobs.publish_runtime["timeout-minutes"] * 60 - networkBudget(jobs.publish_runtime), 600, "runtime upload and infrastructure allowance");
@@ -109,8 +119,14 @@ function check(wf) {
   assert.ok(plan.run.includes("dependencies.sh plan --wait-seconds 600"), "planning has a bounded independent operation");
   equal(plan.env?.GH_TOKEN, undefined, "planning does not receive a dispatch token");
   equal(coordinate.env.GH_TOKEN, "${{ github.token }}", "only coordination receives a dispatch token");
-  assert.ok(coordinate.run.includes("--wait-seconds 10800"), "one budget covers all publishers and final verification");
+  assert.ok(coordinate.run.includes("--wait-seconds 12600"), "one budget covers all publishers and final verification");
   assert.ok(jobs.prepare_dependencies.steps.indexOf(plan) < jobs.prepare_dependencies.steps.indexOf(coordinate));
+  const sourceGate = jobs.prepare_dependencies.steps.find(step => step.run?.includes("image_inputs.sh validate"));
+  assert.ok(sourceGate, "validate reused package source before any companion or runtime publication");
+  assert.ok(jobs.prepare_dependencies.steps.indexOf(sourceGate) < jobs.prepare_dependencies.steps.indexOf(coordinate));
+  const sourceFailure = runSteps(jobs.prepare_dependencies, context(), new Map([[sourceGate, "failure"]]));
+  equal(sourceFailure.result, "failure", "changed image source fails dependency preparation");
+  assert.ok(!sourceFailure.ran.includes(coordinate), "source mismatch prevents coordination");
   for (const publish of [false, true]) for (const event of ["release", "workflow_dispatch"]) for (const previous of results) for (const cancelled of [false, true]) {
     equal(stepEnabled(coordinate, context("all", publish, event), previous, cancelled),
       (publish || event === "release") && !["failure", "cancelled"].includes(previous) && !cancelled,
@@ -135,8 +151,9 @@ function check(wf) {
         prepare_dependencies: runtime && repository === "roboflow/inference",
         publish_runtime: runtime && publishing && (release || packages !== "dependencies"),
       };
-      for (const name of ["build_sdk", "publish_sdk", "build_runtime", "prepare_dependencies", "publish_runtime"]) {
-        const enabled = jobEnabled(jobs[name], ctx);
+      expected.prepare_image_inputs = expected.publish_runtime;
+      for (const name of ["build_sdk", "publish_sdk", "build_runtime", "prepare_dependencies", "publish_runtime", "prepare_image_inputs"]) {
+        const enabled = jobEnabled(jobs[name], ctx, false, jobs);
         equal(enabled, expected[name], `${packages}/${publish}/${event}/${repository}: ${name}`);
         ctx.needs[name] = { result: enabled ? "success" : "skipped" };
       }
@@ -301,10 +318,36 @@ function checkChildren(children) {
   for (const [name, { directory, workflow: wf }] of Object.entries(children)) {
     const job = wf.jobs.build;
     checkRetention(job, name);
-    equal(job["timeout-minutes"], 50, "child includes dependency gate, content verification and build/upload margin");
+    equal(job["timeout-minutes"], 65, "child includes dependency gate, content verification and build/upload margin");
     const budget = job.steps.flatMap(step => [...(step.run || "").matchAll(/--wait-seconds (\d+)/g)]).reduce((sum, match) => sum + Number(match[1]), 0);
     equal(budget, 3 * 600, "child dependency, preparation and final verification budgets");
-    equal(job["timeout-minutes"] * 60 - budget, 1200, "twenty-minute child build and upload allowance");
+    equal(job["timeout-minutes"] * 60 - budget, 2100, "twenty-minute build/upload plus fifteen-minute lock preparation allowance");
+
+    const lock = job.steps.find(step => step.run?.includes(`prepare.sh --profile ${name}`));
+    assert.ok(lock, "new companion candidates regenerate their release lock");
+    equal(lock["continue-on-error"] ?? false, false, "preparation failure blocks publication");
+    const builds = job.steps.filter(step => /uv build|make create_/.test(step.run || ""));
+    assert.ok(builds.length, "exercise actual companion build steps");
+    const seal = job.steps.find(step => step.name === `Seal candidate ${name}`);
+    const retain = job.steps.find(step => step.name === `Retain candidate ${name}`);
+    for (const build of builds) {
+      assert.ok(job.steps.indexOf(lock) < job.steps.indexOf(build), "resolve before building");
+      assert.ok(job.steps.indexOf(build) < job.steps.indexOf(seal), "seal prepared build");
+    }
+    for (const reused of ["false", "true"]) for (const publish of ["false", "true"]) {
+      const ctx = context();
+      ctx.github.event.inputs = { publish };
+      ctx.steps.candidate = { outputs: { reused } };
+      for (const step of [lock, ...builds]) {
+        equal(stepEnabled(step, ctx), reused === "false", "retained retries never resolve or rebuild");
+      }
+      const execution = runSteps(job, ctx, new Map([[lock, "failure"]]));
+      if (reused === "false") {
+        equal(execution.result, "failure", "failed preparation fails the publisher");
+        assert.ok(![...builds, seal, retain, job.steps.find(step => step.uses?.startsWith("pypa/"))].some(step => execution.ran.includes(step)), "no build, retention or upload after failed preparation");
+      }
+      scenarios++;
+    }
 
     const upload = job.steps.find(step => step.uses?.startsWith("pypa/"));
     equal(upload.uses, "pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086", "verified PyPA action pin");
@@ -364,6 +407,8 @@ equal(sdkFailure.result, "failure", "SDK import failure blocks publication");
 assert.ok(!sdkFailure.ran.some(step => step.uses?.startsWith("pypa/")), "no SDK upload after failed import");
 console.log(`Workflow conditions: ${checks} checks passed across ${scenarios} scenarios`);
 const mutations = [
+  ["implicit status skips runtime-only image inputs", wf => { delete wf.jobs.prepare_image_inputs.if; }],
+  ["drop early image source validation", wf => { wf.jobs.prepare_dependencies.steps = wf.jobs.prepare_dependencies.steps.filter(step => !step.run?.includes("image_inputs.sh validate")); }],
   ["stop on runtime duplicate upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
   ["unconditional runtime upload", wf => { delete wf.jobs.publish_runtime.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
   ["drop runtime final verification", wf => { wf.jobs.publish_runtime.steps = wf.jobs.publish_runtime.steps.filter(step => !step.run?.includes("publish.sh verify ")); }],
@@ -392,6 +437,10 @@ for (const [name, mutate] of mutations) {
 console.log(`Workflow mutations: ${mutations.length}/${mutations.length} rejected`);
 
 const childMutations = [
+  ["omit lock regeneration", job => { job.steps = job.steps.filter(step => !step.run?.includes("prepare.sh --profile")); }],
+  ["resolve again on retry", job => { delete job.steps.find(step => step.run?.includes("prepare.sh --profile")).if; }],
+  ["ignore failed lock preparation", job => { job.steps.find(step => step.run?.includes("prepare.sh --profile"))["continue-on-error"] = true; }],
+  ["build again on retry", job => { delete job.steps.find(step => /uv build/.test(step.run || "")).if; }],
   ["stop on child duplicate upload", job => { delete job.steps.find(step => step.uses?.startsWith("pypa/"))["continue-on-error"]; }],
   ["unconditional child upload", job => { delete job.steps.find(step => step.uses?.startsWith("pypa/")).if; }],
   ["drop child preparation", job => { job.steps = job.steps.filter(step => step.id !== "prepare"); }],
@@ -407,3 +456,34 @@ for (const [name, mutate] of childMutations) {
   console.log(`Child mutation rejected: ${name}`);
 }
 console.log(`Child workflow mutations: ${childMutations.length}/${childMutations.length} rejected`);
+
+// Image preparation succeeds only after publication, and retained inputs skip resolution.
+checkRetention(workflow.jobs.prepare_image_inputs, "image-inputs");
+for (const build of results) for (const dependencies of results) for (const published of results) for (const cancelled of [false, true]) {
+  const ctx = context("runtime");
+  ctx.needs = { build_sdk: { result: "skipped" }, publish_sdk: { result: "skipped" }, build_runtime: { result: build }, prepare_dependencies: { result: dependencies }, publish_runtime: { result: published } };
+  const expected = !cancelled && [build, dependencies, published].every(result => result === "success");
+  equal(jobEnabled(workflow.jobs.prepare_image_inputs, ctx, cancelled), expected, "runtime-only image inputs tolerate skipped SDK ancestors but require all direct needs and no cancellation");
+  if (expected) {
+    const implicit = structuredClone(workflow.jobs.prepare_image_inputs);
+    delete implicit.if;
+    equal(jobEnabled(implicit, ctx), false, "regression: implicit success skips image inputs after a skipped SDK ancestor");
+  }
+  scenarios++;
+}
+const imageGate = parse(fs.readFileSync("/work/.github/workflows/prepare.release-image-inputs.yml", "utf8")).jobs.select;
+for (const repository of ["roboflow/inference", "fork/inference"]) for (const event of ["release", "push", "workflow_dispatch"]) for (const coordinator of ["", "123"]) {
+  const ctx = context("all", true, event, repository);
+  ctx.inputs.coordinator_run_id = coordinator;
+  equal(evaluate(imageGate.env.ENABLED, ctx), repository === "roboflow/inference" && (event === "release" || coordinator !== ""), "forks and non-release builds without opt-in perform no API polling");
+}
+for (const enabled of ["true", "false"]) for (const reused of ["true", "false"]) for (const previous of results) {
+  const ctx = context();
+  ctx.env = { ENABLED: enabled };
+  ctx.steps.candidate = { outputs: { reused } };
+  const select = imageGate.steps.find(step => step.name === "Bind this image run to one coordinator");
+  const ready = imageGate.steps.find(step => step.id === "ready");
+  equal(stepEnabled(select, ctx, previous), enabled === "true" && reused === "false" && !["failure", "cancelled"].includes(previous), "retained image retries cannot choose another coordinator");
+  equal(stepEnabled(ready, ctx, previous), enabled === "true" && !["failure", "cancelled"].includes(previous), "gate never tolerates earlier failure");
+}
+console.log(`Including image handoff: ${checks} checks, ${scenarios} scenarios`);

@@ -35,11 +35,12 @@ jobs:
     env:
       EXPECTED_VERSION: ${{ inputs.expected_version }}
       EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      COORDINATOR_RUN_ID: ${{ inputs.coordinator_run_id }}
     name: ${{ inputs.publish && 'Manual publish' || 'Manual build only' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 50
+    timeout-minutes: 65
     concurrency:
       group: pypi-inference-models-${{ github.event.inputs.publish == 'true' && 'publish' || github.run_id }}
       cancel-in-progress: false
@@ -70,6 +71,17 @@ jobs:
       - name: Restore retained candidate inference-models
         if: ${{ steps.candidate.outputs.reused == 'true' }}
         run: bash .release/pypi/candidate.sh restore --profile inference-models
+      - name: Download coordinator dependency selection
+        if: ${{ steps.candidate.outputs.reused != 'true' && inputs.coordinator_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-dependencies
+          run-id: ${{ inputs.coordinator_run_id }}
+          github-token: ${{ github.token }}
+          path: release-candidate/dependencies
+      - name: Prepare release lock inference-models
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/prepare.sh --profile inference-models
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         if: ${{ steps.candidate.outputs.reused != 'true' }}
         uses: actions/setup-python@v6
