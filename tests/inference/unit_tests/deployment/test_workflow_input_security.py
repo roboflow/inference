@@ -22,7 +22,7 @@ def run_step(tmp_path, workflow, step_name, **values):
     step = next(
         step
         for job in config["jobs"].values()
-        for step in job.get("steps", [])
+        for step in job["steps"]
         if step.get("name") == step_name
     )
     assert "${{" not in step["run"]

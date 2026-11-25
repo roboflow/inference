@@ -378,7 +378,7 @@ def _plan(consumers, *, catalog, registry):
     selected = resolve({})
     if selected is None:
         raise ValueError(
-            "No compatible first-party dependency plan (constraints or dependency cycle); prepare compatible versions/pins before releasing"
+            "No compatible first-party dependency plan (constraints or dependency cycle); prepare versions/pins/locks before releasing"
         )
 
     plan = {"consumers": consumers, "packages": selected, "order": _order(selected)}
@@ -793,7 +793,7 @@ def _guard(package):
     "--wait-seconds",
     type=click.FloatRange(
         min=0,
-        max=12600,
+        max=10800,
     ),
     default=600,
     show_default=True,
