@@ -48,3 +48,28 @@ they do not expand M1's one-model-per-process scope to shared or composite model
 Disk-cached artifact bytes remain reusable through the existing loader. A cache
 hit does not authorize a new process, and loading a model is not part of the
 metadata-only negotiation operation. Offline admission is deferred separately.
+
+## Manager preparation and worker handoff
+
+The follow-on internal APIs in `models.auto_loaders.admission` are
+`prepare_model_packages` and `load_admitted_candidate`. Preparation uses the
+ordinary provider authorization, effective constructor configuration and runtime
+negotiation. It does not invoke instance caches, initialize models or download
+weights. A valid existing resolution-cache preference is retained only after
+fresh provider authorization and normal compatibility filtering.
+
+The manager selects one returned candidate, estimates it and performs capacity
+admission. It sends `AdmissionCandidate(canonical_model_id, package_id)` together
+with the same loader settings to a fresh worker. This is ordinary identity data,
+not a token or proof of compatibility. The worker reauthorizes and revalidates the
+single package; changed alias resolution, missing compatibility or dependency
+composition cannot silently select another package. Initializer errors retain
+their original exception and carry an internal fallback classification for the
+process startup transport. Public explicit-ID behavior is unchanged.
+
+The worker preserves the original request's resolution-cache key, so successful
+fallback choices remain normal cached preferences on the next preparation.
+Offline, direct local paths, shared/dependency models and proxy paths are explicit
+unsupported cases in this initial integration. The family adapter must establish
+all memory-affecting effective settings before admission; loading to discover an
+unknown behavior is not permitted.
