@@ -214,6 +214,14 @@ async def v2_load_model(
         logger.exception("v2 load proxy error for '%s'", model_id)
         return error_response(503, "PROXY_ERROR", "model manager unreachable")
 
+    if result[0] == "server_full":
+        return error_response(
+            503,
+            "SERVER_BUSY",
+            "no capacity, try again",
+            follow_up="retry after Retry-After seconds",
+            headers={"Retry-After": str(result[1])},
+        )
     if result[0] != "ok":
         return error_response(500, "LOAD_FAILED", "model load failed")
     return Response(

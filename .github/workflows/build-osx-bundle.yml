@@ -6,22 +6,140 @@ on:
   workflow_dispatch:
     inputs:
       manual_version:
-        description: 'Version to build (e.g., 1.0.0 or v1.0.0). Required for manual runs if a specific version is needed.'
-        required: false # Script will default if not provided for manual, but release uploads need a version.
+        description: 'Artifact-only build version for the selected workflow ref. Leave empty when rebuilding a release tag.'
+        type: string
+        required: false
+      release_tag:
+        description: 'Exact source tag to rebuild, e.g. v1.8.6. Uses build tooling from the selected workflow ref.'
+        type: string
+        required: false
+      publish_release:
+        description: 'Attach the rebuilt DMG to the existing release_tag (never replaces an existing asset).'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.release_tag || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build_osx:
-    runs-on: macos-14
+    # The standard macos-15 runner is ARM64, matching the app and Homebrew paths.
+    runs-on: macos-15
+    timeout-minutes: 120
     permissions:
       contents: write
     env:
-      KEYCHAIN_NAME: "build-keychain.keychain"
       CODESIGN_IDENTITY_STRING: "Developer ID Application: Roboflow, LLC (7SBQ39NG7G)"
       NOTARY_PROFILE_NAME: "roboflow-notary"
     steps:
-      - name: Checkout repository
+      - name: Select source and release target
+        id: target
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MANUAL_VERSION: ${{ inputs.manual_version }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          publish=false
+          if [ "$EVENT_NAME" = release ]; then
+            tag="$EVENT_TAG"
+            publish=true
+            if [ -z "$tag" ]; then
+              echo 'Release event is missing its tag.' >&2
+              exit 1
+            fi
+          elif [ "$PUBLISH_RELEASE" = true ]; then
+            publish=true
+            if [ -z "$tag" ]; then
+              echo 'Publishing requires an exact release_tag.' >&2
+              exit 1
+            fi
+          fi
+          if [ -n "$tag" ] && [ -n "$MANUAL_VERSION" ]; then
+            echo 'Use release_tag or manual_version, not both.' >&2
+            exit 1
+          fi
+          source_ref="$GITHUB_SHA"
+          version="${MANUAL_VERSION#v}"
+          version="${version:-0.0.0-manual-dev}"
+          if [ -n "$tag" ]; then
+            if [[ ! "$tag" =~ ^v?[0-9][A-Za-z0-9.+_-]{0,127}$ ]]; then
+              echo 'Invalid release tag.' >&2
+              exit 1
+            fi
+            source_ref="refs/tags/$tag"
+            version="${tag#v}"
+          fi
+          if [[ ! "$version" =~ ^[0-9][A-Za-z0-9.+_-]{0,127}$ ]]; then
+            echo 'Invalid installer version.' >&2
+            exit 1
+          fi
+          {
+            echo "source_ref=$source_ref"
+            echo "version=$version"
+            echo "release_tag=$tag"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout application source
         uses: actions/checkout@v6
-        # No 'path' means checkout to the root
+        with:
+          ref: ${{ steps.target.outputs.source_ref }}
+          persist-credentials: false
+
+      # Recovery must use the fixed packaging tools without relabeling main's
+      # application code as an older release. build.py runs in the tag's cwd.
+      - name: Checkout build tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .bundle-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /app_bundles/osx/build.py
+            /app_bundles/osx/hooks/hook-torchvision.py
+            /app_bundles/osx/smoke_test.py
+
+      - name: Record build source and install packaging hook
+        shell: bash
+        env:
+          BUILD_VERSION: ${{ steps.target.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          echo "KEYCHAIN_NAME=$RUNNER_TEMP/build-keychain.keychain-db" >> "$GITHUB_ENV"
+          {
+            echo "### macOS DMG $BUILD_VERSION"
+            echo "Application commit: $(git rev-parse HEAD)"
+            echo "Build tooling commit: $(git -C .bundle-tools rev-parse HEAD)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp .bundle-tools/app_bundles/osx/hooks/hook-torchvision.py app_bundles/osx/hooks/
+
+      - name: Check existing release before building
+        if: steps.target.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.target.outputs.release_tag }}
+          BUILD_VERSION: ${{ steps.target.outputs.version }}
+        run: |
+          set -euo pipefail
+          metadata=$(gh release view "$RELEASE_TAG" --json isDraft,assets)
+          if [ "$(jq -r '.isDraft' <<< "$metadata")" != false ]; then
+            echo 'Recovery requires an already published release.' >&2
+            exit 1
+          fi
+          if jq -e --arg name "Roboflow-Inference-${BUILD_VERSION}.dmg" '.assets | any(.name == $name)' <<< "$metadata"; then
+            echo 'The release already has this DMG; refusing to replace it.' >&2
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -73,7 +191,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_NAME" login.keychain
           security default-keychain -s "$KEYCHAIN_NAME"
           security unlock-keychain -p "$KEYCHAIN_TEMP_PASSWORD" "$KEYCHAIN_NAME"
-          security set-keychain-settings -t 3600 -u "$KEYCHAIN_NAME" # Keep unlocked for 1 hour
+          security set-keychain-settings -t 7200 -u "$KEYCHAIN_NAME"
 
           echo "Decoding and importing certificate..."
           echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > certificate.p12
@@ -95,8 +213,8 @@ jobs:
           NOTARY_TEAM_ID_SECRET: ${{ secrets.NOTARY_TEAM_ID }}
           NOTARY_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.NOTARY_APP_SPECIFIC_PASSWORD }}
         run: |
-          echo "Configuring Notarytool for profile: ${{ env.NOTARY_PROFILE_NAME }}"
-          xcrun notarytool store-credentials "${{ env.NOTARY_PROFILE_NAME }}" --apple-id "$NOTARY_APPLE_ID_SECRET" --team-id "$NOTARY_TEAM_ID_SECRET" --password "$NOTARY_APP_SPECIFIC_PASSWORD_SECRET"
+          echo "Configuring Notarytool for profile: $NOTARY_PROFILE_NAME"
+          xcrun notarytool store-credentials "$NOTARY_PROFILE_NAME" --keychain "$KEYCHAIN_NAME" --apple-id "$NOTARY_APPLE_ID_SECRET" --team-id "$NOTARY_TEAM_ID_SECRET" --password "$NOTARY_APP_SPECIFIC_PASSWORD_SECRET"
           echo "Notarytool configured."
 
 
@@ -135,76 +253,38 @@ jobs:
           echo "DEBUG: pyinstaller-hooks-contrib version:"
           pip show pyinstaller-hooks-contrib
 
-      - name: Determine Version
-        id: determine_version
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          MANUAL_VERSION: ${{ inputs.manual_version }}
-          GIT_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          VERSION=""
-          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-            if [ -n "$MANUAL_VERSION" ]; then
-              VERSION="$MANUAL_VERSION"
-              VERSION=${VERSION#v} # Remove leading 'v'
-              echo "Manual run. Using provided version: $VERSION"
-            else
-              # Default for manual run if no version provided, build.py will also default
-              VERSION="0.0.0-manual-dev"
-              echo "Manual run. No version provided, will use default in build script: $VERSION"
-            fi
-          elif [[ "$GIT_REF" == refs/tags/v* ]]; then
-            VERSION=$(echo "$GIT_REF" | sed 's!refs/tags/v!!')
-            echo "Release run. Version from tag: $VERSION"
-          elif [[ "$GIT_REF" == refs/tags/* ]]; then
-            VERSION=$(echo "$GIT_REF" | sed 's!refs/tags/!!')
-            echo "Release run. Version from tag: $VERSION"
-          fi
-
-          if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9][A-Za-z0-9.+_-]{0,127}$ ]]; then
-            echo "Invalid installer version." >&2
-            exit 1
-          fi
-          if [ -z "$VERSION" ] && [ "$EVENT_NAME" == "release" ]; then
-            echo "Error: Could not determine installer version for release."
-            exit 1
-          fi
-          # For cases where manual_version is empty, ensure build.py uses its internal default
-          # If version is set (from tag or manual input), pass it
-          if [ -n "$VERSION" ]; then
-             echo "BUILD_VERSION_ENV=$VERSION" >> "$GITHUB_OUTPUT"
-          else
-             # Let build.py handle the default, pass an empty string or don't set BUILD_VERSION_ENV
-             # For consistency in later steps that might need a version (like release upload), this path should be handled.
-             # If it's a release, it should have failed above. If manual and no input, it will be 0.0.0-manual-dev.
-             echo "BUILD_VERSION_ENV=$VERSION" >> "$GITHUB_OUTPUT" # Will be 0.0.0-manual-dev here if manual and no input
-          fi
-
       - name: Build macOS app and DMG
         working-directory: ./app_bundles/osx # Adjusted path
         env:
-          BUILD_VERSION: ${{ steps.determine_version.outputs.BUILD_VERSION_ENV }} # Pass determined version
-        run: python build.py
+          BUILD_VERSION: ${{ steps.target.outputs.version }} # Pass determined version
+          NOTARY_KEYCHAIN_PATH: ${{ env.KEYCHAIN_NAME }}
+        run: python "$GITHUB_WORKSPACE/.bundle-tools/app_bundles/osx/build.py"
 
       - name: Upload macOS DMG Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Roboflow-Inference-DMG-${{ steps.determine_version.outputs.BUILD_VERSION_ENV || 'dev' }} # Add version to artifact name
-          path: app_bundles/osx/Roboflow-Inference-${{ steps.determine_version.outputs.BUILD_VERSION_ENV || 'unknown' }}.dmg
+          name: Roboflow-Inference-DMG-${{ steps.target.outputs.version || 'dev' }} # Add version to artifact name
+          path: app_bundles/osx/Roboflow-Inference-${{ steps.target.outputs.version || 'unknown' }}.dmg
           if-no-files-found: error
 
-      - name: Upload DMG to Release
-        if: github.event_name == 'release' && steps.determine_version.outputs.BUILD_VERSION_ENV != '0.0.0-manual-dev' && steps.determine_version.outputs.BUILD_VERSION_ENV != ''
-        uses: actions/upload-release-asset@v1
+      - name: Verify and smoke test the DMG
+        working-directory: ./app_bundles/osx
+        timeout-minutes: 10
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./app_bundles/osx/Roboflow-Inference-${{ steps.determine_version.outputs.BUILD_VERSION_ENV }}.dmg
-          asset_name: Roboflow-Inference-${{ steps.determine_version.outputs.BUILD_VERSION_ENV }}.dmg
-          asset_content_type: application/x-apple-diskimage
+          BUILD_VERSION: ${{ steps.target.outputs.version }}
+        run: python "$GITHUB_WORKSPACE/.bundle-tools/app_bundles/osx/smoke_test.py" --dmg "Roboflow-Inference-${BUILD_VERSION}.dmg"
+
+      - name: Upload DMG to Release
+        if: steps.target.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.target.outputs.release_tag }}
+          BUILD_VERSION: ${{ steps.target.outputs.version }}
+        # gh release upload requires an existing release and, without --clobber,
+        # fails if another run has uploaded this asset since the preflight.
+        run: gh release upload "$RELEASE_TAG" "app_bundles/osx/Roboflow-Inference-${BUILD_VERSION}.dmg"
 
       - name: List dist output directory
         working-directory: ./app_bundles/osx/dist # Adjusted path

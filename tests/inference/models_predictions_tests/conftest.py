@@ -32,6 +32,10 @@ TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
 MELEE_IMAGE_PATH = os.path.join(ASSETS_DIR, "melee.jpg")
 BIRD_IMAGE_PATH = os.path.join(ASSETS_DIR, "altamira_yellowthroat.jpg")
 FACE_IMAGE_PATH = os.path.join(ASSETS_DIR, "face.jpg")
+COIN_COUNTING_IMAGE_PATH = os.path.join(ASSETS_DIR, "image-coin-counting.jpg")
+COIN_COUNTING_IMAGE_URL = (
+    "https://media.roboflow.com/inference/example-input-images/image-coin-counting.jpg"
+)
 SAM2_TRUCK_LOGITS = os.path.join(ASSETS_DIR, "low_res_logits.npy")
 SAM2_TRUCK_MASK_FROM_CACHE = os.path.join(ASSETS_DIR, "mask_from_cached_logits.npy")
 SAM2_MULTI_POLY_RESPONSE_PATH = os.path.join(
@@ -48,6 +52,15 @@ def sam2_multipolygon_response() -> Dict:
 @pytest.fixture(scope="function")
 def example_image() -> np.ndarray:
     return cv2.imread(EXAMPLE_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def coin_counting_image() -> np.ndarray:
+    if not os.path.exists(COIN_COUNTING_IMAGE_PATH):
+        download_file(
+            file_url=COIN_COUNTING_IMAGE_URL, target_path=COIN_COUNTING_IMAGE_PATH
+        )
+    return cv2.imread(COIN_COUNTING_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")
@@ -179,6 +192,72 @@ def rfdetr_base_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def rfdetr_atto_coin_counting_model() -> Generator[str, None, None]:
+    model_id = "coin-counting-rfdetr-atto/1"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-atto-legacy.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def rfdetr_atto_coin_counting_reference_prediction() -> (
+    ObjectDetectionInferenceResponse
+):
+    reference_file = os.path.join(
+        ASSETS_DIR, "rfdetr_atto_coin_counting_reference_prediction.json"
+    )
+    with open(reference_file, "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
+def rfdetr_femto_coin_counting_model() -> Generator[str, None, None]:
+    model_id = "coin-counting-rfdetr-femto/1"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-femto-legacy.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def rfdetr_femto_coin_counting_reference_prediction() -> (
+    ObjectDetectionInferenceResponse
+):
+    reference_file = os.path.join(
+        ASSETS_DIR, "rfdetr_femto_coin_counting_reference_prediction.json"
+    )
+    with open(reference_file, "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
+def rfdetr_pico_coin_counting_model() -> Generator[str, None, None]:
+    model_id = "coin-counting-rfdetr-pico/1"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/rf-platform-models/coin-counting-rfdetr-pico-legacy.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def rfdetr_pico_coin_counting_reference_prediction() -> (
+    ObjectDetectionInferenceResponse
+):
+    reference_file = os.path.join(
+        ASSETS_DIR, "rfdetr_pico_coin_counting_reference_prediction.json"
+    )
+    with open(reference_file, "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
 
 
 @pytest.fixture(scope="function")

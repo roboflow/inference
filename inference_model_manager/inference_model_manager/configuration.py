@@ -10,6 +10,7 @@ call site keeps the ``os.environ.get`` so the read happens at the right
 moment.
 """
 
+import math
 import os
 from typing import Optional
 
@@ -21,9 +22,22 @@ from inference_models.utils.environment import (
     parse_comma_separated_values,
 )
 
+
+def _require_finite(name: str, value: float) -> float:
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number, got {value}")
+
+    return value
+
+
 # ── ModelManager (model_manager.py) ─────────────────────────────────────────
+# Thread pool shared by every direct-backend model
 INFERENCE_DIRECT_MAX_WORKERS = get_integer_from_env(
     "INFERENCE_DIRECT_MAX_WORKERS", default=8
+)
+# Per-model in-flight cap; set (e.g. 4) when slow models share the pool with fast ones; 0 disables
+INFERENCE_MAX_INFLIGHT_PER_MODEL = get_integer_from_env(
+    "INFERENCE_MAX_INFLIGHT_PER_MODEL", default=0
 )
 INFERENCE_PROCESS_TIMEOUT_S = get_float_from_env(
     "INFERENCE_PROCESS_TIMEOUT_S", default=300.0
@@ -38,6 +52,11 @@ INFERENCE_MAX_ACTIVE_MODELS = get_integer_from_env(
 # 0 disables the check.
 INFERENCE_MEMORY_FREE_THRESHOLD = get_float_from_env(
     "INFERENCE_MEMORY_FREE_THRESHOLD", default=0.0
+)
+# Seconds a new model is spared from LRU eviction until its first request runs; 0 off.
+INFERENCE_UNSERVED_MODEL_GRACE_S = _require_finite(
+    "INFERENCE_UNSERVED_MODEL_GRACE_S",
+    get_float_from_env("INFERENCE_UNSERVED_MODEL_GRACE_S", default=30.0),
 )
 
 # ── Model loading (pipelines.py) ───────────────────────────────────────────

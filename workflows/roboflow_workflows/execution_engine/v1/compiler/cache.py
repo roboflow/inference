@@ -1,4 +1,5 @@
 import hashlib
+import time
 from collections import deque
 from threading import Lock
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
@@ -16,6 +17,9 @@ class BasicWorkflowsCache(Generic[V]):
     output string is concatenated and md5 value is calculated.
 
     Cache is size bounded, each entry lives until `cache_size` new entries appear.
+    With `ttl_seconds`, an entry is also served only until `ttl_seconds` after it
+    was last cached; reading it does not extend that. An expired entry keeps its
+    slot until it is cached again or evicted.
 
     Raises `WorkflowEnvironmentConfigurationError` when `get_hash_key(...)` is not
     provided with params corresponding to all hash functions.
@@ -27,10 +31,16 @@ class BasicWorkflowsCache(Generic[V]):
         self,
         cache_size: int,
         hash_functions: List[Tuple[str, Callable[[Any], str]]],
+        *,
+        ttl_seconds: Optional[float] = None,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self._keys_buffer = deque(maxlen=max(cache_size, 1))
         self._cache: Dict[str, V] = {}
+        self._expires_at: Dict[str, float] = {}
         self._hash_functions = hash_functions
+        self._ttl_seconds = ttl_seconds
+        self._clock = clock
         self._cache_lock = Lock()
 
     def get_hash_key(self, **kwargs) -> str:
@@ -47,24 +57,30 @@ class BasicWorkflowsCache(Generic[V]):
 
     def get(self, key: str) -> Optional[V]:
         with self._cache_lock:
+            expires_at = self._expires_at.get(key)
+            if expires_at is not None and self._clock() >= expires_at:
+                return None
+
             return self._cache.get(key)
 
     def cache(self, key: str, value: V) -> None:
         """Store a value under a key, evicting the oldest key when full.
 
         Re-caching an existing key replaces its value and keeps its eviction position.
+        With a TTL, every call restarts the key's expiry.
 
         Args:
             key: Cache key.
             value: Value to store.
         """
         with self._cache_lock:
-            if key in self._cache:
-                self._cache[key] = value
-                return
+            if key not in self._cache:
+                if len(self._keys_buffer) == self._keys_buffer.maxlen:
+                    to_pop = self._keys_buffer.popleft()
+                    self._cache.pop(to_pop, None)
+                    self._expires_at.pop(to_pop, None)
+                self._keys_buffer.append(key)
 
-            if len(self._keys_buffer) == self._keys_buffer.maxlen:
-                to_pop = self._keys_buffer.popleft()
-                self._cache.pop(to_pop, None)
-            self._keys_buffer.append(key)
             self._cache[key] = value
+            if self._ttl_seconds is not None:
+                self._expires_at[key] = self._clock() + self._ttl_seconds
