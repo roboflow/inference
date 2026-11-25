@@ -1016,14 +1016,16 @@ def test_new_offline_parameters_are_appended_to_existing_helper_signatures() -> 
         "on_file_created",
         "model_id",
     ]
-    assert legacy_parameters(initialize_model)[-3:] == [
+    assert legacy_parameters(initialize_model)[-4:] == [
         "requested_model_id",
         "api_key",
         "content_addressed_artifact_cache",
+        "refresh_model_package",
     ]
-    assert legacy_parameters(attempt_loading_matching_model_packages)[-2:] == [
+    assert legacy_parameters(attempt_loading_matching_model_packages)[-3:] == [
         "requested_model_id",
         "content_addressed_artifact_cache",
+        "refresh_model_package",
     ]
     assert legacy_parameters(dump_auto_resolution_cache)[-2:] == [
         "canonical_model_id",

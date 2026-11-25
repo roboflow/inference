@@ -497,6 +497,25 @@ def test_record_usage_separates_billable_and_non_billable_buckets(
     assert json.loads(usage[non_billable_key]["resource_details"])["billable"] is False
 
 
+def test_record_usage_keeps_batch_rates_apart_from_regular_usage(collector):
+    contexts = [
+        None,
+        json.dumps({"media": "image", "multiplier": 0.5, "version": "batch-v1"}),
+        json.dumps({"media": "video", "multiplier": 0.5, "version": "batch-v1"}),
+    ]
+
+    for context in contexts:
+        details = {} if context is None else {"billing_context": context}
+        record(collector, category="model", resource_details=details)
+
+    rows = collector._usage["fake-key"].values()
+    recorded = sorted(
+        json.loads(row["resource_details"]).get("billing_context") or "" for row in rows
+    )
+    # Details of a merged row are replaced, so a shared key would lose a rate.
+    assert recorded == sorted(context or "" for context in contexts)
+
+
 def test_record_usage_separates_success_and_error_buckets(collector):
     api_key = "fake-key"
     resource_id = "workspace/model"

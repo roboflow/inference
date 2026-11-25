@@ -37,38 +37,19 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v6
-
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
+      - uses: actions/checkout@v6
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-integration-${{ hashFiles('requirements/**') }}
-
-      - name: 🐍 Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-          check-latest: true
-
-      - name: 📦 Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade setuptools
-          pip install -r requirements/_requirements.txt \
-                      -r requirements/requirements.sdk.http.txt \
-                      -r requirements/requirements.sdk.webrtc.txt \
-                      -r requirements/requirements.test.unit.txt
-
-      - name: 🧪 Integration Tests - WebRTC SDK (mocked)
-        timeout-minutes: 10
-        run: python -m pytest tests/inference_sdk/integration_tests -v --timeout=300
+          persist-credentials: false
+      - name: Run SDK integration validation in Docker
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: bash .github/scripts/run_sdk_tests.sh integration "$PYTHON_VERSION"
 
   e2e-tests:
     needs: call_is_mergeable
@@ -76,55 +57,16 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v6
-
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v5
+      - uses: actions/checkout@v6
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-tests-inference-sdk-${{ matrix.python-version }}-e2e-${{ hashFiles('requirements/**', 'workflows/pyproject.toml', 'workflows/uv.lock', 'inference_models/pyproject.toml') }}
-
-      - name: 🐍 Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-          check-latest: true
-
-      - name: 📦 Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade setuptools
-          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-                      -r requirements/_requirements.txt \
-                      -r requirements/requirements.cpu.txt \
-                      -r requirements/requirements.http.txt \
-                      -r requirements/requirements.sdk.http.txt \
-                      -r requirements/requirements.sdk.webrtc.txt \
-                      -r requirements/requirements.test.unit.txt \
-                      -r requirements/requirements.transformers.txt
-          pip install --no-deps './inference_models[torch-cpu,onnx-cpu]'
-
-      - name: 🏗️ Build and install same-checkout server dependencies
-        run: |
-          make create_isolation_wheels
-          pip install --find-links "${{ github.workspace }}/dist" \
-            "$(ls "${{ github.workspace }}"/dist/roboflow_workflows-*.whl)[enterprise]" \
-            "$(ls "${{ github.workspace }}"/dist/streamvision-*.whl)[webrtc]" \
-            "${{ github.workspace }}"/dist/inference_sdk-*.whl \
-            "${{ github.workspace }}"/dist/inference_models-*.whl
-          # pip skips wheels matching installed release versions. Test this checkout.
-          pip install --force-reinstall --no-deps \
-            "${{ github.workspace }}"/dist/roboflow_workflows-*.whl \
-            "${{ github.workspace }}"/dist/streamvision-*.whl \
-            "${{ github.workspace }}"/dist/inference_sdk-*.whl \
-            "${{ github.workspace }}"/dist/inference_models-*.whl
-
-      - name: 🧪 E2E Tests - WebRTC SDK (real server)
-        timeout-minutes: 15
-        run: python -m pytest tests/inference_sdk/e2e_tests -m slow -v --timeout=300
+          persist-credentials: false
+      - name: Run SDK e2e validation in Docker
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: bash .github/scripts/run_sdk_tests.sh e2e "$PYTHON_VERSION"

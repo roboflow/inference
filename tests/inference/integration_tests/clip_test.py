@@ -38,37 +38,19 @@ def test_clip(test, auth_mode, clean_loaded_models_fixture):
         json=without_api_key_in_header_mode(auth_mode, payload),
         headers=api_key_auth_headers(auth_mode, api_key),
     )
-    try:
-        response.raise_for_status()
-        if bool_env(os.getenv("FUNCTIONAL", False)):
-            return
-        data = response.json()
-        if test["type"] == "embed_image" or test["type"] == "embed_text":
-            try:
-                assert "embeddings" in data
-            except:
-                print(f"Invalid response: {data}, expected 'embeddings' in response")
-            try:
-                assert len(data["embeddings"]) == len(
-                    test["expected_response"]["embeddings"]
-                )
-            except:
-                print(
-                    f"Invalid response: {data}, expected length of embeddings to be {len(test['expected_response']['embeddings'])}, got {len(data['embeddings'])}"
-                )
-        if test["type"] == "compare":
-            try:
-                assert "similarity" in data
-            except:
-                print(f"Invalid response: {data}, expected 'similarity' in response")
-            try:
-                assert data["similarity"] == test["expected_response"]["similarity"]
-            except:
-                print(
-                    f"Invalid response: {data}, expected similarity to be {test['expected_response']['similarity']}, got {data['similarity']}"
-                )
-    except Exception as e:
-        raise e
+    response.raise_for_status()
+    if bool_env(os.getenv("FUNCTIONAL", False)):
+        return
+
+    data = response.json()
+    if test["type"] == "embed_image" or test["type"] == "embed_text":
+        assert "embeddings" in data
+        assert len(data["embeddings"]) == len(test["expected_response"]["embeddings"])
+    if test["type"] == "compare":
+        assert "similarity" in data
+        assert data["similarity"] == pytest.approx(
+            test["expected_response"]["similarity"], abs=1e-3
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -11,6 +11,8 @@ frozen clock, and compares the kwargs the collector was handed.
 frozen 0.25s to the serverless minimum in one arm and not the other.
 """
 
+import threading
+import time
 from types import SimpleNamespace
 from unittest import mock
 
@@ -37,8 +39,17 @@ def _deterministic_collector():
 
 def _record_once(call) -> dict:
     """Run `call` with a frozen clock and return the kwargs the collector got."""
+    real_time = time.time
+    caller = threading.get_ident()
+    frozen = iter(FROZEN_CLOCK)
+
+    def clock() -> float:
+        if threading.get_ident() != caller:
+            return real_time()
+        return next(frozen)
+
     with mock.patch.object(
-        collector_module.time, "time", side_effect=list(FROZEN_CLOCK)
+        collector_module.time, "time", side_effect=clock
     ), mock.patch.object(usage_collector, "record_usage") as record_usage:
         call()
     return record_usage.call_args.kwargs
@@ -231,3 +242,15 @@ def test_model_row_is_identical_to_the_decorated_entry_point() -> None:
     # then
     assert adapted == legacy
     assert adapted["frames"] == 2
+
+
+def test_frozen_clock_is_not_consumed_by_other_threads() -> None:
+    def call():
+        worker = threading.Thread(target=lambda: [time.time() for _ in range(3)])
+        worker.start()
+        worker.join()
+        _legacy_metered_run(_FakeBlock(), block_args=(), block_kwargs={})
+
+    kwargs = _record_once(call)
+
+    assert kwargs["execution_duration"] == pytest.approx(0.25)

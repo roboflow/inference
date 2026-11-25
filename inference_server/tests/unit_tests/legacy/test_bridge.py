@@ -18,6 +18,7 @@ from inference_models.errors import (
     UsagePausedModelAccessError,
 )
 
+from inference_models.models.vllm_proxy.errors import VLLMConnectionError
 from inference_server.framework.model_stat import ModelStat
 from inference_server.gateway import ModelManagerGateway
 from inference_server.legacy import bridge as bridge_mod
@@ -1458,6 +1459,32 @@ def test_load_failure_error_keeps_a_status_the_class_does_not_carry():
     assert str(error) == "boom"
 
 
+@pytest.mark.parametrize("status_code", [503, 504])
+def test_load_failure_error_rebuilds_a_vllm_connection_error_with_its_status(
+    status_code,
+):
+    error = load_failure_error(
+        _failure(
+            "VLLMConnectionError",
+            "sidecar down",
+            help_url=HELP_URL,
+            status_code=status_code,
+        )
+    )
+
+    assert type(error) is VLLMConnectionError
+    assert error.args == ("sidecar down",)
+    assert error.help_url == HELP_URL
+    assert error.status_code == status_code
+
+
+def test_load_failure_error_of_a_vllm_connection_error_without_a_status_is_503():
+    error = load_failure_error(_failure("VLLMConnectionError", "sidecar down"))
+
+    assert type(error) is VLLMConnectionError
+    assert error.status_code == 503
+
+
 @pytest.mark.parametrize("restricted", [True, False])
 def test_load_failure_error_rebuilds_exhausted_alternatives(restricted):
     error = load_failure_error(
@@ -1583,6 +1610,19 @@ async def test_ensure_loaded_not_loaded_code_is_not_ready_with_retry_after(resul
 
 
 @pytest.mark.asyncio
+async def test_ensure_loaded_server_full_is_not_ready_without_polling(monkeypatch):
+    monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_POLL_INTERVAL_S", 0)
+    gateway = FakeGateway()
+    gateway.ensure_results = [("server_full", 1)] * 5
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await LegacyModelBridge(gateway).ensure_loaded(_route(), None)
+
+    _assert_not_ready(exc.value)
+    assert sum(1 for c in gateway.calls if c[0] == "ensure_loaded") == 1
+
+
+@pytest.mark.asyncio
 async def test_ensure_loaded_deadline_is_not_ready_with_retry_after(monkeypatch):
     monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_POLL_INTERVAL_S", 0)
     monkeypatch.setattr(bridge_mod, "LEGACY_LOAD_TIMEOUT_S", 0)
@@ -1604,6 +1644,40 @@ async def test_explicit_load_timeout_is_not_ready_with_retry_after(fake_stat):
             raise asyncio.TimeoutError()
 
     bridge = LegacyModelBridge(_TimingOutGateway())
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")
+
+    _assert_not_ready(exc.value)
+    assert bridge._pending_requests == {"ds/1": ({"/model/add"}, set())}
+
+
+@pytest.mark.asyncio
+async def test_explicit_load_answered_busy_is_not_ready_with_retry_after(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    class _BusyGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            return ("load_timeout", 1)
+
+    bridge = LegacyModelBridge(_BusyGateway())
+
+    with pytest.raises(LegacyHTTPError) as exc:
+        await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")
+
+    _assert_not_ready(exc.value)
+    assert bridge._pending_requests == {"ds/1": ({"/model/add"}, set())}
+
+
+@pytest.mark.asyncio
+async def test_explicit_load_server_full_is_not_ready_with_retry_after(fake_stat):
+    fake_stat["ds/1"] = ("object-detection", "infer")
+
+    class _FullGateway(FakeGateway):
+        async def load(self, model_id, api_key="", timeout_s=None, pinned=True):
+            return ("server_full", 1)
+
+    bridge = LegacyModelBridge(_FullGateway())
 
     with pytest.raises(LegacyHTTPError) as exc:
         await bridge.load("ds/1", "k", row_key="ds/1", path="/model/add")

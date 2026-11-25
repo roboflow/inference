@@ -2,6 +2,87 @@
 
 ## Unreleased
 
+- Retry a Roboflow artifact download once after HTTP 403 by refreshing its signed
+  URL, including through `SECURE_GATEWAY`, while preserving the selected package
+  contract and cached files.
+
+## `0.39.10`
+
+### Added
+
+- [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
+  platform, single-label and multi-label, with their own default confidence
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). ONNX and PyTorch packages
+  also support image embeddings. See the
+  [model page](models/convnext-classification.md).
+- The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
+  `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
+  packages previously failed with `CorruptedModelPackageError`. The new encoder is a timm
+  `vit_pe_core_tiny_patch16_384` trunk with windowed rotary attention; it needs `timm>=1.0.18`
+  and raises `MissingDependencyError` with an older timm. Inputs other than the trained size
+  work as for the DINOv2 sizes. Models fine-tuned at another resolution store a
+  `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
+  `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
+- The Torch RF-DETR object-detection and instance-segmentation loaders
+  (`RFDetrForObjectDetectionTorch.from_pretrained` and
+  `RFDetrForInstanceSegmentationTorch.from_pretrained`) accept an optional
+  `num_queries` in `model_type.json` and build the network with that decoder
+  query count. Packages trained with a non-default `num_queries`, which failed
+  with `size mismatch for query_feat.weight`, now load; packages without the key
+  keep the variant default. A malformed value (not an integer, a bool, or less
+  than 1) raises `CorruptedModelPackageError`.
+
+### Changed
+
+- `VLLMConnectionError` (vLLM proxy backend) carries a `status_code`: `504` when
+  the vLLM sidecar does not answer within `VLLM_REQUEST_TIMEOUT_S`, `503` when
+  the connection cannot be established or is dropped. Hosting servers read it to
+  tag usage rows with `error_status_code` and to answer with that status instead
+  of a generic `500`, also when the failure happens while a model loads (a
+  fine-tuned model registers its LoRA adapter with the sidecar on first use).
+  The exception type and message are unchanged, and the constructor still takes
+  `help_url`; `status_code` is keyword-only.
+- Clients that retry `503` and `504` now retry these failures. `inference_sdk`
+  makes up to 3 attempts, so a sidecar that keeps timing out holds a caller for
+  up to 3 × `VLLM_REQUEST_TIMEOUT_S` (6 minutes at the default 120 s) where the
+  former `500` failed after one attempt. Lower `VLLM_REQUEST_TIMEOUT_S` where
+  that wait is too long.
+
+### Fixed
+
+- Loading a TensorRT engine while other threads run TensorRT models no longer
+  freezes the whole process. Engines are deserialized with TensorRT's built-in
+  logger instead of a Python one, so a TensorRT call never waits for the GIL.
+  TensorRT runtime messages now go to the process output, and a corrupted engine
+  error points there instead of embedding them.
+
+## `0.39.9`
+
+### Changed
+
+- Pillow 13 is required on Python 3.11 and newer (`pillow>=13.0.0,<14.0.0`), so
+  installs pick up its security fixes. Python 3.10 keeps `pillow>=12.3.0,<13.0.0`,
+  because Pillow 13 does not support it.
+- Python 3.10 is deprecated and planned for removal in inference 1.10.0. It stays
+  on Pillow 12.3, which lacks the Pillow 13 security fixes; move to Python 3.11 or
+  newer.
+
+### Fixed
+
+- RF-DETR pre-processing keeps Pillow's horizontal-first resize order. Pillow 13
+  runs the vertical pass first when height shrinks far more than width, which
+  changed 8-bit rounding and shifted predicted boxes.
+- RF-DETR ONNX models with static input shapes (object detection, instance
+  segmentation, semantic segmentation and keypoints) no longer run out of GPU
+  memory at high input resolution on the CUDA execution provider. When
+  `CUDAExecutionProvider` is the first provider, the loader rewrites each unmasked
+  exported `MatMul -> Softmax -> MatMul` attention block into ONNX Runtime's
+  `com.microsoft.MultiHeadAttention` op, which runs a memory-efficient CUDA kernel
+  instead of building the full attention score tensor. The rewritten model is
+  cached in an `attention_fusion/` directory inside the model package and reused
+  on later loads. Other provider lists, models without a matching block, and a
+  fusion that fails (logged as a warning) load the original model.
+
 ## `0.39.8`
 
 ### Fixed

@@ -21,6 +21,10 @@ format, and reproduces the output of the deprecated tensor formatter blocks
   ``data["rle_mask"]``) become ``InstanceDetections`` with the same metadata
   and an ``InstancesRLEMasks`` carrier - what the tensor-mode serializer
   registered for the instance-segmentation kinds expects, and no dense mask;
+* keypoint detections (the ``keypoint-detection`` task, the ``keypoints_*``
+  fields in ``data``) become the ``(KeyPoints, Detections)`` tuple of the
+  keypoint kind, with each instance's keypoints also flattened into its
+  ``bboxes_metadata`` entry, where the tensor-mode serializer reads them;
 * classification carries the dense, ``class_id``-indexed confidence vector and
   is tagged ``CLASSIFICATION_STYLE_FORMATTER`` so
   ``serializers_tensor.serialise_native_classification`` reproduces the "D4 /
@@ -40,6 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import supervision as sv
+from roboflow_workflows.core_steps.common.keypoints import real_keypoints_count
 from roboflow_workflows.environment import (
     ENABLE_TENSOR_DATA_REPRESENTATION,
     WORKFLOWS_IMAGE_TENSOR_DEVICE,
@@ -52,6 +57,10 @@ from roboflow_workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
     INFERENCE_ID_KEY,
+    KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
@@ -66,12 +75,16 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 
 try:
     import torch
+    from roboflow_workflows.core_steps.common.tensor_native import (
+        build_native_key_points,
+    )
 
     from inference_models.models.base.classification import (
         ClassificationPrediction,
         MultiLabelClassificationPrediction,
     )
     from inference_models.models.base.instance_segmentation import InstanceDetections
+    from inference_models.models.base.keypoints_detection import KeyPoints
     from inference_models.models.base.object_detection import Detections
     from inference_models.models.base.types import InstancesRLEMasks
 
@@ -83,10 +96,13 @@ except ImportError:
     InstanceDetections = None
     InstancesRLEMasks = None
     Detections = None
+    KeyPoints = None
+    build_native_key_points = None
     TENSOR_NATIVE_CARRIERS_AVAILABLE = False
 
 DETECTION_PREDICTION_TYPE = "object-detection"
 INSTANCE_SEGMENTATION_PREDICTION_TYPE = "instance-segmentation"
+KEYPOINT_DETECTION_PREDICTION_TYPE = "keypoint-detection"
 CLASSIFICATION_PREDICTION_TYPE = "classification"
 
 
@@ -117,12 +133,22 @@ def to_tensor_native_predictions(
             an empty detection prediction, which carries no per-box copy.
 
     Returns:
-        The native ``Detections`` / ``InstanceDetections`` /
-        ``ClassificationPrediction`` / ``MultiLabelClassificationPrediction``,
-        or the input unchanged.
+        The native ``Detections`` / ``InstanceDetections`` / ``(KeyPoints,
+        Detections)`` / ``ClassificationPrediction`` /
+        ``MultiLabelClassificationPrediction``, or the input unchanged.
     """
     if not tensor_native_carriers_enabled():
         return predictions
+    if (
+        isinstance(predictions, sv.Detections)
+        and KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in predictions.data
+    ):
+        return native_keypoint_detections_from_sv_detections(
+            detections=predictions,
+            image=image,
+            classes=classes,
+            inference_id=inference_id,
+        )
     if isinstance(predictions, sv.Detections) and (
         predictions.mask is not None
         or RLE_MASK_KEY_IN_SV_DETECTIONS in predictions.data
@@ -224,6 +250,98 @@ def native_instance_detections_from_sv_detections(
             device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
         )
     return InstanceDetections(mask=mask, **fields)
+
+
+def native_keypoint_detections_from_sv_detections(
+    detections: sv.Detections,
+    image: WorkflowImageData,
+    classes: Optional[List[str]],
+    inference_id: Optional[str] = None,
+) -> Tuple["KeyPoints", "Detections"]:
+    """Rebuild keypoint ``sv.Detections`` decoded from a VLM answer as the native
+    keypoint prediction.
+
+    The boxes become a native ``Detections`` with the same metadata as
+    :func:`native_detections_from_sv_detections`, and each instance's real
+    keypoints (padding slots dropped) are flattened into its ``bboxes_metadata``
+    entry under the ``keypoints_*`` keys, which is where the tensor-mode serializer
+    reads them. The ``KeyPoints`` component places every keypoint at the slot of its
+    keypoint class id, as the keypoint model blocks do.
+
+    Args:
+        detections: Detections built by the keypoint-detection decoder, with the
+            padded ``keypoints_*`` arrays in ``data``.
+        image: Workflow image the instances refer to.
+        classes: Class names the block asked the model for.
+        inference_id: Identifier the block attached to this decode.
+
+    Returns:
+        The ``(KeyPoints, Detections)`` tuple of the keypoint-detection kind.
+    """
+    fields = _native_detection_fields(
+        detections=detections,
+        image=image,
+        classes=classes,
+        inference_id=inference_id,
+        prediction_type=KEYPOINT_DETECTION_PREDICTION_TYPE,
+    )
+    native_detections = Detections(**fields)
+
+    per_instance_xy, per_instance_confidence = [], []
+    per_instance_class_ids, per_instance_class_names = [], []
+    for index in range(len(detections)):
+        class_names = list(
+            detections.data[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS][index]
+        )
+        count = real_keypoints_count(class_names, total=len(class_names))
+        per_instance_xy.append(
+            [
+                [float(x), float(y)]
+                for x, y in detections.data[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS][index][
+                    :count
+                ]
+            ]
+        )
+        per_instance_confidence.append(
+            [
+                float(value)
+                for value in detections.data[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS][
+                    index
+                ][:count]
+            ]
+        )
+        per_instance_class_ids.append(
+            [
+                int(value)
+                for value in detections.data[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS][
+                    index
+                ][:count]
+            ]
+        )
+        per_instance_class_names.append([str(value) for value in class_names[:count]])
+
+    for index, entry in enumerate(native_detections.bboxes_metadata or []):
+        entry[KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS] = per_instance_class_ids[index]
+        entry[KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS] = per_instance_class_names[
+            index
+        ]
+        entry[KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS] = per_instance_confidence[
+            index
+        ]
+        entry[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = per_instance_xy[index]
+
+    key_points = build_native_key_points(
+        per_instance_xy=per_instance_xy,
+        per_instance_confidence=per_instance_confidence,
+        object_class_ids=[int(value) for value in detections.class_id],
+        image_metadata=native_detections.image_metadata,
+        per_instance_keypoint_class_ids=per_instance_class_ids,
+        per_instance_keypoint_class_names=per_instance_class_names,
+        device=WORKFLOWS_IMAGE_TENSOR_DEVICE,
+    )
+    prediction = (key_points, native_detections)
+
+    return prediction
 
 
 def _native_detection_fields(
