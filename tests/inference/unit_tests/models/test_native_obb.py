@@ -87,6 +87,28 @@ def package(
     )
 
 
+def producer_letterbox(image, size):
+    """rf-detr-internal's training Letterbox: max-side resize (rounded), centered on grey 114.
+
+    >>> producer_letterbox(np.zeros((2, 4, 3), np.uint8), 4)[:, 0, 0].tolist()
+    [114, 0, 0, 114]
+    """
+    from PIL import Image
+
+    height, width = image.shape[:2]
+    scale = size / max(height, width)
+    resized_width = max(1, round(width * scale))
+    resized_height = max(1, round(height * scale))
+    canvas = Image.new("RGB", (size, size), (114, 114, 114))
+    canvas.paste(
+        Image.fromarray(image).resize(
+            (resized_width, resized_height), resample=Image.Resampling.BILINEAR
+        ),
+        ((size - resized_width) // 2, (size - resized_height) // 2),
+    )
+    return np.asarray(canvas)
+
+
 def model_input_pixels(model, image):
     """The RGB uint8 image the model receives, undoing the ImageNet normalization."""
     inputs, metas = model.pre_process([image])
@@ -163,45 +185,42 @@ def test_realized_preprocessing_matches_model_similarity_on_odd_image(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "height,width,pixel_hash,transformed",
+    "height,width,transformed",
     [
         (
             35,
             73,
-            "d25653931528abaaccae0c1623b7be03ef70baeac69d6b554a4e1a2f6aaac2f6",
             [27.51999855, 27.47000122, 14.79557228, 5.2432189],
         ),
         (
             73,
             35,
-            "78f8c9391390f84aea6bf16e6fae669ee7994ecb7b7b099056097b8600ebcc4a",
             [29.32999992, 23.68000031, 7.09376717, 10.93585682],
         ),
         (
             79,
             101,
-            "f112d0893712cccaa52a14568df33bc73268a0b0badaf72e4013ab3fbfe812f3",
             [27.52000046, 25.5, 14.71126556, 8.50504971],
         ),
         (
             1,
             99,
-            "472d724451529a66f3bef12c7ce213b617e6cb1529dfa4559368a230011cdc1b",
             [27.52000046, 31.37000084, 18.74500084, 0.1399495],
         ),
         (
             64,
             64,
-            "2ffe74f47a7bb7350e913f6b9259080cbe3cee97b2d313d5e2fe2942108d98e9",
             [27.52000046, 23.68000031, 14.72000027, 10.88000011],
         ),
     ],
 )
-def test_matches_pinned_producer_pixels_and_inverts_target_geometry(
-    tmp_path, height, width, pixel_hash, transformed
+def test_matches_producer_letterbox_pixels_and_inverts_target_geometry(
+    tmp_path, height, width, transformed
 ):
-    # Fixtures from RFDT c54293a Letterbox(64), applied to this gradient and
-    # obb=[width*.43,height*.37,width*.23,height*.17,.3].
+    # Target geometry from RFDT c54293a Letterbox(64), applied to this gradient and
+    # obb=[width*.43,height*.37,width*.23,height*.17,.3]. Pixels are compared with the
+    # producer's letterbox in this environment: Pillow's resampling differs between
+    # versions, so a pinned pixel hash cannot hold across the CI matrix.
     image = (
         np.arange(height * width * 3, dtype=np.uint32).reshape(height, width, 3) % 251
     ).astype(np.uint8)
@@ -214,7 +233,8 @@ def test_matches_pinned_producer_pixels_and_inverts_target_geometry(
         )
         * 255
     ).astype(np.uint8)
-    assert hashlib.sha256(rgb.tobytes()).hexdigest() == pixel_hash
+    expected = producer_letterbox(image, 64)
+    assert np.abs(rgb.astype(int) - expected.astype(int)).max() <= 1
     result = model(image)[0]
     assert result.obb[0].tolist() == pytest.approx(
         [width * 0.43, height * 0.37, width * 0.23, height * 0.17, 0.3], abs=1e-5
