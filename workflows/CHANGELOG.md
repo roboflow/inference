@@ -18,15 +18,17 @@ for contributor and maintainer responsibilities.
 
 ### Added
 
-- Action Recognition Visualization (`roboflow_core/action_recognition_visualization@v1`) draws an Action Recognition Model's results on its video. `live` display shows the current frame with a strip of the last `history_seconds`: one lane per class, a bar per action range and a hatched zone for frames not analyzed yet. It keeps no frames. `synchronized` display plays the video late so each label sits on its frame; the delay follows the model's `analyzed_until_frame` instead of a fixed setting, capped by `max_delay_seconds`. Delayed frames are stored compressed within `max_buffer_mb`; a budget that is too small shortens the delay and reports the status `behind` instead of raising. Outputs the image, the displayed frame number, the actions and their frame number, and a status. Needs persistent video state; `synchronized` does not show the delayed tail of a video file.
+- Action Recognition Visualization (`roboflow_core/action_recognition_visualization@v1`) draws an Action Recognition Model's results on its video. `live` display shows the current frame with a strip of the last `history_seconds`: one lane per class, a bar per action range and a hatched zone for frames not analyzed yet. It keeps no frames. `synchronized` display plays the video late so each label sits on its frame; the delay follows the model's `analyzed_until_frame` instead of a fixed setting, capped by `max_delay_seconds`. Connecting `analyzed_from_frame` tracks covered window ranges so frames in failed or skipped windows show `not_analyzed` instead of "No action" and hatch those gaps in the strip. Delayed frames are stored compressed within `max_buffer_mb`; a budget that is too small shortens the delay and reports the status `behind` instead of raising. Outputs the image, the displayed frame number, the actions and their frame number, and a status. Implements `close()` to release buffered frames. Needs persistent video state; `synchronized` does not show the delayed tail of a video file.
 
 ### Changed
 
-- Action Recognition Model reports the inclusive end of the latest successful
-  window in `analyzed_until_frame`, or null before the first success. Cosmos
-  reports the last sampled source frame. Models that use the observed window
-  duration report the source frame that triggered the call. Earlier failed or
-  skipped windows can leave gaps before the mark.
+- Action Recognition Model reports the inclusive start and end of the latest
+  successful window in `analyzed_from_frame` and `analyzed_until_frame`, or
+  null before the first success. Cosmos reports the first and last sampled
+  source frames. Models that use the observed window duration report the
+  floored intended start of the first sample and the source frame that
+  triggered the call. Earlier failed, skipped, or non-overlapping windows can
+  leave gaps before the mark.
 - Action Recognition Model can classify the buffered samples on the last frame
   of a video file that reports its frame count. A clip shorter than one stride
   can get a result if enough samples are buffered.

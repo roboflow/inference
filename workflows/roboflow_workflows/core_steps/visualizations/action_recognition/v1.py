@@ -19,6 +19,7 @@ from roboflow_workflows.core_steps.common.workload_presets import (
 from roboflow_workflows.core_steps.visualizations.common.fonts import resolve_font_path
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
+    ImageParentMetadata,
     OutputDefinition,
     VideoMetadata,
     WorkflowImageData,
@@ -67,10 +68,12 @@ STATUS_ANALYZING = "analyzing"
 STATUS_LIVE = "live"
 STATUS_SYNCHRONIZED = "synchronized"
 STATUS_BEHIND = "behind"
+STATUS_NOT_ANALYZED = "not_analyzed"
 
 LONG_DESCRIPTION = """
 Draw the results of an Action Recognition Model on its video. Connect the
-original image, the model's `timeline` and its `analyzed_until_frame`.
+original image, the model's `timeline`, its `analyzed_until_frame` and, when
+available, its `analyzed_from_frame`.
 
 An action recognition result always describes frames the stream has already
 passed. The block offers two honest ways to show that.
@@ -99,11 +102,12 @@ recently used one is dropped. A frame-number restart or a settings change
 resets a stream. A stream without a declared FPS is treated as 30 FPS, like
 the model.
 
-`status` is `analyzing` before the first result, then `live`, `synchronized`
-or `behind`. `actions` lists the classes at `actions_frame_number`: the
-displayed frame in `synchronized`, the last analyzed frame in `live`.
-`displayed_frame_number` identifies the frame in the image. Configure the
-video output to this block's `image`.
+`status` is `analyzing` before the first result, then `live`, `synchronized`,
+`not_analyzed` (when `analyzed_from_frame` shows a gap before
+`analyzed_until_frame`) or `behind`. `actions` lists the classes at
+`actions_frame_number`: the displayed frame in `synchronized`, the last
+analyzed frame in `live`. `displayed_frame_number` identifies the frame in the
+image. Configure the video output to this block's `image`.
 """
 
 
@@ -136,6 +140,16 @@ class BlockManifest(WorkflowBlockManifest):
             "have a result."
         ),
         examples=["$steps.actions.analyzed_until_frame"],
+    )
+    analyzed_from_frame: Optional[Selector(kind=[INTEGER_KIND])] = Field(
+        default=None,
+        description=(
+            "The model's analyzed_from_frame output. Together with "
+            "analyzed_until_frame it marks the inclusive range of each "
+            "successful window, so frames in a failed or skipped window are "
+            'shown as "Not analyzed" instead of "No action".'
+        ),
+        examples=["$steps.actions.analyzed_from_frame"],
     )
     display_mode: Union[
         Literal["live", "synchronized"], Selector(kind=[STRING_KIND])
@@ -270,6 +284,8 @@ class BlockManifest(WorkflowBlockManifest):
 @dataclass
 class _BufferedFrame:
     metadata: VideoMetadata
+    parent_metadata: ImageParentMetadata
+    root_metadata: ImageParentMetadata
     jpeg: bytes
 
 
@@ -282,6 +298,9 @@ class _Stream:
     frames: Deque[_BufferedFrame] = field(default_factory=deque)
     buffered_bytes: int = 0
     last_mark: Optional[int] = None
+    last_displayed_frame: Optional[int] = None
+    covered_ranges: List[Tuple[int, int]] = field(default_factory=list)
+    tracks_coverage: bool = False
     lag_peaks: Deque[int] = field(default_factory=lambda: deque(maxlen=LAG_PEAKS_KEPT))
     current_peak: int = 0
     peak_is_estimate: bool = False
@@ -304,6 +323,10 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             )
             self._font_path = None
 
+    def close(self) -> None:
+        """Release all buffered synchronized frames for tracked streams."""
+        self._streams.clear()
+
     @classmethod
     def get_manifest(cls) -> Type[BlockManifest]:
         """Return the block's manifest.
@@ -315,9 +338,10 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
 
     def run(
         self,
-        image: WorkflowImageData,
+        image: Optional[WorkflowImageData],
         timeline: Optional[List[ActionRecognitionPrediction]],
         analyzed_until_frame: Optional[int],
+        analyzed_from_frame: Optional[int] = None,
         display_mode: str = "live",
         history_seconds: float = 30.0,
         max_delay_seconds: float = 60.0,
@@ -327,10 +351,13 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         """Draw the timeline on the current frame or on a delayed one.
 
         Args:
-            image: Original frame carrying source video metadata.
+            image: Original frame carrying source video metadata, or None when
+                an upstream step emitted an empty image.
             timeline: Current ranges from the same video's model output.
             analyzed_until_frame: Last frame the model has a result for, or
                 None before its first result.
+            analyzed_from_frame: First frame of the model's latest successful
+                window, or None when unavailable.
             display_mode: "live" or "synchronized".
             history_seconds: Video time the strip covers.
             max_delay_seconds: Upper limit of the synchronized delay.
@@ -348,6 +375,17 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         if display_mode not in ("live", "synchronized"):
             raise ValueError('display_mode must be "live" or "synchronized".')
 
+        if image is None:
+            empty_result = {
+                "image": None,
+                "displayed_frame_number": None,
+                "actions": [],
+                "actions_frame_number": None,
+                "status": None,
+            }
+
+            return empty_result
+
         pixels = image.numpy_image
         if pixels.ndim != 3 or pixels.shape[2] != 3 or pixels.dtype != np.uint8:
             raise ValueError("Expected a uint8 BGR video image.")
@@ -358,26 +396,55 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         state = self._stream_state(
             image.video_metadata,
             signature=(display_mode, max_delay_seconds, max_frame_side, *pixels.shape),
+            analyzed_until_frame=analyzed_until_frame,
+        )
+        _record_coverage(
+            state,
+            start_frame=analyzed_from_frame,
+            end_frame=analyzed_until_frame,
         )
         if synchronized:
-            pixels, metadata, status = self._synchronized_frame(
-                state,
-                image=image,
-                analyzed_until_frame=analyzed_until_frame,
-                max_delay_seconds=max_delay_seconds,
-                max_frame_side=max_frame_side,
-                max_buffer_mb=max_buffer_mb,
+            pixels, metadata, parent_metadata, root_metadata, status = (
+                self._synchronized_frame(
+                    state,
+                    image=image,
+                    timeline=timeline,
+                    analyzed_until_frame=analyzed_until_frame,
+                    max_delay_seconds=max_delay_seconds,
+                    max_frame_side=max_frame_side,
+                    max_buffer_mb=max_buffer_mb,
+                )
             )
             displayed = metadata.frame_number
             actions_frame = displayed if status == STATUS_SYNCHRONIZED else None
         else:
-            pixels, metadata = pixels.copy(), image.video_metadata
+            pixels = pixels.copy()
+            metadata = image.video_metadata
+            parent_metadata = image.parent_metadata
+            root_metadata = image.workflow_root_ancestor_metadata
             displayed = number
             if analyzed_until_frame is None:
                 status, actions_frame = STATUS_ANALYZING, None
             else:
-                status = STATUS_LIVE
-                actions_frame = min(number, analyzed_until_frame)
+                candidate = min(number, analyzed_until_frame)
+                if _is_frame_covered(
+                    state,
+                    frame_number=candidate,
+                    analyzed_until_frame=analyzed_until_frame,
+                    timeline=timeline,
+                ):
+                    status, actions_frame = STATUS_LIVE, candidate
+                else:
+                    status, actions_frame = STATUS_NOT_ANALYZED, None
+            state.last_mark = analyzed_until_frame
+
+        history_frames = max(1, round(history_seconds * state.fps))
+        oldest_relevant = displayed - history_frames
+        if state.frames:
+            oldest_relevant = min(
+                oldest_relevant, state.frames[0].metadata.frame_number
+            )
+        _prune_coverage(state, min_frame=oldest_relevant)
 
         held = synchronized and status == STATUS_ANALYZING
         if held:
@@ -391,6 +458,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             actions_frame=actions_frame,
             displayed=displayed,
             fps=state.fps,
+            status=status,
             waited_frames=number - state.first_frame if held else None,
         )
         _draw_strip(
@@ -399,32 +467,48 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             timeline=timeline,
             displayed=displayed,
             analyzed_until_frame=analyzed_until_frame,
+            covered_ranges=state.covered_ranges if state.tracks_coverage else None,
             fps=state.fps,
             history_seconds=history_seconds,
         )
 
+        output_image = WorkflowImageData(
+            parent_metadata=parent_metadata,
+            workflow_root_ancestor_metadata=root_metadata,
+            numpy_image=pixels,
+            video_metadata=metadata,
+        )
         result = {
-            "image": WorkflowImageData.copy_and_replace(
-                origin_image_data=image,
-                numpy_image=pixels,
-                video_metadata=metadata,
-            ),
+            "image": output_image,
             "displayed_frame_number": displayed,
             "actions": [entry.class_name for entry in actions],
             "actions_frame_number": actions_frame,
             "status": status,
         }
+
         return result
 
-    def _stream_state(self, metadata: VideoMetadata, *, signature: tuple) -> _Stream:
+    def _stream_state(
+        self,
+        metadata: VideoMetadata,
+        *,
+        signature: tuple,
+        analyzed_until_frame: Optional[int],
+    ) -> _Stream:
         video_id = metadata.video_identifier
         number = metadata.frame_number
         state = self._streams.get(video_id)
+        model_reset = (
+            state is not None
+            and state.last_mark is not None
+            and (analyzed_until_frame is None or analyzed_until_frame < state.last_mark)
+        )
         if state is not None and (
-            number < state.last_frame or signature != state.signature
+            number < state.last_frame or signature != state.signature or model_reset
         ):
             del self._streams[video_id]
             state = None
+
         if state is None:
             fps = metadata.fps
             if fps is None or not math.isfinite(fps) or fps <= 0:
@@ -439,8 +523,10 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             self._streams[video_id] = state
             while len(self._streams) > MAX_STREAMS:
                 self._streams.popitem(last=False)
+
         self._streams.move_to_end(video_id)
         state.last_frame = number
+
         return state
 
     def _synchronized_frame(
@@ -448,12 +534,19 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         state: _Stream,
         *,
         image: WorkflowImageData,
+        timeline: List[ActionRecognitionPrediction],
         analyzed_until_frame: Optional[int],
         max_delay_seconds: float,
         max_frame_side: int,
         max_buffer_mb: int,
-    ) -> Tuple[np.ndarray, VideoMetadata, str]:
-        """Store the frame; return the delayed frame to show and its status."""
+    ) -> Tuple[
+        np.ndarray,
+        VideoMetadata,
+        ImageParentMetadata,
+        ImageParentMetadata,
+        str,
+    ]:
+        """Store the frame; return the delayed frame, its metadata and status."""
         number = image.video_metadata.frame_number
         if not state.frames or state.frames[-1].metadata.frame_number != number:
             pixels = image.numpy_image
@@ -464,7 +557,12 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
                 pixels = cv2.resize(pixels, size, interpolation=cv2.INTER_AREA)
             jpeg = encode_image_to_jpeg_bytes(pixels, jpeg_quality=JPEG_QUALITY)
             state.frames.append(
-                _BufferedFrame(metadata=image.video_metadata, jpeg=jpeg)
+                _BufferedFrame(
+                    metadata=image.video_metadata,
+                    parent_metadata=image.parent_metadata,
+                    root_metadata=image.workflow_root_ancestor_metadata,
+                    jpeg=jpeg,
+                )
             )
             state.buffered_bytes += len(jpeg)
 
@@ -477,21 +575,68 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         if waiting_for_first_result:
             # No result yet: hold the first frame until the limit, then play.
             delay = number - state.first_frame
-        target = number - min(delay, math.ceil(max_delay_seconds * state.fps))
-        while len(state.frames) > 1 and state.frames[1].metadata.frame_number <= target:
+
+        max_delay_frames = math.ceil(max_delay_seconds * state.fps)
+        hard_limit = number - max_delay_frames
+        target = number - min(delay, max_delay_frames)
+        # Never keep a frame older than max_delay_seconds behind the input,
+        # even when input frame numbers jump past the limit in one step.
+        while (
+            len(state.frames) > 1 and state.frames[0].metadata.frame_number < hard_limit
+        ):
+            state.buffered_bytes -= len(state.frames.popleft().jpeg)
+
+        # Advance toward target, but pause on the first unshown frame of any
+        # detected action so catch-up does not silently drop an entire event.
+        while (
+            len(state.frames) > 1
+            and state.frames[1].metadata.frame_number <= target
+            and not _preserves_unshown_action(
+                state,
+                frame_number=state.frames[0].metadata.frame_number,
+                timeline=timeline,
+                analyzed_until_frame=analyzed_until_frame,
+            )
+        ):
             state.buffered_bytes -= len(state.frames.popleft().jpeg)
         self._enforce_budget(state, max_buffer_mb=max_buffer_mb)
 
         shown = state.frames[0]
         shown_number = shown.metadata.frame_number
+        pixels = decode_encoded_image_bytes(shown.jpeg)
+        budget = max_buffer_mb * 1024**2
+        if state.buffered_bytes > budget:
+            # A single frame can exceed max_buffer_mb; return it now and release
+            # its bytes so total retained memory stays within the budget.
+            while state.frames:
+                state.buffered_bytes -= len(state.frames.popleft().jpeg)
+            self._warn_budget_trimmed(state, max_buffer_mb=max_buffer_mb)
+
         if waiting_for_first_result and shown_number == state.first_frame:
             status = STATUS_ANALYZING
         elif analyzed_until_frame is not None and shown_number <= analyzed_until_frame:
-            status = STATUS_SYNCHRONIZED
+            if _is_frame_covered(
+                state,
+                frame_number=shown_number,
+                analyzed_until_frame=analyzed_until_frame,
+                timeline=timeline,
+            ):
+                status = STATUS_SYNCHRONIZED
+            else:
+                status = STATUS_NOT_ANALYZED
         else:
             status = STATUS_BEHIND
-        pixels = decode_encoded_image_bytes(shown.jpeg)
-        return pixels, shown.metadata, status
+
+        if status != STATUS_ANALYZING:
+            state.last_displayed_frame = shown_number
+
+        return (
+            pixels,
+            shown.metadata,
+            shown.parent_metadata,
+            shown.root_metadata,
+            status,
+        )
 
     def _enforce_budget(self, state: _Stream, *, max_buffer_mb: int) -> None:
         budget = max_buffer_mb * 1024**2
@@ -505,15 +650,100 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
                 dropped = len(stream.frames.popleft().jpeg)
                 stream.buffered_bytes -= dropped
                 used -= dropped
-                if not stream.budget_trimmed:
-                    stream.budget_trimmed = True
-                    logger.warning(
-                        "Action Recognition Visualization dropped delayed frames "
-                        "to stay within max_buffer_mb=%s. The playback delay is "
-                        "shorter than the model needs; lower max_frame_side or "
-                        "raise the budget.",
-                        max_buffer_mb,
-                    )
+                self._warn_budget_trimmed(stream, max_buffer_mb=max_buffer_mb)
+
+    @staticmethod
+    def _warn_budget_trimmed(stream: _Stream, *, max_buffer_mb: int) -> None:
+        if stream.budget_trimmed:
+            return
+
+        stream.budget_trimmed = True
+        logger.warning(
+            "Action Recognition Visualization dropped delayed frames "
+            "to stay within max_buffer_mb=%s. The playback delay is "
+            "shorter than the model needs; lower max_frame_side or "
+            "raise the budget.",
+            max_buffer_mb,
+        )
+
+
+def _record_coverage(
+    state: _Stream,
+    *,
+    start_frame: Optional[int],
+    end_frame: Optional[int],
+) -> None:
+    if start_frame is None or end_frame is None or start_frame > end_frame:
+        return
+
+    state.tracks_coverage = True
+    ranges = sorted([*state.covered_ranges, (start_frame, end_frame)])
+    merged: List[Tuple[int, int]] = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    state.covered_ranges = merged
+
+
+def _prune_coverage(state: _Stream, *, min_frame: int) -> None:
+    if not state.covered_ranges:
+        return
+
+    state.covered_ranges = [
+        (start, end) for start, end in state.covered_ranges if end >= min_frame
+    ]
+
+
+def _is_frame_covered(
+    state: _Stream,
+    *,
+    frame_number: int,
+    analyzed_until_frame: Optional[int],
+    timeline: List[ActionRecognitionPrediction],
+) -> bool:
+    if analyzed_until_frame is None or frame_number > analyzed_until_frame:
+        return False
+
+    if _actions_at(timeline, frame_number=frame_number):
+        return True
+
+    if not state.tracks_coverage:
+        return True
+
+    covered = any(start <= frame_number <= end for start, end in state.covered_ranges)
+
+    return covered
+
+
+def _preserves_unshown_action(
+    state: _Stream,
+    *,
+    frame_number: int,
+    timeline: List[ActionRecognitionPrediction],
+    analyzed_until_frame: Optional[int],
+) -> bool:
+    if analyzed_until_frame is None or frame_number > analyzed_until_frame:
+        return False
+
+    if (
+        state.last_displayed_frame is not None
+        and frame_number <= state.last_displayed_frame
+    ):
+        return False
+
+    for entry in timeline:
+        if not (entry.start_frame_idx <= frame_number <= entry.end_frame_idx):
+            continue
+
+        if (
+            state.last_displayed_frame is None
+            or state.last_displayed_frame < entry.start_frame_idx
+        ):
+            return True
+
+    return False
 
 
 def _playback_delay(
@@ -537,10 +767,9 @@ def _playback_delay(
     else:
         lag = number - analyzed_until_frame
         if state.last_mark is None:
-            # The first result: play on from the held first frame. The wait
-            # so far is one stride plus one call, the peak to expect. A peak
-            # falls on the frame before a result lands, hence the one less.
-            state.lag_peaks.append(max(0, number - state.first_frame - 1))
+            # The first result: show the held first frame with its result once
+            # before advancing to subsequent frames.
+            state.lag_peaks.append(max(0, number - state.first_frame))
             state.peak_is_estimate = True
             state.current_peak = lag
         elif analyzed_until_frame != state.last_mark:
@@ -550,11 +779,16 @@ def _playback_delay(
                 # the first wait as soon as one exists.
                 state.lag_peaks.clear()
                 state.peak_is_estimate = False
-            state.lag_peaks.append(state.current_peak)
+            # current_peak is measured one frame before the result lands; adding
+            # one matches the initial first-frame hold (stride + call) so steady
+            # playback neither skips nor repeats a frame when the estimate clears.
+            measured = state.current_peak + 1 if state.current_peak > 0 else 0
+            state.lag_peaks.append(measured)
             state.current_peak = lag
         state.last_mark = analyzed_until_frame
     state.current_peak = max(state.current_peak, lag)
     delay = max(max(state.lag_peaks, default=0), state.current_peak)
+
     return delay
 
 
@@ -601,21 +835,33 @@ def _draw_badges(
     actions_frame: Optional[int],
     displayed: int,
     fps: float,
+    status: str,
     waited_frames: Optional[int],
 ) -> None:
     unit, pad, font_px = _sizes(image)
     neutral = (70, 70, 70)
-    if actions_frame is None:
+    if status == STATUS_NOT_ANALYZED:
+        badges = [("Not analyzed", neutral)]
+    elif actions_frame is None:
         waited = "" if waited_frames is None else f" {int(waited_frames / fps)} s"
         badges = [(f"Analyzing...{waited}", neutral)]
     elif actions:
         badges = [(entry.class_name, _class_color(entry)) for entry in actions]
     else:
         badges = [("No action", neutral)]
-    age_seconds = 0 if actions_frame is None else int((displayed - actions_frame) / fps)
-    if age_seconds > 0:
+
+    lag_frames = 0 if actions_frame is None else max(0, displayed - actions_frame)
+    if lag_frames > 0:
+        age_seconds = lag_frames / fps
+        if age_seconds >= 1.0:
+            age_label = f"{int(age_seconds)} s ago"
+        elif age_seconds >= 0.1:
+            age_label = f"{age_seconds:.1f} s ago"
+        else:
+            unit_label = "frame" if lag_frames == 1 else "frames"
+            age_label = f"{lag_frames} {unit_label} ago"
         # In live display the label describes the past; say how far back.
-        badges.append((f"{age_seconds} s ago", None))
+        badges.append((age_label, None))
 
     x, y = pad * 2, pad * 2
     for label, color in badges:
@@ -648,6 +894,7 @@ def _draw_strip(
     timeline: List[ActionRecognitionPrediction],
     displayed: int,
     analyzed_until_frame: Optional[int],
+    covered_ranges: Optional[List[Tuple[int, int]]],
     fps: float,
     history_seconds: float,
 ) -> None:
@@ -718,16 +965,37 @@ def _draw_strip(
             right = max(left + 1, x_of(min(entry.end_frame_idx + 1, displayed)))
             cv2.rectangle(image, (left, top + 1), (right, top + unit - 1), color, -1)
 
-    pending_from = start if analyzed_until_frame is None else analyzed_until_frame + 1
-    if pending_from <= displayed:
-        _draw_pending(
-            image,
-            x0=x_of(pending_from),
-            y0=lanes_top,
-            x1=x1,
-            y1=lanes_bottom,
-            spacing=max(4, unit // 2),
+    if covered_ranges is None:
+        pending_from = (
+            start if analyzed_until_frame is None else analyzed_until_frame + 1
         )
+        if pending_from <= displayed:
+            _draw_pending(
+                image,
+                x0=x_of(pending_from),
+                y0=lanes_top,
+                x1=x1,
+                y1=lanes_bottom,
+                spacing=max(4, unit // 2),
+            )
+    else:
+        uncovered = _uncovered_spans(
+            covered_ranges,
+            visible=visible,
+            start=start,
+            displayed=displayed,
+        )
+        for gap_start, gap_end in uncovered:
+            gap_x0 = x_of(gap_start)
+            gap_x1 = x1 if gap_end >= displayed else x_of(gap_end + 1)
+            _draw_pending(
+                image,
+                x0=gap_x0,
+                y0=lanes_top,
+                x1=gap_x1,
+                y1=lanes_bottom,
+                spacing=max(4, unit // 2),
+            )
     cv2.line(image, (x1, lanes_top - 1), (x1, lanes_bottom + 1), (255, 255, 255), 1)
 
     axis_y = lanes_bottom + pad
@@ -742,6 +1010,39 @@ def _draw_strip(
         f"{seconds // 60}:{seconds % 60:02d}", px=axis_px, font_path=font_path
     )
     _blend_text(image, end_label, x=x1 - end_label.shape[1], y=axis_y, color=axis_color)
+
+
+def _uncovered_spans(
+    covered_ranges: List[Tuple[int, int]],
+    *,
+    visible: List[ActionRecognitionPrediction],
+    start: int,
+    displayed: int,
+) -> List[Tuple[int, int]]:
+    """Return inclusive frame ranges within ``[start, displayed]`` lacking coverage."""
+    combined = sorted(
+        [
+            *covered_ranges,
+            *((entry.start_frame_idx, entry.end_frame_idx) for entry in visible),
+        ]
+    )
+    uncovered: List[Tuple[int, int]] = []
+    cursor = start
+    for range_start, range_end in combined:
+        if range_end < cursor:
+            continue
+        if range_start > displayed:
+            break
+        if range_start > cursor:
+            uncovered.append((cursor, min(displayed, range_start - 1)))
+        cursor = max(cursor, range_end + 1)
+        if cursor > displayed:
+            break
+
+    if cursor <= displayed:
+        uncovered.append((cursor, displayed))
+
+    return uncovered
 
 
 def _pick_lanes(

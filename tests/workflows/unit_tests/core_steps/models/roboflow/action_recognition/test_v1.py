@@ -291,10 +291,12 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
         "timeline",
         "error_status",
         "analyzed_until_frame",
+        "analyzed_from_frame",
     ]
     assert outputs[0].kind == [ACTION_RECOGNITION_PREDICTION_KIND]
     assert outputs[1].kind == [STRING_KIND]
     assert outputs[2].kind == [INTEGER_KIND]
+    assert outputs[3].kind == [INTEGER_KIND]
 
 
 @pytest.mark.parametrize("manifest_type", [BlockManifest, TensorBlockManifest])
@@ -2272,5 +2274,73 @@ def test_late_call_gap_matches_continuous_prediction_start_frame():
         (entry.start_frame_idx, entry.end_frame_idx) for entry in after["timeline"]
     ]
     assert ranges == [(3, 6), (8, 12)]
+    assert after["analyzed_from_frame"] == 8
     assert after["analyzed_until_frame"] == 12
     assert "No window covers source frames 7-7." in late["error_status"]
+
+
+@pytest.mark.parametrize(
+    "supports_observed_duration, expected_from, expected_until",
+    [(False, 4, 6), (True, 3, 6)],
+)
+def test_analyzed_from_frame_matches_model_window_origin_and_resets(
+    supports_observed_duration, expected_from, expected_until
+):
+    block, model = _make_block(responses=[[], RuntimeError("temporary failure")])
+    model.supports_observed_duration = supports_observed_duration
+    run_kwargs = {
+        "stride_seconds": 1.0,
+        "sample_fps": 2.0,
+        "requires_regular_sampling": True,
+    }
+
+    for number in range(1, 6):
+        before = _run(block, _make_frame(number, fps=5.0), **run_kwargs)
+    assert before["analyzed_from_frame"] is None
+    assert before["analyzed_until_frame"] is None
+
+    # Frame 6 fires with samples at intended 3.5 (source 4) and 6.0 (source 6).
+    first = _run(block, _make_frame(6, fps=5.0), **run_kwargs)
+    assert first["analyzed_from_frame"] == expected_from
+    assert first["analyzed_until_frame"] == expected_until
+
+    # A failed window leaves both marks unchanged.
+    for number in range(7, 12):
+        failed = _run(block, _make_frame(number, fps=5.0), **run_kwargs)
+    assert failed["error_status"] == "temporary failure"
+    assert failed["analyzed_from_frame"] == expected_from
+    assert failed["analyzed_until_frame"] == expected_until
+
+    # Changing class_filter resets both marks.
+    reset = _run(
+        block,
+        _make_frame(12, fps=5.0),
+        class_filter=["run"],
+        **run_kwargs,
+    )
+    assert reset["analyzed_from_frame"] is None
+    assert reset["analyzed_until_frame"] is None
+
+
+def test_close_releases_bookkeeping_samples_after_cancelling_queued_calls():
+    block, model = _make_background_block()
+    try:
+        running = _submit_camera_window(block, "camera-a").future
+        assert model.entered.wait(timeout=5)
+        queued = _submit_camera_window(block, "camera-b")
+        sample_refs = [weakref.ref(sample.frame) for sample in queued.sampled]
+        queued_future = queued.future
+        del queued
+
+        block.close()
+        gc.collect()
+
+        assert queued_future.cancelled()
+        assert block._video_bookkeeping == {}
+        assert all(sample_ref() is None for sample_ref in sample_refs)
+
+        model.gate.set()
+        running.result(timeout=5)
+    finally:
+        model.gate.set()
+        block.close()
