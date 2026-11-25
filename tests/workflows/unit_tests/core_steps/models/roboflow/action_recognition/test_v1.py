@@ -2236,3 +2236,41 @@ def test_late_call_gap_ends_at_the_first_retained_source_frame():
         block.close()
 
     assert "No window covers source frames 6-7." in late["error_status"]
+
+
+def test_late_call_gap_matches_continuous_prediction_start_frame():
+    # 5 FPS sampled at 2 FPS (stride 2.5): the late window on frame 12 keeps
+    # intended sample 8.5 (source frame 9). Continuous spans floor 8.5 to
+    # frame 8, so the timeline covers 3-6 and 8-12 and only frame 7 is missing.
+    full_window = ModelActionRecognitionPrediction(
+        start_frame_idx=0.0,
+        end_frame_idx=2.0,
+        class_name="walk",
+        end_exclusive=True,
+    )
+    block, model = _make_background_block(responses=[[full_window], [full_window]])
+    model.supports_observed_duration = True
+    run_kwargs = {
+        "stride_seconds": 1.0,
+        "sample_fps": 2.0,
+        "requires_regular_sampling": True,
+        "background_inference": True,
+    }
+    try:
+        for number in range(1, 12):
+            _run(block, _make_frame(number, fps=5.0), **run_kwargs)
+
+        _finish_pending_call(block, model)
+        late = _run(block, _make_frame(12, fps=5.0), **run_kwargs)
+        _finish_pending_call(block, model)
+        after = _run(block, _make_frame(13, fps=5.0), **run_kwargs)
+    finally:
+        model.gate.set()
+        block.close()
+
+    ranges = [
+        (entry.start_frame_idx, entry.end_frame_idx) for entry in after["timeline"]
+    ]
+    assert ranges == [(3, 6), (8, 12)]
+    assert after["analyzed_until_frame"] == 12
+    assert "No window covers source frames 7-7." in late["error_status"]

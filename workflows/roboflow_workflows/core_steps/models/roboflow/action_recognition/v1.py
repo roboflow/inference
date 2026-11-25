@@ -785,7 +785,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 supports_observed_duration=model.supports_observed_duration
             )
         elif should_classify:
-            gap_notice = self._describe_deferral_gap(bookkeeping=bookkeeping)
+            gap_notice = self._describe_deferral_gap(
+                bookkeeping,
+                supports_observed_duration=model.supports_observed_duration,
+            )
             bookkeeping.deferred_window_end = None
             bookkeeping.tail_flushed = is_last_file_frame
             bookkeeping.last_fire_frame_number = frame_number
@@ -1026,32 +1029,40 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         return ""
 
     @staticmethod
-    def _describe_deferral_gap(bookkeeping: _ActionRecognitionBookkeeping) -> str:
+    def _describe_deferral_gap(
+        bookkeeping: _ActionRecognitionBookkeeping,
+        *,
+        supports_observed_duration: bool,
+    ) -> str:
         """Name the frames between a late call and the one before it, if any."""
         if bookkeeping.deferred_window_end is None:
             return ""
 
         first_uncovered = bookkeeping.deferred_window_end + 1
-        # Predictions start at the window's first retained sample, not at the
-        # nominal window start. Its source frame is the later bound of the two
-        # origins the timeline merge uses, so no uncovered frame is left out.
+        # Match the origin rule in merge_window_segments: continuous spans
+        # anchor at floor(intended_frame_number), while sample-index spans
+        # start at the retained source frame.
         first_sample = bookkeeping.sampled[0]
-        window_start = (
-            first_sample.source_frame_number
-            if first_sample.source_frame_number is not None
-            else math.ceil(first_sample.intended_frame_number - 1e-9)
-        )
+        if supports_observed_duration:
+            window_start = math.floor(first_sample.intended_frame_number)
+        elif first_sample.source_frame_number is not None:
+            window_start = first_sample.source_frame_number
+        else:
+            window_start = math.ceil(first_sample.intended_frame_number - 1e-9)
+
         last_uncovered = window_start - 1
         if last_uncovered < first_uncovered:
             return ""
 
         # The whole gap, not only the part lost to the wait: with a stride
         # longer than the window, some of these frames have no window anyway.
-        return (
+        notice = (
             f"The previous classification had not finished, so this one started "
             f"late. No window covers source frames "
             f"{first_uncovered}-{last_uncovered}."
         )
+
+        return notice
 
     def _get_worker(self) -> _WindowWorker:
         if self._worker is None:
