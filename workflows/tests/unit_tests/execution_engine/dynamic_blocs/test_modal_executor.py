@@ -363,6 +363,8 @@ def test_validate_code_in_modal_does_not_cache_failure_to_reach_modal(
 
 
 class _RedirectHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def _handle(self) -> None:
         self.rfile.read(int(self.headers.get("Content-Length", 0)))
         self.server.received_headers.append(dict(self.headers))
@@ -417,7 +419,7 @@ def test_modal_executor_does_not_send_credentials_to_redirect_target(
     monkeypatch.setattr(modal_executor, "MODAL_TOKEN_SECRET", "modal-secret")
     executor = executor_class(workspace_id="workspace-a")
 
-    with pytest.raises(DynamicBlockError):
+    with pytest.raises(DynamicBlockError, match="status 307|Redirect limit exhausted"):
         executor.execute_remote(
             block_type_name="validation",
             python_code=_block_code(),
