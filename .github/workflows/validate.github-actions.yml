@@ -7,6 +7,10 @@ on:
       - ".github/actions/**"
       - ".github/actionlint.y*"
       - ".github/scripts/**"
+      - "app_bundles/osx/**"
+      - ".release/pypi/Dockerfile"
+      - "tests/inference/unit_tests/deployment/test_determine_tags_security.py"
+      - "tests/inference/unit_tests/deployment/test_workflow_input_security.py"
   push:
     branches:
       - main
@@ -15,6 +19,10 @@ on:
       - ".github/actions/**"
       - ".github/actionlint.y*"
       - ".github/scripts/**"
+      - "app_bundles/osx/**"
+      - ".release/pypi/Dockerfile"
+      - "tests/inference/unit_tests/deployment/test_determine_tags_security.py"
+      - "tests/inference/unit_tests/deployment/test_workflow_input_security.py"
   workflow_dispatch:
 
 permissions:
@@ -72,3 +80,15 @@ jobs:
         run: |
           uv pip install --system 'pytest==8.4.2' 'pytest-retry==1.6.3' 'click==8.1.8' 'cryptography==46.0.3'
           python -m unittest discover -s .github/scripts -p 'test_hosted_e2e*.py'
+      - name: Test macOS release recovery without Apple credentials
+        run: |
+          uv pip install --system 'pyinstaller==6.22.3'
+          python -m unittest discover -s .github/scripts -p 'test_macos_bundle.py'
+      - name: Test release image tags without registry publication
+        run: |
+          docker build --tag inference-image-tags-tests --file .release/pypi/Dockerfile .release/pypi
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -w /work inference-image-tags-tests \
+            python -m pytest --confcutdir=tests/inference/unit_tests/deployment -o addopts= \
+            .github/scripts/test_image_release_tags.py \
+            tests/inference/unit_tests/deployment/test_determine_tags_security.py \
+            tests/inference/unit_tests/deployment/test_workflow_input_security.py -q

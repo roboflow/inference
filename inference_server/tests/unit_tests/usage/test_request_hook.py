@@ -6,6 +6,7 @@ import logging
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlencode
 
 import numpy as np
 import pytest
@@ -21,15 +22,25 @@ from inference_models.errors import (
     UnauthorizedModelAccessError,
     UsagePausedModelAccessError,
 )
+from inference_models.models.vllm_proxy.errors import VLLMConnectionError
 from inference_models.weights_providers.roboflow import RoboflowModelMetadata
 from inference_sdk.config import apply_duration_minimum, outbound_service_secret
 from inference_server import configuration
 from inference_server.framework import model_stat
-from inference_server.legacy.errors import SERVICE_MISCONFIGURATION_MESSAGE
+from inference_server.gateway import _load_failure
+from inference_server.legacy.errors import (
+    SERVICE_MISCONFIGURATION_MESSAGE,
+    VLLM_TIMEOUT_MESSAGE,
+    VLLM_UNAVAILABLE_MESSAGE,
+)
 from inference_server.usage import request_hook
 from inference_server.usage.collector import UsageCollector
 from inference_server.usage.request_hook import report_request_usage
-from inference_server.usage.rows import USAGE_SCOPE, execution_duration
+from inference_server.usage.rows import (
+    USAGE_SCOPE,
+    exception_error_details,
+    execution_duration,
+)
 from tests.unit_tests.legacy.conftest import FakeGateway
 
 SECRET = "service-secret-1"
@@ -1951,3 +1962,156 @@ def test_undecodable_image_records_no_model_row_when_the_model_does_not_resolve(
 
     assert response.status_code == status_code
     assert _categories(usage_collector) == ["request"]
+
+
+@pytest.mark.parametrize("status_code", [503, 504])
+def test_vllm_connection_error_row_carries_its_status_code(status_code):
+    error = VLLMConnectionError("Could not reach vLLM sidecar", status_code=status_code)
+
+    details = exception_error_details(error, ())
+
+    assert details == {
+        "error": "VLLMConnectionError: Could not reach vLLM sidecar",
+        "error_type": "VLLMConnectionError",
+        "error_status_code": status_code,
+    }
+
+
+@pytest.mark.parametrize(
+    "status_code,message",
+    [(503, VLLM_UNAVAILABLE_MESSAGE), (504, VLLM_TIMEOUT_MESSAGE)],
+)
+def test_vllm_connection_error_during_a_cold_load_answers_and_records_its_status(
+    usage_client, usage_collector, detection_gateway, status_code, message
+):
+    # The first request for a fine-tuned vLLM model registers its adapter with
+    # the sidecar during the load, so the error arrives as a load failure.
+    detection_gateway.ensure_results = [
+        _load_failure(
+            VLLMConnectionError(
+                "Could not reach vLLM sidecar at http://vllm:8000/v1/load_lora_adapter",
+                status_code=status_code,
+            )
+        )
+    ]
+    client = usage_client(detection_gateway)
+
+    response = client.post(
+        "/infer/object_detection",
+        json={"model_id": "ds/1", "api_key": "k", "image": _image()},
+    )
+
+    assert response.status_code == status_code
+    assert response.json() == {"message": message}
+    assert not any(call[0] == "infer" for call in detection_gateway.calls)
+    row = _request_row(usage_collector)
+    assert (row["error_type"], row["error_status_code"]) == (
+        "VLLMConnectionError",
+        status_code,
+    )
+
+
+BATCH_CONTEXT = json.dumps({"version": "batch-v1", "media": "image", "multiplier": 0.5})
+CANONICAL_BATCH_CONTEXT = json.dumps(
+    {"media": "image", "multiplier": 0.5, "version": "batch-v1"}, sort_keys=True
+)
+
+
+def _batch_query(context: str, secret: str) -> str:
+    return "&" + urlencode({"billing_context": context, "service_secret": secret})
+
+
+def test_authenticated_batch_context_is_carried_on_the_request_and_model_rows(
+    usage_client, usage_collector, detection_gateway, monkeypatch
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+
+    response = _catch_all(client, _batch_query(BATCH_CONTEXT, SECRET))
+
+    assert response.status_code == 200, response.text
+    for row in (_request_row(usage_collector), _model_row(usage_collector)):
+        assert row["billable"] is True
+        assert row["resource_details"]["billing_context"] == CANONICAL_BATCH_CONTEXT
+
+
+def test_authenticated_batch_context_keeps_the_job_it_names(
+    usage_client, usage_collector, detection_gateway, monkeypatch
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+    context = json.dumps({**json.loads(BATCH_CONTEXT), "jobId": "job-1"})
+
+    response = _catch_all(client, _batch_query(context, SECRET))
+
+    assert response.status_code == 200, response.text
+    recorded = _model_row(usage_collector)["resource_details"]["billing_context"]
+    assert json.loads(recorded) == {**json.loads(BATCH_CONTEXT), "jobId": "job-1"}
+
+
+@pytest.mark.parametrize("secret", ["", "wrong-secret"])
+def test_batch_context_without_a_valid_secret_is_ignored(
+    usage_client, usage_collector, detection_gateway, monkeypatch, secret
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+
+    response = _catch_all(client, _batch_query(BATCH_CONTEXT, secret))
+
+    assert response.status_code == 200, response.text
+    for row in (_request_row(usage_collector), _model_row(usage_collector)):
+        assert "billing_context" not in row["resource_details"]
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        "not-json",
+        json.dumps({"version": "batch-v2", "media": "image", "multiplier": 0.5}),
+        json.dumps({"version": "batch-v1", "media": "audio", "multiplier": 0.5}),
+        json.dumps({"version": "batch-v1", "media": "image", "multiplier": 0}),
+        json.dumps({"version": "batch-v1", "media": "image", "multiplier": 10**400}),
+        json.dumps({"version": "batch-v1", "media": "image", "multiplier": True}),
+        json.dumps(
+            {"version": "batch-v1", "media": "image", "multiplier": 0.5, "jobId": "a/b"}
+        ),
+        json.dumps(
+            {"version": "batch-v1", "media": "image", "multiplier": 0.5, "jobId": 7}
+        ),
+    ],
+)
+def test_invalid_authenticated_batch_context_is_never_served_unrecorded(
+    usage_client, usage_collector, detection_gateway, monkeypatch, context
+):
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    client = usage_client(detection_gateway)
+
+    response = _catch_all(client, _batch_query(context, SECRET))
+
+    # Serving the call without its usage row would make it free.
+    assert response.status_code >= 400
+    assert _rows_of(usage_collector, "model") == []
+
+
+def test_overly_nested_authenticated_batch_context_is_never_served_unrecorded(
+    usage_collector, monkeypatch
+):
+    calls = []
+
+    async def handler(request: Request):
+        calls.append(request)
+        return {"ok": True}
+
+    def overly_nested(raw):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(configuration, "ROBOFLOW_SERVICE_SECRET", SECRET)
+    monkeypatch.setattr(
+        request_hook, "json", SimpleNamespace(loads=overly_nested, dumps=json.dumps)
+    )
+    client = _hook_app(usage_collector, handler)
+
+    response = client.post("/probe?api_key=k" + _batch_query("[[]]", SECRET))
+
+    assert response.status_code >= 400
+    assert calls == []

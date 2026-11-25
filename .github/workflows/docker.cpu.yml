@@ -1,11 +1,16 @@
 name: Build and Push CPU Container
 permissions:
   contents: read
+  actions: read
 on:
   release:
-    types: [created]
+    types: [published]
   workflow_dispatch:
     inputs:
+      release_run_id:
+        type: string
+        description: Original coordinator run supplying prepared locks (optional for non-release builds)
+        default: ""
       force_push:
         type: boolean
         description: "Do you want to push image after build?"
@@ -19,6 +24,10 @@ on:
     # mandatory on this path: an empty one would publish to the bare
     # :$VERSION tag and overwrite the released image.
     inputs:
+      release_run_id:
+        type: string
+        description: Original coordinator run supplying prepared locks (optional for non-release builds)
+        default: ""
       force_push:
         type: boolean
         description: "Push the image after build"
@@ -48,7 +57,16 @@ env:
   DOCKERFILE: "./docker/dockerfiles/Dockerfile.onnx.cpu"
 
 jobs:
+  release_inputs:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/prepare.release-image-inputs.yml
+    with:
+      coordinator_run_id: ${{ inputs.release_run_id || '' }}
+
   docker:
+    needs: release_inputs
     if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'workflow_dispatch' || github.event_name == 'release') }}
     runs-on:
       labels: ubuntu-latest
@@ -56,6 +74,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: read
     env:
       PUBLISH: ${{ github.event_name == 'release' || inputs.force_push == true }}
     outputs:
@@ -72,6 +91,13 @@ jobs:
           exit 1
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Restore prepared release image inputs
+        id: prepared_inputs
+        if: ${{ needs.release_inputs.outputs.run_id != '' }}
+        uses: ./.github/actions/restore-release-inputs
+        with:
+          run_id: ${{ needs.release_inputs.outputs.run_id }}
+          artifact_id: ${{ needs.release_inputs.outputs.artifact_id }}
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: Determine Image Tags
@@ -136,6 +162,9 @@ jobs:
         if: ${{ env.PUBLISH != 'true' }}
         uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
         with:
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
           push: false
           project: grl7ffzxd7
           context: .
@@ -148,6 +177,9 @@ jobs:
         if: ${{ env.PUBLISH == 'true' }}
         uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
         with:
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
           project: grl7ffzxd7
           context: .
           outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
@@ -173,6 +205,9 @@ jobs:
         id: arm64
         uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
         with:
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.roboflow.release-inputs.sha256=${{ steps.prepared_inputs.outputs.digest }}
           project: grl7ffzxd7
           context: .
           outputs: type=image,name=${{ env.BASE_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH }}
@@ -215,3 +250,50 @@ jobs:
             fi
             echo "$tag amd64 manifest $published matches the tested image"
           done
+
+  notify-svis:
+    needs: docker
+    if: >-
+      ${{ github.repository == 'roboflow/inference'
+          && github.event_name == 'release'
+          && github.event.release.draft == false
+          && github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    environment: svis-dispatch
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions: {}
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      HAS_APP: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY != '' && vars.SVIS_DISPATCH_APP_CLIENT_ID != '' }}
+    steps:
+      - name: Only announce X.Y.Z and X.Y.Z-postN releases
+        id: filter
+        run: |
+          version="${RELEASE_TAG#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-post[0-9]+)?$ ]]; then
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not a release version ($RELEASE_TAG); nothing to announce."
+          fi
+      - name: Mint a token scoped to the SVIS repository
+        id: app-token
+        if: ${{ steps.filter.outputs.version != '' && env.HAS_APP == 'true' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SVIS_DISPATCH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SVIS_DISPATCH_APP_PRIVATE_KEY }}
+          owner: roboflow
+          repositories: streaming-video-inference-services
+          permission-contents: write
+      - name: Ping SVIS
+        if: ${{ steps.app-token.outputs.token != '' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.filter.outputs.version }}
+        run: |
+          gh api repos/roboflow/streaming-video-inference-services/dispatches \
+            -f event_type=inference-release \
+            -f "client_payload[version]=$VERSION" \
+            -f "client_payload[sha]=$GITHUB_SHA"
+          echo "Announced $VERSION ($GITHUB_SHA) to streaming-video-inference-services"

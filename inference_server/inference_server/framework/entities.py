@@ -13,7 +13,6 @@ class CommonRequestParams:
     action: str = "infer"
     response_style: str = "compact"
     model_package_id: Optional[str] = None
-    instance: str = ""
     device: str = ""
     extra: dict = field(default_factory=dict)
 

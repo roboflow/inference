@@ -1,9 +1,20 @@
 name: Publish streamvision to PyPI
+run-name: pypi-streamvision-${{ inputs.coordinator_run_id != '' && format('parent-{0}', inputs.coordinator_run_id) || format('manual-{0}', github.run_id) }}
 on:
-  release:
-    types: [created]
   workflow_dispatch:
     inputs:
+      coordinator_run_id:
+        description: Parent release run (empty for standalone manual publication)
+        type: string
+        default: ""
+      expected_version:
+        description: Expected package version (set by the release coordinator)
+        type: string
+        default: ""
+      expected_revision:
+        description: Expected commit SHA (set by the release coordinator)
+        type: string
+        default: ""
       publish:
         description: "Publish the built wheel to PyPI (false = build-only smoke test)"
         type: choice
@@ -18,37 +29,108 @@ permissions:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    if: ${{ github.repository == 'roboflow/inference' }}
+    env:
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      COORDINATOR_RUN_ID: ${{ inputs.coordinator_run_id }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 10
+    timeout-minutes: 65
+    concurrency:
+      group: pypi-streamvision-${{ github.event.inputs.publish == 'true' && 'publish' || github.run_id }}
+      cancel-in-progress: false
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify the requested candidate revision and version
+        run: bash .release/pypi/dependencies.sh guard --package streamvision
+      - name: Select retained candidate streamvision
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .release/pypi/candidate.sh select --profile streamvision
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-streamvision.json >> "$GITHUB_OUTPUT"
+      - name: Download retained candidate streamvision
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/streamvision
+      - name: Restore retained candidate streamvision
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile streamvision
+      - name: Download coordinator dependency selection
+        if: ${{ steps.candidate.outputs.reused != 'true' && inputs.coordinator_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-dependencies
+          run-id: ${{ inputs.coordinator_run_id }}
+          github-token: ${{ github.token }}
+          path: release-candidate/dependencies
+      - name: Prepare release lock streamvision
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/prepare.sh --profile streamvision
       - name: 🐍 Set up Python 3.12
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: 🛞 Build streamvision wheel
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         run: make create_streamvision_wheel
+      - name: Seal candidate streamvision
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh seal --profile streamvision
+      - name: Retain candidate streamvision
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-streamvision
+          retention-days: 90
+          if-no-files-found: error
+          path: release-candidate/streamvision/
+      - name: Verify retained candidate streamvision
+        run: bash .release/pypi/candidate.sh verify --profile streamvision
       - name: 🔍 Verify wheel is not empty
         # packages-dir uploads everything in dist/, so require exactly one
         # streamvision wheel and nothing else, containing actual Python modules.
         run: |
           ls -la dist/
-          test "$(ls dist | wc -l)" -eq 1
+          shopt -s nullglob
+          files=(dist/*)
+          test "${#files[@]}" -eq 1
           unzip -l dist/streamvision-*.whl | grep -qE ' streamvision/.+\.py$'
-      - name: 📤 Upload built wheel as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: streamvision-wheel
-          path: dist/streamvision-*.whl
+      - name: Verify published dependencies before upload
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
+      - name: Verify existing files and stage missing distributions
+        if: ${{ github.event.inputs.publish == 'true' }}
+        id: prepare
+        run: |
+          bash .release/pypi/publish.sh prepare --profile streamvision --directory dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-prepare.json
+          echo "upload=$(jq -r '.upload' release-evidence/publication-prepare.json)" >> "$GITHUB_OUTPUT"
       - name: 🚀 Publish streamvision to PyPI
-        # Release-triggered runs always publish. Manual dispatches publish
-        # only when the operator explicitly opts in — default is build-only
-        # so smoke-testing the packaging never accidentally re-tags PyPI.
-        if: ${{ github.event_name == 'release' || github.event.inputs.publish == 'true' }}
-        uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
+        if: ${{ github.event.inputs.publish == 'true' && steps.prepare.outputs.upload == 'true' }}
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
-          packages-dir: dist/
-          skip-existing: true
+          packages-dir: release-upload/
+      - name: Verify the complete published inventory
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: bash .release/pypi/publish.sh verify --profile streamvision --directory dist --upload-directory release-upload --wait-seconds 600 --receipt release-evidence/publication-receipt.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && github.event.inputs.publish == 'true' }}
+        with:
+          name: streamvision-dependencies-${{ github.run_attempt }}
+          path: release-evidence/
+          if-no-files-found: error
