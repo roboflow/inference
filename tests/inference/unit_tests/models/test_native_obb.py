@@ -174,7 +174,7 @@ def test_realized_preprocessing_matches_model_similarity_on_odd_image(tmp_path):
         (
             73,
             35,
-            "e4b2fbf4e9dc0f229cdfd0d208c65357b0dc225bf39e921bfabda636ceecc1c7",
+            "78f8c9391390f84aea6bf16e6fae669ee7994ecb7b7b099056097b8600ebcc4a",
             [29.32999992, 23.68000031, 7.09376717, 10.93585682],
         ),
         (

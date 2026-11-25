@@ -7,6 +7,10 @@ pytest.importorskip(
     "inference_models",
     reason="inference_models is required to exercise the compiler's package verification",
 )
+pytest.importorskip(
+    "tensorrt",
+    reason="the compilation handlers import the TensorRT engine builder",
+)
 
 from inference_cli.lib.enterprise.inference_compiler.core.compilation_handlers.default import (
     verify_model_package,
