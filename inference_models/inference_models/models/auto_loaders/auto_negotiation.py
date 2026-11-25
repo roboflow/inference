@@ -76,7 +76,44 @@ def negotiate_model_packages(
     nms_fusion_preferences: Optional[Union[bool, dict]] = None,
     verbose: bool = False,
     required_capabilities: Optional[List[str]] = None,
+    *,
+    require_compatible_explicit_package: bool = False,
 ) -> List[ModelPackageMetadata]:
+    """Select and rank packages using the inference runtime's compatibility rules.
+
+    No model weights are downloaded or initialized. A process manager may call
+    this before starting a worker, using the worker's effective configuration.
+    For an admitted-candidate handoff, limit the candidate set or specify its ID
+    with ``require_compatible_explicit_package=True`` so validation cannot select
+    a replacement. The legacy explicit-ID shortcut remains the default.
+
+    Args:
+        model_architecture: Architecture reported by the provider.
+        task_type: Task reported by the provider.
+        model_packages: Authorized provider package metadata to consider.
+        requested_model_package_id: Optional single requested package identifier.
+        requested_backends: Allowed backends, if explicitly constrained.
+        requested_batch_size: Required network batch size or range.
+        requested_quantization: Allowed precision values; None uses runtime defaults.
+        device: Intended worker device, also used to rank candidates.
+        onnx_execution_providers: Intended ONNX execution providers.
+        allow_untrusted_packages: Whether untrusted packages may be selected.
+        trt_engine_host_code_allowed: Whether TensorRT engine host code is allowed.
+        nms_fusion_preferences: NMS requirements used for filtering and ranking.
+        verbose: Whether to print selection diagnostics.
+        required_capabilities: Required model capabilities.
+        require_compatible_explicit_package: Apply the normal implementation,
+            request, and runtime checks even when an exact ID is supplied.
+            Rejection never falls back to another ID. Existing public explicit-ID
+            callers retain their behavior unless they opt in.
+
+    Returns:
+        Eligible packages in the existing preference order.
+
+    Raises:
+        ModelPackageNegotiationError: No package satisfies the request, or a
+            request constraint is invalid.
+    """
     verbose_info(
         "The following model packages were exposed by weights provider:",
         verbose_requested=verbose,
@@ -112,7 +149,11 @@ def negotiate_model_packages(
                 f"Package {selected_package.package_id} does not support {required_capabilities}. "
                 "Use an embedding-capable package for the same model version."
             )
-        return [selected_package]
+        if not require_compatible_explicit_package:
+            return [selected_package]
+
+        model_packages = [selected_package]
+
     capability_rejections = [
         DiscardedPackage(
             package_id=package.package_id,
