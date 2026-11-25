@@ -106,6 +106,20 @@ def test_run_object_detection_returns_legacy_dicts():
     assert bridge.calls[0][2]["confidence"] == 0.5 and bridge.calls[0][3][0] is img
 
 
+def test_run_owlv2_text_uses_the_requested_prompts_to_label_detections():
+    bridge = _od_bridge()
+    bridge.routes["ds/1"].task_type = "open-vocabulary-object-detection"
+    provider = GatewayModelsProvider(bridge, api_key="key")
+    image = {"type": "numpy_object", "value": np.zeros((4, 6, 3), dtype=np.uint8)}
+
+    result = provider.run_owlv2_text("ds/1", [image], ["bus", "bicycle"], 0.4, "key")
+
+    model_id, action, params, _ = bridge.calls[0]
+    assert (model_id, action) == ("ds/1", "infer")
+    assert params["classes"] == ["bus", "bicycle"] and params["confidence"] == 0.4
+    assert result[0]["predictions"][0]["class"] == "bus"
+
+
 def test_a_step_batch_above_the_http_image_cap_is_not_refused(monkeypatch):
     monkeypatch.setattr("inference_server.configuration.MAX_IMAGES_PER_REQUEST", 2)
     bridge = _od_bridge()

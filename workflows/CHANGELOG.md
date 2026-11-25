@@ -16,6 +16,11 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Added
+
+- The OWLv2 Model block (`roboflow_core/owlv2_model@v1`) detects objects with an uploaded model and text prompts from each request.
+  Local execution calls `ModelsProvider.run_owlv2_text`. Remote execution calls `InferenceHTTPClient.infer_from_owlv2`.
+
 ### Changed
 
 - Action Recognition Model reports the inclusive end of the latest successful

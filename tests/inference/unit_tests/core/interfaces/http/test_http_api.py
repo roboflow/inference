@@ -239,6 +239,43 @@ def _build_dedicated_deployment_interface(
     return interface, model_manager, workspace_lookup_mock
 
 
+def test_owlv2_text_request_loads_the_workspace_model(monkeypatch):
+    from inference.models.owlv2.owlv2_inference_models import (
+        InferenceModelsOwlV2Adapter,
+    )
+
+    monkeypatch.setattr(http_api, "CORE_MODELS_ENABLED", True)
+    monkeypatch.setattr(http_api, "CORE_MODEL_OWLV2_ENABLED", True)
+    monkeypatch.setattr(http_api, "USE_INFERENCE_MODELS", True)
+    interface, manager, _, _ = _build_serverless_interface(
+        monkeypatch,
+        ServerlessUsageCheckResponse(
+            status_code=200, workspace_id="workspace", under_cap=True
+        ),
+    )
+    manager.__getitem__.return_value = MagicMock(spec=InferenceModelsOwlV2Adapter)
+    manager.infer_from_request_sync.return_value = {
+        "image": {"width": 3, "height": 2},
+        "predictions": [],
+    }
+    model_id = "workspace/uploaded-detector"
+    with TestClient(interface.app) as client:
+        response = client.post(
+            "/owlv2/infer?api_key=workspace-key",
+            json={
+                "model_id": model_id,
+                "text": ["bus"],
+                "image": {"type": "url", "value": "https://example.com/street.jpg"},
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert manager.add_model.call_args.args == (model_id, "workspace-key")
+    loaded_id, request = manager.infer_from_request_sync.call_args.args
+    assert loaded_id == model_id
+    assert request.text == ["bus"]
+
+
 def test_serverless_registers_sam3_routes_when_model_flags_are_enabled(
     monkeypatch,
 ) -> None:

@@ -881,6 +881,20 @@ def test_run_pp_ocr_omits_one_stage_while_disabling_the_other() -> None:
     )
 
 
+def test_run_owlv2_text_forwards_the_workspace_model_and_prompts():
+    manager = manager_returning(empty_detection_response())
+    result = ModelManagerModelsProvider(manager).run_owlv2_text(
+        "ds/1", IMAGES, ["bus", "bicycle"], confidence=0.4, api_key="key"
+    )
+
+    request = captured_request(manager)
+    assert manager.infer_from_request_sync.call_args.kwargs["model_id"] == "ds/1"
+    assert request.model_id == "ds/1" and request.api_key == "key"
+    assert request.text == ["bus", "bicycle"] and request.confidence == 0.4
+    assert request.source == "workflow-execution"
+    assert result[0]["predictions"] == []
+
+
 def test_run_yolo_world_builds_the_request_the_block_used_to_build() -> None:
     manager = manager_returning(_DictResponse({"predictions": []}))
     ModelManagerModelsProvider(manager).run_yolo_world(

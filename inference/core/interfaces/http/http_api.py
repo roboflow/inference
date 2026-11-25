@@ -72,7 +72,10 @@ from inference.core.entities.requests.inference import (
     SemanticSegmentationInferenceRequest,
     ensure_wire_safe_mask_format,
 )
-from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
+from inference.core.entities.requests.owlv2 import (
+    OwlV2InferenceRequest,
+    OwlV2TextInferenceRequest,
+)
 from inference.core.entities.requests.perception_encoder import (
     PerceptionEncoderCompareRequest,
     PerceptionEncoderImageEmbeddingRequest,
@@ -4375,14 +4378,19 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/owlv2/infer",
-                    response_model=ObjectDetectionInferenceResponse,
-                    summary="Owlv2 image prompting",
-                    description="Run the google owlv2 model to few-shot object detect",
+                    response_model=Union[
+                        ObjectDetectionInferenceResponse,
+                        List[ObjectDetectionInferenceResponse],
+                    ],
+                    summary="OWLv2 object detection",
+                    description="Detect with text queries and an uploaded model ID, or with visual examples and a core OWLv2 model.",
                 )
                 @with_route_exceptions
                 @usage_collector("request")
                 def owlv2_infer(
-                    inference_request: OwlV2InferenceRequest,
+                    inference_request: Union[
+                        OwlV2InferenceRequest, OwlV2TextInferenceRequest
+                    ],
                     request: Request,
                     api_key: Optional[str] = Query(
                         None,
@@ -4403,12 +4411,41 @@ class HttpInterface(BaseInterface):
                         M.Sam2EmbeddingResponse or Response: The response affirming the image has been embedded
                     """
                     logger.debug(f"Reached /owlv2/infer")
-                    owl2_model_id = load_owlv2_model(
-                        inference_request,
-                        api_key=api_key,
-                        countinference=countinference,
-                        service_secret=service_secret,
-                    )
+                    if isinstance(inference_request, OwlV2TextInferenceRequest):
+                        owl2_model_id = inference_request.model_id
+                        inference_request.api_key = (
+                            api_key_fallback(api_key) or inference_request.api_key
+                        )
+                        if not USE_INFERENCE_MODELS:
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Uploaded OWLv2 weights require USE_INFERENCE_MODELS.",
+                            )
+                        self.model_manager.add_model(
+                            owl2_model_id,
+                            inference_request.api_key,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
+                        from inference.models.owlv2.owlv2_inference_models import (
+                            InferenceModelsOwlV2Adapter,
+                        )
+
+                        if not isinstance(
+                            self.model_manager[owl2_model_id],
+                            InferenceModelsOwlV2Adapter,
+                        ):
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Expected an uploaded OWLv2 model.",
+                            )
+                    else:
+                        owl2_model_id = load_owlv2_model(
+                            inference_request,
+                            api_key=api_key,
+                            countinference=countinference,
+                            service_secret=service_secret,
+                        )
                     model_response = self.model_manager.infer_from_request_sync(
                         owl2_model_id, inference_request
                     )
