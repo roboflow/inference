@@ -312,7 +312,8 @@ class CommandTests(unittest.TestCase):
         self._run("prepare")
         self._run("warmup")
         for shard in "ABCD":
-            self._run("shard", shard=shard)
+            result = self._run("shard", shard=shard)
+            self.assertRegex(result.stdout, r"slowest .*durations")
         result = self._run("aggregate")
         self.assertEqual(result.stdout, "accepted\n")
         self.assertEqual(self.root.joinpath("warmups.txt").read_text(), "1")

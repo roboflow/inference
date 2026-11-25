@@ -35,6 +35,8 @@ def test_vjepa_registry_respects_enablement(enabled) -> None:
 def test_inference_models_registry_pairs_are_registered_in_outer_lookup() -> None:
     expected_pairs = {
         ("classification", "resnet"),
+        ("classification", "convnext"),
+        ("multi-label-classification", "convnext"),
         ("multi-label-classification", "dinov3_probe"),
         ("multi-label-classification", "resnet"),
         ("multi-label-classification", "vit"),

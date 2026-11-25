@@ -1,0 +1,100 @@
+name: Databricks SQL Image Source - live warehouse integration
+
+# Credentialed, manually dispatched, and gated by the `databricks-live`
+# environment (required reviewers) so untrusted PR code never runs with the
+# warehouse secrets. The deterministic coverage (fake connector, local TLS
+# Thrift warehouse) runs in the normal workflows unit-test jobs.
+#
+# Environment secrets:
+#   DATABRICKS_SERVER_HOSTNAME, DATABRICKS_HTTP_PATH, DATABRICKS_TABLE
+#   DATABRICKS_TOKEN        read-only identity the block runs with
+#   DATABRICKS_SETUP_TOKEN  identity allowed to (re)create the fixture table
+#   ROBOFLOW_API_KEY        only for the server target
+# Environment variable (configured on databricks-live, not supplied at dispatch):
+#   DATABRICKS_LIVE_BASE_URL  approved HTTPS inference server origin
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        description: "Run the block locally or through the approved inference server"
+        options:
+          - local
+          - server
+      cases:
+        type: string
+        description: "Comma-separated cases"
+        default: "import,bad-image,big-metadata,bad-token,slow,recovery,concurrent"
+      expectation:
+        type: choice
+        description: "Special expectation for a deployment configured that way"
+        options:
+          - none
+          - disabled
+          - budget-failure
+      setup_fixtures:
+        type: boolean
+        description: "Recreate the fixture table with the setup identity"
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on:
+      labels: depot-ubuntu-22.04-4
+      group: public-depot
+    environment: databricks-live
+    timeout-minutes: 40
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
+      - name: 🐍 Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: 📦 Install the workflows package with the databricks extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install "./workflows[databricks]" requests
+      - name: 🔎 Record connector and image facts
+        run: |
+          python - <<'EOF'
+          import importlib.metadata as m, importlib.util
+          print("databricks-sql-connector", m.version("databricks-sql-connector"))
+          print("urllib3", m.version("urllib3"))
+          print("pyarrow installed:", importlib.util.find_spec("pyarrow") is not None)
+          EOF
+      - name: 🧪 Live warehouse cases
+        env:
+          DATABRICKS_SERVER_HOSTNAME: ${{ secrets.DATABRICKS_SERVER_HOSTNAME }}
+          DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+          DATABRICKS_TABLE: ${{ secrets.DATABRICKS_TABLE }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          DATABRICKS_SETUP_TOKEN: ${{ secrets.DATABRICKS_SETUP_TOKEN }}
+          ROBOFLOW_API_KEY: ${{ secrets.ROBOFLOW_API_KEY }}
+          DATABRICKS_LIVE_BASE_URL: ${{ vars.DATABRICKS_LIVE_BASE_URL }}
+          LIVE_TARGET: ${{ inputs.target }}
+          LIVE_CASES: ${{ inputs.cases }}
+          LIVE_SETUP: ${{ inputs.setup_fixtures }}
+          LIVE_EXPECTATION: ${{ inputs.expectation }}
+        run: |
+          cd workflows
+          args=(--target "$LIVE_TARGET" --cases "$LIVE_CASES" --report ../databricks-live-report.json)
+          if [ "$LIVE_SETUP" = "true" ]; then args+=(--setup); fi
+          if [ "$LIVE_EXPECTATION" = "disabled" ]; then args+=(--expect-disabled); fi
+          if [ "$LIVE_EXPECTATION" = "budget-failure" ]; then args+=(--expect-budget-failure); fi
+          python scripts/databricks_live_integration.py "${args[@]}"
+      - name: 📄 Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: databricks-live-report
+          path: databricks-live-report.json
+          if-no-files-found: ignore

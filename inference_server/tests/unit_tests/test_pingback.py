@@ -743,7 +743,7 @@ async def test_v2_inference_is_not_recorded(clock):
         "type": "http",
         "method": "POST",
         "path": "/v2/models/infer",
-        "query_string": b"model_id=ds/1&instance=",
+        "query_string": b"model_id=ds/1",
         "headers": [(b"authorization", b"Bearer k1")],
     }
 

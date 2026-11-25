@@ -59,7 +59,12 @@ def test_manifest_matches_clip_image_ports():
     schema = manifest.model_json_schema()
     assert "include_diagnostics" not in schema["properties"]
     assert schema["required_model_capabilities"] == ["image_embeddings"]
-    assert schema["compatible_model_architectures"] == ["resnet", "vit", "dinov3_probe"]
+    assert schema["compatible_model_architectures"] == [
+        "resnet",
+        "convnext",
+        "vit",
+        "dinov3_probe",
+    ]
     assert schema["properties"]["output_type"]["enum"] == ["feature_vector", "logits"]
     with pytest.raises(ValidationError):
         BlockManifest(**{**manifest.model_dump(), "output_type": "probabilities"})

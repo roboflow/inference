@@ -14,6 +14,7 @@ INSTALLERS = [
     "build-windows-installer-gpu.yml",
     "build-osx-bundle.yml",
 ]
+WORKFLOW_SHA = "a" * 40
 
 
 def run_step(tmp_path, workflow, step_name, **values):
@@ -46,6 +47,26 @@ def run_step(tmp_path, workflow, step_name, **values):
         output.read_text() if output.exists() else "",
         env_output.read_text() if env_output.exists() else "",
     )
+
+
+def _run_installer_version_step(tmp_path, workflow, *, event, manual, ref):
+    step_name = "Determine Version"
+    values = {
+        "EVENT_NAME": event,
+        "MANUAL_VERSION": manual,
+        "GIT_REF": ref,
+    }
+    if workflow == "build-osx-bundle.yml":
+        step_name = "Select source and release target"
+        values.update(
+            EVENT_TAG=ref.removeprefix("refs/tags/") if event == "release" else "",
+            RELEASE_TAG="",
+            PUBLISH_RELEASE="false",
+            GITHUB_SHA=WORKFLOW_SHA,
+        )
+
+    result = run_step(tmp_path, workflow, step_name, **values)
+    return result
 
 
 BAD_VALUES = [
@@ -106,13 +127,12 @@ def test_workflows_reject_unsafe_whole_inputs(
 @pytest.mark.parametrize("workflow", INSTALLERS)
 @pytest.mark.parametrize("version", BAD_VALUES)
 def test_installer_manual_version_is_data_and_validated(tmp_path, workflow, version):
-    result, output, _ = run_step(
+    result, output, _ = _run_installer_version_step(
         tmp_path,
         workflow,
-        "Determine Version",
-        EVENT_NAME="workflow_dispatch",
-        MANUAL_VERSION=version,
-        GIT_REF="refs/heads/main",
+        event="workflow_dispatch",
+        manual=version,
+        ref="refs/heads/main",
     )
     assert result.returncode != 0
     assert not output
@@ -130,21 +150,26 @@ def test_installer_manual_version_is_data_and_validated(tmp_path, workflow, vers
 def test_installers_preserve_manual_and_release_versions(
     tmp_path, workflow, event, manual, ref
 ):
-    result, output, _ = run_step(
+    result, output, _ = _run_installer_version_step(
         tmp_path,
         workflow,
-        "Determine Version",
-        EVENT_NAME=event,
-        MANUAL_VERSION=manual,
-        GIT_REF=ref,
+        event=event,
+        manual=manual,
+        ref=ref,
     )
     assert result.returncode == 0, result.stderr
-    key = (
-        "BUILD_VERSION_ENV"
-        if workflow == "build-osx-bundle.yml"
-        else "installer_version_out"
-    )
-    assert output == f"{key}=1.2.3-rc.1\n"
+    if workflow == "build-osx-bundle.yml":
+        source_ref = ref if event == "release" else WORKFLOW_SHA
+        release_tag = "v1.2.3-rc.1" if event == "release" else ""
+        publish = "true" if event == "release" else "false"
+        assert output == (
+            f"source_ref={source_ref}\n"
+            "version=1.2.3-rc.1\n"
+            f"release_tag={release_tag}\n"
+            f"publish={publish}\n"
+        )
+    else:
+        assert output == "installer_version_out=1.2.3-rc.1\n"
 
 
 @pytest.mark.parametrize(
@@ -172,6 +197,7 @@ def test_installers_preserve_manual_and_release_versions(
                 "PLATFORM": "linux/amd64",
                 "EVENT_NAME": "release",
                 "GIT_REF": "refs/tags/v1.2.3",
+                "RELEASE_IMAGE_TAGS": "roboflow/inference-exp:cpu-1.2.3,roboflow/inference-exp:cpu-latest",
             },
             "tags=roboflow/inference-exp:cpu-1.2.3,roboflow/inference-exp:cpu-latest\n",
         ),
