@@ -1150,3 +1150,57 @@ def test_native_model_block_declares_hosted_remote_steps_unsupported():
         [StepExecutionMode.REMOTE],
         {"WORKFLOWS_REMOTE_API_TARGET": "hosted"},
     )
+
+
+def test_native_model_block_remote_step_calls_the_self_hosted_server(monkeypatch):
+    """A remote step against a self-hosted server uses API v1, no client downsizing, and keeps native rows."""
+    from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+    from roboflow_workflows.core_steps.models.roboflow.oriented_object_detection import (
+        v1,
+    )
+    from roboflow_workflows.execution_engine.entities.base import (
+        ImageParentMetadata,
+        WorkflowImageData,
+    )
+
+    calls = {}
+
+    class FakeClient:
+        def __init__(self, api_url, api_key):
+            calls["api_url"] = api_url
+
+        def select_api_v1(self):
+            calls["api_v1"] = True
+
+        def configure(self, configuration):
+            calls["configuration"] = configuration
+
+        def infer(self, images, model_id):
+            calls["model_id"] = model_id
+            return response()
+
+    monkeypatch.setattr(v1, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
+    monkeypatch.setattr(v1, "InferenceHTTPClient", FakeClient)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="image"),
+        numpy_image=np.zeros((79, 101, 3), dtype=np.uint8),
+    )
+    block = v1.RoboflowOrientedObjectDetectionModelBlockV1(
+        model_manager=None, api_key="key", step_execution_mode=StepExecutionMode.REMOTE
+    )
+
+    (output,) = block.run(
+        [image],
+        model_id="workspace/project/1",
+        confidence=0.4,
+        max_detections=300,
+        class_filter=None,
+    )
+
+    assert (calls["api_url"], calls["api_v1"], calls["model_id"]) == (
+        v1.LOCAL_INFERENCE_API_URL,
+        True,
+        "workspace/project/1",
+    )
+    assert calls["configuration"].client_downsizing_disabled is True
+    assert len(output["predictions"]) == 2
