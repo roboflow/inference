@@ -186,6 +186,11 @@ A few legacy behaviours are not (yet) available here:
   of the real behaviour: `/sam3_3d/infer`; `/sam3/embed_image` with
   `SAM3_EXEC_MODE=remote` (concept and visual segmentation are proxied to the
   Roboflow API); `format=binary` on the SAM/SAM2/SAM3 segmentation routes is not implemented (embedding routes still return binary).
+- Native oriented object detection is not served here: `POST
+  /infer/oriented_object_detection` is not ported (it is listed in
+  `scripts/openapi_allowlist.txt`), `oriented-object-detection` models are not
+  supported on `/{dataset_id}/{version_id}`, and the Oriented Object Detection
+  workflow block (`run_oriented_object_detection`) answers 501.
 - Prediction visualization (`format=image`, `visualize_predictions`) uses the
   class colours the model manager reports, else the legacy default palette; the
   per-model colour mapping is not fetched from the Roboflow API.
