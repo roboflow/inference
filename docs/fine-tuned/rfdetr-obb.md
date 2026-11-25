@@ -118,7 +118,8 @@ workspace admission checks; ordinary AABB upload paths are not advertised for OB
 | Query-language `DetectionsShift` / `DetectionsOffset` | Excluded; native NumPy/tensor inputs reject before geometry mutation |
 | Hosted production serving | Requires compatible package releases, trained artifact registration and serving deployment; no hosted/cloud run claimed |
 | ONNX Runtime CUDA and TensorRT execution providers | Implemented; the ONNX package runs on TensorRT, CUDA or CPU providers (environment selection, TensorRT FP16 engine cached in the package directory). On a trained 2XL export (1024 px, L4) CUDA and TensorRT match CPU within 0.24 px and 0.0005 rad |
-| Compiled TRT packages (TRT compilation job), CoreML, OpenVINO, browser inferencejs | Excluded; no native TRT model class is registered, so TRT compilation verification fails for this task |
+| Compiled TRT packages (TRT compilation job) | Implemented; `RFDetrForOrientedObjectDetectionTRT` runs `engine.plan` with the shared native preprocessing and decoding. The compiler passes the model's frozen class heading policy to package verification and the local install. A trained 2XL export compiled to FP32/FP16 engines (L4) gives the ONNX detections within 0.21 px and 0.0012 rad |
+| CoreML, OpenVINO, browser inferencejs | Excluded from this backend registration |
 | Legacy `roboflow-python` `version.model` | Excluded; current Inference SDK support does not add legacy task dispatch |
 
 Synthetic fixtures establish package and transport compatibility; they do not

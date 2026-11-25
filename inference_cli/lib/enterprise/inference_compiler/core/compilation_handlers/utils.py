@@ -48,6 +48,9 @@ from inference_models.errors import NoModelPackagesAvailableError
 from inference_models.models.auto_loaders.auto_negotiation import (
     negotiate_model_packages,
 )
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 from inference_models.runtime_introspection.core import x_ray_runtime_environment
 from inference_models.utils.download import download_files_to_directory
 from inference_models.weights_providers.entities import (
@@ -123,6 +126,7 @@ def download_model_package(
     target_directory: str,
     expected_files: List[str],
     verify_model: Optional[Callable[[str], None]] = None,
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None,
 ) -> Dict[str, str]:
     files_specs = [
         (a.file_handle, a.download_url, a.md5_hash)
@@ -159,6 +163,11 @@ def download_model_package(
                 "task_type": task_type,
                 "backend_type": model_package.backend.value,
             }
+            if oriented_box_metadata is not None:
+                # Native OBB models load only with their frozen class heading policy.
+                model_config["oriented_box_metadata"] = (
+                    oriented_box_metadata.model_dump(mode="json")
+                )
             dump_json(path=model_config_path, content=model_config)
             verify_model(package_dir)
         except ModelVerificationError as error:

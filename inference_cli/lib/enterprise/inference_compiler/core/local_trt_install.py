@@ -23,6 +23,9 @@ from inference_cli.lib.enterprise.inference_compiler.utils.file_system import (
     dump_json,
     read_json,
 )
+from inference_models.models.common.roboflow.oriented_box_metadata import (
+    OrientedBoxMetadata,
+)
 from inference_models.weights_providers.local_trt_constants import (
     LOCAL_TRT_MANIFEST_FILE,
     LOCAL_TRT_PACKAGE_PREFIX,
@@ -66,6 +69,7 @@ def install_compiled_trt_package(
     class_names_path: str,
     compilation_directory: str,
     keypoints_metadata_path: Optional[str] = None,
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None,
 ) -> Tuple[str, str]:
     """Install compiled TRT into models-cache. Returns (package_id, install_dir)."""
     from inference_models.models.auto_loaders.core import (
@@ -135,6 +139,7 @@ def install_compiled_trt_package(
             manifest_payload=manifest_payload,
             manifest_path=manifest_path,
             file_md5=file_md5,
+            oriented_box_metadata=oriented_box_metadata,
         )
     except Exception as error:
         logger.warning(
@@ -165,6 +170,7 @@ def _record_package_in_offline_registry(
     manifest_payload: dict,
     manifest_path: str,
     file_md5: Dict[str, str],
+    oriented_box_metadata: Optional[OrientedBoxMetadata] = None,
 ) -> None:
     """Append the installed package to the offline-weights registry.
 
@@ -232,6 +238,7 @@ def _record_package_in_offline_registry(
         model_architecture=model_architecture,
         model_packages=[package_metadata],
         task_type=task_type,
+        oriented_box_metadata=oriented_box_metadata,
     )
     offline_registry.record_successful_load(
         model_metadata=model_metadata,
