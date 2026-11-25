@@ -23,8 +23,8 @@ flowchart TD
     trace["trace.nsys-rep"]
     analyze["analyze.py"]
     stats["nsys stats"]
-    reports["NVTX report CSV files"]
-    summary["Host + GPU range summaries"]
+    reports["NVTX + CUDA report CSV files"]
+    summary["Range + capture-wide GPU summaries"]
     analysis["analysis.json"]
 
     config --> main
@@ -107,8 +107,12 @@ The command writes:
 - `stats/nsys_nvtx_pushpop_trace.csv` with individual host-side NVTX ranges
 - `stats/nsys_nvtx_gpu_proj_trace.csv` with per-instance GPU work projected
   into NVTX ranges
-- `analysis.json` with run provenance, compact range summaries, iteration
-  statistics, and interpretation warnings
+- `stats/nsys_cuda_gpu_kern_sum.csv` with kernel counts and cumulative execution
+  time by kernel name
+- `stats/nsys_cuda_gpu_trace.csv` with GPU-timeline operations, including memory
+  copies exported with exact byte units
+- `analysis.json` (schema version 2) with run provenance, range and capture-wide
+  GPU summaries, iteration statistics, and interpretation warnings
 
 The analyzer always reads `manifest.yaml` and `trace.nsys-rep` from the same run
 directory. Keep those files together when moving or archiving a run.
@@ -131,11 +135,25 @@ is aggregated across measured iterations.
   host-inclusive time.
 - **GPU-projected time** spans the GPU operations launched by CUDA calls inside
   an NVTX range. It is not the same measurement as host-side range time.
+- **Cumulative kernel time** adds the execution durations of launches of the
+  same kernel across the measured capture. Concurrent launches can make this
+  total larger than an elapsed GPU-projected interval.
+- **Memory-transfer time and bytes** add CUDA copy operations by source and
+  destination memory kind. The transfer list excludes memory sets and kernels.
+
+`capture_gpu_work` contains `kernels` (name, instances, and
+`cumulative_duration_ns`) and `memory_transfers` (source/destination memory
+kind, instances, `total_bytes`, and `cumulative_duration_ns`). It covers the
+whole Nsight capture, not an NVTX stage or individual iteration; do not use it
+to attribute a kernel or transfer to `preprocessing` or `postprocessing`.
+The raw report paths and Nsight version are recorded under `provenance`.
 
 Nsight may produce an empty GPU-projection CSV when no GPU work is attributable
 to the measured NVTX ranges. In that case, host measurements remain available,
-GPU measurements are `null`, and `analysis.json` records a warning instead of
-reporting zero GPU time.
+GPU-projected iteration measurements are `null`, and `analysis.json` records a
+warning instead of reporting zero projected GPU time. A CPU-only capture has
+empty `capture_gpu_work` lists; a nonempty report with missing required columns
+is an error, not evidence of zero GPU work.
 
 Do not sum host-inclusive timings across nested ranges. A parent's duration
 already includes its children. Do not label host-side duration as GPU latency;
