@@ -69,6 +69,9 @@ def bytes_to_opencv_image(
     Returns:
         The OpenCV image.
     """
+    if not payload:
+        raise EncodingError("Could not encode bytes to OpenCV image.")
+
     bytes_array = np.frombuffer(payload, dtype=array_type)
     decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
     if decoding_result is None:
