@@ -197,6 +197,7 @@ def test_installers_preserve_manual_and_release_versions(
                 "PLATFORM": "linux/amd64",
                 "EVENT_NAME": "release",
                 "GIT_REF": "refs/tags/v1.2.3",
+                "RELEASE_IMAGE_TAGS": "roboflow/inference-exp:cpu-1.2.3,roboflow/inference-exp:cpu-latest",
             },
             "tags=roboflow/inference-exp:cpu-1.2.3,roboflow/inference-exp:cpu-latest\n",
         ),
