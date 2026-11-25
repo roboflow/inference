@@ -31,8 +31,24 @@ for contributor and maintainer responsibilities.
   Live streams and files without a usable frame count behave as before, and
   so does a file whose last frame the source drops (for example with
   `max_fps`).
+- Action Recognition Model gains `background_inference`. A live stream then
+  hands each window to a worker thread, so the step returns at once and the
+  video does not wait for the model. The result reaches the timeline on the
+  stream's next frame after the call ends, so the last call of a stream that
+  stops is not reported. One call runs per stream at a time; a call that comes
+  due while the previous one has not finished waits and takes the newest
+  window. When a call starts late, `error_status` names the frames no window
+  covers between it and the previous call. A stream reads
+  `background_inference` on its first frame and keeps that mode until its
+  state resets. A step has one worker, so its streams take turns. Video files
+  always classify inside the step. The default is unchanged.
 
 ### Fixed
+
+- Action Recognition Model releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model
+  changes. A classification already running can finish. A failed call on one
+  camera no longer keeps another camera's completed window in memory.
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
