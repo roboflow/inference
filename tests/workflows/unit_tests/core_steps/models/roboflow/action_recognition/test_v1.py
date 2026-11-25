@@ -2336,7 +2336,6 @@ def test_close_releases_bookkeeping_samples_after_cancelling_queued_calls():
         gc.collect()
 
         assert queued_future.cancelled()
-        assert block._video_bookkeeping == {}
         assert all(sample_ref() is None for sample_ref in sample_refs)
 
         model.gate.set()

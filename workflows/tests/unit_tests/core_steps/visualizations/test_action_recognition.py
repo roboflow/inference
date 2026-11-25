@@ -51,6 +51,9 @@ def _image(
     )
     return WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id=f"{video}-{number}"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(
+            parent_id=f"{video}-root-{number}"
+        ),
         video_metadata=VideoMetadata(
             video_identifier=video,
             frame_number=number,
@@ -70,6 +73,15 @@ def _action(name, start, end, class_id=0):
     )
 
 
+def _analyzed(until, *, start=1):
+    # The model's latest window, covering the stream since frame 1 by default.
+    marks = {
+        "analyzed_from_frame": None if until is None else start,
+        "analyzed_until_frame": until,
+    }
+    return marks
+
+
 def _shade(result):
     # Top-right corner: outside the badges and above the strip.
     return int(result["image"].numpy_image[1, -2, 0])
@@ -78,7 +90,7 @@ def _shade(result):
 def _draws_the_timeline(result, number, *, analyzed_until_frame):
     # The strip darkens the frame even with no actions; compare with none.
     empty = ActionRecognitionVisualizationBlockV1().run(
-        _image(number), [], analyzed_until_frame=analyzed_until_frame
+        _image(number), [], **_analyzed(analyzed_until_frame)
     )
     drawn, blank = result["image"].numpy_image, empty["image"].numpy_image
     lower_half = slice(drawn.shape[0] // 2, None)
@@ -86,11 +98,20 @@ def _draws_the_timeline(result, number, *, analyzed_until_frame):
     return differs
 
 
-def _synchronized(block, number, *, image=None, analyzed_until_frame=None, **kwargs):
+def _synchronized(
+    block,
+    number,
+    *,
+    image=None,
+    timeline=(),
+    analyzed_until_frame=None,
+    analyzed_from_frame=1,
+    **kwargs,
+):
     result = block.run(
         _image(number, **(image or {})),
-        [],
-        analyzed_until_frame=analyzed_until_frame,
+        list(timeline),
+        **_analyzed(analyzed_until_frame, start=analyzed_from_frame),
         display_mode="synchronized",
         **kwargs,
     )
@@ -125,7 +146,7 @@ def _play(block, model, frames, **kwargs):
             block.run(
                 _image(number),
                 timeline,
-                analyzed_until_frame=mark,
+                **_analyzed(mark),
                 **kwargs,
             )
         )
@@ -154,9 +175,9 @@ def test_live_names_the_actions_at_the_last_analyzed_frame():
     block = ActionRecognitionVisualizationBlockV1()
     timeline = [_action("wave", 5, 21), _action("jump", 18, 30, class_id=1)]
 
-    during = block.run(_image(40), timeline, analyzed_until_frame=21)
-    after = block.run(_image(41), timeline, analyzed_until_frame=40)
-    quiet = block.run(_image(42), timeline, analyzed_until_frame=41)
+    during = block.run(_image(40), timeline, **_analyzed(21))
+    after = block.run(_image(41), timeline, **_analyzed(40))
+    quiet = block.run(_image(42), timeline, **_analyzed(41))
 
     assert during["actions"] == ["jump", "wave"]
     assert during["actions_frame_number"] == 21
@@ -169,7 +190,7 @@ def test_live_draws_a_strip_on_a_copy_with_or_without_the_mark(mark):
     block = ActionRecognitionVisualizationBlockV1()
     source = _image(50)
 
-    result = block.run(source, [_action("wave", 20, 40)], analyzed_until_frame=mark)
+    result = block.run(source, [_action("wave", 20, 40)], **_analyzed(mark))
 
     assert result["status"] == ("analyzing" if mark is None else "live")
     assert result["displayed_frame_number"] == 50
@@ -180,7 +201,11 @@ def test_live_draws_a_strip_on_a_copy_with_or_without_the_mark(mark):
 
 def test_synchronized_holds_the_first_frame_then_plays_labelled_frames_in_order():
     block = ActionRecognitionVisualizationBlockV1()
-    model = _Model(stride=20, latency=5, timeline=[_action("wave", 3, 8)])
+    model = _Model(
+        stride=20,
+        latency=5,
+        timeline=[_action("jump", 1, 1, class_id=1), _action("wave", 3, 8)],
+    )
 
     # A repeated frame number must be neither stored nor shown twice.
     results = _play(block, model, [1, 1, *range(2, 121)], display_mode="synchronized")
@@ -195,6 +220,9 @@ def test_synchronized_holds_the_first_frame_then_plays_labelled_frames_in_order(
     # Playback shows the held first frame with its result once, then advances
     # frame by frame: no skip, no repeat.
     assert shown == list(range(1, len(playing) + 1))
+    # The held first frame shows its own result before playback advances.
+    assert playing[0]["actions"] == ["jump"]
+    assert playing[1]["actions"] == []
     assert all(
         result["displayed_frame_number"] <= model.at(number)[0]
         for number, result in enumerate(playing, 26)
@@ -209,9 +237,12 @@ def test_synchronized_holds_the_first_frame_then_plays_labelled_frames_in_order(
     for result in playing:
         assert result["actions_frame_number"] == result["displayed_frame_number"]
         assert abs(_shade(result) - result["displayed_frame_number"]) <= 2
+        displayed = result["displayed_frame_number"]
+        assert result["image"].video_metadata.frame_number == displayed
+        assert result["image"].parent_metadata.parent_id == f"demo-{displayed}"
         assert (
-            result["image"].video_metadata.frame_number
-            == result["displayed_frame_number"]
+            result["image"].workflow_root_ancestor_metadata.parent_id
+            == f"demo-root-{displayed}"
         )
 
 
@@ -230,23 +261,30 @@ def test_synchronized_forgets_a_slow_start_once_a_second_result_lands():
     assert max(delays[number] for number in range(112, 160)) <= 12
 
 
-def test_synchronized_recovers_its_delay_after_one_slow_call():
+def test_synchronized_recovers_from_one_slow_call_without_skipping_an_action():
     block = ActionRecognitionVisualizationBlockV1()
-    marks = {}
+    wave = [_action("wave", 48, 51)]
+    delays, wave_frames = [], []
     # Results land every 10 frames with a lag of 2, except one that is 30 late.
     for number in range(1, 200):
         landed = (number - 2) // 10 * 10
         if 50 <= number < 82:
             landed = 40
-        marks[number] = landed if landed >= 10 else None
-
-    delays = []
-    for number in range(1, 200):
-        result = _synchronized(block, number, analyzed_until_frame=marks[number])
+        mark = landed if landed >= 10 else None
+        result = _synchronized(
+            block,
+            number,
+            timeline=wave if mark is not None and mark >= 51 else [],
+            analyzed_until_frame=mark,
+        )
         delays.append(number - result["displayed_frame_number"])
+        if "wave" in result["actions"]:
+            wave_frames.append(result["displayed_frame_number"])
 
     assert max(delays[49:90]) >= 40
     assert max(delays[-20:]) <= 12
+    # Catching up after the slow call still shows the action.
+    assert any(48 <= frame <= 51 for frame in wave_frames)
 
 
 def test_synchronized_stops_waiting_at_the_delay_limit():
@@ -262,6 +300,11 @@ def test_synchronized_stops_waiting_at_the_delay_limit():
     assert results[-1]["status"] == "behind"
     assert results[-1]["displayed_frame_number"] == 60 - 2 * FPS
     assert results[-1]["actions"] == []
+    # A camera that skips frames does not keep frames past the limit either.
+    jumped = _synchronized(block, 160, max_delay_seconds=2)
+    assert jumped["displayed_frame_number"] == 160
+    assert jumped["status"] == "behind"
+    assert jumped["actions_frame_number"] is None
 
 
 def test_memory_budget_is_shared_and_shortens_the_delay_instead_of_failing():
@@ -315,7 +358,7 @@ def test_synchronized_frames_are_downscaled_before_they_are_kept(tensor):
     result = block.run(
         source,
         [],
-        analyzed_until_frame=None,
+        **_analyzed(None),
         display_mode="synchronized",
         max_frame_side=160,
     )
@@ -373,7 +416,7 @@ def test_source_fps_falls_back_like_the_model_and_is_pinned_per_stream(
 def test_class_names_outside_ascii_draw_with_and_without_the_font(monkeypatch):
     timeline = [_action("Saída 走る", 1, 48, class_id=-1)]
     fallback = ActionRecognitionVisualizationBlockV1().run(
-        _image(50), timeline, analyzed_until_frame=45
+        _image(50), timeline, **_analyzed(45)
     )
     # Compare before the font patch, so both renders use the fallback font.
     fallback_drawn = _draws_the_timeline(fallback, 50, analyzed_until_frame=45)
@@ -388,7 +431,7 @@ def test_class_names_outside_ascii_draw_with_and_without_the_font(monkeypatch):
     )
 
     with_font = ActionRecognitionVisualizationBlockV1().run(
-        _image(50), timeline, analyzed_until_frame=45
+        _image(50), timeline, **_analyzed(45)
     )
 
     assert fallback["actions"] == ["Saída 走る"]
@@ -402,7 +445,7 @@ def test_frame_too_small_for_a_strip_is_returned_with_its_outputs():
     result = block.run(
         _image(50, size=(16, 24)),
         [_action("wave", 20, 60)],
-        analyzed_until_frame=50,
+        **_analyzed(50),
     )
 
     assert result["image"].numpy_image.shape == (16, 24, 3)
@@ -415,6 +458,7 @@ def test_run_rejects_an_unknown_display_mode_and_a_non_bgr_image():
         name="display",
         image="$inputs.image",
         timeline="$steps.model.timeline",
+        analyzed_from_frame="$steps.model.analyzed_from_frame",
         analyzed_until_frame="$steps.model.analyzed_until_frame",
         display_mode="$inputs.display_mode",
     )
@@ -427,9 +471,9 @@ def test_run_rejects_an_unknown_display_mode_and_a_non_bgr_image():
     # A selector defers the display_mode check to run time.
     assert manifest.display_mode == "$inputs.display_mode"
     with pytest.raises(ValueError, match="display_mode"):
-        block.run(_image(1), [], None, display_mode="delayed")
+        block.run(_image(1), [], None, None, display_mode="delayed")
     with pytest.raises(ValueError, match="uint8 BGR"):
-        block.run(gray, [], None)
+        block.run(gray, [], None, None)
 
 
 @pytest.mark.parametrize("display_mode", [None, "synchronized"])
@@ -448,6 +492,7 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
         "name": "display",
         "image": "$inputs.image",
         "timeline": "$inputs.timeline",
+        "analyzed_from_frame": "$inputs.start",
         "analyzed_until_frame": "$inputs.mark",
     }
     if display_mode:
@@ -458,6 +503,7 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
             "inputs": [
                 {"type": "WorkflowImage", "name": "image"},
                 {"type": "WorkflowBatchInput", "name": "timeline"},
+                {"type": "WorkflowBatchInput", "name": "start"},
                 {"type": "WorkflowBatchInput", "name": "mark"},
             ],
             "steps": [step],
@@ -484,6 +530,7 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
                     }
                 ],
                 "timeline": [timeline],
+                "start": [_analyzed(mark)["analyzed_from_frame"]],
                 "mark": [mark],
             },
             serialize_results=serialize,
@@ -559,72 +606,10 @@ def test_synchronized_marks_failed_window_frames_not_analyzed_instead_of_no_acti
     assert result["actions_frame_number"] == 12
 
 
-def test_synchronized_enforces_max_delay_limit_when_camera_skips_frames():
-    block = ActionRecognitionVisualizationBlockV1()
-
-    _synchronized(block, 1, max_delay_seconds=1)
-    jumped = _synchronized(block, 101, max_delay_seconds=1)
-
-    assert jumped["displayed_frame_number"] == 101
-    assert jumped["status"] == "behind"
-    assert jumped["actions_frame_number"] is None
-
-
-def test_synchronized_preserves_displayed_frame_parent_and_root_metadata():
-    block = ActionRecognitionVisualizationBlockV1()
-
-    for number in range(1, 21):
-        frame = WorkflowImageData(
-            parent_metadata=ImageParentMetadata(parent_id=f"parent-{number}"),
-            workflow_root_ancestor_metadata=ImageParentMetadata(
-                parent_id=f"root-{number}"
-            ),
-            video_metadata=VideoMetadata(
-                video_identifier="demo",
-                frame_number=number,
-                fps=FPS,
-                frame_timestamp=datetime(2026, 1, 1),
-            ),
-            numpy_image=np.full((90, 160, 3), number % 256, dtype=np.uint8),
-        )
-        block.run(
-            frame,
-            [],
-            analyzed_until_frame=None,
-            display_mode="synchronized",
-        )
-
-    for number in (21, 22):
-        frame = WorkflowImageData(
-            parent_metadata=ImageParentMetadata(parent_id=f"parent-{number}"),
-            workflow_root_ancestor_metadata=ImageParentMetadata(
-                parent_id=f"root-{number}"
-            ),
-            video_metadata=VideoMetadata(
-                video_identifier="demo",
-                frame_number=number,
-                fps=FPS,
-                frame_timestamp=datetime(2026, 1, 1),
-            ),
-            numpy_image=np.full((90, 160, 3), number % 256, dtype=np.uint8),
-        )
-        result = block.run(
-            frame,
-            [],
-            analyzed_until_frame=20,
-            display_mode="synchronized",
-        )
-
-    assert result["displayed_frame_number"] == 2
-    assert result["image"].video_metadata.frame_number == 2
-    assert result["image"].parent_metadata.parent_id == "parent-2"
-    assert result["image"].workflow_root_ancestor_metadata.parent_id == "root-2"
-
-
 def test_run_propagates_empty_output_when_upstream_image_is_none():
     block = ActionRecognitionVisualizationBlockV1()
 
-    result = block.run(None, [], analyzed_until_frame=None, display_mode="synchronized")
+    result = block.run(None, [], **_analyzed(None), display_mode="synchronized")
 
     assert result == {
         "image": None,
@@ -642,7 +627,7 @@ def test_single_jpeg_larger_than_budget_is_released_after_run():
     result = block.run(
         huge_noise,
         [],
-        analyzed_until_frame=None,
+        **_analyzed(None),
         display_mode="synchronized",
         max_frame_side=2560,
         max_buffer_mb=1,
@@ -652,73 +637,6 @@ def test_single_jpeg_larger_than_budget_is_released_after_run():
     assert result["displayed_frame_number"] == 1
     assert total_bytes <= 1024**2
     assert total_bytes == 0
-
-
-def test_synchronized_catch_up_preserves_at_least_one_frame_of_a_detected_action():
-    block = ActionRecognitionVisualizationBlockV1()
-    wave = [_action("wave", 48, 51)]
-
-    # Regular results every 10 frames (lag 2), except one slow call that holds
-    # the mark at 40 until frame 72, pushing delay up to ~32. Four fast calls
-    # later the old peak drops out and target jumps past frames 48-51.
-    results = []
-    for number in range(1, 121):
-        landed = (number - 2) // 10 * 10
-        if 50 <= number < 72:
-            landed = 40
-        mark = landed if landed >= 10 else None
-        timeline = wave if mark is not None and mark >= 51 else []
-        results.append(
-            block.run(
-                _image(number),
-                timeline,
-                analyzed_until_frame=mark,
-                display_mode="synchronized",
-            )
-        )
-
-    wave_frames = [
-        result["displayed_frame_number"]
-        for result in results
-        if "wave" in result["actions"]
-    ]
-    assert wave_frames
-    assert any(48 <= frame <= 51 for frame in wave_frames)
-
-
-def test_synchronized_shows_held_first_frame_with_its_result_before_advancing():
-    block = ActionRecognitionVisualizationBlockV1()
-    timeline = [_action("wave", 1, 1)]
-
-    for number in range(1, 7):
-        warmup = block.run(
-            _image(number),
-            [],
-            analyzed_until_frame=None,
-            display_mode="synchronized",
-        )
-    assert warmup["status"] == "analyzing"
-    assert warmup["displayed_frame_number"] == 1
-    assert warmup["actions"] == []
-
-    first_labelled = block.run(
-        _image(7),
-        timeline,
-        analyzed_until_frame=5,
-        display_mode="synchronized",
-    )
-    second_labelled = block.run(
-        _image(8),
-        timeline,
-        analyzed_until_frame=5,
-        display_mode="synchronized",
-    )
-
-    assert first_labelled["displayed_frame_number"] == 1
-    assert first_labelled["status"] == "synchronized"
-    assert first_labelled["actions"] == ["wave"]
-    assert second_labelled["displayed_frame_number"] == 2
-    assert second_labelled["actions"] == []
 
 
 def test_synchronized_resets_playback_when_model_resets_timeline():
@@ -732,7 +650,7 @@ def test_synchronized_resets_playback_when_model_resets_timeline():
         block.run(
             _image(number),
             old_timeline if mark is not None else [],
-            analyzed_until_frame=mark,
+            **_analyzed(mark),
             display_mode="synchronized",
         )
 
@@ -741,7 +659,7 @@ def test_synchronized_resets_playback_when_model_resets_timeline():
     reset_frame = block.run(
         _image(23),
         [],
-        analyzed_until_frame=None,
+        **_analyzed(None),
         display_mode="synchronized",
     )
     assert reset_frame["status"] == "analyzing"
@@ -752,7 +670,7 @@ def test_synchronized_resets_playback_when_model_resets_timeline():
         waiting = block.run(
             _image(number),
             [],
-            analyzed_until_frame=None,
+            **_analyzed(None),
             display_mode="synchronized",
         )
         assert waiting["displayed_frame_number"] == 23
@@ -779,6 +697,7 @@ def test_close_releases_all_buffered_synchronized_frames():
             "inputs": [
                 {"type": "WorkflowImage", "name": "image"},
                 {"type": "WorkflowBatchInput", "name": "timeline"},
+                {"type": "WorkflowBatchInput", "name": "start"},
                 {"type": "WorkflowBatchInput", "name": "mark"},
             ],
             "steps": [
@@ -787,6 +706,7 @@ def test_close_releases_all_buffered_synchronized_frames():
                     "name": "display",
                     "image": "$inputs.image",
                     "timeline": "$inputs.timeline",
+                    "analyzed_from_frame": "$inputs.start",
                     "analyzed_until_frame": "$inputs.mark",
                     "display_mode": "synchronized",
                 }
@@ -813,6 +733,7 @@ def test_close_releases_all_buffered_synchronized_frames():
                     }
                 ],
                 "timeline": [[]],
+                "start": [None],
                 "mark": [None],
             }
         )
@@ -829,10 +750,10 @@ def test_close_releases_all_buffered_synchronized_frames():
 def test_live_badge_shows_sub_second_lag_when_displayed_frame_is_ahead():
     timeline = [_action("wave", 1, 20)]
     current_result = ActionRecognitionVisualizationBlockV1().run(
-        _image(20), timeline, analyzed_until_frame=20
+        _image(20), timeline, **_analyzed(20)
     )
     lagged_result = ActionRecognitionVisualizationBlockV1().run(
-        _image(20), timeline, analyzed_until_frame=14
+        _image(20), timeline, **_analyzed(14)
     )
 
     top_band = slice(0, 40)
