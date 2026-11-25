@@ -1171,7 +1171,7 @@ def test_coordination_uses_one_deadline_and_fresh_final_registry(
     plan["source_revision"] = "candidate"
     deadlines = []
 
-    def dispatch(name, *, version, deadline):
+    def dispatch(name, *, version, deadline, **retry_state):
         deadlines.append(deadline)
         _fake_clock[0] += 4
         api.add({models["name"]: models, workflows["name"]: workflows}[name])
@@ -1308,7 +1308,7 @@ def test_same_version_partial_inventory_dispatches_original_child(
     assert plan["packages"]["inference-models"]["action"] == "publish"
     calls = []
 
-    def dispatch(name, *, version, deadline):
+    def dispatch(name, *, version, deadline, **retry_state):
         calls.append((name, version))
         api.add(package)
         return 42

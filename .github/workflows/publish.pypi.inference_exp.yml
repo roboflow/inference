@@ -1,7 +1,12 @@
 name: Publish Inference Models Wheels to PyPi
+run-name: pypi-inference-models-${{ inputs.coordinator_run_id != '' && format('parent-{0}', inputs.coordinator_run_id) || format('manual-{0}', github.run_id) }}
 on:
   workflow_dispatch:
     inputs:
+      coordinator_run_id:
+        description: Parent release run (empty for standalone manual publication)
+        type: string
+        default: ""
       expected_version:
         description: Expected package version (set by the release coordinator)
         type: string
@@ -22,15 +27,20 @@ permissions:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     if: ${{ github.repository == 'roboflow/inference' }}
     env:
       EXPECTED_VERSION: ${{ inputs.expected_version }}
       EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      COORDINATOR_RUN_ID: ${{ inputs.coordinator_run_id }}
     name: ${{ inputs.publish && 'Manual publish' || 'Manual build only' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 50
+    timeout-minutes: 65
     concurrency:
       group: pypi-inference-models-${{ github.event.inputs.publish == 'true' && 'publish' || github.run_id }}
       cancel-in-progress: false
@@ -44,30 +54,67 @@ jobs:
           persist-credentials: false
       - name: Verify the requested candidate revision and version
         run: bash .release/pypi/dependencies.sh guard --package inference-models
+      - name: Select retained candidate inference-models
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .release/pypi/candidate.sh select --profile inference-models
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-inference-models.json >> "$GITHUB_OUTPUT"
+      - name: Download retained candidate inference-models
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/inference-models
+      - name: Restore retained candidate inference-models
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile inference-models
+      - name: Download coordinator dependency selection
+        if: ${{ steps.candidate.outputs.reused != 'true' && inputs.coordinator_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-dependencies
+          run-id: ${{ inputs.coordinator_run_id }}
+          github-token: ${{ github.token }}
+          path: release-candidate/dependencies
+      - name: Prepare release lock inference-models
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/prepare.sh --profile inference-models
       - name: 🐍 Set up Python ${{ matrix.python-version }}
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
       - name: 📦 Install dependencies
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         working-directory: inference_models
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install uv
+          python -m pip install -c ../.release/pypi/build-requirements.txt uv
       - name: 🔨 Build package
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         working-directory: inference_models
         run: |
           python -m uv lock --check
-          python -m uv build --no-create-gitignore
+          python -m uv build --build-constraints ../.release/pypi/build-requirements.txt --no-create-gitignore
+      - name: Seal candidate inference-models
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh seal --profile inference-models
+      - name: Retain candidate inference-models
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-inference-models
+          retention-days: 90
+          if-no-files-found: error
+          path: release-candidate/inference-models/
+      - name: Verify retained candidate inference-models
+        run: bash .release/pypi/candidate.sh verify --profile inference-models
       - name: Verify published dependencies before upload
         if: ${{ github.event.inputs.publish == 'true' }}
         run: bash .release/pypi/dependencies.sh gate --directory inference_models/dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600
-      - uses: actions/upload-artifact@v4
-        with:
-          name: inference-models-distributions-${{ github.run_attempt }}
-          retention-days: 90
-          if-no-files-found: error
-          path: inference_models/dist/
       - name: Verify existing files and stage missing distributions
         if: ${{ github.event.inputs.publish == 'true' }}
         id: prepare
