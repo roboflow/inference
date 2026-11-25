@@ -39,6 +39,7 @@ MODELS_PACKAGE = "roboflow_workflows.core_steps.models"
 ALLOWED_RESTRICTION_CODES = {
     "deprecated_block_always_raises",
     "hosted_endpoint_disabled_by_flag",
+    "oriented_object_detection_hosted_remote_unsupported",
     "remote_step_execution_not_supported",
     "requires_gpu_for_local_execution",
     "roboflow_internal_endpoint_only",
@@ -70,6 +71,10 @@ ENDPOINT_FLAGS = {
 # The representation switch is the one flag declared for its True branch: with
 # tensor data representation ON, the block's tensor sibling raises.
 TENSOR_REPRESENTATION_FLAG = "ENABLE_TENSOR_DATA_REPRESENTATION"
+
+# The remote step target, declared for its "hosted" branch: a block served by
+# no hosted API raises there, while a self-hosted target still runs it.
+REMOTE_API_TARGET_FLAG = "WORKFLOWS_REMOTE_API_TARGET"
 
 # Blocks whose run() raises FeatureDeprecatedError unconditionally. They
 # truthfully perform no operation at all.
@@ -236,16 +241,20 @@ def test_every_model_block_returns_known_restriction_codes(
             seen_codes.add(restriction.code)
             seen_flags.update(restriction.when.configuration_equals)
             for flag, value in restriction.when.configuration_equals.items():
-                expected = (
-                    value is True
-                    if flag == TENSOR_REPRESENTATION_FLAG
-                    else (value is False)
-                )
+                if flag == TENSOR_REPRESENTATION_FLAG:
+                    expected = value is True
+                elif flag == REMOTE_API_TARGET_FLAG:
+                    expected = value == "hosted"
+                else:
+                    expected = value is False
                 assert expected, f"{flag}={value} is not the declared branch"
     assert seen_codes <= ALLOWED_RESTRICTION_CODES, (
         seen_codes - ALLOWED_RESTRICTION_CODES
     )
-    assert seen_flags <= ENDPOINT_FLAGS | {TENSOR_REPRESENTATION_FLAG}, seen_flags
+    assert seen_flags <= ENDPOINT_FLAGS | {
+        TENSOR_REPRESENTATION_FLAG,
+        REMOTE_API_TARGET_FLAG,
+    }, seen_flags
 
 
 def test_no_model_block_declares_more_than_one_endpoint_flag(
