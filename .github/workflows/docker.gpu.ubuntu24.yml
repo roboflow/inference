@@ -100,6 +100,14 @@ jobs:
           DH_TAGS: ${{ steps.suffixed_tags.outputs.image_tags }}
         run: |
           set -euo pipefail
+          # TEMP: on a push to this branch, push only one fixed test tag to
+          # Artifact Registry (no Docker Hub). Remove before merge.
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            TEST_TAG="us-docker.pkg.dev/roboflow-artifacts/roboflow/roboflow-inference-server-gpu:ubuntu-24-04-test-ubuntu24.04"
+            echo "all_tags=${TEST_TAG}" >> "$GITHUB_OUTPUT"
+            echo "TEMP test run will push only: ${TEST_TAG}"
+            exit 0
+          fi
           GCP_PREFIX="us-docker.pkg.dev/roboflow-artifacts/"
           GCP_TAGS=""
           IFS=',' read -ra TAG_ARRAY <<< "$DH_TAGS"
@@ -113,7 +121,8 @@ jobs:
       - name: Build and push (Docker Hub and GCP from one build)
         uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
         with:
-          push: ${{ github.event_name == 'release' || inputs.force_push == true }}
+          # TEMP: `|| github.event_name == 'push'` pushes the test tag above. Remove before merge.
+          push: ${{ github.event_name == 'release' || inputs.force_push == true || github.event_name == 'push' }}
           project: grl7ffzxd7
           tags: ${{ steps.all_tags.outputs.all_tags }}
           platforms: linux/amd64
