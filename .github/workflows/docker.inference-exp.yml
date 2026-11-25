@@ -40,6 +40,7 @@ jobs:
       contents: read
     outputs:
       base-tag: ${{ steps.tags.outputs.base-tag }}
+      release-version: ${{ steps.runtime-version.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -51,13 +52,30 @@ jobs:
           echo "VERSION=${VERSION}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
+      - name: Read runtime release version
+        id: runtime-version
+        run: echo "version=$(DISABLE_VERSION_CHECK=true python inference/core/version.py)" >> "$GITHUB_OUTPUT"
+
       - name: generate tags
         id: tags
         env:
           CUSTOM_TAG: ${{ github.event.inputs.custom_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_VERSION: ${{ steps.runtime-version.outputs.version }}
         run: |
           set -euo pipefail
           BASE_TAG="${CUSTOM_TAG:-$VERSION}"
+          if [ "${EVENT_NAME:-}" = "workflow_dispatch" ] && [ -z "$CUSTOM_TAG" ]; then
+            if [[ ! "$RELEASE_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "Invalid runtime version." >&2
+              exit 1
+            fi
+            # A runtime candidate must not replace an unchanged final Models image.
+            stable_version='^[0-9]+\.[0-9]+(\.[0-9]+)?([.-]?post[0-9]+)?$'
+            if [[ "$VERSION" =~ $stable_version && ! "$RELEASE_VERSION" =~ $stable_version ]]; then
+              BASE_TAG="${VERSION}-${RELEASE_VERSION}"
+            fi
+          fi
           if [[ ! "$BASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
             echo "Invalid image tag." >&2
             exit 1
@@ -121,6 +139,17 @@ jobs:
         if: steps.should-build.outputs.should-build == 'true'
         uses: actions/checkout@v6
 
+      - name: Select release image tags
+        if: steps.should-build.outputs.should-build == 'true' && github.event_name == 'release'
+        id: release-tags
+        uses: ./.github/actions/determine-tags
+        with:
+          version: ${{ needs.determine-tags.outputs.base-tag }}
+          release_version: ${{ needs.determine-tags.outputs.release-version }}
+          tag_prefix: ${{ matrix.platform == 'linux/amd64' && 'cpu-' || format('{0}-', matrix.platform) }}
+          base_image: roboflow/inference-exp
+          token: ${{ github.token }}
+
       - name: Determine image tags
         if: steps.should-build.outputs.should-build == 'true'
         id: image-tags
@@ -129,6 +158,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           EVENT_NAME: ${{ github.event_name }}
           GIT_REF: ${{ github.ref }}
+          RELEASE_IMAGE_TAGS: ${{ steps.release-tags.outputs.image_tags }}
         run: |
           set -euo pipefail
           if [ "$PLATFORM" == "linux/amd64" ]; then
@@ -141,7 +171,7 @@ jobs:
             fi
           done
           if [ "$EVENT_NAME" = "release" ]; then
-            TAGS="roboflow/inference-exp:${PLATFORM}-${BASE_TAG},roboflow/inference-exp:${PLATFORM}-latest"
+            TAGS="${RELEASE_IMAGE_TAGS:?Release tag decision is required}"
           elif [ "$GIT_REF" = "refs/heads/main" ]; then
             TAGS="roboflow/inference-exp:${PLATFORM}-test"
           else
@@ -154,6 +184,10 @@ jobs:
               exit 1
             fi
             tag="${image_tag#roboflow/inference-exp:}"
+            if [ "$EVENT_NAME" != release ] && [ "$tag" = "${PLATFORM}-latest" ]; then
+              echo "Manual candidates cannot update a stable image alias." >&2
+              exit 1
+            fi
             if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
               echo "Invalid generated image tag." >&2
               exit 1
