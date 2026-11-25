@@ -1,0 +1,74 @@
+name: Select prepared release image inputs
+on:
+  workflow_call:
+    inputs:
+      coordinator_run_id:
+        type: string
+        default: ""
+    outputs:
+      run_id:
+        value: ${{ jobs.select.outputs.run_id }}
+      artifact_id:
+        value: ${{ jobs.select.outputs.artifact_id }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      ENABLED: ${{ github.event_name == 'release' || inputs.coordinator_run_id != '' }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      PARENT_RUN_ID: ${{ inputs.coordinator_run_id }}
+      GH_TOKEN: ${{ github.token }}
+    outputs:
+      run_id: ${{ steps.ready.outputs.run_id }}
+      artifact_id: ${{ steps.ready.outputs.artifact_id }}
+    steps:
+      - uses: actions/checkout@v6
+        if: ${{ env.ENABLED == 'true' }}
+        with:
+          persist-credentials: false
+      - name: Select retained candidate image-selection
+        if: ${{ env.ENABLED == 'true' }}
+        id: candidate
+        run: |
+          bash .release/pypi/candidate.sh select --profile image-selection
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-image-selection.json >> "$GITHUB_OUTPUT"
+      - name: Download original coordinator selection
+        if: ${{ env.ENABLED == 'true' && steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/image-selection
+      - name: Restore original coordinator selection
+        if: ${{ env.ENABLED == 'true' && steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile image-selection
+      - name: Bind this image run to one coordinator
+        if: ${{ env.ENABLED == 'true' && steps.candidate.outputs.reused != 'true' }}
+        run: |
+          args=()
+          if [[ -n "$PARENT_RUN_ID" ]]; then args+=(--parent-run-id "$PARENT_RUN_ID"); fi
+          bash .release/pypi/image_inputs.sh select "${args[@]}" --wait-seconds 300
+          bash .release/pypi/candidate.sh seal --profile image-selection
+      - name: Retain candidate image-selection
+        if: ${{ env.ENABLED == 'true' && steps.candidate.outputs.reused != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-image-selection
+          retention-days: 90
+          if-no-files-found: error
+          path: release-candidate/image-selection/
+      - name: Wait for verified release inputs
+        if: ${{ env.ENABLED == 'true' }}
+        id: ready
+        run: |
+          bash .release/pypi/candidate.sh verify --profile image-selection
+          args=()
+          if [[ -n "$PARENT_RUN_ID" ]]; then args+=(--parent-run-id "$PARENT_RUN_ID"); fi
+          bash .release/pypi/image_inputs.sh wait "${args[@]}" --wait-seconds 21000
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/image-selection.json >> "$GITHUB_OUTPUT"

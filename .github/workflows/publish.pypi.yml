@@ -202,7 +202,7 @@ jobs:
             (inputs.packages == 'runtime' || inputs.publish != true) &&
             needs.publish_sdk.result == 'skipped')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 270
     permissions:
       contents: read
       actions: write
@@ -279,7 +279,7 @@ jobs:
         if: ${{ github.event_name == 'release' || inputs.publish == true }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .release/pypi/dependencies.sh coordinate --wait-seconds 10800
+        run: bash .release/pypi/dependencies.sh coordinate --wait-seconds 12600
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
@@ -360,3 +360,96 @@ jobs:
           path: |
             dist/runtime-prepare.json
             dist/runtime-receipt.json
+
+  prepare_image_inputs:
+    needs: [build_runtime, prepare_dependencies, publish_runtime]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Select retained candidate image-inputs
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .release/pypi/candidate.sh select --profile image-inputs
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-image-inputs.json >> "$GITHUB_OUTPUT"
+      - name: Download retained candidate image-inputs
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/image-inputs
+      - name: Restore retained candidate image-inputs
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile image-inputs
+      - name: Download retained runtime identity
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_runtime.outputs.artifact }}
+          path: release-candidate/runtime
+      - name: Restore retained runtime identity
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile runtime
+      - name: Download verified dependency checkpoint
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare_dependencies.outputs.artifact }}
+          path: dist
+      - name: Read original companion publishers
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        id: publishers
+        run: |
+          echo "models=$(jq -r '.packages["inference-models"].publisher_run_id // empty' dist/dependency-plan.json)" >> "$GITHUB_OUTPUT"
+          echo "workflows=$(jq -r '.packages["roboflow-workflows"].publisher_run_id // empty' dist/dependency-plan.json)" >> "$GITHUB_OUTPUT"
+          echo "streamvision=$(jq -r '.packages["streamvision"].publisher_run_id // empty' dist/dependency-plan.json)" >> "$GITHUB_OUTPUT"
+      - name: Download prepared inference-models candidate
+        if: ${{ steps.candidate.outputs.reused != 'true' && steps.publishers.outputs.models != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-inference-models
+          run-id: ${{ steps.publishers.outputs.models }}
+          github-token: ${{ github.token }}
+          path: release-candidate/inference-models
+      - name: Download prepared roboflow-workflows candidate
+        if: ${{ steps.candidate.outputs.reused != 'true' && steps.publishers.outputs.workflows != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-roboflow-workflows
+          run-id: ${{ steps.publishers.outputs.workflows }}
+          github-token: ${{ github.token }}
+          path: release-candidate/roboflow-workflows
+      - name: Download prepared streamvision candidate
+        if: ${{ steps.candidate.outputs.reused != 'true' && steps.publishers.outputs.streamvision != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-streamvision
+          run-id: ${{ steps.publishers.outputs.streamvision }}
+          github-token: ${{ github.token }}
+          path: release-candidate/streamvision
+      - name: Assemble prepared image inputs
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/image_inputs.sh assemble
+      - name: Seal candidate image-inputs
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh seal --profile image-inputs
+      - name: Retain candidate image-inputs
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-image-inputs
+          retention-days: 90
+          if-no-files-found: error
+          path: release-candidate/image-inputs/
+      - name: Verify retained candidate image-inputs
+        run: bash .release/pypi/candidate.sh verify --profile image-inputs

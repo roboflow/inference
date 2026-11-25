@@ -485,7 +485,7 @@ def test_manual_models_workflow_protects_final_version_tag(
     steps = {
         step["id"]: step
         for job in config["jobs"].values()
-        for step in job["steps"]
+        for step in job.get("steps", [])
         if "id" in step
     }
     env = {
