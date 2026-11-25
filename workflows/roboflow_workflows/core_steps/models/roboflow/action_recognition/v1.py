@@ -140,7 +140,9 @@ When a call starts late, error_status names the frames no window covers
 between it and the previous call. The step has one worker, so its streams
 take turns: with several cameras on one step, each camera's results arrive
 less often. Video files always classify inside the step, so every window is
-analyzed and results are repeatable.
+analyzed and results are repeatable. A stream reads background_inference on
+its first frame and keeps that mode until its state resets, for example when
+a window input changes.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -182,6 +184,12 @@ class _WindowCall:
     id_vocabulary: Optional[List[str]]
     sampling_stride: float
     future: Optional[Future] = None
+
+    def last_covered_frame(self, *, supports_observed_duration: bool) -> int:
+        if supports_observed_duration and self.frame_limit is not None:
+            return self.frame_limit - 1
+
+        return self.sampled[-1].source_frame_number
 
 
 _WindowResult = Tuple[List[ModelActionRecognitionPrediction], int]
@@ -266,7 +274,8 @@ class _ActionRecognitionBookkeeping:
     analyzed_until_frame: Optional[int] = None
     tail_flushed: bool = False
     pending: Optional[_WindowCall] = None
-    fire_deferred: bool = False
+    deferred_window_end: Optional[int] = None
+    background: bool = False
     next_sample_frame_number: Optional[float] = None
     source_fps: Optional[float] = None
     signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
@@ -337,7 +346,8 @@ class BlockManifest(WorkflowBlockManifest):
             "Classify live-stream windows on a worker thread, so the step "
             "returns at once and the video does not wait for the model. "
             "Results reach the timeline on a later frame. Video files always "
-            "classify inside the step."
+            "classify inside the step. A stream keeps the mode it starts with "
+            "until its state resets."
         ),
         examples=[False, "$inputs.background_inference"],
     )
@@ -620,7 +630,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         ):
             if bookkeeping is not None:
                 self._discard_pending_call(bookkeeping)
-            bookkeeping = _ActionRecognitionBookkeeping(signature=signature)
+            # The mode holds for the stream's life, so a call left running by
+            # one mode never meets the other. A file is not paced by the clock,
+            # so a worker would fall behind it and leave most windows unclassified.
+            bookkeeping = _ActionRecognitionBookkeeping(
+                signature=signature,
+                background=background_inference and not metadata.comes_from_video_file,
+            )
             self._video_bookkeeping[video_id] = bookkeeping
             while len(self._video_bookkeeping) > MAX_TRACKED_VIDEOS:
                 evicted_video_id, evicted = self._video_bookkeeping.popitem(last=False)
@@ -765,13 +781,15 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         if should_classify and bookkeeping.pending is not None:
             # One call per stream at a time. The fire waits for the worker
             # and then takes the newest window, not the one it was due on.
-            bookkeeping.fire_deferred = True
+            bookkeeping.deferred_window_end = bookkeeping.pending.last_covered_frame(
+                supports_observed_duration=model.supports_observed_duration
+            )
         elif should_classify:
             gap_notice = self._describe_deferral_gap(
-                bookkeeping=bookkeeping,
-                cutoff_frame_number=cutoff_frame_number,
+                bookkeeping,
+                supports_observed_duration=model.supports_observed_duration,
             )
-            bookkeeping.fire_deferred = False
+            bookkeeping.deferred_window_end = None
             bookkeeping.tail_flushed = is_last_file_frame
             bookkeeping.last_fire_frame_number = frame_number
             call_error = self._classify_buffer(
@@ -783,9 +801,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 sampling_stride=sampling_stride,
                 confidence=confidence,
                 frame_limit=frame_number + 1,
-                # A file is not paced by the clock, so a worker would fall
-                # behind it and leave most windows unclassified.
-                background=background_inference and not metadata.comes_from_video_file,
+                background=bookkeeping.background,
             )
             error_status = " ".join(
                 part for part in (error_status, gap_notice, call_error) if part
@@ -910,7 +926,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             if model.supports_confidence and confidence not in (None, "default")
             else {}
         )
-        analyzed_until_frame = call.sampled[-1].source_frame_number
         if model.supports_observed_duration and call.frame_limit is not None:
             duration_seconds = (
                 call.frame_limit - call.sampled[0].intended_frame_number
@@ -918,7 +933,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             infer_kwargs["duration_seconds"] = min(
                 duration_seconds, model.video_sampling.window_seconds
             )
-            analyzed_until_frame = call.frame_limit - 1
 
         with model_lock:
             segments = model.infer(
@@ -939,6 +953,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 (segment.start_frame_idx, segment.end_frame_idx, segment.class_name)
                 for segment in segments
             ],
+        )
+        analyzed_until_frame = call.last_covered_frame(
+            supports_observed_duration=model.supports_observed_duration
         )
         return segments, analyzed_until_frame
 
@@ -1015,23 +1032,37 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
     def _describe_deferral_gap(
         bookkeeping: _ActionRecognitionBookkeeping,
         *,
-        cutoff_frame_number: int,
+        supports_observed_duration: bool,
     ) -> str:
         """Name the frames between a late call and the one before it, if any."""
-        if not bookkeeping.fire_deferred:
+        if bookkeeping.deferred_window_end is None:
             return ""
 
-        first_uncovered = bookkeeping.last_fire_frame_number + 1
-        if cutoff_frame_number < first_uncovered:
+        first_uncovered = bookkeeping.deferred_window_end + 1
+        # Match the origin rule in merge_window_segments: continuous spans
+        # anchor at floor(intended_frame_number), while sample-index spans
+        # start at the retained source frame.
+        first_sample = bookkeeping.sampled[0]
+        if supports_observed_duration:
+            window_start = math.floor(first_sample.intended_frame_number)
+        elif first_sample.source_frame_number is not None:
+            window_start = first_sample.source_frame_number
+        else:
+            window_start = math.ceil(first_sample.intended_frame_number - 1e-9)
+
+        last_uncovered = window_start - 1
+        if last_uncovered < first_uncovered:
             return ""
 
         # The whole gap, not only the part lost to the wait: with a stride
         # longer than the window, some of these frames have no window anyway.
-        return (
+        notice = (
             f"The previous classification had not finished, so this one started "
             f"late. No window covers source frames "
-            f"{first_uncovered}-{cutoff_frame_number}."
+            f"{first_uncovered}-{last_uncovered}."
         )
+
+        return notice
 
     def _get_worker(self) -> _WindowWorker:
         if self._worker is None:

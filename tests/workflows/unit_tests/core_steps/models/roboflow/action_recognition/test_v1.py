@@ -1,5 +1,6 @@
 """Tests for the stateful Action Recognition Model workflow block."""
 
+import gc
 import importlib
 import math
 import threading
@@ -1889,26 +1890,36 @@ def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
     assert classified == [[1, 3], [5, 7]]
     assert late["analyzed_until_frame"] == 3
     assert after["analyzed_until_frame"] == 7
-    # Frames 4-7 sit inside the one-second window ending on 7: no gap.
-    assert late["error_status"] == ""
+    # The late window's first sample is frame 5, so frame 4 is in no window:
+    # the skipped call on 5 was the one that covered it.
+    assert "No window covers source frames 4-4." in late["error_status"]
 
 
 @pytest.mark.parametrize(
-    "stride_seconds, late_frame, uncovered, analyzed_until",
+    "stride_seconds, late_frame, observed_duration, uncovered, analyzed_until",
     [
         # The first call ends on frame 3 and runs until frame 12, so the next
         # window covers 9-12.
-        (0.5, 12, "4-8", 3),
+        (0.5, 12, False, "4-8", 3),
         # The stride is twice the window: the first call ends on frame 9 and
         # runs until frame 20, so the next window covers 17-20. The stride
         # skips 10-13 anyway; the notice names the whole gap.
-        (2.0, 20, "10-16", 9),
+        (2.0, 20, False, "10-16", 9),
+        # The stride equals the window: the first call ends on frame 5 and
+        # runs until frame 11. The next window's first sample is frame 9, so
+        # frame 8 is uncovered even though the nominal window starts there.
+        (1.0, 11, False, "6-8", 5),
+        # Frame 4 fires the previous call. A sample-index model covers through
+        # frame 3, while an observed-duration model covers through frame 4.
+        (0.75, 11, False, "4-8", 3),
+        (0.75, 11, True, "5-8", 4),
     ],
 )
 def test_late_background_call_names_the_frames_no_window_covers(
-    stride_seconds, late_frame, uncovered, analyzed_until
+    stride_seconds, late_frame, observed_duration, uncovered, analyzed_until
 ):
     block, model = _make_background_block()
+    model.supports_observed_duration = observed_duration
     try:
         for number in range(1, late_frame):
             _run_background(block, number, stride_seconds=stride_seconds)
@@ -2142,17 +2153,124 @@ def test_close_cancels_waiting_windows_while_the_running_call_finishes():
         block.close()
 
 
-def test_switching_background_inference_off_still_collects_the_running_call():
+def test_dropping_the_block_cancels_calls_that_have_not_started():
+    block, model = _make_background_block()
+    for number in (1, 2, 3):
+        for video_id in ("camera-a", "camera-b"):
+            _run(
+                block,
+                _make_frame(number, video_id=video_id),
+                background_inference=True,
+            )
+    assert model.entered.wait(timeout=5)
+    running = block._video_bookkeeping["camera-a"].pending.future
+    queued = block._video_bookkeeping["camera-b"].pending.future
+    block_reference = weakref.ref(block)
+
+    del block
+    gc.collect()
+    model.gate.set()
+    running.result(timeout=5)
+
+    assert block_reference() is None
+    assert queued.cancelled()
+    assert len(model.calls) == 1
+
+
+def test_a_background_stream_keeps_its_mode_when_the_input_turns_off():
     block, model = _make_background_block(responses=[[_model_segment("walk")]])
     try:
         for number in (1, 2, 3):
             _run_background(block, number)
+        assert model.entered.wait(timeout=5)
+
+        # Frame 5 is due while the frame-3 call runs. The stream started in
+        # background mode, so it defers instead of waiting for the model.
+        for number in (4, 5):
+            due = _run(block, _make_frame(number))
+        assert model.calls == []
 
         _finish_pending_call(block, model)
-        switched = _run(block, _make_frame(4))
+        collected = _run(block, _make_frame(6))
+        # Frame 6 is due again: the window goes to the worker, not the step.
+        assert block._video_bookkeeping["stream-0"].pending is not None
     finally:
         model.gate.set()
         block.close()
 
-    assert switched["analyzed_until_frame"] == 3
-    assert [entry["class_name"] for entry in _timeline_as_dicts(switched)] == ["walk"]
+    assert due["analyzed_until_frame"] is None
+    assert collected["error_status"] == ""
+    assert collected["analyzed_until_frame"] == 3
+    assert [entry["class_name"] for entry in _timeline_as_dicts(collected)] == ["walk"]
+
+
+def test_a_synchronous_stream_keeps_its_mode_when_the_input_turns_on():
+    block, _ = _make_block(responses=[[_model_segment("run")]])
+
+    for number in (1, 2):
+        _run(block, _make_frame(number))
+    fired = _run(block, _make_frame(3), background_inference=True)
+
+    # The result is on the frame that fired: the call ran inside the step.
+    assert fired["analyzed_until_frame"] == 3
+    assert [entry["class_name"] for entry in _timeline_as_dicts(fired)] == ["run"]
+
+
+def test_late_call_gap_ends_at_the_first_retained_source_frame():
+    # 4 FPS sampled at 3 FPS: the late window's first sample is intended
+    # frame 7.67 and comes from source frame 8, where its ranges start.
+    run_kwargs = {
+        "stride_seconds": 1.0,
+        "sample_fps": 3.0,
+        "requires_regular_sampling": True,
+    }
+    block, model = _make_background_block()
+    try:
+        for number in range(1, 11):
+            _run_background(block, number, **run_kwargs)
+
+        _finish_pending_call(block, model)
+        late = _run_background(block, 11, **run_kwargs)
+    finally:
+        model.gate.set()
+        block.close()
+
+    assert "No window covers source frames 6-7." in late["error_status"]
+
+
+def test_late_call_gap_matches_continuous_prediction_start_frame():
+    # 5 FPS sampled at 2 FPS (stride 2.5): the late window on frame 12 keeps
+    # intended sample 8.5 (source frame 9). Continuous spans floor 8.5 to
+    # frame 8, so the timeline covers 3-6 and 8-12 and only frame 7 is missing.
+    full_window = ModelActionRecognitionPrediction(
+        start_frame_idx=0.0,
+        end_frame_idx=2.0,
+        class_name="walk",
+        end_exclusive=True,
+    )
+    block, model = _make_background_block(responses=[[full_window], [full_window]])
+    model.supports_observed_duration = True
+    run_kwargs = {
+        "stride_seconds": 1.0,
+        "sample_fps": 2.0,
+        "requires_regular_sampling": True,
+        "background_inference": True,
+    }
+    try:
+        for number in range(1, 12):
+            _run(block, _make_frame(number, fps=5.0), **run_kwargs)
+
+        _finish_pending_call(block, model)
+        late = _run(block, _make_frame(12, fps=5.0), **run_kwargs)
+        _finish_pending_call(block, model)
+        after = _run(block, _make_frame(13, fps=5.0), **run_kwargs)
+    finally:
+        model.gate.set()
+        block.close()
+
+    ranges = [
+        (entry.start_frame_idx, entry.end_frame_idx) for entry in after["timeline"]
+    ]
+    assert ranges == [(3, 6), (8, 12)]
+    assert after["analyzed_until_frame"] == 12
+    assert "No window covers source frames 7-7." in late["error_status"]
