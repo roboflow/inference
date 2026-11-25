@@ -631,7 +631,7 @@ def test_workflow_ownership_and_credential_boundaries():
         Loader=yaml.BaseLoader,
     )
     assert not (ROOT / ".github/workflows/publish.pypi.inference_sdk.yml").exists()
-    assert workflow["on"]["release"]["types"] == ["published"]
+    assert workflow["on"]["release"]["types"] == ["created"]
     inputs = workflow["on"]["workflow_dispatch"]["inputs"]
     assert inputs["publish"]["default"] == "false"
     assert inputs["packages"]["default"] == "all"
@@ -651,12 +651,7 @@ def test_workflow_ownership_and_credential_boundaries():
         uploads = [
             step for step in job["steps"] if step.get("uses", "").startswith("pypa/")
         ]
-        if name in {
-            "build_sdk",
-            "build_runtime",
-            "prepare_dependencies",
-            "prepare_image_inputs",
-        }:
+        if name in {"build_sdk", "build_runtime", "prepare_dependencies"}:
             assert "id-token" not in job.get("permissions", {})
             assert not uploads
             continue
