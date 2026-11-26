@@ -540,6 +540,7 @@ from inference_server.workflows.errors import (  # noqa: E402
     MalformedRoboflowAPIResponseError,
     ModelDeploymentNotSupportedError,
     PaymentRequiredError,
+    RoboflowAPIRateLimitedError,
     RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
@@ -662,6 +663,11 @@ _PLATFORM_API_ERRORS: Dict[int, Tuple[type, str]] = {
         RoboflowAPIUsagePausedError,
         "Roboflow API usage is paused. Please contact your workspace administrator "
         "to re-enable api keys.",
+    ),
+    429: (
+        RoboflowAPIRateLimitedError,
+        "Roboflow API rate limit or usage limit reached for this workspace. "
+        "Retry later or verify your workspace billing page.",
     ),
 }
 
@@ -1793,6 +1799,15 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             _STEP_EXECUTION_CONTEXT,
         )
+    if isinstance(error, RoboflowAPIRateLimitedError):
+        _client_caused(
+            step_name,
+            429,
+            f"Rate limit reached while executing step {step_name}. "
+            f"Retry later or verify your workspace billing page. Details: {error}",
+            error,
+            _STEP_EXECUTION_CONTEXT,
+        )
     if isinstance(error, ModelRetrievalError):
         status_code = getattr(error, "status_code", None)
         if status_code in _MODEL_ACCESS_ERROR_MESSAGES:
@@ -1854,6 +1869,8 @@ _REMOTE_CALL_ERROR_MESSAGES = {
     "{step_name} - details of error: {error}.",
     423: "Roboflow API usage is paused while remote executing step {step_name}. "
     "Contact your workspace administrator to re-enable API keys. Details: {error}",
+    429: "Rate limit reached while remote executing step {step_name}. Retry later "
+    "or verify your workspace billing page. Details: {error}",
 }
 
 

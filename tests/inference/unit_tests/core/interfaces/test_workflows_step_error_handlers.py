@@ -11,6 +11,7 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRateLimitedError,
     RoboflowAPIUsagePausedError,
 )
 from inference.core.interfaces.workflows_step_error_handlers import (
@@ -156,6 +157,13 @@ def test_extended_roboflow_errors_handler_when_usage_is_paused() -> None:
         extended_roboflow_errors_handler("some", RoboflowAPIUsagePausedError())
 
     assert error.value.status_code == 423
+
+
+def test_extended_roboflow_errors_handler_when_rate_limited() -> None:
+    with pytest.raises(ClientCausedStepExecutionError) as error:
+        extended_roboflow_errors_handler("some", RoboflowAPIRateLimitedError())
+
+    assert error.value.status_code == 429
 
 
 def test_extended_roboflow_errors_handler_when_payment_required_error_occurs_while_remote_execution() -> (
