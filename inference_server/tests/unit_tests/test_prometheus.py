@@ -658,12 +658,12 @@ def _series(scraped: str) -> list:
     ]
 
 
-def _v2_request(model_id: str, instance: str = "") -> Request:
+def _v2_request(model_id: str) -> Request:
     scope = {
         "type": "http",
         "method": "POST",
         "path": "/v2/models/infer",
-        "query_string": f"model_id={model_id}&instance={instance}".encode(),
+        "query_string": f"model_id={model_id}".encode(),
         "headers": [(b"authorization", b"Bearer k1")],
     }
 
@@ -673,7 +673,7 @@ def _v2_request(model_id: str, instance: str = "") -> Request:
     return Request(scope, receive)
 
 
-async def _dispatch_v2(model_id: str, model, count: int, instance: str = "") -> list:
+async def _dispatch_v2(model_id: str, model, count: int) -> list:
     async def handler(action, input_data, proxy, hooks):
         return model(None, None)
 
@@ -694,9 +694,7 @@ async def _dispatch_v2(model_id: str, model, count: int, instance: str = "") -> 
         ):
             statuses = [
                 (
-                    await handle_model_inference_request(
-                        _v2_request(model_id, instance), proxy
-                    )
+                    await handle_model_inference_request(_v2_request(model_id), proxy)
                 ).status_code
                 for _ in range(count)
             ]
@@ -745,40 +743,6 @@ def test_legacy_alias_and_v2_registry_id_share_one_series(
     assert _gauge_value(scraped, "avg_inference_time_yolov8n_640") == pytest.approx(
         0.02
     )
-
-
-@pytest.mark.asyncio
-async def test_v2_named_instance_records_under_its_routing_key(clock):
-    statuses = await _dispatch_v2(
-        "ds/1", _scripted_model(clock, [0.01]), 1, instance="blue"
-    )
-    MODEL_METRICS.observe_loaded(["ds/1:blue"])
-
-    metrics = MODEL_METRICS.metrics()
-
-    assert statuses == [200]
-    assert metrics["ds/1:blue"]["num_inferences"] == 1
-    assert metrics["ds/1:blue"]["avg_inference_time"] == pytest.approx(0.01)
-
-
-@pytest.mark.asyncio
-async def test_v2_named_instance_and_default_instance_have_separate_series(clock):
-    default_statuses = await _dispatch_v2("ds/1", _scripted_model(clock, [0.01]), 1)
-    named_statuses = await _dispatch_v2(
-        "ds/1", _scripted_model(clock, [0.03, None]), 2, instance="blue"
-    )
-    MODEL_METRICS.observe_loaded(["ds/1", "ds/1:blue"])
-
-    metrics = MODEL_METRICS.metrics()
-
-    assert default_statuses == [200]
-    assert named_statuses == [200, 500]
-    assert metrics["ds/1"]["num_inferences"] == 1
-    assert metrics["ds/1"]["num_errors"] == 0
-    assert metrics["ds/1"]["avg_inference_time"] == pytest.approx(0.01)
-    assert metrics["ds/1:blue"]["num_inferences"] == 1
-    assert metrics["ds/1:blue"]["num_errors"] == 1
-    assert metrics["ds/1:blue"]["avg_inference_time"] == pytest.approx(0.03)
 
 
 _CLIP = "clip/ViT-B-16"

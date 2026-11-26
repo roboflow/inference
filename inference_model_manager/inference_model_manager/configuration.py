@@ -31,10 +31,11 @@ def _require_finite(name: str, value: float) -> float:
 
 
 # ── ModelManager (model_manager.py) ─────────────────────────────────────────
+# Thread pool shared by every direct-backend model
 INFERENCE_DIRECT_MAX_WORKERS = get_integer_from_env(
     "INFERENCE_DIRECT_MAX_WORKERS", default=8
 )
-# Per-model in-flight request cap in process_async; 0 disables
+# Per-model in-flight cap; set (e.g. 4) when slow models share the pool with fast ones; 0 disables
 INFERENCE_MAX_INFLIGHT_PER_MODEL = get_integer_from_env(
     "INFERENCE_MAX_INFLIGHT_PER_MODEL", default=0
 )
