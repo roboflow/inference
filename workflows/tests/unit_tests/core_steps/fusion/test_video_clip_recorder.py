@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,7 @@ from roboflow_workflows.core_steps.fusion.video_clip_recorder.v1 import (
     UNAVAILABLE_NO_ENCODER,
     UNAVAILABLE_NO_TIMESTAMP,
     UNAVAILABLE_SINKS_DISABLED,
+    UNAVAILABLE_TOO_MANY_STREAMS,
     UNAVAILABLE_UNSUPPORTED_HOST,
     BlockManifest,
     VideoClipRecorderBlockV1,
@@ -642,20 +644,38 @@ def test_still_image_without_video_metadata_is_unsupported_host(rings) -> None:
     assert rings.rings == []
 
 
-def test_least_recently_seen_stream_is_retired_beyond_limit(rings) -> None:
-    # given
+def test_stream_beyond_the_limit_is_refused_and_the_others_keep_recording(
+    rings, caplog: pytest.LogCaptureFixture
+) -> None:
+    # given: one more stream than slots, taking turns as a multi-source pipeline
+    # delivers them
     block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
+    cameras = [f"camera-{index}" for index in range(MAX_TRACKED_VIDEOS + 1)]
+    rounds = 5
+    last_round_anchors = {}
 
     # when
-    for index in range(MAX_TRACKED_VIDEOS + 1):
-        _run(block, _image(1, video_id=f"camera-{index}"))
+    with caplog.at_level(logging.WARNING):
+        for frame_number in range(1, rounds + 1):
+            for camera in cameras:
+                (anchor,) = _run(block, _image(frame_number, video_id=camera))
+                last_round_anchors[camera] = anchor
 
-    # then
-    assert rings.rings[0].retired_with == PARTIAL_SHUTDOWN
-    assert all(ring.retired_with is None for ring in rings.rings[1:])
-    assert set(block.telemetry()) == {
-        f"camera-{index}" for index in range(1, MAX_TRACKED_VIDEOS + 1)
-    }
+    # then: the first streams keep the ring they started with, for every frame
+    assert len(rings.rings) == MAX_TRACKED_VIDEOS
+    assert all(ring.retired_with is None for ring in rings.rings)
+    assert all(len(ring.submitted) == rounds for ring in rings.rings)
+    assert set(block.telemetry()) == set(cameras[:MAX_TRACKED_VIDEOS])
+    for camera in cameras[:MAX_TRACKED_VIDEOS]:
+        assert last_round_anchors[camera].availability == "ok"
+
+    # and: the extra stream is refused with a reason, and said once in the log
+    refused = last_round_anchors[cameras[-1]]
+    assert refused.availability == UNAVAILABLE_TOO_MANY_STREAMS
+    with pytest.raises(ClipUnavailableError):
+        refused.capture(1.0, 1.0)
+    warnings = [r for r in caplog.records if "does not record stream" in r.message]
+    assert len(warnings) == 1
 
 
 def test_telemetry_reports_ring_cost_percentiles(rings) -> None:

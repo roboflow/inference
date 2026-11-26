@@ -120,7 +120,9 @@ A clip is approximate evidence with reported bounds.
   `resolution_change`). The previous recording's memory is freed as soon as its
   last pending clip is finished.
 * **Streams.** State is kept per `video_identifier`, for at most 16 streams per
-  recorder; the least recently seen stream's recording is discarded beyond that.
+  recorder step: the first 16 it sees, until the pipeline ends. A further stream is
+  not recorded and its anchors are `unavailable:too_many_streams`; the recorder logs
+  one warning. The 16 streams that hold a slot are not affected.
 * No audio.
 
 Limits of the time axis: frames that arrive in a burst after a stall (for example
@@ -167,7 +169,7 @@ The sink's `videos` output has one entry per anchor, in request order:
 | --- | --- |
 | `pending` | Captured and admitted; the event references the video and the clip uploads when its post-roll is recorded |
 | `disabled`, `throttled` | The sink was disabled or in its cooldown; nothing was captured |
-| `unavailable:<reason>` | No clip: the recorder's anchor was unavailable (`no_timestamp`, `no_encoder`, `sinks_disabled`, `unsupported_host`), the recorder was stopping (`closing`), the capture failed (`capture_failed`), the input was not an anchor (`no_anchor`, `invalid_anchor`), or the sink writes to the local Event Store (`unsupported_sink_mode`) |
+| `unavailable:<reason>` | No clip: the recorder's anchor was unavailable (`no_timestamp`, `no_encoder`, `sinks_disabled`, `unsupported_host`, `too_many_streams`), the recorder was stopping (`closing`), the capture failed (`capture_failed`), the input was not an anchor (`no_anchor`, `invalid_anchor`), or the sink writes to the local Event Store (`unsupported_sink_mode`) |
 | `rejected:<reason>` | Captured but not attached: more than 4 anchors (`too_many_videos`), a resource cap (`budget_exceeded`, `too_many_pending_captures`, `clip_too_large`, or `admission_error` if the check itself failed), the event POST failed (`event_failed`), or the uploader was stopping (`uploader_unavailable`) |
 | `prepare_failed` | The upload slot request failed; the event is sent without that video |
 

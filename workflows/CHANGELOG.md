@@ -60,8 +60,8 @@ Engine version: `1.18.0` (was `1.17.3`).
 ### Added
 
 - **Video Clip Recorder** (`roboflow_core/video_clip_recorder@v1`). Keeps a rolling
-  H.264 buffer of the frames a workflow processes, per `video_identifier` (up to 16
-  streams), and outputs an `anchor` per frame for the Vision Events sink.
+  H.264 buffer of the frames a workflow processes, per `video_identifier`, and
+  outputs an `anchor` per frame for the Vision Events sink.
   - A clip covers `[trigger - pre_roll_seconds, trigger + post_roll_seconds]` of
     processed frames and starts on a keyframe up to one second earlier. Both rolls
     default to 5 s and are capped at 60 s; a host can raise the cap to 300 s.
@@ -74,6 +74,8 @@ Engine version: `1.18.0` (was `1.17.3`).
     other host, HTTP requests included, the anchor is
     `unavailable:unsupported_host`. With `disable_sinks` it is
     `unavailable:sinks_disabled`.
+  - One recorder step records the first 16 streams it sees. A further stream is not
+    recorded and its anchor is `unavailable:too_many_streams`.
   - The block requires engine `>=1.18.0`.
 - **Video clips on Vision Events** (`roboflow_core/roboflow_vision_events@v1`, numpy
   and tensor-native variants).

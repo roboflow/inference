@@ -67,12 +67,16 @@ UNAVAILABLE_NO_TIMESTAMP = "unavailable:no_timestamp"
 UNAVAILABLE_NO_ENCODER = "unavailable:no_encoder"
 UNAVAILABLE_SINKS_DISABLED = "unavailable:sinks_disabled"
 UNAVAILABLE_UNSUPPORTED_HOST = "unavailable:unsupported_host"
+UNAVAILABLE_TOO_MANY_STREAMS = "unavailable:too_many_streams"
 
 BACKEND_X264 = "x264"
 BACKEND_NVENC = "nvenc"
 
-# Upper bound on concurrently tracked `video_identifier` values, as in Frame Delay.
-# The least recently seen stream's ring is retired beyond that.
+# Upper bound on the `video_identifier` values one recorder records. The first
+# streams keep their slot until the recorder closes and later ones are refused.
+# Evicting the least recently seen stream instead (as Frame Delay does) would end
+# a ring, with its encoder thread and its pre-roll, on every frame as soon as more
+# streams than slots take turns.
 MAX_TRACKED_VIDEOS = 16
 
 MAX_PRE_ROLL_SECONDS_ENV = "WORKFLOWS_VIDEO_CLIP_MAX_PRE_ROLL_SECONDS"
@@ -172,8 +176,8 @@ Clips are approximate evidence with reported bounds:
   `max_width` or lower the model fps before adding streams.
 - Keep `fire_and_forget` enabled on the Vision Events sink: otherwise the upload slot
   requests and the event POST run on the pipeline thread.
-- At most 16 streams are tracked at once; the least recently seen stream's recording
-  is discarded beyond that.
+- One recorder records at most 16 streams (`video_identifier` values): the first 16
+  it sees. For any further stream the anchor is `unavailable:too_many_streams`.
 - With `disable_sinks` the recorder idles and anchors are
   `unavailable:sinks_disabled`. No audio is recorded.
 """
@@ -501,8 +505,9 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         self._host_manages_block_lifecycle = host_manages_block_lifecycle
         self._lock = threading.RLock()
         self._close_lock = threading.Lock()
-        # Ordered least- to most-recently-seen stream, for LRU retirement.
+        # At most `MAX_TRACKED_VIDEOS` entries, in the order the streams were first seen.
         self._streams: "OrderedDict[str, _StreamState]" = OrderedDict()
+        self._refused_stream_logged = False
         # Rings retired by a reset or eviction: their pending captures finalise on
         # the rings' own threads. A ring releases itself and leaves this list once
         # its last capture is finalised; the rest are closed with the block.
@@ -670,6 +675,15 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
                 )
 
             state = self._track_stream(video_identifier=video_identifier)
+            if state is None:
+                return self._unavailable_anchor(
+                    video_identifier=video_identifier,
+                    frame_timestamp=frame_timestamp,
+                    frame_number=frame_number,
+                    settings=settings,
+                    availability=UNAVAILABLE_TOO_MANY_STREAMS,
+                )
+
             resolution = _frame_resolution(image=image)
             self._reset_if_needed(
                 state=state,
@@ -769,15 +783,25 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         state.ring_costs_ms.append((time.perf_counter() - started) * 1000.0)
         state.frames_submitted += 1
 
-    def _track_stream(self, video_identifier: str) -> _StreamState:
+    def _track_stream(self, video_identifier: str) -> Optional[_StreamState]:
+        # Recorder lock held. Returns None for a stream beyond the limit.
         state = self._streams.get(video_identifier)
-        if state is None:
-            state = _StreamState()
+        if state is not None:
+            return state
+
+        if len(self._streams) >= MAX_TRACKED_VIDEOS:
+            if not self._refused_stream_logged:
+                self._refused_stream_logged = True
+                logger.warning(
+                    f"Video Clip Recorder `{self._step_name()}` already records "
+                    f"{MAX_TRACKED_VIDEOS} streams and does not record stream "
+                    f"`{video_identifier}` or any further one; their anchors are "
+                    f"`{UNAVAILABLE_TOO_MANY_STREAMS}`."
+                )
+            return None
+
+        state = _StreamState()
         self._streams[video_identifier] = state
-        self._streams.move_to_end(video_identifier)
-        while len(self._streams) > MAX_TRACKED_VIDEOS:
-            _, evicted = self._streams.popitem(last=False)
-            self._retire_ring(state=evicted, reason=PARTIAL_SHUTDOWN)
 
         return state
 
