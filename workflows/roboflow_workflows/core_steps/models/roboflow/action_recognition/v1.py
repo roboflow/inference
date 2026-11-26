@@ -203,24 +203,25 @@ class _WindowCall:
     block_filter: Optional[List[str]]
     id_vocabulary: Optional[List[str]]
     sampling_stride: float
+    supports_observed_duration: bool
     future: Optional[Future] = None
 
-    def first_covered_frame(self, *, supports_observed_duration: bool) -> int:
+    def first_covered_frame(self) -> int:
         first_frame = _first_covered_frame(
             self.sampled[0],
-            supports_observed_duration=supports_observed_duration,
+            supports_observed_duration=self.supports_observed_duration,
         )
 
         return first_frame
 
-    def last_covered_frame(self, *, supports_observed_duration: bool) -> int:
-        if supports_observed_duration and self.frame_limit is not None:
+    def last_covered_frame(self) -> int:
+        if self.supports_observed_duration and self.frame_limit is not None:
             return self.frame_limit - 1
 
         return self.sampled[-1].source_frame_number
 
 
-_WindowResult = Tuple[List[ModelActionRecognitionPrediction], int, int]
+_WindowResult = List[ModelActionRecognitionPrediction]
 
 
 class _WindowWorker:
@@ -813,9 +814,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         if should_classify and bookkeeping.pending is not None:
             # One call per stream at a time. The fire waits for the worker
             # and then takes the newest window, not the one it was due on.
-            bookkeeping.deferred_window_end = bookkeeping.pending.last_covered_frame(
-                supports_observed_duration=model.supports_observed_duration
-            )
+            bookkeeping.deferred_window_end = bookkeeping.pending.last_covered_frame()
         elif should_classify:
             gap_notice = self._describe_deferral_gap(
                 bookkeeping,
@@ -907,6 +906,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             block_filter=block_filter,
             id_vocabulary=id_vocabulary,
             sampling_stride=sampling_stride,
+            supports_observed_duration=model.supports_observed_duration,
         )
         classify = partial(
             self._infer_window,
@@ -922,7 +922,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             return ""
 
         try:
-            segments, analyzed_from_frame, analyzed_until_frame = classify()
+            segments = classify()
         except Exception as error:
             logger.warning(
                 "Action Recognition Model call failed: %s",
@@ -931,13 +931,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
             return str(error)
 
-        self._apply_call_result(
-            bookkeeping=bookkeeping,
-            call=call,
-            segments=segments,
-            analyzed_from_frame=analyzed_from_frame,
-            analyzed_until_frame=analyzed_until_frame,
-        )
+        self._apply_call_result(bookkeeping=bookkeeping, call=call, segments=segments)
         return ""
 
     @classmethod
@@ -987,13 +981,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 for segment in segments
             ],
         )
-        analyzed_from_frame = call.first_covered_frame(
-            supports_observed_duration=model.supports_observed_duration
-        )
-        analyzed_until_frame = call.last_covered_frame(
-            supports_observed_duration=model.supports_observed_duration
-        )
-        return segments, analyzed_from_frame, analyzed_until_frame
+        return segments
 
     def _apply_call_result(
         self,
@@ -1001,8 +989,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         *,
         call: _WindowCall,
         segments: List[ModelActionRecognitionPrediction],
-        analyzed_from_frame: int,
-        analyzed_until_frame: int,
     ) -> None:
         # Same-class ranges merge only when no sampled frame lies in the
         # gap. ceil(stride) is that rule exactly: consecutive samples sit
@@ -1031,8 +1017,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         bookkeeping.timeline_snapshot = [
             entry.model_copy() for entry in bookkeeping.timeline
         ]
-        bookkeeping.analyzed_from_frame = analyzed_from_frame
-        bookkeeping.analyzed_until_frame = analyzed_until_frame
+        bookkeeping.analyzed_from_frame = call.first_covered_frame()
+        bookkeeping.analyzed_until_frame = call.last_covered_frame()
 
     def _collect_finished_call(self, bookkeeping: _ActionRecognitionBookkeeping) -> str:
         """Merge a finished background call on the step thread.
@@ -1057,14 +1043,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             )
             return str(error)
 
-        segments, analyzed_from_frame, analyzed_until_frame = call.future.result()
-        self._apply_call_result(
-            bookkeeping=bookkeeping,
-            call=call,
-            segments=segments,
-            analyzed_from_frame=analyzed_from_frame,
-            analyzed_until_frame=analyzed_until_frame,
-        )
+        segments = call.future.result()
+        self._apply_call_result(bookkeeping=bookkeeping, call=call, segments=segments)
         return ""
 
     @staticmethod
@@ -1191,9 +1171,10 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # which grows without bound and caps the frame rate the block keeps
         # up with. The entries come from the snapshot the last fire built.
         # The list is still fresh per frame, so a consumer that appends to
-        # one frame's output leaves the next frame alone.
+        # one frame's output leaves the next frame alone. Pydantic builds
+        # its own list for the result, so the snapshot needs no copy there.
         predictions = ActionRecognitionResult(
-            timeline=list(bookkeeping.timeline_snapshot),
+            timeline=bookkeeping.timeline_snapshot,
             analyzed_from_frame=bookkeeping.analyzed_from_frame,
             analyzed_until_frame=bookkeeping.analyzed_until_frame,
             error_status=error_status,
