@@ -418,7 +418,7 @@ COPY . .
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     python -m pip install --break-system-packages setuptools wheel requests && \
     rm -f dist/* && \
-    make create_workflows_wheel create_streamvision_wheel && \
+    PIP_BREAK_SYSTEM_PACKAGES=1 make create_workflows_wheel create_streamvision_wheel && \
     rm -rf build/* && \
     python .release/pypi/inference.core.setup.py bdist_wheel && \
     rm -rf build/* && \
