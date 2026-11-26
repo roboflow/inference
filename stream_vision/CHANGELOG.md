@@ -27,6 +27,13 @@ This is the canonical changelog for the `streamvision` package.
   `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS`. Sessions without a time limit use the
   default.
 
+### Fixed
+
+- Cap the WebRTC extra's aiortc dependency below 1.17 while retaining PyAV 14.2.0.
+  aiortc 1.17 accesses `VideoFrame.duration`, which is unavailable in that PyAV
+  version, causing video decoding workers to crash.
+
+
 ## `0.1.7`
 
 ### Added

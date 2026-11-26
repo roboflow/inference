@@ -108,30 +108,73 @@ below.
   `WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS` (scaled from 4 Mbit/s at 1080p30).
   Invalid values fall back to the default with a warning. `docs/workflows/video_clips.md`
   describes the clip contract, host support and the measured performance envelope.
+- **Custom Python requests to Modal no longer follow redirects.** The syntax
+  check and the HTTP execution request to the Modal `execute-block` endpoint,
+  and the websocket connection to `wsapp`, used to follow a 3xx response and
+  resend the `Modal-Key` and `Modal-Secret` headers to the host it named. A
+  3xx response now fails the check or the block with `DynamicBlockError`, as
+  any other unexpected status does. An endpoint set with
+  `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
+  rather than redirect.
+
+- **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
+  - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
+  - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
+  - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
+  - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
 
 ### Changed
 
-- Action Recognition Model gains an `analyzed_until_frame` output: the source
-  index of the last frame a successful classification covered, null until the
-  first one. A consumer can tell "no action" from "not analyzed yet". Failed and
-  skipped windows do not advance it.
-- Action Recognition Model runs one extra classification on the last frame of a
-  video file that reports its frame count. The timeline on that frame covers
-  the tail of the clip, and a clip shorter than one stride now gets a result.
+- Action Recognition Model reports the inclusive end of the latest successful
+  window in `analyzed_until_frame`, or null before the first success. Cosmos
+  reports the last sampled source frame. Models that use the observed window
+  duration report the source frame that triggered the call. Earlier failed or
+  skipped windows can leave gaps before the mark.
+- Action Recognition Model can classify the buffered samples on the last frame
+  of a video file that reports its frame count. A clip shorter than one stride
+  can get a result if enough samples are buffered.
+  When the file ends between scheduled calls, the final window can overlap
+  the preceding window even when the configured overlap is zero.
   Live streams and files without a usable frame count behave as before, and
   so does a file whose last frame the source drops (for example with
   `max_fps`).
+- Action Recognition Model gains `background_inference`. A live stream then
+  hands each window to a worker thread, so the step returns at once and the
+  video does not wait for the model. The result reaches the timeline on the
+  stream's next frame after the call ends, so the last call of a stream that
+  stops is not reported. One call runs per stream at a time; a call that comes
+  due while the previous one has not finished waits and takes the newest
+  window. When a call starts late, `error_status` names the frames no window
+  covers between it and the previous call. A stream reads
+  `background_inference` on its first frame and keeps that mode until its
+  state resets. A step has one worker, so its streams take turns. Video files
+  always classify inside the step. The default is unchanged.
 
 ### Fixed
 
-- Video Clip Recorder, NVENC backend: the first frame of a GPU stream no longer stalls the pipeline thread. The process-wide NVENC start-up (the PyNvVideoCodec import, the CUDA context, the conversion kernels and a throwaway encoder session) now runs once per process on a background thread that the recorder starts when it is constructed on a CUDA host (torch already imported with CUDA image tensors or an initialised CUDA context, and PyNvVideoCodec installed); CPU hosts and hosts without PyNvVideoCodec do nothing and never import torch. Frames that arrive before it finishes are not buffered and are reported in a new `startup_dropped` loss count (clip report `loss.startup_dropped`, ring stats `startup_dropped`); the recorder never falls back to x264 while NVENC is still starting, and uses x264 only if the start-up finds NVENC unavailable or does not finish within 60 s. Until a stream's encoder session is open, its GPU frame pool may grow to 32 frames (at most 192 MiB of device memory, freed once the backlog drains), so the frames that arrive while NVENC opens the session are kept instead of dropped; frames refused in that window also count as `startup_dropped`, and a full pool afterwards still counts `queue_drops`.
-- Video Clip Recorder, NVENC backend: the pipeline thread now makes two CUDA calls per frame (one device-to-device copy of the RGB frame into a pooled slot on the caller's stream and one event record) instead of about 47 (stream waits, event creation and the 39 kernels of the NV12 conversion). The wait, the `max_width` resize, the NV12 conversion and the encode run on the recorder's own encoder thread and CUDA stream. This matters under gVisor, where every CUDA driver call goes through the sandbox. The copy still happens inside the step, so later in-place drawing never reaches the clip. A staging slot holds RGB (6.2 MB at 1080p, up from 3.1 MB for NV12).
-- Video Clip Recorder, NVENC backend: the encoder thread now feeds NVENC packed RGBA (`ABGR`) and lets the encoder convert to YUV, so it makes about four CUDA and encoder calls per frame instead of about forty (the torch NV12 conversion and a per-frame device switch). Under gVisor each of those calls released and re-took the GIL and went through the sandbox; on a 2-CPU Serverless Streaming sandbox (L4, runsc-kvm-nvproxy) two recorders raised the preview's p95 latency by about 30%, now by 8-14%, with one recorder 3% and with 4 CPUs 3%. Decoded colours are unchanged (the same BT.709 result). A CUDA graph of the conversion was tried and rejected because capturing it made the host's concurrent CUDA calls fail.
-- Video Clip Recorder, NVENC backend: once a stream's encoder session is open and the start-up backlog is encoded, the start-up frame pool's extra block (up to 192 MiB) is handed back to the driver with one `torch.cuda.empty_cache()` per stream start-up; before, torch's caching allocator kept it reserved for the life of the process. Ring stats report `startup_pool_released` and `startup_pool_release_ms`.
-- Video clips: clips are muxed one at a time per process with a short pause every 32 packets, and a clip held in memory is uploaded as one buffer (file-backed clips stream in 1 MiB reads instead of 8 KiB), so clips that finish together compete less with the pipeline.
 - The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
+
+- Action Recognition Model releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model
+  changes. A classification already running can finish. A failed call on one
+  camera no longer keeps another camera's completed window in memory.
+  
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
+  tensor-native variants) no longer fails the run when an image has no QR code.
+  OpenCV returns no corners in that case, and the block now returns empty
+  predictions. Each box now covers all four corners of its code. The box used to
+  be built from two corners on the assumption that the code was upright, so a
+  code turned 45 degrees or more either way got an empty or inverted box, and a
+  smaller tilt left part of the code outside the box.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`): with
+  `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
+  with no QR code now reports the image `width` and `height`. They used to be
+  `null`, while the tensor-native variant already reported them.
 
 ## `0.2.17`
 

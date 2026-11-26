@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 webrtc = [
-  "aiortc>=1.9.0",
+  "aiortc>=1.9.0,<1.17", # 1.17 uses VideoFrame.duration, unavailable in av==14.2.0.
   "av==14.2.0",
   "orjson>=3.11.6,<4.0.0",
   "requests>=2.33.0,<3.0.0",
