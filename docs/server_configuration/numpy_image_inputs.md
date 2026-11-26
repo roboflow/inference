@@ -44,8 +44,8 @@ older Workflows packages discard the type before decoding the value.
 The pickled `numpy` image type has been removed: servers never call
 `pickle.loads` on request data, because unpickling a client payload can run
 arbitrary code. Both server stacks now reject `type: "numpy"` with HTTP 400 in
-every configuration. `ALLOW_NUMPY_INPUT` no longer enables it; when it is set,
-the error message points to `npy`.
+every configuration, with an error that points to `npy`. `ALLOW_NUMPY_INPUT`
+no longer has any effect.
 
 To migrate, replace `pickle.dumps(image)` with the `np.save` example above
 and change the declared type from `numpy` to `npy`. For an existing uint8 BGR

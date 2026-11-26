@@ -8,7 +8,8 @@ Every image source carrying a *host policy* goes through here:
   re-validation, `MAX_IMAGE_URL_REDIRECTS`, and non-global-address rejection
   with IP pinning (`inference.core.utils.url_input`).
 * Local-filesystem reads - `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`.
-* Pickled-numpy payloads - `ALLOW_NUMPY_INPUT`, the gate before `pickle.loads`.
+* NPY payloads (`type: "npy"`) - the host's bounded decoder, which never
+  unpickles. Every codec refuses pickled `numpy` payloads.
 
 None of those rules is reimplemented here and none may be. Normal inference
 startup registers a lazy default for its guarded implementation; server entry
@@ -64,8 +65,8 @@ _URL_REFUSAL = (
     "without the host's SSRF policy."
 )
 _PICKLE_REFUSAL = (
-    "Serialised numpy image payloads are not supported: deserializing them is "
-    "arbitrary code execution and is gated by the host, not by Workflows."
+    "Pickled numpy image payloads are not supported: unpickling request data "
+    "can execute arbitrary code."
 )
 
 
@@ -104,8 +105,7 @@ class ImageCodec(Protocol):
         cv_imread_flags: int = cv2.IMREAD_COLOR,
     ) -> Tuple[np.ndarray, bool]:
         """Decode an in-memory payload (base64 / raw encoded bytes) to
-        `(bgr_image, is_bgr)`. The host implementation also honours its
-        `ALLOW_NUMPY_INPUT` pickle gate."""
+        `(bgr_image, is_bgr)`. No implementation unpickles the payload."""
         ...
 
     def ensure_local_file_load_allowed(self, path: str) -> None:

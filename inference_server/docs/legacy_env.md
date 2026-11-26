@@ -545,7 +545,7 @@ No new package reads these. They never get an alias or a default row.
 |---|---|---|
 | `ALLOW_INFERENCE_MODELS_DIRECTLY_ACCESS_LOCAL_PACKAGES` | `env.py:413` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
 | `ALLOW_INFERENCE_MODELS_UNTRUSTED_PACKAGES` | `env.py:410` | legacy adapter flag forwarded as a `from_pretrained` argument; no new package reads the env |
-| `ALLOW_NUMPY_INPUT` | `env.py:48` | none: pickled `numpy` input was removed from both servers; the flag only changes the legacy error text. Use `npy` |
+| `ALLOW_NUMPY_INPUT` | `env.py:48` | none: pickled `numpy` input was removed from both servers and the flag has no effect. Use `npy` |
 | `ALLOW_OFFLINE_MODEL_CACHE_AUTH_BYPASS` | `env.py:732` | legacy models-cache auth; unread by any new package (hosting summary) |
 | `API_DEBUG` | `env.py:219` | legacy debug flag with no consumer in the new stack |
 | `ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN` | `env.py:1335` | legacy assume-identity headers; unread (hosting summary) |

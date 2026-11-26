@@ -835,6 +835,44 @@ def test_deserialize_image_kind_when_dict_with_base64_value_given() -> None:
     assert result.base64_image == base64_image
 
 
+class _NpyCodec:
+    def __init__(self, pixels: np.ndarray, is_bgr: bool) -> None:
+        self.pixels = pixels
+        self.is_bgr = is_bgr
+        self.loaded = []
+
+    def load_image(self, value, disable_preproc_auto_orient: bool = False):
+        self.loaded.append(value)
+        return self.pixels, self.is_bgr
+
+
+@pytest.mark.parametrize("is_bgr", [True, False])
+def test_deserialize_image_kind_sends_npy_to_the_host_codec(is_bgr: bool) -> None:
+    # given
+    bgr = np.arange(105, dtype=np.uint8).reshape(5, 7, 3)
+    codec = _NpyCodec(bgr if is_bgr else bgr[..., ::-1].copy(), is_bgr=is_bgr)
+    image = {"type": "NPY", "value": "bnB5", "parent_id": "frame"}
+
+    # when
+    result = deserialize_image_kind(parameter="image", image=image, image_codec=codec)
+
+    # then
+    assert codec.loaded == [image]
+    assert result.parent_metadata.parent_id == "frame"
+    assert np.array_equal(result.numpy_image, bgr)
+
+
+def test_deserialize_image_kind_refuses_npy_without_a_host_codec() -> None:
+    # when
+    with pytest.raises(RuntimeInputError) as error:
+        _ = deserialize_image_kind(
+            parameter="image", image={"type": "npy", "value": "bnB5"}
+        )
+
+    # then
+    assert "`npy`" in error.value.public_message
+
+
 def test_deserialize_image_kind_when_base64_string_given() -> None:
     # given
     # simple 1x1 pixel base64 encoded image

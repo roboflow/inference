@@ -69,6 +69,10 @@ _EMPTY_PAYLOAD_ERROR = "Empty image payload."
 _NUMPY_UNSUPPORTED_ERROR = (
     "NumPy image type is not supported in this configuration of `inference`."
 )
+_NUMPY_REMOVED_ERROR = (
+    "The pickled 'numpy' image type is not supported. Send type 'npy' with "
+    "base64-encoded np.save(..., allow_pickle=False) data instead."
+)
 _NOT_NDARRAY_ERROR = (
     "Data provided as input could not be decoded into np.ndarray object."
 )
@@ -341,9 +345,10 @@ def _inline_payload(
     if image_type == "url":
         raise ValueError("url")
     if image_type == "numpy":
-        raise image_load_error(_NUMPY_UNSUPPORTED_ERROR, InvalidImageTypeDeclared)
+        raise image_load_error(_NUMPY_REMOVED_ERROR, InvalidImageTypeDeclared)
     if image_type == "npy":
-        return _npy_payload(value, ndarray_ok=ndarray_ok)
+        payload = _npy_payload(value, ndarray_ok=ndarray_ok)
+        return payload
     if image_type == "numpy_object":
         return _numpy_object_payload(value, ndarray_ok=ndarray_ok)
     if image_type == "base64":
@@ -405,9 +410,8 @@ def _npy_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
         if not isinstance(value, bytes):
             raise ValueError("expected NPY bytes or a base64 string")
 
-        # Mirror inference.core.utils.image_utils.load_image_from_npy without
-        # coupling the separately distributed servers.
-        header = io.BytesIO(value[: 12 + 10_000])
+        # Same checks as inference.core.utils.image_utils.load_image_from_npy.
+        header = io.BytesIO(value)
         version = np.lib.format.read_magic(header)
         if version == (1, 0):
             shape, _, dtype = np.lib.format.read_array_header_1_0(header)
@@ -427,16 +431,8 @@ def _npy_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
         if ceiling and shape[0] * shape[1] > ceiling:
             raise ValueError("image exceeds the decoded pixel ceiling")
 
-        # Remote workers already accept NPY bytes. Only decode for gateways
-        # that accept arrays, avoiding a decode/re-encode on the remote path.
-        data = np.load(io.BytesIO(value), allow_pickle=False) if ndarray_ok else value
-        if ndarray_ok and (data.ndim == 2 or data.shape[2] == 1):
-            # Direct model gateways expect three-channel BGR, as the legacy
-            # stack's load_image produces for grayscale input.
-            data = cv2.cvtColor(data, cv2.COLOR_GRAY2BGR)
-    # NumPy's header parser raises TokenError, SyntaxError or RecursionError for
-    # malformed or deeply nested headers, and IndexError/KeyError/AttributeError
-    # for malformed dtype descriptors; all are a client error.
+        image = np.ascontiguousarray(np.load(io.BytesIO(value), allow_pickle=False))
+    # NumPy raises all of these for malformed headers and dtype descriptors.
     except (
         ValueError,
         TypeError,
@@ -454,7 +450,18 @@ def _npy_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
             InvalidNumpyInput,
         ) from error
 
-    return ImagePayload(data, int(shape[1]), int(shape[0]))
+    if not ndarray_ok:
+        # BGR in C order like numpy_object payloads, as visualization and active
+        # learning read them.
+        payload = _numpy_object_payload(image, ndarray_ok=False)
+        return payload
+
+    # Gateways taking arrays expect three-channel BGR, like legacy load_image.
+    if image.ndim == 2 or image.shape[2] == 1:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    payload = ImagePayload(image, int(shape[1]), int(shape[0]))
+
+    return payload
 
 
 def _numpy_object_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:

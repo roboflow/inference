@@ -40,15 +40,30 @@ def test_explicit_npy_preserves_bgr_pixels(ndarray_ok, version, layout, encoded)
         {"type": "NPY", "value": value}, ndarray_ok=ndarray_ok
     )
 
+    pixels = (
+        payload.data
+        if ndarray_ok
+        else np.load(io.BytesIO(payload.data), allow_pickle=False)
+    )
+
     assert (payload.width, payload.height) == (image.shape[1], image.shape[0])
-    if ndarray_ok:
-        np.testing.assert_array_equal(payload.data, image)
-    else:
-        assert payload.data == data
-        np.testing.assert_array_equal(
-            np.load(io.BytesIO(payload.data), allow_pickle=False), image
-        )
+    assert pixels.flags.c_contiguous
+    np.testing.assert_array_equal(pixels, image)
     np.testing.assert_array_equal(payload_to_rgb(payload), image[..., ::-1])
+
+
+@pytest.mark.parametrize("layout", ["c", "fortran"])
+def test_npy_reaches_non_ndarray_gateways_like_numpy_object(layout):
+    # Workers on the imagecodecs decoder read NPY as RGB: one gap for both types.
+    image = np.arange(7 * 11 * 3, dtype=np.uint8).reshape(7, 11, 3)
+    sent = np.asfortranarray(image) if layout == "fortran" else image
+
+    npy = decode_inline_image({"type": "npy", "value": _npy(sent)}, ndarray_ok=False)
+    numpy_object = decode_inline_image(
+        {"type": "numpy_object", "value": image}, ndarray_ok=False
+    )
+
+    assert npy == numpy_object
 
 
 @pytest.mark.parametrize("ndarray_ok", [False, True])
@@ -267,7 +282,10 @@ def test_npy_malformed_descriptor_is_a_client_error(monkeypatch, version, name):
 
     with pytest.raises(InvalidNumpyInput):
         decode_inline_image(
-            {"type": "npy", "value": _malformed_npy(version, _MALFORMED_DESCRIPTORS[name])},
+            {
+                "type": "npy",
+                "value": _malformed_npy(version, _MALFORMED_DESCRIPTORS[name]),
+            },
             ndarray_ok=True,
         )
 
@@ -276,7 +294,9 @@ def test_npy_malformed_descriptor_is_a_client_error(monkeypatch, version, name):
 
 @pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
 @pytest.mark.parametrize("name", list(_MALFORMED_DESCRIPTORS))
-def test_http_npy_malformed_descriptor_returns_400(legacy_client, fake_stat, version, name):
+def test_http_npy_malformed_descriptor_returns_400(
+    legacy_client, fake_stat, version, name
+):
     fake_stat["ds/1"] = ("object-detection", "infer")
     gateway = _detection_gateway()
     data = _malformed_npy(version, _MALFORMED_DESCRIPTORS[name])
@@ -295,7 +315,9 @@ def test_decoded_grayscale_npy_reaches_direct_gateways_as_bgr(channels_axis):
     gray = np.arange(35, dtype=np.uint8).reshape(5, 7)
     image = gray[..., None] if channels_axis else gray
 
-    payload = decode_inline_image({"type": "npy", "value": _npy(image)}, ndarray_ok=True)
+    payload = decode_inline_image(
+        {"type": "npy", "value": _npy(image)}, ndarray_ok=True
+    )
 
     assert payload.data.shape == (5, 7, 3)
     np.testing.assert_array_equal(payload.data, np.repeat(gray[..., None], 3, axis=2))

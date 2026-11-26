@@ -110,9 +110,8 @@ def attempt_loading_image_from_string(
 ) -> Tuple[np.ndarray, bool]:
     """Decode an in-memory image payload through the installed `ImageCodec`.
 
-    Routed rather than vendored because the host implementation's last fallback
-    is a pickled-numpy payload behind `ALLOW_NUMPY_INPUT` - a gate Workflows must
-    not own.
+    Routed rather than vendored so the host's decoders and error messages apply.
+    No implementation unpickles the payload.
     """
     return get_image_codec().decode_string(value, cv_imread_flags=cv_imread_flags)
 

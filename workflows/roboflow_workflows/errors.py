@@ -272,12 +272,13 @@ class WorkflowImageLoadError(WorkflowExecutionEngineError):
 
     The workflows-local `ImageCodec` default (see
     `roboflow_workflows.prototypes.image_codec`) refuses URL fetching,
-    local-filesystem reads and pickled-numpy payloads outright: each carries a
-    host policy (SSRF allow/deny lists plus redirect and address validation,
-    `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`, `ALLOW_NUMPY_INPUT`) that
+    local-filesystem reads and NPY payloads outright: each needs a host policy
+    or decoder (SSRF allow/deny lists plus redirect and address validation,
+    `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`, the bounded NPY decoder) that
     Workflows must not reimplement. A host that wants them installs a codec that
     provides them - the Roboflow inference server does so in
-    `inference.core.interfaces.workflows_image_codec`.
+    `inference.core.interfaces.workflows_image_codec`. Every codec refuses
+    pickled-numpy payloads.
 
     Maps to HTTP 500 through the generic `WorkflowError` arm of
     `inference/core/interfaces/http/error_handlers.py:571`.

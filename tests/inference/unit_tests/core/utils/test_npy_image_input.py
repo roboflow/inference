@@ -4,15 +4,12 @@ import pickle
 import warnings
 from unittest.mock import Mock
 
+import cv2
 import numpy as np
 import pytest
 
 from inference.core.entities.requests.inference import InferenceRequestImage
-from inference.core.exceptions import (
-    InputFormatInferenceFailed,
-    InvalidImageTypeDeclared,
-    InvalidNumpyInput,
-)
+from inference.core.exceptions import InvalidImageTypeDeclared, InvalidNumpyInput
 from inference.core.utils import image_utils
 from inference.core.warnings import InferenceDeprecationWarning
 
@@ -30,11 +27,7 @@ def _value(data, *, encoded):
 @pytest.mark.parametrize("version", [(1, 0), (2, 0)])
 @pytest.mark.parametrize("layout", ["c", "fortran", "strided"])
 @pytest.mark.parametrize("encoded", [False, True])
-@pytest.mark.parametrize("allow_pickle_input", [False, True])
-def test_explicit_npy_preserves_bgr_pixels(
-    monkeypatch, version, layout, encoded, allow_pickle_input
-):
-    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", allow_pickle_input)
+def test_explicit_npy_preserves_bgr_pixels(version, layout, encoded):
     image = np.arange(7 * 11 * 3, dtype=np.uint8).reshape(7, 11, 3)
     if layout == "fortran":
         image = np.asfortranarray(image)
@@ -50,6 +43,7 @@ def test_explicit_npy_preserves_bgr_pixels(
 
     assert is_bgr
     assert loaded.dtype == image.dtype
+    assert loaded.flags.c_contiguous
     np.testing.assert_array_equal(loaded, image)
     np.testing.assert_array_equal(image_utils.load_image_rgb(request), image[..., ::-1])
     assert not emitted
@@ -139,9 +133,7 @@ class _PickleSentinel:
 
 
 @pytest.mark.parametrize("container", ["pickle", "object-npy"])
-@pytest.mark.parametrize("enabled", [False, True])
-def test_npy_never_executes_pickle(monkeypatch, container, enabled):
-    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", enabled)
+def test_npy_never_executes_pickle(container):
     _UNPICKLED.clear()
     image = np.full((2, 3, 1), _PickleSentinel(), dtype=object)
     data = (
@@ -154,28 +146,20 @@ def test_npy_never_executes_pickle(monkeypatch, container, enabled):
     assert not _UNPICKLED
 
 
-@pytest.mark.parametrize("allow_numpy_input", [False, True])
 @pytest.mark.parametrize("encoded", [False, True])
 @pytest.mark.parametrize("protocol", [4, 5])
 @pytest.mark.parametrize("declared", [False, True])
-def test_pickled_numpy_is_never_unpickled(
-    monkeypatch, allow_numpy_input, encoded, protocol, declared
-):
-    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", allow_numpy_input)
+def test_pickled_numpy_is_never_unpickled(monkeypatch, encoded, protocol, declared):
     image = np.arange(105, dtype=np.uint8).reshape(5, 7, 3)
     value = _value(pickle.dumps(image, protocol=protocol), encoded=encoded)
     request = {"type": "numpy", "value": value} if declared else value
     unpickle = Mock(side_effect=AssertionError("request data must never be unpickled"))
     monkeypatch.setattr(pickle, "loads", unpickle)
 
-    expected = (
-        InvalidImageTypeDeclared
-        if declared or not allow_numpy_input
-        else InputFormatInferenceFailed
-    )
-    with pytest.raises(expected):
+    with pytest.raises(InvalidImageTypeDeclared) as error:
         image_utils.load_image(request)
 
+    assert ("npy" in error.value.get_public_error_details()) is declared
     unpickle.assert_not_called()
     assert not _UNPICKLED
 
@@ -191,8 +175,7 @@ def test_numpy_object_has_no_pickle_deprecation_warning():
     assert not emitted
 
 
-def test_untyped_npy_still_requires_an_explicit_type(monkeypatch):
-    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", False)
+def test_untyped_npy_still_requires_an_explicit_type():
     data = _value(_npy(np.zeros((5, 7, 3), dtype=np.uint8)), encoded=True)
 
     with pytest.raises(InvalidImageTypeDeclared):
@@ -200,12 +183,11 @@ def test_untyped_npy_still_requires_an_explicit_type(monkeypatch):
 
 
 @pytest.mark.parametrize("tensor_mode", [False, True])
-def test_workflow_npy_retains_type_and_metadata(monkeypatch, tensor_mode):
+def test_workflow_npy_retains_type_and_metadata(tensor_mode):
     from roboflow_workflows.core_steps.common import deserializers, deserializers_tensor
 
     from inference.core.interfaces.workflows_image_codec import ServerImageCodec
 
-    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", False)
     image = np.arange(105, dtype=np.uint8).reshape(5, 7, 3)
     deserializer = deserializers_tensor if tensor_mode else deserializers
 
@@ -222,6 +204,25 @@ def test_workflow_npy_retains_type_and_metadata(monkeypatch, tensor_mode):
     np.testing.assert_array_equal(result.numpy_image, image)
     assert result.parent_metadata.parent_id == "source-frame"
     assert base64.b64decode(result.base64_image).startswith(b"\xff\xd8")
+
+
+def test_workflow_npy_in_fortran_order_can_be_drawn_on_in_place():
+    from roboflow_workflows.core_steps.common import deserializers
+
+    from inference.core.interfaces.workflows_image_codec import ServerImageCodec
+
+    image = np.asfortranarray(np.arange(105, dtype=np.uint8).reshape(5, 7, 3))
+
+    result = deserializers.deserialize_image_kind(
+        parameter="image",
+        image={"type": "npy", "value": _value(_npy(image), encoded=True)},
+        image_codec=ServerImageCodec(),
+    )
+    pixels = result.numpy_image
+    cv2.rectangle(pixels, (1, 1), (4, 3), (255, 0, 0), 1)
+
+    assert pixels.flags.c_contiguous
+    assert pixels[1, 1].tolist() == [255, 0, 0]
 
 
 _MALFORMED_HEADERS = {
@@ -259,7 +260,9 @@ _MALFORMED_DESCRIPTORS = {
 
 @pytest.mark.parametrize("version", [(1, 0), (2, 0)], ids=["v1", "v2"])
 @pytest.mark.parametrize("name", list(_MALFORMED_DESCRIPTORS))
-def test_malformed_npy_descriptor_raises_invalid_numpy_input(monkeypatch, version, name):
+def test_malformed_npy_descriptor_raises_invalid_numpy_input(
+    monkeypatch, version, name
+):
     header = _MALFORMED_DESCRIPTORS[name]
     size = len(header).to_bytes(2 if version == (1, 0) else 4, "little")
     data = b"\x93NUMPY" + bytes(version) + size + header

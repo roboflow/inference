@@ -135,8 +135,7 @@ def deserialize_image_kind(
             if not is_bgr:
                 pixels = cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
 
-            # NPY base64 is not an encoded JPEG/PNG. Let WorkflowImageData
-            # produce its normal base64 image from pixels when requested.
+            # NPY is not an encoded image; WorkflowImageData encodes the pixels.
             return WorkflowImageData(
                 parent_metadata=parent_metadata,
                 workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,

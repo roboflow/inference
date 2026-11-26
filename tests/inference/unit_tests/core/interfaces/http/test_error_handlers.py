@@ -55,11 +55,7 @@ def test_with_route_exceptions_reports_non_ascii_image_as_bad_request():
     assert "Malformed base64 input image" in response.body.decode()
 
 
-def test_with_route_exceptions_reports_non_ascii_inferred_image_as_bad_request(
-    monkeypatch,
-):
-    monkeypatch.setattr(image_utils, "ALLOW_NUMPY_INPUT", True)
-
+def test_with_route_exceptions_reports_non_ascii_inferred_image_as_bad_request():
     @with_route_exceptions
     def image_route():
         image_utils.load_image("not-base64-猫")

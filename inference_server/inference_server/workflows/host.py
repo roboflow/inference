@@ -1332,7 +1332,11 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
             disable_preproc_auto_orient=disable_preproc_auto_orient
         )
         if isinstance(value, dict) and "type" in value and "value" in value:
-            if isinstance(value["type"], str) and value["type"].lower() == "npy":
+            # The legacy decoder reads NPY and refuses pickled numpy, pointing to NPY.
+            if isinstance(value["type"], str) and value["type"].lower() in (
+                "npy",
+                "numpy",
+            ):
                 try:
                     payload = decode_inline_image(value, ndarray_ok=True)
                 except LegacyHTTPError as error:
@@ -1341,7 +1345,8 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
                         context=_IMAGE_LOADING_CONTEXT,
                     ) from error
 
-                return convert_gray_image_to_bgr(payload.data), True
+                image = convert_gray_image_to_bgr(payload.data)
+                return image, True
             if value["type"] == "url":
                 return (
                     convert_gray_image_to_bgr(

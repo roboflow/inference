@@ -4896,7 +4896,7 @@ class HttpInterface(BaseInterface):
                 ),
                 image_type: Optional[str] = Query(
                     "base64",
-                    description="One of base64 or numpy. Note, numpy input is not supported for Roboflow Hosted Inference.",
+                    description="One of base64 or npy (NPY data saved with np.save(..., allow_pickle=False)).",
                 ),
                 class_filter: Optional[str] = Query(
                     None,

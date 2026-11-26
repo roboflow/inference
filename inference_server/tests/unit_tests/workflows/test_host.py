@@ -551,10 +551,12 @@ def test_image_codec_refuses_pickled_numpy_and_local_files(monkeypatch):
         host.configuration, "ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM", False
     )
 
-    with pytest.raises(WorkflowImageLoadError):
+    with pytest.raises(WorkflowImageLoadError) as pickled:
         host.GUARDED_IMAGE_CODEC.load_image({"type": "numpy", "value": b"x"})
     with pytest.raises(WorkflowImageLoadError):
         host.GUARDED_IMAGE_CODEC.ensure_local_file_load_allowed("/tmp/x.jpg")
+
+    assert "'npy'" in pickled.value.public_message
 
 
 def test_step_error_handler_maps_unauthorized():

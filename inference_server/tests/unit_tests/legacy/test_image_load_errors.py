@@ -36,6 +36,10 @@ RAW_BYTES = (
 NUMPY_UNSUPPORTED = (
     "NumPy image type is not supported in this configuration of `inference`."
 )
+NUMPY_REMOVED = (
+    "The pickled 'numpy' image type is not supported. Send type 'npy' with "
+    "base64-encoded np.save(..., allow_pickle=False) data instead."
+)
 UNKNOWN_TYPE = "Image declaration contains not recognised image type."
 LOCAL_FILE_DISABLED = "Loading images from local filesystem is disabled."
 NOT_NDARRAY = "Data provided as input could not be decoded into np.ndarray object."
@@ -311,7 +315,7 @@ def test_pickled_numpy_image_is_refused_in_every_configuration(
     response = _post_image(client, {"type": declared_type, "value": pickled})
 
     assert response.status_code == 400
-    assert response.json() == {"message": f"{PREFIX}{NUMPY_UNSUPPORTED}"}
+    assert response.json() == {"message": f"{PREFIX}{NUMPY_REMOVED}"}
 
 
 def test_image_without_declared_type_given_as_url_is_fetched(
@@ -505,7 +509,7 @@ async def test_v2_json_image_keeps_refusing_other_declared_types(
         ({"type": "base64", "value": NOT_AN_IMAGE_B64}, MALFORMED_BASE64),
         ({"type": "base64", "value": ""}, EMPTY_PAYLOAD),
         ({"type": "base64", "value": "!!!"}, EMPTY_PAYLOAD),
-        ({"type": "numpy", "value": "gASVAAAAAAAAAAAu"}, NUMPY_UNSUPPORTED),
+        ({"type": "numpy", "value": "gASVAAAAAAAAAAAu"}, NUMPY_REMOVED),
         ({"type": "bogus", "value": "x"}, UNKNOWN_TYPE),
         ({"type": "numpy_object", "value": [1, 2, 3]}, NOT_NDARRAY),
     ],
@@ -1204,7 +1208,7 @@ async def test_truncated_jpeg_from_url_answers_like_legacy(monkeypatch, case):
             {"type": "numpy", "value": "x"},
             {},
             "InvalidImageTypeDeclared",
-            NUMPY_UNSUPPORTED,
+            NUMPY_REMOVED,
         ),
         (
             {"type": "numpy_object", "value": np.zeros(3, dtype=np.uint8)},

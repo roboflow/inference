@@ -23,7 +23,6 @@ from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import (
     ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM,
     ALLOW_NON_HTTPS_URL_INPUT,
-    ALLOW_NUMPY_INPUT,
     ALLOW_URL_INPUT,
     ALLOW_URL_INPUT_WITHOUT_FQDN,
     ALLOW_URL_TO_NON_GLOBAL_ADDRESSES,
@@ -34,7 +33,6 @@ from inference.core.env import (
     WHITELISTED_DESTINATIONS_FOR_URL_INPUT,
 )
 from inference.core.exceptions import (
-    InputFormatInferenceFailed,
     InputImageLoadError,
     InvalidImageTypeDeclared,
     InvalidNumpyInput,
@@ -48,6 +46,13 @@ from inference.core.utils.url_input import (
 )
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
+_NUMPY_UNSUPPORTED_MESSAGE = (
+    "NumPy image type is not supported in this configuration of `inference`."
+)
+_NUMPY_REMOVED_MESSAGE = (
+    "The pickled 'numpy' image type is not supported. Send type 'npy' with "
+    "base64-encoded np.save(..., allow_pickle=False) data instead."
+)
 
 
 class ImageType(Enum):
@@ -251,6 +256,9 @@ def attempt_loading_image_from_string(
 
     Returns:
         Tuple[np.ndarray, bool]: A tuple of the loaded image in numpy array format and a boolean flag indicating if the image is in BGR format.
+
+    Raises:
+        InvalidImageTypeDeclared: If no supported image format decodes the value.
     """
     try:
         return load_image_base64(value=value, cv_imread_flags=cv_imread_flags), True
@@ -270,22 +278,10 @@ def attempt_loading_image_from_string(
         )
     except:
         pass
-    try:
-        return load_image_from_numpy_str(value=value), True
-    except InvalidImageTypeDeclared as error:
-        if ALLOW_NUMPY_INPUT:
-            # The pickle fallback this flag used to open no longer exists, so an
-            # unrecognised string is simply not an image format we can infer.
-            raise InputFormatInferenceFailed(
-                message="Input image format could not be inferred from string.",
-                public_message="Input image format could not be inferred from string.",
-            ) from error
-        raise error
-    except InvalidNumpyInput as error:
-        raise InputFormatInferenceFailed(
-            message="Input image format could not be inferred from string.",
-            public_message="Input image format could not be inferred from string.",
-        ) from error
+    raise InvalidImageTypeDeclared(
+        message=_NUMPY_UNSUPPORTED_MESSAGE,
+        public_message=_NUMPY_UNSUPPORTED_MESSAGE,
+    )
 
 
 def load_image_base64(
@@ -361,7 +357,8 @@ def load_image_from_npy(value: Union[bytes, str]) -> np.ndarray:
         value (Union[bytes, str]): Raw NPY bytes or their base64-encoded string.
 
     Returns:
-        np.ndarray: The image, preserving its pixels and channel order.
+        np.ndarray: The image as a C-contiguous array, preserving its pixels and
+            channel order.
 
     Raises:
         InvalidNumpyInput: If the payload is not a complete uint8 NPY image.
@@ -372,10 +369,8 @@ def load_image_from_npy(value: Union[bytes, str]) -> np.ndarray:
         if not isinstance(value, bytes):
             raise ValueError("expected NPY bytes or a base64 string")
 
-        # Bound header parsing before reading any array data. Keep this contract
-        # in sync with inference_server.legacy.common._npy_payload; the servers
-        # are distributed separately and cannot import each other's internals.
-        header = BytesIO(value[: 12 + 10_000])
+        # Same checks as inference_server.legacy.common._npy_payload.
+        header = BytesIO(value)
         version = np.lib.format.read_magic(header)
         if version == (1, 0):
             shape, _, dtype = np.lib.format.read_array_header_1_0(header)
@@ -394,9 +389,7 @@ def load_image_from_npy(value: Union[bytes, str]) -> np.ndarray:
             raise ValueError("array size does not match the NPY payload")
 
         data = np.load(BytesIO(value), allow_pickle=False)
-    # NumPy's header parser raises TokenError, SyntaxError or RecursionError for
-    # malformed or deeply nested headers, and IndexError/KeyError/AttributeError
-    # for malformed dtype descriptors; all are a client error.
+    # NumPy raises all of these for malformed headers and dtype descriptors.
     except (
         ValueError,
         TypeError,
@@ -414,7 +407,8 @@ def load_image_from_npy(value: Union[bytes, str]) -> np.ndarray:
             public_message="Expected a complete uint8 NPY image with 2 or 3 dimensions and 1 or 3 channels.",
         ) from error
 
-    return data
+    image = np.ascontiguousarray(data)
+    return image
 
 
 def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
@@ -430,17 +424,10 @@ def load_image_from_numpy_str(value: Union[bytes, str]) -> np.ndarray:
     Raises:
         InvalidImageTypeDeclared: Always.
     """
-    if ALLOW_NUMPY_INPUT:
-        message = (
-            "The pickled 'numpy' image type has been removed and ALLOW_NUMPY_INPUT "
-            "no longer enables it. Send type='npy' with base64-encoded "
-            "np.save(..., allow_pickle=False) data instead."
-        )
-    else:
-        message = (
-            "NumPy image type is not supported in this configuration of `inference`."
-        )
-    raise InvalidImageTypeDeclared(message=message, public_message=message)
+    raise InvalidImageTypeDeclared(
+        message=_NUMPY_REMOVED_MESSAGE,
+        public_message=_NUMPY_REMOVED_MESSAGE,
+    )
 
 
 def load_image_from_numpy_object(value: np.ndarray) -> np.ndarray:

@@ -36,7 +36,9 @@ for contributor and maintainer responsibilities.
   - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
 - Explicit `type: "npy"` workflow image inputs are decoded by the host image
   codec, preserving their pixels and metadata. This requires a server with NPY
-  input support and a Workflows release containing this change.
+  input support and a Workflows release containing this change. The local
+  codec's refusal of pickled `numpy` payloads no longer says a host may allow
+  them.
 
 ### Changed
 

@@ -28,11 +28,7 @@ import pytest
 from requests_mock import Mocker
 from urllib3.connectionpool import HTTPSConnectionPool
 
-from inference.core.exceptions import (
-    InputFormatInferenceFailed,
-    InputImageLoadError,
-    InvalidImageTypeDeclared,
-)
+from inference.core.exceptions import InputImageLoadError, InvalidImageTypeDeclared
 from inference.core.interfaces.workflows_image_codec import (
     GUARDED_IMAGE_CODEC,
     ServerImageCodec,
@@ -421,26 +417,16 @@ def test_adapter_load_image_refuses_a_declared_file_payload_when_disabled(
 # --------------------------------------------------------------------------
 
 
-@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", False)
-def test_adapter_decode_string_keeps_the_pickle_gate_shut_by_default(
-    image_as_base64_encoded_pickled_bytes: bytes,
-) -> None:
-    with pytest.raises(InputImageLoadError):
-        CODEC.decode_string(image_as_base64_encoded_pickled_bytes)
-
-
-@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", True)
-def test_adapter_decode_string_never_unpickles_even_with_the_old_flag(
+def test_adapter_decode_string_never_unpickles(
     image_as_base64_encoded_pickled_bytes: bytes,
 ) -> None:
     with mock.patch("pickle.loads", side_effect=AssertionError("unpickled")) as loads:
-        with pytest.raises(InputFormatInferenceFailed):
+        with pytest.raises(InvalidImageTypeDeclared):
             CODEC.decode_string(image_as_base64_encoded_pickled_bytes)
     loads.assert_not_called()
 
 
-@mock.patch.object(image_utils, "ALLOW_NUMPY_INPUT", False)
-def test_adapter_load_image_refuses_a_declared_numpy_payload_when_disabled(
+def test_adapter_load_image_refuses_a_declared_numpy_payload(
     image_as_base64_encoded_pickled_bytes: bytes,
 ) -> None:
     with pytest.raises(InvalidImageTypeDeclared):
