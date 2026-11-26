@@ -6,8 +6,9 @@ is unable to set it.
 """
 
 import threading
+import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 import numpy as np
 from roboflow_workflows.execution_engine.core import ExecutionEngine
@@ -24,7 +25,7 @@ RECORDER_WORKFLOW = {
     ],
     "outputs": [],
 }
-ENCODER_THREAD_PREFIX = "video-clip-"
+ENCODER_THREAD_PREFIX = "video-clip-x264-encoder-"
 
 
 def _frame_with_caller_supplied_video_metadata() -> Dict[str, Any]:
@@ -43,12 +44,31 @@ def _frame_with_caller_supplied_video_metadata() -> Dict[str, Any]:
     }
 
 
-def _recorder_threads() -> List[str]:
+def _thread_ids() -> Set[int]:
+    return {thread.ident for thread in threading.enumerate()}
+
+
+def _encoder_threads_started_since(known_thread_ids: Set[int]) -> List[str]:
+    # Only threads this test started: threads other tests left winding down in the
+    # same process may exit at any moment and must not change the result.
     return [
         thread.name
         for thread in threading.enumerate()
-        if thread.name.startswith(ENCODER_THREAD_PREFIX)
+        if thread.ident not in known_thread_ids
+        and thread.name.startswith(ENCODER_THREAD_PREFIX)
     ]
+
+
+def _wait_until_no_encoder_thread_since(
+    known_thread_ids: Set[int], timeout: float = 10.0
+) -> List[str]:
+    deadline = time.monotonic() + timeout
+    while _encoder_threads_started_since(known_thread_ids):
+        if time.monotonic() > deadline:
+            break
+        time.sleep(0.01)
+
+    return _encoder_threads_started_since(known_thread_ids)
 
 
 def _recorder_block(execution_engine: ExecutionEngine) -> Any:
@@ -57,7 +77,7 @@ def _recorder_block(execution_engine: ExecutionEngine) -> Any:
 
 def test_request_host_never_starts_a_recorder_thread() -> None:
     # given: a host that builds an engine per request and passes no declaration
-    threads_before = _recorder_threads()
+    known_thread_ids = _thread_ids()
     execution_engine = ExecutionEngine.init(
         workflow_definition=RECORDER_WORKFLOW,
         init_parameters={"workflows_core.api_key": None},
@@ -70,12 +90,12 @@ def test_request_host_never_starts_a_recorder_thread() -> None:
 
     # then: nothing is left running that only `close()` could stop
     assert _recorder_block(execution_engine)._streams == {}
-    assert _recorder_threads() == threads_before
+    assert _encoder_threads_started_since(known_thread_ids) == []
 
 
 def test_host_that_manages_block_lifecycle_records_until_close() -> None:
     # given: what `InferencePipeline.init_with_workflow` sets
-    threads_before = _recorder_threads()
+    known_thread_ids = _thread_ids()
     execution_engine = ExecutionEngine.init(
         workflow_definition=RECORDER_WORKFLOW,
         init_parameters={
@@ -92,9 +112,11 @@ def test_host_that_manages_block_lifecycle_records_until_close() -> None:
 
         # then
         assert list(_recorder_block(execution_engine)._streams) == ["camera-1"]
-        assert len(_recorder_threads()) == len(threads_before) + 1
+        assert _encoder_threads_started_since(known_thread_ids) == [
+            "video-clip-x264-encoder-camera-1"
+        ]
     finally:
         execution_engine.close()
 
     # then: the close the host promised stops the encoder thread
-    assert _recorder_threads() == threads_before
+    assert _wait_until_no_encoder_thread_since(known_thread_ids) == []

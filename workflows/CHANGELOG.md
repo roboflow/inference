@@ -74,9 +74,9 @@ Engine version: `1.18.0` (was `1.17.3`).
     other host, HTTP requests included, the anchor is
     `unavailable:unsupported_host`. With `disable_sinks` it is
     `unavailable:sinks_disabled`.
-  - An encoder that keeps failing (9 frames in a row) is given up for that stream:
-    NVENC falls back to x264, and a failing x264 stream reports
-    `unavailable:no_encoder` instead of `ok`.
+  - An encoder that keeps failing (9 frames in a row, over at least 2 seconds) is
+    given up for that stream: NVENC falls back to x264, and a failing x264 stream
+    reports `unavailable:no_encoder` instead of `ok`.
   - One recorder step records the first 16 streams it sees. A further stream is not
     recorded and its anchor is `unavailable:too_many_streams`.
   - The block requires engine `>=1.18.0`.

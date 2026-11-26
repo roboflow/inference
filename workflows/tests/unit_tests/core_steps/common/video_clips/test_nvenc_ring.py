@@ -18,6 +18,7 @@ from typing import Any, List, Optional
 import av
 import pytest
 from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+from roboflow_workflows.core_steps.common.video_clips import ring as ring_module
 from roboflow_workflows.core_steps.common.video_clips.artifact import ClipArtifact
 from roboflow_workflows.core_steps.common.video_clips.capture import (
     PARTIAL_SHUTDOWN,
@@ -455,9 +456,11 @@ def test_full_pool_drops_frames_while_encoder_is_blocked() -> None:
     ring.close()
 
 
-def test_session_that_never_opens_is_reported_as_encoder_failed() -> None:
+def test_session_that_never_opens_is_reported_as_encoder_failed(monkeypatch) -> None:
     # given: the process warm-up succeeded, but this stream's session cannot be
     # opened (for example the driver's limit on concurrent sessions is reached)
+    monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 0.0)
+
     class NoSessionAdapter(FakeAdapter):
         def open_session(self, width, height, fps, gop, bitrate, device):
             raise RuntimeError("out of NVENC sessions")

@@ -117,8 +117,13 @@ COST_SAMPLES = 600
 LOSS_EVENT_HISTORY = 65536
 MAX_CONSECUTIVE_ENCODE_ERRORS = 3
 # Failed restarts in a row (each after MAX_CONSECUTIVE_ENCODE_ERRORS failed frames,
-# with no frame encoded in between) after which the encoder counts as failed.
+# with no frame encoded in between) after which the encoder counts as failed,
+# provided the failures also lasted ENCODER_FAILURE_MIN_SECONDS. Queued frames are
+# encoded back to back, so a count alone would be used up within milliseconds by
+# a short hiccup (a momentary CUDA out-of-memory, an NVENC session another ring is
+# just giving back).
 MAX_ENCODER_RESTARTS = 3
+ENCODER_FAILURE_MIN_SECONDS = 2.0
 WORKER_POLL_SECONDS = 0.1
 TIME_EPSILON = 1e-6
 LOGGED_ERRORS_BEFORE_THROTTLE = 5
@@ -781,6 +786,8 @@ class BaseEncodedRing(abc.ABC):
         self._in_flight: Deque[_InFlight] = deque()
         self._consecutive_encode_errors = 0
         self._failed_encoder_restarts = 0
+        self._encoder_failing_since: Optional[float] = None
+        self._encoder_failures_in_a_row = 0
         # Written by the encoder thread, read by the owner: a plain flag.
         self._encoder_failed = False
 
@@ -1020,7 +1027,8 @@ class BaseEncodedRing(abc.ABC):
 
         Set after ``MAX_ENCODER_RESTARTS`` restarts in a row that each ended in
         ``MAX_CONSECUTIVE_ENCODE_ERRORS`` failed frames, with no frame encoded in
-        between. It never goes back to False.
+        between, once the failures lasted ``ENCODER_FAILURE_MIN_SECONDS``. It never
+        goes back to False.
         """
         return self._encoder_failed
 
@@ -1189,6 +1197,8 @@ class BaseEncodedRing(abc.ABC):
         encode_ms = (time.perf_counter() - started) * 1000
         self._consecutive_encode_errors = 0
         self._failed_encoder_restarts = 0
+        self._encoder_failing_since = None
+        self._encoder_failures_in_a_row = 0
         with self._lock:
             self._frames_encoded += 1
             self._encode_ms.append(encode_ms)
@@ -1200,14 +1210,19 @@ class BaseEncodedRing(abc.ABC):
         self._log_error("encode", error)
         self._discard_safely(frame)
         self._consecutive_encode_errors += 1
+        self._encoder_failures_in_a_row += 1
+        if self._encoder_failing_since is None:
+            self._encoder_failing_since = time.monotonic()
         if self._consecutive_encode_errors >= MAX_CONSECUTIVE_ENCODE_ERRORS:
             self._consecutive_encode_errors = 0
             self._close_encoder_safely()
             self._in_flight.clear()
             self._last_keyframe_slot = None
             self._failed_encoder_restarts += 1
+            failing_seconds = time.monotonic() - self._encoder_failing_since
             if (
                 self._failed_encoder_restarts >= MAX_ENCODER_RESTARTS
+                and failing_seconds >= ENCODER_FAILURE_MIN_SECONDS
                 and not self._encoder_failed
             ):
                 # Restarting did not help (a missing codec, an exhausted NVENC
@@ -1216,10 +1231,11 @@ class BaseEncodedRing(abc.ABC):
                 self._encoder_failed = True
                 logger.warning(
                     "Video clip ring `%s` (%s): the encoder failed on %d frames in "
-                    "a row; the ring no longer records.",
+                    "a row over %.1f s; the ring no longer records.",
                     self.video_identifier,
                     self.backend,
-                    MAX_ENCODER_RESTARTS * MAX_CONSECUTIVE_ENCODE_ERRORS,
+                    self._encoder_failures_in_a_row,
+                    failing_seconds,
                 )
 
     def _append_outputs(

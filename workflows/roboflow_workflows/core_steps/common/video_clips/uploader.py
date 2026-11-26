@@ -563,11 +563,14 @@ class ClipUploader:
         if 200 <= status_code < 300 or status_code == 412:
             return STATUS_PUT_ACCEPTED, None, False
 
-        body_text = redact_text(_response_text(response)[:ERROR_BODY_CHARACTERS])
+        raw_body_text = _response_text(response)[:ERROR_BODY_CHARACTERS]
+        body_text = redact_text(raw_body_text)
         message = f"HTTP {status_code}: {body_text}"
         if status_code >= 500 or status_code in TRANSIENT_4XX:
             return STATUS_UPLOAD_FAILED, message, True
-        if "ExpiredToken" in body_text:
+        # Looked for in the raw body: redaction replaces everything after a "?" up
+        # to the next space or quote, which may include the error code.
+        if "ExpiredToken" in raw_body_text:
             return STATUS_EXPIRED, message, False
 
         return STATUS_UPLOAD_FAILED, message, False

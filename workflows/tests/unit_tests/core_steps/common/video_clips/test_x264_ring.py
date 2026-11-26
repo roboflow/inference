@@ -390,8 +390,9 @@ FRAMES_UNTIL_ENCODER_FAILED = (
 )
 
 
-def test_encoder_that_never_recovers_is_reported_as_failed() -> None:
-    # given
+def test_encoder_that_never_recovers_is_reported_as_failed(monkeypatch) -> None:
+    # given: only the count matters here
+    monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 0.0)
     recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
     recorder.failures = 10_000
     try:
@@ -413,8 +414,34 @@ def test_encoder_that_never_recovers_is_reported_as_failed() -> None:
         recorder.close()
 
 
-def test_encoder_that_recovers_is_not_reported_as_failed() -> None:
+def test_burst_of_encoder_failures_is_not_reported_as_failed() -> None:
+    # given: queued frames are encoded back to back, so many failures can happen
+    # within milliseconds of a short hiccup
+    recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
+    recorder.failures = 10 * FRAMES_UNTIL_ENCODER_FAILED
+    try:
+        # when: far more failed frames than the count asks for, in well under
+        # ENCODER_FAILURE_MIN_SECONDS
+        started = time.monotonic()
+        _feed(recorder, range(recorder.failures))
+        _wait_for(lambda: recorder.stats().encode_errors == recorder.failures)
+        elapsed = time.monotonic() - started
+
+        # then
+        assert elapsed < ring_module.ENCODER_FAILURE_MIN_SECONDS
+        assert recorder.encoder_failed is False
+
+        # and: the encoder works again afterwards
+        _feed(recorder, [recorder.failures])
+        _wait_for(lambda: recorder.stats().frames_encoded == 1)
+        assert recorder.encoder_failed is False
+    finally:
+        recorder.close()
+
+
+def test_encoder_that_recovers_is_not_reported_as_failed(monkeypatch) -> None:
     # given: failures up to one frame short of the limit, then a working encoder
+    monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 0.0)
     recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
     recorder.failures = FRAMES_UNTIL_ENCODER_FAILED - 1
     try:

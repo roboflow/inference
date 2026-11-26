@@ -1,5 +1,4 @@
 import logging
-import socket
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -33,6 +32,7 @@ from roboflow_workflows.core_steps.common.video_clips.uploader import (
     redact_text,
     redact_url,
 )
+from urllib3.exceptions import MaxRetryError, NewConnectionError
 
 START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 SECRET = "X-Goog-Signature=deadbeefsecret&X-Goog-Credential=svc%40proj"
@@ -250,44 +250,66 @@ def test_transient_errors_back_off_then_succeed_with_redacted_logs(
     assert "storage.googleapis.com/bucket/videos/abc.mp4?REDACTED" in caplog.text
 
 
-def _closed_local_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
+def _requests_connection_error(path_and_query: str) -> requests.ConnectionError:
+    """Build the error `requests` raises when a connection cannot be made.
 
-    return port
+    The real urllib3 classes format the message, so it reads as in production:
+    "... Max retries exceeded with url: <path>?<query> (Caused by ...)", the
+    request named by its path and query alone, without scheme or host.
+    """
+    refused = NewConnectionError(None, "Failed to establish a new connection")
+    try:
+        try:
+            raise MaxRetryError(pool=None, url=path_and_query, reason=refused)
+        except MaxRetryError as retries_exhausted:
+            raise requests.ConnectionError(retries_exhausted)
+    except requests.ConnectionError as error:
+        return error
+
+
+def test_expired_token_is_recognised_when_redaction_covers_the_error_code() -> None:
+    # given: an error body where the code follows a query string with no space or
+    # quote in between, so redacting the query also removes the code
+    body = f"denied for /bucket/videos/abc.mp4?{SECRET};code=ExpiredToken"
+    put = _FakePut([_Response(400, body)])
+    uploader = _uploader(put, _FakeClock())
+
+    # when
+    completion = _submit(uploader, _capture(_artifact())).result(timeout=5)
+
+    # then: the status comes from the raw body, the message stays redacted
+    assert completion.terminal_status == STATUS_EXPIRED
+    assert "deadbeefsecret" not in completion.error
+    assert "ExpiredToken" not in completion.error
 
 
 def test_real_connection_error_never_exposes_the_signature(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # given: the real `requests.put` against a port nothing listens on. Its error
-    # reads "Max retries exceeded with url: /bucket/videos/abc.mp4?<signature>",
-    # without scheme or host, so a pattern looking for "https://...?" misses it.
-    signed_url = (
-        f"http://127.0.0.1:{_closed_local_port()}/bucket/videos/abc.mp4?{SECRET}"
-    )
+    # given: the error `requests` raises for a refused connection. A pattern that
+    # looks for "https://...?" does not find the query string in it.
+    error = _requests_connection_error(f"/bucket/videos/abc.mp4?{SECRET}")
+    assert "deadbeefsecret" in repr(error)
+    assert "https://" not in repr(error)
     clock = _FakeClock()
-    uploader = _uploader(requests.put, clock)
+    uploader = _uploader(_FakePut([error]), clock)
 
     # when
     with caplog.at_level(logging.INFO):
         completion = _submit(
-            uploader,
-            _capture(_artifact()),
-            signed_url=signed_url,
-            upload_timeout_seconds=10.0,
-        ).result(timeout=30)
+            uploader, _capture(_artifact()), upload_timeout_seconds=10.0
+        ).result(timeout=5)
 
     # then: retried, reported by exception type, and the signature is nowhere
     assert completion.terminal_status == STATUS_SHUTDOWN_DEADLINE
     assert clock.sleeps
-    assert "ConnectionError" in completion.error
-    assert "deadbeefsecret" not in completion.error
-    assert "X-Goog-Credential" not in completion.error
+    assert completion.error == (
+        "upload deadline passed: "
+        "ConnectionError <- MaxRetryError <- NewConnectionError"
+    )
     assert "deadbeefsecret" not in caplog.text
     assert "X-Goog-Credential" not in caplog.text
-    assert "/bucket/videos/abc.mp4?REDACTED" in caplog.text
+    assert "storage.googleapis.com/bucket/videos/abc.mp4?REDACTED" in caplog.text
 
 
 def test_describe_put_error_names_the_causes_without_their_messages() -> None:
