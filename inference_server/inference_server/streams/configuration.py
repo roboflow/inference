@@ -53,6 +53,7 @@ def build_streams_configuration() -> StreamsConfiguration:
         enable_tensor_data_representation=tensor_representation_enabled,
         enable_workflows_profiling=configuration.ENABLE_WORKFLOWS_PROFILING,
         workflows_profiler_buffer_size=configuration.WORKFLOWS_PROFILER_BUFFER_SIZE,
+        workflows_block_close_deadline_seconds=configuration.WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS,
         predictions_queue_size=configuration.INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE,
         predictions_queue_size_explicit=configuration.INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE_EXPLICIT,
         stream_manager_max_active_pipelines=configuration.STREAM_MANAGER_MAX_ACTIVE_PIPELINES,
