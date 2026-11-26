@@ -168,6 +168,10 @@ def detect_qr_codes(image: WorkflowImageData) -> sv.Detections:
     detections[IMAGE_DIMENSIONS_KEY] = np.array(
         [[img_height, img_width]] * len(detections)
     )
+    if len(detections) == 0:
+        # Per-row data cannot carry image dimensions when there are no rows, so
+        # the serializer reads them from ``metadata`` for empty results.
+        detections.metadata[IMAGE_DIMENSIONS_KEY] = [img_height, img_width]
     return attach_parents_coordinates_to_sv_detections(
         detections=detections,
         image=image,

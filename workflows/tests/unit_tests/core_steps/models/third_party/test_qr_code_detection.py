@@ -4,10 +4,12 @@ import cv2
 import numpy as np
 import pytest
 from pydantic import ValidationError
+from roboflow_workflows.core_steps.common.serializers import serialise_sv_detections
 from roboflow_workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     BlockManifest,
     QRCodeDetectorBlockV1,
 )
+from roboflow_workflows.execution_engine.constants import IMAGE_DIMENSIONS_KEY
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
@@ -134,7 +136,12 @@ def test_qr_code_detection_when_image_has_no_qr_code() -> None:
     result = step.run(images=_single_image_batch(numpy_image=blank_image))
 
     # then
-    assert len(result[0]["predictions"]) == 0
+    predictions = result[0]["predictions"]
+    assert len(predictions) == 0
+    assert predictions.metadata[IMAGE_DIMENSIONS_KEY] == [480, 640]
+    serialized = serialise_sv_detections(detections=predictions)
+    assert serialized["image"] == {"width": 640, "height": 480}
+    assert serialized["predictions"] == []
 
 
 @pytest.mark.parametrize("quarter_turns", [1, 2, 3])
