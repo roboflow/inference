@@ -29,7 +29,6 @@ async def _embed_image(proxy, common, hooks, image: bytes):
         model_id=common.model_id,
         image=image,
         action="embed_images",
-        instance=common.instance,
         params={},
         request=hooks.request,
     )
@@ -40,7 +39,6 @@ async def _embed_texts(proxy, common, hooks, texts: list[str]):
         model_id=common.model_id,
         image=None,
         action="embed_text",
-        instance=common.instance,
         params={"texts": texts},
         request=hooks.request,
     )
@@ -62,7 +60,6 @@ async def handle_embeddings(
                 model_id=common.model_id,
                 image=images[0],
                 action="embed_images",
-                instance=common.instance,
                 params=params,
                 request=hooks.request,
             )
