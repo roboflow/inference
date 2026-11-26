@@ -23,6 +23,8 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     CROP_MAX_EDGE,
     CROP_MIN_EDGE,
     KEYPOINT_CROP_MIN_EDGE,
+    MAX_REFERENCE_ANNOTATIONS,
+    MAX_REFERENCE_DRAW_ITEMS,
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_BOXED_INTRO,
     REFERENCE_CROPS_INTRO,
@@ -1716,3 +1718,144 @@ def test_keypoint_reference_parts_are_cached_apart_by_skeleton(parts_for) -> Non
 
     # then
     assert load_image.call_count == 3
+
+
+def test_validate_reference_examples_rejects_too_many_annotations_in_an_example() -> (
+    None
+):
+    # given
+    annotation = {"x": 50, "y": 50, "width": 40, "height": 20, "class": "cat"}
+    accepted = _example(annotations=[annotation] * MAX_REFERENCE_ANNOTATIONS)
+    refused = _example(annotations=[annotation] * (MAX_REFERENCE_ANNOTATIONS + 1))
+
+    # when
+    examples = validate_reference_examples(
+        [accepted], task_type="object-detection", labels=["cat"]
+    )
+
+    # then
+    assert len(examples[0].annotations) == MAX_REFERENCE_ANNOTATIONS
+    with pytest.raises(ValueError, match=f"at most {MAX_REFERENCE_ANNOTATIONS} items"):
+        validate_reference_examples(
+            [refused], task_type="object-detection", labels=["cat"]
+        )
+
+
+def _plate_instances(count: int) -> dict:
+    instance = _plate_example()["annotations"][0]
+    return _example(annotations=[instance] * count)
+
+
+def test_validate_reference_examples_limits_the_keypoints_and_edges_to_draw() -> None:
+    # given
+    # A plate draws 4 keypoints and 4 edges.
+    instances = MAX_REFERENCE_DRAW_ITEMS // 8
+    per_example = instances // 5
+    accepted = [_plate_instances(per_example)] * 5
+    refused = accepted[:4] + [_plate_instances(per_example + 1)]
+
+    # when
+    examples = validate_reference_examples(
+        accepted,
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=PLATE_SKELETONS,
+    )
+
+    # then
+    assert sum(len(example.annotations) for example in examples) == instances
+    with pytest.raises(
+        ValueError, match=f"{MAX_REFERENCE_DRAW_ITEMS + 8} keypoints and skeleton edges"
+    ):
+        validate_reference_examples(
+            refused,
+            task_type="keypoint-detection",
+            labels=["plate"],
+            keypoint_skeletons=PLATE_SKELETONS,
+        )
+
+
+def test_validate_reference_examples_limits_the_keypoints_without_skeletons() -> None:
+    # given
+    # The skeletons come from a selector, so only the keypoints are counted.
+    per_example = MAX_REFERENCE_DRAW_ITEMS // 4 // 10
+    accepted = [_plate_instances(per_example)] * 10
+    refused = accepted[:9] + [_plate_instances(per_example + 1)]
+
+    # when
+    examples = validate_reference_examples(
+        accepted, task_type="keypoint-detection", labels=["plate"]
+    )
+
+    # then
+    assert len(examples) == 10
+    with pytest.raises(
+        ValueError, match=f"{MAX_REFERENCE_DRAW_ITEMS + 4} keypoints and skeleton edges"
+    ):
+        validate_reference_examples(
+            refused, task_type="keypoint-detection", labels=["plate"]
+        )
+
+
+def test_validate_reference_examples_counts_a_repeated_edge_once() -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(
+        {
+            "plate": {
+                "keypoints": ["TL", "TR", "BR", "BL"],
+                "edges": [[0, 1], [1, 0], [2, 2]] * MAX_REFERENCE_DRAW_ITEMS,
+            }
+        },
+        classes=["plate"],
+    )
+
+    # when
+    examples = validate_reference_examples(
+        [_plate_example()],
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=skeletons,
+    )
+
+    # then
+    assert len(examples) == 1
+
+
+@pytest.mark.parametrize("render", ["boxed", "crops"])
+def test_reference_examples_draw_a_repeated_edge_once(render: str) -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(
+        {
+            "plate": {
+                "keypoints": ["TL", "TR", "BR", "BL"],
+                "edges": [[0, 1], [1, 0], [0, 1], [2, 2], [1, 2]],
+            }
+        },
+        classes=["plate"],
+    )
+    examples = validate_reference_examples(
+        [_plate_example(scale=5)],
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=skeletons,
+    )
+
+    # when
+    with patch.object(
+        ImageDraw.ImageDraw,
+        "line",
+        autospec=True,
+        side_effect=ImageDraw.ImageDraw.line,
+    ) as draw_line:
+        if render == "boxed":
+            render_boxed_examples(
+                examples, labels=["plate"], keypoint_skeletons=skeletons
+            )
+        else:
+            render_example_crops(
+                examples, labels=["plate"], keypoint_skeletons=skeletons
+            )
+
+    # then
+    # TL-TR once, although given three times, and TR-BR; BR-BR joins nothing.
+    assert draw_line.call_count == 2

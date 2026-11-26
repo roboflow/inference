@@ -48,6 +48,11 @@ from roboflow_workflows.utils.images import encode_image_to_jpeg_bytes, load_ima
 REFERENCE_EXAMPLES_TASK = "object-detection"
 REFERENCE_EXAMPLES_TASKS = (REFERENCE_EXAMPLES_TASK, KEYPOINT_DETECTION_TASK)
 MAX_REFERENCE_EXAMPLES = 10
+# Bounds the boxes drawn for one request, whatever the task.
+MAX_REFERENCE_ANNOTATIONS = 5_000
+# Bounds the skeleton drawing of one request: a keypoint is a dot and a number tag,
+# an edge a line. The largest request allowed renders in a few seconds.
+MAX_REFERENCE_DRAW_ITEMS = 20_000
 MAX_CROPS_PER_LABEL = 3
 BOXED_IMAGE_MAX_EDGE = 1024
 CROP_MARGIN = 0.15
@@ -117,8 +122,10 @@ REFERENCE_EXAMPLES_DESCRIPTION = (
     "the class skeleton, picks between keypoints that share a name. Annotate every "
     "object of those labels in each example. Local file paths are not read. At most "
     f"{MAX_REFERENCE_EXAMPLES} examples, sent with every image, so each request costs "
-    "more input tokens. A selector can provide the whole list, but selectors inside "
-    "an example are not resolved."
+    f"more input tokens. An example takes at most {MAX_REFERENCE_ANNOTATIONS} "
+    "annotations, and the keypoints and skeleton edges of all the examples at most "
+    f"{MAX_REFERENCE_DRAW_ITEMS} together. A selector can provide the whole list, "
+    "but selectors inside an example are not resolved."
 )
 REFERENCE_EXAMPLES_EXAMPLE = [
     {
@@ -220,7 +227,8 @@ class ReferenceExample(BaseModel):
         examples=[{"type": "url", "value": "https://example.com/labeled.jpg"}],
     )
     annotations: List[ReferenceAnnotation] = Field(
-        description="Every object of the block's labels in the image."
+        max_length=MAX_REFERENCE_ANNOTATIONS,
+        description="Every object of the block's labels in the image.",
     )
 
     @field_validator("image", "annotations", mode="before")
@@ -513,7 +521,8 @@ def validate_reference_examples(
         ValueError: If the task takes no examples, an example is malformed, there
             are too many, an annotation uses a label the block does not have, or a
             keypoint-detection instance has no keypoints or one its class skeleton
-            does not have.
+            does not have, or the examples have more keypoints and edges than one
+            request may draw.
     """
     if not value:
         return []
@@ -931,6 +940,9 @@ def _check_reference_keypoints(
     *,
     skeletons: Optional[Dict[str, KeypointSkeleton]],
 ) -> None:
+    # Counted before any image loads, so a request too large to draw costs nothing.
+    draw_items = 0
+    edge_counts: Dict[str, int] = {}
     for index, example in enumerate(examples):
         for position, annotation in enumerate(example.annotations):
             where = f"`reference_examples[{index}].annotations[{position}]`"
@@ -940,8 +952,20 @@ def _check_reference_keypoints(
                     "need"
                 )
 
+            draw_items += len(annotation.keypoints)
             if skeletons is not None:
                 _instance_keypoint_slots(annotation, skeletons=skeletons, where=where)
+                label = annotation.class_name
+                if label not in edge_counts:
+                    edge_counts[label] = len(_unique_edges(skeletons[label]))
+                draw_items += edge_counts[label]
+
+    if draw_items > MAX_REFERENCE_DRAW_ITEMS:
+        raise ValueError(
+            f"`reference_examples` have {draw_items} keypoints and skeleton edges to "
+            f"draw, more than the {MAX_REFERENCE_DRAW_ITEMS} allowed; pass fewer "
+            "examples or fewer instances"
+        )
 
 
 def _instance_keypoint_slots(
@@ -963,6 +987,22 @@ def _instance_keypoint_slots(
         raise ValueError(f"{where}: {error}") from None
 
     return slots
+
+
+def _unique_edges(skeleton: KeypointSkeleton) -> List[Tuple[int, int]]:
+    """List each edge of the skeleton once, in the order given.
+
+    An edge given twice, or once in each direction, draws the same line, and an edge
+    from a keypoint to itself draws none.
+    """
+    edges = list(
+        dict.fromkeys(
+            (min(first, second), max(first, second))
+            for first, second in skeleton.edges or []
+            if first != second
+        )
+    )
+    return edges
 
 
 def _keypoint_slots(
@@ -1202,6 +1242,11 @@ class _LargestCrops:
         self._labels = list(labels)
         self._label_positions = {label: index for index, label in enumerate(labels)}
         self._skeletons = skeletons
+        # Listed once per skeleton, not for each crop.
+        self._edges = {
+            label: _unique_edges(skeleton)
+            for label, skeleton in (skeletons or {}).items()
+        }
         # (-area, arrival, crop) sorts the largest box first, then the first given.
         self._kept: Dict[str, List[Tuple[float, int, str]]] = {
             label: [] for label in labels
@@ -1247,7 +1292,7 @@ class _LargestCrops:
             image,
             box=box,
             points=points,
-            edges=self._skeletons[label].edges or [],
+            edges=self._edges[label],
             color=_BOX_COLORS[self._label_positions[label] % len(_BOX_COLORS)],
         )
         return crop
@@ -1311,6 +1356,11 @@ def _draw_boxes(
         # Drawn last, so no box or tag hides a keypoint.
         longest = max(canvas.size)
         number_font = _label_font(max(10, round(longest / 80)))
+        # Listed once per skeleton, not for each instance.
+        edges_by_label = {
+            label: _unique_edges(skeletons[label])
+            for label in {label for label, *_ in example.boxes}
+        }
         for (label, *_), points in zip(example.boxes, example.keypoints):
             _draw_skeleton(
                 draw,
@@ -1322,7 +1372,7 @@ def _draw_boxes(
                     )
                     for point in points
                 ],
-                edges=skeletons[label].edges or [],
+                edges=edges_by_label[label],
                 color=_BOX_COLORS[label_positions[label] % len(_BOX_COLORS)],
                 radius=max(3, round(longest / 256)),
                 line_width=max(1, round(longest / 512)),
