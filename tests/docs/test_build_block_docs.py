@@ -5,10 +5,12 @@ These tests ensure that generated Markdown docs do not contain raw
 (Jinja2) parse errors like "unexpected char '$'".
 """
 
+import pytest
 from jinja2 import Environment
 
 from development.docs.build_block_docs import (
     _escape_jinja2_expressions,
+    get_auto_generation_markers,
     slugify_block_name,
 )
 
@@ -144,3 +146,22 @@ class TestSlugifyBlockName:
 
     def test_repeated_brackets_collapse(self):
         assert slugify_block_name("Thing ((Nested))") == "thing_nested"
+
+
+class TestGetAutoGenerationMarkers:
+    """Tests for ``get_auto_generation_markers``."""
+
+    def test_returns_lines_of_the_two_markers(self):
+        lines = ["intro", "<!--- MARK -->", "table", "<!--- MARK -->", "outro"]
+
+        result = get_auto_generation_markers(lines, token="<!--- MARK -->")
+
+        assert result == (1, 3)
+
+    @pytest.mark.parametrize(
+        "lines",
+        [["no markers here"], ["<!--- MARK -->"], ["<!--- MARK -->"] * 3],
+    )
+    def test_wrong_marker_count_names_the_token(self, lines):
+        with pytest.raises(RuntimeError, match="<!--- MARK -->"):
+            get_auto_generation_markers(lines, token="<!--- MARK -->")

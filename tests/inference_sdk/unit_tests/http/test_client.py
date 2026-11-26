@@ -349,7 +349,7 @@ def test_setting_model_statically() -> None:
 
     # then
     assert previous_model is None
-    assert new_model is "some/1"
+    assert new_model == "some/1"
 
 
 def test_setting_model_with_context_manager() -> None:
@@ -363,7 +363,7 @@ def test_setting_model_with_context_manager() -> None:
 
     # then
     assert previous_model is None
-    assert new_model is "some/1"
+    assert new_model == "some/1"
     assert http_client.selected_model is None
 
 

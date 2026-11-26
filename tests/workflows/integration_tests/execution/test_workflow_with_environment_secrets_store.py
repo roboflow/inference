@@ -550,8 +550,8 @@ def test_feeding_existing_env_variable_into_simd_step_accepting_empty_batches(
     assert set(result[1].keys()) == {
         "output",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["output"] is "empty"
-    assert result[1]["output"] is "empty"
+    assert result[0]["output"] == "empty"
+    assert result[1]["output"] == "empty"
 
 
 WORKFLOW_EXPOSING_NON_EXISTING_ENV_VARIABLE_TO_SIMD_STEP_ACCEPTING_EMPTY_BATCHES_NESTED = {
@@ -834,8 +834,8 @@ def test_feeding_existing_env_variable_into_simd_step_accepting_empty_values(
     assert set(result[1].keys()) == {
         "output",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["output"] is "empty"
-    assert result[1]["output"] is "empty"
+    assert result[0]["output"] == "empty"
+    assert result[1]["output"] == "empty"
 
 
 WORKFLOW_EXPOSING_NON_EXISTING_ENV_VARIABLE_TO_SIMD_STEP_ACCEPTING_EMPTY_VALUES_NESTED = {
