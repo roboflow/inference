@@ -81,14 +81,16 @@ passed. The block offers two honest ways to show that.
 `live` (default) shows the current frame with no delay. A strip at the bottom
 covers the last `history_seconds`: one lane per class, a bar for each action
 range, and a hatched zone for frames the model has not analyzed yet. A badge
-names the actions at the last analyzed frame and how long ago that was. This
-mode keeps no frames and adds no latency.
+names the most recent action on the strip and how long ago it ended, so a
+quiet latest window does not hide it. With no action on the strip, the badge
+describes the last analyzed frame. This mode keeps no frames and adds no
+latency.
 
 `synchronized` plays the video late, so each label sits on the frame it
 describes. The block picks the delay: it follows how far the model's results
-trail the stream, which is about one stride plus one model call. Until the
-first result arrives, the first frame is held with an "Analyzing" badge, then
-playback starts from that frame. `max_delay_seconds` caps the delay. When the
+trail the stream, which is about one stride plus one model call. A badge shows
+the current delay. Until the first result arrives, the first frame is held
+with an "Analyzing" badge, then playback starts from that frame. `max_delay_seconds` caps the delay. When the
 model falls further behind than the cap, or the frame budget is too small,
 playback continues with the status `behind` and frames may carry no label.
 This mode suits live streams. A video file ends before its delayed tail is
@@ -104,8 +106,9 @@ the model.
 
 `status` is `analyzing` before the first result, then `live`, `synchronized`,
 `not_analyzed` (for a frame no successful window covered) or `behind`. `actions` lists the classes at
-`actions_frame_number`: the displayed frame in `synchronized`, the last
-analyzed frame in `live`. `displayed_frame_number` identifies the frame in the
+`actions_frame_number`: the displayed frame in `synchronized`; in `live`, the
+last frame of the most recent action on the strip, or the last analyzed frame
+when the strip has none. `displayed_frame_number` identifies the frame in the
 image. Configure the video output to this block's `image`.
 """
 
@@ -371,6 +374,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             start_frame=analyzed_from_frame,
             end_frame=analyzed_until_frame,
         )
+        history_frames = max(1, round(history_seconds * state.fps))
         if synchronized:
             pixels, metadata, parent_metadata, root_metadata, status = (
                 self._synchronized_frame(
@@ -395,19 +399,25 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
                 status, actions_frame = STATUS_ANALYZING, None
             else:
                 candidate = min(number, analyzed_until_frame)
-                if _is_frame_covered(
+                covered = _is_frame_covered(
                     state,
                     frame_number=candidate,
                     analyzed_until_frame=analyzed_until_frame,
                     timeline=timeline,
-                ):
-                    status, actions_frame = STATUS_LIVE, candidate
-                else:
-                    status, actions_frame = STATUS_NOT_ANALYZED, None
+                )
+                status = STATUS_LIVE if covered else STATUS_NOT_ANALYZED
+                # A quiet latest window must not hide an action the strip still
+                # shows; the badge names it with its age instead.
+                actions_frame = _last_action_frame(
+                    timeline,
+                    until_frame=candidate,
+                    since_frame=number - history_frames,
+                )
+                if actions_frame is None and covered:
+                    actions_frame = candidate
 
         state.last_mark = analyzed_until_frame
 
-        history_frames = max(1, round(history_seconds * state.fps))
         oldest_relevant = displayed - history_frames
         if state.frames:
             oldest_relevant = min(
@@ -429,6 +439,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             fps=state.fps,
             status=status,
             waited_frames=number - state.first_frame if held else None,
+            delay_frames=number - displayed if synchronized and not held else None,
         )
         _draw_strip(
             pixels,
@@ -767,6 +778,26 @@ def _actions_at(
     return actions
 
 
+def _last_action_frame(
+    timeline: List[ActionRecognitionPrediction],
+    *,
+    until_frame: int,
+    since_frame: int,
+) -> Optional[int]:
+    """Last frame in [since_frame, until_frame] that any action covers."""
+    ends = [
+        min(entry.end_frame_idx, until_frame)
+        for entry in timeline
+        if entry.start_frame_idx <= until_frame
+    ]
+    recent_ends = [end for end in ends if end >= since_frame]
+    if not recent_ends:
+        return None
+
+    last_frame = max(recent_ends)
+    return last_frame
+
+
 def _class_color(entry: ActionRecognitionPrediction) -> Tuple[int, int, int]:
     # An open-vocabulary class has no id, so its name picks a stable color.
     index = (
@@ -796,16 +827,17 @@ def _draw_badges(
     fps: float,
     status: str,
     waited_frames: Optional[int],
+    delay_frames: Optional[int],
 ) -> None:
     unit, pad, font_px = _sizes(image)
     neutral = (70, 70, 70)
-    if status == STATUS_NOT_ANALYZED:
+    if actions:
+        badges = [(entry.class_name, _class_color(entry)) for entry in actions]
+    elif status == STATUS_NOT_ANALYZED:
         badges = [("Not analyzed", neutral)]
     elif actions_frame is None:
         waited = "" if waited_frames is None else f" {int(waited_frames / fps)} s"
         badges = [(f"Analyzing...{waited}", neutral)]
-    elif actions:
-        badges = [(entry.class_name, _class_color(entry)) for entry in actions]
     else:
         badges = [("No action", neutral)]
 
@@ -821,6 +853,8 @@ def _draw_badges(
             age_label = f"{lag_frames} {unit_label} ago"
         # In live display the label describes the past; say how far back.
         badges.append((age_label, None))
+    if delay_frames:
+        badges.append((f"Delay {delay_frames / fps:.1f} s", None))
 
     x, y = pad * 2, pad * 2
     for label, color in badges:

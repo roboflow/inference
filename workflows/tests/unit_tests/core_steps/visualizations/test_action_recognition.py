@@ -85,6 +85,20 @@ def _predictions(timeline=(), until=None, *, start=1, error_status=""):
     return result
 
 
+@pytest.fixture
+def drawn_labels(monkeypatch):
+    labels = []
+    draw = visualization_module._fitted_text
+
+    def recording(label, **kwargs):
+        labels.append(label)
+        mask = draw(label, **kwargs)
+        return mask
+
+    monkeypatch.setattr(visualization_module, "_fitted_text", recording)
+    return labels
+
+
 def _shade(result):
     # Top-right corner: outside the badges and above the strip.
     return int(result["image"].numpy_image[1, -2, 0])
@@ -169,21 +183,43 @@ def test_live_shows_the_current_frame():
     assert results[24]["actions"] == []
     assert results[24]["actions_frame_number"] is None
     assert results[25]["status"] == "live"
-    assert results[25]["actions_frame_number"] == 21
+    assert results[25]["actions"] == ["wave"]
+    assert results[25]["actions_frame_number"] == 15
 
 
-def test_live_names_the_actions_at_the_last_analyzed_frame():
+def test_live_names_the_most_recent_action_on_the_strip():
     block = ActionRecognitionVisualizationBlockV1()
     timeline = [_action("wave", 5, 21), _action("jump", 18, 30, class_id=1)]
 
     during = block.run(_image(40), _predictions(timeline, 21))
     after = block.run(_image(41), _predictions(timeline, 40))
-    quiet = block.run(_image(42), _predictions(timeline, 41))
+    # The 30-second strip at 10 FPS starts at frame 101 here: jump left it.
+    gone = block.run(_image(401), _predictions(timeline, 400))
 
     assert during["actions"] == ["jump", "wave"]
     assert during["actions_frame_number"] == 21
-    assert after["actions"] == []
-    assert quiet["actions_frame_number"] == 41
+    # A quiet latest window does not hide the jump that ended at frame 30.
+    assert after["status"] == "live"
+    assert after["actions"] == ["jump"]
+    assert after["actions_frame_number"] == 30
+    assert gone["actions"] == []
+    assert gone["actions_frame_number"] == 400
+
+
+def test_live_names_an_earlier_action_when_the_latest_frame_is_not_analyzed(
+    drawn_labels,
+):
+    block = ActionRecognitionVisualizationBlockV1()
+
+    result = block.run(
+        _image(41),
+        _predictions([_action("punch", 5, 10)], 40, start=None),
+    )
+
+    assert result["status"] == "not_analyzed"
+    assert result["actions"] == ["punch"]
+    assert result["actions_frame_number"] == 10
+    assert drawn_labels[:2] == ["punch", "3 s ago"]
 
 
 @pytest.mark.parametrize("mark", [None, 45])
@@ -551,7 +587,8 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
         # The default display is live.
         assert ready["status"] == "live"
         assert ready["displayed_frame_number"] == 12
-        assert ready["actions_frame_number"] == 10
+        assert ready["actions"] == ["wave"]
+        assert ready["actions_frame_number"] == 5
         assert serialized["displayed_frame_number"] == 13
     assert isinstance(serialized["image"], dict)
 
@@ -879,3 +916,28 @@ def test_live_badge_shows_sub_second_lag_when_displayed_frame_is_ahead():
         current_result["image"].numpy_image[top_band],
         lagged_result["image"].numpy_image[top_band],
     )
+
+
+def test_synchronized_badge_shows_the_current_delay(drawn_labels):
+    block = ActionRecognitionVisualizationBlockV1()
+    for number in range(1, 12):
+        _synchronized(block, number)
+    held_labels = list(drawn_labels)
+    drawn_labels.clear()
+
+    result = _synchronized(
+        block, 12, timeline=[_action("wave", 1, 5)], analyzed_until_frame=10
+    )
+
+    # While the first frame is held its badge already counts the wait.
+    assert not any(label.startswith("Delay") for label in held_labels)
+    assert result["displayed_frame_number"] == 1
+    assert drawn_labels[:2] == ["wave", "Delay 1.1 s"]
+
+
+def test_live_badge_never_shows_a_delay(drawn_labels):
+    ActionRecognitionVisualizationBlockV1().run(
+        _image(40), _predictions([_action("wave", 5, 21)], 30)
+    )
+
+    assert not any(label.startswith("Delay") for label in drawn_labels)
