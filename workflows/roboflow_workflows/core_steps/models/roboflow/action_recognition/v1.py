@@ -351,18 +351,23 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 self._model = load_remote_action_recognition_model(
                     model_id, api_key=self._api_key
                 )
-            elif self._model_manager is None:
-                raise WorkflowEnvironmentConfigurationError(
-                    public_message=(
-                        "This block loads its model through the Workflows models "
-                        "provider. Supply `workflows_core.model_manager` in the "
-                        "workflow init parameters."
-                    ),
-                    context="workflow_execution | step_execution | model_loading",
-                )
-            else:
+            elif self._step_execution_mode is StepExecutionMode.LOCAL:
+                if self._model_manager is None:
+                    raise WorkflowEnvironmentConfigurationError(
+                        public_message=(
+                            "This block loads its model through the Workflows "
+                            "models provider. Supply `workflows_core.model_manager` "
+                            "in the workflow init parameters."
+                        ),
+                        context="workflow_execution | step_execution | model_loading",
+                    )
+
                 self._model = self._model_manager.load_action_recognition_model(
                     model_id=model_id, api_key=self._api_key
+                )
+            else:
+                raise ValueError(
+                    f"Unknown step execution mode: {self._step_execution_mode}"
                 )
             self._current_model_id = model_id
             self._clear_streams()

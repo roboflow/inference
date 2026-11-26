@@ -92,6 +92,18 @@ def get_action_recognition_contract(
 def _resolve_action_recognition_package(
     metadata: ModelMetadata,
 ) -> Tuple[Type[ActionRecognitionModel], ModelPackageMetadata]:
+    # A server loads the model under its own task, so a model of another task
+    # with a same-named action recognition entry (cosmos3-edge) is not one.
+    if metadata.task_type != ACTION_RECOGNITION_TASK:
+        raise ModelImplementationNotFoundError(
+            message=(
+                f"Model {metadata.model_id} has task type {metadata.task_type!r}, "
+                f"not {ACTION_RECOGNITION_TASK!r}, so it has no action recognition "
+                f"contract."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#modelimplementationnotfounderror",
+        )
+
     # Runtime negotiation is skipped on purpose: the caller does not run the
     # model, so its own hardware must not rule packages out. Any package
     # serves, because a model's packages share their contract files.
@@ -100,13 +112,17 @@ def _resolve_action_recognition_package(
             model_architecture=metadata.model_architecture,
             task_type=ACTION_RECOGNITION_TASK,
             backend=package.backend,
+            model_features=package.model_features,
         ):
             continue
+
         model_class = resolve_model_class(
             model_architecture=metadata.model_architecture,
             task_type=ACTION_RECOGNITION_TASK,
             backend=package.backend,
+            model_features=package.model_features,
         )
+
         return model_class, package
 
     raise ModelImplementationNotFoundError(

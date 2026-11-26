@@ -13,6 +13,10 @@ from inference_models.errors import (
 )
 from inference_models.models.auto_loaders import action_recognition
 from inference_models.models.auto_loaders.entities import BackendType
+from inference_models.models.auto_loaders.models_registry import (
+    ACTION_RECOGNITION_TASK,
+    VLM_TASK,
+)
 from inference_models.models.base.action_recognition import (
     SLIDING_WINDOW_MODE,
     WHOLE_VIDEO_MODE,
@@ -133,10 +137,17 @@ def test_a_model_without_a_contract_reader_says_so(tmp_path) -> None:
         _Opaque.contract_from_package(str(tmp_path))
 
 
-def _metadata(architecture: str, backend: BackendType, artefacts) -> ModelMetadata:
+def _metadata(
+    architecture: str,
+    backend: BackendType,
+    artefacts,
+    *,
+    task_type: str = ACTION_RECOGNITION_TASK,
+) -> ModelMetadata:
     return ModelMetadata(
         model_id="ws/actions/1",
         model_architecture=architecture,
+        task_type=task_type,
         model_packages=[
             ModelPackageMetadata(
                 package_id="pkg-1", backend=backend, package_artefacts=artefacts
@@ -225,6 +236,25 @@ def test_an_architecture_without_an_action_recognition_class_is_refused(
 
     with pytest.raises(ModelImplementationNotFoundError, match="'yolov8'"):
         get_action_recognition_contract("ws/actions/1")
+
+
+def test_a_model_of_another_task_is_refused_despite_a_same_named_entry(
+    monkeypatch,
+) -> None:
+    # The base Cosmos3 Edge VLM shares its architecture with the action
+    # recognition fine-tune, but a server never loads it as one.
+    metadata = _metadata(
+        "cosmos3-edge",
+        BackendType.HF,
+        _remote_artefacts("inference_config.json", "class_names.txt"),
+        task_type=VLM_TASK,
+    )
+    requested = _fake_platform(monkeypatch, metadata=metadata, files={})
+
+    with pytest.raises(ModelImplementationNotFoundError, match="'vlm'"):
+        get_action_recognition_contract("ws/actions/1")
+
+    assert [entry[0] for entry in requested] == ["metadata"]
 
 
 def test_a_contract_file_held_only_locally_is_an_error(monkeypatch) -> None:

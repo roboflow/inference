@@ -23,7 +23,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -40,7 +40,7 @@ from inference_models.models.base.action_recognition import SLIDING_WINDOW_MODE
 from inference_models.models.base.action_recognition import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
-from inference_models.models.base.action_recognition import VideoSampling
+from inference_models.models.base.action_recognition import VideoSampling, plan_windows
 from inference_sdk.http.entities import ApiKeyTransport, InferenceConfiguration
 from inference_sdk.http.utils.requests import deduct_api_key_from_string
 
@@ -94,7 +94,9 @@ class RemoteActionRecognitionModel:
             Spans in sampled-frame coordinates, as a local ``infer`` returns.
 
         Raises:
-            ValueError: The window cannot map one to one onto a server window.
+            ValueError: The window cannot map one to one onto a server window,
+                at the sampling rate or at the rate the clip's container
+                declares.
             RuntimeError: The server read a different clip than was sent.
             requests.HTTPError: The server rejected the request.
             requests.RequestException: The request did not reach the server.
@@ -103,7 +105,12 @@ class RemoteActionRecognitionModel:
         _ensure_window_maps_one_to_one(
             frame_count=frame_count, fps=fps, video_sampling=self.video_sampling
         )
-        clip = encode_window(frames, fps=fps)
+        clip, declared_fps = _encode_clip(frames, fps=fps)
+        _ensure_server_plans_one_window(
+            frame_count=frame_count,
+            declared_fps=declared_fps,
+            video_sampling=self.video_sampling,
+        )
 
         # The SDK has no client call that takes clip bytes, so this request
         # carries what its calls carry: usage attribution, the billing
@@ -248,6 +255,14 @@ def encode_window(frames: Sequence[Any], *, fps: float) -> bytes:
     Raises:
         ValueError: Frames differ in size, or no encoder is available.
     """
+    clip, _ = _encode_clip(frames, fps=fps)
+
+    return clip
+
+
+def _encode_clip(frames: Sequence[Any], *, fps: float) -> Tuple[bytes, float]:
+    # Also report the rate the container declares: the server plans windows
+    # from it, not from the rate the block sampled at.
     bgr_frames = [_to_bgr(frame) for frame in frames]
     height, width = bgr_frames[0].shape[:2]
     if any(frame.shape[:2] != (height, width) for frame in bgr_frames):
@@ -266,10 +281,21 @@ def encode_window(frames: Sequence[Any], *, fps: float) -> bytes:
             writer.write(frame)
         writer.release()
         clip = Path(path).read_bytes()
+        declared_fps = _read_declared_fps(path=path)
     finally:
         os.remove(path)
 
-    return clip
+    return clip, declared_fps
+
+
+def _read_declared_fps(*, path: str) -> float:
+    capture = cv2.VideoCapture(path)
+    try:
+        declared_fps = float(capture.get(cv2.CAP_PROP_FPS))
+    finally:
+        capture.release()
+
+    return declared_fps
 
 
 def _to_bgr(frame: Any) -> np.ndarray:
@@ -306,6 +332,22 @@ def _ensure_window_maps_one_to_one(
             f"A window of {frame_count} frames at {fps} FPS runs longer than the "
             f"model's {video_sampling.window_seconds} s window, so the endpoint "
             f"would split it and the frames would no longer map one to one."
+        )
+
+
+def _ensure_server_plans_one_window(
+    *, frame_count: int, declared_fps: float, video_sampling: VideoSampling
+) -> None:
+    # The container can round a fractional rate down, which lengthens the
+    # clip the server sees; plan it the way the endpoint does to be sure.
+    windows = plan_windows(
+        frame_count=frame_count, source_fps=declared_fps, sampling=video_sampling
+    )
+    if len(windows) != 1:
+        raise ValueError(
+            f"The clip's container declares {declared_fps} FPS, at which the "
+            f"endpoint would read {frame_count} frames as {len(windows)} "
+            f"windows, so the frames would no longer map one to one."
         )
 
 

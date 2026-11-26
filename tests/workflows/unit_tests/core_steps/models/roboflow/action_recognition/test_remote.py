@@ -2,26 +2,34 @@
 
 import base64
 import json
+import math
 import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pytest
+import torch
 from roboflow_workflows.core_steps.models.roboflow.action_recognition import remote
 from roboflow_workflows.core_steps.models.roboflow.action_recognition.remote import (
     encode_window,
     load_remote_action_recognition_model,
 )
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
+    ActionRecognitionModelBlockV1,
+)
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
+    ActionRecognitionModelBlockV1 as TensorActionRecognitionModelBlockV1,
+)
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.v2 import (
+    ActionRecognitionModelBlockV2,
+)
 
 import inference_models
 from inference.core.utils.video_utils import probe_video, read_frame_windows
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1 import (
-    ActionRecognitionModelBlockV1,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
@@ -55,11 +63,17 @@ class _FakeResponse:
 
 
 class _FakeServer:
-    """Answers like /infer/action_recognition after reading the sent clip."""
+    """Answers like /infer/action_recognition after reading the sent clip.
+
+    Windows are planned as the endpoint plans them, from the rate the clip's
+    container declares and the model's sampling.
+    """
 
     def __init__(self, timeline: List[dict]):
         self.timeline = timeline
         self.requests: List[dict] = []
+        self.sampling: Optional[VideoSampling] = None
+        self.decoded_shapes: List[tuple] = []
 
     def post(self, url, json, timeout, params=None, headers=None):
         self.requests.append(
@@ -71,13 +85,22 @@ class _FakeServer:
         try:
             Path(path).write_bytes(clip)
             source_fps, frame_count = probe_video(path=path)
+            windows = plan_windows(
+                frame_count=frame_count, source_fps=source_fps, sampling=self.sampling
+            )
+            decoded = list(
+                read_frame_windows(
+                    path=path, windows=[window.frame_indices for window in windows]
+                )
+            )
         finally:
             os.remove(path)
+        self.decoded_shapes.append(decoded[0][0].shape)
         payload = {
             "timeline": self.timeline,
             "source_fps": source_fps,
             "frame_count": frame_count,
-            "windows_classified": 1,
+            "windows_classified": len(windows),
         }
 
         return _FakeResponse(payload=payload)
@@ -96,6 +119,9 @@ def _frames(count: int, height: int = 24, width: int = 32) -> List[np.ndarray]:
 def _fake_platform(monkeypatch, post, **contract_fields) -> list:
     """Fake only the contract lookup and the HTTP call."""
     contract = ActionRecognitionContract(**contract_fields)
+    server = getattr(post, "__self__", None)
+    if isinstance(server, _FakeServer):
+        server.sampling = contract.video_sampling
     lookups = []
 
     def get_action_recognition_contract(model_id, api_key):
@@ -353,13 +379,17 @@ def _video_frame(frame_number: int, fps: float = 8.0) -> WorkflowImageData:
 
 
 def _remote_block(
-    monkeypatch, *, timeline: List[dict], video_sampling: VideoSampling = BLOCK_SAMPLING
+    monkeypatch,
+    *,
+    timeline: List[dict],
+    video_sampling: VideoSampling = BLOCK_SAMPLING,
+    block_type=ActionRecognitionModelBlockV1,
 ):
     server = _FakeServer(timeline=timeline)
     lookups = _fake_platform(
         monkeypatch, server.post, class_names=["punch"], video_sampling=video_sampling
     )
-    block = ActionRecognitionModelBlockV1(
+    block = block_type(
         api_key="key",
         step_execution_mode=StepExecutionMode.REMOTE,
         model_manager=None,
@@ -368,11 +398,16 @@ def _remote_block(
     return block, server, lookups
 
 
+@pytest.mark.parametrize(
+    "block_type", [ActionRecognitionModelBlockV1, ActionRecognitionModelBlockV2]
+)
 def test_block_keeps_its_state_and_sends_only_window_calls_in_remote_mode(
     monkeypatch,
+    block_type,
 ):
     block, server, lookups = _remote_block(
         monkeypatch,
+        block_type=block_type,
         timeline=[{"start_frame_idx": 1, "end_frame_idx": 2, "class": "punch"}],
     )
 
@@ -393,12 +428,19 @@ def test_block_keeps_its_state_and_sends_only_window_calls_in_remote_mode(
     assert request["json"]["api_key"] == "key"
     assert request["json"]["class_filter"] == ["punch"]
     assert "confidence" not in request["json"]
-    assert all(result["error_status"] == "" for result in results)
+    if block_type is ActionRecognitionModelBlockV2:
+        predictions = [result["predictions"] for result in results]
+        assert all(result.error_status == "" for result in predictions)
+        assert predictions[-1].covered_frame_ranges == ((2, 8), (10, 16))
+        timeline = predictions[-1].timeline
+    else:
+        assert all(result["error_status"] == "" for result in results)
+        timeline = results[-1]["timeline"]
     # Window 1 samples source frames 2, 4, 6, 8 and window 2 samples 10..16;
     # sampled indices 1..2 map to source frames 4..6 and 12..14.
     assert [
         (entry.start_frame_idx, entry.end_frame_idx, entry.class_name, entry.class_id)
-        for entry in results[-1]["timeline"]
+        for entry in timeline
     ] == [(4, 6, "punch", 0), (12, 14, "punch", 0)]
 
 
@@ -422,3 +464,113 @@ def test_ntsc_windows_without_a_frame_budget_still_classify_remotely(
 
     assert len(server.requests) == 19
     assert all(result["error_status"] == "" for result in results)
+
+
+@pytest.mark.parametrize(
+    "fps", [30000 / 1001, 24000 / 1001, 15000 / 1001, 7.4925, 10 / 3, 7 / 3]
+)
+@pytest.mark.parametrize("window_seconds", [1.0, 2.0, 4.0])
+def test_full_window_at_a_fractional_rate_stays_one_server_window(
+    monkeypatch, fps, window_seconds
+):
+    # The container rounds a fractional rate, often down, which lengthens the
+    # clip the server plans; a full window must still be one server window.
+    server = _FakeServer(timeline=[])
+    sampling = VideoSampling(
+        window_seconds=window_seconds,
+        sample_fps=fps,
+        min_frames=2,
+        max_frames=math.ceil(window_seconds * fps),
+    )
+    _fake_platform(monkeypatch, server.post, class_names=None, video_sampling=sampling)
+    model = load_remote_action_recognition_model("ws/m/1", api_key=None)
+    frame_count = math.floor(window_seconds * fps + 1e-9)
+    if frame_count / fps > window_seconds:
+        frame_count -= 1
+
+    assert model.infer(frames=_frames(frame_count), fps=fps) == []
+    assert len(server.requests) == 1
+
+
+def test_window_the_container_rate_would_split_is_refused_before_sending(
+    monkeypatch,
+):
+    server = _FakeServer(timeline=[])
+    sampling = VideoSampling(
+        window_seconds=2.0, sample_fps=3.0, min_frames=2, max_frames=6
+    )
+    _fake_platform(monkeypatch, server.post, class_names=None, video_sampling=sampling)
+    # A container declaring 2 FPS stretches six frames to 3 s, two windows.
+    monkeypatch.setattr(remote, "_read_declared_fps", lambda path: 2.0)
+    model = load_remote_action_recognition_model("ws/m/1", api_key=None)
+
+    with pytest.raises(ValueError, match="2 windows"):
+        model.infer(frames=_frames(6), fps=3.0)
+
+    assert server.requests == []
+
+
+def test_chw_uint8_tensor_frames_encode_like_hwc_arrays():
+    hwc_frames = _frames(8)
+    chw_frames = [torch.from_numpy(frame).permute(2, 0, 1) for frame in hwc_frames]
+
+    assert encode_window(chw_frames, fps=12.0) == encode_window(hwc_frames, fps=12.0)
+
+
+def test_tensor_block_sends_chw_uint8_frames_remotely(monkeypatch):
+    server = _FakeServer(timeline=[])
+    _fake_platform(
+        monkeypatch, server.post, class_names=["punch"], video_sampling=BLOCK_SAMPLING
+    )
+    block = TensorActionRecognitionModelBlockV1(
+        api_key="key",
+        step_execution_mode=StepExecutionMode.REMOTE,
+        model_manager=None,
+    )
+
+    results = []
+    for number in range(9):
+        frame = _video_frame(number)
+        tensor_frame = WorkflowImageData(
+            parent_metadata=frame.parent_metadata,
+            workflow_root_ancestor_metadata=frame.workflow_root_ancestor_metadata,
+            video_metadata=frame.video_metadata,
+            tensor_image=torch.full((3, 24, 32), number, dtype=torch.uint8),
+        )
+        results.append(block.run(images=[tensor_frame], model_id="ws/punch/1")[0])
+
+    assert len(server.requests) == 1
+    assert server.decoded_shapes == [(24, 32, 3)]
+    assert all(result["error_status"] == "" for result in results)
+
+
+def test_background_window_calls_keep_the_step_attribution_and_billing_opt_out(
+    monkeypatch,
+):
+    # The worker thread does not inherit context variables, so without the
+    # step's context an internal run would bill every window to the customer.
+    block, server, _ = _remote_block(
+        monkeypatch, timeline=[], block_type=ActionRecognitionModelBlockV2
+    )
+    tags = {"source": "workflow", "source_info": "ws/flow"}
+    tags_token = usage_source_tags.set(tags)
+    secret_token = outbound_service_secret.set("service-secret")
+    try:
+        for number in range(9):
+            block.run(
+                images=[_video_frame(number)],
+                model_id="ws/punch/1",
+                background_inference=True,
+            )
+        pending = block._video_bookkeeping["clip"].pending
+        pending.future.result(timeout=10)
+    finally:
+        outbound_service_secret.reset(secret_token)
+        usage_source_tags.reset(tags_token)
+        block.close()
+
+    assert len(server.requests) == 1
+    request = server.requests[0]
+    assert {key: request["json"][key] for key in tags} == tags
+    assert request["params"]["service_secret"] == "service-secret"
+    assert request["params"]["countinference"] is False
