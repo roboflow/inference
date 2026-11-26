@@ -213,7 +213,8 @@ def test_live_names_an_earlier_action_when_the_latest_frame_is_not_analyzed(
 
     result = block.run(
         _image(41),
-        _predictions([_action("punch", 5, 10)], 40, start=None),
+        # Frame 41 lies before the covered window 50-60, so live reports not_analyzed.
+        _predictions([_action("punch", 5, 10)], 60, start=50),
     )
 
     assert result["status"] == "not_analyzed"
