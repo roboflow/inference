@@ -1597,6 +1597,74 @@ def test_timeline_entries_survive_frames_that_do_not_classify():
     assert [entry.class_name for entry in later["predictions"].timeline] == ["walk"]
 
 
+def test_predictions_timeline_list_is_isolated_per_frame():
+    block, _ = _make_block(responses=[[_model_segment("walk")]])
+    _run(block, _make_frame(0))
+    _run(block, _make_frame(2))
+    idle = _run(block, _make_frame(3))
+    bookkeeping = next(iter(block._video_bookkeeping.values()))
+
+    assert idle["predictions"].timeline is not bookkeeping.timeline_snapshot
+    idle["predictions"].timeline.append(_timeline_entry(0, 0, "appended"))
+    idle["predictions"].timeline.pop(0)
+    later = _run(block, _make_frame(4))
+
+    assert [entry.class_name for entry in bookkeeping.timeline_snapshot] == ["walk"]
+    assert [entry.class_name for entry in later["predictions"].timeline] == ["walk"]
+
+
+@pytest.mark.parametrize("tensor", [False, True])
+def test_constructed_predictions_serialize_like_a_validated_result(tensor):
+    block, _ = _make_block(responses=[[_model_segment("walk")]], tensor=tensor)
+    frame_kwargs = {"tensor_rgb_color": [1, 2, 3]} if tensor else {}
+    _run(block, _make_frame(0, **frame_kwargs))
+    result = _run(block, _make_frame(2, **frame_kwargs))
+    predictions = result["predictions"]
+    validated = ActionRecognitionResult(
+        timeline=[entry.model_dump() for entry in predictions.timeline],
+        analyzed_from_frame=predictions.analyzed_from_frame,
+        analyzed_until_frame=predictions.analyzed_until_frame,
+        error_status=predictions.error_status,
+    )
+    expected = validated.model_dump(by_alias=True)
+
+    assert predictions.timeline
+    assert predictions.model_fields_set == validated.model_fields_set
+    assert serialize_action_recognition_result_kind(predictions) == expected
+    assert serialize_wildcard_kind(value=predictions) == expected
+    assert serialize_tensor_wildcard_kind(value=predictions) == expected
+    assert predictions.model_dump_json(by_alias=True) == validated.model_dump_json(
+        by_alias=True
+    )
+
+
+def test_build_output_does_not_revalidate_timeline_entries(monkeypatch):
+    bookkeeping = video_classification_module._ActionRecognitionBookkeeping()
+    bookkeeping.timeline_snapshot = [
+        _timeline_entry(index, index, f"action_{index}")
+        for index in range(video_classification_module.MAX_TIMELINE_ACTIONS)
+    ]
+    bookkeeping.analyzed_from_frame = 0
+    bookkeeping.analyzed_until_frame = 10
+    block, _ = _make_block()
+
+    # BaseModel.__init__ runs the full model validator; model_construct does not.
+    def _fail_on_validation(*args, **kwargs):
+        raise AssertionError("per-frame output re-validated the timeline")
+
+    monkeypatch.setattr(ActionRecognitionResult, "__init__", _fail_on_validation)
+    monkeypatch.setattr(ActionRecognitionResult, "model_validate", _fail_on_validation)
+    output = block._build_output(bookkeeping=bookkeeping, error_status="")
+
+    assert output["predictions"].timeline == bookkeeping.timeline_snapshot
+    assert all(
+        built is original
+        for built, original in zip(
+            output["predictions"].timeline, bookkeeping.timeline_snapshot
+        )
+    )
+
+
 def test_timeline_evicts_the_ranges_that_ended_earliest():
     bookkeeping = video_classification_module._ActionRecognitionBookkeeping()
     # A range open since the stream began sorts first by start, yet it is the

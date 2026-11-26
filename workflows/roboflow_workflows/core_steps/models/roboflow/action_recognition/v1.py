@@ -1167,14 +1167,13 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
     ) -> dict:
-        # Copying every entry here costs one full timeline copy per frame,
-        # which grows without bound and caps the frame rate the block keeps
-        # up with. The entries come from the snapshot the last fire built.
-        # The list is still fresh per frame, so a consumer that appends to
-        # one frame's output leaves the next frame alone. Pydantic builds
-        # its own list for the result, so the snapshot needs no copy there.
-        predictions = ActionRecognitionResult(
-            timeline=bookkeeping.timeline_snapshot,
+        # Entries come from the snapshot the last fire built and validated.
+        # model_construct skips an O(N) per-frame Pydantic pass over up to
+        # MAX_TIMELINE_ACTIONS (5000) entries; it also keeps the list we pass.
+        # So list() gives each output its own list: a consumer that mutates
+        # one frame's list leaves the snapshot and later frames alone.
+        predictions = ActionRecognitionResult.model_construct(
+            timeline=list(bookkeeping.timeline_snapshot),
             analyzed_from_frame=bookkeeping.analyzed_from_frame,
             analyzed_until_frame=bookkeeping.analyzed_until_frame,
             error_status=error_status,
