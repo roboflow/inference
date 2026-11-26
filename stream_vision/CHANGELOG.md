@@ -12,9 +12,9 @@ This is the canonical changelog for the `streamvision` package.
   `comes_from_video_file=False`, so the pipeline buffered and dropped them as for
   a live stream. Such a source now ends at the end of the file. Before, with
   stream reconnection on (the default), it reconnected and replayed the file.
-- All video producers read `file://` URIs the same way. `#` and `?` stay part of
-  the file name, and the scheme is case-insensitive. A URI with a remote host or
-  an invalid percent escape is not treated as a local file.
+- The OpenCV, Jetson and GStreamer-CUDA producers parse `file://` URIs the same
+  way: `#` and `?` stay in the file name, the scheme is case-insensitive, and a
+  remote host or invalid percent escape is not a local file.
 - Cap the WebRTC extra's aiortc dependency below 1.17 while retaining PyAV 14.2.0.
   aiortc 1.17 accesses `VideoFrame.duration`, which is unavailable in that PyAV
   version, causing video decoding workers to crash.
