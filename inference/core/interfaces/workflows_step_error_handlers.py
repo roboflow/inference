@@ -12,6 +12,7 @@ from inference.core.exceptions import (
     RoboflowAPIForbiddenError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRateLimitedError,
     RoboflowAPIUsagePausedError,
 )
 from inference.core.workflows.errors import (
@@ -141,6 +142,15 @@ def extended_roboflow_errors_handler(step_name: str, error: Exception) -> None:
             status_code=423,
             public_message=f"Roboflow API usage is paused while executing step {step_name}. "
             f"Contact your workspace administrator to re-enable API keys. Details: {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
+    if isinstance(error, RoboflowAPIRateLimitedError):
+        raise ClientCausedStepExecutionError(
+            block_id=step_name,
+            status_code=429,
+            public_message=f"Rate limit reached while executing step {step_name}. "
+            f"Retry later or verify your workspace billing page. Details: {error}",
             context="workflow_execution | step_execution",
             inner_error=error,
         ) from error
