@@ -1,9 +1,11 @@
 import base64
 import json
 import os.path
+import sys
 import warnings
 from glob import glob
 from io import BytesIO
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
@@ -5538,8 +5540,18 @@ def test_guidance_warning_suppressed_by_inference_warnings_disabled() -> None:
 # changes made afterwards warn instead of silently not applying.
 
 
+@pytest.fixture
+def stub_webrtc_client(monkeypatch) -> None:
+    # The transport tests only need the lazy constructor, without the WebRTC extra.
+    monkeypatch.setitem(
+        sys.modules,
+        "inference_sdk.webrtc.client",
+        SimpleNamespace(WebRTCClient=MagicMock()),
+    )
+
+
 def test_transport_change_after_webrtc_access_warns_about_stickiness(
-    monkeypatch,
+    monkeypatch, stub_webrtc_client
 ) -> None:
     # given
     monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
@@ -5571,7 +5583,9 @@ def test_transport_change_without_webrtc_access_does_not_warn(
         http_client.configure(InferenceConfiguration(api_key_transport="header"))
 
 
-def test_matching_transport_after_webrtc_access_does_not_warn(monkeypatch) -> None:
+def test_matching_transport_after_webrtc_access_does_not_warn(
+    monkeypatch, stub_webrtc_client
+) -> None:
     # given - webrtc created AFTER the transport was configured: no divergence
     monkeypatch.setattr(client, "_DEFAULT_API_KEY_TRANSPORT_WARNED", True)
     http_client = InferenceHTTPClient(

@@ -23,6 +23,7 @@ from requests import HTTPError, Response, Timeout
 
 from inference_sdk.config import (
     EXECUTION_ID_HEADER,
+    INFERENCE_SDK_REQUEST_TIMEOUT_EXPLICITLY_SET,
     InferenceSDKGuidanceWarning,
     execution_id,
     usage_source_tags,
@@ -115,6 +116,7 @@ DEFAULT_HEADERS = {
 }
 
 _DEFAULT_API_KEY_TRANSPORT_WARNED = False
+_DEFAULT_REQUEST_TIMEOUT_WARNED = False
 
 
 def _warn_about_default_api_key_transport_once() -> None:
@@ -131,6 +133,24 @@ def _warn_about_default_api_key_transport_once() -> None:
         "a transition period safe with every server version. Set "
         "api_key_transport='legacy' "
         "explicitly to keep the current behaviour and silence this warning.",
+        InferenceSDKGuidanceWarning,
+    )
+
+
+def _warn_about_default_request_timeout_once() -> None:
+    global _DEFAULT_REQUEST_TIMEOUT_WARNED
+    if _DEFAULT_REQUEST_TIMEOUT_WARNED:
+        return
+
+    _DEFAULT_REQUEST_TIMEOUT_WARNED = True
+    warnings.warn(
+        "No HTTP request timeout is configured for InferenceHTTPClient, so "
+        "requests can wait indefinitely. The default will change to a finite "
+        "timeout at the end of Q4 2026. Set "
+        "InferenceConfiguration(request_timeout=<seconds>) or the "
+        "INFERENCE_SDK_REQUEST_TIMEOUT environment variable to choose a value "
+        "now; set INFERENCE_SDK_REQUEST_TIMEOUT=none to keep no timeout and "
+        "silence this warning.",
         InferenceSDKGuidanceWarning,
     )
 
@@ -519,7 +539,7 @@ class InferenceHTTPClient:
         """
         response = requests.get(
             f"{self.__api_url}/info",
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -664,7 +684,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         return responses
 
@@ -772,7 +792,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         results = []
         for request_data, response in zip(requests_data, responses):
@@ -928,7 +948,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         results = []
         for request_data, parsed_response in zip(requests_data, responses):
@@ -1047,7 +1067,7 @@ class InferenceHTTPClient:
         response = requests.get(
             url,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1070,7 +1090,7 @@ class InferenceHTTPClient:
         if self.__resolved_api_key_transport() is not ApiKeyTransport.HEADER:
             url = f"{url}?api_key={self.__api_key}"
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.get(
                 url, headers=self.__headers_with_auth(None)
@@ -1106,7 +1126,7 @@ class InferenceHTTPClient:
                 **self.__legacy_api_key_payload(),
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1139,7 +1159,7 @@ class InferenceHTTPClient:
             **self.__legacy_api_key_payload(),
         }
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.post(
                 f"{self.__api_url}/model/add",
@@ -1175,7 +1195,7 @@ class InferenceHTTPClient:
                 "model_id": de_aliased_model_id,
             },
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1191,7 +1211,7 @@ class InferenceHTTPClient:
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.post(
                 f"{self.__api_url}/model/remove",
@@ -1215,7 +1235,7 @@ class InferenceHTTPClient:
         response = requests.post(
             f"{self.__api_url}/model/clear",
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         response.raise_for_status()
         response_payload = response.json()
@@ -1226,7 +1246,7 @@ class InferenceHTTPClient:
     async def unload_all_models_async(self) -> RegisteredModels:
         self.__ensure_v1_client_mode()
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.post(
                 f"{self.__api_url}/model/clear",
@@ -1305,7 +1325,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         results = [r.json() for r in responses]
         return unwrap_single_element_list(sequence=results)
@@ -1378,7 +1398,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         return unwrap_single_element_list(sequence=responses)
 
@@ -1603,7 +1623,7 @@ class InferenceHTTPClient:
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
             json=payload,
             headers=self.__headers_with_auth(headers),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         _collect_processing_time_from_response(
             response, model_id=clip_version or "clip"
@@ -1635,7 +1655,7 @@ class InferenceHTTPClient:
         if clip_version is not None:
             payload["clip_version_id"] = clip_version
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/embed_text"),
@@ -1717,7 +1737,7 @@ class InferenceHTTPClient:
             self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
             json=payload,
             headers=self.__headers_with_auth(headers),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         _collect_processing_time_from_response(
             response, model_id=clip_version or "clip"
@@ -1783,7 +1803,7 @@ class InferenceHTTPClient:
             payload["prompt"] = prompt
 
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.post(
                 self.__wrap_url_with_api_key(f"{self.__api_url}/clip/compare"),
@@ -1838,7 +1858,7 @@ class InferenceHTTPClient:
             ),
             json=payload,
             headers=self.__headers_with_auth(headers),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         _collect_processing_time_from_response(
             response,
@@ -2261,7 +2281,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         return responses[0].json()
 
@@ -2335,7 +2355,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         return responses[0]
 
@@ -2769,7 +2789,7 @@ class InferenceHTTPClient:
             payload=payload,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
             enable_retries=self.__inference_configuration.workflow_run_retries_enabled,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         return response
 
@@ -2849,7 +2869,7 @@ class InferenceHTTPClient:
             params=params,
             data=data,
             headers=headers,
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2864,7 +2884,7 @@ class InferenceHTTPClient:
             model_id=model_id,
         )
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.post(
                 url, params=params, data=data, headers=headers
@@ -2888,7 +2908,7 @@ class InferenceHTTPClient:
             url,
             json=payload,
             headers=self.__headers_with_auth(DEFAULT_HEADERS),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -2907,7 +2927,7 @@ class InferenceHTTPClient:
             asynchronous=True,
         )
         async with open_async_session(
-            request_timeout=self.__inference_configuration.request_timeout
+            request_timeout=self.__request_timeout()
         ) as session:
             async with session.post(
                 url, json=payload, headers=self.__headers_with_auth(DEFAULT_HEADERS)
@@ -3023,7 +3043,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         return [r.json() for r in responses]
 
@@ -3081,7 +3101,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
 
     @experimental(
@@ -3183,7 +3203,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/inference_pipelines/initialise",
             json=payload,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         response.raise_for_status()
         return response.json()
@@ -3211,7 +3231,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/inference_pipelines/list",
             json=payload,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3240,7 +3260,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
             json=payload,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3272,7 +3292,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/pause",
             json=payload,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3304,7 +3324,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/resume",
             json=payload,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3336,7 +3356,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/terminate",
             json=payload,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3376,7 +3396,7 @@ class InferenceHTTPClient:
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/consume",
             json=payload,
             headers=self.__headers_with_auth(None),
-            timeout=self.__inference_configuration.request_timeout,
+            timeout=self.__request_timeout(),
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
@@ -3417,7 +3437,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         results = [r.json() for r in responses]
         return unwrap_single_element_list(sequence=results)
@@ -3454,7 +3474,7 @@ class InferenceHTTPClient:
             requests_data=requests_data,
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
-            request_timeout=self.__inference_configuration.request_timeout,
+            request_timeout=self.__request_timeout(),
         )
         return unwrap_single_element_list(sequence=responses)
 
@@ -3481,6 +3501,15 @@ class InferenceHTTPClient:
             "transport.",
             InferenceSDKGuidanceWarning,
         )
+
+    def __request_timeout(self) -> Optional[float]:
+        # None means no timeout (today's default). Warn once per process unless
+        # the user explicitly opted into no timeout via the environment variable.
+        timeout = self.__inference_configuration.request_timeout
+        if timeout is None and not INFERENCE_SDK_REQUEST_TIMEOUT_EXPLICITLY_SET:
+            _warn_about_default_request_timeout_once()
+
+        return timeout
 
     def __resolved_api_key_transport(self) -> ApiKeyTransport:
         # None means the user made no choice - resolve to the legacy channel

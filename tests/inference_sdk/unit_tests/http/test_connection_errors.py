@@ -1,3 +1,4 @@
+import warnings
 from unittest import mock
 
 import aiohttp
@@ -7,6 +8,8 @@ import requests
 from aioresponses import aioresponses
 
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+from inference_sdk.config import InferenceSDKGuidanceWarning
+from inference_sdk.http import client as client_module
 from inference_sdk.http.errors import (
     HTTPCallErrorError,
     HTTPClientError,
@@ -167,7 +170,7 @@ def test_get_server_info_forwards_request_timeout(requests_mock):
     )
 
     http_client.get_server_info()
-    assert requests_mock.last_request.timeout == 300.0
+    assert requests_mock.last_request.timeout is None
 
     with http_client.use_configuration(InferenceConfiguration(request_timeout=12.5)):
         http_client.get_server_info()
@@ -276,7 +279,7 @@ def test_infer_connect_timeout_retries_and_raises_connection_error(
 @pytest.mark.parametrize(
     "configuration, expected_timeout",
     [
-        (None, aiohttp.ClientTimeout(total=300)),
+        (None, aiohttp.ClientTimeout(total=None)),
         (
             InferenceConfiguration(request_timeout=12.5),
             aiohttp.ClientTimeout(total=12.5),
@@ -310,3 +313,69 @@ async def test_async_client_session_uses_configured_timeout(
             await http_client.list_loaded_models_async()
 
     assert captured["timeout"] == expected_timeout
+
+
+def test_default_request_timeout_emits_guidance_warning_once(
+    requests_mock, monkeypatch
+):
+    monkeypatch.setattr(client_module, "_DEFAULT_REQUEST_TIMEOUT_WARNED", False)
+    monkeypatch.setattr(
+        client_module, "INFERENCE_SDK_REQUEST_TIMEOUT_EXPLICITLY_SET", False
+    )
+    requests_mock.get(
+        "http://localhost:9001/info",
+        json={"name": "inference", "version": "1.0.0", "uuid": "server-uuid"},
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client = InferenceHTTPClient(api_url="http://localhost:9001")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", InferenceSDKGuidanceWarning)
+        http_client.get_server_info()
+        http_client.get_server_info()
+
+    guidance_warnings = [
+        record
+        for record in caught
+        if issubclass(record.category, InferenceSDKGuidanceWarning)
+    ]
+    assert len(guidance_warnings) == 1
+    assert "Q4 2026" in str(guidance_warnings[0].message)
+
+
+def test_explicit_request_timeout_does_not_warn(requests_mock, monkeypatch):
+    monkeypatch.setattr(client_module, "_DEFAULT_REQUEST_TIMEOUT_WARNED", False)
+    monkeypatch.setattr(
+        client_module, "INFERENCE_SDK_REQUEST_TIMEOUT_EXPLICITLY_SET", False
+    )
+    requests_mock.get(
+        "http://localhost:9001/info",
+        json={"name": "inference", "version": "1.0.0", "uuid": "server-uuid"},
+    )
+    http_client = InferenceHTTPClient(api_url="http://localhost:9001").configure(
+        InferenceConfiguration(request_timeout=12.5)
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.get_server_info()
+
+
+def test_explicit_env_none_request_timeout_does_not_warn(requests_mock, monkeypatch):
+    monkeypatch.setattr(client_module, "_DEFAULT_REQUEST_TIMEOUT_WARNED", False)
+    monkeypatch.setattr(
+        client_module, "INFERENCE_SDK_REQUEST_TIMEOUT_EXPLICITLY_SET", True
+    )
+    requests_mock.get(
+        "http://localhost:9001/info",
+        json={"name": "inference", "version": "1.0.0", "uuid": "server-uuid"},
+    )
+    http_client = InferenceHTTPClient(api_url="http://localhost:9001").configure(
+        InferenceConfiguration(request_timeout=None)
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", InferenceSDKGuidanceWarning)
+        http_client.get_server_info()

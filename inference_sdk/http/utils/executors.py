@@ -397,8 +397,8 @@ def open_async_session(
 
     Args:
         request_timeout (Optional[float]): Total request timeout in seconds, or
-            ``None`` to disable the timeout. Defaults to
-            ``INFERENCE_SDK_REQUEST_TIMEOUT``.
+            ``None`` to disable the timeout. Defaults to ``None`` unless
+            configured through ``INFERENCE_SDK_REQUEST_TIMEOUT``.
 
     Returns:
         aiohttp.ClientSession: Session configured with the requested timeout.

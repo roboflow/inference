@@ -227,9 +227,9 @@ def test_collector_tracks_remote_cold_start_metadata() -> None:
 @pytest.mark.parametrize(
     "raw_value, expected",
     [
-        (None, 300.0),
-        ("", 300.0),
-        ("   ", 300.0),
+        (None, None),
+        ("", None),
+        ("   ", None),
         ("300", 300.0),
         ("12.5", 12.5),
         ("None", None),
