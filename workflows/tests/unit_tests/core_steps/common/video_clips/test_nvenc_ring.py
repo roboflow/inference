@@ -455,6 +455,34 @@ def test_full_pool_drops_frames_while_encoder_is_blocked() -> None:
     ring.close()
 
 
+def test_session_that_never_opens_is_reported_as_encoder_failed() -> None:
+    # given: the process warm-up succeeded, but this stream's session cannot be
+    # opened (for example the driver's limit on concurrent sessions is reached)
+    class NoSessionAdapter(FakeAdapter):
+        def open_session(self, width, height, fps, gop, bitrate, device):
+            raise RuntimeError("out of NVENC sessions")
+
+    adapter = NoSessionAdapter()
+    ring = make_ring(adapter, pool_frames=8, queue_depth=64)
+
+    # when: frames keep arriving
+    try:
+        index = 0
+        while not ring.encoder_failed and index < 200:
+            ring.submit(timestamp(index), index, FakeImage())
+            wait_for(lambda: ring.stats().queue_depth == 0)
+            index += 1
+
+        # then: the ring says so, so the recorder can fall back to x264; it does
+        # not keep reporting a stream nothing is recorded for
+        assert ring.encoder_failed is True
+        assert ring.startup_failed is False
+        assert ring.stats().frames_encoded == 0
+        assert adapter.sessions == []
+    finally:
+        ring.close()
+
+
 # ---- caller thread never encodes ----------------------------------------------------
 def test_submit_returns_fast_and_never_encodes_on_the_caller_thread() -> None:
     adapter = FakeAdapter(encode_sleep=0.02)

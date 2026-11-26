@@ -205,8 +205,9 @@ spent on the pipeline thread per frame) and `finalize_ms`.
 frames arrived for 10 s, and at least the remaining post-roll plus 10 s passed since
 the capture; a source processed slower than real time is not stalled while frames
 keep arriving), `reset` (the source restarted: its frame number went backwards),
-`resolution_change`, `shutdown` (the pipeline stopped during the post-roll) or
-`ring_evicted` (the window start was no longer buffered).
+`resolution_change`, `shutdown` (the pipeline stopped during the post-roll),
+`ring_evicted` (the window start was no longer buffered) or `encoder_failed` (the
+stream's encoder failed for good during the post-roll).
 
 `loss` counts the frames missing from the window by cause: `decimated` (`clip_fps`
 grid), `ring_drops` (buffer byte cap), `queue_drops` (encoder queue full, or dropped
@@ -238,6 +239,15 @@ The recorder picks a backend per stream at its first frame:
 * **x264**, otherwise. The frame is converted to I420 with OpenCV inside the step
   (about 1.2-1.5 ms at 1080p) and encoded with libx264 (`ultrafast`, `zerolatency`,
   one thread) on the recorder's own thread.
+
+**When an encoder fails.** An encoder that fails on 3 frames in a row is closed and
+reopened. After 3 such restarts in a row, with no frame encoded in between (9
+frames), the recorder gives up on it for that stream. A stream on NVENC switches to
+x264 and keeps recording; this costs CPU, because every frame is then copied from
+the GPU. A stream on x264 stops recording and its anchors are
+`unavailable:no_encoder`. A clip that was in its post-roll ends as
+`partial: encoder_failed`. The stream is tried again when it restarts (frame number
+going backwards or a resolution change). The recorder logs one warning per stream.
 
 Both write an IDR frame every output second and mux clips to MP4 with
 `+faststart`. Encoding, muxing and uploading never use the Workflow's shared thread

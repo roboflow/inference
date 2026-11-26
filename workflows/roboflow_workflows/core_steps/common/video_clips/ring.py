@@ -116,6 +116,9 @@ MIN_RATE_SPAN_SECONDS = 1.0
 COST_SAMPLES = 600
 LOSS_EVENT_HISTORY = 65536
 MAX_CONSECUTIVE_ENCODE_ERRORS = 3
+# Failed restarts in a row (each after MAX_CONSECUTIVE_ENCODE_ERRORS failed frames,
+# with no frame encoded in between) after which the encoder counts as failed.
+MAX_ENCODER_RESTARTS = 3
 WORKER_POLL_SECONDS = 0.1
 TIME_EPSILON = 1e-6
 LOGGED_ERRORS_BEFORE_THROTTLE = 5
@@ -152,8 +155,9 @@ def import_av() -> Any:
         import av
     except ImportError as error:
         raise VideoExtraMissingError(
-            "Video clips need PyAV (`av`), a dependency of roboflow-workflows; "
-            "reinstall the package to restore it."
+            "Video clips need PyAV (`av`), which roboflow-workflows does not "
+            "install by itself; install `av` (it comes with `inference` and with "
+            "`streamvision[webrtc]`)."
         ) from error
 
     return av
@@ -776,6 +780,9 @@ class BaseEncodedRing(abc.ABC):
         self._frame_size: Optional[Tuple[int, int]] = None
         self._in_flight: Deque[_InFlight] = deque()
         self._consecutive_encode_errors = 0
+        self._failed_encoder_restarts = 0
+        # Written by the encoder thread, read by the owner: a plain flag.
+        self._encoder_failed = False
 
         self._budget.register_source(self)
 
@@ -1007,6 +1014,16 @@ class BaseEncodedRing(abc.ABC):
                 self._closed = True
             self._budget.unregister_source(self)
 
+    @property
+    def encoder_failed(self) -> bool:
+        """True once the encoder failed for good; the owner should replace the ring.
+
+        Set after ``MAX_ENCODER_RESTARTS`` restarts in a row that each ended in
+        ``MAX_CONSECUTIVE_ENCODE_ERRORS`` failed frames, with no frame encoded in
+        between. It never goes back to False.
+        """
+        return self._encoder_failed
+
     def stats(self) -> RingStats:
         """Return the ring's statistics.
 
@@ -1171,6 +1188,7 @@ class BaseEncodedRing(abc.ABC):
 
         encode_ms = (time.perf_counter() - started) * 1000
         self._consecutive_encode_errors = 0
+        self._failed_encoder_restarts = 0
         with self._lock:
             self._frames_encoded += 1
             self._encode_ms.append(encode_ms)
@@ -1187,6 +1205,22 @@ class BaseEncodedRing(abc.ABC):
             self._close_encoder_safely()
             self._in_flight.clear()
             self._last_keyframe_slot = None
+            self._failed_encoder_restarts += 1
+            if (
+                self._failed_encoder_restarts >= MAX_ENCODER_RESTARTS
+                and not self._encoder_failed
+            ):
+                # Restarting did not help (a missing codec, an exhausted NVENC
+                # session limit): say so, instead of failing on every frame while
+                # the owner keeps reporting the stream as recorded.
+                self._encoder_failed = True
+                logger.warning(
+                    "Video clip ring `%s` (%s): the encoder failed on %d frames in "
+                    "a row; the ring no longer records.",
+                    self.video_identifier,
+                    self.backend,
+                    MAX_ENCODER_RESTARTS * MAX_CONSECUTIVE_ENCODE_ERRORS,
+                )
 
     def _append_outputs(
         self, outputs: List[EncodedOutput], *, processed_t: Optional[float]

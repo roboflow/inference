@@ -20,6 +20,7 @@ from pydantic import ConfigDict, Field, field_validator
 from roboflow_workflows._compat_names import get_logger
 from roboflow_workflows.core_steps.common.video_clips import env_positive_float
 from roboflow_workflows.core_steps.common.video_clips.capture import (
+    PARTIAL_ENCODER_FAILED,
     PARTIAL_RESET,
     PARTIAL_RESOLUTION_CHANGE,
     PARTIAL_SHUTDOWN,
@@ -472,6 +473,8 @@ class _StreamState:
     ring: Any = None
     backend: Optional[str] = None
     encoder_unavailable: bool = False
+    # NVENC failed for good on this stream: record it with x264 until it resets.
+    nvenc_unusable: bool = False
     last_frame_number: Optional[int] = None
     last_frame_timestamp: Optional[datetime] = None
     resolution: Optional[Tuple[int, int]] = None
@@ -826,6 +829,7 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         self._retire_ring(state=state, reason=reason)
         state.backend = None
         state.encoder_unavailable = False
+        state.nvenc_unusable = False
         state.last_frame_number = None
         state.last_frame_timestamp = None
         state.resolution = None
@@ -871,11 +875,31 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
             self._retire_ring(state=state, reason=PARTIAL_SHUTDOWN)
             state.backend = None
 
+        if state.ring is not None and getattr(state.ring, "encoder_failed", False):
+            # The ring gave up on its encoder. Until now the anchors said `ok`
+            # while nothing was recorded.
+            if state.backend == BACKEND_NVENC:
+                logger.warning(
+                    f"Video Clip Recorder `{self._step_name()}` switches stream "
+                    f"`{video_identifier}` to x264: the NVENC encoder failed"
+                )
+                state.nvenc_unusable = True
+            else:
+                logger.warning(
+                    f"Video Clip Recorder `{self._step_name()}` stops recording "
+                    f"stream `{video_identifier}`: the {state.backend} encoder failed"
+                )
+                state.encoder_unavailable = True
+            self._retire_ring(state=state, reason=PARTIAL_ENCODER_FAILED)
+            state.backend = None
+
         if state.ring is not None or state.encoder_unavailable:
             return state.ring
 
         declared_fps = getattr(image.video_metadata, "fps", None)
-        backend, ring_class = _select_backend(image=image)
+        backend, ring_class = _select_backend(
+            image=image, allow_nvenc=not state.nvenc_unusable
+        )
         try:
             state.ring = ring_class(
                 video_identifier,
@@ -932,9 +956,14 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         return step_name
 
 
-def _select_backend(image: WorkflowImageData) -> Tuple[str, Type]:
+def _select_backend(
+    image: WorkflowImageData, allow_nvenc: bool = True
+) -> Tuple[str, Type]:
     # NVENC only for frames that already live on a CUDA device, so the check never
     # triggers a numpy -> tensor conversion or a GPU -> CPU download.
+    if not allow_nvenc:
+        return BACKEND_X264, X264Ring
+
     if not image.is_tensor_materialised():
         return BACKEND_X264, X264Ring
 

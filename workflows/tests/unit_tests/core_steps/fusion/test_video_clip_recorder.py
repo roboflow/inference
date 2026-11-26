@@ -10,6 +10,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common.video_clips.capture import (
+    PARTIAL_ENCODER_FAILED,
     PARTIAL_RESET,
     PARTIAL_RESOLUTION_CHANGE,
     PARTIAL_SHUTDOWN,
@@ -838,7 +839,7 @@ def test_stream_switches_to_x264_when_the_nvenc_warm_up_fails(monkeypatch) -> No
     x264_rings = RingFactory()
     nvenc_allowed = [True]
 
-    def select_backend(image):
+    def select_backend(image, allow_nvenc=True):
         if nvenc_allowed[0]:
             return BACKEND_NVENC, nvenc_rings
         return BACKEND_X264, x264_rings
@@ -858,6 +859,67 @@ def test_stream_switches_to_x264_when_the_nvenc_warm_up_fails(monkeypatch) -> No
     assert [number for _, number, _ in x264_rings.rings[0].submitted] == [2, 3]
     assert block.telemetry()["camera-1"]["backend"] == BACKEND_X264
     assert all(anchor.availability == AVAILABILITY_OK for anchor in anchors)
+
+
+def test_stream_switches_to_x264_when_the_nvenc_encoder_fails(monkeypatch) -> None:
+    # given: the NVENC warm-up succeeded, so NVENC stays the preferred backend
+    nvenc_rings = RingFactory()
+    x264_rings = RingFactory()
+
+    def select_backend(image, allow_nvenc=True):
+        if allow_nvenc:
+            return BACKEND_NVENC, nvenc_rings
+        return BACKEND_X264, x264_rings
+
+    monkeypatch.setattr(v1, "_select_backend", select_backend)
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
+
+    # when: the ring reports that its encoder failed for good
+    _run(block, _image(1))
+    nvenc_rings.rings[0].encoder_failed = True
+    anchors = _run(block, _image(2), _image(3))
+
+    # then: NVENC is not tried again for this stream, and recording continues
+    assert nvenc_rings.rings[0].retired_with == PARTIAL_ENCODER_FAILED
+    assert len(nvenc_rings.rings) == 1
+    assert len(x264_rings.rings) == 1
+    assert [number for _, number, _ in x264_rings.rings[0].submitted] == [2, 3]
+    assert block.telemetry()["camera-1"]["backend"] == BACKEND_X264
+    assert all(anchor.availability == AVAILABILITY_OK for anchor in anchors)
+
+
+def test_stream_is_unavailable_when_the_x264_encoder_fails(rings) -> None:
+    # given
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
+    (first,) = _run(block, _image(1))
+
+    # when: the ring reports that its encoder failed for good
+    rings.rings[0].encoder_failed = True
+    anchors = _run(block, _image(2), _image(3), _image(4))
+
+    # then: the anchors say so, and no ring is built for every further frame
+    assert first.availability == AVAILABILITY_OK
+    assert rings.rings[0].retired_with == PARTIAL_ENCODER_FAILED
+    assert len(rings.rings) == 1
+    assert all(anchor.availability == UNAVAILABLE_NO_ENCODER for anchor in anchors)
+    for anchor in anchors:
+        with pytest.raises(ClipUnavailableError):
+            anchor.capture(1.0, 1.0)
+
+
+def test_stream_with_a_failed_encoder_records_again_after_it_restarts(rings) -> None:
+    # given: a stream whose encoder failed
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
+    _run(block, _image(5))
+    rings.rings[0].encoder_failed = True
+    _run(block, _image(6))
+
+    # when: the source restarts (its frame number goes backwards)
+    (anchor,) = _run(block, _image(1))
+
+    # then
+    assert len(rings.rings) == 2
+    assert anchor.availability == AVAILABILITY_OK
 
 
 # ---- lifecycle -----------------------------------------------------------------------

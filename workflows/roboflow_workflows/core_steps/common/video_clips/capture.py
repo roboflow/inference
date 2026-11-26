@@ -33,12 +33,15 @@ PARTIAL_SHUTDOWN = "shutdown"
 PARTIAL_RING_EVICTED = "ring_evicted"
 # The source restarted (its frame number went backwards) during the post-roll.
 PARTIAL_RESET = "reset"
+# The stream's encoder failed for good during the post-roll.
+PARTIAL_ENCODER_FAILED = "encoder_failed"
 PARTIAL_REASONS = (
     PARTIAL_STALLED,
     PARTIAL_RESOLUTION_CHANGE,
     PARTIAL_SHUTDOWN,
     PARTIAL_RING_EVICTED,
     PARTIAL_RESET,
+    PARTIAL_ENCODER_FAILED,
 )
 
 STALL_GRACE_SECONDS = 10.0

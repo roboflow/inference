@@ -372,6 +372,71 @@ def test_clip_kept_on_disk_is_private_to_the_owner(ring, tmp_path, monkeypatch) 
     assert list(tmp_path.iterdir()) == []
 
 
+class _FailingX264Ring(X264Ring):
+    """Fails to encode the first `failures` frames, then encodes normally."""
+
+    failures = 0
+    attempts = 0
+
+    def _encode_frame(self, frame, *, pts, force_keyframe):
+        self.attempts += 1
+        if self.attempts <= self.failures:
+            raise RuntimeError("encoder cannot open")
+        return super()._encode_frame(frame, pts=pts, force_keyframe=force_keyframe)
+
+
+FRAMES_UNTIL_ENCODER_FAILED = (
+    ring_module.MAX_ENCODER_RESTARTS * ring_module.MAX_CONSECUTIVE_ENCODE_ERRORS
+)
+
+
+def test_encoder_that_never_recovers_is_reported_as_failed() -> None:
+    # given
+    recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
+    recorder.failures = 10_000
+    try:
+        # when: one frame short of the limit
+        _feed(recorder, range(FRAMES_UNTIL_ENCODER_FAILED - 1))
+        _wait_for(lambda: recorder.attempts == FRAMES_UNTIL_ENCODER_FAILED - 1)
+
+        # then
+        assert recorder.encoder_failed is False
+
+        # when: the limit is reached
+        _feed(recorder, [FRAMES_UNTIL_ENCODER_FAILED - 1])
+        _wait_for(lambda: recorder.encoder_failed)
+
+        # then
+        assert recorder.stats().encode_errors == FRAMES_UNTIL_ENCODER_FAILED
+        assert recorder.stats().frames_encoded == 0
+    finally:
+        recorder.close()
+
+
+def test_encoder_that_recovers_is_not_reported_as_failed() -> None:
+    # given: failures up to one frame short of the limit, then a working encoder
+    recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
+    recorder.failures = FRAMES_UNTIL_ENCODER_FAILED - 1
+    try:
+        # when: a success in between, then the same number of failures again
+        _feed(recorder, range(FRAMES_UNTIL_ENCODER_FAILED))
+        _wait_for(lambda: recorder.stats().frames_encoded == 1)
+        recorder.attempts = 0
+        _feed(
+            recorder,
+            range(FRAMES_UNTIL_ENCODER_FAILED, 2 * FRAMES_UNTIL_ENCODER_FAILED - 1),
+        )
+        _wait_for(
+            lambda: recorder.stats().encode_errors
+            == 2 * (FRAMES_UNTIL_ENCODER_FAILED - 1)
+        )
+
+        # then: the count starts again after every encoded frame
+        assert recorder.encoder_failed is False
+    finally:
+        recorder.close()
+
+
 class _SlowX264Ring(X264Ring):
     encoded = 0
 
