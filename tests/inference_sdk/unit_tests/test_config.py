@@ -1,11 +1,16 @@
 import json
 import threading
 
+import pytest
+
 from inference_sdk.config import (
+    INFERENCE_SDK_REQUEST_TIMEOUT,
     RemoteProcessingTimeCollector,
     outbound_service_secret,
+    parse_request_timeout,
     remote_processing_times,
 )
+from inference_sdk.http.entities import InferenceConfiguration
 
 
 def test_collector_add_and_drain() -> None:
@@ -217,3 +222,40 @@ def test_collector_tracks_remote_cold_start_metadata() -> None:
     assert collector.snapshot_cold_start_count() == 2
     assert abs(collector.snapshot_cold_start_total_load_time() - 0.6) < 1e-9
     assert collector.snapshot_model_ids() == {"model-a/1"}
+
+
+@pytest.mark.parametrize(
+    "raw_value, expected",
+    [
+        (None, 300.0),
+        ("", 300.0),
+        ("   ", 300.0),
+        ("300", 300.0),
+        ("12.5", 12.5),
+        ("None", None),
+        ("none", None),
+    ],
+)
+def test_parse_request_timeout_valid_values(raw_value, expected) -> None:
+    assert parse_request_timeout(raw_value) == expected
+
+
+@pytest.mark.parametrize("raw_value", ["0", 0, "-5", "not-a-number", "nan", "inf"])
+def test_parse_request_timeout_invalid_values(raw_value) -> None:
+    with pytest.raises(ValueError):
+        parse_request_timeout(raw_value)
+
+
+def test_inference_configuration_request_timeout_default() -> None:
+    assert InferenceConfiguration().request_timeout == INFERENCE_SDK_REQUEST_TIMEOUT
+    assert (
+        InferenceConfiguration.init_default().request_timeout
+        == INFERENCE_SDK_REQUEST_TIMEOUT
+    )
+
+
+def test_inference_configuration_omits_request_timeout_from_parameters() -> None:
+    configuration = InferenceConfiguration(request_timeout=12.5)
+
+    assert "request_timeout" not in configuration.to_legacy_call_parameters()
+    assert "request_timeout" not in configuration.to_object_detection_parameters()

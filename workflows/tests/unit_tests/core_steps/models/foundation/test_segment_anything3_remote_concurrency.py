@@ -111,7 +111,7 @@ def test_remote_requests_overlap_within_limit_and_keep_frame_order(
     active = peak = 0
     completed, requests, contexts = [], [], []
 
-    def transport(request_data, request_method):
+    def transport(request_data, request_method, request_timeout=None):
         nonlocal active, peak
         # A SAM3 request must contain one image, even for a workflow batch.
         assert isinstance(request_data.payload["image"], dict)
@@ -173,7 +173,7 @@ def test_cpu_v3_polygon_output_keeps_class_mapping_and_masks(monkeypatch):
     kwargs["output_format"] = "polygons"
     requests = []
 
-    def transport(request_data, request_method):
+    def transport(request_data, request_method, request_timeout=None):
         requests.append(request_data)
         return _response(0, request_data.payload["format"])
 
@@ -197,7 +197,7 @@ def test_remote_empty_and_single_image_batches(monkeypatch, variant, count):
     block, kwargs = _block(monkeypatch, variant, 8)
     calls = []
 
-    def transport(request_data, request_method):
+    def transport(request_data, request_method, request_timeout=None):
         calls.append(request_data)
         return _response(0, request_data.payload["format"])
 
@@ -219,7 +219,7 @@ def test_remote_http_failure_stops_later_groups(
     first = images[failed_group * concurrency].base64_image
     requested = []
 
-    def transport(request_data, request_method):
+    def transport(request_data, request_method, request_timeout=None):
         requested.append(request_data.payload["image"]["value"])
         status = 400 if request_data.payload["image"]["value"] == first else 200
         return _response(0, request_data.payload["format"], status=status)
@@ -257,7 +257,7 @@ def test_remote_releases_large_polygon_responses_before_next_group(
             parsed_refs.append(weakref.ref(payload))
             return payload
 
-    def transport(request_data, request_method):
+    def transport(request_data, request_method, request_timeout=None):
         idx = indices[request_data.payload["image"]["value"]]
         with lock:
             if idx >= concurrency:

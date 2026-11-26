@@ -1,4 +1,7 @@
+from unittest import mock
+
 import aiohttp
+import numpy as np
 import pytest
 import requests
 from aioresponses import aioresponses
@@ -154,3 +157,156 @@ async def test_infer_async_image_download_failure_is_not_a_server_connection_err
     assert type(error.value) is HTTPClientError
     assert "Could not load image from URL" in str(error.value)
     assert "refused" in str(error.value)
+
+
+def test_get_server_info_forwards_request_timeout(requests_mock):
+    http_client = InferenceHTTPClient(api_url="http://localhost:9001")
+    requests_mock.get(
+        "http://localhost:9001/info",
+        json={"name": "inference", "version": "1.0.0", "uuid": "server-uuid"},
+    )
+
+    http_client.get_server_info()
+    assert requests_mock.last_request.timeout == 300.0
+
+    with http_client.use_configuration(InferenceConfiguration(request_timeout=12.5)):
+        http_client.get_server_info()
+    assert requests_mock.last_request.timeout == 12.5
+
+    with http_client.use_configuration(InferenceConfiguration(request_timeout=None)):
+        http_client.get_server_info()
+    assert requests_mock.last_request.timeout is None
+
+
+def test_get_server_info_read_timeout_raises_client_error(requests_mock):
+    http_client = InferenceHTTPClient(api_url="http://localhost:9001")
+    original = requests.exceptions.ReadTimeout("Read timed out")
+    requests_mock.get("http://localhost:9001/info", exc=original)
+
+    with pytest.raises(HTTPClientError) as error:
+        http_client.get_server_info()
+
+    assert type(error.value) is HTTPClientError
+    assert str(error.value).startswith("Server request timed out")
+    assert error.value.__cause__ is original
+
+
+def test_get_server_info_connect_timeout_stays_connection_error(requests_mock):
+    http_client = InferenceHTTPClient(api_url="http://localhost:9001")
+    original = requests.exceptions.ConnectTimeout("Connect timed out")
+    requests_mock.get("http://localhost:9001/info", exc=original)
+
+    with pytest.raises(HTTPServerConnectionError) as error:
+        http_client.get_server_info()
+
+    assert type(error.value) is HTTPServerConnectionError
+    assert error.value.__cause__ is original
+
+
+def test_run_workflow_and_infer_forward_request_timeout(requests_mock):
+    workflow_client = InferenceHTTPClient(api_url="http://localhost:9001")
+    requests_mock.post(
+        "http://localhost:9001/workspace/workflows/workflow",
+        json={"outputs": [{"ok": True}]},
+    )
+
+    with workflow_client.use_configuration(
+        InferenceConfiguration(request_timeout=12.5)
+    ):
+        workflow_result = workflow_client.run_workflow(
+            workspace_name="workspace", workflow_id="workflow"
+        )
+
+    assert workflow_result == [{"ok": True}]
+    assert requests_mock.last_request.timeout == 12.5
+
+    infer_client = InferenceHTTPClient(
+        api_url="https://serverless.roboflow.com", api_key="key"
+    )
+    requests_mock.post(
+        "https://serverless.roboflow.com/some/1",
+        json={"predictions": []},
+    )
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    with infer_client.use_configuration(InferenceConfiguration(request_timeout=12.5)):
+        infer_result = infer_client.infer(inference_input=image, model_id="some/1")
+
+    assert infer_result == {"predictions": []}
+    assert requests_mock.last_request.timeout == 12.5
+
+
+def test_infer_read_timeout_does_not_retry(requests_mock):
+    http_client = InferenceHTTPClient(
+        api_url="https://serverless.roboflow.com", api_key="key"
+    )
+    original = requests.exceptions.ReadTimeout("Read timed out")
+    requests_mock.post("https://serverless.roboflow.com/some/1", exc=original)
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    with pytest.raises(HTTPClientError) as error:
+        http_client.infer(inference_input=image, model_id="some/1")
+
+    assert type(error.value) is HTTPClientError
+    assert str(error.value).startswith("Server request timed out")
+    assert error.value.__cause__ is original
+    assert requests_mock.call_count == 1
+
+
+def test_infer_connect_timeout_retries_and_raises_connection_error(
+    requests_mock, monkeypatch
+):
+    monkeypatch.setattr("backoff._sync.time.sleep", lambda _: None)
+    http_client = InferenceHTTPClient(
+        api_url="https://serverless.roboflow.com", api_key="key"
+    )
+    original = requests.exceptions.ConnectTimeout("Connect timed out")
+    requests_mock.post("https://serverless.roboflow.com/some/1", exc=original)
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    with pytest.raises(HTTPServerConnectionError) as error:
+        http_client.infer(inference_input=image, model_id="some/1")
+
+    assert type(error.value) is HTTPServerConnectionError
+    assert error.value.__cause__ is original
+    assert requests_mock.call_count == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "configuration, expected_timeout",
+    [
+        (None, aiohttp.ClientTimeout(total=300)),
+        (
+            InferenceConfiguration(request_timeout=12.5),
+            aiohttp.ClientTimeout(total=12.5),
+        ),
+        (
+            InferenceConfiguration(request_timeout=None),
+            aiohttp.ClientTimeout(total=None),
+        ),
+    ],
+)
+async def test_async_client_session_uses_configured_timeout(
+    configuration, expected_timeout
+):
+    captured = {}
+    real_session = aiohttp.ClientSession
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return real_session(*args, **kwargs)
+
+    http_client = InferenceHTTPClient(api_url="http://localhost:9001", api_key="key")
+    if configuration is not None:
+        http_client.configure(configuration)
+
+    with aioresponses() as responses:
+        responses.get(
+            "http://localhost:9001/model/registry?api_key=key",
+            payload={"models": []},
+        )
+        with mock.patch.object(aiohttp, "ClientSession", side_effect=_capture):
+            await http_client.list_loaded_models_async()
+
+    assert captured["timeout"] == expected_timeout
