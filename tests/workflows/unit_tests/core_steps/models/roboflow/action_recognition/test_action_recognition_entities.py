@@ -38,30 +38,24 @@ def test_base_does_not_import_server_action_recognition_entities() -> None:
     assert offenders == []
 
 
-def test_there_is_exactly_one_action_recognition_prediction_class() -> None:
+def test_there_is_exactly_one_class_per_action_recognition_entity() -> None:
     from inference.core.entities.responses.action_recognition import (
         ActionRecognitionPrediction as ServerName,
     )
     from inference.core.workflows.core_steps.models.roboflow.action_recognition.entities import (
         ActionRecognitionPrediction,
+        ActionRecognitionResult,
     )
     from inference.core.workflows.execution_engine.entities.base import (
         ActionRecognitionPrediction as ReExported,
     )
+    from inference.core.workflows.execution_engine.entities.base import (
+        ActionRecognitionResult as ReExportedResult,
+    )
 
     assert ServerName is ActionRecognitionPrediction
     assert ReExported is ActionRecognitionPrediction
-
-
-def test_there_is_exactly_one_action_recognition_result_class() -> None:
-    from inference.core.workflows.core_steps.models.roboflow.action_recognition.entities import (
-        ActionRecognitionResult,
-    )
-    from inference.core.workflows.execution_engine.entities.base import (
-        ActionRecognitionResult as ReExported,
-    )
-
-    assert ReExported is ActionRecognitionResult
+    assert ReExportedResult is ActionRecognitionResult
 
 
 def test_isinstance_holds_for_objects_the_server_helper_builds() -> None:

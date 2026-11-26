@@ -261,13 +261,6 @@ def deserialize_action_recognition_result_kind(
             f"(`{type(value).__name__}`).",
             context="workflow_execution | runtime_input_validation",
         )
-    if "timeline" not in value:
-        raise RuntimeInputError(
-            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
-            "an action recognition result, but dictionary misses required key "
-            "`timeline`.",
-            context="workflow_execution | runtime_input_validation",
-        )
     try:
         return ActionRecognitionResult.model_validate(value)
     except ValidationError as error:
