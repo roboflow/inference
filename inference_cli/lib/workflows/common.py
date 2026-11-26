@@ -198,11 +198,13 @@ def aggregate_batch_processing_results(
         output_directory=output_directory
     )
     file_descriptor.close()
-    all_results = [
-        os.path.join(output_directory, f, "results.json")
-        for f in sorted(all_processed_files)
-        if os.path.exists(os.path.join(output_directory, f, "results.json"))
-    ]
+    all_results = _drop_paths_to_same_file(
+        paths=[
+            os.path.join(output_directory, f, "results.json")
+            for f in sorted(all_processed_files)
+            if os.path.exists(os.path.join(output_directory, f, "results.json"))
+        ]
+    )
     decoded_content = []
     for result_path in track(all_results, description="Grabbing processing results..."):
         content = read_json(path=result_path)
@@ -233,6 +235,22 @@ def aggregate_batch_processing_results(
     aggregated_results_path = os.path.join(output_directory, "aggregated_results.csv")
     data_frame.to_csv(aggregated_results_path, index=False)
     return aggregated_results_path
+
+
+def _drop_paths_to_same_file(paths: List[str]) -> List[str]:
+    # progress.log can name one image under two spellings, such as img.jpg from
+    # an older run and IMG.JPG from a resume, and a case-insensitive disk resolves
+    # both to one file. A zero inode says nothing about identity, so never merge on it.
+    seen_files = set()
+    unique_paths = []
+    for path in paths:
+        stats = os.stat(path)
+        file_id = (stats.st_dev, stats.st_ino)
+        if stats.st_ino and file_id in seen_files:
+            continue
+        seen_files.add(file_id)
+        unique_paths.append(path)
+    return unique_paths
 
 
 def extract_processed_image_name_from_predictions_path(predictions_path: str) -> str:
