@@ -19,6 +19,4 @@ COPY release.py /release.py
 COPY dependencies.py /dependencies.py
 COPY publish.py /publish.py
 COPY candidate.py /candidate.py
-COPY prepare.py /prepare.py
-COPY image_inputs.py /image_inputs.py
 WORKDIR /work

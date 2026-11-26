@@ -21,6 +21,7 @@ from roboflow_workflows.core_steps.common.serializers import (
 )
 from roboflow_workflows.core_steps.common.serializers import (
     serialize_action_recognition_prediction_kind,
+    serialize_action_recognition_result_kind,
     serialize_timestamp,
 )
 from roboflow_workflows.execution_engine.constants import (
@@ -87,6 +88,7 @@ from roboflow_workflows.execution_engine.constants import (
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
+    ActionRecognitionResult,
     WorkflowImageData,
 )
 
@@ -844,6 +846,8 @@ def serialize_wildcard_kind(value: Any) -> Any:
         # Without this the model reaches clients by field name, so the
         # timeline arrives as "class_name" where the kind declares "class".
         return serialize_action_recognition_prediction_kind(value=[value])[0]
+    if isinstance(value, ActionRecognitionResult):
+        return serialize_action_recognition_result_kind(value=value)
     if isinstance(value, datetime):
         return serialize_timestamp(timestamp=value)
     return value

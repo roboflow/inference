@@ -19,13 +19,14 @@ from roboflow_workflows.core_steps.common.workload_presets import (
 from roboflow_workflows.core_steps.visualizations.common.fonts import resolve_font_path
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
+    ActionRecognitionResult,
     ImageParentMetadata,
     OutputDefinition,
     VideoMetadata,
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.entities.types import (
-    ACTION_RECOGNITION_PREDICTION_KIND,
+    ACTION_RECOGNITION_RESULT_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
@@ -72,8 +73,7 @@ STATUS_NOT_ANALYZED = "not_analyzed"
 
 LONG_DESCRIPTION = """
 Draw the results of an Action Recognition Model on its video. Connect the
-original image, the model's `timeline`, its `analyzed_from_frame` and its
-`analyzed_until_frame`.
+original image and the model's `predictions` output.
 
 An action recognition result always describes frames the stream has already
 passed. The block offers two honest ways to show that.
@@ -129,25 +129,13 @@ class BlockManifest(WorkflowBlockManifest):
         description="Original video frame of the stream the model analyzes.",
         examples=["$inputs.image"],
     )
-    timeline: Selector(kind=[ACTION_RECOGNITION_PREDICTION_KIND]) = Field(
-        description="Timeline output of the same stream's Action Recognition Model.",
-        examples=["$steps.actions.timeline"],
-    )
-    analyzed_until_frame: Selector(kind=[INTEGER_KIND]) = Field(
+    predictions: Selector(kind=[ACTION_RECOGNITION_RESULT_KIND]) = Field(
         description=(
-            "The model's analyzed_until_frame output. It marks which frames "
-            "have a result."
+            "Predictions output of the same stream's Action Recognition Model, "
+            "carrying the timeline and the analyzed frame bounds of each "
+            "successful window."
         ),
-        examples=["$steps.actions.analyzed_until_frame"],
-    )
-    analyzed_from_frame: Selector(kind=[INTEGER_KIND]) = Field(
-        description=(
-            "The model's analyzed_from_frame output. Together with "
-            "analyzed_until_frame it marks the inclusive range of each "
-            "successful window, so frames in a failed or skipped window are "
-            'shown as "Not analyzed" instead of "No action".'
-        ),
-        examples=["$steps.actions.analyzed_from_frame"],
+        examples=["$steps.actions.predictions"],
     )
     display_mode: Union[
         Literal["live", "synchronized"], Selector(kind=[STRING_KIND])
@@ -213,15 +201,6 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="actions_frame_number", kind=[INTEGER_KIND]),
             OutputDefinition(name="status", kind=[STRING_KIND]),
         ]
-
-    @classmethod
-    def accepts_empty_values(cls) -> bool:
-        """Keep drawing while the model has no analyzed frame to report.
-
-        Returns:
-            True, so null analyzed frame marks do not skip the step.
-        """
-        return True
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -342,10 +321,8 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
 
     def run(
         self,
-        image: Optional[WorkflowImageData],
-        timeline: Optional[List[ActionRecognitionPrediction]],
-        analyzed_from_frame: Optional[int],
-        analyzed_until_frame: Optional[int],
+        image: WorkflowImageData,
+        predictions: ActionRecognitionResult,
         display_mode: str = "live",
         history_seconds: float = 30.0,
         max_delay_seconds: float = 60.0,
@@ -355,13 +332,9 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         """Draw the timeline on the current frame or on a delayed one.
 
         Args:
-            image: Original frame carrying source video metadata, or None when
-                an upstream step emitted an empty image.
-            timeline: Current ranges from the same video's model output.
-            analyzed_from_frame: First frame of the model's latest successful
-                window, or None before its first result.
-            analyzed_until_frame: Last frame the model has a result for, or
-                None before its first result.
+            image: Original frame carrying source video metadata.
+            predictions: Current result bundle from the same video's Action
+                Recognition Model, carrying timeline and analyzed frame bounds.
             display_mode: "live" or "synchronized".
             history_seconds: Video time the strip covers.
             max_delay_seconds: Upper limit of the synchronized delay.
@@ -379,22 +352,13 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         if display_mode not in ("live", "synchronized"):
             raise ValueError('display_mode must be "live" or "synchronized".')
 
-        if image is None:
-            empty_result = {
-                "image": None,
-                "displayed_frame_number": None,
-                "actions": [],
-                "actions_frame_number": None,
-                "status": None,
-            }
-
-            return empty_result
-
         pixels = image.numpy_image
         if pixels.ndim != 3 or pixels.shape[2] != 3 or pixels.dtype != np.uint8:
             raise ValueError("Expected a uint8 BGR video image.")
 
-        timeline = timeline or []
+        timeline = predictions.timeline
+        analyzed_from_frame = predictions.analyzed_from_frame
+        analyzed_until_frame = predictions.analyzed_until_frame
         number = image.video_metadata.frame_number
         synchronized = display_mode == "synchronized"
         state = self._stream_state(

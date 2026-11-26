@@ -17,6 +17,7 @@ from roboflow_workflows.core_steps.visualizations.action_recognition.v1 import (
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
+    ActionRecognitionResult,
     ImageParentMetadata,
     VideoMetadata,
     WorkflowImageData,
@@ -73,13 +74,15 @@ def _action(name, start, end, class_id=0):
     )
 
 
-def _analyzed(until, *, start=1):
-    # The model's latest window, covering the stream since frame 1 by default.
-    marks = {
-        "analyzed_from_frame": None if until is None else start,
-        "analyzed_until_frame": until,
-    }
-    return marks
+def _predictions(timeline=(), until=None, *, start=1, error_status=""):
+    # The model's latest result bundle, covering the stream since frame 1 by default.
+    result = ActionRecognitionResult(
+        timeline=list(timeline),
+        analyzed_from_frame=None if until is None else start,
+        analyzed_until_frame=until,
+        error_status=error_status,
+    )
+    return result
 
 
 def _shade(result):
@@ -90,7 +93,7 @@ def _shade(result):
 def _draws_the_timeline(result, number, *, analyzed_until_frame):
     # The strip darkens the frame even with no actions; compare with none.
     empty = ActionRecognitionVisualizationBlockV1().run(
-        _image(number), [], **_analyzed(analyzed_until_frame)
+        _image(number), _predictions(until=analyzed_until_frame)
     )
     drawn, blank = result["image"].numpy_image, empty["image"].numpy_image
     lower_half = slice(drawn.shape[0] // 2, None)
@@ -110,8 +113,7 @@ def _synchronized(
 ):
     result = block.run(
         _image(number, **(image or {})),
-        list(timeline),
-        **_analyzed(analyzed_until_frame, start=analyzed_from_frame),
+        _predictions(timeline, analyzed_until_frame, start=analyzed_from_frame),
         display_mode="synchronized",
         **kwargs,
     )
@@ -145,8 +147,7 @@ def _play(block, model, frames, **kwargs):
         results.append(
             block.run(
                 _image(number),
-                timeline,
-                **_analyzed(mark),
+                _predictions(timeline, mark),
                 **kwargs,
             )
         )
@@ -175,9 +176,9 @@ def test_live_names_the_actions_at_the_last_analyzed_frame():
     block = ActionRecognitionVisualizationBlockV1()
     timeline = [_action("wave", 5, 21), _action("jump", 18, 30, class_id=1)]
 
-    during = block.run(_image(40), timeline, **_analyzed(21))
-    after = block.run(_image(41), timeline, **_analyzed(40))
-    quiet = block.run(_image(42), timeline, **_analyzed(41))
+    during = block.run(_image(40), _predictions(timeline, 21))
+    after = block.run(_image(41), _predictions(timeline, 40))
+    quiet = block.run(_image(42), _predictions(timeline, 41))
 
     assert during["actions"] == ["jump", "wave"]
     assert during["actions_frame_number"] == 21
@@ -190,7 +191,7 @@ def test_live_draws_a_strip_on_a_copy_with_or_without_the_mark(mark):
     block = ActionRecognitionVisualizationBlockV1()
     source = _image(50)
 
-    result = block.run(source, [_action("wave", 20, 40)], **_analyzed(mark))
+    result = block.run(source, _predictions([_action("wave", 20, 40)], mark))
 
     assert result["status"] == ("analyzing" if mark is None else "live")
     assert result["displayed_frame_number"] == 50
@@ -357,8 +358,7 @@ def test_synchronized_frames_are_downscaled_before_they_are_kept(tensor):
 
     result = block.run(
         source,
-        [],
-        **_analyzed(None),
+        _predictions(),
         display_mode="synchronized",
         max_frame_side=160,
     )
@@ -416,7 +416,7 @@ def test_source_fps_falls_back_like_the_model_and_is_pinned_per_stream(
 def test_class_names_outside_ascii_draw_with_and_without_the_font(monkeypatch):
     timeline = [_action("Saída 走る", 1, 48, class_id=-1)]
     fallback = ActionRecognitionVisualizationBlockV1().run(
-        _image(50), timeline, **_analyzed(45)
+        _image(50), _predictions(timeline, 45)
     )
     # Compare before the font patch, so both renders use the fallback font.
     fallback_drawn = _draws_the_timeline(fallback, 50, analyzed_until_frame=45)
@@ -431,7 +431,7 @@ def test_class_names_outside_ascii_draw_with_and_without_the_font(monkeypatch):
     )
 
     with_font = ActionRecognitionVisualizationBlockV1().run(
-        _image(50), timeline, **_analyzed(45)
+        _image(50), _predictions(timeline, 45)
     )
 
     assert fallback["actions"] == ["Saída 走る"]
@@ -444,8 +444,7 @@ def test_frame_too_small_for_a_strip_is_returned_with_its_outputs():
 
     result = block.run(
         _image(50, size=(16, 24)),
-        [_action("wave", 20, 60)],
-        **_analyzed(50),
+        _predictions([_action("wave", 20, 60)], 50),
     )
 
     assert result["image"].numpy_image.shape == (16, 24, 3)
@@ -457,9 +456,7 @@ def test_run_rejects_an_unknown_display_mode_and_a_non_bgr_image():
         type=TYPE,
         name="display",
         image="$inputs.image",
-        timeline="$steps.model.timeline",
-        analyzed_from_frame="$steps.model.analyzed_from_frame",
-        analyzed_until_frame="$steps.model.analyzed_until_frame",
+        predictions="$steps.model.predictions",
         display_mode="$inputs.display_mode",
     )
     block = ActionRecognitionVisualizationBlockV1()
@@ -471,9 +468,9 @@ def test_run_rejects_an_unknown_display_mode_and_a_non_bgr_image():
     # A selector defers the display_mode check to run time.
     assert manifest.display_mode == "$inputs.display_mode"
     with pytest.raises(ValueError, match="display_mode"):
-        block.run(_image(1), [], None, None, display_mode="delayed")
+        block.run(_image(1), _predictions(), display_mode="delayed")
     with pytest.raises(ValueError, match="uint8 BGR"):
-        block.run(gray, [], None, None)
+        block.run(gray, _predictions())
 
 
 @pytest.mark.parametrize("display_mode", [None, "synchronized"])
@@ -491,9 +488,7 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
         "type": TYPE,
         "name": "display",
         "image": "$inputs.image",
-        "timeline": "$inputs.timeline",
-        "analyzed_from_frame": "$inputs.start",
-        "analyzed_until_frame": "$inputs.mark",
+        "predictions": "$inputs.predictions",
     }
     if display_mode:
         step["display_mode"] = display_mode
@@ -502,9 +497,11 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
             "version": "1.0",
             "inputs": [
                 {"type": "WorkflowImage", "name": "image"},
-                {"type": "WorkflowBatchInput", "name": "timeline"},
-                {"type": "WorkflowBatchInput", "name": "start"},
-                {"type": "WorkflowBatchInput", "name": "mark"},
+                {
+                    "type": "WorkflowBatchInput",
+                    "name": "predictions",
+                    "kind": ["action_recognition_result"],
+                },
             ],
             "steps": [step],
             "outputs": [
@@ -518,7 +515,7 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
         }
     )
 
-    def run(number, timeline, mark, serialize=False):
+    def run(number, predictions, serialize=False):
         image = _image(number)
         return engine.run(
             runtime_parameters={
@@ -529,21 +526,19 @@ def test_real_engine_runs_the_step_while_the_mark_is_still_null(display_mode):
                         "video_metadata": image.video_metadata,
                     }
                 ],
-                "timeline": [timeline],
-                "start": [_analyzed(mark)["analyzed_from_frame"]],
-                "mark": [mark],
+                "predictions": [predictions],
             },
             serialize_results=serialize,
         )[0]
 
-    warmup = run(1, [], None)
+    warmup = run(1, _predictions())
     timeline = [_action("wave", 1, 5)]
     for number in range(2, 12):
-        run(number, [], None)
-    ready = run(12, timeline, 10)
-    serialized = run(13, timeline, 10, serialize=True)
+        run(number, _predictions())
+    ready = run(12, _predictions(timeline, 10).model_dump(by_alias=True))
+    serialized = run(13, _predictions(timeline, 10), serialize=True)
 
-    # A null mark must not skip the step: the video output would go missing.
+    # Null bounds inside ActionRecognitionResult must not skip the step.
     assert warmup["status"] == "analyzing"
     assert isinstance(warmup["image"], WorkflowImageData)
     if display_mode == "synchronized":
@@ -606,18 +601,147 @@ def test_synchronized_marks_failed_window_frames_not_analyzed_instead_of_no_acti
     assert result["actions_frame_number"] == 12
 
 
-def test_run_propagates_empty_output_when_upstream_image_is_none():
-    block = ActionRecognitionVisualizationBlockV1()
+def test_engine_skips_step_when_upstream_image_is_none():
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
 
-    result = block.run(None, [], **_analyzed(None), display_mode="synchronized")
+    engine = ExecutionEngine.init(
+        workflow_definition={
+            "version": "1.0",
+            "inputs": [
+                {"type": "WorkflowImage", "name": "image"},
+                {
+                    "type": "WorkflowBatchInput",
+                    "name": "predictions",
+                    "kind": ["action_recognition_result"],
+                },
+            ],
+            "steps": [
+                {
+                    "type": TYPE,
+                    "name": "display",
+                    "image": "$inputs.image",
+                    "predictions": "$inputs.predictions",
+                    "display_mode": "synchronized",
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "image",
+                    "selector": "$steps.display.image",
+                },
+                {
+                    "type": "JsonField",
+                    "name": "status",
+                    "selector": "$steps.display.status",
+                },
+            ],
+        }
+    )
 
-    assert result == {
-        "image": None,
-        "displayed_frame_number": None,
-        "actions": [],
-        "actions_frame_number": None,
-        "status": None,
-    }
+    result = engine.run(
+        runtime_parameters={
+            "image": [None],
+            "predictions": [_predictions()],
+        }
+    )[0]
+
+    assert result == {"image": None, "status": None}
+
+
+def test_engine_wires_model_predictions_into_visualization():
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+
+    from inference_models import (
+        ActionRecognitionPrediction as ModelActionRecognitionPrediction,
+    )
+    from inference_models import VideoSampling
+
+    class _StubModel:
+        class_names = ["wave"]
+        video_sampling = VideoSampling(window_seconds=0.5, sample_fps=2.0, min_frames=1)
+        supports_confidence = False
+        supports_observed_duration = False
+
+        def infer(self, frames, class_names=None, fps=None, **kwargs):
+            return [
+                ModelActionRecognitionPrediction(
+                    start_frame_idx=0, end_frame_idx=len(frames) - 1, class_name="wave"
+                )
+            ]
+
+    class _StubModelsProvider:
+        def load_action_recognition_model(self, model_id, api_key=None):
+            return _StubModel()
+
+    engine = ExecutionEngine.init(
+        workflow_definition={
+            "version": "1.0",
+            "inputs": [{"type": "WorkflowImage", "name": "image"}],
+            "steps": [
+                {
+                    "type": "roboflow_core/roboflow_action_recognition_model@v1",
+                    "name": "actions",
+                    "images": "$inputs.image",
+                    "model_id": "stub-model/1",
+                    "stride_seconds": 0.2,
+                },
+                {
+                    "type": TYPE,
+                    "name": "display",
+                    "image": "$inputs.image",
+                    "predictions": "$steps.actions.predictions",
+                    "display_mode": "live",
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "status",
+                    "selector": "$steps.display.status",
+                },
+                {
+                    "type": "JsonField",
+                    "name": "actions",
+                    "selector": "$steps.display.actions",
+                },
+                {
+                    "type": "JsonField",
+                    "name": "predictions",
+                    "selector": "$steps.actions.predictions",
+                },
+            ],
+        },
+        init_parameters={"workflows_core.model_manager": _StubModelsProvider()},
+    )
+
+    try:
+        results = []
+        for number in range(1, 5):
+            frame = _image(number, fps=10)
+            results.append(
+                engine.run(
+                    runtime_parameters={
+                        "image": [
+                            {
+                                "type": "numpy_object",
+                                "value": frame.numpy_image,
+                                "video_metadata": frame.video_metadata,
+                            }
+                        ]
+                    },
+                    serialize_results=True,
+                )[0]
+            )
+    finally:
+        engine.close()
+
+    assert results[0]["status"] == "analyzing"
+    assert results[0]["predictions"]["analyzed_until_frame"] is None
+    assert results[2]["status"] == "live"
+    assert results[2]["actions"] == ["wave"]
+    assert results[2]["predictions"]["analyzed_from_frame"] == 1
+    assert results[2]["predictions"]["analyzed_until_frame"] == 1
 
 
 def test_single_jpeg_larger_than_budget_is_released_after_run():
@@ -626,8 +750,7 @@ def test_single_jpeg_larger_than_budget_is_released_after_run():
 
     result = block.run(
         huge_noise,
-        [],
-        **_analyzed(None),
+        _predictions(),
         display_mode="synchronized",
         max_frame_side=2560,
         max_buffer_mb=1,
@@ -649,8 +772,7 @@ def test_synchronized_resets_playback_when_model_resets_timeline():
             mark = 20
         block.run(
             _image(number),
-            old_timeline if mark is not None else [],
-            **_analyzed(mark),
+            _predictions(old_timeline if mark is not None else [], mark),
             display_mode="synchronized",
         )
 
@@ -658,8 +780,7 @@ def test_synchronized_resets_playback_when_model_resets_timeline():
     # reports analyzed_until_frame=None.
     reset_frame = block.run(
         _image(23),
-        [],
-        **_analyzed(None),
+        _predictions(),
         display_mode="synchronized",
     )
     assert reset_frame["status"] == "analyzing"
@@ -669,8 +790,7 @@ def test_synchronized_resets_playback_when_model_resets_timeline():
     for number in range(24, 30):
         waiting = block.run(
             _image(number),
-            [],
-            **_analyzed(None),
+            _predictions(),
             display_mode="synchronized",
         )
         assert waiting["displayed_frame_number"] == 23
@@ -678,9 +798,7 @@ def test_synchronized_resets_playback_when_model_resets_timeline():
     new_timeline = [_action("jump", 23, 28)]
     resumed = block.run(
         _image(30),
-        new_timeline,
-        analyzed_from_frame=23,
-        analyzed_until_frame=28,
+        _predictions(new_timeline, 28, start=23),
         display_mode="synchronized",
     )
     assert resumed["displayed_frame_number"] == 23
@@ -696,18 +814,18 @@ def test_close_releases_all_buffered_synchronized_frames():
             "version": "1.0",
             "inputs": [
                 {"type": "WorkflowImage", "name": "image"},
-                {"type": "WorkflowBatchInput", "name": "timeline"},
-                {"type": "WorkflowBatchInput", "name": "start"},
-                {"type": "WorkflowBatchInput", "name": "mark"},
+                {
+                    "type": "WorkflowBatchInput",
+                    "name": "predictions",
+                    "kind": ["action_recognition_result"],
+                },
             ],
             "steps": [
                 {
                     "type": TYPE,
                     "name": "display",
                     "image": "$inputs.image",
-                    "timeline": "$inputs.timeline",
-                    "analyzed_from_frame": "$inputs.start",
-                    "analyzed_until_frame": "$inputs.mark",
+                    "predictions": "$inputs.predictions",
                     "display_mode": "synchronized",
                 }
             ],
@@ -732,9 +850,7 @@ def test_close_releases_all_buffered_synchronized_frames():
                         "video_metadata": frame.video_metadata,
                     }
                 ],
-                "timeline": [[]],
-                "start": [None],
-                "mark": [None],
+                "predictions": [_predictions()],
             }
         )
 
@@ -750,10 +866,10 @@ def test_close_releases_all_buffered_synchronized_frames():
 def test_live_badge_shows_sub_second_lag_when_displayed_frame_is_ahead():
     timeline = [_action("wave", 1, 20)]
     current_result = ActionRecognitionVisualizationBlockV1().run(
-        _image(20), timeline, **_analyzed(20)
+        _image(20), _predictions(timeline, 20)
     )
     lagged_result = ActionRecognitionVisualizationBlockV1().run(
-        _image(20), timeline, **_analyzed(14)
+        _image(20), _predictions(timeline, 14)
     )
 
     top_band = slice(0, 40)

@@ -749,6 +749,8 @@ class ModalExecutor:
                 "Content-Type": "application/json",
                 "Content-Encoding": "gzip",
             },
+            # A followed redirect would resend the Modal credentials to its host.
+            allow_redirects=False,
         )
 
         if response.status_code != 200:
@@ -1239,10 +1241,18 @@ class WebSocketModalExecutor:
             url,
             header=[f"{k}: {v}" for k, v in headers.items()],
             timeout=WEBEXEC_WS_CONNECT_TIMEOUT_SECONDS,
+            # A followed redirect would resend the Modal credentials to its host.
+            redirect_limit=0,
         )
         # New container -> no compiled namespaces cached yet.
         self._hashes_sent_on_ws = set()
         try:
+            # websocket-client 1.9 returns a 3xx unraised when redirect_limit=0.
+            status = self._ws.getstatus()
+            if status != 101:
+                raise ws_lib.WebSocketBadStatusException(
+                    f"Handshake status {status}", status
+                )
             # The handshake runs while _io_lock is held, so its recv must not
             # wait the execution-sized read timeout: a server that accepts
             # the upgrade and then stalls (cold boot, starved event loop,

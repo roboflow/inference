@@ -30,6 +30,7 @@ from roboflow_workflows.core_steps.models.workload_presets import (
 from roboflow_workflows.errors import WorkflowEnvironmentConfigurationError
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
+    ActionRecognitionResult,
     Batch,
     OutputDefinition,
     VideoMetadata,
@@ -37,10 +38,10 @@ from roboflow_workflows.execution_engine.entities.base import (
 )
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    ACTION_RECOGNITION_RESULT_KIND,
     BOOLEAN_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
-    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
@@ -107,19 +108,21 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-analyzed_from_frame and analyzed_until_frame are the inclusive first and last
-source frames for which the latest successful call could report an action, or
-null before the first success. For models like Cosmos that return sampled-frame
-indices, they are the first and last sampled frames. For models like V-JEPA
-that use the observed window duration, analyzed_from_frame is the floored
-intended position of the first sample and analyzed_until_frame is the source
-frame that triggered the call. Models can therefore report different values
-for the same input frame. To display file-processing progress when the frame
-count is known, use frame_number and total_frames from the video metadata.
-Both marks update even if no actions are detected.
-Earlier gaps can remain after failed, skipped, or non-overlapping windows
-(continuous coverage without sub-sample gaps requires stride < window), and
-overlapping windows can still revise earlier predictions.
+predictions bundles timeline, analyzed_from_frame, analyzed_until_frame, and
+error_status into a single action_recognition_result output for downstream
+blocks such as Action Recognition Visualization. analyzed_from_frame and
+analyzed_until_frame are the inclusive first and last source frames for which
+the latest successful call could report an action, or null before the first
+success. For models like Cosmos that return sampled-frame indices, they are the
+first and last sampled frames. For models like V-JEPA that use the observed
+window duration, analyzed_from_frame is the floored intended position of the
+first sample and analyzed_until_frame is the source frame that triggered the
+call. Models can therefore report different values for the same input frame. To
+display file-processing progress when the frame count is known, use frame_number
+and total_frames from the video metadata. Both marks update even if no actions
+are detected. Earlier gaps can remain after failed, skipped, or non-overlapping
+windows (continuous coverage without sub-sample gaps requires stride < window),
+and overlapping windows can still revise earlier predictions.
 
 On a video file that reports its frame count, the last frame can trigger a
 classification before the next scheduled call. This call uses the current
@@ -135,7 +138,7 @@ get no extra call, so frames after the final scheduled call receive no result.
 By default a classification runs inside the step, so the video waits for
 the model. With background_inference, a live stream hands each window to a
 worker thread and the step returns at once. The result reaches the timeline
-on the stream's next frame after the call ends, and analyzed_until_frame
+on the stream's next frame after the call ends, and predictions.analyzed_until_frame
 shows how far results go. The last call of a stream that stops is therefore
 not reported. One call runs per stream at a time: a call that comes due
 while the previous one has not finished waits, then takes the newest window.
@@ -400,8 +403,10 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[ACTION_RECOGNITION_PREDICTION_KIND],
             ),
             OutputDefinition(name="error_status", kind=[STRING_KIND]),
-            OutputDefinition(name="analyzed_until_frame", kind=[INTEGER_KIND]),
-            OutputDefinition(name="analyzed_from_frame", kind=[INTEGER_KIND]),
+            OutputDefinition(
+                name="predictions",
+                kind=[ACTION_RECOGNITION_RESULT_KIND],
+            ),
         ]
 
     @classmethod
@@ -578,8 +583,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 thread instead of inside the step.
 
         Returns:
-            A timeline, error status and analyzed-frame mark for each
-            input frame.
+            A timeline, error status, and bundled ``predictions`` result for
+            each input frame.
         """
         if self._step_execution_mode is not StepExecutionMode.LOCAL:
             raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
@@ -1187,11 +1192,16 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # up with. The entries come from the snapshot the last fire built.
         # The list is still fresh per frame, so a consumer that appends to
         # one frame's output leaves the next frame alone.
+        predictions = ActionRecognitionResult(
+            timeline=list(bookkeeping.timeline_snapshot),
+            analyzed_from_frame=bookkeeping.analyzed_from_frame,
+            analyzed_until_frame=bookkeeping.analyzed_until_frame,
+            error_status=error_status,
+        )
         output = {
             "timeline": list(bookkeeping.timeline_snapshot),
             "error_status": error_status,
-            "analyzed_until_frame": bookkeeping.analyzed_until_frame,
-            "analyzed_from_frame": bookkeeping.analyzed_from_frame,
+            "predictions": predictions,
         }
 
         return output

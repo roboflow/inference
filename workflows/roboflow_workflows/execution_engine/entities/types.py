@@ -173,6 +173,28 @@ ACTION_RECOGNITION_PREDICTION_KIND = Kind(
     internal_data_type="List[ActionRecognitionPrediction]",
 )
 
+ACTION_RECOGNITION_RESULT_KIND_DOCS = """
+This kind represents the output of an action recognition model for one video
+frame. The serialized value is a dictionary with these keys:
+
+* `timeline`: List of classified frame segments (same entries as
+  `action_recognition_prediction`, each with `start_frame_idx`,
+  `end_frame_idx`, `class`, `class_id`, and optional `confidence`).
+* `analyzed_from_frame`: Inclusive first source frame covered by the latest
+  successful classification window, or null before the first success.
+* `analyzed_until_frame`: Inclusive last source frame covered by the latest
+  successful classification window, or null before the first success.
+* `error_status`: Error or gap message for the current frame, or an empty
+  string when no error occurred.
+"""
+ACTION_RECOGNITION_RESULT_KIND = Kind(
+    name="action_recognition_result",
+    description="Action recognition timeline, analyzed frame bounds, and error status",
+    docs=ACTION_RECOGNITION_RESULT_KIND_DOCS,
+    serialised_data_type="dict",
+    internal_data_type="ActionRecognitionResult",
+)
+
 ROBOFLOW_MODEL_ID_KIND_DOCS = """
 This kind represents value specific for Roboflow platform. At the platform, models are
 identified with special strings in the format: `<project_name>/<version>`. You should
