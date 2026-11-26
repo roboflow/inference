@@ -73,6 +73,11 @@ for contributor and maintainer responsibilities.
   code turned 45 degrees or more either way got an empty or inverted box, and a
   smaller tilt left part of the code outside the box.
 
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`): with
+  `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
+  with no QR code now reports the image `width` and `height`. They used to be
+  `null`, while the tensor-native variant already reported them.
+
 ## `0.2.17`
 
 Bundled execution engine: `1.17.3`.
