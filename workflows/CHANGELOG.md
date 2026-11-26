@@ -68,7 +68,21 @@ for contributor and maintainer responsibilities.
   camera no longer keeps another camera's completed window in memory.
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
+  tensor-native variants) no longer fails the run when an image has no QR code.
+  OpenCV returns no corners in that case, and the block now returns empty
+  predictions. Each box now covers all four corners of its code. The box used to
+  be built from two corners on the assumption that the code was upright, so a
+  code turned 45 degrees or more either way got an empty or inverted box, and a
+  smaller tilt left part of the code outside the box.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`): with
+  `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
+  with no QR code now reports the image `width` and `height`. They used to be
+  `null`, while the tensor-native variant already reported them.
 
 ## `0.2.17`
 
