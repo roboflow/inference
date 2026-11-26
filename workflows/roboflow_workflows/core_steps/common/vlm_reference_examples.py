@@ -118,11 +118,15 @@ REFERENCE_EXAMPLES_DESCRIPTION = (
     "image, `class` one of the block's labels. For keypoint-detection, each "
     'annotation also lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., '
     '"y": ..., "occluded": false}]`, in pixels of the example image, leaving out the '
-    "keypoints the instance does not show; `class_id`, the keypoint's position in "
-    "the class skeleton, picks between keypoints that share a name. Annotate every "
-    "object of those labels in each example. Local file paths are not read. At most "
-    f"{MAX_REFERENCE_EXAMPLES} examples, sent with every image, so each request costs "
-    f"more input tokens. An example takes at most {MAX_REFERENCE_ANNOTATIONS} "
+    "keypoints the instance does not show. Set `occluded` to true for a hidden "
+    "keypoint whose position is estimated. The `confidence` of a keypoint "
+    "prediction is ignored, so every keypoint given is drawn: remove the ones the "
+    "instance does not show. `class_id`, the keypoint's position in the class "
+    "skeleton counted from 0, picks between keypoints that share a name. Annotate "
+    "every object of those labels in each example. Local file paths are not read. "
+    f"At most {MAX_REFERENCE_EXAMPLES} examples, sent with every image, so each "
+    "request costs more input tokens. An example takes at most "
+    f"{MAX_REFERENCE_ANNOTATIONS} "
     "annotations, and the keypoints and skeleton edges of all the examples at most "
     f"{MAX_REFERENCE_DRAW_ITEMS} together. A selector can provide the whole list, "
     "but selectors inside an example are not resolved."
@@ -155,7 +159,11 @@ _BOX_COLORS = [
 
 
 class ReferenceKeypoint(BaseModel):
-    """One keypoint of a reference instance, as in a Roboflow keypoint prediction.
+    """One keypoint of a reference instance.
+
+    A Roboflow keypoint prediction parses as one: its ``class``, ``class_id``, ``x``
+    and ``y`` are read. Its ``confidence`` is not, and a prediction has no
+    ``occluded``, so a keypoint taken from a prediction is drawn as visible.
 
     ``class`` names the keypoint in its class skeleton. When the skeleton repeats a
     name, ``class_id`` picks the keypoint; without it, keypoints that share a name
@@ -186,7 +194,8 @@ class ReferenceKeypoint(BaseModel):
     occluded: bool = Field(
         default=False,
         description="Whether the keypoint is hidden, by another object or by the "
-        "instance itself, and its position estimated.",
+        "instance itself, and its position estimated. Predictions do not carry it, "
+        "and it is never derived from `confidence`.",
     )
 
 
@@ -197,7 +206,8 @@ class ReferenceAnnotation(BaseModel):
     keypoints. The same list can serve the other tasks, which read other fields of a
     prediction: `points` or `rle_mask` for instance segmentation, only `class` for
     classification. Fields a task does not read are ignored, so a whole prediction
-    is a valid annotation.
+    parses as an annotation. For keypoint detection that does not make it a good
+    example: see ``ReferenceKeypoint`` on ``confidence`` and ``occluded``.
     """
 
     model_config = ConfigDict(populate_by_name=True)
