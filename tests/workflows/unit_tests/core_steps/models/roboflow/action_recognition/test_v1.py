@@ -1124,6 +1124,17 @@ def test_result_wire_contract_and_wildcard_round_trip():
         )
         is result
     )
+    single_frame = deserialize_action_recognition_result_kind(
+        parameter="predictions",
+        value={
+            "timeline": [],
+            "analyzed_from_frame": 5,
+            "analyzed_until_frame": 5,
+            "error_status": "",
+        },
+    )
+    assert single_frame.analyzed_from_frame == 5
+    assert single_frame.analyzed_until_frame == 5
 
 
 @pytest.mark.parametrize(
@@ -1135,6 +1146,9 @@ def test_result_wire_contract_and_wildcard_round_trip():
         {"timeline": "bad"},
         {"timeline": [{"class": "walk"}]},
         {"timeline": [], "analyzed_until_frame": "not-an-int"},
+        {"timeline": [], "analyzed_until_frame": 9},
+        {"timeline": [], "analyzed_from_frame": 1},
+        {"timeline": [], "analyzed_from_frame": 11, "analyzed_until_frame": 9},
     ],
 )
 def test_result_deserializer_rejects_malformed_values(value):
