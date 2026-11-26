@@ -68,7 +68,10 @@ INGESTION_CONFIRMED = "confirmed"
 INGESTION_PENDING = "pending"
 INGESTION_FAILED = "failed"
 
-_SIGNED_URL_QUERY_PATTERN = re.compile(r"(https?://[^\s\"'?]+)\?[^\s\"']*")
+# A query string after anything that looks like a path, with or without a scheme
+# and host: `requests` errors name the request by its path and query alone
+# ("... with url: /path?query"). Same rule as `video_clips.uploader.redact_text`.
+_SIGNED_URL_QUERY_PATTERN = re.compile(r"(/[^\s?#'\"<>]*)\?[^\s'\"<>]*")
 _UNSAFE_NAME_CHARACTERS = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -80,7 +83,8 @@ def redact_signed_urls(text: str) -> str:
 
     Returns:
         str: `text` with each `http(s)://host/path?query` reduced to
-        `http(s)://host/path?<redacted>`.
+        `http(s)://host/path?<redacted>`, and each bare `/path?query` (the form
+        `requests` errors use) to `/path?<redacted>`.
     """
     redacted = _SIGNED_URL_QUERY_PATTERN.sub(r"\1?<redacted>", text)
 

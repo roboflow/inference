@@ -87,7 +87,11 @@ ERROR_BODY_CHARACTERS = 300
 ERROR_CAUSE_DEPTH = 4
 REDACTED = "REDACTED"
 
-_URL_QUERY_PATTERN = re.compile(r"(https?://[^\s?#'\"<>]+)\?[^\s'\"<>]*")
+# A query string after anything that looks like a path, with or without a scheme
+# and host. `requests` errors name the request by its path and query alone
+# ("... with url: /object?X-Goog-Signature=..."), so requiring "https://" in
+# front would let a signature through.
+_URL_QUERY_PATTERN = re.compile(r"(/[^\s?#'\"<>]*)\?[^\s'\"<>]*")
 
 IngestionProbe = Callable[[str], str]
 HttpPut = Callable[..., Any]
@@ -143,7 +147,7 @@ def describe_put_error(error: BaseException) -> str:
 
 
 def redact_text(text: str) -> str:
-    """Redact the query string of every URL inside free text.
+    """Redact the query string of every URL or request path inside free text.
 
     Args:
         text: An error message or response body.

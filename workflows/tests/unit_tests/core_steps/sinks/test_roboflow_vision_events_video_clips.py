@@ -758,6 +758,23 @@ def test_signed_urls_never_reach_outputs_or_logs(
     assert all("very-secret-signature" not in line for line in orphan_logs)
 
 
+def test_redact_signed_urls_strips_the_query_of_a_request_path_without_scheme() -> None:
+    # given: how `requests` names a failed request in a connection error
+    text = (
+        "ConnectionError: HTTPSConnectionPool(host='storage.googleapis.com', "
+        f"port=443): Max retries exceeded with url: /b/o?{SIGNATURE}&X-Goog-Date=1 "
+        "(Caused by NewConnectionError('refused'))"
+    )
+
+    # when
+    redacted = clip_attachments.redact_signed_urls(text)
+
+    # then
+    assert "very-secret" not in redacted
+    assert "X-Goog-Date" not in redacted
+    assert "with url: /b/o?<redacted> (Caused by" in redacted
+
+
 def test_redact_signed_urls_strips_every_query_string() -> None:
     # given
     text = (

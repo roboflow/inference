@@ -567,6 +567,26 @@ def test_redaction_helpers() -> None:
     assert "deadbeefsecret" not in redact_text(f"error at {SIGNED_URL} (x)")
 
 
+def test_redact_text_hides_the_query_of_a_request_path_without_scheme() -> None:
+    # given: how urllib3 names a failed request, behind a gateway or not
+    direct = (
+        f"Max retries exceeded with url: /bucket/videos/abc.mp4?{SECRET} (Caused by"
+    )
+    wrapped = (
+        "Max retries exceeded with url: /proxy?url="
+        + quote(SIGNED_URL, safe="")
+        + " (Caused by"
+    )
+
+    # then
+    assert redact_text(direct) == (
+        "Max retries exceeded with url: /bucket/videos/abc.mp4?REDACTED (Caused by"
+    )
+    assert redact_text(wrapped) == (
+        "Max retries exceeded with url: /proxy?REDACTED (Caused by"
+    )
+
+
 def test_redaction_hides_the_signature_of_a_gateway_wrapped_url() -> None:
     # given: the sink wraps the signed URL for the secure gateway
     wrapped = "https://gateway.example/proxy?url=" + quote(SIGNED_URL, safe="")
