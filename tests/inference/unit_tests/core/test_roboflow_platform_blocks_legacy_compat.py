@@ -385,10 +385,8 @@ def test_a_canonical_only_child_process_inherits_the_host_client() -> None:
     assert report["client"] == "ServerRoboflowPlatformClient"
 
 
-def _main_cloud_headers(module_suffix: str, explicit_headers: dict) -> dict:
-    if module_suffix.endswith("_tensor"):
-        headers = {"Authorization": "Bearer my-key", **explicit_headers}
-        return headers
+def _main_cloud_headers(explicit_headers: dict) -> dict:
+    # Both variants send the shared Roboflow API headers plus the bearer token.
     headers = build_roboflow_api_headers(explicit_headers=dict(explicit_headers))
     headers.setdefault("Authorization", "Bearer my-key")
     return headers
@@ -432,14 +430,11 @@ def test_vision_events_cloud_requests_on_the_legacy_server_are_unchanged(
     assert result["error_status"] is False
     upload_call, event_call = post_mock.call_args_list
     assert upload_call.args == (wrap_url(f"{API_BASE_URL}/vision-events/upload"),)
-    assert upload_call.kwargs["headers"] == _main_cloud_headers(
-        module_suffix=module_suffix, explicit_headers={}
-    )
+    assert upload_call.kwargs["headers"] == _main_cloud_headers(explicit_headers={})
     assert set(upload_call.kwargs) == {"headers", "files", "timeout"}
     assert upload_call.kwargs["timeout"] == 30
     assert event_call.args == (wrap_url(f"{API_BASE_URL}/vision-events"),)
     assert event_call.kwargs["headers"] == _main_cloud_headers(
-        module_suffix=module_suffix,
         explicit_headers={"Content-Type": "application/json"},
     )
     assert event_call.kwargs["json"]["images"] == [
