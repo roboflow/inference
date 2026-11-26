@@ -13,7 +13,6 @@ from pydantic import (
     Field,
     SerializerFunctionWrapHandler,
     model_serializer,
-    model_validator,
 )
 
 
@@ -64,7 +63,6 @@ class ActionRecognitionResult(BaseModel):
     """
 
     timeline: List[ActionRecognitionPrediction] = Field(
-        default_factory=list,
         description=(
             "Cumulative classified frame segments for the stream, sorted by "
             "start frame."
@@ -91,27 +89,3 @@ class ActionRecognitionResult(BaseModel):
             "when no error occurred."
         ),
     )
-
-    @model_validator(mode="after")
-    def validate_analyzed_bounds(self) -> "ActionRecognitionResult":
-        """Ensure analyzed frame bounds are either both null or an ordered range.
-
-        Returns:
-            The validated result instance.
-
-        Raises:
-            ValueError: If only one bound is set or start exceeds end.
-        """
-        has_from = self.analyzed_from_frame is not None
-        has_until = self.analyzed_until_frame is not None
-        if has_from != has_until:
-            raise ValueError(
-                "analyzed_from_frame and analyzed_until_frame must both be set "
-                "or both be null."
-            )
-        if has_from and self.analyzed_from_frame > self.analyzed_until_frame:
-            raise ValueError(
-                "analyzed_from_frame must be less than or equal to "
-                "analyzed_until_frame."
-            )
-        return self

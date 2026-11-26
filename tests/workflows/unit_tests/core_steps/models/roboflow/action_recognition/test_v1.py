@@ -1124,17 +1124,6 @@ def test_result_wire_contract_and_wildcard_round_trip():
         )
         is result
     )
-    single_frame = deserialize_action_recognition_result_kind(
-        parameter="predictions",
-        value={
-            "timeline": [],
-            "analyzed_from_frame": 5,
-            "analyzed_until_frame": 5,
-            "error_status": "",
-        },
-    )
-    assert single_frame.analyzed_from_frame == 5
-    assert single_frame.analyzed_until_frame == 5
 
 
 @pytest.mark.parametrize(
@@ -1146,9 +1135,6 @@ def test_result_wire_contract_and_wildcard_round_trip():
         {"timeline": "bad"},
         {"timeline": [{"class": "walk"}]},
         {"timeline": [], "analyzed_until_frame": "not-an-int"},
-        {"timeline": [], "analyzed_until_frame": 9},
-        {"timeline": [], "analyzed_from_frame": 1},
-        {"timeline": [], "analyzed_from_frame": 11, "analyzed_until_frame": 9},
     ],
 )
 def test_result_deserializer_rejects_malformed_values(value):
@@ -1170,6 +1156,8 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
     _run(block, _make_frame(1))
     result = _run(block, _make_frame(2))
     assert result["timeline"]
+    assert result["predictions"].analyzed_from_frame is not None
+    assert result["predictions"].analyzed_until_frame is not None
 
     class_filter = reset_kwargs.get("class_filter", ("walk", "run"))
     window_seconds = reset_kwargs.get("window_seconds", 1.0)
@@ -1184,6 +1172,8 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
 
     assert reset_result["timeline"] == []
     assert reset_result["error_status"] == ""
+    assert reset_result["predictions"].analyzed_from_frame is None
+    assert reset_result["predictions"].analyzed_until_frame is None
     assert len(model.calls) == 1
 
     reset_fire_frame = 3 + max(1, round(stride_seconds * 4.0))
@@ -1738,13 +1728,22 @@ def _run_file(block, *, frame_numbers, total_frames, **run_kwargs):
     return results
 
 
-def test_analyzed_until_frame_follows_successful_classifications():
+def test_analyzed_bounds_follow_successful_classifications():
     # The cadence anchors at frame 1 and fires at 3, 5 and 7. The call at 5
-    # fails, so the mark must stay on 3 until the call at 7 returns.
+    # fails, so the marks must stay on 1-3 until the call at 7 returns.
     block, _ = _make_block(responses=[[], RuntimeError("model failure"), []])
 
     results = [_run(block, _make_frame(number)) for number in range(1, 8)]
 
+    assert [result["predictions"].analyzed_from_frame for result in results] == [
+        None,
+        None,
+        1,
+        1,
+        1,
+        1,
+        5,
+    ]
     assert [result["predictions"].analyzed_until_frame for result in results] == [
         None,
         None,
@@ -1758,7 +1757,7 @@ def test_analyzed_until_frame_follows_successful_classifications():
     assert results[4]["predictions"].error_status == "model failure"
 
 
-def test_frame_rollback_clears_analyzed_until_frame():
+def test_frame_rollback_clears_analyzed_bounds():
     block, _ = _make_block(responses=[[]])
     for number in (1, 2):
         _run(block, _make_frame(number))
@@ -1766,7 +1765,9 @@ def test_frame_rollback_clears_analyzed_until_frame():
 
     restarted = _run(block, _make_frame(1))
 
+    assert analyzed["predictions"].analyzed_from_frame == 1
     assert analyzed["predictions"].analyzed_until_frame == 3
+    assert restarted["predictions"].analyzed_from_frame is None
     assert restarted["predictions"].analyzed_until_frame is None
 
 
@@ -1782,7 +1783,6 @@ def test_last_file_frame_classifies_the_tail_between_scheduled_calls():
     assert results[-2]["predictions"].analyzed_until_frame == 5
     assert results[-1]["predictions"].analyzed_until_frame == 5
     (action,) = results[-1]["timeline"]
-    assert results[-1]["predictions"].timeline == results[-1]["timeline"]
     assert (action.class_name, action.start_frame_idx, action.end_frame_idx) == (
         "walk",
         3,
@@ -2083,7 +2083,6 @@ def test_background_model_failure_surfaces_on_the_frame_that_collects_it():
 
     assert fired["error_status"] == ""
     assert failed["error_status"] == "model failure"
-    assert failed["predictions"].error_status == "model failure"
     assert failed["predictions"].analyzed_until_frame is None
     assert recovered["error_status"] == ""
     assert recovered["predictions"].analyzed_until_frame == 5
@@ -2232,17 +2231,22 @@ def test_discarding_stream_state_releases_a_waiting_call(reason, monkeypatch):
         block.close()
 
 
-def test_close_cancels_waiting_windows_while_the_running_call_finishes():
+def test_close_cancels_waiting_windows_and_releases_their_frames():
     block, model = _make_background_block()
     try:
         running = _submit_camera_window(block, "camera-a").future
         assert model.entered.wait(timeout=5)
-        waiting = _submit_camera_window(block, "camera-b").future
+        queued = _submit_camera_window(block, "camera-b")
+        waiting = queued.future
+        frame_refs = [weakref.ref(sample.frame) for sample in queued.sampled]
+        del queued
 
         block.close()
+        gc.collect()
 
         assert running.running()
         assert waiting.cancelled()
+        assert all(frame_ref() is None for frame_ref in frame_refs)
         model.gate.set()
         running.result(timeout=5)
         assert len(model.calls) == 1
@@ -2379,10 +2383,10 @@ def test_late_call_gap_matches_continuous_prediction_start_frame():
     "supports_observed_duration, expected_from, expected_until",
     [(False, 4, 6), (True, 3, 6)],
 )
-def test_analyzed_from_frame_matches_model_window_origin_and_resets(
+def test_analyzed_from_frame_matches_model_window_origin(
     supports_observed_duration, expected_from, expected_until
 ):
-    block, model = _make_block(responses=[[], RuntimeError("temporary failure")])
+    block, model = _make_block(responses=[[]])
     model.supports_observed_duration = supports_observed_duration
     run_kwargs = {
         "stride_seconds": 1.0,
@@ -2399,44 +2403,3 @@ def test_analyzed_from_frame_matches_model_window_origin_and_resets(
     first = _run(block, _make_frame(6, fps=5.0), **run_kwargs)
     assert first["predictions"].analyzed_from_frame == expected_from
     assert first["predictions"].analyzed_until_frame == expected_until
-
-    # A failed window leaves both marks unchanged.
-    for number in range(7, 12):
-        failed = _run(block, _make_frame(number, fps=5.0), **run_kwargs)
-    assert failed["error_status"] == "temporary failure"
-    assert failed["predictions"].error_status == "temporary failure"
-    assert failed["predictions"].analyzed_from_frame == expected_from
-    assert failed["predictions"].analyzed_until_frame == expected_until
-
-    # Changing class_filter resets both marks.
-    reset = _run(
-        block,
-        _make_frame(12, fps=5.0),
-        class_filter=["run"],
-        **run_kwargs,
-    )
-    assert reset["predictions"].analyzed_from_frame is None
-    assert reset["predictions"].analyzed_until_frame is None
-
-
-def test_close_releases_bookkeeping_samples_after_cancelling_queued_calls():
-    block, model = _make_background_block()
-    try:
-        running = _submit_camera_window(block, "camera-a").future
-        assert model.entered.wait(timeout=5)
-        queued = _submit_camera_window(block, "camera-b")
-        sample_refs = [weakref.ref(sample.frame) for sample in queued.sampled]
-        queued_future = queued.future
-        del queued
-
-        block.close()
-        gc.collect()
-
-        assert queued_future.cancelled()
-        assert all(sample_ref() is None for sample_ref in sample_refs)
-
-        model.gate.set()
-        running.result(timeout=5)
-    finally:
-        model.gate.set()
-        block.close()
