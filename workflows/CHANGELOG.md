@@ -16,6 +16,17 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Custom Python requests to Modal no longer follow redirects.** The syntax
+  check and the HTTP execution request to the Modal `execute-block` endpoint,
+  and the websocket connection to `wsapp`, used to follow a 3xx response and
+  resend the `Modal-Key` and `Modal-Secret` headers to the host it named. A
+  3xx response now fails the check or the block with `DynamicBlockError`, as
+  any other unexpected status does. An endpoint set with
+  `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
+  rather than redirect.
+
 ### Added
 
 - Action Recognition Visualization (`roboflow_core/action_recognition_visualization@v1`) draws an Action Recognition Model's results on its video. `live` display shows the current frame with a strip of the last `history_seconds`: one lane per class, a bar per action range and a hatched zone for frames not analyzed yet. It keeps no frames. `synchronized` display plays the video late so each label sits on its frame; the delay follows the model's `analyzed_until_frame` instead of a fixed setting, capped by `max_delay_seconds`. It tracks the window ranges from the model's `analyzed_from_frame` and `analyzed_until_frame`, so frames in failed or skipped windows show `not_analyzed` instead of "No action" and those gaps are hatched in the strip. Delayed frames are stored compressed within `max_buffer_mb`; a budget that is too small shortens the delay and reports the status `behind` instead of raising. Outputs the image, the displayed frame number, the actions and their frame number, and a status. Implements `close()` to release buffered frames. Needs persistent video state; `synchronized` does not show the delayed tail of a video file.
@@ -57,7 +68,16 @@ for contributor and maintainer responsibilities.
   camera no longer keeps another camera's completed window in memory.
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
+  tensor-native variants) no longer fails the run when an image has no QR code.
+  OpenCV returns no corners in that case, and the block now returns empty
+  predictions. Each box now covers all four corners of its code. The box used to
+  be built from two corners on the assumption that the code was upright, so a
+  code turned 45 degrees or more either way got an empty or inverted box, and a
+  smaller tilt left part of the code outside the box.
 
 ## `0.2.17`
 
