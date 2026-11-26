@@ -136,8 +136,7 @@ def test_default_load_image_refuses_url_and_file_declarations() -> None:
 
 
 def test_default_refuses_pickled_numpy_payloads() -> None:
-    # The host refuses pickled numpy too; the workflows-local default never
-    # unpickles, whatever the payload claims to be.
+    # Like the host, the workflows-local default never unpickles a payload.
     payload = base64.b64encode(pickle.dumps(IMAGE)).decode("ascii")
     codec = WorkflowsLocalImageCodec()
     with pytest.raises(WorkflowImageLoadError):

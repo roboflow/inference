@@ -451,8 +451,7 @@ def _npy_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
         ) from error
 
     if not ndarray_ok:
-        # BGR in C order like numpy_object payloads, as visualization and active
-        # learning read them.
+        # C-ordered BGR bytes like numpy_object; visualization reads them as BGR.
         payload = _numpy_object_payload(image, ndarray_ok=False)
         return payload
 
