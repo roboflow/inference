@@ -172,6 +172,10 @@ class RoboflowAPIUsagePausedError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
+class RoboflowAPIRateLimitedError(RoboflowAPIUnsuccessfulRequestError):
+    pass
+
+
 class RoboflowAPIImageUploadRejectionError(RoboflowAPIRequestError):
     pass
 
