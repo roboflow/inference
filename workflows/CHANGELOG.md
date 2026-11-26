@@ -26,6 +26,14 @@ for contributor and maintainer responsibilities.
   any other unexpected status does. An endpoint set with
   `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
   rather than redirect.
+  
+### Added
+
+- **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
+  - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
+  - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
+  - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
+  - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
 
 ### Changed
 
@@ -63,7 +71,21 @@ for contributor and maintainer responsibilities.
   camera no longer keeps another camera's completed window in memory.
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
+  tensor-native variants) no longer fails the run when an image has no QR code.
+  OpenCV returns no corners in that case, and the block now returns empty
+  predictions. Each box now covers all four corners of its code. The box used to
+  be built from two corners on the assumption that the code was upright, so a
+  code turned 45 degrees or more either way got an empty or inverted box, and a
+  smaller tilt left part of the code outside the box.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`): with
+  `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
+  with no QR code now reports the image `width` and `height`. They used to be
+  `null`, while the tensor-native variant already reported them.
 
 ## `0.2.17`
 
