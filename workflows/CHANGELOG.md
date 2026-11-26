@@ -93,70 +93,85 @@ Engine version: `1.18.0` (was `1.17.3`).
   the roll caps, the memory and upload limits, the temp directory and the NVENC
   options. `docs/workflows/video_clips.md` lists them with their defaults and
   describes the clip contract, host support and the measured performance.
-- **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
-  - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
-  - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
-  - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
-  - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
+- **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and
+  `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection`
+  task.
+  - Each annotation lists its `keypoints` as `[{"class": <keypoint name>, "x": ..., "y":
+    ..., "occluded": false}]`. Leave out the keypoints the instance does not show.
+    `occluded` defaults to `false`. `class_id`, counted from 0, picks between keypoints
+    that share a name. The names are checked against `keypoint_schema`.
+  - A keypoint prediction can be passed as it is, with two caveats: its `confidence` is
+    ignored, and it has no `occluded`, so each of its keypoints is drawn as visible.
+    First remove the keypoints the instance does not show and mark the hidden ones
+    `occluded`.
+  - The block draws each instance's skeleton on the examples: its edges, a filled dot
+    for a visible keypoint and a hollow ring for an occluded one. Each keypoint is
+    numbered by its position in the class skeleton, and the text before the examples
+    maps the numbers to the keypoint names. Gemini gets whole images. OpenAI gets crops
+    of the instances, 256 to 512 pixels on the long edge.
+  - Limits: the examples of one request draw at most 20,000 keypoints and skeleton edges
+    together, and a larger request is refused before any example image is loaded. An
+    example takes at most 5,000 annotations, for object detection too. An edge listed
+    more than once in `keypoint_schema` is drawn once.
+  - Object-detection examples and requests without examples are otherwise unchanged.
 
 ### Changed
 
-- Action Recognition Model reports the inclusive end of the latest successful
-  window in `analyzed_until_frame`, or null before the first success. Cosmos
-  reports the last sampled source frame. Models that use the observed window
-  duration report the source frame that triggered the call. Earlier failed or
-  skipped windows can leave gaps before the mark.
-- Action Recognition Model can classify the buffered samples on the last frame
-  of a video file that reports its frame count. A clip shorter than one stride
-  can get a result if enough samples are buffered.
-  When the file ends between scheduled calls, the final window can overlap
-  the preceding window even when the configured overlap is zero.
-  Live streams and files without a usable frame count behave as before, and
-  so does a file whose last frame the source drops (for example with
-  `max_fps`).
-- Action Recognition Model gains `background_inference`. A live stream then
-  hands each window to a worker thread, so the step returns at once and the
-  video does not wait for the model. The result reaches the timeline on the
-  stream's next frame after the call ends, so the last call of a stream that
-  stops is not reported. One call runs per stream at a time; a call that comes
-  due while the previous one has not finished waits and takes the newest
-  window. When a call starts late, `error_status` names the frames no window
-  covers between it and the previous call. A stream reads
-  `background_inference` on its first frame and keeps that mode until its
-  state resets. A step has one worker, so its streams take turns. Video files
-  always classify inside the step. The default is unchanged.
+- **Action Recognition Model: `analyzed_until_frame`.** The output reports the inclusive
+  end of the latest successful window, or null before the first success. Cosmos reports
+  the last sampled source frame. Models that use the observed window duration report the
+  source frame that triggered the call. Earlier failed or skipped windows can leave gaps
+  before the mark.
+- **Action Recognition Model: end of a video file.** The block can classify the buffered
+  samples on the last frame of a video file that reports its frame count. A clip shorter
+  than one stride can get a result if enough samples are buffered. When the file ends
+  between scheduled calls, the final window can overlap the preceding one even when the
+  configured overlap is zero. Live streams, files without a usable frame count, and
+  files whose last frame the source drops (for example with `max_fps`) behave as before.
+- **Action Recognition Model: `background_inference`.** A new option; the default is
+  unchanged. A live stream then hands each window to a worker thread, so the step
+  returns at once and the video does not wait for the model.
+  - The result reaches the timeline on the stream's next frame after the call ends, so
+    the last call of a stream that stops is not reported.
+  - One call runs per stream at a time. A call that comes due while the previous one has
+    not finished waits and takes the newest window.
+  - When a call starts late, `error_status` names the frames no window covers between it
+    and the previous call.
+  - A stream reads `background_inference` on its first frame and keeps that mode until
+    its state resets. A step has one worker, so its streams take turns. Video files
+    always classify inside the step.
 
 ### Fixed
 
-- Tensor-native Vision Events (`roboflow_core/roboflow_vision_events@v1` with
-  `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as
-  the numpy variant: the shared Roboflow API headers (inference version and any
+- **Tensor-native Vision Events** (`roboflow_core/roboflow_vision_events@v1` with
+  `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the
+  numpy variant: the shared Roboflow API headers (inference version and any
   `ROBOFLOW_API_EXTRA_HEADERS`) plus the bearer token. A configured `Authorization`
-  header wins over the bearer token. Upload and send errors no longer show
-  `api_key` or `service_secret` from the URL. The block description now covers
-  `cooldown_seconds`. Request bodies are unchanged.
-
-- Action Recognition Model releases queued background windows when a stream
-  restarts, its configuration changes, its state is evicted, or the model
-  changes. A classification already running can finish. A failed call on one
-  camera no longer keeps another camera's completed window in memory.
-  
-- OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
-
-- OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
-
-- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
-  tensor-native variants) no longer fails the run when an image has no QR code.
-  OpenCV returns no corners in that case, and the block now returns empty
-  predictions. Each box now covers all four corners of its code. The box used to
-  be built from two corners on the assumption that the code was upright, so a
-  code turned 45 degrees or more either way got an empty or inverted box, and a
-  smaller tilt left part of the code outside the box.
-
-- QR Code Detection (`roboflow_core/qr_code_detector@v1`): with
-  `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
-  with no QR code now reports the image `width` and `height`. They used to be
-  `null`, while the tensor-native variant already reported them.
+  header wins over the bearer token. Upload and send errors no longer show `api_key` or
+  `service_secret` from the URL. The block description now covers `cooldown_seconds`.
+  Request bodies are unchanged.
+- **Action Recognition Model** releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model changes. A
+  classification already running can finish. A failed call on one camera no longer keeps
+  another camera's completed window in memory.
+- **OpenAI Decisions Switch** (`roboflow_core/open_ai_decisions_switch@v1`). The example
+  `context` now holds the `boxes` value that the example `context_operations` reduces,
+  so the block's generated example definition validates. The description states the 0.9
+  `min_confidence` default, and that a probability that is not a number from 0 to 1 runs
+  `default_next_steps`.
+- **OpenAI Decisions** (`roboflow_core/open_ai_decisions@v1`). The description no longer
+  states how the Decisions API bills.
+- **QR Code Detection** (`roboflow_core/qr_code_detector@v1`, numpy and tensor-native
+  variants).
+  - An image with no QR code no longer fails the run. OpenCV returns no corners in that
+    case, and the block now returns empty predictions.
+  - Each box now covers all four corners of its code. The box used to be built from two
+    corners on the assumption that the code was upright. A code turned 45 degrees or
+    more either way got an empty or inverted box, and a smaller tilt left part of the
+    code outside the box.
+  - With `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
+    with no QR code now reports the image `width` and `height`. They used to be `null`,
+    while the tensor-native variant already reported them.
 
 ## `0.2.17`
 
