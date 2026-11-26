@@ -27,12 +27,6 @@ for contributor and maintainer responsibilities.
   `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
   rather than redirect.
 
-### Added
-
-- Explicit `type: "npy"` workflow image inputs are decoded by the host image
-  codec, preserving their pixels and metadata. This requires a server with NPY
-  input support and a Workflows release containing this change.
-
 ### Changed
 
 - Action Recognition Model reports the inclusive end of the latest successful

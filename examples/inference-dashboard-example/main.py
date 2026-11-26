@@ -1,10 +1,9 @@
 import argparse
-import io
 import os
+import pickle
 
 import cv2
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import requests
 
@@ -49,9 +48,7 @@ def fetch_predictions(
     headers = {"Content-Type": "application/json"}
     df_rows = []
     for idx, frame in enumerate(frames):
-        buffer = io.BytesIO()
-        np.save(buffer, frame, allow_pickle=False)
-        numpy_data = buffer.getvalue()
+        numpy_data = pickle.dumps(frame)
         res = requests.post(
             f"{base_url}/{dataset_id}/{version_id}",
             data=numpy_data,
@@ -59,7 +56,7 @@ def fetch_predictions(
             params={
                 "api_key": api_key,
                 "confidence": confidence,
-                "image_type": "npy",
+                "image_type": "numpy",
             },
         )
         predictions = res.json()

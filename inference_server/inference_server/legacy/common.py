@@ -3,11 +3,9 @@ from __future__ import annotations
 import base64
 import io
 import json
-import math
 import os
 import re
 import stat
-import tokenize
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
@@ -19,9 +17,6 @@ import pybase64
 import requests
 import tldextract
 from fastapi import Request, Response
-from PIL import Image
-from pydantic import BaseModel
-
 from inference_model_manager.backends.decode import (
     decoded_dims,
     guard_decoder,
@@ -30,6 +25,9 @@ from inference_model_manager.backends.decode import (
     reset_exif_orientation,
 )
 from inference_models.errors import ModelInputError
+from PIL import Image
+from pydantic import BaseModel
+
 from inference_server import configuration
 from inference_server.auth import extract_bearer
 from inference_server.configuration import (
@@ -75,7 +73,7 @@ _NOT_NDARRAY_ERROR = (
 _NDARRAY_DIMENSIONS_ERROR = "For image given as np.ndarray expected 2 or 3 dimensions."
 _NDARRAY_CHANNELS_ERROR = "For image given as np.ndarray expected 1 or 3 channels."
 _IMAGE_TYPES = frozenset(
-    {"base64", "file", "multipart", "npy", "numpy", "numpy_object", "pil", "url"}
+    {"base64", "file", "multipart", "numpy", "numpy_object", "pil", "url"}
 )
 _URL_OFFLINE_ERROR = "Cannot load an image from URL while OFFLINE_MODE is enabled."
 _URL_INPUT_DISABLED_ERROR = (
@@ -342,8 +340,6 @@ def _inline_payload(
         raise ValueError("url")
     if image_type == "numpy":
         raise image_load_error(_NUMPY_UNSUPPORTED_ERROR, InvalidImageTypeDeclared)
-    if image_type == "npy":
-        return _npy_payload(value, ndarray_ok=ndarray_ok)
     if image_type == "numpy_object":
         return _numpy_object_payload(value, ndarray_ok=ndarray_ok)
     if image_type == "base64":
@@ -396,65 +392,6 @@ def _imdecode_as_stored(data: bytes) -> np.ndarray:
 
 
 _decode_as_stored = guard_decoder(_imdecode_as_stored)
-
-
-def _npy_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:
-    try:
-        if isinstance(value, str):
-            value = base64.b64decode(value, validate=True)
-        if not isinstance(value, bytes):
-            raise ValueError("expected NPY bytes or a base64 string")
-
-        # Mirror inference.core.utils.image_utils.load_image_from_npy without
-        # coupling the separately distributed servers.
-        header = io.BytesIO(value[: 12 + 10_000])
-        version = np.lib.format.read_magic(header)
-        if version == (1, 0):
-            shape, _, dtype = np.lib.format.read_array_header_1_0(header)
-        elif version == (2, 0):
-            shape, _, dtype = np.lib.format.read_array_header_2_0(header)
-        else:
-            raise ValueError("expected NPY format version 1.0 or 2.0")
-        if dtype != np.dtype(np.uint8):
-            raise ValueError("expected a uint8 array")
-        if len(shape) not in (2, 3) or any(d <= 0 for d in shape):
-            raise ValueError("expected a non-empty 2D or 3D image")
-        if len(shape) == 3 and shape[2] not in (1, 3):
-            raise ValueError("expected 1 or 3 channels")
-        if math.prod(shape) != len(value) - header.tell():
-            raise ValueError("array size does not match the NPY payload")
-        ceiling = max_decoded_pixels()
-        if ceiling and shape[0] * shape[1] > ceiling:
-            raise ValueError("image exceeds the decoded pixel ceiling")
-
-        # Remote workers already accept NPY bytes. Only decode for gateways
-        # that accept arrays, avoiding a decode/re-encode on the remote path.
-        data = np.load(io.BytesIO(value), allow_pickle=False) if ndarray_ok else value
-        if ndarray_ok and (data.ndim == 2 or data.shape[2] == 1):
-            # Direct model gateways expect three-channel BGR, as the legacy
-            # stack's load_image produces for grayscale input.
-            data = cv2.cvtColor(data, cv2.COLOR_GRAY2BGR)
-    # NumPy's header parser raises TokenError, SyntaxError or RecursionError for
-    # malformed or deeply nested headers, and IndexError/KeyError/AttributeError
-    # for malformed dtype descriptors; all are a client error.
-    except (
-        ValueError,
-        TypeError,
-        EOFError,
-        SyntaxError,
-        RecursionError,
-        IndexError,
-        KeyError,
-        AttributeError,
-        OverflowError,
-        tokenize.TokenError,
-    ) as error:
-        raise image_load_error(
-            "Expected a complete uint8 NPY image with 2 or 3 dimensions and 1 or 3 channels.",
-            InvalidNumpyInput,
-        ) from error
-
-    return ImagePayload(data, int(shape[1]), int(shape[0]))
 
 
 def _numpy_object_payload(value: Any, *, ndarray_ok: bool) -> ImagePayload:

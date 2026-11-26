@@ -5,8 +5,8 @@ server already owns keeps applying to images loaded inside Workflows:
 `OFFLINE_MODE`, `ALLOW_URL_INPUT`, the scheme and FQDN rules, the
 `WHITELISTED_/BLACKLISTED_DESTINATIONS_FOR_URL_INPUT` lists, per-hop redirect
 re-validation with `MAX_IMAGE_URL_REDIRECTS`, non-global-address rejection with
-IP pinning (`inference.core.utils.url_input`), the bounded no-pickle NPY decoder,
-and `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`.
+IP pinning (`inference.core.utils.url_input`), `ALLOW_NUMPY_INPUT` in front of
+`pickle.loads`, and `ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM`.
 
 NOTHING here reimplements a rule, and nothing here holds a snapshot of one:
 

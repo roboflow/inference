@@ -517,7 +517,6 @@ from inference_server.framework.input_parsers.url_fetch import (  # noqa: E402
 from inference_server.framework.model_stat import _TtlLruCache  # noqa: E402
 from inference_server.legacy import bridge as legacy_bridge  # noqa: E402
 from inference_server.legacy.bridge import LoopBridge  # noqa: E402
-from inference_server.legacy.common import decode_inline_image  # noqa: E402
 from inference_server.legacy.errors import (  # noqa: E402
     MODEL_ACCESS_ERROR_MESSAGES,
     NOT_FOUND_MESSAGE,
@@ -1316,32 +1315,10 @@ class ServerImageCodec(WorkflowsLocalImageCodec):
     def load_image(
         self, value: Any, disable_preproc_auto_orient: bool = False
     ) -> Tuple[np.ndarray, bool]:
-        """Load an image using the server's URL, file and NPY input policies.
-
-        Args:
-            value (Any): An image declaration or an untyped image value.
-            disable_preproc_auto_orient (bool): Whether to ignore EXIF orientation.
-
-        Returns:
-            Tuple[np.ndarray, bool]: Image pixels and whether their order is BGR.
-
-        Raises:
-            WorkflowImageLoadError: If the image is invalid or refused by policy.
-        """
         flags = choose_image_decoding_flags(
             disable_preproc_auto_orient=disable_preproc_auto_orient
         )
         if isinstance(value, dict) and "type" in value and "value" in value:
-            if isinstance(value["type"], str) and value["type"].lower() == "npy":
-                try:
-                    payload = decode_inline_image(value, ndarray_ok=True)
-                except LegacyHTTPError as error:
-                    raise WorkflowImageLoadError(
-                        public_message=error.message,
-                        context=_IMAGE_LOADING_CONTEXT,
-                    ) from error
-
-                return convert_gray_image_to_bgr(payload.data), True
             if value["type"] == "url":
                 return (
                     convert_gray_image_to_bgr(

@@ -59,27 +59,18 @@ class InferenceRequestImage(BaseModel):
     """Image data for inference request.
 
     Attributes:
-        type (str): Image format, including 'url', 'base64', or 'npy'.
+        type (str): The type of image data provided, one of 'url', 'base64', or 'numpy'.
         value (Optional[Any]): Image data corresponding to the image type.
     """
 
     type: str = Field(
         examples=["url"],
-        description=(
-            "Image format: 'url', 'base64', or 'npy'. "
-            "The pickled 'numpy' format has been removed and is always rejected."
-        ),
+        description="The type of image data provided, one of 'url', 'base64', or 'numpy'",
     )
     value: Optional[Any] = Field(
         None,
         examples=["http://www.example-image-url.com"],
-        description=(
-            "For 'url', an image URL; for 'base64', a base64-encoded image. "
-            "For 'npy', a base64-encoded NPY file saved with np.save(..., "
-            "allow_pickle=False), containing a non-empty uint8 BGR array of shape "
-            "(height, width, 3), or grayscale (height, width) / (height, width, 1). "
-            "Raw NPY bytes are also accepted by Python callers."
-        ),
+        description="Image data corresponding to the image type, if type = 'url' then value is a string containing the url of an image, else if type = 'base64' then value is a string containing base64 encoded image data, else if type = 'numpy' then value is binary numpy data serialized using pickle.dumps(); array should 3 dimensions, channels last, with values in the range [0,255].",
     )
 
 

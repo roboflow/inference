@@ -44,7 +44,7 @@ PROJECT = os.getenv("PROJECT", "roboflow-platform")
 # Selected Roboflow region ("us" or "eu"), default is "us"
 ROBOFLOW_REGION = get_roboflow_region()
 
-# Pickled "numpy" input was removed; this only changes the error text. Use "npy".
+# Allow numpy input, default is False
 ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", False))
 ALLOW_URL_INPUT = str2bool(os.getenv("ALLOW_URL_INPUT", True))
 ALLOW_NON_HTTPS_URL_INPUT = str2bool(os.getenv("ALLOW_NON_HTTPS_URL_INPUT", False))
