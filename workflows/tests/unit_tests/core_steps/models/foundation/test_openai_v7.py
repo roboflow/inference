@@ -25,7 +25,10 @@ from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import
     resolve_keypoint_skeletons,
 )
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    REFERENCE_SKELETON_CROPS_INTRO,
     SHARED_REFERENCE_PARTS_CACHE,
+    TARGET_IMAGE_INTRO,
+    TARGET_ONLY_RULE,
     ReferenceExample,
 )
 from roboflow_workflows.core_steps.loader import KINDS_SERIALIZERS
@@ -875,6 +878,88 @@ def test_run_decodes_keypoint_detection_into_original_image_pixels() -> None:
             "y": 1200.0,
         },
     ]
+
+
+def _keypoint_reference_example(keypoints: Optional[List[dict]] = None) -> dict:
+    image = np.full((100, 200, 3), 255, dtype=np.uint8)
+    _, encoded = cv2.imencode(".png", image)
+    return {
+        "image": {
+            "type": "base64",
+            "value": base64.b64encode(encoded.tobytes()).decode("ascii"),
+        },
+        "annotations": [
+            {
+                "x": 50,
+                "y": 50,
+                "width": 40,
+                "height": 20,
+                "class": "plate",
+                "keypoints": (
+                    keypoints
+                    if keypoints is not None
+                    else [
+                        {"class": "TL", "x": 30, "y": 40},
+                        {"class": "TR", "x": 70, "y": 40},
+                        {"class": "BR", "x": 70, "y": 60, "occluded": True},
+                    ]
+                ),
+            }
+        ],
+    }
+
+
+def test_keypoint_task_checks_reference_keypoints_against_the_schema() -> None:
+    with pytest.raises(ValueError, match="'center' is not a keypoint of the skeleton"):
+        _keypoint_manifest(
+            reference_examples=[
+                _keypoint_reference_example([{"class": "center", "x": 50, "y": 50}])
+            ]
+        )
+
+
+def test_run_sends_skeleton_reference_crops_before_the_keypoint_target() -> None:
+    # given
+    image = _build_image(width=DETECTION_IMAGE_WIDTH, height=DETECTION_IMAGE_HEIGHT)
+    block = OpenAIBlockV7(api_key="rf-key")
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(KEYPOINT_OUTPUT, 11, 3)]
+        result = block.run(
+            images=Batch(content=[image], indices=[(0,)]),
+            task_type="keypoint-detection",
+            prompt=None,
+            output_structure=None,
+            classes=["plate"],
+            model_version="gpt-6-astra",
+            reasoning_effort="low",
+            image_detail="high",
+            max_tokens=None,
+            temperature=None,
+            max_concurrent_requests=None,
+            api_key="sk-test",
+            keypoint_schema=KEYPOINT_SCHEMA,
+            reference_examples=[_keypoint_reference_example()],
+        )[0]
+
+    # then
+    content = mock_execute.call_args.kwargs["openai_prompts"][0]["input"][0]["content"]
+    assert content[0]["text"].startswith(REFERENCE_SKELETON_CROPS_INTRO)
+    assert content[0]["text"].endswith(
+        'Keypoints of "plate" by number: 1 TL, 2 TR, 3 BR, 4 BL.'
+    )
+    assert content[1] == {"type": "input_text", "text": 'Examples of "plate":'}
+    assert content[2]["image_url"].startswith("data:image/jpeg;base64,")
+    assert content[3] == {"type": "input_text", "text": TARGET_IMAGE_INTRO}
+    assert content[4]["detail"] == "high"
+    assert content[5]["text"].startswith(
+        "Find every instance of these classes in the target image"
+    )
+    assert "of the 3200x1600 pixel image" in content[5]["text"]
+    assert content[5]["text"].endswith(TARGET_ONLY_RULE)
+    assert len(content) == 6
+    assert result["error_status"] is False
 
 
 def test_run_reports_error_status_for_unparsable_keypoint_output() -> None:
