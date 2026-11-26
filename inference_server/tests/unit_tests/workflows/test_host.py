@@ -149,8 +149,9 @@ def _formatted(error):
         ),
         (
             429,
-            "RoboflowAPIUnsuccessfulRequestError",
-            "Unsuccessful request to Roboflow API with response code: 429",
+            "RoboflowAPIRateLimitedError",
+            "Roboflow API rate limit or usage limit reached for this workspace. "
+            "Retry later or verify your workspace billing page.",
         ),
         (
             500,

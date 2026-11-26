@@ -45,6 +45,12 @@ class RoboflowAPIUsagePausedError(RoboflowAPIUnsuccessfulRequestError):
     pass
 
 
+class RoboflowAPIRateLimitedError(RoboflowAPIUnsuccessfulRequestError):
+    """The Roboflow API (e.g. /apiproxy) refused the call with HTTP 429."""
+
+    pass
+
+
 class MalformedRoboflowAPIResponseError(RoboflowAPIRequestError):
     pass
 

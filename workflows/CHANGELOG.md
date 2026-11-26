@@ -212,6 +212,7 @@ Bundled execution engine: `1.17.3`.
 
 ### Fixed
 
+- The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
 - Keypoint Visualization (`roboflow_core/keypoint_visualization@v1`) no longer
   fails the run when its `edges` name a keypoint that no instance has, as when
   a model left out every keypoint, or the last keypoints of a skeleton, in every
