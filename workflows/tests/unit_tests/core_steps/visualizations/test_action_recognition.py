@@ -942,3 +942,56 @@ def test_live_badge_never_shows_a_delay(drawn_labels):
     )
 
     assert not any(label.startswith("Delay") for label in drawn_labels)
+
+
+def _strip_column(result, frame_number, *, displayed, history_seconds):
+    # The lower band at the strip x of ``frame_number``, from the same geometry.
+    pixels = result["image"].numpy_image
+    width = pixels.shape[1]
+    _, pad, _ = visualization_module._sizes(pixels)
+    x0, x1 = pad * 2, width - pad * 2
+    history_frames = round(history_seconds * FPS)
+    start = displayed - history_frames
+    x = round(x0 + (frame_number - start) / history_frames * (x1 - x0))
+    column = pixels[pixels.shape[0] // 2 :, x, 0]
+    return column
+
+
+@pytest.mark.parametrize("display_mode", ["live", "synchronized"])
+def test_strip_does_not_hatch_frames_before_the_stream_started(display_mode):
+    # Joining mid-stream at frame 100: frames 90-99 predate the stream, so they
+    # are not failed windows. Frames 106-110 after the mark still are.
+    block = ActionRecognitionVisualizationBlockV1()
+    hatched_lane = int(55 * 0.6 + 40)
+    for number in range(100, 111):
+        until = 105 if number >= 105 else None
+        result = block.run(
+            _image(number),
+            _predictions(until=until, start=100),
+            display_mode=display_mode,
+            history_seconds=2.0,
+        )
+
+    displayed = result["displayed_frame_number"]
+    pre_stream = _strip_column(result, 95, displayed=displayed, history_seconds=2.0)
+    assert hatched_lane not in pre_stream
+    if display_mode == "live":
+        gap = _strip_column(result, 108, displayed=displayed, history_seconds=2.0)
+        assert hatched_lane in gap
+
+
+def test_uncovered_spans_start_at_the_first_frame_of_the_stream():
+    spans = visualization_module._uncovered_spans(
+        [(100, 105)], visible=[], start=90, first_frame=100, displayed=110
+    )
+    assert spans == [(106, 110)]
+
+    before_any_result = visualization_module._uncovered_spans(
+        [], visible=[], start=-290, first_frame=1, displayed=10
+    )
+    assert before_any_result == [(1, 10)]
+
+    displayed_before_stream = visualization_module._uncovered_spans(
+        [], visible=[], start=90, first_frame=100, displayed=95
+    )
+    assert displayed_before_stream == []

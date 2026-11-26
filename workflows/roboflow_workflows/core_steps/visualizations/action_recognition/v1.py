@@ -447,6 +447,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             timeline=timeline,
             displayed=displayed,
             covered_ranges=state.covered_ranges,
+            first_frame=state.first_frame,
             fps=state.fps,
             history_seconds=history_seconds,
         )
@@ -887,6 +888,7 @@ def _draw_strip(
     timeline: List[ActionRecognitionPrediction],
     displayed: int,
     covered_ranges: List[Tuple[int, int]],
+    first_frame: int,
     fps: float,
     history_seconds: float,
 ) -> None:
@@ -962,6 +964,7 @@ def _draw_strip(
         covered_ranges,
         visible=visible,
         start=start,
+        first_frame=first_frame,
         displayed=displayed,
     )
     for gap_start, gap_end in uncovered:
@@ -996,9 +999,14 @@ def _uncovered_spans(
     *,
     visible: List[ActionRecognitionPrediction],
     start: int,
+    first_frame: int,
     displayed: int,
 ) -> List[Tuple[int, int]]:
-    """Return inclusive frame ranges within ``[start, displayed]`` lacking coverage."""
+    """Return inclusive frame ranges within ``[start, displayed]`` lacking coverage.
+
+    Frames before ``first_frame`` predate the stream, so no window could cover
+    them; hatching them would look like a failed window.
+    """
     combined = sorted(
         [
             *covered_ranges,
@@ -1006,7 +1014,7 @@ def _uncovered_spans(
         ]
     )
     uncovered: List[Tuple[int, int]] = []
-    cursor = start
+    cursor = max(start, first_frame)
     for range_start, range_end in combined:
         if range_end < cursor:
             continue
