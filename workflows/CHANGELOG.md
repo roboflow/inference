@@ -43,11 +43,17 @@ for contributor and maintainer responsibilities.
   The previous default, `claude-sonnet-4-5` (`claude-sonnet-4-5-20250929`), is
   retired by Anthropic on November 30, 2026. Workflows that set
   `model_version` explicitly are unchanged.
-- Action Recognition Model reports the inclusive end of the latest successful
-  window in `analyzed_until_frame`, or null before the first success. Cosmos
-  reports the last sampled source frame. Models that use the observed window
-  duration report the source frame that triggered the call. Earlier failed or
-  skipped windows can leave gaps before the mark.
+- Action Recognition Model adds a `predictions` output of kind
+  `action_recognition_result` (`ActionRecognitionResult`) bundling `timeline`,
+  `analyzed_from_frame`, `analyzed_until_frame`, and `error_status` (replacing
+  the unreleased top-level `analyzed_until_frame` output while keeping
+  `timeline` and `error_status` unchanged). `analyzed_from_frame` and
+  `analyzed_until_frame` are the inclusive bounds of the latest successful
+  window, or null before the first success. Cosmos reports the first and last
+  sampled source frames. Models that use the observed window duration report
+  the floored intended position of the first sample and the source frame that
+  triggered the call. Earlier failed, skipped, or non-overlapping windows can
+  leave gaps before the mark. `close()` also clears buffered per-stream state.
 - Action Recognition Model can classify the buffered samples on the last frame
   of a video file that reports its frame count. A clip shorter than one stride
   can get a result if enough samples are buffered.

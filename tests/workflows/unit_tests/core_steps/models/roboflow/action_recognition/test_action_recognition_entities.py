@@ -53,6 +53,17 @@ def test_there_is_exactly_one_action_recognition_prediction_class() -> None:
     assert ReExported is ActionRecognitionPrediction
 
 
+def test_there_is_exactly_one_action_recognition_result_class() -> None:
+    from inference.core.workflows.core_steps.models.roboflow.action_recognition.entities import (
+        ActionRecognitionResult,
+    )
+    from inference.core.workflows.execution_engine.entities.base import (
+        ActionRecognitionResult as ReExported,
+    )
+
+    assert ReExported is ActionRecognitionResult
+
+
 def test_isinstance_holds_for_objects_the_server_helper_builds() -> None:
     """`serialize_wildcard_kind` dispatches on isinstance; the timeline entries
     are built by `inference.core.models.action_recognition.merge_window_segments`,
