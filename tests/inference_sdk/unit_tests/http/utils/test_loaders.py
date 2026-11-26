@@ -487,6 +487,68 @@ async def test_load_static_inference_input_async_when_single_pillow_image_passed
     assert np.allclose(decoding_result, image)
 
 
+def test_load_static_inference_input_scales_16_bit_png_passed_as_base64() -> None:
+    # given
+    image = np.full((128, 128), 40000, dtype=np.uint16)
+    _, encoded_image = cv2.imencode(".png", image)
+    reference = base64.b64encode(encoded_image.tobytes()).decode("utf-8")
+
+    # when
+    result = load_static_inference_input(
+        inference_input=reference, max_height=64, max_width=64
+    )
+    bytes_array = np.frombuffer(base64.b64decode(result[0][0]), dtype=np.uint8)
+    decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+
+    # then
+    assert abs(result[0][1] - 0.5) < 1e-5
+    assert abs(int(decoding_result.mean()) - (40000 >> 8)) <= 2
+
+
+def test_load_static_inference_input_scales_16_bit_png_passed_as_url(
+    requests_mock,
+) -> None:
+    # given
+    url = "https://some.com/file.png"
+    image = np.full((128, 128), 40000, dtype=np.uint16)
+    _, encoded_image = cv2.imencode(".png", image)
+    requests_mock.get(url, content=encoded_image.tobytes())
+
+    # when
+    result = load_static_inference_input(
+        inference_input=url, max_height=64, max_width=64
+    )
+    bytes_array = np.frombuffer(base64.b64decode(result[0][0]), dtype=np.uint8)
+    decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+
+    # then
+    assert abs(result[0][1] - 0.5) < 1e-5
+    assert abs(int(decoding_result.mean()) - (40000 >> 8)) <= 2
+
+
+@pytest.mark.asyncio
+async def test_load_static_inference_input_async_scales_16_bit_png_passed_as_url() -> (
+    None
+):
+    with aioresponses() as m:
+        # given
+        url = "https://some.com/file.png"
+        image = np.full((128, 128), 40000, dtype=np.uint16)
+        _, encoded_image = cv2.imencode(".png", image)
+        m.get(url, status=200, body=encoded_image.tobytes())
+
+        # when
+        result = await load_static_inference_input_async(
+            inference_input=url, max_height=64, max_width=64
+        )
+        bytes_array = np.frombuffer(base64.b64decode(result[0][0]), dtype=np.uint8)
+        decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+
+        # then
+        assert abs(result[0][1] - 0.5) < 1e-5
+        assert abs(int(decoding_result.mean()) - (40000 >> 8)) <= 2
+
+
 def test_load_static_inference_input_when_invalid_input_passed() -> None:
     # given
     invalid_input = b"Some invalid input"
