@@ -18,96 +18,36 @@ for contributor and maintainer responsibilities.
 
 ### Execution engine
 
-Engine version: `1.18.0` (was `1.17.3`), a minor bump for the new capabilities
-below.
+Engine version: `1.18.0` (was `1.17.3`).
 
 - **`host_manages_block_lifecycle` init parameter.** A host sets
-  `workflows_core.host_manages_block_lifecycle` to `True` to declare that it calls
-  `close()` on the engine when it is done with it. The default is `False`. A block
-  that owns a thread or another resource garbage collection cannot release takes
-  the parameter in `get_init_parameters()` and stays idle without it, so a host
-  that never closes its engine loses the feature instead of leaking. The Video
-  Clip Recorder is the first such block. The value comes from the host's init
-  parameters only; a workflow definition or a run input cannot set it. Hosts that
-  call `ExecutionEngine.init` directly and want video clips must pass it and call
-  `prepare_close()` / `close()`; nothing changes for other workflows.
-- **Two-phase close for blocks.** `ExecutionEngine.prepare_close(deadline_seconds=None)`
-  calls `prepare_close(deadline_seconds)` on every block that defines one, so a block
-  can stop taking work and start finishing what it holds before `close()`; for
-  example, the Video Clip Recorder stops ingesting frames and starts muxing pending
-  clips. A failing block is logged and does not stop the others. Hosts call it
-  before shutting down their thread pools and keep calling `close()` after them.
-  The v1 engine runs each phase at most once under one lock: repeated or concurrent
-  `prepare_close()` and `close()` calls (for example two `pipeline.join()` threads)
-  close the blocks once, and a concurrent `close()` returns after the first has
-  finished. Blocks without `prepare_close` and hosts that never call it behave as
-  before; no migration is needed.
-- **`video_clip_anchor` kind.** An in-process reference to the video a
-  `roboflow_core/video_clip_recorder@v1` step buffers for one frame. Its serializer
-  emits metadata only (recorder, video identifier, frame timestamp, frame number,
-  availability), never frames or packets, and it cannot be deserialized.
+  `workflows_core.host_manages_block_lifecycle=True` to promise that it will call
+  `close()` on the engine. The default is `False`. A block that holds a thread, or
+  another resource garbage collection cannot free, reads the parameter and stays
+  idle without it. The Video Clip Recorder is the first such block. Only the host
+  can set it: a workflow definition or a run input cannot. A host that calls
+  `ExecutionEngine.init` directly and wants video clips must pass it and call
+  `close()`. Other workflows are unaffected.
+- **Two-phase close.** `ExecutionEngine.prepare_close(deadline_seconds=None)` calls
+  `prepare_close(deadline_seconds)` on every block that defines it, so a block can
+  stop taking work and start finishing before `close()`. Hosts call it before they
+  shut down their thread pools and still call `close()` after. Each phase runs at
+  most once, also under concurrent calls. A failing block is logged and does not
+  stop the others. Blocks without `prepare_close` and hosts that never call it
+  behave as before.
+- **`video_clip_anchor` kind.** An in-process reference to the video that a Video
+  Clip Recorder step buffers around one frame. It serializes to metadata only
+  (recorder, video identifier, frame timestamp, frame number, availability) and
+  cannot be deserialized.
 - **Compile-time checks for video clip anchors.** Compilation fails with
-  `ExecutionGraphStructureError` when an anchor is bound into a step that executes
-  outside the process (an inner workflow with remote dispatch, Custom Python running
-  remotely, a Roboflow model step running remotely) or is exposed as a workflow
-  output, and warns when a recorder runs under flow control, where it loses
-  pre-roll. Tracking is conservative: a wildcard, `list_of_values`, `dictionary` or
-  kind-less output of a step that receives an anchor through an input not declaring
-  the anchor kind (Expression, Frame Delay, Buffer, Dimension Collapse) is treated
-  as an anchor, so an Expression that only reads an anchor's metadata cannot feed a
-  remote step or a workflow output. Workflows without a recorder are unaffected.
-
-### Added
-
-- Video Clip Recorder (`roboflow_core/video_clip_recorder@v1`): keeps a rolling H.264
-  buffer of the frames a workflow processes, per `video_identifier` (up to 16
-  streams), and outputs an `anchor` per frame for the Vision Events sink. Settings:
-  `label` (1 to 256 characters, default `Evidence`), `pre_roll_seconds` and
-  `post_roll_seconds` (default 5, at most 60 unless the host raises the caps up to
-  300), `playback_speed` (0.1 to 32), `clip_fps` (1 to 120), `max_width` (even, at
-  least 64) and `max_processing_lag_seconds` (default 5). A clip covers
-  `[trigger - pre, trigger + post]` (end inclusive) of processed frames, starting on
-  the keyframe up to one output second before the window. The frame is converted or
-  copied inside the step, so in-place drawing later in the workflow never reaches a
-  raw clip. A frame-number restart or resolution change starts a new recording.
-  Two encoder backends: libx264 through PyAV after an OpenCV I420 conversion in the
-  step (the default), and NVENC through PyNvVideoCodec straight from CUDA tensor
-  frames when it imports. Anchors are `unavailable:unsupported_host` unless the host
-  declares `workflows_core.host_manages_block_lifecycle` (a stream pipeline does;
-  an HTTP request host does not, whatever `video_metadata` the request carries)
-  and on single-image requests, and `unavailable:sinks_disabled` with
-  `disable_sinks`. The block requires engine `>=1.18.0`.
-- Vision Events (`roboflow_core/roboflow_vision_events@v1`, numpy and tensor-native
-  variants) gains `video_clips` (one anchor or a list of up to 4; extras are
-  `rejected:too_many_videos`), `video_label` (fallback caption), `confirm_ingestion`
-  (poll up to 5 minutes for the platform to ingest each clip) and
-  `clip_upload_timeout_seconds` (default 55 minutes, at most 60), and a `videos`
-  output with each clip's `video_id`, `label`, immediate `video_status` (`pending`,
-  `disabled`, `throttled`, `unavailable:*`, `rejected:*`, `prepare_failed`),
-  `requested_window` and `available_from`. After the cooldown check the sink
-  captures each anchor, applies the resource caps, requests an upload slot per clip
-  (`POST /vision-events/videos/prepare-upload`), posts the event with `videos` and
-  uploads each clip on its own thread as soon as its post-roll is recorded. Signed
-  URL query strings are redacted from logs and errors. Requests without
-  `video_clips` are unchanged. Local Event Store mode reports
-  `unavailable:unsupported_sink_mode` and sends the event without video.
-- Each clip's outcome is logged once as a structured `vision_event_clip_completed`
-  record: event and video ids, label, `terminal_status` (`put_accepted`,
-  `upload_failed`, `expired`, `clip_failed`, `cancelled`, `shutdown_deadline`), the
-  clip report (requested and actual bounds, keyframe lead, frames, density, backend,
-  partial reason, missing frames by cause, encoder and pipeline-thread timings),
-  timings and, with `confirm_ingestion`, the ingestion result.
-- Video clip settings, read from the environment: `WORKFLOWS_VIDEO_CLIP_MAX_PRE_ROLL_SECONDS`
-  and `WORKFLOWS_VIDEO_CLIP_MAX_POST_ROLL_SECONDS` (default 60, clamped to 300),
-  `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` (1 GiB over buffered packets, queues, clips and
-  uploads), `WORKFLOWS_VIDEO_CLIP_MAX_PENDING_CAPTURES` (16),
-  `WORKFLOWS_VIDEO_CLIP_MAX_UPLOAD_CONCURRENCY` (2),
-  `WORKFLOWS_VIDEO_CLIP_MAX_CLIP_BYTES` (512 MiB),
-  `WORKFLOWS_VIDEO_CLIP_INMEMORY_MAX_BYTES` (64 MiB), `WORKFLOWS_VIDEO_CLIP_TEMP_DIR`
-  (system temp), `WORKFLOWS_VIDEO_CLIP_NVENC_POOL_FRAMES` (8) and
-  `WORKFLOWS_VIDEO_CLIP_NVENC_BITRATE_KBPS` (scaled from 4 Mbit/s at 1080p30).
-  Invalid values fall back to the default with a warning. `docs/workflows/video_clips.md`
-  describes the clip contract, host support and the measured performance envelope.
+  `ExecutionGraphStructureError` when an anchor is exposed as a workflow output or
+  bound into a step that runs outside the process: an inner workflow with remote
+  dispatch, remote Custom Python, or a remote Roboflow model step. Compilation
+  warns when a recorder sits under flow control, where it loses pre-roll. The
+  tracking is conservative: when a step receives an anchor through an input that
+  does not declare the anchor kind (Expression, Frame Delay, Buffer, Dimension
+  Collapse), its wildcard, `list_of_values`, `dictionary` and kind-less outputs
+  count as anchors. Workflows without a recorder are unaffected.
 - **Custom Python requests to Modal no longer follow redirects.** The syntax
   check and the HTTP execution request to the Modal `execute-block` endpoint,
   and the websocket connection to `wsapp`, used to follow a 3xx response and
@@ -117,6 +57,42 @@ below.
   `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
   rather than redirect.
 
+### Added
+
+- **Video Clip Recorder** (`roboflow_core/video_clip_recorder@v1`). Keeps a rolling
+  H.264 buffer of the frames a workflow processes, per `video_identifier` (up to 16
+  streams), and outputs an `anchor` per frame for the Vision Events sink.
+  - A clip covers `[trigger - pre_roll_seconds, trigger + post_roll_seconds]` of
+    processed frames and starts on a keyframe up to one second earlier. Both rolls
+    default to 5 s and are capped at 60 s; a host can raise the cap to 300 s.
+  - Other settings: `label`, `playback_speed`, `clip_fps`, `max_width` and
+    `max_processing_lag_seconds`.
+  - Frames are encoded with libx264 through PyAV, or with NVENC through
+    PyNvVideoCodec when they are CUDA tensors and the library is installed.
+  - It records only on a host that sets
+    `workflows_core.host_manages_block_lifecycle`, as stream pipelines do. On any
+    other host, HTTP requests included, the anchor is
+    `unavailable:unsupported_host`. With `disable_sinks` it is
+    `unavailable:sinks_disabled`.
+  - The block requires engine `>=1.18.0`.
+- **Video clips on Vision Events** (`roboflow_core/roboflow_vision_events@v1`, numpy
+  and tensor-native variants).
+  - New inputs: `video_clips` (one anchor or a list of up to 4), `video_label`,
+    `confirm_ingestion` and `clip_upload_timeout_seconds` (default 55 minutes, at
+    most 60).
+  - New `videos` output with each clip's `video_id`, `label`, `video_status`,
+    `requested_window` and `available_from`.
+  - The event is posted at once with the video ids. Each clip is uploaded in the
+    background as soon as its post-roll is recorded.
+  - Each clip's final outcome is logged once as a `vision_event_clip_completed`
+    record. It carries a clip report: requested and actual window, frames, missing
+    frames by cause, and timings.
+  - Requests without `video_clips` are unchanged. Local Event Store mode sends the
+    event without video (`unavailable:unsupported_sink_mode`).
+- **Video clip settings.** The `WORKFLOWS_VIDEO_CLIP_*` environment variables set
+  the roll caps, the memory and upload limits, the temp directory and the NVENC
+  options. `docs/workflows/video_clips.md` lists them with their defaults and
+  describes the clip contract, host support and the measured performance.
 - **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
   - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
   - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
@@ -152,7 +128,13 @@ below.
 
 ### Fixed
 
-- The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
+- Tensor-native Vision Events (`roboflow_core/roboflow_vision_events@v1` with
+  `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as
+  the numpy variant: the shared Roboflow API headers (inference version and any
+  `ROBOFLOW_API_EXTRA_HEADERS`) plus the bearer token. A configured `Authorization`
+  header wins over the bearer token. Upload and send errors no longer show
+  `api_key` or `service_secret` from the URL. The block description now covers
+  `cooldown_seconds`. Request bodies are unchanged.
 
 - Action Recognition Model releases queued background windows when a stream
   restarts, its configuration changes, its state is evicted, or the model
