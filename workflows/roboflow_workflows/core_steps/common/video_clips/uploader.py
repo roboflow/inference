@@ -23,7 +23,8 @@ exponential backoff until the deadline. After ``put_accepted`` and with
 ``confirm_ingestion`` the sink-provided probe is polled for at most five
 minutes. Every outcome is logged once as the structured
 ``vision_event_clip_completed`` record. Signed-URL query strings never appear in
-logs or errors.
+logs or errors: a failed PUT is reported by its exception types (its message
+carries the signed path and query), and URLs in response bodies are redacted.
 """
 
 import json
@@ -83,6 +84,7 @@ PUT_READ_CHUNK_BYTES = 1024 * 1024
 WORKER_POLL_SECONDS = 0.5
 TRANSIENT_4XX = (408, 429)
 ERROR_BODY_CHARACTERS = 300
+ERROR_CAUSE_DEPTH = 4
 REDACTED = "REDACTED"
 
 _URL_QUERY_PATTERN = re.compile(r"(https?://[^\s?#'\"<>]+)\?[^\s'\"<>]*")
@@ -105,6 +107,39 @@ def redact_url(url: str) -> str:
     redacted = urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
     return redacted
+
+
+def describe_put_error(error: BaseException) -> str:
+    """Name a failed PUT by its exception types, never by its message.
+
+    The message of a `requests` error holds the request's path and query without
+    scheme or host ("Max retries exceeded with url: /object?X-Goog-Signature=..."),
+    so for a signed URL it holds the signature, in a shape no URL pattern finds.
+    The exception types say what failed; the caller logs the redacted URL itself.
+
+    Args:
+        error: The exception raised by the PUT.
+
+    Returns:
+        The exception type, followed by the types of its causes, for example
+        ``ConnectionError <- MaxRetryError <- NewConnectionError``.
+    """
+    kinds = [type(error).__name__]
+    current = error
+    for _ in range(ERROR_CAUSE_DEPTH):
+        # urllib3's MaxRetryError keeps the real failure in `reason`.
+        cause = getattr(current, "reason", None)
+        if not isinstance(cause, BaseException):
+            cause = current.__cause__ or current.__context__
+        if cause is None or cause is current:
+            break
+        current = cause
+        kind = type(current).__name__
+        if kind not in kinds:
+            kinds.append(kind)
+    description = " <- ".join(kinds)
+
+    return description
 
 
 def redact_text(text: str) -> str:
@@ -518,7 +553,7 @@ class ClipUploader:
                     timeout=PUT_TIMEOUT_SECONDS,
                 )
         except (requests.RequestException, OSError) as error:
-            return STATUS_UPLOAD_FAILED, redact_text(repr(error)), True
+            return STATUS_UPLOAD_FAILED, describe_put_error(error), True
 
         status_code = int(response.status_code)
         if 200 <= status_code < 300 or status_code == 412:

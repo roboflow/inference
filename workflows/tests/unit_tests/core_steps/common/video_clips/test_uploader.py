@@ -1,4 +1,5 @@
 import logging
+import socket
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,7 @@ from roboflow_workflows.core_steps.common.video_clips.uploader import (
     STATUS_SHUTDOWN_DEADLINE,
     STATUS_UPLOAD_FAILED,
     ClipUploader,
+    describe_put_error,
     redact_text,
     redact_url,
 )
@@ -246,6 +248,61 @@ def test_transient_errors_back_off_then_succeed_with_redacted_logs(
     assert "deadbeefsecret" not in caplog.text
     assert "X-Goog-Credential" not in caplog.text
     assert "storage.googleapis.com/bucket/videos/abc.mp4?REDACTED" in caplog.text
+
+
+def _closed_local_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    return port
+
+
+def test_real_connection_error_never_exposes_the_signature(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # given: the real `requests.put` against a port nothing listens on. Its error
+    # reads "Max retries exceeded with url: /bucket/videos/abc.mp4?<signature>",
+    # without scheme or host, so a pattern looking for "https://...?" misses it.
+    signed_url = (
+        f"http://127.0.0.1:{_closed_local_port()}/bucket/videos/abc.mp4?{SECRET}"
+    )
+    clock = _FakeClock()
+    uploader = _uploader(requests.put, clock)
+
+    # when
+    with caplog.at_level(logging.INFO):
+        completion = _submit(
+            uploader,
+            _capture(_artifact()),
+            signed_url=signed_url,
+            upload_timeout_seconds=10.0,
+        ).result(timeout=30)
+
+    # then: retried, reported by exception type, and the signature is nowhere
+    assert completion.terminal_status == STATUS_SHUTDOWN_DEADLINE
+    assert clock.sleeps
+    assert "ConnectionError" in completion.error
+    assert "deadbeefsecret" not in completion.error
+    assert "X-Goog-Credential" not in completion.error
+    assert "deadbeefsecret" not in caplog.text
+    assert "X-Goog-Credential" not in caplog.text
+    assert "/bucket/videos/abc.mp4?REDACTED" in caplog.text
+
+
+def test_describe_put_error_names_the_causes_without_their_messages() -> None:
+    # given
+    try:
+        try:
+            raise TimeoutError(f"timed out for {SIGNED_URL}")
+        except TimeoutError as inner:
+            raise requests.ConnectionError(f"failed: /abc.mp4?{SECRET}") from inner
+    except requests.ConnectionError as error:
+        # when
+        description = describe_put_error(error)
+
+    # then
+    assert description == "ConnectionError <- TimeoutError"
 
 
 def test_transient_errors_until_deadline_end_as_shutdown_deadline(
