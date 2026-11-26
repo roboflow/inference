@@ -821,9 +821,13 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_image_embeddings_route_when_no_image_given(
+    platform_environment: PlatformEnvironment,
     classification_service_url: str,
     auth_mode: str,
 ) -> None:
+    if platform_environment not in SERVERLESS_ENVIRONMENTS:
+        pytest.skip("Hosted /infer/embeddings is deployed on GCP Serverless only")
+
     # when
     response = requests.post(
         f"{classification_service_url}/infer/embeddings",

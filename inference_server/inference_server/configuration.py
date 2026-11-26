@@ -377,8 +377,7 @@ CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = get_float_from_env(
     "CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", default=0.01
 )
 CLIP_MAX_BATCH_SIZE = get_integer_from_env("CLIP_MAX_BATCH_SIZE", default=8)
-# Images one POST /infer/embeddings call may carry on GCP Serverless. GPU pods are
-# shared and a list runs as one forward pass, so it sets the call's memory peak.
+# Max images in one POST /infer/embeddings request on GCP Serverless.
 SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE = get_integer_from_env(
     "SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE", default=8
 )

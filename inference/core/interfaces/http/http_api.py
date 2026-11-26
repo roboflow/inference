@@ -2277,12 +2277,14 @@ class HttpInterface(BaseInterface):
                     )
                     raise PayloadTooLargeError(message=message, public_message=message)
 
-                return process_inference_request(
+                response = process_inference_request(
                     inference_request,
                     api_key=api_key,
                     countinference=countinference,
                     service_secret=service_secret,
                 )
+
+                return response
 
         if not LAMBDA and (LMM_ENABLED or MOONDREAM2_ENABLED):
 
