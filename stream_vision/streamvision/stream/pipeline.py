@@ -178,8 +178,10 @@ class InferencePipeline:
             video_reference: Reference of the source or sources to process.
             workflow_specification: The resolved workflow definition.
             workflow_init_parameters: Execution Engine init parameters built by
-                the host. The pipeline sets `workflows_core.thread_pool_executor`
-                and `workflows_core.disable_sinks` in this same dict and passes
+                the host. The pipeline sets `workflows_core.thread_pool_executor`,
+                `workflows_core.disable_sinks` and
+                `workflows_core.host_manages_block_lifecycle` (always True: the
+                pipeline closes the engine when it ends) in this same dict and passes
                 it, together with every value the host placed in it (the models
                 provider object included), to `ExecutionEngine.init` unchanged.
             step_error_handler: The effective step error handler, passed to
@@ -251,6 +253,11 @@ class InferencePipeline:
                 thread_pool_executor
             )
             workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
+            # The pipeline closes the engine in `on_pipeline_end` (prepare_close,
+            # pool shutdown, close), so blocks may hold threads between frames.
+            workflow_init_parameters["workflows_core.host_manages_block_lifecycle"] = (
+                True
+            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,

@@ -58,7 +58,7 @@ def _mp4_frame_count(artifact) -> int:
 @pytest.mark.timeout(60)
 def test_capture_resolves_into_mp4_after_post_roll() -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     start = datetime.now()
     anchors = []
     pending = None
@@ -98,7 +98,7 @@ def test_capture_resolves_into_mp4_after_post_roll() -> None:
 @pytest.mark.timeout(60)
 def test_close_finalises_pending_capture_as_partial_shutdown() -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     start = datetime.now()
     pending = None
 
@@ -132,7 +132,7 @@ def test_close_finalises_pending_capture_as_partial_shutdown() -> None:
 @pytest.mark.timeout(60)
 def test_close_without_prepare_close_finalises_and_releases() -> None:
     # given: the HTTP / batch path calls `close()` with no `prepare_close()`
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     start = datetime.now()
     pending = None
 
@@ -180,7 +180,7 @@ def _wait_for(predicate, timeout: float = 10.0) -> None:
 @pytest.mark.timeout(60)
 def test_retired_rings_release_themselves_before_close() -> None:
     # given: five frame-number resets, the second with a capture still pending
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     retired = []
     pending = None
 

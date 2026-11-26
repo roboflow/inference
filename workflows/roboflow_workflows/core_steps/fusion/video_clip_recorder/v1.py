@@ -147,8 +147,10 @@ Clips are approximate evidence with reported bounds:
 
 ## Requirements and Limitations
 
-- Needs a video stream (an InferencePipeline, WebRTC or Serverless Streaming). On a
-  single-image request the anchor is `unavailable:unsupported_host`.
+- Needs a video stream (an InferencePipeline, WebRTC or Serverless Streaming). The
+  recorder only records when its host declares that it manages the lifecycle of
+  the blocks (`InferencePipeline` does). On every other host, single-image HTTP
+  requests included, the anchor is `unavailable:unsupported_host`.
 - Place the recorder on the unconditional path: under flow control it only records
   frames on which it runs, so clips lose pre-roll (compile-time warning). Gate the
   sink instead.
@@ -382,7 +384,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.18.0,<2.0.0"
 
     @classmethod
     def get_restrictions(cls) -> List[RuntimeRestriction]:
@@ -486,8 +488,17 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
     `prepare_close` and `close` are idempotent and safe under concurrent calls.
     """
 
-    def __init__(self, disable_sinks: bool = False):
+    def __init__(
+        self,
+        disable_sinks: bool = False,
+        host_manages_block_lifecycle: bool = False,
+    ):
         self._disable_sinks = disable_sinks
+        # Set by the host, never by the workflow or its inputs. A ring owns an
+        # encoder thread that only `close()` stops, so the recorder records only
+        # for a host that promised to call `close()` (a stream pipeline). A
+        # request host that drops the engine after one run would leak the thread.
+        self._host_manages_block_lifecycle = host_manages_block_lifecycle
         self._lock = threading.RLock()
         self._close_lock = threading.Lock()
         # Ordered least- to most-recently-seen stream, for LRU retirement.
@@ -499,12 +510,14 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
         self._closing = False
         self._closed = False
         # GPU hosts: warm NVENC up now (on a background thread, once per process)
-        # so the first frame never pays for it on the pipeline thread.
-        _start_nvenc_warm_up()
+        # so the first frame never pays for it on the pipeline thread. Skipped on
+        # hosts the recorder never records for.
+        if host_manages_block_lifecycle:
+            _start_nvenc_warm_up()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["disable_sinks"]
+        return ["disable_sinks", "host_manages_block_lifecycle"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -624,9 +637,11 @@ class VideoClipRecorderBlockV1(WorkflowBlock):
                 availability=UNAVAILABLE_SINKS_DISABLED,
             )
 
+        # The host's declaration comes first: video metadata can arrive in the
+        # inputs of an HTTP request, so it cannot tell a stream host by itself.
         # Stored metadata only. `video_metadata` above synthesises a default for
-        # still images and does not store it, so it cannot answer this check.
-        if not image.has_video_metadata:
+        # still images and does not store it, so it cannot answer the second check.
+        if not self._host_manages_block_lifecycle or not image.has_video_metadata:
             return self._unavailable_anchor(
                 video_identifier=video_identifier,
                 frame_timestamp=frame_timestamp,

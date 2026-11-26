@@ -115,9 +115,11 @@ def test_schedule_execution_engine_close_runs_after_the_tasks_queued_by_the_run(
     assert order == ["sink task", "close"]
 
 
-def test_schedule_execution_engine_close_without_background_tasks_leaves_it_to_gc() -> (
+def test_schedule_execution_engine_close_without_background_tasks_closes_right_away() -> (
     None
 ):
+    # given: the hosted platform passes no background tasks, so sinks ran inside
+    # the run and nothing can still need a block
     from unittest.mock import MagicMock
 
     from inference.core.interfaces.http.handlers.workflows import (
@@ -126,11 +128,34 @@ def test_schedule_execution_engine_close_without_background_tasks_leaves_it_to_g
 
     execution_engine = MagicMock()
 
+    # when
     schedule_execution_engine_close(
         execution_engine=execution_engine, background_tasks=None
     )
 
-    execution_engine.close.assert_not_called()
+    # then: a thread-backed block resource is never left to garbage collection
+    execution_engine.close.assert_called_once_with()
+
+
+def test_schedule_execution_engine_close_without_background_tasks_survives_a_failing_close() -> (
+    None
+):
+    # given: the helper runs in a `finally`, so it must not replace the response
+    from unittest.mock import MagicMock
+
+    from inference.core.interfaces.http.handlers.workflows import (
+        schedule_execution_engine_close,
+    )
+
+    execution_engine = MagicMock()
+    execution_engine.close.side_effect = RuntimeError("block refused to close")
+
+    # when / then: does not raise
+    schedule_execution_engine_close(
+        execution_engine=execution_engine, background_tasks=None
+    )
+
+    execution_engine.close.assert_called_once_with()
 
 
 def test_schedule_execution_engine_close_accepts_engines_without_close() -> None:

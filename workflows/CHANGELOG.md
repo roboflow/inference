@@ -18,6 +18,19 @@ for contributor and maintainer responsibilities.
 
 ### Execution engine
 
+Engine version: `1.18.0` (was `1.17.3`), a minor bump for the new capabilities
+below.
+
+- **`host_manages_block_lifecycle` init parameter.** A host sets
+  `workflows_core.host_manages_block_lifecycle` to `True` to declare that it calls
+  `close()` on the engine when it is done with it. The default is `False`. A block
+  that owns a thread or another resource garbage collection cannot release takes
+  the parameter in `get_init_parameters()` and stays idle without it, so a host
+  that never closes its engine loses the feature instead of leaking. The Video
+  Clip Recorder is the first such block. The value comes from the host's init
+  parameters only; a workflow definition or a run input cannot set it. Hosts that
+  call `ExecutionEngine.init` directly and want video clips must pass it and call
+  `prepare_close()` / `close()`; nothing changes for other workflows.
 - **Two-phase close for blocks.** `ExecutionEngine.prepare_close(deadline_seconds=None)`
   calls `prepare_close(deadline_seconds)` on every block that defines one, so a block
   can stop taking work and start finishing what it holds before `close()`; for
@@ -59,8 +72,11 @@ for contributor and maintainer responsibilities.
   raw clip. A frame-number restart or resolution change starts a new recording.
   Two encoder backends: libx264 through PyAV after an OpenCV I420 conversion in the
   step (the default), and NVENC through PyNvVideoCodec straight from CUDA tensor
-  frames when it imports. Anchors are `unavailable:unsupported_host` on single-image
-  requests and `unavailable:sinks_disabled` with `disable_sinks`.
+  frames when it imports. Anchors are `unavailable:unsupported_host` unless the host
+  declares `workflows_core.host_manages_block_lifecycle` (a stream pipeline does;
+  an HTTP request host does not, whatever `video_metadata` the request carries)
+  and on single-image requests, and `unavailable:sinks_disabled` with
+  `disable_sinks`. The block requires engine `>=1.18.0`.
 - Vision Events (`roboflow_core/roboflow_vision_events@v1`, numpy and tensor-native
   variants) gains `video_clips` (one anchor or a list of up to 4; extras are
   `rejected:too_many_videos`), `video_label` (fallback caption), `confirm_ingestion`

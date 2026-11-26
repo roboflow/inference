@@ -296,7 +296,7 @@ def test_manifest_declares_stateful_video_restrictions() -> None:
 
 def test_run_submits_each_frame_inside_run_and_emits_bound_anchors(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     timestamps = [datetime.now() + timedelta(seconds=i / 30) for i in range(3)]
 
     # when
@@ -332,7 +332,7 @@ def test_run_submits_each_frame_inside_run_and_emits_bound_anchors(rings) -> Non
 
 def test_anchor_capture_requests_inclusive_window_from_its_ring(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     timestamp = datetime.now()
     (anchor,) = _run(block, _image(1, frame_timestamp=timestamp))
 
@@ -347,7 +347,7 @@ def test_anchor_capture_requests_inclusive_window_from_its_ring(rings) -> None:
 
 def test_anchor_uses_step_name_attached_by_compiler(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     block._workflow_step_name = "raw_recorder"
 
     # when
@@ -359,7 +359,7 @@ def test_anchor_uses_step_name_attached_by_compiler(rings) -> None:
 
 def test_two_identifiers_get_isolated_rings(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     anchors = _run(
@@ -382,8 +382,8 @@ def test_two_identifiers_get_isolated_rings(rings) -> None:
 
 def test_two_block_instances_never_share_rings(rings) -> None:
     # given
-    raw_recorder = VideoClipRecorderBlockV1()
-    annotated_recorder = VideoClipRecorderBlockV1()
+    raw_recorder = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
+    annotated_recorder = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     _run(raw_recorder, _image(1, video_id="0"))
@@ -398,7 +398,7 @@ def test_two_block_instances_never_share_rings(rings) -> None:
 
 def test_frame_number_going_backwards_resets_ring(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     _run(block, _image(10), _image(11))
 
     # when
@@ -417,7 +417,7 @@ def test_frame_number_going_backwards_resets_ring(rings) -> None:
 
 def test_resolution_change_resets_ring(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     _run(block, _image(1, shape=(48, 64)))
 
     # when
@@ -432,7 +432,7 @@ def test_resolution_change_resets_ring(rings) -> None:
 
 def test_duplicate_frame_number_is_deduplicated(rings) -> None:
     # given - WebRTC runs the workflow twice on frame 1
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     timestamp = datetime.now()
 
     # when
@@ -452,7 +452,7 @@ def test_duplicate_frame_number_is_deduplicated(rings) -> None:
 
 def test_stale_frame_is_counted_but_not_buffered(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     stale_timestamp = datetime.now() - timedelta(seconds=10)
 
     # when
@@ -470,7 +470,7 @@ def test_stale_frame_is_counted_but_not_buffered(rings) -> None:
 
 def test_stale_rule_compares_aware_timestamps_in_utc(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     fresh = datetime.now(timezone.utc)
     stale = fresh - timedelta(seconds=7)
 
@@ -485,7 +485,7 @@ def test_stale_rule_compares_aware_timestamps_in_utc(rings) -> None:
 
 def test_stale_rule_honours_configured_lag(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     timestamp = datetime.now() - timedelta(seconds=10)
 
     # when
@@ -498,7 +498,7 @@ def test_stale_rule_honours_configured_lag(rings) -> None:
 
 def test_stale_rule_does_not_apply_to_video_files(rings) -> None:
     # given - file timestamps follow the declared fps, not the wall clock
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     timestamp = datetime.now() - timedelta(hours=1)
 
     # when
@@ -511,7 +511,7 @@ def test_stale_rule_does_not_apply_to_video_files(rings) -> None:
 
 def test_missing_timestamp_is_unavailable(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     metadata = VideoMetadata.model_construct(
         video_identifier="camera-1",
         frame_number=1,
@@ -542,7 +542,7 @@ def test_missing_encoder_is_unavailable_and_never_fails_the_workflow(
 
     monkeypatch.setattr(v1, "X264Ring", no_encoder)
     monkeypatch.setattr(v1, "_available_nvenc_ring_class", lambda: None)
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     anchors = _run(block, _image(1), _image(2))
@@ -563,7 +563,7 @@ def test_failing_submit_retires_ring_and_reports_no_encoder(monkeypatch) -> None
     factory = RingFactory(ring_class=BrokenRing)
     monkeypatch.setattr(v1, "X264Ring", factory)
     monkeypatch.setattr(v1, "_available_nvenc_ring_class", lambda: None)
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     anchors = _run(block, _image(1), _image(2))
@@ -576,7 +576,9 @@ def test_failing_submit_retires_ring_and_reports_no_encoder(monkeypatch) -> None
 
 def test_disabled_sinks_idle_the_recorder(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1(disable_sinks=True)
+    block = VideoClipRecorderBlockV1(
+        disable_sinks=True, host_manages_block_lifecycle=True
+    )
 
     # when
     (anchor,) = _run(block, _image(1))
@@ -588,9 +590,49 @@ def test_disabled_sinks_idle_the_recorder(rings) -> None:
         anchor.capture(1.0, 1.0)
 
 
+def test_host_that_does_not_manage_block_lifecycle_is_unsupported_host(rings) -> None:
+    # given: the default, as on an HTTP request host. The frame carries video
+    # metadata, which a request can put into its image input.
+    block = VideoClipRecorderBlockV1()
+
+    # when
+    (anchor,) = _run(block, _image(0))
+
+    # then: nothing is recorded and no ring (and encoder thread) is created
+    assert anchor.availability == UNAVAILABLE_UNSUPPORTED_HOST
+    assert rings.rings == []
+    with pytest.raises(ClipUnavailableError):
+        anchor.capture(1.0, 1.0)
+
+
+def test_host_lifecycle_declaration_is_an_init_parameter() -> None:
+    # then: the engine resolves it from the host's init parameters, never from
+    # the workflow definition or its inputs
+    assert VideoClipRecorderBlockV1.get_init_parameters() == [
+        "disable_sinks",
+        "host_manages_block_lifecycle",
+    ]
+    assert "host_manages_block_lifecycle" not in BlockManifest.model_fields
+
+
+def test_block_init_does_not_warm_nvenc_up_without_host_lifecycle(monkeypatch) -> None:
+    # given
+    from roboflow_workflows.core_steps.common.video_clips import nvenc_ring
+
+    started: List[str] = []
+    monkeypatch.setattr(nvenc_ring, "should_warm_up", lambda device: True)
+    monkeypatch.setattr(nvenc_ring, "start_warm_up", lambda: started.append("x"))
+
+    # when
+    VideoClipRecorderBlockV1()
+
+    # then
+    assert started == []
+
+
 def test_still_image_without_video_metadata_is_unsupported_host(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     (anchor,) = _run(block, _image(0, video_metadata=None))
@@ -602,7 +644,7 @@ def test_still_image_without_video_metadata_is_unsupported_host(rings) -> None:
 
 def test_least_recently_seen_stream_is_retired_beyond_limit(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     for index in range(MAX_TRACKED_VIDEOS + 1):
@@ -618,7 +660,7 @@ def test_least_recently_seen_stream_is_retired_beyond_limit(rings) -> None:
 
 def test_telemetry_reports_ring_cost_percentiles(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     _run(block, *[_image(n) for n in range(1, 21)])
@@ -735,7 +777,7 @@ def test_block_init_starts_the_warm_up_only_on_cuda_hosts(monkeypatch, hint) -> 
     monkeypatch.setattr(nvenc_ring, "should_warm_up", should_warm_up)
 
     # when
-    VideoClipRecorderBlockV1()
+    VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # then
     assert stub.started == (1 if hint else 0)
@@ -752,7 +794,7 @@ def test_block_init_survives_a_broken_warm_up_hint(monkeypatch) -> None:
     monkeypatch.setattr(nvenc_ring, "should_warm_up", broken)
 
     # then
-    VideoClipRecorderBlockV1()
+    VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
 
 def test_cpu_host_never_imports_torch_for_the_warm_up(monkeypatch) -> None:
@@ -764,7 +806,7 @@ def test_cpu_host_never_imports_torch_for_the_warm_up(monkeypatch) -> None:
     monkeypatch.setitem(__import__("sys").modules, "torch", None)
 
     # when
-    VideoClipRecorderBlockV1()
+    VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # then
     assert stub.started == 0
@@ -782,7 +824,7 @@ def test_stream_switches_to_x264_when_the_nvenc_warm_up_fails(monkeypatch) -> No
         return BACKEND_X264, x264_rings
 
     monkeypatch.setattr(v1, "_select_backend", select_backend)
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
 
     # when
     _run(block, _image(1))
@@ -803,7 +845,7 @@ def test_stream_switches_to_x264_when_the_nvenc_warm_up_fails(monkeypatch) -> No
 
 def test_prepare_close_fans_out_once_and_stops_recording(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     _run(block, _image(1, video_id="a"), _image(1, video_id="b"))
     (anchor,) = _run(block, _image(2, video_id="a"))
 
@@ -824,7 +866,7 @@ def test_close_without_prepare_close_closes_every_ring_including_retired(
     rings,
 ) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     _run(block, _image(5), _image(1))
 
     # when
@@ -840,7 +882,7 @@ def test_close_without_prepare_close_closes_every_ring_including_retired(
 
 def test_concurrent_prepare_close_and_close_are_idempotent(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     _run(block, *[_image(1, video_id=f"camera-{i}") for i in range(4)])
     barrier = threading.Barrier(8)
     errors = []
@@ -880,7 +922,7 @@ def test_close_survives_ring_errors(monkeypatch) -> None:
 
     monkeypatch.setattr(v1, "X264Ring", RingFactory(ring_class=FailingRing))
     monkeypatch.setattr(v1, "_available_nvenc_ring_class", lambda: None)
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     _run(block, _image(1))
 
     # when
@@ -896,7 +938,7 @@ def test_close_survives_ring_errors(monkeypatch) -> None:
 
 def test_serializer_emits_metadata_only(rings) -> None:
     # given
-    block = VideoClipRecorderBlockV1()
+    block = VideoClipRecorderBlockV1(host_manages_block_lifecycle=True)
     block._workflow_step_name = "raw_recorder"
     timestamp = datetime(2026, 10, 30, 11, 13, 44, 313999)
     (anchor,) = _run(

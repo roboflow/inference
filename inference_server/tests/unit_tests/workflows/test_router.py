@@ -279,6 +279,122 @@ def test_workflow_run_routes_defer_sinks_unless_serverless(
         assert captured[0] is None
 
 
+def _count_engine_closes(monkeypatch):
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+
+    closes = []
+    original = ExecutionEngine.close
+
+    def _counting(self):
+        closes.append(self)
+        return original(self)
+
+    monkeypatch.setattr(ExecutionEngine, "close", _counting)
+
+    return closes
+
+
+@pytest.mark.parametrize("flag", [None, "LAMBDA", "GCP_SERVERLESS"])
+def test_workflow_run_closes_its_execution_engine(legacy_client, monkeypatch, flag):
+    # given: with background tasks the close is queued behind the sink tasks;
+    # on serverless there are none, so the engine is closed inside the request
+    from inference_server import configuration
+
+    monkeypatch.setattr(configuration, "LAMBDA", False)
+    monkeypatch.setattr(configuration, "GCP_SERVERLESS", False)
+    if flag is not None:
+        monkeypatch.setattr(configuration, flag, True)
+    closes = _count_engine_closes(monkeypatch)
+
+    # when
+    response = legacy_client(FakeGateway()).post(
+        "/workflows/run", json={"specification": PASSTHROUGH_WF, "inputs": {"x": 1}}
+    )
+
+    # then
+    assert response.status_code == 200, response.text
+    assert len(closes) == 1
+
+
+def test_workflow_run_closes_its_execution_engine_when_the_run_fails(
+    legacy_client, monkeypatch
+):
+    # given
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+
+    def _failing_run(self, **kwargs):
+        raise RuntimeError("step failed")
+
+    monkeypatch.setattr(ExecutionEngine, "run", _failing_run)
+    closes = _count_engine_closes(monkeypatch)
+
+    # when
+    response = legacy_client(FakeGateway()).post(
+        "/workflows/run", json={"specification": PASSTHROUGH_WF, "inputs": {"x": 1}}
+    )
+
+    # then
+    assert response.status_code >= 400
+    assert len(closes) == 1
+
+
+def test_workflow_validate_closes_its_execution_engine(legacy_client, monkeypatch):
+    # given
+    closes = _count_engine_closes(monkeypatch)
+
+    # when
+    response = legacy_client(FakeGateway()).post(
+        "/workflows/validate", json=PASSTHROUGH_WF
+    )
+
+    # then
+    assert response.status_code == 200, response.text
+    assert len(closes) == 1
+
+
+def test_close_after_run_survives_a_failing_close_without_background_tasks():
+    # given: called from a `finally`, so it must not replace the response
+    from unittest.mock import MagicMock
+
+    from inference_server.workflows import execution
+
+    execution_engine = MagicMock()
+    execution_engine.close.side_effect = RuntimeError("block refused to close")
+
+    # when / then: does not raise
+    execution.close_execution_engine_after_run(
+        execution_engine=execution_engine, background_tasks=None
+    )
+
+    execution_engine.close.assert_called_once_with()
+
+
+def test_close_after_run_is_queued_behind_the_sink_tasks():
+    # given: a sink queued fire-and-forget work during the run
+    from unittest.mock import MagicMock
+
+    from fastapi import BackgroundTasks
+
+    from inference_server.workflows import execution
+
+    order = []
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(lambda: order.append("sink task"))
+    execution_engine = MagicMock()
+    execution_engine.close.side_effect = lambda: order.append("close")
+
+    # when
+    execution.close_execution_engine_after_run(
+        execution_engine=execution_engine, background_tasks=background_tasks
+    )
+
+    # then: nothing closes during the request, and the close comes last
+    execution_engine.close.assert_not_called()
+    for task in background_tasks.tasks:
+        task.func(*task.args, **task.kwargs)
+    assert order == ["sink task", "close"]
+
+
 def test_two_segment_workflow_paths_beat_catch_all(legacy_client):
     client = legacy_client(FakeGateway())
 
@@ -750,9 +866,7 @@ _DYNAMIC_BLOCK_WF = {
 
 @pytest.fixture
 def modal_custom_python(monkeypatch):
-    from roboflow_workflows.execution_engine.v1.dynamic_blocks import (
-        block_scaffolding,
-    )
+    from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_scaffolding
 
     monkeypatch.setattr(
         block_scaffolding, "WORKFLOWS_CUSTOM_PYTHON_EXECUTION_MODE", "modal"

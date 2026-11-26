@@ -1611,6 +1611,13 @@ REGISTERED_INITIALIZERS = {
     "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     "inner_workflow_dispatch_depth": 0,
     "disable_sinks": False,
+    # False unless the host promises to call `ExecutionEngine.close()` when it is
+    # done with the engine (a stream pipeline sets
+    # `workflows_core.host_manages_block_lifecycle`). Blocks that own threads or
+    # other resources garbage collection cannot release (the Video Clip Recorder)
+    # stay idle without it, so a host that forgets the binding loses the feature
+    # instead of leaking.
+    "host_manages_block_lifecycle": False,
     # Standalone default. The server overrides it with
     # `workflows_core.platform_client` at every composition root. An object,
     # not a function: call_if_callable() would invoke a function registered

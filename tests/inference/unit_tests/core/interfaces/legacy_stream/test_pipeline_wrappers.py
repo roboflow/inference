@@ -651,9 +651,12 @@ def test_core_workflow_constructor_passes_host_bindings_through_unchanged(
         "workflows_core.model_manager",
         "workflows_core.thread_pool_executor",
         "workflows_core.disable_sinks",
+        "workflows_core.host_manages_block_lifecycle",
     }
     assert init_parameters["workflows_core.model_manager"] is provider
     assert init_parameters["workflows_core.disable_sinks"] is True
+    # the pipeline closes the engine when it ends, so it says so to the blocks
+    assert init_parameters["workflows_core.host_manages_block_lifecycle"] is True
     assert type(pipeline) is CoreInferencePipeline
     assert not isinstance(pipeline, LegacyInferencePipeline)
     init_parameters["workflows_core.thread_pool_executor"].shutdown()

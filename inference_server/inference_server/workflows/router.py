@@ -486,7 +486,7 @@ async def validate_workflow(
         inner_workflow_dispatch_depth=0,
         step_execution_mode=host.SERVER_WORKFLOWS_CONFIGURATION.engine.step_execution_mode,
     )
-    await run_in_threadpool(
+    execution_engine = await run_in_threadpool(
         ExecutionEngine.init,
         workflow_definition=specification,
         init_parameters=init_parameters,
@@ -494,4 +494,7 @@ async def validate_workflow(
         prevent_local_images_loading=True,
         step_error_handler=host.step_error_handler,
     )
+    # Validation never runs the workflow, so no sink task can still need a
+    # block: release what the initialised blocks hold right away.
+    await run_in_threadpool(execution_engine.close)
     return WorkflowValidationStatus(status="ok")

@@ -18,6 +18,7 @@ from roboflow_workflows.http_contract.describe import (  # noqa: F401
     get_unique_kinds,
 )
 
+from inference.core import logger
 from inference.core.cache.air_gapped import has_cached_model_variant
 from inference.core.entities.responses.workflows import WorkflowsBlocksDescription
 from inference.core.env import ENABLE_BUILDER
@@ -131,24 +132,33 @@ def schedule_execution_engine_close(
     execution_engine: Any,
     background_tasks: Optional[BackgroundTasks],
 ) -> None:
-    """Close a per-request execution engine once the response has been sent.
+    """Close a per-request execution engine once nothing needs its blocks.
 
     Blocks may hold resources between runs (an OPC UA Reader's session and thread, for
-    example) that would otherwise wait for garbage collection. The close is queued as
-    the last background task, after the fire-and-forget sink tasks the run queued, so
+    example). Garbage collection cannot release a resource that a running thread keeps
+    alive, so every request closes its engine. With background tasks the close is
+    queued as the last one, after the fire-and-forget sink tasks the run queued, so
     those still find their blocks open. Without background tasks (the hosted platform)
-    nothing is scheduled and garbage collection releases the blocks as before.
+    sinks ran inside the run, so the engine is closed right away.
 
     Args:
         execution_engine: The engine the request built and ran.
         background_tasks: The request's background tasks, or None.
     """
-    if background_tasks is None:
+    close_execution_engine = getattr(execution_engine, "close", None)
+    if not callable(close_execution_engine):
         return None
 
-    close_execution_engine = getattr(execution_engine, "close", None)
-    if callable(close_execution_engine):
+    if background_tasks is not None:
         background_tasks.add_task(close_execution_engine)
+        return None
+
+    try:
+        close_execution_engine()
+    except Exception as error:
+        # Called from a `finally`: a failed close must not replace the response
+        # or the error of the run.
+        logger.warning(f"Could not close the workflow execution engine: {error}")
 
 
 def handle_describe_workflow_workload(

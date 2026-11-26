@@ -251,7 +251,7 @@ per stream. Neither runs on the pipeline thread:
 
 * **Process warm-up.** A recorder constructed on a CUDA host (torch already imported
   with CUDA image tensors, or a CUDA context already initialised, and PyNvVideoCodec
-  installed) starts the warm-up on a background thread when the Workflow is
+  installed) that manages the block lifecycle (a stream pipeline) starts the warm-up on a background thread when the Workflow is
   compiled. It takes 0.7-0.8 s on an RTX 4080, so it normally finishes during the
   host's model load, before the first frame. CPU hosts and hosts without
   PyNvVideoCodec skip it and never import torch for it. Frames that arrive before it
@@ -320,9 +320,21 @@ the event is still sent.
 | Serverless Streaming | Needs a cell image with a `roboflow-workflows` release that contains these blocks; until then the Workflow fails to compile like any unknown block. Cancelling a job currently kills the process, so a clip still in its post-roll or upload at cancel is lost |
 | Batch video processing (`process_video_with_workflow`) | Clips follow `max_video_fps`. Validated locally; an end-to-end upload from hosted Batch Processing has not been tested |
 | Vision Events sink in local Event Store mode | Event without video (`unavailable:unsupported_sink_mode`) |
-| HTTP `/workflows/run`, Serverless Image API | Event without video (`unavailable:unsupported_host`) |
+| HTTP `/workflows/run`, Serverless Image API | Event without video (`unavailable:unsupported_host`), also when the request's image input carries `video_metadata` |
+| A host that calls `ExecutionEngine` directly | Event without video (`unavailable:unsupported_host`) unless the host declares that it closes the engine (see below) |
 | Anchor bound into a remote step or a workflow output | Compile-time error |
 | Older Inference or `roboflow-workflows` | The Workflow does not compile |
+
+The recorder owns an encoder thread per stream that only `close()` stops, so it
+records only for a host that promises to close the Execution Engine. The host
+says so with the init parameter `workflows_core.host_manages_block_lifecycle`
+(default `False`). `InferencePipeline.init_with_workflow` sets it to `True` and
+closes the engine when the pipeline ends, which covers the stream manager, WebRTC
+and batch video processing. A host that calls `ExecutionEngine.init` directly
+with its own frame loop passes
+`init_parameters={"workflows_core.host_manages_block_lifecycle": True, ...}` and
+must call `prepare_close()` and `close()` when it is done. The parameter comes
+from the host only: a Workflow definition or a request input cannot set it.
 
 Hosts that build an `InferencePipeline` themselves and do not pass their
 environment through to `roboflow-workflows` (for example a runner that sets
