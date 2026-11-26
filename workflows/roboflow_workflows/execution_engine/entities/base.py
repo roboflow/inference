@@ -22,6 +22,7 @@ import torch
 from pydantic import BaseModel, ConfigDict, Field
 from roboflow_workflows.core_steps.models.roboflow.action_recognition.entities import (
     ActionRecognitionPrediction,
+    ActionRecognitionResult,
 )
 from roboflow_workflows.environment import (
     ENABLE_TENSOR_DATA_REPRESENTATION,

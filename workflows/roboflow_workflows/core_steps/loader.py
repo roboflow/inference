@@ -243,6 +243,7 @@ else:
 
 from roboflow_workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
+    deserialize_action_recognition_result_kind,
     deserialize_boolean_kind,
     deserialize_bytes_kind,
     deserialize_classification_prediction_kind,
@@ -265,6 +266,7 @@ from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.common.serializers import (
     serialise_image,
     serialize_action_recognition_prediction_kind,
+    serialize_action_recognition_result_kind,
     serialize_secret,
     serialize_timestamp,
     serialize_video_metadata_kind,
@@ -1540,6 +1542,7 @@ else:
 
 from roboflow_workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    ACTION_RECOGNITION_RESULT_KIND,
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
     BYTES_KIND,
@@ -1628,6 +1631,7 @@ KINDS_SERIALIZERS = {
     IMAGE_KIND.name: serialise_image,
     VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
     ACTION_RECOGNITION_PREDICTION_KIND.name: serialize_action_recognition_prediction_kind,
+    ACTION_RECOGNITION_RESULT_KIND.name: serialize_action_recognition_result_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_rle_sv_detections,
@@ -1676,6 +1680,7 @@ KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
     VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
     ACTION_RECOGNITION_PREDICTION_KIND.name: deserialize_action_recognition_prediction_kind,
+    ACTION_RECOGNITION_RESULT_KIND.name: deserialize_action_recognition_result_kind,
     OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
     INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_rle_detections_kind,
@@ -2072,6 +2077,7 @@ def load_kinds() -> List[Kind]:
         IMAGE_KIND,
         VIDEO_METADATA_KIND,
         ACTION_RECOGNITION_PREDICTION_KIND,
+        ACTION_RECOGNITION_RESULT_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,
         ROBOFLOW_SOLUTION_KIND,

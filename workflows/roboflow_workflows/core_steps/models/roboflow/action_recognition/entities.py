@@ -5,7 +5,7 @@ now re-exports it: the workflow kind, the serializers' `isinstance` dispatch and
 the HTTP `ActionRecognitionInferenceResponse` must all see ONE class object.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import (
     BaseModel,
@@ -52,3 +52,41 @@ class ActionRecognitionPrediction(BaseModel):
         if self.confidence is None:
             result.pop("confidence", None)
         return result
+
+
+class ActionRecognitionResult(BaseModel):
+    """Cumulative action recognition output for one video stream frame.
+
+    Bundles the classified timeline together with the inclusive source-frame
+    bounds of the latest successful window and any per-frame error status, so
+    downstream blocks receive a consistent snapshot through one connection.
+    """
+
+    timeline: List[ActionRecognitionPrediction] = Field(
+        default_factory=list,
+        description=(
+            "Cumulative classified frame segments for the stream, sorted by "
+            "start frame."
+        ),
+    )
+    analyzed_from_frame: Optional[int] = Field(
+        default=None,
+        description=(
+            "Inclusive first source frame covered by the latest successful "
+            "classification window, or null before the first success."
+        ),
+    )
+    analyzed_until_frame: Optional[int] = Field(
+        default=None,
+        description=(
+            "Inclusive last source frame covered by the latest successful "
+            "classification window, or null before the first success."
+        ),
+    )
+    error_status: str = Field(
+        default="",
+        description=(
+            "Error or gap message for the current frame, or an empty string "
+            "when no error occurred."
+        ),
+    )
