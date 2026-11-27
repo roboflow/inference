@@ -73,14 +73,16 @@ conda activate inference-development
 
 Then, in repository root:
 ```bash
-repo_root$ (inference-development) pip install -e ./inference_models -e ./workflows -e .
+repo_root$ (inference-development) pip install --config-settings editable_mode=compat -e ./inference_models -e ./workflows -e .
 ```
 
 That will install all requirements apart from SAM model. To install the latter:
 ```bash
-repo_root$ (inference-development) pip install -e ./inference_models -e ./workflows -e ".[sam]"
+repo_root$ (inference-development) pip install --config-settings editable_mode=compat -e ./inference_models -e ./workflows -e ".[sam]"
 ```
 but in some OS (like MacOS) that would require installing additional libs ([this](https://medium.com/@vascofernandes_13322/how-to-install-gdal-on-macos-6a76fb5e24a4) guide should fix the issue for MacOS).
+
+compat mode installs a .pth entry, so the real package at inference_models/inference_models/ is found when commands run from the repo root. editable_mode=strict also works, but new files then require a reinstall.
 
 After installation, you should be able to run both tests and the library components without issues.
 
