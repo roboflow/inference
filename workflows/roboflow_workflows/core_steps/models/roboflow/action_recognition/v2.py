@@ -274,6 +274,12 @@ class _ActionRecognitionBookkeeping(V1Bookkeeping):
 
 
 class BlockManifest(V1Manifest):
+    # The optional worker changes when results arrive. Both versions buffer
+    # video and load the same local model with the same runtime restrictions.
+    discover_work_operations = V1Manifest.discover_work_operations
+    discover_dependent_resources = V1Manifest.discover_dependent_resources
+    get_actual_restrictions = V1Manifest.get_actual_restrictions
+
     model_config = ConfigDict(
         json_schema_extra={
             **V1Manifest.model_config["json_schema_extra"],
