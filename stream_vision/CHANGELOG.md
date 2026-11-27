@@ -4,7 +4,18 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Added
+
+- `StreamsConfiguration.workflows_profiling_directory` (default
+  `./inference_profiling`) sets where `InferencePipeline` writes Workflow profiler
+  traces. The `inference` and `inference_server` hosts fill it from
+  `WORKFLOWS_PROFILING_DIRECTORY`.
+
 ### Fixed
+
+- Workflow profiler traces are written as
+  `inference_pipeline_workflow_execution_track_<timestamp>.json`; the file name used
+  to say `tack`.
 
 - Cap the WebRTC extra's aiortc dependency below 1.17 while retaining PyAV 14.2.0.
   aiortc 1.17 accesses `VideoFrame.duration`, which is unavailable in that PyAV
