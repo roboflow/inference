@@ -6,7 +6,7 @@ from typing import Callable, List, Literal, Optional, Union
 import torch
 import torch.nn.functional as F
 import torchvision
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from torch import Tensor, nn
 
 from inference_models.models.rfdetr.backbone_builder import build_backbone
@@ -19,7 +19,7 @@ from inference_models.models.rfdetr.transformer import build_transformer
 
 
 class ModelConfig(BaseModel):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"]
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base", "PE-Core-T"]
     out_feature_indexes: List[int]
     dec_layers: int
     two_stage: bool = True
@@ -151,6 +151,72 @@ class RFDETR2XLargeConfig(ModelConfig):
     resolution: int = 880
     pretrain_weights: str = "rf-detr-xxlarge.pth"
     license: str = "PML-1.0"
+
+
+class RFDETRPECoreTConfig(ModelConfig):
+    """Shared architecture of the PE-Core-T sizes (Atto, Femto, Pico), released under PML-1.0."""
+
+    encoder: Literal["PE-Core-T"] = "PE-Core-T"
+    hidden_dim: int = 128
+    sa_nheads: int = 4
+    ca_nheads: int = 8
+    dec_n_points: int = 2
+    dim_feedforward: int = 1024
+    projector_scale: List[Literal["P4",]] = ["P4"]
+    out_feature_indexes: List[int] = [2, 5, 8, 11]
+    license: str = "PML-1.0"
+
+    @model_validator(mode="after")
+    def _sync_positional_encoding_size_with_resolution(self) -> "RFDETRPECoreTConfig":
+        """Size the position-embedding grid from an explicit ``resolution``.
+
+        Training does the same (as the public ``rfdetr`` package does for its sizes): a
+        model fine-tuned at another resolution stores ``resolution // patch_size`` patches
+        per side. An explicit ``positional_encoding_size`` is kept.
+
+        Returns:
+            RFDETRPECoreTConfig: This config.
+        """
+        if (
+            "resolution" in self.model_fields_set
+            and "positional_encoding_size" not in self.model_fields_set
+        ):
+            self.positional_encoding_size = self.resolution // self.patch_size
+
+        return self
+
+
+class RFDETRAttoConfig(RFDETRPECoreTConfig):
+    dec_layers: int = 0
+    num_windows: int = 1
+    patch_size: int = 20
+    num_queries: int = 300
+    num_select: int = 300
+    resolution: int = 380
+    positional_encoding_size: int = 380 // 20
+    pretrain_weights: Optional[str] = "rf-detr-atto.pth"
+
+
+class RFDETRFemtoConfig(RFDETRPECoreTConfig):
+    dec_layers: int = 2
+    num_windows: int = 2
+    patch_size: int = 16
+    num_queries: int = 200
+    num_select: int = 200
+    resolution: int = 384
+    positional_encoding_size: int = 384 // 16
+    pretrain_weights: Optional[str] = "rf-detr-femto.pth"
+
+
+class RFDETRPicoConfig(RFDETRPECoreTConfig):
+    dec_layers: int = 3
+    num_windows: int = 2
+    patch_size: int = 20
+    num_queries: int = 200
+    num_select: int = 200
+    resolution: int = 560
+    positional_encoding_size: int = 560 // 20
+    pretrain_weights: Optional[str] = "rf-detr-pico.pth"
 
 
 class RFDETRSegPreviewConfig(RFDETRBaseConfig):

@@ -528,7 +528,9 @@ from inference_server.legacy.errors import (  # noqa: E402
 )
 from inference_server.legacy.telemetry_recording import record_telemetry  # noqa: E402
 from inference_server.platform_http import (  # noqa: E402
+    API_PROXY_REQUEST_TIMEOUT_S,
     API_REQUEST_TIMEOUT_S,
+    CLIENT_TIMEOUT_HEADER,
     _add_params_to_url,
     _platform_request,
 )
@@ -537,6 +539,7 @@ from inference_server.workflows.errors import (  # noqa: E402
     MalformedRoboflowAPIResponseError,
     ModelDeploymentNotSupportedError,
     PaymentRequiredError,
+    RoboflowAPIRateLimitedError,
     RoboflowAPIUsagePausedError,
     WorkspaceLoadError,
 )
@@ -660,6 +663,11 @@ _PLATFORM_API_ERRORS: Dict[int, Tuple[type, str]] = {
         "Roboflow API usage is paused. Please contact your workspace administrator "
         "to re-enable api keys.",
     ),
+    429: (
+        RoboflowAPIRateLimitedError,
+        "Roboflow API rate limit or usage limit reached for this workspace. "
+        "Retry later or verify your workspace billing page.",
+    ),
 }
 
 
@@ -750,14 +758,19 @@ def _records_api_call(function_name: str) -> Callable:
     return decorator
 
 
+def _is_api_proxy_endpoint(endpoint: str) -> bool:
+    normalized_endpoint = endpoint.strip("/")
+    is_api_proxy_endpoint = any(
+        normalized_endpoint == prefix or normalized_endpoint.startswith(f"{prefix}/")
+        for prefix in _API_PROXY_ENDPOINT_PREFIXES
+    )
+    return is_api_proxy_endpoint
+
+
 def _api_base_url_for_endpoint(endpoint: str) -> str:
     """Return the platform base URL serving ``endpoint``, proxy prefixes included."""
-    normalized_endpoint = endpoint.strip("/")
-    for prefix in _API_PROXY_ENDPOINT_PREFIXES:
-        if normalized_endpoint == prefix or normalized_endpoint.startswith(
-            f"{prefix}/"
-        ):
-            return configuration.API_PROXY_BASE_URL
+    if _is_api_proxy_endpoint(endpoint):
+        return configuration.API_PROXY_BASE_URL
 
     return configuration.API_BASE_URL
 
@@ -800,6 +813,10 @@ class ServerRoboflowPlatformClient:
 
         The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
         waiting one and then two seconds. Other endpoints make one attempt.
+        An attempt on an API proxy endpoint (``apiproxy/...``, ``api-proxy/...``)
+        waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds and sends that wait
+        in ``X-Roboflow-Client-Timeout``; any other one waits
+        ``ROBOFLOW_API_REQUEST_TIMEOUT``.
 
         Args:
             endpoint: API endpoint path.
@@ -826,7 +843,19 @@ class ServerRoboflowPlatformClient:
             params=url_params,
         )
         wrapped_url = self.wrap_url(url)
-        headers = self.build_api_headers()
+        is_api_proxy_endpoint = _is_api_proxy_endpoint(endpoint)
+        timeout = (
+            API_PROXY_REQUEST_TIMEOUT_S
+            if is_api_proxy_endpoint
+            else API_REQUEST_TIMEOUT_S
+        )
+        headers = self.build_api_headers(
+            explicit_headers=(
+                {CLIENT_TIMEOUT_HEADER: f"{timeout:g}"}
+                if is_api_proxy_endpoint
+                else None
+            )
+        )
         try:
             for attempt in range(3):
                 response = _platform_request(
@@ -834,7 +863,7 @@ class ServerRoboflowPlatformClient:
                     wrapped_url,
                     json=payload,
                     headers=headers,
-                    timeout=API_REQUEST_TIMEOUT_S,
+                    timeout=timeout,
                 )
                 if (
                     endpoint.strip("/") != "apiproxy/google_vision_ocr"
@@ -1742,6 +1771,15 @@ def step_error_handler(step_name: str, error: Exception) -> None:
             error,
             _STEP_EXECUTION_CONTEXT,
         )
+    if isinstance(error, RoboflowAPIRateLimitedError):
+        _client_caused(
+            step_name,
+            429,
+            f"Rate limit reached while executing step {step_name}. "
+            f"Retry later or verify your workspace billing page. Details: {error}",
+            error,
+            _STEP_EXECUTION_CONTEXT,
+        )
     if isinstance(error, ModelRetrievalError):
         status_code = getattr(error, "status_code", None)
         if status_code in _MODEL_ACCESS_ERROR_MESSAGES:
@@ -1803,6 +1841,8 @@ _REMOTE_CALL_ERROR_MESSAGES = {
     "{step_name} - details of error: {error}.",
     423: "Roboflow API usage is paused while remote executing step {step_name}. "
     "Contact your workspace administrator to re-enable API keys. Details: {error}",
+    429: "Rate limit reached while remote executing step {step_name}. Retry later "
+    "or verify your workspace billing page. Details: {error}",
 }
 
 

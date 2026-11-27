@@ -15,6 +15,12 @@ instance, enforced via structured outputs and decoded into RLE-masked
 The image is sent at its original resolution for this task - pre-downscaling
 the upload measurably hurt mask quality on GPT-6 Astra, the model the task
 defaults to.
+
+Adds the ``keypoint-detection`` task: each instance's box and one absolute-pixel
+point per keypoint of its class skeleton (``keypoint_schema``), enforced via
+structured outputs and decoded into keypoint ``predictions`` (see
+``vlm_decoding/keypoint_detection``). Like segmentation, it sends the image at
+its original resolution and defaults to GPT-6 Astra.
 """
 
 import base64
@@ -50,12 +56,26 @@ from roboflow_workflows.core_steps.common.vlm_decoding import (
     decode_vlm_output,
     describe_vlm_prediction_outputs,
 )
+from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
+    ABSOLUTE_XY,
+    KEYPOINT_DETECTION_TASK,
+    KEYPOINT_SCHEMA_DESCRIPTION,
+    KEYPOINT_SCHEMA_EXAMPLE,
+    OCCLUDED_KEYPOINT_CONFIDENCE,
+    VISIBLE_KEYPOINT_CONFIDENCE,
+    KeypointSchema,
+    KeypointSkeleton,
+    build_absolute_keypoint_json_schema,
+    build_keypoint_detection_prompt,
+    decode_keypoint_detections,
+    resolve_keypoint_skeletons,
+)
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     MAX_CROPS_PER_LABEL,
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_EXAMPLES_DESCRIPTION,
     REFERENCE_EXAMPLES_EXAMPLE,
-    REFERENCE_EXAMPLES_TASK,
+    REFERENCE_EXAMPLES_TASKS,
     SHARED_REFERENCE_PARTS_CACHE,
     TARGET_IMAGE_INTRO,
     ReferenceExamples,
@@ -74,6 +94,7 @@ from roboflow_workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -119,6 +140,18 @@ PLAIN_ABSOLUTE_STYLE = "plain-absolute"
 
 # GPT-5.6 Terra/Luna assumed to match Sol's `max` (docs describe the set family-wide).
 OPENAI_MODELS = [
+    {
+        "id": "gpt-6.2-astra",
+        "name": "GPT-6.2 Astra",
+        "reasoning_effort_values": ["low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
+    {
+        "id": "gpt-6.2-sol",
+        "name": "GPT-6.2 Sol",
+        "reasoning_effort_values": ["low", "medium", "high", "xhigh", "max"],
+        "detection_prompt_style": STRUCTURED_ABSOLUTE_STYLE,
+    },
     {
         "id": "gpt-6.1-terra",
         "name": "GPT-6.1 Terra",
@@ -423,6 +456,19 @@ strict mode cannot express "even and at least six", so short or odd lists are
 rejected at decode time instead.
 """
 
+KEYPOINT_DETECTION_DEFAULT_MODEL = "gpt-6-astra"
+"""Model the keypoint task runs on when the manifest names none.
+
+The keypoint prompt was benchmarked on GPT-6 Astra and GPT-6.1 Sol, and Astra is
+the segmentation default too. The block-wide default asks for normalized boxes
+and was never tried on absolute-pixel points.
+"""
+
+TASK_DEFAULT_MODELS = {
+    INSTANCE_SEGMENTATION_TASK: INSTANCE_SEGMENTATION_DEFAULT_MODEL,
+    KEYPOINT_DETECTION_TASK: KEYPOINT_DETECTION_DEFAULT_MODEL,
+}
+
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
@@ -434,6 +480,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     "detailed-caption",
     "object-detection",
     INSTANCE_SEGMENTATION_TASK,
+    KEYPOINT_DETECTION_TASK,
 ]
 SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 
@@ -477,14 +524,21 @@ The two lists are paired by position. Structured-output models constrain the
 returned label to `output_classes`, and decoded predictions use those stable
 labels. Omitting `output_classes` preserves the original `classes` contract.
 
-For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
-labeled example images. The block cuts up to {MAX_CROPS_PER_LABEL} crops per label
-from the examples' boxes (largest first) and sends them, grouped by label, before
-the image to label, so the model sees what each label looks like. Box labels are
-the output labels: `output_classes` when set, `classes` otherwise. The crops go
-with every image, so they add input tokens to each request; they come first, so
-the provider can cache them across a batch. Without examples the request is
-unchanged.
+For `object-detection` and `keypoint-detection`, `reference_examples` takes up to
+{MAX_REFERENCE_EXAMPLES} labeled example images. The block cuts up to
+{MAX_CROPS_PER_LABEL} crops per label from the examples' boxes (largest first) and
+sends them, grouped by label, before the image to label, so the model sees what
+each label looks like. Box labels are the output labels: `output_classes` when set,
+`classes` otherwise. The crops go with every image, so they add input tokens to
+each request; they come first, so the provider can cache them across a batch.
+Without examples the request is unchanged.
+
+For `keypoint-detection`, each annotation also lists its `keypoints` by name, and
+each crop shows its instance's box and skeleton: the edges, a filled dot for a
+visible keypoint and a hollow ring for an occluded one, each numbered by its
+position in the class skeleton. The text before the crops maps the numbers to the
+keypoint names, so the model sees where each keypoint goes. Leave out the
+keypoints an instance does not show.
 
 A selector can provide the whole list, such as `$inputs.reference_examples`, but
 selectors inside an example are not resolved: to build the examples from a step's
@@ -502,6 +556,21 @@ is set explicitly, this task runs on `{INSTANCE_SEGMENTATION_DEFAULT_MODEL}`,
 the model it was benchmarked with. Like the absolute-coordinate detection
 formats, it provides no confidence scores (`1.0` is assigned).
 
+The `keypoint-detection` task takes the skeleton of every class in
+`keypoint_schema`: its keypoint names, the edges between them and, optionally,
+where each keypoint sits on a reference instance. Its edges are 0-based indices
+into the keypoint names, while Keypoint Visualization numbers keypoints from 1
+in its `edges`, so add 1 to each index to draw the skeleton with that block.
+Structured outputs have the model return each instance's `box_2d` and one
+`{{"x": int, "y": int, "occluded": bool}}` point per keypoint, in absolute pixel
+coordinates of the uploaded image, or null for a keypoint outside the image.
+Predictions are keypoint detections: a keypoint the model sees gets confidence
+{VISIBLE_KEYPOINT_CONFIDENCE}, one it marks occluded (hidden, its position
+estimated) {OCCLUDED_KEYPOINT_CONFIDENCE}, and one it could not place is left
+out. As for `instance-segmentation`, the image is sent at its
+original resolution as JPEG with the `image_detail` hint, and an unset
+`model_version` runs `{KEYPOINT_DETECTION_DEFAULT_MODEL}`.
+
 ## Version Differences
 
 This version (v7) decodes the model answer inside the block, adding
@@ -509,9 +578,10 @@ This version (v7) decodes the model answer inside the block, adding
 `output` string:
 
 * `predictions` holds object detections for the `object-detection` task,
-RLE-masked detections for the `instance-segmentation` task and a classification
-prediction for the `classification` / `multi-label-classification` tasks -
-the kind of the output follows the selected task type.
+RLE-masked detections for the `instance-segmentation` task, keypoint detections
+for the `keypoint-detection` task and a classification prediction for the
+`classification` / `multi-label-classification` tasks - the kind of the output
+follows the selected task type.
 * `predictions` is `None` for every other task (unconstrained prompting, OCR,
 captioning, structured answering, visual question answering).
 * `error_status` is `True` when the answer could not be decoded.
@@ -536,6 +606,11 @@ TASKS_REQUIRING_CLASSES = {
     "multi-label-classification",
     "object-detection",
     INSTANCE_SEGMENTATION_TASK,
+    KEYPOINT_DETECTION_TASK,
+}
+
+TASKS_REQUIRING_KEYPOINT_SCHEMA = {
+    KEYPOINT_DETECTION_TASK,
 }
 
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
@@ -683,6 +758,21 @@ class BlockManifest(WorkflowBlockManifest):
             },
         )
     )
+    keypoint_schema: Optional[
+        Union[Selector(kind=[DICTIONARY_KIND]), KeypointSchema]
+    ] = Field(
+        default=None,
+        description=KEYPOINT_SCHEMA_DESCRIPTION,
+        examples=[KEYPOINT_SCHEMA_EXAMPLE, "$inputs.keypoint_schema"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_KEYPOINT_SCHEMA,
+                    "required": True,
+                },
+            },
+        },
+    )
     reference_examples: Optional[
         Union[Selector(kind=[LIST_OF_VALUES_KIND]), ReferenceExamples]
     ] = Field(
@@ -692,7 +782,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "values": set(REFERENCE_EXAMPLES_TASKS),
                     "required": False,
                 },
             },
@@ -784,14 +874,14 @@ class BlockManifest(WorkflowBlockManifest):
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
         if (
-            self.task_type == INSTANCE_SEGMENTATION_TASK
+            self.task_type in TASK_DEFAULT_MODELS
             and "model_version" not in self.model_fields_set
         ):
             # The block-wide default predates the task and was never
             # benchmarked for it; only an omitted `model_version` is
             # overridden, an explicit choice (a literal or a selector) is
             # always honoured.
-            self.model_version = INSTANCE_SEGMENTATION_DEFAULT_MODEL
+            self.model_version = TASK_DEFAULT_MODELS[self.task_type]
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(
                 f"`prompt` parameter required to be set for task `{self.task_type}`"
@@ -815,6 +905,21 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`output_structure` parameter required to be set for task `{self.task_type}`"
             )
+        if (
+            self.task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA
+            and self.keypoint_schema is None
+        ):
+            raise ValueError(
+                f"`keypoint_schema` parameter required to be set for task `{self.task_type}`"
+            )
+        keypoint_skeletons = None
+        if self.task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA and isinstance(
+            self.keypoint_schema, dict
+        ):
+            keypoint_skeletons = resolve_keypoint_skeletons(
+                self.keypoint_schema,
+                classes=self.classes if isinstance(self.classes, list) else None,
+            )
         if isinstance(self.reference_examples, list):
             if isinstance(self.output_classes, list):
                 labels = self.output_classes
@@ -823,7 +928,10 @@ class BlockManifest(WorkflowBlockManifest):
             else:
                 labels = None
             validate_reference_examples(
-                self.reference_examples, task_type=self.task_type, labels=labels
+                self.reference_examples,
+                task_type=self.task_type,
+                labels=labels,
+                keypoint_skeletons=keypoint_skeletons,
             )
         validate_reasoning_level(
             model=self.model_version,
@@ -925,8 +1033,14 @@ class OpenAIBlockV7(WorkflowBlock):
         api_key: str = "rf_key:account",
         service_tier: Optional[str] = None,
         reference_examples: Optional[List[Any]] = None,
+        keypoint_schema: Optional[Dict[str, Any]] = None,
     ) -> BlockResult:
         resolved_output_classes = validate_output_classes(classes, output_classes)
+        keypoint_skeletons = (
+            resolve_keypoint_skeletons(keypoint_schema, classes=classes)
+            if task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA
+            else None
+        )
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_openai_prompting(
             platform_client=self._platform_client,
@@ -947,6 +1061,7 @@ class OpenAIBlockV7(WorkflowBlock):
             service_tier=service_tier,
             reference_examples=reference_examples,
             reference_parts_cache=self._reference_parts_cache,
+            keypoint_schema=keypoint_skeletons,
         )
         box_format = get_detection_box_format(model_version)
         results = []
@@ -955,16 +1070,28 @@ class OpenAIBlockV7(WorkflowBlock):
             upload_width, upload_height = detection_upload_dimensions(
                 image=image, task_type=task_type, box_format=box_format
             )
-            error_status, predictions = decode_vlm_output(
-                task_type=task_type,
-                raw_output=content,
-                image=image,
-                classes=resolved_output_classes,
-                inference_id=inference_id,
-                box_format=box_format,
-                upload_width=upload_width,
-                upload_height=upload_height,
-            )
+            if task_type == KEYPOINT_DETECTION_TASK:
+                error_status, predictions = decode_keypoint_detections(
+                    content,
+                    image=image,
+                    skeletons=keypoint_skeletons,
+                    classes=classes,
+                    inference_id=inference_id,
+                    coordinates=ABSOLUTE_XY,
+                    upload_width=upload_width,
+                    upload_height=upload_height,
+                )
+            else:
+                error_status, predictions = decode_vlm_output(
+                    task_type=task_type,
+                    raw_output=content,
+                    image=image,
+                    classes=resolved_output_classes,
+                    inference_id=inference_id,
+                    box_format=box_format,
+                    upload_width=upload_width,
+                    upload_height=upload_height,
+                )
             results.append(
                 {
                     "output": content,
@@ -988,8 +1115,9 @@ def detection_upload_dimensions(
 
     The absolute-pixel contracts return coordinates of the uploaded image, so
     decoding has to repeat what ``encode_image_for_task`` did: the detection
-    downscale, or nothing for segmentation, which uploads the original. The
-    normalized detection contract is resolution independent and needs nothing.
+    downscale, or nothing for segmentation and keypoints, which upload the
+    original. The normalized detection contract is resolution independent and
+    needs nothing.
 
     Args:
         image: Workflow image passed to the block.
@@ -1000,7 +1128,7 @@ def detection_upload_dimensions(
         Tuple of the uploaded ``(width, height)``, or ``(None, None)`` when
         the format does not need them.
     """
-    if task_type == INSTANCE_SEGMENTATION_TASK:
+    if task_type in (INSTANCE_SEGMENTATION_TASK, KEYPOINT_DETECTION_TASK):
         height, width = image.numpy_image.shape[:2]
         return width, height
     if task_type != "object-detection" or box_format != ABSOLUTE_BOX_FORMAT:
@@ -1028,6 +1156,7 @@ def run_openai_prompting(
     service_tier: Optional[str] = None,
     reference_examples: Optional[List[Any]] = None,
     reference_parts_cache: Optional[ReferencePartsCache] = None,
+    keypoint_schema: Optional[Dict[str, Any]] = None,
 ) -> List[Tuple[str, Optional[int], Optional[int]]]:
     """Encode images, build per-task prompts and execute OpenAI requests.
 
@@ -1054,29 +1183,42 @@ def run_openai_prompting(
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent OpenAI requests.
         service_tier: OpenAI service tier, omitted from the request when ``None``.
-        reference_examples: Optional labeled example images for object detection,
-            in the format ``validate_reference_examples`` accepts.
+        reference_examples: Optional labeled example images for object or keypoint
+            detection, in the format ``validate_reference_examples`` accepts.
         reference_parts_cache: Keeps the parts built for the examples, the
             process-wide cache for the block; without one they load on every call.
+        keypoint_schema: The skeleton of each class, for the keypoint task.
 
     Returns:
         ``(output_text, input_tokens, output_tokens)`` tuples, one per input
         image; token counts are ``None`` when the provider omits usage data.
 
     Raises:
-        ValueError: If the task type has no registered prompt builder, or the
-            reference examples are invalid for the task or the labels.
+        ValueError: If the task type has no registered prompt builder, the
+            reference examples are invalid for the task or the labels, or a
+            class of the keypoint task has no skeleton.
     """
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
+    keypoint_skeletons = (
+        resolve_keypoint_skeletons(keypoint_schema, classes=classes)
+        if task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA
+        else None
+    )
     reference_parts = []
     if reference_examples:
         labels = validate_output_classes(classes, output_classes)
         validate_reference_examples(
-            reference_examples, task_type=task_type, labels=labels
+            reference_examples,
+            task_type=task_type,
+            labels=labels,
+            keypoint_skeletons=keypoint_skeletons,
         )
         reference_parts = openai_reference_parts_for(
-            reference_examples, labels=labels, cache=reference_parts_cache
+            reference_examples,
+            labels=labels,
+            cache=reference_parts_cache,
+            keypoint_skeletons=keypoint_skeletons,
         )
 
     openai_prompts = []
@@ -1095,6 +1237,7 @@ def run_openai_prompting(
             image_width=image_width,
             image_height=image_height,
             model_version=model_version,
+            keypoint_skeletons=keypoint_skeletons,
         )
         if reference_parts:
             message = generated_prompt["input"][0]
@@ -1127,9 +1270,9 @@ def encode_image_for_task(
     The `object-detection` task mirrors the preprocessing used for detection
     benchmarks: the image is downscaled so its longest edge does not exceed
     ``DETECTION_MAX_EDGE_PIXELS`` (aspect ratio preserved, never upscaled) and
-    encoded as lossless PNG. All other tasks - `instance-segmentation`
-    deliberately included, see the module docstring - send the image unchanged
-    as JPEG.
+    encoded as lossless PNG. All other tasks - `instance-segmentation` and
+    `keypoint-detection` deliberately included, see the module docstring - send
+    the image unchanged as JPEG.
 
     Args:
         image: BGR image to be encoded.
@@ -1954,6 +2097,69 @@ def prepare_instance_segmentation_prompt(
     }
 
 
+def prepare_keypoint_detection_prompt(
+    base64_image: str,
+    keypoint_skeletons: Dict[str, KeypointSkeleton],
+    image_width: int,
+    image_height: int,
+    image_detail: str,
+    **kwargs,
+) -> dict:
+    """Build the keypoint request, whose answer strict structured outputs constrain.
+
+    One contract for every model: absolute pixel coordinates of the uploaded
+    image, which is the original-resolution JPEG, as for segmentation.
+
+    Args:
+        base64_image: Base64-encoded JPEG of the original image.
+        keypoint_skeletons: The skeleton of each class to detect, as
+            ``resolve_keypoint_skeletons`` returns them.
+        image_width: Width of the encoded image in pixels.
+        image_height: Height of the encoded image in pixels.
+        image_detail: Requested image detail level.
+        **kwargs: Ignored builder arguments shared across task types.
+
+    Returns:
+        Request payload with ``input`` and structured-output ``text`` keys.
+
+    Raises:
+        ValueError: If no skeleton is given.
+    """
+    if not keypoint_skeletons:
+        raise ValueError("Keypoint detection requires the skeleton of each class")
+
+    prompt_text = build_keypoint_detection_prompt(
+        keypoint_skeletons,
+        coordinates=ABSOLUTE_XY,
+        upload_width=image_width,
+        upload_height=image_height,
+    )
+
+    return {
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": image_detail,
+                    },
+                    {"type": "input_text", "text": prompt_text},
+                ],
+            }
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "keypoints",
+                "strict": True,
+                "schema": build_absolute_keypoint_json_schema(keypoint_skeletons),
+            }
+        },
+    }
+
+
 def _get_openai_client(api_key: str):
     client = _openai_client_cache.get(api_key)
     if client is None:
@@ -1973,6 +2179,7 @@ PROMPT_BUILDERS = {
     "structured-answering": prepare_structured_answering_prompt,
     "object-detection": prepare_object_detection_prompt,
     INSTANCE_SEGMENTATION_TASK: prepare_instance_segmentation_prompt,
+    KEYPOINT_DETECTION_TASK: prepare_keypoint_detection_prompt,
 }
 
 _openai_client_cache = {}

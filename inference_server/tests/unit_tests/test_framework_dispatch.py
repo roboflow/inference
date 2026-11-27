@@ -23,6 +23,7 @@ from inference_server.framework.entities import (
 from inference_server.framework.input_parsers import extract_images_and_params
 from inference_server.framework.registry import _HANDLERS
 from inference_server.gateway import ModelManagerGateway
+from inference_server.routing import routing_key
 from tests.unit_tests.legacy.conftest import EvictedModelManager
 
 _JPEG = bytes(
@@ -169,33 +170,18 @@ async def test_model_id_carrying_an_instance_returns_404_before_the_registry():
     proxy.ensure_loaded.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "instance",
-    [
-        b"capabilities%3Dimage_embeddings",
-        b"b%3Acapabilities%3Dimage_embeddings",
-        b"capabilities%3Dimage_embeddings%3Bb",
-    ],
-)
-async def test_capability_instance_returns_400_before_the_registry(instance):
-    proxy = _mock_proxy()
-    with _stat_returns(("classification", "infer")) as stat:
-        r = await handle_model_inference_request(
-            _request(query=b"model_id=m&instance=" + instance), proxy
-        )
-    assert r.status_code == 400
-    assert b"INVALID_PARAM" in r.body
-    stat.assert_not_awaited()
-    proxy.ensure_loaded.assert_not_awaited()
+def test_decode_treats_instance_as_a_plain_extra_param():
+    common = decode_common_request_params(_request(query=b"model_id=m&instance=x"))
+    assert common.extra == {"instance": "x"}
+    assert routing_key(common.model_id) == "m"
 
 
 @pytest.mark.asyncio
-async def test_named_instance_model_id_reaches_the_registry():
+async def test_colon_model_id_reaches_the_registry():
     proxy = _mock_proxy()
     with _stat_raises(LookupError("no such")) as stat:
         r = await handle_model_inference_request(
-            _request(query=b"model_id=m%3Ablue&instance=green"), proxy
+            _request(query=b"model_id=m%3Ablue"), proxy
         )
     assert r.status_code == 404
     stat.assert_awaited_once()
@@ -521,6 +507,17 @@ async def test_ensure_loaded_load_timeout_returns_503(fake_handler_entry):
         r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
     assert r.status_code == 503
     assert r.headers["Retry-After"] == "7"
+
+
+@pytest.mark.asyncio
+async def test_ensure_loaded_server_full_returns_503_server_busy(fake_handler_entry):
+    proxy = _mock_proxy()
+    proxy.ensure_loaded = AsyncMock(return_value=("server_full", 1))
+    with _stat_returns(("fake-task", "infer")):
+        r = await handle_model_inference_request(_request(query=b"model_id=m"), proxy)
+    assert r.status_code == 503
+    assert r.headers["Retry-After"] == "1"
+    assert b"SERVER_BUSY" in r.body
 
 
 @pytest.mark.asyncio

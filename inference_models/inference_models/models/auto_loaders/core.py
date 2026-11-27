@@ -7,8 +7,10 @@ import os.path
 import re
 import stat
 import tempfile
+import time
 import urllib.parse
 from contextvars import ContextVar
+from dataclasses import replace
 from datetime import datetime
 from functools import partial
 from typing import (
@@ -121,6 +123,7 @@ from inference_models.utils.content_addressed_artifact_cache import (
 )
 from inference_models.utils.download import (
     FileHandle,
+    _ArtifactDownloadForbiddenError,
     download_files_to_directory,
     is_valid_md5_hash,
 )
@@ -130,6 +133,7 @@ from inference_models.utils.onnx_embeddings import (
     TRANSFORM_VERSION,
     embedding_definition,
 )
+from inference_models.utils.secure_gateway import validate_secure_gateway_url
 from inference_models.weights_providers import offline_registry
 from inference_models.weights_providers.core import get_model_from_provider
 from inference_models.weights_providers.entities import (
@@ -159,6 +163,9 @@ MODEL_TYPES_TO_LOAD_FROM_CHECKPOINT = {
     "rfdetr-large",
     "rfdetr-xlarge",
     "rfdetr-2xlarge",
+    "rfdetr-atto",
+    "rfdetr-femto",
+    "rfdetr-pico",
     "rfdetr-seg-preview",
     "rfdetr-seg-nano",
     "rfdetr-seg-small",
@@ -302,7 +309,9 @@ def _credential_hash(api_key: Optional[str]) -> str:
     return hash_dict_content(content={"api_key": api_key})
 
 
-def _canonicalize_download_source(download_url: str) -> str:
+def _canonicalize_download_source(
+    download_url: str, *, additional_auth_params: Optional[Set[str]] = None
+) -> str:
     parsed_url = urllib.parse.urlparse(download_url)
     if not parsed_url.query:
         return download_url
@@ -313,10 +322,11 @@ def _canonicalize_download_source(download_url: str) -> str:
     query_param_names = {key.lower() for key, _ in query_params}
     if query_param_names.isdisjoint(SIGNED_DOWNLOAD_URL_MARKER_PARAMS):
         return download_url
+    # Keep existing persisted cache fingerprints stable. Refresh comparisons can
+    # additionally ignore the CDN signing key name without migrating manifests.
+    auth_params = SIGNED_DOWNLOAD_URL_AUTH_PARAMS | (additional_auth_params or set())
     content_params = sorted(
-        (key, value)
-        for key, value in query_params
-        if key.lower() not in SIGNED_DOWNLOAD_URL_AUTH_PARAMS
+        (key, value) for key, value in query_params if key.lower() not in auth_params
     )
     canonical_query = urllib.parse.urlencode(content_params)
     return urllib.parse.urlunparse(
@@ -2275,7 +2285,18 @@ class AutoModel:
                 if point_model_directory:
                     point_model_directory(model_dir)
 
+            refresh_model_package = None
+            if weights_provider == "roboflow" and not OFFLINE_MODE:
+                refresh_model_package = partial(
+                    _refresh_roboflow_model_package,
+                    model_metadata=model_metadata,
+                    api_key=api_key,
+                    weights_provider_extra_query_params=weights_provider_extra_query_params,
+                    weights_provider_extra_headers=weights_provider_extra_headers,
+                )
+
             model = attempt_loading_matching_model_packages(
+                refresh_model_package=refresh_model_package,
                 model_id=model_metadata.model_id,
                 requested_model_id=model_id_or_path,
                 model_architecture=model_metadata.model_architecture,
@@ -2865,6 +2886,91 @@ def _prepare_library_model_init_kwargs(
     return {**model_init_kwargs, "local_files_only": True}
 
 
+def _canonicalize_artifact_refresh_source(download_url: str) -> str:
+    """Compare signing credentials inside the configured gateway envelope only."""
+    gateway_prefix = None
+    if configuration.SECURE_GATEWAY:
+        gateway_base = validate_secure_gateway_url(configuration.SECURE_GATEWAY)
+        prefix = f"{gateway_base}/proxy?url="
+        if download_url.startswith(prefix):
+            parsed_url = urllib.parse.urlsplit(download_url)
+            query = urllib.parse.parse_qsl(parsed_url.query, keep_blank_values=True)
+            # The provider emits exactly one encoded URL. Ambiguous or extended
+            # envelopes retain their full identity instead of being unwrapped.
+            if len(query) == 1 and query[0][0] == "url" and not parsed_url.fragment:
+                gateway_prefix = prefix
+                download_url = query[0][1]
+
+    source = _canonicalize_download_source(
+        download_url, additional_auth_params={"keyname"}
+    )
+    if gateway_prefix is not None:
+        source = gateway_prefix + urllib.parse.quote(source, safe="~()*!'")
+
+    return source
+
+
+def _refresh_roboflow_model_package(
+    model_package: ModelPackageMetadata,
+    *,
+    model_metadata: ModelMetadata,
+    api_key: Optional[str],
+    weights_provider_extra_query_params: Optional[dict],
+    weights_provider_extra_headers: Optional[dict],
+) -> ModelPackageMetadata:
+    """Refresh transport credentials without renegotiating package identity."""
+    refreshed = get_model_from_provider(
+        provider="roboflow",
+        model_id=model_metadata.model_id,
+        api_key=api_key,
+        weights_provider_extra_query_params=weights_provider_extra_query_params,
+        weights_provider_extra_headers=weights_provider_extra_headers,
+    )
+    candidates = [
+        package
+        for package in refreshed.model_packages
+        if package.package_id == model_package.package_id
+    ]
+
+    def _identity(package: ModelPackageMetadata) -> ModelPackageMetadata:
+        artifacts = [
+            (
+                replace(
+                    artifact,
+                    download_url=_canonicalize_artifact_refresh_source(
+                        artifact.download_url
+                    ),
+                )
+                if isinstance(artifact, FileDownloadSpecs)
+                else artifact
+            )
+            for artifact in package.package_artefacts
+        ]
+        package_identity = replace(
+            package,
+            package_artefacts=sorted(artifacts, key=lambda item: item.file_handle),
+        )
+        return package_identity
+
+    # Keep the complete negotiated contract, including constructor recommendations,
+    # fixed during recovery; metadata changes require a fresh model load.
+    if (
+        replace(refreshed, model_packages=[])
+        != replace(model_metadata, model_packages=[])
+        or len(candidates) != 1
+        or _identity(candidates[0]) != _identity(model_package)
+    ):
+        raise CorruptedModelPackageError(
+            message=(
+                "Refreshed metadata changed the selected model or package contract. "
+                "Refusing to retry the download with different metadata."
+            ),
+            help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+        )
+
+    return candidates[0]
+
+
 def attempt_loading_matching_model_packages(
     model_id: str,
     model_architecture: ModelArchitecture,
@@ -2888,7 +2994,40 @@ def attempt_loading_matching_model_packages(
     point_model_directory: Optional[Callable[[str], None]] = None,
     requested_model_id: Optional[str] = None,
     content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
+    refresh_model_package: Optional[
+        Callable[[ModelPackageMetadata], ModelPackageMetadata]
+    ] = None,
 ) -> AnyModel:
+    """Load the first usable negotiated package.
+
+    Args:
+        model_id: Canonical model identity returned by the provider.
+        model_architecture: Architecture used to resolve the model class.
+        task_type: Task supported by the selected model.
+        matching_model_packages: Negotiated packages in loading preference order.
+        model_init_kwargs: Arguments forwarded to the model constructor.
+        model_access_manager: Authority for model access and storage callbacks.
+        auto_resolution_cache: Cache receiving successful model resolutions.
+        auto_negotiation_hash: Key identifying the current loading parameters.
+        api_key: Effective credential used for cache attribution.
+        model_dependencies: Dependency declarations from model metadata.
+        model_dependencies_instances: Already loaded dependency instances.
+        model_dependencies_directories: Verified storage paths for dependencies.
+        recommended_parameters: Model-level recommendations used as a fallback.
+        max_package_loading_attempts: Maximum number of candidate packages to try.
+        model_download_file_lock_acquire_timeout: Timeout for package and artifact locks.
+        verbose: Whether to display loading progress.
+        verify_hash_while_download: Whether to verify downloaded artifact digests.
+        download_files_without_hash: Whether unhashed remote artifacts are permitted.
+        use_auto_resolution_cache: Whether to record a successful resolution.
+        point_model_directory: Optional callback receiving the loaded package directory.
+        requested_model_id: Original model identifier, including an alias if supplied.
+        content_addressed_artifact_cache: Optional shared cache for verified blobs.
+        refresh_model_package: Internal callback to refresh artifact URLs once after a 403.
+
+    Returns:
+        Loaded model instance.
+    """
     if requested_model_id is None:
         requested_model_id = model_id
     if max_package_loading_attempts is not None:
@@ -2912,6 +3051,7 @@ def attempt_loading_matching_model_packages(
         )
         try:
             model, model_package_cache_dir = initialize_model(
+                refresh_model_package=refresh_model_package,
                 model_id=model_id,
                 requested_model_id=requested_model_id,
                 model_architecture=model_architecture,
@@ -3118,7 +3258,40 @@ def initialize_model(
     requested_model_id: Optional[str] = None,
     api_key: Optional[str] = None,
     content_addressed_artifact_cache: Optional[ContentAddressedArtifactCache] = None,
+    refresh_model_package: Optional[
+        Callable[[ModelPackageMetadata], ModelPackageMetadata]
+    ] = None,
 ) -> Tuple[AnyModel, str]:
+    """Materialize and initialize a selected model package.
+
+    Args:
+        model_id: Canonical model identity returned by the provider.
+        model_architecture: Architecture used to resolve the model class.
+        task_type: Task supported by the selected model.
+        model_package: Selected package whose identity has already been negotiated.
+        model_init_kwargs: Arguments forwarded to the model constructor.
+        auto_resolution_cache: Cache receiving successful model resolutions.
+        auto_negotiation_hash: Key identifying the current loading parameters.
+        model_dependencies: Dependency declarations from model metadata.
+        model_dependencies_instances: Already loaded dependency instances.
+        model_dependencies_directories: Verified storage paths for dependencies.
+        recommended_parameters: Model-level recommendations used as a fallback.
+        model_download_file_lock_acquire_timeout: Timeout for package and artifact locks.
+        verify_hash_while_download: Whether to verify downloaded artifact digests.
+        download_files_without_hash: Whether unhashed remote artifacts are permitted.
+        on_file_created: Optional callback for new cache files.
+        on_file_renamed: Optional callback for atomically promoted files.
+        on_symlink_created: Optional callback for new artifact and dependency links.
+        on_symlink_deleted: Optional callback for removed cache links.
+        use_auto_resolution_cache: Whether to record a successful resolution.
+        requested_model_id: Original model identifier, including an alias if supplied.
+        api_key: Effective credential used for cache attribution.
+        content_addressed_artifact_cache: Optional shared cache for verified blobs.
+        refresh_model_package: Internal callback to refresh artifact URLs once after a 403.
+
+    Returns:
+        Loaded model and its package cache directory.
+    """
     if not isinstance(model_id, str) or not model_id.strip():
         raise CorruptedModelPackageError(
             message="Cannot initialize a model without a canonical model identity.",
@@ -3246,6 +3419,7 @@ def initialize_model(
             )
             try:
                 return initialize_model(
+                    refresh_model_package=refresh_model_package,
                     model_id=model_id,
                     model_architecture=model_architecture,
                     task_type=task_type,
@@ -3341,35 +3515,58 @@ def initialize_model(
             declarations=package_artifact_declarations,
         )
         os.makedirs(model_package_cache_dir, exist_ok=True)
-        files_specs = [
-            (artefact.file_handle, artefact.download_url, artefact.md5_hash)
-            for artefact in model_package.package_artefacts
-            if isinstance(artefact, FileDownloadSpecs)
-        ]
-        file_specs_with_hash = [spec for spec in files_specs if spec[2] is not None]
-        file_specs_without_hash = [spec for spec in files_specs if spec[2] is None]
-        shared_blobs_dir = generate_shared_blobs_path()
-        shared_files_mapping = download_files_to_directory(
-            target_dir=shared_blobs_dir,
-            files_specs=file_specs_with_hash,
-            file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-            verify_hash_while_download=verify_hash_while_download,
-            download_files_without_hash=download_files_without_hash,
-            content_addressed_artifact_cache=content_addressed_artifact_cache,
-            name_after="md5_hash",
-            on_file_created=on_file_created,
-            on_file_renamed=on_file_renamed,
-        )
-        model_specific_files_mapping = download_files_to_directory(
-            target_dir=model_package_cache_dir,
-            files_specs=file_specs_without_hash,
-            file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
-            verify_hash_while_download=verify_hash_while_download,
-            download_files_without_hash=download_files_without_hash,
-            content_addressed_artifact_cache=content_addressed_artifact_cache,
-            on_file_created=on_file_created,
-            on_file_renamed=on_file_renamed,
-        )
+        # The downloader joins all workers and removes partial files before
+        # raising. Keep recovery inside the package lock and outside its worker
+        # pools so simultaneous range/file failures share one refresh budget.
+        for download_attempt in range(2):
+            try:
+                files_specs = [
+                    (artefact.file_handle, artefact.download_url, artefact.md5_hash)
+                    for artefact in model_package.package_artefacts
+                    if isinstance(artefact, FileDownloadSpecs)
+                ]
+                file_specs_with_hash = [
+                    spec for spec in files_specs if spec[2] is not None
+                ]
+                file_specs_without_hash = [
+                    spec for spec in files_specs if spec[2] is None
+                ]
+                shared_blobs_dir = generate_shared_blobs_path()
+                shared_files_mapping = download_files_to_directory(
+                    target_dir=shared_blobs_dir,
+                    files_specs=file_specs_with_hash,
+                    file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                    verify_hash_while_download=verify_hash_while_download,
+                    download_files_without_hash=download_files_without_hash,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
+                    name_after="md5_hash",
+                    on_file_created=on_file_created,
+                    on_file_renamed=on_file_renamed,
+                )
+                model_specific_files_mapping = download_files_to_directory(
+                    target_dir=model_package_cache_dir,
+                    files_specs=file_specs_without_hash,
+                    file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                    verify_hash_while_download=verify_hash_while_download,
+                    download_files_without_hash=download_files_without_hash,
+                    content_addressed_artifact_cache=content_addressed_artifact_cache,
+                    on_file_created=on_file_created,
+                    on_file_renamed=on_file_renamed,
+                )
+                break
+            except _ArtifactDownloadForbiddenError as error:
+                if download_attempt or refresh_model_package is None:
+                    raise
+
+                LOGGER.warning(
+                    "Artifact download recovery attempt 1/1 for model %s, "
+                    "package %s: %s; refreshing metadata before retrying.",
+                    model_id,
+                    model_package.package_id,
+                    error,
+                )
+                time.sleep(1.0)
+                model_package = refresh_model_package(model_package)
         symlinks_mapping = create_symlinks_to_shared_blobs(
             model_dir=model_package_cache_dir,
             shared_files_mapping=shared_files_mapping,

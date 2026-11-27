@@ -5,7 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import numpy as np
@@ -30,6 +30,10 @@ from roboflow_workflows.core_steps.common.workload_presets import (
     COOLDOWN_ACTUAL_RESTRICTION,
 )
 from roboflow_workflows.core_steps.sinks.noop import disabled_sink_message
+from roboflow_workflows.core_steps.sinks.roboflow.vision_events.v1 import (
+    _api_key_safe_raise_for_status,
+    _build_cloud_request_headers,
+)
 from roboflow_workflows.environment import API_BASE_URL
 from roboflow_workflows.execution_engine.constants import (
     CLASS_NAMES_KEY,
@@ -156,13 +160,31 @@ creating structured events that can be queried, filtered, and visualized in the 
 dashboard.
 
 1. Optionally uploads an input image and/or output image (visualization) to the Vision Events
-   image storage via the public API
+   image storage via the public API, plus any extra images (each stored under its own label,
+   without annotations)
 2. Converts model predictions (object detection, classification, instance segmentation, or
    keypoint detection) into the Vision Events annotation format and attaches them to the
    input image
 3. Creates a vision event with the specified event type, use case, event data,
    and custom metadata
-4. Supports fire-and-forget mode for non-blocking execution
+4. Enforces a built-in rate limit (`cooldown_seconds`, default 1 second) so
+   high-frequency video workflows do not flood the API with an event per frame
+5. Supports fire-and-forget mode for non-blocking execution
+
+## Rate Limiting
+
+Video workflows can run many times per second, which by default would send an event
+(and its images) for every frame. To prevent this, the block enforces a cooldown
+between consecutive events: at most one event per second is sent by default. Events
+triggered during the cooldown period are dropped and the `throttling_status` output
+is set to `True`.
+
+Adjust `cooldown_seconds` to your needs, or set it to `0` to disable rate limiting
+entirely (e.g. for intentionally bursty use cases). The cooldown timer lives in the
+block instance, so it throttles long-lived executions such as video processing with
+InferencePipeline. Workflows served over HTTP (e.g. `/workflows/run`) create fresh
+block instances per request, so the cooldown does not throttle across separate HTTP
+calls.
 
 ## Deployment Modes
 
@@ -238,6 +260,18 @@ class BlockManifest(WorkflowBlockManifest):
         "block). Displayed as the primary image in the Vision Events dashboard.",
         examples=["$steps.visualization.image"],
         json_schema_extra={"always_visible": True},
+    )
+    extra_images: Dict[
+        Annotated[str, Field(min_length=1)], Selector(kind=[IMAGE_KIND])
+    ] = Field(
+        default_factory=dict,
+        title="Extra Images",
+        description="Additional images keyed by a non-empty label, such as raw_crop. "
+        "Each image is stored under its label without annotations. Omit this field "
+        "or use an empty mapping to send the event without extra images. If any "
+        "configured image selector resolves to no image, the workflow skips the "
+        "event for that frame.",
+        examples=[{"raw_crop": "$steps.cropping.crops"}],
     )
     predictions: Optional[
         Selector(
@@ -609,6 +643,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
         # Appended last on purpose: inserting it earlier would silently
         # rebind any positional caller's arguments.
         value_base_units: Optional[Union[int, float]] = None,
+        extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
     ) -> BlockResult:
         if self._disable_sinks or disable_sink:
             return {
@@ -671,6 +706,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 event_data=event_data,
                 custom_metadata=custom_metadata,
                 value_base_units=value_base_units,
+                extra_images=extra_images,
             )
         else:
             if self._api_key is None:
@@ -693,6 +729,7 @@ class RoboflowVisionEventsBlockV1(WorkflowBlock):
                 event_data=event_data,
                 custom_metadata=custom_metadata,
                 value_base_units=value_base_units,
+                extra_images=extra_images,
             )
 
         self._last_event_fired = datetime.now()
@@ -864,6 +901,7 @@ def _execute_vision_event(
     custom_metadata: Dict[str, Any],
     platform_client: Optional[RoboflowPlatformClient] = None,
     value_base_units: Optional[int] = None,
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
 ) -> Tuple[bool, str, str]:
     try:
         # Step 1: Convert predictions to vision events annotation format
@@ -894,6 +932,17 @@ def _execute_vision_event(
             image_entry.update(annotations)
 
         images_payload: List[dict] = [image_entry] if image_entry else []
+        # Extra images are unannotated originals (e.g. a clean crop kept for
+        # relabelling), so they keep the input image's quality.
+        for label, image in _present_extra_images(extra_images):
+            extra_source_id, _ = _upload_image(
+                api_base_url,
+                api_key,
+                image,
+                jpeg_quality=95,
+                platform_client=platform_client,
+            )
+            images_payload.append({"sourceId": extra_source_id, "label": label})
 
         # Step 3: Build and send event
         payload = _build_event_payload(
@@ -931,6 +980,7 @@ def _execute_local_event(
     event_data: Dict[str, Any],
     custom_metadata: Dict[str, Any],
     value_base_units: Optional[int] = None,
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]] = None,
 ) -> Tuple[bool, str, str]:
     """Send an event to a local Event Ingestion Service (v2 API).
 
@@ -955,6 +1005,8 @@ def _execute_local_event(
             image_entry.update(annotations)
 
         images_payload: List[dict] = [image_entry] if image_entry else []
+        for label, image in _present_extra_images(extra_images):
+            images_payload.append({"base64Image": image.base64_image, "label": label})
 
         payload: Dict[str, Any] = {
             "inference_timestamp": datetime.now(timezone.utc).isoformat(),
@@ -979,6 +1031,19 @@ def _execute_local_event(
             f"Error writing event to event store: {type(error).__name__}: {error}",
             "",
         )
+
+
+def _present_extra_images(
+    extra_images: Optional[Dict[str, Optional[WorkflowImageData]]],
+) -> List[Tuple[str, WorkflowImageData]]:
+    """Return the extra images that resolved to an image, as (label, image) pairs."""
+    present_images = [
+        (label, image)
+        for label, image in (extra_images or {}).items()
+        if image is not None
+    ]
+
+    return present_images
 
 
 def _send_local_event(
@@ -1211,11 +1276,13 @@ def _upload_image(
     )
     response = requests.post(
         platform_client.wrap_url(f"{api_base_url}/vision-events/upload"),
-        headers={"Authorization": f"Bearer {api_key}"},
+        headers=_build_cloud_request_headers(
+            api_key=api_key, platform_client=platform_client
+        ),
         files={"file": ("image.jpg", image_bytes, "image/jpeg")},
         timeout=30,
     )
-    response.raise_for_status()
+    _api_key_safe_raise_for_status(response=response)
     result = response.json()
     return result["sourceId"], result.get("url", "")
 
@@ -1269,14 +1336,15 @@ def _send_event(
         ensure_roboflow_api_access(platform_client)
         response = requests.post(
             platform_client.wrap_url(f"{api_base_url}/vision-events"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=_build_cloud_request_headers(
+                api_key=api_key,
+                platform_client=platform_client,
+                explicit_headers={"Content-Type": "application/json"},
+            ),
             json=payload,
             timeout=30,
         )
-        response.raise_for_status()
+        _api_key_safe_raise_for_status(response=response)
         return False, "Vision event sent successfully"
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response is not None else "unknown"
