@@ -23,7 +23,7 @@ def test_runtime_upload_is_preflighted_and_stages_only_missing_files():
         i for i, step in enumerate(steps) if "publish.sh verify" in step.get("run", "")
     )
     assert prepare < upload < verify
-    assert steps[upload]["with"]["packages-dir"] == "release-upload/"
+    assert steps[upload]["with"]["packages-dir"] == "dist/runtime-upload/"
     assert "skip-existing" not in steps[upload]["with"]
 
 
@@ -42,6 +42,7 @@ import zipfile
 
 import pytest
 from click.testing import CliRunner
+from packaging.requirements import Requirement
 
 sys.path.insert(0, str(ROOT / ".release/pypi"))
 SPEC = importlib.util.spec_from_file_location(
@@ -87,47 +88,136 @@ def test_zero_publication_budget_stops_before_network(
     assert api.calls == []
 
 
-@pytest.mark.parametrize("profile", list(publish.PROJECTS))
-def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
-    tmp_path, monkeypatch, profile
-):
+def _build_pins():
+    pins = {}
+    for line in (
+        (ROOT / ".release/pypi/build-requirements.txt").read_text().splitlines()
+    ):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+
+        requirement = Requirement(line)
+        specs = list(requirement.specifier)
+        assert len(specs) == 1 and specs[0].operator == "=="
+        pins[requirement.name] = specs[0].version
+    return pins
+
+
+def _standalone_build(checkout, *, profile, models_make=False):
     project = publish.PROJECTS[profile]
     shutil.copytree(
         ROOT / project,
-        tmp_path / project,
+        checkout / project,
         ignore=shutil.ignore_patterns(".venv", "dist", "build", "*.egg-info", "tests"),
     )
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("EXPECTED_VERSION", raising=False)
-    monkeypatch.delenv("EXPECTED_REVISION", raising=False)
-    version = publish._version(profile)
-    if profile == "inference-models":
+    constraints = checkout / ".release/pypi/build-requirements.txt"
+    constraints.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / ".release/pypi/build-requirements.txt", constraints)
+    if profile == "inference-models" and not models_make:
         workflow = yaml.safe_load(
             (ROOT / ".github/workflows/publish.pypi.inference_exp.yml").read_text()
         )
         command = next(
             line.strip()
             for step in workflow["jobs"]["build"]["steps"]
+            if step.get("name") == "🔨 Build package"
             for line in step.get("run", "").splitlines()
             if "uv build" in line
         )
-        directory = tmp_path / project / "dist"
+        directory = checkout / project / "dist"
     else:
         command = next(
             line.split("&&", 1)[1].strip()
             for line in (ROOT / "Makefile").read_text().splitlines()
-            if line.strip().startswith(f"cd {project} && uv build ")
+            if line.strip().startswith(f"cd {project} && ") and "uv build " in line
         )
-        directory = tmp_path / "dist"
+        directory = checkout / "dist"
 
-    # Use the real publisher command and backend, with installed build tools offline.
+    argv = shlex.split(command.replace("${PYTHON}", sys.executable))
+    argv.extend(["--offline", "--no-index", "--find-links", "/build-wheels"])
+    return argv, directory, constraints
+
+
+@pytest.mark.parametrize(
+    "profile,backend",
+    [(profile, "setuptools") for profile in publish.PROJECTS]
+    + [
+        (profile, backend)
+        for profile in ("roboflow-workflows", "streamvision")
+        for backend in ("wheel", "packaging")
+    ],
+)
+def test_uv_isolated_build_rejects_unsatisfiable_backend_pin(
+    tmp_path, profile, backend
+):
+    argv, _, constraints = _standalone_build(tmp_path, profile=profile)
+    constraints.write_text(
+        constraints.read_text().replace(
+            f"{backend}=={_build_pins()[backend]}", f"{backend}==0.0.0"
+        )
+    )
     result = subprocess.run(
-        [*shlex.split(command), "--offline", "--no-build-isolation"],
-        cwd=tmp_path / project,
+        argv, cwd=tmp_path / publish.PROJECTS[profile], capture_output=True, text=True
+    )
+    assert result.returncode != 0, "Build ignored the configured backend constraint"
+    assert f"{backend}==0.0.0" in result.stderr
+
+
+def test_models_make_build_rejects_unsatisfiable_backend_pin(tmp_path):
+    argv, _, constraints = _standalone_build(
+        tmp_path, profile="inference-models", models_make=True
+    )
+    constraints.write_text("setuptools==0.0.0\n")
+    result = subprocess.run(
+        argv, cwd=tmp_path / "inference_models", capture_output=True, text=True
+    )
+    assert result.returncode != 0, "Models Make build ignored the backend constraint"
+    assert "setuptools==0.0.0" in result.stderr
+
+
+@pytest.mark.parametrize("profile", list(publish.PROJECTS))
+def test_real_uv_output_passes_strict_prepare_and_rejects_incomplete_builds(
+    tmp_path, monkeypatch, profile
+):
+    argv, directory, _ = _standalone_build(tmp_path, profile=profile)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("EXPECTED_VERSION", raising=False)
+    monkeypatch.delenv("EXPECTED_REVISION", raising=False)
+    version = publish._version(profile)
+    result = subprocess.run(
+        argv, cwd=tmp_path / publish.PROJECTS[profile], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    with zipfile.ZipFile(next(directory.glob("*.whl"))) as archive:
+        metadata = next(
+            name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")
+        )
+        assert (
+            f"Generator: setuptools ({_build_pins()['setuptools']})"
+            in archive.read(metadata).decode()
+        )
+
+    # Repeatability in this fixed environment, not cross-platform reproducibility.
+    retry = tmp_path / "repeat"
+    retry_argv, retry_directory, _ = _standalone_build(retry, profile=profile)
+    repeated = subprocess.run(
+        retry_argv,
+        cwd=retry / publish.PROJECTS[profile],
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert repeated.returncode == 0, repeated.stdout + repeated.stderr
+    for path in directory.iterdir():
+        original = publish._artifact(
+            path.read_bytes(), filename=path.name, version=version
+        )
+        rebuilt = publish._artifact(
+            (retry_directory / path.name).read_bytes(),
+            filename=path.name,
+            version=version,
+        )
+        assert original["content_sha256"] == rebuilt["content_sha256"]
     calls = []
 
     def absent(url, **kwargs):
@@ -881,41 +971,34 @@ def test_runtime_modes_and_dependency_gates_precede_recovery():
         Loader=yaml.BaseLoader,
     )
     job = config["jobs"]["publish_runtime"]
-    assert "prepare_dependencies" in job["needs"]
-    assert "validation" in config["jobs"]["prepare_dependencies"]["needs"]
-    for job_name in (
-        "prepare_dependencies",
-        "publish_runtime",
-        "docker",
-        "complete",
-        "notify-svis",
-    ):
-        guarded = config["jobs"][job_name]
-        assert "!cancelled()" in guarded["if"]
-        needs = guarded["needs"]
-        if isinstance(needs, str):
-            needs = [needs]
-        for dependency in needs:
-            assert f"needs.{dependency}.result == 'success'" in guarded["if"], job_name
+    assert "inputs.packages != 'dependencies'" in job["if"]
+    assert "inputs.publish == true" in job["if"]
     assert job["concurrency"]["cancel-in-progress"] == "false"
     steps = job["steps"]
     prepare = next(
         i for i, step in enumerate(steps) if "publish.sh prepare" in step.get("run", "")
     )
-    gate = next(
+    gates = [
         i
         for i, step in enumerate(steps)
-        if "dependencies.sh verify" in step.get("run", "")
-    )
-    assert gate < prepare
-    assert "gate-sdk" in steps[gate]["run"]
+        if "gate-sdk" in step.get("run", "")
+        or "dependencies.sh verify" in step.get("run", "")
+    ]
+    assert len(gates) == 2 and max(gates) < prepare
     assert any(
-        step.get("with", {}).get("path") == "release-state/runtime-receipt.json"
+        "always()" in step.get("if", "")
+        and "runtime-publication" in step.get("with", {}).get("name", "")
         for step in steps
     )
-    assert not any(
-        "dependencies.sh coordinate" in step.get("run", "")
-        for step in config["jobs"]["prepare_dependencies"]["steps"]
+    coordinator = config["jobs"]["prepare_dependencies"]["steps"]
+    coordinate = next(
+        step
+        for step in coordinator
+        if "dependencies.sh coordinate" in step.get("run", "")
+    )
+    assert (
+        coordinate["if"]
+        == "${{ github.event_name == 'release' || inputs.publish == true }}"
     )
 
 
@@ -927,10 +1010,9 @@ def test_contract_workflow_covers_new_helper_and_tests():
     for trigger in ("pull_request", "push"):
         assert ".github/scripts/test_pypi_publish.py" in config["on"][trigger]["paths"]
     run = next(
-        step.get("run", step.get("with", {}).get("command", ""))
+        step["run"]
         for step in config["jobs"]["contracts"]["steps"]
-        if "python -m pytest"
-        in step.get("run", step.get("with", {}).get("command", ""))
+        if "python -m pytest" in step.get("run", "")
     )
     assert "docker run" in run
     assert run.count(".release/pypi/publish.py") == 2

@@ -23,7 +23,10 @@ from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import
     resolve_keypoint_skeletons,
 )
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    REFERENCE_SKELETONS_INTRO,
     SHARED_REFERENCE_PARTS_CACHE,
+    TARGET_IMAGE_INTRO,
+    TARGET_ONLY_RULE,
     ReferenceExample,
 )
 from roboflow_workflows.core_steps.loader import KINDS_SERIALIZERS
@@ -1087,6 +1090,100 @@ def test_keypoint_detection_request_constrains_the_answer() -> None:
     keypoints = schema["properties"]["plate"]["items"]["properties"]["keypoints"]
     assert keypoints["required"] == ["TL", "TR", "BR", "BL"]
     assert "tools" not in payload
+
+
+def _keypoint_reference_example(keypoints: Optional[List[dict]] = None) -> dict:
+    example = _reference_example(box_class="plate")
+    example["annotations"][0]["keypoints"] = (
+        keypoints
+        if keypoints is not None
+        else [
+            {"class": "TL", "x": 30, "y": 40},
+            {"class": "TR", "x": 70, "y": 40},
+            {"class": "BR", "x": 70, "y": 60, "occluded": True},
+        ]
+    )
+    return example
+
+
+def test_keypoint_detection_manifest_checks_reference_keypoints_against_the_schema() -> (
+    None
+):
+    with pytest.raises(ValueError, match="'center' is not a keypoint of the skeleton"):
+        BlockManifest.model_validate(
+            _keypoint_manifest_data(
+                reference_examples=[
+                    _keypoint_reference_example([{"class": "center", "x": 50, "y": 50}])
+                ]
+            )
+        )
+
+
+def test_keypoint_detection_manifest_leaves_keypoint_names_to_a_schema_selector() -> (
+    None
+):
+    # when
+    manifest = BlockManifest.model_validate(
+        _keypoint_manifest_data(
+            keypoint_schema="$inputs.keypoint_schema",
+            reference_examples=[
+                _keypoint_reference_example([{"class": "center", "x": 50, "y": 50}])
+            ],
+        )
+    )
+
+    # then
+    keypoints = manifest.reference_examples[0].annotations[0].keypoints
+    assert keypoints[0].class_name == "center"
+
+
+def test_keypoint_detection_manifest_rejects_reference_boxes_without_keypoints() -> (
+    None
+):
+    with pytest.raises(ValueError, match="has no `keypoints`"):
+        BlockManifest.model_validate(
+            _keypoint_manifest_data(
+                reference_examples=[_reference_example(box_class="plate")]
+            )
+        )
+
+
+def test_keypoint_detection_request_sends_skeleton_references_before_the_target() -> (
+    None
+):
+    # when
+    payload = _run_keypoint_prompting(
+        reference_examples=[_keypoint_reference_example()]
+    )
+
+    # then
+    parts = payload["contents"]["parts"]
+    assert parts[0]["text"].startswith(REFERENCE_SKELETONS_INTRO)
+    assert parts[0]["text"].endswith(
+        'Keypoints of "plate" by number: 1 TL, 2 TR, 3 BR, 4 BL.'
+    )
+    assert parts[1] == {"text": "Reference image 1:"}
+    assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[3] == {"text": TARGET_IMAGE_INTRO}
+    assert parts[4]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[5]["text"].startswith(
+        "Find every instance of these classes in the target image"
+    )
+    assert parts[5]["text"].endswith(TARGET_ONLY_RULE)
+    assert len(parts) == 6
+
+
+def test_keypoint_detection_request_rejects_reference_keypoints_off_the_skeleton() -> (
+    None
+):
+    # given
+    keypoints = [{"class": "TL", "x": 30, "y": 40}, {"class": "TL", "x": 31, "y": 41}]
+
+    # when / then
+    with pytest.raises(ValueError, match="'TL' is given more times"):
+        _run_keypoint_prompting(
+            reference_examples=[_keypoint_reference_example(keypoints)]
+        )
 
 
 def test_keypoint_detection_request_rejects_code_execution() -> None:

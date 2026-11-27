@@ -2,11 +2,18 @@
 
 ## Unreleased
 
+- Retry a Roboflow artifact download once after HTTP 403 by refreshing its signed
+  URL, including through `SECURE_GATEWAY`, while preserving the selected package
+  contract and cached files.
+
+## `0.39.10`
+
 ### Added
 
 - [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
   platform, single-label and multi-label, with their own default confidence
-  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). ONNX and PyTorch packages
+  also support image embeddings. See the
   [model page](models/convnext-classification.md).
 - The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
   `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
@@ -44,6 +51,14 @@
   installed next to packages that need it, such as Torch-TensorRT 2.15
   (`filelock>=4.2.1`). filelock 4.0 changed only `SoftReadWriteLock`;
   `inference-models` uses `FileLock`.
+
+### Fixed
+
+- Loading a TensorRT engine while other threads run TensorRT models no longer
+  freezes the whole process. Engines are deserialized with TensorRT's built-in
+  logger instead of a Python one, so a TensorRT call never waits for the GIL.
+  TensorRT runtime messages now go to the process output, and a corrupted engine
+  error points there instead of embedding them.
 
 ## `0.39.9`
 

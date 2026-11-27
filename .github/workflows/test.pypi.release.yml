@@ -1,21 +1,8 @@
 name: Test PyPI release contracts
 on:
-  workflow_call:
-    inputs:
-      release_source:
-        description: Exact prepared release commit; empty for normal CI
-        type: string
-        default: ''
   pull_request:
     paths:
-      - .release/**
-      - .github/scripts/test_release_flow.py
-      - .github/scripts/release*.py
-      - .github/scripts/retry.sh
-      - .github/actions/retry-tests/**
-      - .github/actions/determine-tags/**
-      - tests/inference/unit_tests/deployment/test_determine_tags_security.py
-      - .github/workflows/release.image.yml
+      - .release/pypi/**
       - .github/workflows/publish.pypi*.yml
       - .github/workflows/test.pypi.release.yml
       - .github/workflows/*inference_sdk*.yml
@@ -27,9 +14,19 @@ on:
       - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - .github/scripts/test_pypi_publish.py
+      - .github/scripts/test_pypi_recovery.py
+      - .github/scripts/test_pypi_candidate_ownership.py
+      - .github/scripts/test_pypi_build_tools.py
+      - .github/scripts/test_pypi_system_python.py
+      - .github/docker/Dockerfile.pypi-system-python-tests
+      - docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0
+      - docker/dockerfiles/Dockerfile.onnx.gpu
       - inference_models/pyproject.toml
+      - inference_models/uv.lock
       - workflows/pyproject.toml
+      - workflows/uv.lock
       - stream_vision/pyproject.toml
+      - stream_vision/uv.lock
       - Makefile
       - requirements/**
       - inference/core/version.py
@@ -37,14 +34,7 @@ on:
   push:
     branches: [main]
     paths:
-      - .release/**
-      - .github/scripts/test_release_flow.py
-      - .github/scripts/release*.py
-      - .github/scripts/retry.sh
-      - .github/actions/retry-tests/**
-      - .github/actions/determine-tags/**
-      - tests/inference/unit_tests/deployment/test_determine_tags_security.py
-      - .github/workflows/release.image.yml
+      - .release/pypi/**
       - .github/workflows/publish.pypi*.yml
       - .github/workflows/test.pypi.release.yml
       - .github/workflows/*inference_sdk*.yml
@@ -56,9 +46,19 @@ on:
       - .github/docker/Dockerfile.pypi-workflow-tests
       - .github/scripts/test_pypi_dependencies.py
       - .github/scripts/test_pypi_publish.py
+      - .github/scripts/test_pypi_recovery.py
+      - .github/scripts/test_pypi_candidate_ownership.py
+      - .github/scripts/test_pypi_build_tools.py
+      - .github/scripts/test_pypi_system_python.py
+      - .github/docker/Dockerfile.pypi-system-python-tests
+      - docker/dockerfiles/Dockerfile.onnx.jetson.7.2.0
+      - docker/dockerfiles/Dockerfile.onnx.gpu
       - inference_models/pyproject.toml
+      - inference_models/uv.lock
       - workflows/pyproject.toml
+      - workflows/uv.lock
       - stream_vision/pyproject.toml
+      - stream_vision/uv.lock
       - Makefile
       - requirements/**
       - inference/core/version.py
@@ -69,50 +69,42 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-test.pypi.release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.release_source != '' && 154 || 20 }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.release_source || github.sha }}
           persist-credentials: false
-      - name: "Test publication conditions and regression mutations in Docker [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 62 || 20 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1200'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            docker build --tag inference-pypi-workflow-tests --file .github/docker/Dockerfile.pypi-workflow-tests .github
-            image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-workflow-tests)
-            echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
-            docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" "$image_id"
-      - name: "Test package inventories and registry failure boundaries in Docker [release-test]"
-        timeout-minutes: ${{ inputs.release_source != '' && 62 || 20 }}
-        uses: ./.github/actions/retry-tests
-        with:
-          timeout-seconds: '1200'
-          attempts: ${{ inputs.release_source != '' && 3 || 1 }}
-          command: |
-            docker build --tag inference-pypi-tests --file .release/pypi/Dockerfile .release/pypi
-            image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-tests)
-            echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
-            docker run --rm -e SOURCE_REVISION="$GITHUB_SHA" \
-              -v "$GITHUB_WORKSPACE:/work" -w /work "$image_id" \
-              sh -c 'python -m black --check .release/pypi/flow.py .release/pypi/smoke.py .release/pypi/versioning.py .github/scripts/release_images.py .github/scripts/release_image_smoke.py .github/scripts/release_image_finalize.py .github/scripts/test_release_flow.py .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py &&
-                python -m isort --check-only .release/pypi/flow.py .release/pypi/smoke.py .release/pypi/versioning.py .github/scripts/release_images.py .github/scripts/release_image_smoke.py .github/scripts/release_image_finalize.py .github/scripts/test_release_flow.py .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py &&
-                python -m pytest .github/scripts/test_release_flow.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py -v &&
-                python -m pytest --confcutdir=tests/inference/unit_tests/deployment tests/inference/unit_tests/deployment/test_determine_tags_security.py -v'
-      - name: Retain RC attempt exit codes
-        if: ${{ always() && inputs.release_source != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: rc-attempts-test.pypi.release-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/release-test-attempts.*/attempts.txt
-          if-no-files-found: warn
+      - name: Test publication conditions and regression mutations in Docker
+        run: |
+          docker build --tag inference-pypi-workflow-tests --file .github/docker/Dockerfile.pypi-workflow-tests .github
+          image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-workflow-tests)
+          echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" "$image_id"
+      - name: Test package inventories and registry failure boundaries in Docker
+        run: |
+          docker build --tag inference-pypi-tests --file .release/pypi/Dockerfile .release/pypi
+          image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-tests)
+          echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
+          docker run --rm --network none -e PIP_NO_INDEX=1 -e PIP_FIND_LINKS=/build-wheels -e SOURCE_REVISION="$GITHUB_SHA" \
+            -v "$GITHUB_WORKSPACE:/work" -w /work "$image_id" \
+            sh -c 'python -m black --check .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .release/pypi/candidate.py .release/pypi/sdk_smoke.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_recovery.py .github/scripts/test_pypi_candidate_ownership.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
+              python -m isort --check-only .release/pypi/release.py .release/pypi/dependencies.py .release/pypi/publish.py .release/pypi/candidate.py .release/pypi/sdk_smoke.py .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_recovery.py .github/scripts/test_pypi_candidate_ownership.py .github/scripts/test_pypi_build_tools.py .github/scripts/test_pypi_system_python.py &&
+              python -m pytest .github/scripts/test_pypi_build_tools.py -v &&
+              python -m pytest .github/scripts/test_pypi_release.py .github/scripts/test_pypi_dependencies.py .github/scripts/test_pypi_publish.py .github/scripts/test_pypi_recovery.py .github/scripts/test_pypi_candidate_ownership.py -v'
+      - name: Test the Jetson package build on protected system Python
+        run: |
+          docker build --tag inference-pypi-system-python-tests --file .github/docker/Dockerfile.pypi-system-python-tests .
+          image_id=$(docker image inspect --format '{{.Id}}' inference-pypi-system-python-tests)
+          echo "Source revision: $GITHUB_SHA; Docker image: $image_id"
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -w /work "$image_id" \
+            python -m pytest .github/scripts/test_pypi_system_python.py -v
+      - name: Smoke the exact SDK wheel in the existing SDK test image
+        run: |
+          bash .release/pypi/release.sh build-sdk
+          bash .github/scripts/run_sdk_tests.sh retained 3.12

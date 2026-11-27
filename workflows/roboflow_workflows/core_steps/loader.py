@@ -1217,6 +1217,16 @@ else:
     from roboflow_workflows.core_steps.transformations.dynamic_crop.v1_tensor import (
         DynamicCropBlockV1,
     )
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v2 import (
+        DynamicCropBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v2_tensor import (
+        DynamicCropBlockV2,
+    )
+
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.transformations.dynamic_zones.v1 import (
         DynamicZonesBlockV1,
@@ -1785,6 +1795,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
     blocks = [
         AbsoluteStaticCropBlockV1,
         DynamicCropBlockV1,
+        DynamicCropBlockV2,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
         PerClassConfidenceFilterBlockV1,
