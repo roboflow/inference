@@ -175,6 +175,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     camera_password: Union[Selector(kind=[SECRET_KIND]), str] = Field(
         description="Camera password for ONVIF authentication. Should be stored as a secret for security.",
+        json_schema_extra={"private": True},
     )
     movement_type: Literal["Follow", "Go To Preset"] = Field(
         default="Follow",

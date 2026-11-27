@@ -458,6 +458,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Password for MQTT broker authentication.",
         examples=["$inputs.mqtt_password"],
+        json_schema_extra={"private": True},
     )
     fail_fast: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
