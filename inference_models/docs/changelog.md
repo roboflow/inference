@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Added an opt-in RF-DETR ONNX attention rewrite for the CoreML MLProgram GPU
+  memory growth reported in #3302. Set
+  `INFERENCE_MODELS_COREML_KEY_SCALE_WORKAROUND=true` to try the temporary
+  workaround on affected Apple Silicon deployments.
 - Retry a Roboflow artifact download once after HTTP 403 by refreshing its signed
   URL, including through `SECURE_GATEWAY`, while preserving the selected package
   contract and cached files.
