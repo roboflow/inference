@@ -4,15 +4,19 @@ import math
 import threading
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
-from typing import Callable, List, Literal, Optional, Type, Union
+from typing import Callable, List, Literal, Optional, Tuple, Type, Union
+from uuid import uuid4
 from weakref import finalize
 
 from pydantic import ConfigDict, Field
 from roboflow_workflows.core_steps.common.entities import StepExecutionMode
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     normalise_class_names,
+)
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.entities import (
+    _SharedTimeline,
 )
 from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
     MAX_TRACKED_VIDEOS,
@@ -50,6 +54,8 @@ from inference_models.models.base.action_recognition import (
 )
 from inference_models.models.base.action_recognition import VideoSampling
 
+COVERAGE_HISTORY_SECONDS = 900
+
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
@@ -81,7 +87,9 @@ display file-processing progress when the frame count is known, use frame_number
 and total_frames from the video metadata. Both marks update even if no actions
 are detected. Earlier gaps can remain after failed, skipped, or non-overlapping
 windows (continuous coverage without sub-sample gaps requires stride < window),
-and overlapping windows can still revise earlier predictions.
+and overlapping windows can still revise earlier predictions. covered_frame_ranges
+records recent successful windows, including quiet ones. source_fps is the
+pinned source rate, and stream_generation changes when model state resets.
 
 On a video file that reports its frame count, the last frame can trigger a
 classification before the next scheduled call. This call uses the current
@@ -244,10 +252,25 @@ class _WindowWorker:
 class _ActionRecognitionBookkeeping(V1Bookkeeping):
     analyzed_from_frame: Optional[int] = None
     analyzed_until_frame: Optional[int] = None
+    covered_frame_ranges: Tuple[Tuple[int, int], ...] = ()
+    stream_generation: str = field(default_factory=lambda: uuid4().hex)
     tail_flushed: bool = False
     pending: Optional[_WindowCall] = None
     deferred_window_end: Optional[int] = None
     background: bool = False
+
+    def record_successful_window(self, *, start: int, end: int) -> None:
+        """Retain successful coverage across the display history and maximum delay."""
+        self.analyzed_from_frame = start
+        self.analyzed_until_frame = end
+        assert self.source_fps is not None
+        oldest = end - math.ceil(COVERAGE_HISTORY_SECONDS * self.source_fps)
+        ranges = [pair for pair in self.covered_frame_ranges if pair[1] >= oldest]
+        # Windows for each stream complete in source order.
+        while ranges and start <= ranges[-1][1] + 1:
+            start = min(start, ranges.pop()[0])
+
+        self.covered_frame_ranges = (*ranges, (start, end))
 
 
 class BlockManifest(V1Manifest):
@@ -652,8 +675,9 @@ class ActionRecognitionModelBlockV2(ActionRecognitionModelBlockV1):
             sample_stride=call.sampling_stride,
             frame_limit=call.frame_limit,
         )
-        bookkeeping.analyzed_from_frame = call.first_covered_frame()
-        bookkeeping.analyzed_until_frame = call.last_covered_frame()
+        bookkeeping.record_successful_window(
+            start=call.first_covered_frame(), end=call.last_covered_frame()
+        )
 
     def _collect_finished_call(self, bookkeeping: _ActionRecognitionBookkeeping) -> str:
         """Merge a finished background call on the step thread.
@@ -740,10 +764,11 @@ class ActionRecognitionModelBlockV2(ActionRecognitionModelBlockV1):
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
     ) -> dict:
-        # Snapshot entries were validated at classification time. Copy the list
-        # so edits to its membership cannot affect another frame's result.
         predictions = ActionRecognitionResult.model_construct(
-            timeline=list(bookkeeping.timeline_snapshot),
+            timeline=_SharedTimeline(bookkeeping.timeline_snapshot),
+            covered_frame_ranges=bookkeeping.covered_frame_ranges,
+            stream_generation=bookkeeping.stream_generation,
+            source_fps=bookkeeping.source_fps,
             analyzed_from_frame=bookkeeping.analyzed_from_frame,
             analyzed_until_frame=bookkeeping.analyzed_until_frame,
             error_status=error_status,

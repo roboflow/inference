@@ -368,7 +368,7 @@ def serialize_action_recognition_prediction_kind(
 def serialize_action_recognition_result_kind(
     value: ActionRecognitionResult,
 ) -> dict:
-    return value.model_dump(by_alias=True)
+    return value.model_dump(mode="json", by_alias=True)
 
 
 def serialize_wildcard_kind(value: Any) -> Any:
