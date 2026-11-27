@@ -74,6 +74,8 @@ for contributor and maintainer responsibilities.
     To count action ranges, select **Timeline** and then **Count Items** (`SequenceLength`).
     When a frame bound is still null during warm-up, its operation chain returns
     null. Subsequent operations such as **Round** run once the bound is available.
+    Query-language operations can opt in to this behavior by setting
+    `stop_chain_on_none_result = True` on their operation definition class.
 
 ### Changed
 

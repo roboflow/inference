@@ -1,4 +1,7 @@
 import pytest
+from roboflow_workflows.core_steps.common.query_language.entities.operations import (
+    NumericSequenceAggregate,
+)
 from roboflow_workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationError,
@@ -54,10 +57,17 @@ def test_sequence_join_operation_when_output_is_within_length_limit() -> None:
     assert result == "a" * 10 + ", " + "b" * 10
 
 
-def test_null_numeric_aggregate_can_be_converted_to_a_string() -> None:
+def test_numeric_aggregate_can_opt_in_to_stopping_the_chain_on_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     operations = [
         {"type": "NumericSequenceAggregate", "function": "max"},
         {"type": "ToString"},
     ]
 
     assert execute_operations(value=[], operations=operations) == "None"
+
+    monkeypatch.setattr(NumericSequenceAggregate, "stop_chain_on_none_result", True)
+
+    assert execute_operations(value=[], operations=operations) is None
+    assert execute_operations(value=[0], operations=operations) == "0"
