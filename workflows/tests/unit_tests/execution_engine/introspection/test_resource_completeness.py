@@ -16,6 +16,7 @@ Nothing here loads a model, initialises a block or contacts a model API.
 
 import json
 
+import pytest
 from roboflow_workflows.execution_engine.entities.workload import (
     ModelMetadataLookup,
     unresolved_selector_problem,
@@ -27,7 +28,6 @@ from roboflow_workflows.execution_engine.introspection.workload import (
 OBJECT_DETECTION_MODEL = "roboflow_core/roboflow_object_detection_model@v3"
 SAM2_VIDEO = "roboflow_core/segment_anything_2_video@v1"
 SAM3_VIDEO = "roboflow_core/sam3_video@v1"
-ACTION_RECOGNITION = "roboflow_core/roboflow_action_recognition_model@v1"
 
 
 class RecordingProvider:
@@ -156,7 +156,10 @@ def test_selector_fed_model_is_step_and_inventory_incomplete_without_lookup() ->
     assert provider.calls == []
 
 
-def test_streaming_video_models_are_visible_and_preloadable_stays_internal() -> None:
+@pytest.mark.parametrize("action_model_version", ["v1", "v2"])
+def test_streaming_video_models_are_visible_and_preloadable_stays_internal(
+    action_model_version: str,
+) -> None:
     # given
     definition = _definition(
         steps=[
@@ -172,7 +175,7 @@ def test_streaming_video_models_are_visible_and_preloadable_stays_internal() -> 
                 "class_names": ["person"],
             },
             {
-                "type": ACTION_RECOGNITION,
+                "type": f"roboflow_core/roboflow_action_recognition_model@{action_model_version}",
                 "name": "actions",
                 "images": "$inputs.image",
                 "model_id": "my-actions/2",

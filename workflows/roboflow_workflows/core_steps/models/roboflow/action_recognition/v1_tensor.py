@@ -15,7 +15,7 @@ from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import 
 from roboflow_workflows.execution_engine.entities.base import WorkflowImageData
 
 
-class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
+class _TensorFrameInput:
     def _extract_frame(self, image: WorkflowImageData):
         if image.is_tensor_materialised():
             frame = image.tensor_image
@@ -56,3 +56,9 @@ class ActionRecognitionModelBlockV1(_NumpyActionRecognitionModelBlockV1):
         if frame.dtype == torch.uint8:
             return resized.round_().clamp_(0, 255).to(torch.uint8)
         return resized.to(frame.dtype)
+
+
+class ActionRecognitionModelBlockV1(
+    _TensorFrameInput, _NumpyActionRecognitionModelBlockV1
+):
+    pass
