@@ -184,6 +184,86 @@ runtime. Elsewhere the `coreml` extra installs nothing, Core ML packages are not
 load through their other backends. Installing or removing coremltools changes which package a cached model resolves to
 on its next load.
 
+### ExecuTorch
+
+**A `.pte` program exported with `torch.export`, no ONNX step.**
+
+- ✅ **Pros**: Exported straight from PyTorch; the same backend runs programs lowered to TensorRT on NVIDIA GPUs or to XNNPACK on the CPU, and parts TensorRT cannot convert can run on ExecuTorch's CUDA backend in the same file
+- ⚠️ **Cons**: Local packages only for now, fixed batch size per program, a TensorRT program is tied to the GPU and TensorRT version it was built for
+- 🎯 **Best for**: Running RF-DETR models exported with `rfdetr`'s ExecuTorch export or with Torch-TensorRT (`torch_tensorrt.save(..., output_format="executorch")`)
+
+**Installation:**
+
+ExecuTorch is not installed by any extra. Install the package that matches how the program was exported:
+
+=== "uv"
+    ```bash
+    # programs that use TensorRT, alone or with ExecuTorch's CUDA backend (NVIDIA GPUs)
+    uv pip install "torch_tensorrt[executorch]"
+    # programs that use XNNPACK (CPU)
+    uv pip install "executorch>=1.6"
+    ```
+
+=== "pip"
+    ```bash
+    # programs that use TensorRT, alone or with ExecuTorch's CUDA backend (NVIDIA GPUs)
+    pip install "torch_tensorrt[executorch]"
+    # programs that use XNNPACK (CPU)
+    pip install "executorch>=1.6"
+    ```
+
+ExecuTorch 1.6 requires Python 3.11+ and `torch==2.15.0`, so install it before `inference-models`, which then keeps
+that torch and picks a matching `torchvision`. Torch-TensorRT 2.15 also requires `filelock>=4.2.1`, while
+`inference-models` pins `filelock<4`: pip cannot install both in one command, and in this order it reports the
+`filelock` conflict, but both packages work. Torch-TensorRT brings TensorRT 11 under the same `tensorrt` module as the
+`trt10` extras, so keep them in separate environments.
+
+**Supported Models**: RF-DETR object detection
+
+A package is a directory. The program takes the same normalized NCHW tensor as the ONNX export and returns raw boxes
+and class logits, so pre- and post-processing are shared with the ONNX backend. Programs exported with device-resident
+inputs get their input on the GPU they expect; others get it in host memory and copy it themselves. For an XNNPACK
+program, pass `device=torch.device("cpu")` to keep pre- and post-processing on the CPU too.
+
+```
+rfdetr-executorch-package/
+├── weights.pte             # the ExecuTorch program, for example from rfdetr's ExecuTorch export
+├── weights.ptd             # only if the program keeps data outside the .pte (the CUDA backend can)
+├── class_names.txt         # one class name per line, in the model's output order
+├── inference_config.json   # input size, resize mode and normalization used in training
+└── model_config.json       # tells AutoModel which backend runs the package
+```
+
+For a model trained with `rfdetr` at 384x384 on RGB images, `inference_config.json` is:
+
+```json
+{
+  "network_input": {
+    "training_input_size": {"height": 384, "width": 384},
+    "dynamic_spatial_size_supported": false,
+    "color_mode": "rgb",
+    "resize_mode": "stretch",
+    "input_channels": 3,
+    "scaling_factor": 255,
+    "normalization": [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]]
+  }
+}
+```
+
+and `model_config.json` is:
+
+```json
+{"model_architecture": "rfdetr", "task_type": "object-detection", "backend_type": "executorch"}
+```
+
+Then load it by path:
+
+```python
+from inference_models import AutoModel
+
+model = AutoModel.from_pretrained("/path/to/rfdetr-executorch-package")
+```
+
 ### Hugging Face Transformers
 
 **Access to transformer-based models from Hugging Face Hub.**

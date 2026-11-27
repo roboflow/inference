@@ -321,3 +321,22 @@ def test_model_implementation_exists_for_rfdetr_nas_packages(
 
     # then
     assert result is True
+
+
+def test_rfdetr_executorch_packages_resolve_to_executorch_model() -> None:
+    # when
+    exists = model_implementation_exists(
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        backend=BackendType.EXECUTORCH,
+        model_features={"resolution", "num_queries"},
+    )
+    model_class = resolve_model_class(
+        model_architecture="rfdetr",
+        task_type="object-detection",
+        backend=BackendType.EXECUTORCH,
+    )
+
+    # then
+    assert exists is True
+    assert model_class.__name__ == "RFDetrForObjectDetectionExecuTorch"
