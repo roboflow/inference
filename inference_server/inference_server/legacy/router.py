@@ -902,6 +902,7 @@ async def _classify_and_repack(
         video_type=inference_request.video.type,
         video_value=inference_request.video.value,
         class_filter=inference_request.class_filter or None,
+        confidence=inference_request.confidence,
     )
     response.time = time.perf_counter() - started
     response.inference_id = inference_request.id
@@ -1108,24 +1109,32 @@ async def legacy_infer_from_request(
         model_id, resolved_key, row_key=model_id, path=request.scope["path"]
     )
     bridge.record_request(route, model_id, request.scope["path"])
+    if isinstance(confidence, (int, float)) and confidence >= 1:
+        confidence /= 100
+
     if route.task_type == ACTION_RECOGNITION_TASK and not route.is_stub:
-        inference_request = ActionRecognitionInferenceRequest(
-            api_key=resolved_key,
-            model_id=model_id,
-            video=InferenceRequestVideo(
-                type=request_image.type, value=request_image.value
-            ),
-            class_filter=_parse_legacy_class_filter(class_filter),
-        )
+        try:
+            inference_request = ActionRecognitionInferenceRequest(
+                api_key=resolved_key,
+                model_id=model_id,
+                video=InferenceRequestVideo(
+                    type=request_image.type, value=request_image.value
+                ),
+                class_filter=_parse_legacy_class_filter(class_filter),
+                confidence=confidence if "confidence" in request.query_params else None,
+            )
+        except ValidationError as error:
+            raise LegacyHTTPError(400, str(error)) from error
+
         http_response = await _classify_and_repack(inference_request, bridge, route)
 
         return http_response
 
-    if isinstance(confidence, (int, float)):
-        if confidence >= 1:
-            confidence /= 100
-        if confidence < configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION:
-            confidence = configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
+    if (
+        isinstance(confidence, (int, float))
+        and confidence < configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
+    ):
+        confidence = configuration.CONFIDENCE_LOWER_BOUND_OOM_PREVENTION
     if overlap >= 1:
         overlap /= 100
     request_type = ObjectDetectionInferenceRequest

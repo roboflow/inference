@@ -1027,7 +1027,7 @@ _ACTION_CONFIGS: dict[str, list[tuple[str, str, bool, dict, str, str, str]]] = {
             "infer",
             "infer",
             True,
-            _p(_P_ACTION_RECOGNITION),
+            _p(_P_ACTION_RECOGNITION, _P_CONFIDENCE),
             "validate_frames_and_fps",
             "serialize_passthrough",
             "roboflow-action-recognition-v1",

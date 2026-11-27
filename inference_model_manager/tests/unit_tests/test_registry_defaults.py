@@ -320,6 +320,7 @@ def test_action_recognition_action_config():
         "frames": {"type": "list", "required": True},
         "class_names": {"type": "list[str]", "required": False},
         "fps": {"type": "float", "required": True},
+        "confidence": {"type": "confidence", "required": False},
     }
     assert "images" not in infer_action[3]
     assert infer_action[4] == "validate_frames_and_fps"
