@@ -68,11 +68,11 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Rate Limiter (`roboflow_core/rate_limiter@v1`) falls back to wall-clock time when `video_reference_image` carries no video metadata, for example a still image sent over HTTP or the output of a step that builds a new image (`stitch_images@v1`, `grid_visualization@v1`, the Stability AI blocks). The block used to read the placeholder metadata such images report (frame 0 at 30 FPS), so its time never advanced and it suppressed `next_steps` on every run after the first. Video time (`frame_number / fps`) is now used only for frames from a video file with a known, non-zero FPS; stream frames, frames whose source is unknown and video files without FPS use the frame timestamp, as Time in Zone and Velocity do. Streams that report FPS used to be timed by `frame_number / fps`. The new `WorkflowImageData.has_video_metadata()` tells real video metadata from the placeholder.
 - Action Recognition Model releases queued background windows when a stream
   restarts, its configuration changes, its state is evicted, or the model
   changes. A classification already running can finish. A failed call on one
   camera no longer keeps another camera's completed window in memory.
-
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
 
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.

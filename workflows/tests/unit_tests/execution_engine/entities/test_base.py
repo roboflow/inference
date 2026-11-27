@@ -717,6 +717,34 @@ def test_workflow_image_video_metadata_preservation() -> None:
     assert result is metadata
 
 
+def test_workflow_image_has_video_metadata_only_when_metadata_is_provided() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=7,
+        frame_timestamp=datetime.now(),
+        fps=40,
+    )
+    image_with_metadata = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        video_metadata=metadata,
+    )
+    image_without_metadata = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+    )
+
+    # when
+    _ = image_without_metadata.video_metadata
+
+    # then
+    assert image_with_metadata.has_video_metadata() is True
+    assert (
+        image_without_metadata.has_video_metadata() is False
+    ), "Expected placeholder video metadata not to count as real metadata"
+
+
 def test_workflow_image_replace_image_operation() -> None:
     # given
     metadata = VideoMetadata(
