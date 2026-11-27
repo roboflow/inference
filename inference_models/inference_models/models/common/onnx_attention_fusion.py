@@ -157,7 +157,9 @@ def _fold_constants(model_path: str, *, destination: Path) -> None:
     """Run ONNX Runtime's basic optimizations, which fold the exporter's shape-derived scale."""
     import onnxruntime
 
-    options = onnxruntime.SessionOptions()
+    from inference_models.models.common.onnx import default_onnx_session_options
+
+    options = default_onnx_session_options()
     options.graph_optimization_level = (
         onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
     )

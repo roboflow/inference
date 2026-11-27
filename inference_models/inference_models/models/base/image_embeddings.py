@@ -118,8 +118,7 @@ def embedding_providers(providers, path):
 def load_classifier_session(
     source_path, providers, required_capabilities=None, output_type="feature_vector"
 ):
-    import onnxruntime
-
+    from inference_models.models.common.onnx import create_onnx_inference_session
     from inference_models.utils.onnx_embeddings import prepare_classifier_embedding
 
     info = None
@@ -127,7 +126,11 @@ def load_classifier_session(
     if "image_embeddings" in (required_capabilities or ()):
         path, info = prepare_classifier_embedding(source_path, output_type=output_type)
         providers = embedding_providers(providers, path)
-    return onnxruntime.InferenceSession(path, providers=providers), info, path
+    return (
+        create_onnx_inference_session(model_path=path, providers=providers),
+        info,
+        path,
+    )
 
 
 class LazyClassifierSession:

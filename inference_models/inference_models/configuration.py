@@ -23,6 +23,12 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     .strip("[")
     .strip("]")
 )
+ONNXRUNTIME_INTRA_OP_NUM_THREADS = get_integer_from_env(
+    variable_name="ONNXRUNTIME_INTRA_OP_NUM_THREADS", default=0
+)
+ONNXRUNTIME_ALLOW_SPINNING = get_boolean_from_env(
+    variable_name="ONNXRUNTIME_ALLOW_SPINNING", default=True
+)
 DISABLED_INFERENCE_MODELS_BACKENDS = set(
     parse_comma_separated_values(
         values=os.getenv("DISABLED_INFERENCE_MODELS_BACKENDS", "")

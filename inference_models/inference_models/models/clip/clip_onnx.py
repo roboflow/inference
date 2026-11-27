@@ -19,6 +19,7 @@ from inference_models.models.clip.preprocessing import (
 )
 from inference_models.models.common.model_packages import get_model_package_contents
 from inference_models.models.common.onnx import (
+    create_onnx_inference_session,
     run_onnx_session_with_batch_size_limit,
     set_onnx_execution_provider_defaults,
 )
@@ -82,12 +83,12 @@ class ClipOnnx(TextImageEmbeddingModel):
                 "visual.onnx",
             ],
         )
-        visual_onnx_session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["visual.onnx"],
+        visual_onnx_session = create_onnx_inference_session(
+            model_path=model_package_content["visual.onnx"],
             providers=onnx_execution_providers,
         )
-        textual_onnx_session = onnxruntime.InferenceSession(
-            path_or_bytes=model_package_content["textual.onnx"],
+        textual_onnx_session = create_onnx_inference_session(
+            model_path=model_package_content["textual.onnx"],
             providers=onnx_execution_providers,
         )
         device = align_device_with_onnx_session(
