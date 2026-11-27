@@ -16,13 +16,23 @@ import pytest
 from PIL import ImageDraw
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.common import vlm_reference_examples
+from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
+    resolve_keypoint_skeletons,
+)
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     CROP_MAX_EDGE,
     CROP_MIN_EDGE,
+    KEYPOINT_CROP_MIN_EDGE,
+    MAX_REFERENCE_ANNOTATIONS,
+    MAX_REFERENCE_DRAW_ITEMS,
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_BOXED_INTRO,
     REFERENCE_CROPS_INTRO,
+    REFERENCE_KEYPOINTS_LEGEND,
     REFERENCE_NUMBERED_INTRO,
+    REFERENCE_NUMBERED_SKELETONS_INTRO,
+    REFERENCE_SKELETON_CROPS_INTRO,
+    REFERENCE_SKELETONS_INTRO,
     TARGET_IMAGE_INTRO,
     TARGET_ONLY_RULE,
     ReferencePartsCache,
@@ -1321,3 +1331,531 @@ def test_with_reference_parts_keeps_text_before_the_image_in_place() -> None:
         {"type": "input_text", "text": TARGET_IMAGE_INTRO},
         parts[1],
     ]
+
+
+PLATE_SKELETONS = resolve_keypoint_skeletons(
+    {
+        "plate": {
+            "keypoints": ["TL", "TR", "BR", "BL"],
+            "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
+        }
+    },
+    classes=["plate"],
+)
+PLATE_LEGEND = 'Keypoints of "plate" by number: 1 TL, 2 TR, 3 BR, 4 BL.'
+
+
+def _plate_keypoints(scale: float = 1.0) -> List[dict]:
+    return [
+        {"class": "TL", "x": 40 * scale, "y": 30 * scale},
+        {"class": "TR", "x": 120 * scale, "y": 30 * scale},
+        {"class": "BR", "x": 120 * scale, "y": 70 * scale, "occluded": True},
+        {"class": "BL", "x": 40 * scale, "y": 70 * scale},
+    ]
+
+
+def _plate_example(
+    keypoints: Optional[List[dict]] = None,
+    scale: float = 1.0,
+    label: str = "plate",
+) -> dict:
+    return _example(
+        width=round(200 * scale),
+        height=round(100 * scale),
+        annotations=[
+            {
+                "x": 80 * scale,
+                "y": 50 * scale,
+                "width": 100 * scale,
+                "height": 50 * scale,
+                "class": label,
+                "keypoints": (
+                    keypoints if keypoints is not None else _plate_keypoints(scale)
+                ),
+            }
+        ],
+    )
+
+
+def _white_texts(draw_text: Any) -> List[str]:
+    # The number tags are drawn white over a black outline drawn first.
+    texts = [
+        call.args[2]
+        for call in draw_text.call_args_list
+        if call.kwargs.get("fill") == (255, 255, 255)
+    ]
+    return texts
+
+
+def test_validate_reference_examples_reads_the_keypoints_of_a_keypoint_prediction() -> (
+    None
+):
+    # given
+    prediction = {
+        "x": 80,
+        "y": 50,
+        "width": 100,
+        "height": 50,
+        "class": "plate",
+        "class_id": 0,
+        "confidence": 0.9,
+        "keypoints": [
+            {"x": 40, "y": 30, "confidence": 0.98, "class_id": 0, "class": "TL"},
+            {"x": 120, "y": 30, "confidence": 0.97, "class_id": 1, "class": "TR"},
+        ],
+    }
+
+    # when
+    result = validate_reference_examples(
+        [_example(annotations=[prediction])],
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=PLATE_SKELETONS,
+    )
+
+    # then
+    keypoints = result[0].annotations[0].keypoints
+    assert [
+        (keypoint.class_name, keypoint.class_id, keypoint.x, keypoint.y)
+        for keypoint in keypoints
+    ] == [("TL", 0, 40, 30), ("TR", 1, 120, 30)]
+    assert not any(keypoint.occluded for keypoint in keypoints)
+
+
+@pytest.mark.parametrize(
+    "keypoints, message",
+    [
+        (None, "has no `keypoints`, which keypoint-detection examples need"),
+        (
+            [{"class": "center", "x": 80, "y": 50}],
+            "'center' is not a keypoint of the skeleton",
+        ),
+        (
+            [{"class": "TL", "x": 40, "y": 30}, {"class": "TL", "x": 41, "y": 31}],
+            "'TL' is given more times than the skeleton has it",
+        ),
+        (
+            [{"class": "TL", "class_id": 2, "x": 40, "y": 30}],
+            "'TL' has class_id 2, which is not its position in the skeleton",
+        ),
+        (
+            [{"class": "TL", "class_id": 9, "x": 40, "y": 30}],
+            "'TL' has class_id 9, which is not its position in the skeleton",
+        ),
+        (
+            [
+                {"class": "TL", "class_id": 0, "x": 40, "y": 30},
+                {"class": "TL", "class_id": 0, "x": 41, "y": 31},
+            ],
+            r"'TL' \(class_id 0\) is given twice",
+        ),
+    ],
+)
+def test_validate_reference_examples_rejects_keypoints_outside_the_skeleton(
+    keypoints, message
+) -> None:
+    # given
+    example = _plate_example()
+    if keypoints is None:
+        del example["annotations"][0]["keypoints"]
+    else:
+        example["annotations"][0]["keypoints"] = keypoints
+
+    # when
+    with pytest.raises(ValueError, match=message) as error:
+        validate_reference_examples(
+            [example],
+            task_type="keypoint-detection",
+            labels=["plate"],
+            keypoint_skeletons=PLATE_SKELETONS,
+        )
+
+    # then
+    assert "`reference_examples[0].annotations[0]`" in str(error.value)
+
+
+def test_validate_reference_examples_rejects_a_class_without_a_skeleton() -> None:
+    with pytest.raises(ValueError, match="'car', which has no skeleton"):
+        validate_reference_examples(
+            [_plate_example(label="car")],
+            task_type="keypoint-detection",
+            labels=None,
+            keypoint_skeletons=PLATE_SKELETONS,
+        )
+
+
+def test_validate_reference_examples_checks_keypoint_names_only_with_skeletons() -> (
+    None
+):
+    # given
+    example = _plate_example(keypoints=[{"class": "center", "x": 80, "y": 50}])
+
+    # when
+    result = validate_reference_examples(
+        [example], task_type="keypoint-detection", labels=["plate"]
+    )
+
+    # then
+    assert result[0].annotations[0].keypoints[0].class_name == "center"
+
+
+def test_validate_reference_examples_ignores_keypoints_for_object_detection() -> None:
+    # given
+    example = _plate_example(keypoints=[{"class": "center", "x": 80, "y": 50}])
+
+    # when
+    result = validate_reference_examples(
+        [example],
+        task_type="object-detection",
+        labels=["plate"],
+        keypoint_skeletons=PLATE_SKELETONS,
+    )
+
+    # then
+    assert len(result) == 1
+
+
+def test_load_reference_example_places_keypoints_in_skeleton_order() -> None:
+    # given
+    keypoints = [
+        {"class": "BL", "x": 40, "y": 70},
+        {"class": "TR", "x": 250, "y": 30},
+        {"class": "BR", "x": 120, "y": 70, "occluded": True},
+    ]
+    examples = validate_reference_examples(
+        [_plate_example(keypoints=keypoints)],
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=PLATE_SKELETONS,
+    )
+
+    # when
+    loaded = load_reference_example(
+        examples[0], index=0, keypoint_skeletons=PLATE_SKELETONS
+    )
+
+    # then
+    # TL is not given and TR lies outside the 200x100 image, so neither is drawn.
+    assert loaded.boxes == (("plate", 30.0, 25.0, 130.0, 75.0),)
+    assert loaded.keypoints == ((None, None, (120, 70, True), (40, 70, False)),)
+
+
+def test_load_reference_example_matches_repeated_keypoint_names_in_order() -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(
+        {"car": {"keypoints": ["wheel", "roof", "wheel"]}}, classes=["car"]
+    )
+    keypoints = [
+        {"class": "wheel", "x": 150, "y": 70},
+        {"class": "wheel", "class_id": 0, "x": 50, "y": 70},
+        {"class": "roof", "x": 100, "y": 30},
+    ]
+    examples = validate_reference_examples(
+        [_plate_example(keypoints=keypoints, label="car")],
+        task_type="keypoint-detection",
+        labels=["car"],
+        keypoint_skeletons=skeletons,
+    )
+
+    # when
+    loaded = load_reference_example(examples[0], index=0, keypoint_skeletons=skeletons)
+
+    # then
+    assert loaded.keypoints == (((50, 70, False), (100, 30, False), (150, 70, False)),)
+
+
+def test_load_reference_example_has_no_keypoints_without_skeletons() -> None:
+    # given
+    examples = validate_reference_examples(
+        [_plate_example()], task_type="object-detection", labels=["plate"]
+    )
+
+    # when
+    loaded = load_reference_example(examples[0], index=0)
+
+    # then
+    assert loaded.keypoints == ()
+
+
+def test_render_boxed_examples_draws_each_instance_skeleton() -> None:
+    # given
+    examples = validate_reference_examples(
+        [_plate_example(scale=5)],
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=PLATE_SKELETONS,
+    )
+
+    # when
+    with patch.object(
+        ImageDraw.ImageDraw,
+        "text",
+        autospec=True,
+        side_effect=ImageDraw.ImageDraw.text,
+    ) as draw_text:
+        rendered = render_boxed_examples(
+            examples, labels=["plate"], keypoint_skeletons=PLATE_SKELETONS
+        )
+
+    # then
+    image = _decode(rendered[0])
+    assert image.shape == (500, 1000, 3)
+    # The first label takes the first color, red (230, 25, 75) in RGB. TL at (200,
+    # 150) is a filled dot; BR at (600, 350) is occluded, a ring around white.
+    blue, green, red = (int(v) for v in image[150, 200])
+    assert red > 180 and green < 90 and blue < 120
+    assert min(int(v) for v in image[350, 600]) >= 230
+    # The TL-TR edge runs along y = 150.
+    blue, green, red = (int(v) for v in image[150, 400])
+    assert red > 150 and green < 120
+    # The tag on the red box is white too, and comes first.
+    assert _white_texts(draw_text) == ["plate", "1", "2", "3", "4"]
+
+
+def test_gemini_reference_parts_map_the_keypoint_numbers_to_names() -> None:
+    # when
+    parts = gemini_reference_parts_for(
+        [_plate_example(), _plate_example()],
+        labels=["plate"],
+        keypoint_skeletons=PLATE_SKELETONS,
+    )
+
+    # then
+    assert parts[0] == {
+        "text": f"{REFERENCE_SKELETONS_INTRO} {REFERENCE_KEYPOINTS_LEGEND}\n"
+        f"{PLATE_LEGEND}"
+    }
+    assert parts[1] == {"text": "Reference image 1:"}
+    assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[3] == {"text": "Reference image 2:"}
+    assert len(parts) == 5
+
+
+def test_gemini_keypoint_parts_number_classes_apart_from_keypoints() -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(
+        {"车牌": {"keypoints": ["TL", "TR", "BR", "BL"]}}, classes=["车牌"]
+    )
+
+    # when
+    with patch.object(
+        ImageDraw.ImageDraw,
+        "text",
+        autospec=True,
+        side_effect=ImageDraw.ImageDraw.text,
+    ) as draw_text:
+        parts = gemini_reference_parts_for(
+            [_plate_example(label="车牌")],
+            labels=["车牌"],
+            keypoint_skeletons=skeletons,
+        )
+
+    # then
+    assert parts[0] == {
+        "text": f"{REFERENCE_NUMBERED_SKELETONS_INTRO} {REFERENCE_KEYPOINTS_LEGEND}\n"
+        'Class numbers: class 1 is "车牌".\n'
+        'Keypoints of "车牌" by number: 1 TL, 2 TR, 3 BR, 4 BL.'
+    }
+    assert draw_text.call_args_list[0].args[2] == "class 1"
+
+
+def test_openai_reference_parts_crop_each_instance_with_its_skeleton() -> None:
+    # when
+    with patch.object(
+        ImageDraw.ImageDraw,
+        "text",
+        autospec=True,
+        side_effect=ImageDraw.ImageDraw.text,
+    ) as draw_text:
+        parts = openai_reference_parts_for(
+            [_plate_example()], labels=["plate"], keypoint_skeletons=PLATE_SKELETONS
+        )
+
+    # then
+    assert parts[0] == {
+        "type": "input_text",
+        "text": f"{REFERENCE_SKELETON_CROPS_INTRO} {REFERENCE_KEYPOINTS_LEGEND}\n"
+        f"{PLATE_LEGEND}",
+    }
+    assert parts[1] == {"type": "input_text", "text": 'Examples of "plate":'}
+    assert len(parts) == 3
+    crop = _decode(parts[2]["image_url"].removeprefix("data:image/jpeg;base64,"))
+    assert max(crop.shape[:2]) == KEYPOINT_CROP_MIN_EDGE
+    assert _white_texts(draw_text) == ["1", "2", "3", "4"]
+
+
+@pytest.mark.parametrize(
+    "parts_for", [gemini_reference_parts_for, openai_reference_parts_for]
+)
+def test_keypoint_reference_parts_are_cached_apart_by_skeleton(parts_for) -> None:
+    # given
+    cache = ReferencePartsCache()
+    examples = [_plate_example()]
+    reordered = resolve_keypoint_skeletons(
+        {
+            "plate": {
+                "keypoints": ["TL", "TR", "BR", "BL"],
+                "edges": [[0, 2], [1, 3]],
+            }
+        },
+        classes=["plate"],
+    )
+
+    # when
+    with patch.object(
+        vlm_reference_examples,
+        "load_image",
+        side_effect=vlm_reference_examples.load_image,
+    ) as load_image:
+        parts_for(examples, labels=["plate"], cache=cache)
+        parts_for(
+            examples, labels=["plate"], cache=cache, keypoint_skeletons=PLATE_SKELETONS
+        )
+        parts_for(
+            examples, labels=["plate"], cache=cache, keypoint_skeletons=PLATE_SKELETONS
+        )
+        parts_for(examples, labels=["plate"], cache=cache, keypoint_skeletons=reordered)
+
+    # then
+    assert load_image.call_count == 3
+
+
+def test_validate_reference_examples_rejects_too_many_annotations_in_an_example() -> (
+    None
+):
+    # given
+    annotation = {"x": 50, "y": 50, "width": 40, "height": 20, "class": "cat"}
+    accepted = _example(annotations=[annotation] * MAX_REFERENCE_ANNOTATIONS)
+    refused = _example(annotations=[annotation] * (MAX_REFERENCE_ANNOTATIONS + 1))
+
+    # when
+    examples = validate_reference_examples(
+        [accepted], task_type="object-detection", labels=["cat"]
+    )
+
+    # then
+    assert len(examples[0].annotations) == MAX_REFERENCE_ANNOTATIONS
+    with pytest.raises(ValueError, match=f"at most {MAX_REFERENCE_ANNOTATIONS} items"):
+        validate_reference_examples(
+            [refused], task_type="object-detection", labels=["cat"]
+        )
+
+
+def _plate_instances(count: int) -> dict:
+    instance = _plate_example()["annotations"][0]
+    return _example(annotations=[instance] * count)
+
+
+def test_validate_reference_examples_limits_the_keypoints_and_edges_to_draw() -> None:
+    # given
+    # A plate draws 4 keypoints and 4 edges.
+    instances = MAX_REFERENCE_DRAW_ITEMS // 8
+    per_example = instances // 5
+    accepted = [_plate_instances(per_example)] * 5
+    refused = accepted[:4] + [_plate_instances(per_example + 1)]
+
+    # when
+    examples = validate_reference_examples(
+        accepted,
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=PLATE_SKELETONS,
+    )
+
+    # then
+    assert sum(len(example.annotations) for example in examples) == instances
+    with pytest.raises(
+        ValueError, match=f"{MAX_REFERENCE_DRAW_ITEMS + 8} keypoints and skeleton edges"
+    ):
+        validate_reference_examples(
+            refused,
+            task_type="keypoint-detection",
+            labels=["plate"],
+            keypoint_skeletons=PLATE_SKELETONS,
+        )
+
+
+def test_validate_reference_examples_limits_the_keypoints_without_skeletons() -> None:
+    # given
+    # The skeletons come from a selector, so only the keypoints are counted.
+    per_example = MAX_REFERENCE_DRAW_ITEMS // 4 // 10
+    accepted = [_plate_instances(per_example)] * 10
+    refused = accepted[:9] + [_plate_instances(per_example + 1)]
+
+    # when
+    examples = validate_reference_examples(
+        accepted, task_type="keypoint-detection", labels=["plate"]
+    )
+
+    # then
+    assert len(examples) == 10
+    with pytest.raises(
+        ValueError, match=f"{MAX_REFERENCE_DRAW_ITEMS + 4} keypoints and skeleton edges"
+    ):
+        validate_reference_examples(
+            refused, task_type="keypoint-detection", labels=["plate"]
+        )
+
+
+def test_validate_reference_examples_counts_a_repeated_edge_once() -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(
+        {
+            "plate": {
+                "keypoints": ["TL", "TR", "BR", "BL"],
+                "edges": [[0, 1], [1, 0], [2, 2]] * MAX_REFERENCE_DRAW_ITEMS,
+            }
+        },
+        classes=["plate"],
+    )
+
+    # when
+    examples = validate_reference_examples(
+        [_plate_example()],
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=skeletons,
+    )
+
+    # then
+    assert len(examples) == 1
+
+
+@pytest.mark.parametrize("render", ["boxed", "crops"])
+def test_reference_examples_draw_a_repeated_edge_once(render: str) -> None:
+    # given
+    skeletons = resolve_keypoint_skeletons(
+        {
+            "plate": {
+                "keypoints": ["TL", "TR", "BR", "BL"],
+                "edges": [[0, 1], [1, 0], [0, 1], [2, 2], [1, 2]],
+            }
+        },
+        classes=["plate"],
+    )
+    examples = validate_reference_examples(
+        [_plate_example(scale=5)],
+        task_type="keypoint-detection",
+        labels=["plate"],
+        keypoint_skeletons=skeletons,
+    )
+
+    # when
+    with patch.object(
+        ImageDraw.ImageDraw,
+        "line",
+        autospec=True,
+        side_effect=ImageDraw.ImageDraw.line,
+    ) as draw_line:
+        if render == "boxed":
+            render_boxed_examples(
+                examples, labels=["plate"], keypoint_skeletons=skeletons
+            )
+        else:
+            render_example_crops(
+                examples, labels=["plate"], keypoint_skeletons=skeletons
+            )
+
+    # then
+    # TL-TR once, although given three times, and TR-BR; BR-BR joins nothing.
+    assert draw_line.call_count == 2
