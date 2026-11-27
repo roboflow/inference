@@ -377,6 +377,10 @@ CONFIDENCE_LOWER_BOUND_OOM_PREVENTION = get_float_from_env(
     "CONFIDENCE_LOWER_BOUND_OOM_PREVENTION", default=0.01
 )
 CLIP_MAX_BATCH_SIZE = get_integer_from_env("CLIP_MAX_BATCH_SIZE", default=8)
+# Max images in one POST /infer/embeddings request on GCP Serverless.
+SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE = get_integer_from_env(
+    "SERVERLESS_IMAGE_EMBEDDINGS_MAX_BATCH_SIZE", default=8
+)
 CLIP_VERSION_ID = os.environ.get("CLIP_VERSION_ID", "ViT-B-16")
 PERCEPTION_ENCODER_VERSION_ID = os.environ.get(
     "PERCEPTION_ENCODER_VERSION_ID", "PE-Core-L14-336"

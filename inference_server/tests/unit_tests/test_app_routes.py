@@ -13,7 +13,6 @@ HIDDEN_ON_ANY_HOSTED_FLAG = (
     "/infer/instance_segmentation",
     "/infer/semantic_segmentation",
     "/infer/classification",
-    "/infer/embeddings",
     "/infer/keypoints_detection",
     "/clear_cache",
     "/start/{dataset_id}/{version_id}",
@@ -22,6 +21,7 @@ HIDDEN_ON_ANY_HOSTED_FLAG = (
 )
 HIDDEN_ON_LAMBDA_ONLY = (
     "/model/registry",
+    "/infer/embeddings",
     "/infer/lmm",
     "/infer/lmm/{model_id:path}",
 )
