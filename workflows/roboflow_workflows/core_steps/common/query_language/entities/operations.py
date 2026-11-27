@@ -257,7 +257,10 @@ class ActionRecognitionPropertyExtract(OperationDefinition):
     )
     type: Literal["ActionRecognitionPropertyExtract"]
     property_name: ActionRecognitionProperty = Field(
-        description="Result field to return. Frame bounds are null before the first successful window."
+        description=(
+            "Result field to return. Before the first successful window, extracting "
+            "a frame bound returns null and skips the remaining operations in the chain."
+        )
     )
 
 
