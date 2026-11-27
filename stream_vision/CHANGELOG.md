@@ -13,10 +13,18 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Fixed
 
+- The OpenCV video source treats a `file://` URI as a video file, like the
+  equivalent local path. It opens the decoded path, so percent-encoded and
+  `file://localhost/` URIs also open. Before, frames from `file://` sources had
+  `comes_from_video_file=False`, so the pipeline buffered and dropped them as for
+  a live stream. Such a source now ends at the end of the file. Before, with
+  stream reconnection on (the default), it reconnected and replayed the file.
+- The OpenCV, Jetson and GStreamer-CUDA producers parse `file://` URIs the same
+  way: `#` and `?` stay in the file name, the scheme is case-insensitive, and a
+  remote host or invalid percent escape is not a local file.
 - Workflow profiler traces are written as
   `inference_pipeline_workflow_execution_track_<timestamp>.json`; the file name used
   to say `tack`.
-
 - Cap the WebRTC extra's aiortc dependency below 1.17 while retaining PyAV 14.2.0.
   aiortc 1.17 accesses `VideoFrame.duration`, which is unavailable in that PyAV
   version, causing video decoding workers to crash.

@@ -66,9 +66,13 @@ _INVENTORY_PATH = (
 )
 _INVENTORY = json.loads(_INVENTORY_PATH.read_text())
 
-# Dropped by decontamination; restoring them would re-import host modules.
+# Incidental imports, not API: dropped by decontamination (restoring them would
+# re-import host modules) or when a helper moved to streamvision.camera.local_files.
 _APPROVED_REMOVALS = {
     "inference.core.interfaces.camera.collection_policy": {"core_env"},
+    "inference.core.interfaces.camera.gstreamer_cuda_producer": {"unquote", "urlparse"},
+    "inference.core.interfaces.camera.jetson_producer": {"unquote", "urlparse"},
+    "inference.core.interfaces.camera.video_source": {"os"},
     "inference.core.interfaces.stream_manager.manager_app.app": {"Tuple"},
 }
 

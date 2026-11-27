@@ -1,11 +1,11 @@
 import logging
 import math
-import os
 import random
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Union
@@ -31,6 +31,7 @@ from streamvision.camera.exceptions import (
     StreamOperationNotAllowedError,
 )
 from streamvision.camera.fourcc import parse_fourcc
+from streamvision.camera.local_files import local_file_path
 from streamvision.camera.source_reference_sanitizer import (
     redact_credentials_in_text,
     sanitize_source_reference,
@@ -143,12 +144,15 @@ def lock_state_transition(
 class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
         self._source_ref = video
+        self._file_path = local_file_path(video)
+        # OpenCV does not decode file:// URIs, so it opens the decoded local path.
+        capture_reference = video if self._file_path is None else self._file_path
         self._connection_error_message = ""
         with capture_process_stderr() as captured_stderr:
-            if _consumes_camera_on_jetson(video=video):
-                self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
+            if _consumes_camera_on_jetson(video=capture_reference):
+                self.stream = cv2.VideoCapture(capture_reference, cv2.CAP_V4L2)
             else:
-                self.stream = cv2.VideoCapture(video)
+                self.stream = cv2.VideoCapture(capture_reference)
         self._connection_error_message = extract_stream_open_error(
             "".join(captured_stderr)
         )
@@ -175,11 +179,17 @@ class CV2VideoFrameProducer(VideoFrameProducer):
         height = int(self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = self.stream.get(cv2.CAP_PROP_FPS)
         total_frames = int(self.stream.get(cv2.CAP_PROP_FRAME_COUNT))
-        is_file = total_frames > 0 and os.path.exists(self._source_ref)
+        is_file = (
+            total_frames > 0
+            and self._file_path is not None
+            and Path(self._file_path).is_file()
+        )
         timestamp_created = None
         if is_file:
             file_length_seconds = total_frames / fps
-            last_modified = datetime.fromtimestamp(os.path.getmtime(self._source_ref))
+            last_modified = datetime.fromtimestamp(
+                Path(self._file_path).stat().st_mtime
+            )
             timestamp_created = last_modified - timedelta(seconds=file_length_seconds)
 
         return SourceProperties(

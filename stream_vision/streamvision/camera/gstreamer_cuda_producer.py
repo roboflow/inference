@@ -5,13 +5,13 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
-from urllib.parse import unquote, urlparse
 
 from streamvision.camera.entities import (
     FrameImage,
     SourceProperties,
     VideoFrameProducer,
 )
+from streamvision.camera.local_files import local_file_path, source_uri
 
 _GST_RANK_PRIMARY = 256
 _NVIDIA_DECODER_RANK = _GST_RANK_PRIMARY + 100
@@ -186,7 +186,7 @@ def required_gstreamer_cuda_elements(
 
 
 def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
-    is_live = _local_file_path(video) is None
+    is_live = local_file_path(video) is None
     queue_options = (
         "max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream"
         if is_live
@@ -236,7 +236,7 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
         )
     demuxer = _file_demuxer(video)
     if demuxer is not None:
-        local_path = _local_file_path(video)
+        local_path = local_file_path(video)
         location = _quote_gstreamer_value(str(Path(local_path).resolve()))
         return (
             f'filesrc location="{location}" ! '
@@ -244,7 +244,7 @@ def build_gstreamer_cuda_pipeline(video: str, *, device_id: int = 0) -> str:
             'decodebin caps="video/x-raw(memory:CUDAMemory)" ! '
             f"{tail}"
         )
-    uri = _source_uri(video)
+    uri = source_uri(video)
     return (
         f'uridecodebin uri="{_quote_gstreamer_value(uri)}" '
         'caps="video/x-raw(memory:CUDAMemory)" ! '
@@ -364,7 +364,7 @@ class GstreamerCudaVideoFrameProducer(VideoFrameProducer):
             if frame_info.duration_ns > 0 and fps > 0
             else 0
         )
-        local_path = _local_file_path(self._source_ref)
+        local_path = local_file_path(self._source_ref)
         is_file = local_path is not None
         timestamp_created = None
         if is_file and fps > 0 and total_frames > 0 and os.path.isfile(local_path):
@@ -515,27 +515,11 @@ def _appsink_sync_enabled() -> bool:
     }
 
 
-def _source_uri(video: str) -> str:
-    local_path = _local_file_path(video)
-    if local_path is not None:
-        return Path(local_path).resolve().as_uri()
-    return video
-
-
-def _local_file_path(video: str) -> Optional[str]:
-    if video.startswith("file://"):
-        parsed = urlparse(video)
-        return unquote(parsed.path)
-    if "://" in video:
-        return None
-    return video
-
-
 def _file_demuxer(video: str) -> Optional[str]:
-    local_file_path = _local_file_path(video)
-    if local_file_path is None:
+    file_path = local_file_path(video)
+    if file_path is None:
         return None
-    return _FILE_DEMUXERS.get(Path(local_file_path).suffix.lower())
+    return _FILE_DEMUXERS.get(Path(file_path).suffix.lower())
 
 
 def _is_rtsp_source(video: str) -> bool:
