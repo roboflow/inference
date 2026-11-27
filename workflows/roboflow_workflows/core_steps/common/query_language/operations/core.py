@@ -12,6 +12,9 @@ from roboflow_workflows.core_steps.common.query_language.entities.types import T
 from roboflow_workflows.core_steps.common.query_language.errors import (
     OperationTypeNotRecognisedError,
 )
+from roboflow_workflows.core_steps.common.query_language.operations.action_recognition.base import (
+    extract_action_recognition_property,
+)
 from roboflow_workflows.core_steps.common.query_language.operations.booleans.base import (
     to_bool,
 )
@@ -203,6 +206,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "Divide": divide,
     "DetectionsSelection": select_detections,
     "SortDetections": sort_detections,
+    "ActionRecognitionPropertyExtract": extract_action_recognition_property,
     "ClassificationPropertyExtract": extract_classification_property,
     "DetectionsRename": rename_detections,
     "ConvertImageToJPEG": encode_image_to_jpeg,
