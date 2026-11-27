@@ -220,7 +220,7 @@ def test_live_names_an_earlier_action_when_the_latest_frame_is_not_analyzed(
     assert result["status"] == "not_analyzed"
     assert result["actions"] == ["punch"]
     assert result["actions_frame_number"] == 10
-    assert drawn_labels[:2] == ["punch", "3 s ago"]
+    assert drawn_labels[:2] == ["3 s ago", "punch"]
 
 
 @pytest.mark.parametrize("mark", [None, 45])
@@ -431,8 +431,79 @@ def test_synchronized_frames_are_downscaled_before_they_are_kept(tensor):
         max_frame_side=160,
     )
 
-    assert result["image"].numpy_image.shape == (90, 160, 3)
-    assert source.numpy_image.shape == (360, 640, 3)
+    stored = block._streams["demo"].frames[0]
+    jpeg = visualization_module.decode_encoded_image_bytes(stored.jpeg)
+    assert jpeg.shape == (90, 160, 3)
+    assert (
+        result["image"].numpy_image.shape == source.numpy_image.shape == (360, 640, 3)
+    )
+
+
+def test_engine_maps_detections_on_downscaled_playback_to_source_coordinates():
+    from roboflow_workflows.execution_engine.core import ExecutionEngine
+
+    image = _image(1, size=(180, 320))
+    # A textured square large enough to survive JPEG and the 2x resize.
+    pattern = np.random.default_rng(57).integers(0, 256, (8, 8, 3), dtype=np.uint8)
+    template = pattern.repeat(4, axis=0).repeat(4, axis=1)
+    image.numpy_image[64:96, 144:176] = template
+    engine = ExecutionEngine.init(
+        workflow_definition={
+            "version": "1.0",
+            "inputs": [
+                {"type": "WorkflowImage", "name": "image"},
+                {"type": "WorkflowImage", "name": "template"},
+                {
+                    "type": "WorkflowBatchInput",
+                    "name": "predictions",
+                    "kind": ["action_recognition_result"],
+                },
+            ],
+            "steps": [
+                {
+                    "type": TYPE,
+                    "name": "display",
+                    "image": "$inputs.image",
+                    "predictions": "$inputs.predictions",
+                    "display_mode": "synchronized",
+                    "max_frame_side": 160,
+                },
+                {
+                    "type": "roboflow_core/template_matching@v1",
+                    "name": "match",
+                    "image": "$steps.display.image",
+                    "template": "$inputs.template",
+                    "matching_threshold": 0.9,
+                },
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "detections",
+                    "selector": "$steps.match.predictions",
+                    "coordinates_system": "parent",
+                }
+            ],
+        }
+    )
+    try:
+        (result,) = engine.run(
+            runtime_parameters={
+                "image": [
+                    {
+                        "type": "numpy_object",
+                        "value": image.numpy_image,
+                        "video_metadata": image.video_metadata,
+                    }
+                ],
+                "template": [template],
+                "predictions": [_predictions(until=1)],
+            }
+        )
+    finally:
+        engine.close()
+
+    assert result["detections"].xyxy.tolist() == [[144, 64, 176, 96]]
 
 
 def test_streams_are_independent_and_a_restart_resets_only_its_stream():
@@ -1062,8 +1133,21 @@ def test_close_releases_all_buffered_synchronized_frames():
     assert step._streams == {}
 
 
-def test_live_badge_shows_sub_second_lag_when_displayed_frame_is_ahead():
-    timeline = [_action("wave", 1, 20)]
+@pytest.mark.parametrize(
+    "classes",
+    [
+        ["wave"],
+        [
+            "Checking the pressure gauge",
+            "Closing the access door",
+            "Inspecting the control panel",
+            "Standing at the workbench",
+            "Wearing safety glasses",
+        ],
+    ],
+)
+def test_live_badge_shows_sub_second_lag_when_displayed_frame_is_ahead(classes):
+    timeline = [_action(name, 1, 20, idx) for idx, name in enumerate(classes)]
     current_result = ActionRecognitionVisualizationBlockV1().run(
         _image(20), _predictions(timeline, 20)
     )
@@ -1072,7 +1156,7 @@ def test_live_badge_shows_sub_second_lag_when_displayed_frame_is_ahead():
     )
 
     top_band = slice(0, 40)
-    assert lagged_result["actions"] == ["wave"]
+    assert lagged_result["actions"] == classes
     assert lagged_result["actions_frame_number"] == 14
     assert not np.array_equal(
         current_result["image"].numpy_image[top_band],
@@ -1094,7 +1178,7 @@ def test_synchronized_badge_shows_the_current_delay(drawn_labels):
     # While the first frame is held its badge already counts the wait.
     assert not any(label.startswith("Delay") for label in held_labels)
     assert result["displayed_frame_number"] == 1
-    assert drawn_labels[:2] == ["wave", "Delay 1.1 s"]
+    assert drawn_labels[:2] == ["Delay 1.1 s", "wave"]
 
 
 def test_live_badge_never_shows_a_delay(drawn_labels):

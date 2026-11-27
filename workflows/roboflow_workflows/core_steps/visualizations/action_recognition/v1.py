@@ -101,6 +101,8 @@ a workflow output and read its `timeline` field on the last frame.
 
 Frames for `synchronized` are downscaled to `max_frame_side`, compressed and
 kept in host memory, within `max_buffer_mb` across all streams of the step.
+Playback restores the displayed frame to its source dimensions before drawing,
+so downstream blocks can use the original image coordinates.
 When the budget is too small the oldest frames are dropped and the delay
 shrinks; the block does not raise. At most 16 streams are tracked; the least
 recently used one is dropped. A frame-number restart or a settings change
@@ -269,6 +271,7 @@ class _BufferedFrame:
     metadata: VideoMetadata
     parent_metadata: ImageParentMetadata
     root_metadata: ImageParentMetadata
+    source_size: Tuple[int, int]
     jpeg: bytes
 
 
@@ -564,6 +567,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
                     metadata=image.video_metadata,
                     parent_metadata=image.parent_metadata,
                     root_metadata=image.workflow_root_ancestor_metadata,
+                    source_size=(width, height),
                     jpeg=jpeg,
                 )
             )
@@ -606,6 +610,11 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         shown = state.frames[0]
         shown_number = shown.metadata.frame_number
         pixels = decode_encoded_image_bytes(shown.jpeg)
+        if (pixels.shape[1], pixels.shape[0]) != shown.source_size:
+            pixels = cv2.resize(
+                pixels, shown.source_size, interpolation=cv2.INTER_LINEAR
+            )
+
         budget = max_buffer_mb * 1024**2
         if state.buffered_bytes > budget:
             # A single frame can exceed max_buffer_mb; return it now and release
@@ -901,10 +910,10 @@ def _draw_badges(
         else:
             unit_label = "frame" if lag_frames == 1 else "frames"
             age_label = f"{lag_frames} {unit_label} ago"
-        # In live display the label describes the past; say how far back.
-        badges.append((age_label, None))
+        # Give the age space even when the action names fill the row.
+        badges.insert(0, (age_label, None))
     if delay_frames:
-        badges.append((f"Delay {delay_frames / fps:.1f} s", None))
+        badges.insert(0, (f"Delay {delay_frames / fps:.1f} s", None))
 
     x, y = pad * 2, pad * 2
     for label, color in badges:
