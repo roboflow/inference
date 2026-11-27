@@ -4,6 +4,8 @@ must never be silently stringified on the wire — flag-on they raise, flag-off
 the pre-existing generic-object contract stays byte-identical."""
 
 import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
 import numpy as np
@@ -358,3 +360,72 @@ def test_validate_code_in_modal_does_not_cache_failure_to_reach_modal(
 
     assert result is True
     assert execute_remote.call_count == 2
+
+
+class _RedirectHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def _handle(self) -> None:
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.server.received_headers.append(dict(self.headers))
+        if self.server.redirect_to:
+            scheme = "ws" if self.headers.get("Upgrade") else "http"
+            self.send_response(307)
+            self.send_header("Location", f"{scheme}://{self.server.redirect_to}/")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    do_GET = do_POST = _handle
+
+    def log_message(self, *args) -> None:
+        pass
+
+
+def _serve(redirect_to: str) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _RedirectHandler)
+    server.redirect_to = redirect_to
+    server.received_headers = []
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    return server
+
+
+@pytest.fixture
+def redirect_to_other_host():
+    target = _serve(redirect_to="")
+    redirector = _serve(redirect_to=f"127.0.0.1:{target.server_port}")
+    yield redirector, target
+    for server in (redirector, target):
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize(
+    "executor_class,endpoint_variable",
+    [
+        (modal_executor.ModalExecutor, "MODAL_WEB_ENDPOINT_URL"),
+        (modal_executor.WebSocketModalExecutor, "MODAL_WS_ENDPOINT_URL"),
+    ],
+)
+def test_modal_executor_does_not_send_credentials_to_redirect_target(
+    redirect_to_other_host, monkeypatch, executor_class, endpoint_variable: str
+) -> None:
+    redirector, target = redirect_to_other_host
+    monkeypatch.setenv(endpoint_variable, f"http://127.0.0.1:{redirector.server_port}")
+    monkeypatch.setattr(modal_executor, "MODAL_AVAILABLE", True)
+    monkeypatch.setattr(modal_executor, "MODAL_TOKEN_ID", "modal-key")
+    monkeypatch.setattr(modal_executor, "MODAL_TOKEN_SECRET", "modal-secret")
+    executor = executor_class(workspace_id="workspace-a")
+
+    with pytest.raises(DynamicBlockError, match="status 307|Redirect limit exhausted"):
+        executor.execute_remote(
+            block_type_name="validation",
+            python_code=_block_code(),
+            inputs={},
+            workspace_id="workspace-a",
+        )
+
+    assert target.received_headers == []
+    assert redirector.received_headers[0]["Modal-Key"] == "modal-key"

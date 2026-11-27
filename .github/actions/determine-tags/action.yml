@@ -8,6 +8,14 @@ inputs:
   version:
     description: "Version of the image (e.g., 0.0.1, without the 'v')"
     required: true
+  release_version:
+    description: "Runtime version corresponding to the GitHub release tag; defaults to version. Set for independently versioned images."
+    required: false
+    default: ""
+  tag_prefix:
+    description: "Optional image tag prefix, including separator (e.g. cu124-)"
+    required: false
+    default: ""
   base_image:
     description: "Base image name for the Docker tags (e.g., 'roboflow/roboflow-inference-server-gpu')"
     required: true
@@ -31,6 +39,9 @@ runs:
       env:
         CUSTOM_TAG: ${{ inputs.custom_tag }}
         VERSION: ${{ inputs.version }}
+        RELEASE_VERSION: ${{ inputs.release_version }}
+        RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        TAG_PREFIX: ${{ inputs.tag_prefix }}
         BASE_IMAGE: ${{ inputs.base_image }}
         TOKEN: ${{ inputs.token }}
         FORCE_PUSH: ${{ inputs.force_push }}
@@ -40,7 +51,10 @@ runs:
         REPOSITORY: ${{ github.repository }}
       run: |
         set -euo pipefail
-        for value in "$CUSTOM_TAG" "$VERSION" "$BASE_IMAGE" "$BRANCH" "$TARGET_BRANCH" "$REPOSITORY"; do
+        TAG_PREFIX="${TAG_PREFIX:-}"
+        RELEASE_VERSION="${RELEASE_VERSION:-$VERSION}"
+        RELEASE_PRERELEASE="${RELEASE_PRERELEASE:-false}"
+        for value in "$TAG_PREFIX" "$RELEASE_VERSION" "$RELEASE_PRERELEASE" "$CUSTOM_TAG" "$VERSION" "$BASE_IMAGE" "$BRANCH" "$TARGET_BRANCH" "$REPOSITORY"; do
           if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
             echo "Tag inputs must not contain line breaks." >&2
             exit 1
@@ -59,62 +73,84 @@ runs:
           exit 1
         fi
 
-        # Initialize the tags
+        if [[ -n "$TAG_PREFIX" && ! "$TAG_PREFIX" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]]; then
+          echo "Invalid image tag prefix." >&2
+          exit 1
+        fi
+
         IMAGE_TAGS=""
-
-        # Workflow Dispatch Logic
-        if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-          echo "Triggered manually via workflow_dispatch"
-          if [ -n "$CUSTOM_TAG" ]; then
-            echo "Custom tag set, force push ignored."
-            CUSTOM_TAG="$VERSION-$CUSTOM_TAG"
-            IMAGE_TAGS="$BASE_IMAGE:$CUSTOM_TAG"
-          else
-            echo "Force push set or defaulting to version tag."
-            IMAGE_TAGS="$BASE_IMAGE:$VERSION"
+        ALLOW_LATEST=false
+        if [ "$EVENT_NAME" = "release" ]; then
+          RELEASE="${BRANCH#v}"
+          # Accept historical short final and dotted RC spellings, as well as
+          # equivalent post-release spellings. Never discard a release suffix.
+          # Keep the checkout's image version spelling in the published tag.
+          normalize_version() {
+            local value="${1#v}"
+            if [[ "$value" =~ ^([0-9]+\.[0-9]+)$ ]]; then
+              value="${BASH_REMATCH[1]}.0"
+            elif [[ "$value" =~ ^([0-9]+\.[0-9]+\.[0-9]+)[.-]?rc[.-]?([0-9]+)$ ]]; then
+              value="${BASH_REMATCH[1]}rc${BASH_REMATCH[2]}"
+            fi
+            if [[ "$value" =~ ^([0-9]+\.[0-9]+\.[0-9]+)[.-]?post([0-9]+)$ ]]; then
+              value="${BASH_REMATCH[1]}.post${BASH_REMATCH[2]}"
+            fi
+            printf '%s' "$value"
+          }
+          NORMALIZED_RELEASE="$(normalize_version "$RELEASE")"
+          NORMALIZED_VERSION="$(normalize_version "$VERSION")"
+          if [ "$NORMALIZED_RELEASE" != "$(normalize_version "$RELEASE_VERSION")" ]; then
+            echo "Release tag does not match the checked-out runtime version. Correct the tag/source pairing, or use workflow_dispatch for a version-only historical image." >&2
+            exit 1
           fi
-
-        # Automatic Trigger Logic
-        else
-          echo "Triggered automatically via $EVENT_NAME"
-          # Fetch the latest release tag for release events
-          if [ "$EVENT_NAME" == "release" ]; then
-            RELEASE=$BRANCH
-            NORMALIZED_RELEASE=$(if echo "$RELEASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then echo "$RELEASE" | sed 's/^v//'; else echo "$RELEASE"; fi)
-            if [[ ! "$NORMALIZED_RELEASE" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-              echo "Invalid release tag." >&2
+          # Positive final-version allowlist: alpha, beta, RC and development
+          # versions can never promote a stable alias, even if mislabeled.
+          stable_version='^[0-9]+\.[0-9]+\.[0-9]+([.-]?post[0-9]+)?$'
+          IMAGE_VERSION="$VERSION"
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then
+            if [[ "$NORMALIZED_RELEASE" =~ $stable_version ]]; then
+              echo "A prerelease requires a prerelease runtime version. Correct the GitHub prerelease flag or use a candidate version, then rerun." >&2
               exit 1
             fi
-            echo "Normalized release: $NORMALIZED_RELEASE"
-
-            LATEST_RELEASE=$(curl -s -H "Authorization: Bearer $TOKEN" \
-              "https://api.github.com/repos/$REPOSITORY/releases/latest" | jq -r '.tag_name')
-            echo "Fetched latest release: $LATEST_RELEASE"
-
-            # Normalize versions: remove 'v' from the latest release tag
-            NORMALIZED_LATEST_RELEASE=$(echo "$LATEST_RELEASE" | sed 's/^v//')
-            echo "Normalized latest release: $NORMALIZED_LATEST_RELEASE"
+            if [[ "$NORMALIZED_VERSION" =~ $stable_version ]]; then
+              # An unchanged Models package can accompany a runtime RC. Give
+              # its image a distinct RC tag instead of replacing the final tag.
+              IMAGE_VERSION="${VERSION}-${RELEASE}"
+            fi
+          elif [ "$RELEASE_PRERELEASE" = "false" ]; then
+            if [[ ! "$NORMALIZED_RELEASE" =~ $stable_version || ! "$NORMALIZED_VERSION" =~ $stable_version ]]; then
+              echo "A candidate version must be marked as a GitHub prerelease. Correct the release metadata, then rerun; no tags were emitted." >&2
+              exit 1
+            fi
           else
-            LATEST_RELEASE=""
-            NORMALIZED_RELEASE=""
-            NORMALIZED_LATEST_RELEASE=""
+            echo "Missing or invalid release prerelease status." >&2
+            exit 1
           fi
 
-          # Pushes to non-main release branches need a deterministic image tag,
-          # too. This is required for the MVP JP7.2 wheel workflow, which runs
-          # before its changes land on main.
-          if [ "$EVENT_NAME" == "push" ]; then
-            PUSH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//;s/-$//')
-            IMAGE_TAGS="$BASE_IMAGE:$PUSH_TAG"
-          fi
-
-          # Logic for release events
-          if [ "$EVENT_NAME" == "release" ]; then
-            IMAGE_TAGS="$BASE_IMAGE:$NORMALIZED_RELEASE"
-            if [ "$VERSION" == "$NORMALIZED_RELEASE" ] && [ "$NORMALIZED_RELEASE" == "$NORMALIZED_LATEST_RELEASE" ] && [[ "$NORMALIZED_RELEASE" != *rc* ]]; then
-              IMAGE_TAGS="$IMAGE_TAGS,$BASE_IMAGE:latest"
+          IMAGE_TAGS="$BASE_IMAGE:${TAG_PREFIX}${IMAGE_VERSION}"
+          if [ "$RELEASE_PRERELEASE" = "false" ]; then
+            if ! LATEST_RELEASE=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+              --retry 3 --retry-all-errors --retry-max-time 90 \
+              -H "Authorization: Bearer $TOKEN" \
+              "https://api.github.com/repos/$REPOSITORY/releases/latest" \
+              | jq -er 'select(.prerelease == false and .draft == false) | .tag_name | select(type == "string" and length > 0)'); then
+              echo "Cannot verify the selected stable release. Check GitHub API availability/access and release metadata, then rerun this job; no tags were emitted." >&2
+              exit 1
+            fi
+            # Equivalent package versions can identify different Git tags.
+            # Only the exact release selected by GitHub may move latest.
+            if [ "$BRANCH" = "$LATEST_RELEASE" ]; then
+              ALLOW_LATEST=true
+              IMAGE_TAGS="$IMAGE_TAGS,$BASE_IMAGE:${TAG_PREFIX}latest"
             fi
           fi
+        elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          # Manual publication only writes the requested version/custom tag.
+          TAG="$VERSION${CUSTOM_TAG:+-$CUSTOM_TAG}"
+          IMAGE_TAGS="$BASE_IMAGE:${TAG_PREFIX}${TAG}"
+        elif [ "$EVENT_NAME" = "push" ]; then
+          PUSH_TAG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//;s/-$//')
+          IMAGE_TAGS="$BASE_IMAGE:${TAG_PREFIX}${PUSH_TAG}"
         fi
 
         # Clean up leading/trailing commas
@@ -136,6 +172,10 @@ runs:
             exit 1
           fi
           tag="${image_tag#"$BASE_IMAGE:"}"
+          if [ "$tag" = "${TAG_PREFIX}latest" ] && [ "$ALLOW_LATEST" != true ]; then
+            echo "Only the selected stable release can update latest." >&2
+            exit 1
+          fi
           if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
             echo "Invalid generated Docker tag." >&2
             exit 1

@@ -61,6 +61,7 @@ def _loader(request, monkeypatch):
         monkeypatch.setattr(
             adapter, "parse_model_type", Mock(return_value="rfdetr-small")
         )
+        monkeypatch.setattr(adapter, "parse_num_queries", Mock(return_value=None))
         monkeypatch.setitem(
             adapter.CONFIG_FOR_MODEL_TYPE,
             "rfdetr-small",

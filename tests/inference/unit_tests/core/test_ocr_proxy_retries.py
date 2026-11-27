@@ -131,7 +131,7 @@ def test_custom_handler_runs_after_exhaustion(requests_mock, sleep):
 
 def test_retries_preserve_request(requests_mock, sleep, monkeypatch):
     monkeypatch.setattr(roboflow_api, "API_PROXY_BASE_URL", "https://proxy.example")
-    monkeypatch.setattr(roboflow_api, "ROBOFLOW_API_REQUEST_TIMEOUT", 37)
+    monkeypatch.setattr(roboflow_api, "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", 37)
     monkeypatch.setattr(roboflow_api, "ROBOFLOW_API_VERIFY_SSL", False)
     monkeypatch.setattr(url_utils, "SECURE_GATEWAY", "gateway.example")
     requests_mock.post(

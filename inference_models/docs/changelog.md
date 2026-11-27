@@ -2,11 +2,18 @@
 
 ## Unreleased
 
+- Retry a Roboflow artifact download once after HTTP 403 by refreshing its signed
+  URL, including through `SECURE_GATEWAY`, while preserving the selected package
+  contract and cached files.
+
+## `0.39.10`
+
 ### Added
 
 - [ConvNeXt](https://arxiv.org/abs/2201.03545) classifiers trained on the Roboflow
   platform, single-label and multi-label, with their own default confidence
-  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). See the
+  (`INFERENCE_MODELS_CONVNEXT_DEFAULT_CONFIDENCE`). ONNX and PyTorch packages
+  also support image embeddings. See the
   [model page](models/convnext-classification.md).
 - The PyTorch backend loads RF-DETR Atto, Femto and Pico (`rfdetr-atto`, `rfdetr-femto`,
   `rfdetr-pico`), the PE-Core-T sizes fine-tuned on the Roboflow platform. Their `torch-dynamic`
@@ -16,6 +23,14 @@
   work as for the DINOv2 sizes. Models fine-tuned at another resolution store a
   `resolution // patch_size` position-embedding grid, as in training, and checkpoints saved by
   `rfdetr_plus` (without the unused CLIP head) load as well as platform checkpoints.
+- The Torch RF-DETR object-detection and instance-segmentation loaders
+  (`RFDetrForObjectDetectionTorch.from_pretrained` and
+  `RFDetrForInstanceSegmentationTorch.from_pretrained`) accept an optional
+  `num_queries` in `model_type.json` and build the network with that decoder
+  query count. Packages trained with a non-default `num_queries`, which failed
+  with `size mismatch for query_feat.weight`, now load; packages without the key
+  keep the variant default. A malformed value (not an integer, a bool, or less
+  than 1) raises `CorruptedModelPackageError`.
 
 ### Changed
 
@@ -32,6 +47,14 @@
   up to 3 × `VLLM_REQUEST_TIMEOUT_S` (6 minutes at the default 120 s) where the
   former `500` failed after one attempt. Lower `VLLM_REQUEST_TIMEOUT_S` where
   that wait is too long.
+
+### Fixed
+
+- Loading a TensorRT engine while other threads run TensorRT models no longer
+  freezes the whole process. Engines are deserialized with TensorRT's built-in
+  logger instead of a Python one, so a TensorRT call never waits for the GIL.
+  TensorRT runtime messages now go to the process output, and a corrupted engine
+  error points there instead of embedding them.
 
 ## `0.39.9`
 
