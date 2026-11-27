@@ -325,6 +325,37 @@ def test_synchronized_recovers_from_one_slow_call_without_skipping_an_action():
     assert any(48 <= frame <= 51 for frame in wave_frames)
 
 
+def test_catch_up_shows_a_late_action_overlapping_an_already_displayed_frame():
+    block = ActionRecognitionVisualizationBlockV1()
+    for number in range(1, 21):
+        _synchronized(block, number)
+    first = _synchronized(block, 21, analyzed_until_frame=20)
+    assert first["displayed_frame_number"] == 1
+    assert first["actions"] == []
+
+    # An overlapping window first recognizes a wave after frame 1 was shown.
+    # As the cold-start delay expires there are still frames 1-3 to show it on.
+    results = [
+        _synchronized(
+            block, n, timeline=[_action("wave", 1, 3)], analyzed_until_frame=n - 1
+        )
+        for n in (22, 23)
+    ]
+    assert 1 <= results[0]["displayed_frame_number"] <= 3
+    assert results[0]["actions"] == ["wave"]
+    assert results[1]["displayed_frame_number"] >= 20
+
+
+@pytest.mark.parametrize(("fps", "max_delay_seconds"), [(1, 0.25), (0.5, 1)])
+def test_fractional_frame_delay_limit(fps, max_delay_seconds):
+    block = ActionRecognitionVisualizationBlockV1()
+    for n in range(1, 4):
+        result = _synchronized(
+            block, n, image={"fps": fps}, max_delay_seconds=max_delay_seconds
+        )
+        assert (n - result["displayed_frame_number"]) / fps <= max_delay_seconds
+
+
 def test_synchronized_stops_waiting_at_the_delay_limit():
     block = ActionRecognitionVisualizationBlockV1()
 
@@ -637,6 +668,135 @@ def test_synchronized_marks_failed_window_frames_not_analyzed_instead_of_no_acti
     assert result["displayed_frame_number"] == 12
     assert result["status"] == "synchronized"
     assert result["actions_frame_number"] == 12
+
+
+@pytest.mark.parametrize("with_history", [True, False])
+def test_merged_action_cannot_fill_a_gap_between_observed_windows(with_history):
+    block = ActionRecognitionVisualizationBlockV1()
+    results = {}
+    for number in range(1, 14):
+        if number < 7:
+            predictions = _predictions()
+        elif number == 7:
+            predictions = _predictions([_action("walk", 3, 3)], 3)
+        else:
+            predictions = _predictions([_action("walk", 3, 5)], 7, start=5)
+        if with_history:
+            ranges = () if number < 7 else ((1, 3),)
+            if number >= 8:
+                ranges += ((5, 7),)
+            predictions = predictions.model_copy(
+                update={"covered_frame_ranges": ranges}
+            )
+        result = block.run(_image(number), predictions, display_mode="synchronized")
+        results[result["displayed_frame_number"]] = result
+
+    assert results[3]["actions"] == ["walk"]
+    assert results[5]["actions"] == ["walk"]
+    assert results[4]["status"] == "not_analyzed"
+    assert results[4]["actions"] == []
+    assert results[4]["actions_frame_number"] is None
+
+
+@pytest.mark.parametrize(
+    ("ranges", "expected_status", "actions_frame"),
+    [
+        (((2, 22),), "synchronized", 14),
+        (((2, 8), (16, 22)), "not_analyzed", None),
+    ],
+)
+def test_synchronized_recovers_window_coverage_when_display_resumes(
+    ranges, expected_status, actions_frame
+):
+    block = ActionRecognitionVisualizationBlockV1()
+    for number in range(1, 15):
+        predictions = _predictions() if number < 8 else _predictions(until=8, start=2)
+        block.run(_image(number), predictions, display_mode="synchronized")
+
+    # Continue If paused the display, but the model kept classifying frames.
+    resumed = block.run(
+        _image(22),
+        ActionRecognitionResult(
+            timeline=[],
+            analyzed_from_frame=16,
+            analyzed_until_frame=22,
+            covered_frame_ranges=ranges,
+        ),
+        display_mode="synchronized",
+    )
+    assert resumed["displayed_frame_number"] == 14
+    assert resumed["status"] == expected_status
+    assert resumed["actions_frame_number"] == actions_frame
+    assert resumed["actions"] == []
+
+
+def test_first_display_renders_known_historical_gaps_and_uses_model_fps():
+    frame = _image(22, fps=60)
+
+    def draw(ranges):
+        block = ActionRecognitionVisualizationBlockV1()
+        result = block.run(
+            frame,
+            ActionRecognitionResult(
+                timeline=[],
+                analyzed_from_frame=16,
+                analyzed_until_frame=22,
+                covered_frame_ranges=ranges,
+                source_fps=30,
+            ),
+            history_seconds=1,
+        )
+        assert block._streams["demo"].fps == 30
+        return result["image"].numpy_image
+
+    # A display started by Continue If first sees frame 22. The strip must
+    # still show the model's known gap at 9–15 using its original frame rate.
+    assert not np.array_equal(draw(((2, 22),)), draw(((2, 8), (16, 22))))
+
+
+def test_strip_bars_and_hatching_treat_a_merged_action_as_two_covered_pieces():
+    frame = _image(9)
+
+    def draw(timeline):
+        result = ActionRecognitionVisualizationBlockV1().run(
+            frame,
+            ActionRecognitionResult(
+                timeline=timeline,
+                analyzed_from_frame=7,
+                analyzed_until_frame=9,
+                covered_frame_ranges=((3, 5), (7, 9)),
+            ),
+            history_seconds=1,
+        )
+        return result["image"].numpy_image
+
+    merged = draw([_action("walk", 3, 9)])
+    split = draw([_action("walk", 3, 5), _action("walk", 7, 9)])
+    assert np.array_equal(merged, split)
+
+
+def test_resuming_after_a_model_reset_discards_the_old_playback():
+    block = ActionRecognitionVisualizationBlockV1()
+    for number in range(1, 23):
+        predictions = _predictions() if number < 22 else _predictions(until=22)
+        predictions = predictions.model_copy(update={"stream_generation": "old"})
+        block.run(_image(number), predictions, display_mode="synchronized")
+
+    # The display skipped every warm-up result of the new model. Its end
+    # frame has already overtaken the old mark when the display resumes.
+    result = block.run(
+        _image(30),
+        ActionRecognitionResult(
+            timeline=[],
+            analyzed_from_frame=23,
+            analyzed_until_frame=30,
+            covered_frame_ranges=((23, 30),),
+            stream_generation="new",
+        ),
+        display_mode="synchronized",
+    )
+    assert result["displayed_frame_number"] == 30
+    assert result["status"] == "synchronized"
 
 
 def test_engine_skips_step_when_upstream_image_is_none():
@@ -983,16 +1143,16 @@ def test_strip_does_not_hatch_frames_before_the_stream_started(display_mode):
 
 def test_uncovered_spans_start_at_the_first_frame_of_the_stream():
     spans = visualization_module._uncovered_spans(
-        [(100, 105)], visible=[], start=90, first_frame=100, displayed=110
+        [(100, 105)], start=90, first_frame=100, displayed=110
     )
     assert spans == [(106, 110)]
 
     before_any_result = visualization_module._uncovered_spans(
-        [], visible=[], start=-290, first_frame=1, displayed=10
+        [], start=-290, first_frame=1, displayed=10
     )
     assert before_any_result == [(1, 10)]
 
     displayed_before_stream = visualization_module._uncovered_spans(
-        [], visible=[], start=90, first_frame=100, displayed=95
+        [], start=90, first_frame=100, displayed=95
     )
     assert displayed_before_stream == []

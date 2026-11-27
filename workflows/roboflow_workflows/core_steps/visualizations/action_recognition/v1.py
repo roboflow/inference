@@ -2,10 +2,12 @@
 
 import math
 import zlib
+from bisect import bisect_left
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Deque, Dict, List, Literal, Optional, Tuple, Type, Union
+from operator import itemgetter
+from typing import Deque, Dict, List, Literal, Optional, Sequence, Tuple, Type, Union
 
 import cv2
 import numpy as np
@@ -279,7 +281,7 @@ class _Stream:
     frames: Deque[_BufferedFrame] = field(default_factory=deque)
     buffered_bytes: int = 0
     last_mark: Optional[int] = None
-    last_displayed_frame: Optional[int] = None
+    last_shown_actions: Dict[str, int] = field(default_factory=dict)
     covered_ranges: List[Tuple[int, int]] = field(default_factory=list)
     lag_peaks: Deque[int] = field(default_factory=lambda: deque(maxlen=LAG_PEAKS_KEPT))
     current_peak: int = 0
@@ -360,30 +362,45 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         if pixels.ndim != 3 or pixels.shape[2] != 3 or pixels.dtype != np.uint8:
             raise ValueError("Expected a uint8 BGR video image.")
 
-        timeline = predictions.timeline
-        analyzed_from_frame = predictions.analyzed_from_frame
         analyzed_until_frame = predictions.analyzed_until_frame
         number = image.video_metadata.frame_number
         synchronized = display_mode == "synchronized"
         state = self._stream_state(
             image.video_metadata,
-            signature=(display_mode, max_delay_seconds, max_frame_side, *pixels.shape),
+            signature=(
+                display_mode,
+                max_delay_seconds,
+                max_frame_side,
+                *pixels.shape,
+                predictions.stream_generation,
+                predictions.source_fps,
+            ),
+            source_fps=predictions.source_fps,
             analyzed_until_frame=analyzed_until_frame,
         )
-        _record_coverage(
-            state,
-            start_frame=analyzed_from_frame,
-            end_frame=analyzed_until_frame,
-        )
         history_frames = max(1, round(history_seconds * state.fps))
+        max_delay_frames = (
+            math.floor(max_delay_seconds * state.fps) if synchronized else 0
+        )
+        raw_timeline = predictions._timeline_for_reading()
+        covered_ranges = _coverage_for_display(
+            state, predictions=predictions, timeline=raw_timeline
+        )
+        timeline = _covered_actions(
+            raw_timeline,
+            covered_ranges=covered_ranges,
+            since_frame=number - history_frames - max_delay_frames,
+            until_frame=number,
+        )
         if synchronized:
             pixels, metadata, parent_metadata, root_metadata, status = (
                 self._synchronized_frame(
                     state,
                     image=image,
                     timeline=timeline,
+                    covered_ranges=covered_ranges,
                     analyzed_until_frame=analyzed_until_frame,
-                    max_delay_seconds=max_delay_seconds,
+                    max_delay_frames=max_delay_frames,
                     max_frame_side=max_frame_side,
                     max_buffer_mb=max_buffer_mb,
                 )
@@ -400,12 +417,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
                 status, actions_frame = STATUS_ANALYZING, None
             else:
                 candidate = min(number, analyzed_until_frame)
-                covered = _is_frame_covered(
-                    state,
-                    frame_number=candidate,
-                    analyzed_until_frame=analyzed_until_frame,
-                    timeline=timeline,
-                )
+                covered = _is_frame_covered(covered_ranges, frame_number=candidate)
                 status = STATUS_LIVE if covered else STATUS_NOT_ANALYZED
                 # A quiet latest window must not hide an action the strip still
                 # shows; the badge names it with its age instead.
@@ -431,6 +443,10 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             # The held first frame is not the stream's present; dim it to say so.
             _darken(pixels, keep=0.45)
         actions = _actions_at(timeline, frame_number=actions_frame)
+        if synchronized:
+            state.last_shown_actions = {
+                entry.class_name: displayed for entry in actions
+            }
         _draw_badges(
             pixels,
             font_path=self._font_path,
@@ -447,8 +463,12 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             font_path=self._font_path,
             timeline=timeline,
             displayed=displayed,
-            covered_ranges=state.covered_ranges,
-            first_frame=state.first_frame,
+            covered_ranges=covered_ranges,
+            first_frame=(
+                min(state.first_frame, covered_ranges[0][0])
+                if covered_ranges
+                else state.first_frame
+            ),
             fps=state.fps,
             history_seconds=history_seconds,
         )
@@ -474,6 +494,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         metadata: VideoMetadata,
         *,
         signature: tuple,
+        source_fps: Optional[float],
         analyzed_until_frame: Optional[int],
     ) -> _Stream:
         video_id = metadata.video_identifier
@@ -491,7 +512,7 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             state = None
 
         if state is None:
-            fps = metadata.fps
+            fps = source_fps if source_fps is not None else metadata.fps
             if fps is None or not math.isfinite(fps) or fps <= 0:
                 # Same fallback as the model, so both count frames alike.
                 fps = DEFAULT_SOURCE_FPS
@@ -516,8 +537,9 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         *,
         image: WorkflowImageData,
         timeline: List[ActionRecognitionPrediction],
+        covered_ranges: Sequence[Tuple[int, int]],
         analyzed_until_frame: Optional[int],
-        max_delay_seconds: float,
+        max_delay_frames: int,
         max_frame_side: int,
         max_buffer_mb: int,
     ) -> Tuple[
@@ -557,7 +579,6 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             # No result yet: hold the first frame until the limit, then play.
             delay = number - state.first_frame
 
-        max_delay_frames = math.ceil(max_delay_seconds * state.fps)
         hard_limit = number - max_delay_frames
         target = number - min(delay, max_delay_frames)
         # Never keep a frame older than max_delay_seconds behind the input,
@@ -596,20 +617,12 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         if waiting_for_first_result and shown_number == state.first_frame:
             status = STATUS_ANALYZING
         elif analyzed_until_frame is not None and shown_number <= analyzed_until_frame:
-            if _is_frame_covered(
-                state,
-                frame_number=shown_number,
-                analyzed_until_frame=analyzed_until_frame,
-                timeline=timeline,
-            ):
+            if _is_frame_covered(covered_ranges, frame_number=shown_number):
                 status = STATUS_SYNCHRONIZED
             else:
                 status = STATUS_NOT_ANALYZED
         else:
             status = STATUS_BEHIND
-
-        if status != STATUS_ANALYZING:
-            state.last_displayed_frame = shown_number
 
         return (
             pixels,
@@ -646,23 +659,45 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
         )
 
 
-def _record_coverage(
+def _coverage_for_display(
     state: _Stream,
     *,
-    start_frame: Optional[int],
-    end_frame: Optional[int],
-) -> None:
-    if start_frame is None or end_frame is None or start_frame > end_frame:
-        return
+    predictions: ActionRecognitionResult,
+    timeline: Sequence[ActionRecognitionPrediction],
+) -> Sequence[Tuple[int, int]]:
+    if predictions.covered_frame_ranges is not None:
+        # Includes successful windows when the workflow skipped this display.
+        return predictions.covered_frame_ranges
 
-    ranges = sorted([*state.covered_ranges, (start_frame, end_frame)])
+    # Older results only carry the latest successful window. Remember windows
+    # we witnessed. A timeline can supply earlier history before we joined,
+    # but a merged action must never fill a gap between observed windows.
+    start = predictions.analyzed_from_frame
+    end = predictions.analyzed_until_frame
+    if start is not None and end is not None:
+        state.covered_ranges = _merge_ranges([*state.covered_ranges, (start, end)])
+    known_since = state.first_frame
+    if state.covered_ranges:
+        known_since = min(known_since, state.covered_ranges[0][0])
+    historical_actions = [
+        (entry.start_frame_idx, min(entry.end_frame_idx, known_since - 1))
+        for entry in timeline
+        if entry.start_frame_idx < known_since
+    ]
+    if historical_actions:
+        return _merge_ranges([*historical_actions, *state.covered_ranges])
+
+    return state.covered_ranges
+
+
+def _merge_ranges(ranges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
     merged: List[Tuple[int, int]] = []
-    for start, end in ranges:
+    for start, end in sorted(ranges):
         if merged and start <= merged[-1][1] + 1:
             merged[-1] = (merged[-1][0], max(merged[-1][1], end))
         else:
             merged.append((start, end))
-    state.covered_ranges = merged
+    return merged
 
 
 def _prune_coverage(state: _Stream, *, min_frame: int) -> None:
@@ -674,20 +709,43 @@ def _prune_coverage(state: _Stream, *, min_frame: int) -> None:
     ]
 
 
-def _is_frame_covered(
-    state: _Stream,
+def _is_frame_covered(ranges: Sequence[Tuple[int, int]], *, frame_number: int) -> bool:
+    index = bisect_left(ranges, frame_number, key=itemgetter(1))
+    return index < len(ranges) and ranges[index][0] <= frame_number
+
+
+def _covered_actions(
+    timeline: Sequence[ActionRecognitionPrediction],
     *,
-    frame_number: int,
-    analyzed_until_frame: Optional[int],
-    timeline: List[ActionRecognitionPrediction],
-) -> bool:
-    if analyzed_until_frame is None or frame_number > analyzed_until_frame:
-        return False
+    covered_ranges: Sequence[Tuple[int, int]],
+    since_frame: int,
+    until_frame: int,
+) -> List[ActionRecognitionPrediction]:
+    """Clip merged detections to successful windows before labeling or drawing."""
+    covered = []
+    for entry in timeline:
+        if entry.end_frame_idx < since_frame or entry.start_frame_idx > until_frame:
+            continue
 
-    if _actions_at(timeline, frame_number=frame_number):
-        return True
+        index = bisect_left(
+            covered_ranges, max(entry.start_frame_idx, since_frame), key=itemgetter(1)
+        )
+        for i in range(index, len(covered_ranges)):
+            start, end = covered_ranges[i]
+            if start > entry.end_frame_idx or start > until_frame:
+                break
+            if start <= entry.start_frame_idx and entry.end_frame_idx <= end:
+                covered.append(entry)
+                break
 
-    covered = any(start <= frame_number <= end for start, end in state.covered_ranges)
+            covered.append(
+                entry.model_copy(
+                    update={
+                        "start_frame_idx": max(start, entry.start_frame_idx),
+                        "end_frame_idx": min(end, entry.end_frame_idx),
+                    }
+                )
+            )
 
     return covered
 
@@ -702,21 +760,11 @@ def _preserves_unshown_action(
     if analyzed_until_frame is None or frame_number > analyzed_until_frame:
         return False
 
-    if (
-        state.last_displayed_frame is not None
-        and frame_number <= state.last_displayed_frame
-    ):
-        return False
-
     for entry in timeline:
-        if not (entry.start_frame_idx <= frame_number <= entry.end_frame_idx):
-            continue
-
-        if (
-            state.last_displayed_frame is None
-            or state.last_displayed_frame < entry.start_frame_idx
-        ):
-            return True
+        if entry.start_frame_idx <= frame_number <= entry.end_frame_idx:
+            shown = state.last_shown_actions.get(entry.class_name)
+            if shown is None or shown < entry.start_frame_idx:
+                return True
 
     return False
 
@@ -888,7 +936,7 @@ def _draw_strip(
     font_path: Optional[str],
     timeline: List[ActionRecognitionPrediction],
     displayed: int,
-    covered_ranges: List[Tuple[int, int]],
+    covered_ranges: Sequence[Tuple[int, int]],
     first_frame: int,
     fps: float,
     history_seconds: float,
@@ -963,7 +1011,6 @@ def _draw_strip(
     # Frames no successful window covered, including those after the mark.
     uncovered = _uncovered_spans(
         covered_ranges,
-        visible=visible,
         start=start,
         first_frame=first_frame,
         displayed=displayed,
@@ -996,9 +1043,8 @@ def _draw_strip(
 
 
 def _uncovered_spans(
-    covered_ranges: List[Tuple[int, int]],
+    covered_ranges: Sequence[Tuple[int, int]],
     *,
-    visible: List[ActionRecognitionPrediction],
     start: int,
     first_frame: int,
     displayed: int,
@@ -1008,15 +1054,9 @@ def _uncovered_spans(
     Frames before ``first_frame`` predate the stream, so no window could cover
     them; hatching them would look like a failed window.
     """
-    combined = sorted(
-        [
-            *covered_ranges,
-            *((entry.start_frame_idx, entry.end_frame_idx) for entry in visible),
-        ]
-    )
     uncovered: List[Tuple[int, int]] = []
     cursor = max(start, first_frame)
-    for range_start, range_end in combined:
+    for range_start, range_end in covered_ranges:
         if range_end < cursor:
             continue
         if range_start > displayed:
