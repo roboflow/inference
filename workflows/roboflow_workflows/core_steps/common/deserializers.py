@@ -252,9 +252,7 @@ def deserialize_action_recognition_result_kind(
     parameter: str,
     value: Any,
 ) -> ActionRecognitionResult:
-    if isinstance(value, ActionRecognitionResult):
-        return value
-    if not isinstance(value, dict):
+    if not isinstance(value, (ActionRecognitionResult, dict)):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
             f"an action recognition result, but invalid type of data found "
@@ -262,6 +260,9 @@ def deserialize_action_recognition_result_kind(
             context="workflow_execution | runtime_input_validation",
         )
     try:
+        if isinstance(value, ActionRecognitionResult):
+            # model_copy(update=...) and subsequent edits can bypass field validators.
+            value = vars(value)
         return ActionRecognitionResult.model_validate(value)
     except ValidationError as error:
         raise RuntimeInputError(

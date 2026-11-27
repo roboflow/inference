@@ -935,9 +935,15 @@ if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1 import (
         ActionRecognitionModelBlockV1,
     )
+    from roboflow_workflows.core_steps.models.roboflow.action_recognition.v2 import (
+        ActionRecognitionModelBlockV2,
+    )
 else:
     from roboflow_workflows.core_steps.models.roboflow.action_recognition.v1_tensor import (
         ActionRecognitionModelBlockV1,
+    )
+    from roboflow_workflows.core_steps.models.roboflow.action_recognition.v2_tensor import (
+        ActionRecognitionModelBlockV2,
     )
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.models.roboflow.object_detection.v1_tensor import (
@@ -1994,6 +2000,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowMultiLabelClassificationModelBlockV2,
         RoboflowMultiLabelClassificationModelBlockV3,
         ActionRecognitionModelBlockV1,
+        ActionRecognitionModelBlockV2,
         RoboflowObjectDetectionModelBlockV2,
         RoboflowObjectDetectionModelBlockV3,
         VLMAsClassifierBlockV2,
