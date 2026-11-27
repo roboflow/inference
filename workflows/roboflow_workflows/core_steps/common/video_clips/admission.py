@@ -3,9 +3,12 @@
 One `Budget` (``default_budget()``) is shared by every ring and sink in the
 process. It enforces, at admission time:
 
-* ``WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES`` (default 1 GiB) over ring packets
-  (including packets held by captures), ingest queues, artifacts and in-flight
-  uploads, plus the new capture's estimated size;
+* ``WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES`` (default 1 GiB) over the clips of the
+  process: every admitted capture counts with its estimated size from admission
+  on and with its real size once it is muxed, until its terminal status, plus
+  the new capture's estimate. Recording memory (ring packets, ingest queues) is
+  not counted: each ring bounds its own, and counting it would let large
+  buffers alone reject every clip;
 * ``WORKFLOWS_VIDEO_CLIP_MAX_PENDING_CAPTURES`` (default 16) admitted captures
   that have not reached a terminal status;
 * ``WORKFLOWS_VIDEO_CLIP_MAX_CLIP_BYTES`` (default 512 MiB) on the estimated
@@ -46,7 +49,9 @@ class BudgetUsage:
 
     Attributes:
         source_bytes: Bytes held by registered sources (rings and queues).
-        ticket_bytes: Bytes of admitted artifacts and in-flight uploads.
+            Reported only: recording memory is not counted against the byte cap.
+        ticket_bytes: Bytes of admitted clips (estimated, then real), which the
+            byte cap bounds.
         pending_captures: Admitted captures not yet terminal.
     """
 
@@ -56,7 +61,7 @@ class BudgetUsage:
 
     @property
     def total_bytes(self) -> int:
-        """All bytes counted against the byte cap."""
+        """Recording and clip bytes together (telemetry; not what the cap bounds)."""
         return self.source_bytes + self.ticket_bytes
 
 
@@ -65,16 +70,19 @@ class AdmissionTicket:
 
     Args:
         budget: The budget that issued the ticket.
+        estimated_bytes: The capture's estimated clip size, counted from
+            admission on so that captures admitted together cannot each use the
+            same free bytes.
     """
 
-    def __init__(self, budget: "Budget"):
+    def __init__(self, budget: "Budget", estimated_bytes: int = 0):
         self._budget = budget
-        self._bytes = 0
+        self._bytes = max(0, int(estimated_bytes))
         self._released = False
 
     @property
     def bytes(self) -> int:
-        """Artifact or in-flight upload bytes counted for this capture."""
+        """Clip bytes counted for this capture: the estimate, then the real size."""
         return self._bytes
 
     @property
@@ -83,7 +91,7 @@ class AdmissionTicket:
         return self._released
 
     def set_bytes(self, size_bytes: int) -> None:
-        """Count the capture's artifact (and its upload) against the byte cap.
+        """Replace the estimate with the real size of the capture's artifact.
 
         Args:
             size_bytes: Artifact size in bytes.
@@ -120,7 +128,7 @@ class Budget:
     """Resource caps shared by every ring, sink and uploader in a process.
 
     Args:
-        budget_bytes: Byte cap over rings, queues, artifacts and uploads.
+        budget_bytes: Byte cap over the clips of admitted captures.
         max_pending_captures: Maximum admitted, not yet terminal captures.
         max_upload_concurrency: Process-wide concurrent uploads.
         max_clip_bytes: Maximum size of one clip.
@@ -156,7 +164,7 @@ class Budget:
         self._upload_slots = threading.BoundedSemaphore(max_upload_concurrency)
 
     def register_source(self, source: ByteSource) -> None:
-        """Count a ring's bytes against the cap (held weakly).
+        """Report a ring's bytes in `usage()` (held weakly; not against the cap).
 
         Args:
             source: Object exposing ``budget_bytes() -> int``.
@@ -211,10 +219,10 @@ class Budget:
                 reason = REJECT_CLIP_TOO_LARGE
             elif usage.pending_captures >= self.max_pending_captures:
                 reason = REJECT_TOO_MANY_PENDING_CAPTURES
-            elif usage.total_bytes + estimated_size > self.budget_bytes:
+            elif usage.ticket_bytes + estimated_size > self.budget_bytes:
                 reason = REJECT_BUDGET_EXCEEDED
             else:
-                ticket = AdmissionTicket(self)
+                ticket = AdmissionTicket(self, estimated_bytes=estimated_size)
                 self._tickets.add(ticket)
 
         if reason is not None:

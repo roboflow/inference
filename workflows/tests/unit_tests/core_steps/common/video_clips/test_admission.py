@@ -65,23 +65,58 @@ def test_clip_larger_than_max_clip_bytes_is_rejected() -> None:
     assert capture.released is True
 
 
-def test_byte_cap_counts_sources_tickets_and_the_new_estimate() -> None:
+def test_byte_cap_counts_admitted_clips_and_the_new_estimate() -> None:
     # given
     budget = Budget(budget_bytes=1000, max_clip_bytes=1000)
-    source = _Source(held=600)
-    budget.register_source(source)
     admitted = budget.admit(_Capture(estimated_size_bytes=100))
-    admitted.ticket.set_bytes(250)
+    admitted.ticket.set_bytes(700)
 
     # when
-    rejected = budget.admit(_Capture(estimated_size_bytes=200))
-    fits = budget.admit(_Capture(estimated_size_bytes=150))
+    rejected = budget.admit(_Capture(estimated_size_bytes=400))
+    fits = budget.admit(_Capture(estimated_size_bytes=300))
 
     # then
     assert admitted.admitted is True
     assert rejected.reason == REJECT_BUDGET_EXCEEDED
     assert fits.admitted is True
-    assert budget.usage().total_bytes == 850
+    assert budget.usage().ticket_bytes == 1000
+
+
+def test_captures_admitted_together_cannot_use_the_same_free_bytes() -> None:
+    # given: room for one clip of this size, not for two. Neither clip is muxed
+    # yet, so only the estimates can tell.
+    budget = Budget(budget_bytes=150, max_clip_bytes=150)
+    first_capture = _Capture(estimated_size_bytes=112)
+    second_capture = _Capture(estimated_size_bytes=112)
+
+    # when
+    first = budget.admit(first_capture)
+    second = budget.admit(second_capture)
+
+    # then
+    assert first.admitted is True
+    assert first.ticket.bytes == 112
+    assert second.reason == REJECT_BUDGET_EXCEEDED
+    assert second_capture.released is True
+
+    # and: the bytes are free again once the first clip reaches a terminal status
+    first.ticket.release()
+    assert budget.admit(_Capture(estimated_size_bytes=112)).admitted is True
+
+
+def test_recording_memory_does_not_count_against_the_byte_cap() -> None:
+    # given: the rings alone hold more than the cap (long pre-rolls, many streams)
+    budget = Budget(budget_bytes=1000, max_clip_bytes=1000)
+    source = _Source(held=5000)
+    budget.register_source(source)
+
+    # when
+    decision = budget.admit(_Capture(estimated_size_bytes=900))
+
+    # then: the clip is admitted, and recording memory is still reported
+    assert decision.admitted is True
+    assert budget.usage().source_bytes == 5000
+    assert budget.usage().ticket_bytes == 900
 
     budget.unregister_source(source)
     assert budget.usage().source_bytes == 0

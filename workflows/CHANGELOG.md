@@ -98,6 +98,9 @@ Engine version: `1.18.0` (was `1.17.3`).
   the roll caps, the memory and upload limits, the temp directory and the NVENC
   options. `docs/workflows/video_clips.md` lists them with their defaults and
   describes the clip contract, host support and the measured performance.
+  - `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` (1 GiB) bounds the clips of a process:
+    captured, built and being uploaded. Recording buffers are bounded per stream
+    and are not counted against it.
 - **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and
   `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection`
   task.

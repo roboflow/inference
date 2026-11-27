@@ -545,6 +545,99 @@ def test_confirm_ingestion_polls_the_probe_until_confirmed() -> None:
     assert probed == ["video-1"] * 3
 
 
+def test_ingestion_confirmations_are_limited_and_the_rest_report_pending() -> None:
+    # given: ingestion never confirms while the test holds it, and at most two
+    # confirmations may be polled at once
+    release = threading.Event()
+    probing = []
+
+    def _probe(video_id: str) -> str:
+        probing.append(video_id)
+        release.wait(timeout=10)
+        return "confirmed"
+
+    uploader = ClipUploader(
+        budget=Budget(), http_put=_FakePut([_Response(200)]), max_ingestion_probes=2
+    )
+
+    # when: five clips are uploaded while ingestion is slow
+    futures = [
+        _submit(
+            uploader,
+            _capture(_artifact()),
+            video_id=f"video-{index}",
+            confirm_ingestion=True,
+            ingestion_probe=_probe,
+        )
+        for index in range(5)
+    ]
+    try:
+        skipped = []
+        deadline = time.monotonic() + 10
+        while len(skipped) < 3 and time.monotonic() < deadline:
+            skipped = [future for future in futures if future.done()]
+            time.sleep(0.01)
+        probe_threads = [
+            thread
+            for thread in threading.enumerate()
+            if thread.name == "video-clip-ingestion-probe"
+        ]
+
+        # then: two are polled, the other three finish at once as pending
+        assert len(probing) == 2
+        assert len(probe_threads) == 2
+        assert len(skipped) == 3
+        for future in skipped:
+            completion = future.result()
+            assert completion.terminal_status == STATUS_PUT_ACCEPTED
+            assert completion.ingestion == "pending"
+    finally:
+        release.set()
+
+    # and: the polled ones report what ingestion said, and their slots are free again
+    results = [future.result(timeout=10) for future in futures]
+    assert sorted(result.ingestion for result in results) == (
+        ["confirmed"] * 2 + ["pending"] * 3
+    )
+    late = _submit(
+        uploader,
+        _capture(_artifact()),
+        video_id="video-late",
+        confirm_ingestion=True,
+        ingestion_probe=_probe,
+    ).result(timeout=10)
+    assert late.ingestion == "confirmed"
+    uploader.shutdown(0)
+
+
+def test_built_clip_waiting_for_a_worker_counts_with_its_real_size() -> None:
+    # given: a clip admitted with a small estimate, built much larger, and no
+    # upload slot free, so it waits
+    budget = Budget(
+        budget_bytes=10_000, max_clip_bytes=10_000, max_upload_concurrency=1
+    )
+    assert budget.acquire_upload_slot(timeout=1.0)
+    capture = _capture()
+    capture.estimated_size_bytes = 10
+    decision = budget.admit(capture)
+    assert decision.ticket.bytes == 10
+    uploader = ClipUploader(budget=budget, http_put=_FakePut([_Response(200)]))
+    future = _submit(uploader, capture, admission_ticket=decision.ticket)
+
+    try:
+        # when: the clip is built
+        capture.future.set_result(_artifact())
+
+        # then: its real size is counted although no upload has started
+        assert decision.ticket.bytes == len(CLIP_BYTES)
+        assert budget.usage().ticket_bytes == len(CLIP_BYTES)
+    finally:
+        budget.release_upload_slot()
+    assert future.result(timeout=5).terminal_status == STATUS_PUT_ACCEPTED
+    assert budget.usage().ticket_bytes == 0
+    uploader.shutdown(0)
+
+
 def test_confirm_ingestion_is_bounded_and_reports_pending() -> None:
     # given
     def _probe(video_id: str) -> str:

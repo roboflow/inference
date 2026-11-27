@@ -1072,7 +1072,9 @@ class BaseEncodedRing(abc.ABC):
         return stats
 
     def budget_bytes(self) -> int:
-        """Bytes this ring holds for the budget (store, held packets, queue).
+        """Bytes this ring holds (store, held packets, queue), for `Budget.usage()`.
+
+        Reported only: recording memory is not counted against the byte cap.
 
         Returns:
             The byte count (read without locking).

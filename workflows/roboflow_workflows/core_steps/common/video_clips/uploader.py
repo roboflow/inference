@@ -83,6 +83,10 @@ PUT_TIMEOUT_SECONDS = (10.0, 300.0)
 PUT_READ_CHUNK_BYTES = 1024 * 1024
 WORKER_POLL_SECONDS = 0.5
 UPLOAD_SLOT_POLL_SECONDS = 0.1
+# Ingestion confirmations polled at once per uploader. A probe thread can live
+# for the whole poll bound and holds no admission ticket, so without a limit slow
+# ingestion would add a thread for every clip uploaded meanwhile.
+MAX_INGESTION_PROBES = 4
 TRANSIENT_4XX = (408, 429)
 ERROR_BODY_CHARACTERS = 300
 ERROR_CAUSE_DEPTH = 4
@@ -265,6 +269,9 @@ class ClipUploader:
         clock: Monotonic clock in seconds.
         ingestion_poll_bound_seconds: Longest ingestion confirmation poll.
         ingestion_poll_interval_seconds: Delay between ingestion probes.
+        max_ingestion_probes: Ingestion confirmations polled at the same time; a
+            clip uploaded while that many are running is reported with
+            ``ingestion: pending`` without being polled.
         backoff_initial_seconds: First retry delay.
         backoff_max_seconds: Largest retry delay.
     """
@@ -279,6 +286,7 @@ class ClipUploader:
         clock: Callable[[], float] = time.monotonic,
         ingestion_poll_bound_seconds: float = INGESTION_POLL_BOUND_SECONDS,
         ingestion_poll_interval_seconds: float = INGESTION_POLL_INTERVAL_SECONDS,
+        max_ingestion_probes: int = MAX_INGESTION_PROBES,
         backoff_initial_seconds: float = BACKOFF_INITIAL_SECONDS,
         backoff_max_seconds: float = BACKOFF_MAX_SECONDS,
     ):
@@ -290,6 +298,8 @@ class ClipUploader:
         self._clock = clock
         self._ingestion_poll_bound_seconds = ingestion_poll_bound_seconds
         self._ingestion_poll_interval_seconds = ingestion_poll_interval_seconds
+        self._max_ingestion_probes = max_ingestion_probes
+        self._active_ingestion_probes = 0
         self._backoff_initial_seconds = backoff_initial_seconds
         self._backoff_max_seconds = backoff_max_seconds
         self._lock = threading.Lock()
@@ -434,7 +444,20 @@ class ClipUploader:
         # Runs on the ring's finalizer thread (or the submitting thread when the
         # clip was already done): never block here.
         job.ready_at = _now_iso()
+        self._count_built_clip(job)
         self._work.put(job)
+
+    def _count_built_clip(self, job: _UploadJob) -> None:
+        # The clip exists now and may wait for a worker: count its real size from
+        # here on, in place of the estimate the ticket was admitted with.
+        if job.admission_ticket is None:
+            return None
+
+        capture_future = job.capture.future
+        if capture_future.cancelled() or capture_future.exception() is not None:
+            return None
+
+        job.admission_ticket.set_bytes(capture_future.result().size_bytes)
 
     def _worker_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -626,20 +649,42 @@ class ClipUploader:
             error=error,
         )
         if status == STATUS_PUT_ACCEPTED and job.confirm_ingestion:
-            threading.Thread(
-                target=self._confirm_and_complete,
-                args=(job, completion),
-                name="video-clip-ingestion-probe",
-                daemon=True,
-            ).start()
-            return None
+            if self._reserve_ingestion_probe():
+                threading.Thread(
+                    target=self._confirm_and_complete,
+                    args=(job, completion),
+                    name="video-clip-ingestion-probe",
+                    daemon=True,
+                ).start()
+                return None
+
+            # The clip was uploaded; only its confirmation is skipped.
+            logger.debug(
+                "Ingestion of video %s is not polled: %d confirmations are "
+                "already running.",
+                job.video_id,
+                self._max_ingestion_probes,
+            )
+            completion.ingestion = INGESTION_PENDING
 
         self._complete(job, completion)
+
+    def _reserve_ingestion_probe(self) -> bool:
+        with self._lock:
+            if self._active_ingestion_probes >= self._max_ingestion_probes:
+                return False
+            self._active_ingestion_probes += 1
+
+        return True
 
     def _confirm_and_complete(
         self, job: _UploadJob, completion: ClipCompletion
     ) -> None:
-        completion.ingestion = self._poll_ingestion(job)
+        try:
+            completion.ingestion = self._poll_ingestion(job)
+        finally:
+            with self._lock:
+                self._active_ingestion_probes -= 1
         self._complete(job, completion)
 
     def _poll_ingestion(self, job: _UploadJob) -> str:

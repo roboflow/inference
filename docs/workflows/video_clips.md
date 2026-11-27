@@ -187,7 +187,7 @@ Each clip's outcome is logged once, at INFO level, as a structured
 | `terminal_status` | `put_accepted`, `upload_failed`, `expired`, `clip_failed`, `cancelled` or `shutdown_deadline` |
 | `report` | The clip report below, when a clip exists |
 | `timings` | ISO timestamps `captured_at`, `ready_at`, `uploaded_at` |
-| `ingestion` | `null`, or with `confirm_ingestion: true` one of `confirmed`, `pending`, `failed` after polling for up to 5 minutes |
+| `ingestion` | `null`, or with `confirm_ingestion: true` one of `confirmed`, `pending`, `failed` after polling for up to 5 minutes. At most 4 clips per sink are polled at once; a clip uploaded meanwhile is reported as `pending` without being polled |
 | `error` | Redacted error text for failed statuses |
 
 `put_accepted` means the storage accepted the upload; the platform may still be
@@ -321,10 +321,18 @@ Measured in validation with the x264 backend at 1080p (CRF 23):
   the once-per-process NVENC start-up). Before the start-up pool was returned, two
   recorders held 1042 MiB (about 263 MiB each, torch reserved 498 MiB).
 
-Process-wide caps bound the total: `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` covers buffered
-packets, encoder queues, finished clips and in-flight uploads (not the NVENC GPU
-frame pool). A capture that would exceed a cap is rejected with `rejected:<reason>`;
-the event is still sent.
+Two things use memory, and they are bounded separately:
+
+* **Clips** are bounded per process by `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` (1 GiB by
+  default). A clip counts from the moment the sink captures it, with its estimated
+  size, then with its real size once it is built, until its upload ends. A capture
+  that does not fit is rejected with `rejected:budget_exceeded`; the event is still
+  sent. `WORKFLOWS_VIDEO_CLIP_MAX_PENDING_CAPTURES` and
+  `WORKFLOWS_VIDEO_CLIP_MAX_CLIP_BYTES` bound the number and the size of clips.
+* **Recording** is bounded per stream, not by the budget: the rolling buffer by its
+  window (the figures above) and the encoder queue by 30 frames. Size it as
+  streams x recorder steps x (buffer + encoder memory). Large buffers do not take
+  room from clips.
 
 ## Host support
 
@@ -401,7 +409,7 @@ warning.
 | --- | --- | --- |
 | `WORKFLOWS_VIDEO_CLIP_MAX_PRE_ROLL_SECONDS` | `60` | Largest accepted `pre_roll_seconds`; values above 300 are clamped to 300 |
 | `WORKFLOWS_VIDEO_CLIP_MAX_POST_ROLL_SECONDS` | `60` | Largest accepted `post_roll_seconds`; values above 300 are clamped to 300 |
-| `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` | 1 GiB | Process-wide byte cap over buffered packets, encoder queues, finished clips and in-flight uploads |
+| `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` | 1 GiB | Process-wide byte cap over clips: captured, built and being uploaded. Recording buffers are not counted |
 | `WORKFLOWS_VIDEO_CLIP_MAX_PENDING_CAPTURES` | `16` | Admitted clips that have not reached a terminal status |
 | `WORKFLOWS_VIDEO_CLIP_MAX_UPLOAD_CONCURRENCY` | `2` | Clip uploads running at once in the process |
 | `WORKFLOWS_VIDEO_CLIP_MAX_CLIP_BYTES` | 512 MiB | Largest clip, estimated at capture and checked again after muxing |
