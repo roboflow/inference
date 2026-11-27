@@ -639,6 +639,40 @@ def test_synchronized_marks_failed_window_frames_not_analyzed_instead_of_no_acti
     assert result["actions_frame_number"] == 12
 
 
+@pytest.mark.parametrize(
+    ("ranges", "expected_status", "actions_frame"),
+    [
+        (((2, 22),), "synchronized", 14),
+        (((2, 8), (16, 22)), "not_analyzed", None),
+    ],
+)
+def test_synchronized_recovers_quiet_window_coverage_after_display_skips_frames(
+    ranges, expected_status, actions_frame
+):
+    block = ActionRecognitionVisualizationBlockV1()
+    for number in range(1, 15):
+        predictions = _predictions() if number < 8 else _predictions(until=8, start=2)
+        block.run(_image(number), predictions, display_mode="synchronized")
+
+    # Continue If skips the display on inputs 15–21. At 22 the latest window
+    # alone cannot tell us whether the model classified buffered frame 14.
+    resumed = block.run(
+        _image(22),
+        ActionRecognitionResult(
+            timeline=[],
+            analyzed_from_frame=16,
+            analyzed_until_frame=22,
+            covered_frame_ranges=ranges,
+        ),
+        display_mode="synchronized",
+    )
+
+    assert resumed["displayed_frame_number"] == 14
+    assert resumed["status"] == expected_status
+    assert resumed["actions_frame_number"] == actions_frame
+    assert resumed["actions"] == []
+
+
 def test_engine_skips_step_when_upstream_image_is_none():
     from roboflow_workflows.execution_engine.core import ExecutionEngine
 

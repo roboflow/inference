@@ -360,7 +360,6 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             raise ValueError("Expected a uint8 BGR video image.")
 
         timeline = predictions.timeline
-        analyzed_from_frame = predictions.analyzed_from_frame
         analyzed_until_frame = predictions.analyzed_until_frame
         number = image.video_metadata.frame_number
         synchronized = display_mode == "synchronized"
@@ -369,11 +368,17 @@ class ActionRecognitionVisualizationBlockV1(WorkflowBlock):
             signature=(display_mode, max_delay_seconds, max_frame_side, *pixels.shape),
             analyzed_until_frame=analyzed_until_frame,
         )
-        _record_coverage(
-            state,
-            start_frame=analyzed_from_frame,
-            end_frame=analyzed_until_frame,
-        )
+        if predictions.covered_frame_ranges is None:
+            # Older inputs only describe the latest successful window.
+            _record_coverage(
+                state,
+                start_frame=predictions.analyzed_from_frame,
+                end_frame=analyzed_until_frame,
+            )
+        else:
+            # The model saw every window, including ones skipped by a conditional
+            # display. Its coverage belongs to the current model stream.
+            state.covered_ranges = list(predictions.covered_frame_ranges)
         history_frames = max(1, round(history_seconds * state.fps))
         if synchronized:
             pixels, metadata, parent_metadata, root_metadata, status = (
