@@ -9,7 +9,6 @@ from pathlib import Path
 
 import click
 import dependencies
-import prepare
 
 DIRECTORIES = {
     "sdk": "dist",
@@ -18,18 +17,16 @@ DIRECTORIES = {
     "inference-models": "inference_models/dist",
     "roboflow-workflows": "dist",
     "streamvision": "dist",
-    "image-inputs": "release-inputs",
-    "image-selection": "release-selection",
 }
 
 
-def _identity(profile, *, run_id=None):
+def _identity(profile):
     return {
-        "schema": 2 if profile in dependencies.PROJECTS else 1,
+        "schema": 1,
         "profile": profile,
         "source_revision": os.environ["SOURCE_REVISION"],
         "repository": os.environ["GITHUB_REPOSITORY"],
-        "run_id": str(run_id or os.environ["GITHUB_RUN_ID"]),
+        "run_id": os.environ["GITHUB_RUN_ID"],
     }
 
 
@@ -152,48 +149,21 @@ def _checkpoint(artifacts, *, run_id, deadline):
 
 
 def _seal(profile):
-    if profile in dependencies.PROJECTS:
-        prepare._verify(profile)
     directory = Path(DIRECTORIES[profile])
     bundle = Path("release-candidate") / profile
     bundle.mkdir(parents=True, exist_ok=False)
     shutil.copytree(directory, bundle / "files", symlinks=True)
     manifest = {**_identity(profile), "files": _files(bundle / "files")}
-    if profile in dependencies.PROJECTS:
-        for path in prepare._paths(profile):
-            target = bundle / "inputs" / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path, target)
-        manifest["inputs"] = _files(bundle / "inputs")
     (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 
-def _verify(profile, *, restored=False, run_id=None):
+def _verify(profile, *, restored=False):
     bundle = Path("release-candidate") / profile
     manifest = json.loads((bundle / "manifest.json").read_text())
-    identity = _identity(profile, run_id=run_id)
-    if {key: manifest.get(key) for key in identity} != identity:
+    if {key: manifest.get(key) for key in _identity(profile)} != _identity(profile):
         raise ValueError("Retained candidate identity does not match this run/source")
     if _files(bundle / "files") != manifest["files"]:
         raise ValueError("Retained candidate inventory or SHA-256 changed")
-    if profile in dependencies.PROJECTS:
-        expected_paths = {path.as_posix() for path in prepare._paths(profile)}
-        if (
-            set(manifest["inputs"]) != expected_paths
-            or _files(bundle / "inputs") != manifest["inputs"]
-        ):
-            raise ValueError("Retained preparation inventory or SHA-256 changed")
-        prepare._verify(profile, root=bundle / "inputs", run_id=run_id)
-        project, lock, receipt = prepare._paths(profile)
-        if project.read_bytes() != (bundle / "inputs" / project).read_bytes():
-            raise ValueError("Checkout metadata differs from the prepared candidate")
-        if restored:
-            prepare._verify(profile, run_id=run_id)
-            if any(
-                path.read_bytes() != (bundle / "inputs" / path).read_bytes()
-                for path in (lock, receipt)
-            ):
-                raise ValueError("Restored preparation differs from the candidate")
     if restored and _files(Path(DIRECTORIES[profile])) != manifest["files"]:
         raise ValueError("Restored candidate inventory or SHA-256 changed")
 
@@ -205,11 +175,6 @@ def _restore(profile):
         raise ValueError(
             f"Refusing to overwrite existing candidate directory: {directory}"
         )
-    if profile in dependencies.PROJECTS:
-        # Restore the tested lock and receipt without resolving on a retry.
-        for path in prepare._paths(profile)[1:]:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(Path("release-candidate") / profile / "inputs" / path, path)
     shutil.copytree(Path("release-candidate") / profile / "files", directory)
     _verify(profile, restored=True)
 

@@ -707,6 +707,39 @@ def test_platform_post_500_without_block_handler_in_a_step_answers_500(
     assert "platform text" not in response.text
 
 
+def test_platform_post_429_without_block_handler_in_a_step_answers_429(
+    legacy_client, monkeypatch
+):
+    _step_calls(monkeypatch, _post_to_platform)
+    client = legacy_client(FakeGateway())
+
+    with requests_mock.Mocker() as mocker:
+        mocker.post(
+            "https://api.roboflow.com/x/y?api_key=k",
+            status_code=429,
+            json={"message": "platform text"},
+        )
+        response = _run(client)
+
+    body = response.json()
+    assert response.status_code == 429
+    assert body["error_type"] == "ClientCausedStepExecutionError"
+    assert body["context"] == STEP_CONTEXT
+    assert body["inner_error_type"] == "RoboflowAPIRateLimitedError"
+    assert "platform text" not in response.text
+
+
+def test_step_error_handler_converts_remote_429():
+    error = HTTPCallErrorError(
+        description="d", status_code=429, api_message="slow down"
+    )
+
+    with pytest.raises(ClientCausedStepExecutionError) as exc:
+        host.step_error_handler("det", error)
+
+    assert exc.value.status_code == 429
+
+
 def test_remote_501_in_a_step_names_the_deployment_error(legacy_client, monkeypatch):
     def _remote_call(provider, model_id, api_key):
         raise HTTPCallErrorError(
