@@ -495,6 +495,9 @@ ENABLE_WORKFLOWS_PROFILING = get_boolean_from_env(
 WORKFLOWS_PROFILER_BUFFER_SIZE = get_integer_from_env(
     "WORKFLOWS_PROFILER_BUFFER_SIZE", default=64
 )
+WORKFLOWS_PROFILING_DIRECTORY = os.environ.get(
+    "WORKFLOWS_PROFILING_DIRECTORY", "./inference_profiling"
+)
 WORKFLOWS_DEFINITION_CACHE_TTL_S = get_integer_from_env(
     "WORKFLOWS_DEFINITION_CACHE_EXPIRY", default=15 * 60
 )

@@ -1568,7 +1568,7 @@ requires-dist = [
     { name = "diffusers", specifier = ">=0.39.0,<0.41.0" },
     { name = "easyocr", specifier = "~=1.7.2" },
     { name = "einops", specifier = ">=0.7.0,<1.0.0" },
-    { name = "filelock", specifier = ">=3.20.3,<4.0.0" },
+    { name = "filelock", specifier = ">=3.20.3,<5.0.0" },
     { name = "fonttools", specifier = ">=4.60.2,<5.0.0" },
     { name = "fsspec", specifier = ">=2026.6.0" },
     { name = "gitpython", specifier = ">=3.2.1,<4.0.0" },

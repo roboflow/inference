@@ -29,6 +29,8 @@ for contributor and maintainer responsibilities.
   
 ### Added
 
+- Dynamic Crop v2 returns the source image and original prediction alongside each crop, so per-object records can retain the surrounding frame and its annotations.
+
 - **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
   - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
   - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
@@ -37,6 +39,10 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
+- Anthropic Claude block (v5) defaults `model_version` to `claude-sonnet-5-5`.
+  The previous default, `claude-sonnet-4-5` (`claude-sonnet-4-5-20250929`), is
+  retired by Anthropic on November 30, 2026. Workflows that set
+  `model_version` explicitly are unchanged.
 - Action Recognition Model reports the inclusive end of the latest successful
   window in `analyzed_until_frame`, or null before the first success. Cosmos
   reports the last sampled source frame. Models that use the observed window
@@ -121,6 +127,7 @@ Bundled execution engine: `1.17.3`.
 - The package now requires `inference-models>=0.39.10` and `inference-sdk>=1.8.6`.
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
+- `filelock` 4 is allowed (`filelock>=3.20.3,<5.0.0`), matching `inference-models`.
 
 ### Fixed
 

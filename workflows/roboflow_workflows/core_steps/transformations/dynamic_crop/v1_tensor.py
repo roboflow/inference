@@ -219,6 +219,7 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class DynamicCropBlockV1(WorkflowBlock):
+    include_source = False
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -237,6 +238,7 @@ class DynamicCropBlockV1(WorkflowBlock):
                 predictions=detections,
                 mask_opacity=mask_opacity,
                 background_color=background_color,
+                include_source=self.include_source,
             )
             for image, detections in zip(images, predictions)
         ]
@@ -248,6 +250,7 @@ def crop_image(
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
+    include_source: bool = False,
 ) -> List[Dict[str, Any]]:
     bbox_detections = _bbox_carrier(predictions)
     if bbox_detections is None or len(bbox_detections) == 0:
@@ -299,11 +302,16 @@ def crop_image(
             background_color=background_color,
         )
         if cropped is None:
-            crops.append({"crops": None, "predictions": None})
+            empty = {"crops": None, "predictions": None}
+            if include_source:
+                empty.update(source_image=None, source_prediction=None)
+            crops.append(empty)
             continue
+        selected_detection = take_prediction_by_indices(
+            prediction=predictions, indices=[idx]
+        )
         translated_prediction = _translate_single_prediction(
-            prediction=predictions,
-            index=idx,
+            single=selected_detection,
             x_min=x_min,
             y_min=y_min,
             x_max=x_max,
@@ -316,6 +324,8 @@ def crop_image(
                 "predictions": translated_prediction,
             }
         )
+        if include_source:
+            crops[-1].update(source_image=image, source_prediction=selected_detection)
     return crops
 
 
@@ -393,19 +403,17 @@ def _bbox_carrier(
 
 
 def _translate_single_prediction(
-    prediction: TensorNativePrediction,
-    index: int,
+    single: TensorNativePrediction,
     x_min: int,
     y_min: int,
     x_max: int,
     y_max: int,
 ) -> TensorNativePrediction:
-    """Slice the prediction down to a single detection ``index`` and translate
+    """Translate the selected detection to the crop by adjusting
     every geometry field into the crop's coordinate frame (offset
     ``(-x_min, -y_min)``): xyxy is shifted, dense / RLE masks are cropped to the
     box, and the flattened ``keypoints_xy`` / ``polygon`` / OBB metadata plus the
     ``KeyPoints.xy`` tensor are offset. Returns the same shape as the input."""
-    single = take_prediction_by_indices(prediction=prediction, indices=[index])
     is_tuple = isinstance(single, tuple)
     key_points = None
     if is_tuple:

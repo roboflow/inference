@@ -63,6 +63,7 @@ class StreamsConfiguration:
     enable_tensor_data_representation: bool = False
     enable_workflows_profiling: bool = False
     workflows_profiler_buffer_size: int = 64
+    workflows_profiling_directory: str = "./inference_profiling"
     predictions_queue_size: int = 512
     # Whether set explicitly; the tensor pipeline's cap applies to an omitted size only.
     predictions_queue_size_explicit: bool = False
