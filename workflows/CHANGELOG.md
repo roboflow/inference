@@ -16,6 +16,10 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+## `0.3.0`
+
+Bundled execution engine: `1.17.4`.
+
 ### Execution engine
 
 - **Custom Python requests to Modal no longer follow redirects.** The syntax

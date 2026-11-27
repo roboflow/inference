@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## `0.40.0`
+
 ### Added
 
 - `get_action_recognition_contract(model_id, api_key=...)` returns an
