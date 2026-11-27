@@ -34,6 +34,10 @@ class BlockManifest(CropManifestV1):
         }
     )
 
+    discover_work_operations = CropManifestV1.discover_work_operations
+    get_actual_restrictions = CropManifestV1.get_actual_restrictions
+    discover_dependent_resources = CropManifestV1.discover_dependent_resources
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         crop, prediction = super().describe_outputs()
