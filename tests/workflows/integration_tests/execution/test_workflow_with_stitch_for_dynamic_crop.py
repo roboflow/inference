@@ -139,3 +139,62 @@ def test_workflow_with_stitch_and_dynamic_crop(
         0,
         0,
     ], "Expected predicted classes to be exactly the same as when test was created"
+
+
+def test_dynamic_crop_source_outputs_serialize_in_the_persons_source_frame():
+    workflow = {
+        "version": "1.0",
+        "inputs": [{"type": "WorkflowImage", "name": "image"}],
+        "steps": [
+            {
+                "type": "roboflow_core/expression@v1",
+                "name": "boxes",
+                "data": {"image": "$inputs.image"},
+                "switch": {
+                    "type": "CasesDefinition",
+                    "cases": [],
+                    "default": {
+                        "type": "StaticCaseResult",
+                        "value": '{"detections":[{"class_name":"person","x_min":0.25,"x_max":0.75,"y_min":0.4,"y_max":0.6}]}',
+                    },
+                },
+            },
+            {
+                "type": "roboflow_core/vlm_as_detector@v2",
+                "name": "detector",
+                "image": "$inputs.image",
+                "vlm_output": "$steps.boxes.output",
+                "classes": ["person"],
+                "model_type": "openai",
+                "task_type": "object-detection",
+            },
+            {
+                "type": "roboflow_core/dynamic_crop@v2",
+                "name": "crop",
+                "images": "$inputs.image",
+                "predictions": "$steps.detector.predictions",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "source",
+                "selector": "$steps.crop.source_image",
+            },
+            {
+                "type": "JsonField",
+                "name": "detection",
+                "selector": "$steps.crop.source_prediction",
+            },
+        ],
+    }
+    frame = np.full((100, 200, 3), 33, dtype=np.uint8)
+    result = ExecutionEngine.init(workflow).run(
+        runtime_parameters={"image": frame},
+        serialize_results=True,
+    )[0]
+    (source,) = result["source"]
+    assert source["type"] == "base64"
+    (detections,) = result["detection"]
+    (box,) = detections["predictions"]
+    assert [box[k] for k in ("x", "y", "width", "height")] == [100, 50, 100, 20]
