@@ -132,8 +132,14 @@ async def _preload_models(
                     timeout_s=timeout_s,
                     pinned=is_pinned,
                 )
-            except Exception:
-                logger.error("Preload of '%s' failed", mid, exc_info=True)
+            except Exception as error:
+                from inference_server.legacy.errors import redacted_exc_info
+
+                logger.error(
+                    "Preload of '%s' failed",
+                    mid,
+                    exc_info=redacted_exc_info(error, (api_key,)),
+                )
                 return False
 
         if result and result[0] == "ok":

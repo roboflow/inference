@@ -12,7 +12,8 @@ access log is silenced and ``install_structured_access_log(app)`` adds a
 middleware that logs every response through the application logger with the
 request, model and trace fields of the legacy structured access log, health
 paths at ``DEBUG``. With both flags unset the access log is uvicorn's default
-line: ``<client> - "<METHOD> <path> HTTP/1.1" <status>``. Every call replaces
+line: ``<client> - "<METHOD> <path> HTTP/1.1" <status>``, with credentials in
+the path and query string redacted by a filter on ``uvicorn.access``. Every call replaces
 only the handlers it installed before, so the ``python -m inference_server.app``
 runner, which imports the application twice, ends with one owned handler per
 logger and keeps handlers installed by anyone else.
@@ -25,6 +26,7 @@ import time
 import traceback
 import warnings
 from typing import Any, Dict, List
+from urllib.parse import unquote_plus
 
 from inference_sdk.config import execution_id
 from uvicorn.config import LOGGING_CONFIG as UVICORN_LOGGING_CONFIG
@@ -238,6 +240,85 @@ class StructuredAccessLogMiddleware:
         await self.app(scope, receive, _send)
 
 
+def redact_path_with_query_string(path: str) -> str:
+    """Redact credentials from a request path and its query string.
+
+    Each query parameter is checked in its decoded form, so a percent-encoded
+    name such as ``api%5Fkey`` is caught as well. Parameters carrying no
+    credential keep their original encoding.
+
+    Args:
+        path: The path with its raw query string, as uvicorn logs it.
+
+    Returns:
+        The path with every credential value redacted.
+    """
+    # Imported here: app.py imports this module before anything else, and the
+    # redaction helpers pull in the model manager stack.
+    from inference_server.legacy.errors import redact_text
+
+    base, separator, query = path.partition("?")
+    if not separator:
+        redacted_path = redact_text(path)
+
+        return redacted_path
+
+    parameters = []
+    for parameter in query.split("&"):
+        decoded = unquote_plus(parameter)
+        redacted = redact_text(decoded)
+        parameters.append(redacted if redacted != decoded else parameter)
+    redacted_path = f"{redact_text(base)}{separator}{'&'.join(parameters)}"
+
+    return redacted_path
+
+
+def _redact_access_argument(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+
+    return redact_path_with_query_string(value)
+
+
+class AccessLogRedactionFilter(logging.Filter):
+    """Logger filter that strips credentials from uvicorn access log records.
+
+    uvicorn logs ``(client, method, path_with_query, http_version, status)``;
+    every string argument is redacted so the filter does not depend on that
+    order. Installed on the ``uvicorn.access`` logger, it runs before every
+    handler, the in-memory ``/logs`` handler included, and never drops a record.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Redact the record's string arguments in place.
+
+        Args:
+            record: The access log record.
+
+        Returns:
+            Always True, so the record is still emitted.
+        """
+        try:
+            if isinstance(record.args, tuple):
+                record.args = tuple(_redact_access_argument(arg) for arg in record.args)
+            elif isinstance(record.msg, str) and not record.args:
+                record.msg = redact_path_with_query_string(record.msg)
+        except Exception:
+            pass
+
+        return True
+
+
+def _install_access_log_redaction(access_logger: logging.Logger) -> None:
+    if any(
+        isinstance(existing, AccessLogRedactionFilter)
+        for existing in access_logger.filters
+    ):
+        return
+
+    access_logger.addFilter(AccessLogRedactionFilter())
+
+
 def _replace_owned_handlers(
     target: logging.Logger, handlers: List[logging.Handler]
 ) -> None:
@@ -287,6 +368,7 @@ def _configure_uvicorn_loggers() -> None:
     error_logger.propagate = True
 
     access_logger = logging.getLogger(UVICORN_ACCESS_LOGGER_NAME)
+    _install_access_log_redaction(access_logger)
     access_logger.propagate = False
     access_logger.setLevel(logging.INFO)
     if structured_access_log_enabled():
