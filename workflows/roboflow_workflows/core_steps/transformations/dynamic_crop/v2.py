@@ -13,10 +13,7 @@ from roboflow_workflows.execution_engine.entities.workload import (
     RuntimeRestriction,
     WorkOperation,
 )
-from roboflow_workflows.prototypes.block import (
-    DependentResource,
-    WorkflowBlockManifest,
-)
+from roboflow_workflows.prototypes.block import DependentResource, WorkflowBlockManifest
 
 LONG_DESCRIPTION = (
     V1BlockManifest.model_config["json_schema_extra"]["long_description"]
