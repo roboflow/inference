@@ -1,14 +1,15 @@
 from typing import Any
 
+from roboflow_workflows.core_steps.common.deserializers import (
+    deserialize_action_recognition_result_kind,
+)
 from roboflow_workflows.core_steps.common.query_language.entities.enums import (
     ActionRecognitionProperty,
 )
 from roboflow_workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
 )
-from roboflow_workflows.core_steps.models.roboflow.action_recognition.entities import (
-    ActionRecognitionResult,
-)
+from roboflow_workflows.errors import RuntimeInputError
 
 
 def extract_action_recognition_property(
@@ -21,7 +22,7 @@ def extract_action_recognition_property(
     """Read a public field from the model's per-frame result.
 
     Args:
-        value: Result produced by the Action Recognition Model.
+        value: Model result or its serialized workflow parameter.
         property_name: Result field to return.
         execution_context: Operation location used for error reporting.
         **kwargs: Execution parameters supplied by the query language engine.
@@ -30,13 +31,18 @@ def extract_action_recognition_property(
         The selected field, including a null bound during warm-up.
 
     Raises:
-        InvalidInputTypeError: If the input has a different kind.
+        InvalidInputTypeError: If the value is not a valid action recognition result.
     """
-    if not isinstance(value, ActionRecognitionResult):
-        raise InvalidInputTypeError(
-            public_message=f"Expected an action recognition result, got {type(value).__name__}.",
-            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+    try:
+        result = deserialize_action_recognition_result_kind(
+            parameter=execution_context, value=value
         )
+    except RuntimeInputError as error:
+        raise InvalidInputTypeError(
+            public_message="Expected a valid action recognition result.",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=error,
+        ) from error
 
-    result_field = getattr(value, property_name.value)
+    result_field = getattr(result, property_name.value)
     return result_field
