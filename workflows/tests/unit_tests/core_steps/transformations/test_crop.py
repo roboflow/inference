@@ -11,10 +11,16 @@ from roboflow_workflows.core_steps.transformations.dynamic_crop.v1 import (
     convert_color_to_bgr_tuple,
     crop_image,
 )
-from roboflow_workflows.core_steps.transformations.dynamic_crop.v2 import (
-    DynamicCropBlockV2,
-)
 from roboflow_workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
+
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v2 import (
+        DynamicCropBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v2_tensor import (
+        DynamicCropBlockV2,
+    )
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,

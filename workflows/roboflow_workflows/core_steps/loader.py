@@ -1218,9 +1218,14 @@ else:
         DynamicCropBlockV1,
     )
 
-from roboflow_workflows.core_steps.transformations.dynamic_crop.v2 import (
-    DynamicCropBlockV2,
-)
+if not ENABLE_TENSOR_DATA_REPRESENTATION:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v2 import (
+        DynamicCropBlockV2,
+    )
+else:
+    from roboflow_workflows.core_steps.transformations.dynamic_crop.v2_tensor import (
+        DynamicCropBlockV2,
+    )
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.transformations.dynamic_zones.v1 import (
