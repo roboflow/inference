@@ -17,6 +17,7 @@ STREAM_ENV_NAMES = (
     "ENABLE_TENSOR_DATA_REPRESENTATION",
     "ENABLE_WORKFLOWS_PROFILING",
     "WORKFLOWS_PROFILER_BUFFER_SIZE",
+    "WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS",
     "OFFLINE_MODE",
     "STREAM_MANAGER_HOST",
     "STREAM_MANAGER_PORT",
@@ -70,6 +71,7 @@ EXPLICIT_VALUES = {
     "WEBRTC_REALTIME_PROCESSING": "False",
     "ENABLE_WORKFLOWS_PROFILING": "True",
     "WORKFLOWS_PROFILER_BUFFER_SIZE": "12",
+    "WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS": "5",
     "CLASS_AGNOSTIC_NMS": "True",
 }
 
@@ -134,6 +136,11 @@ EXPECTED_FIELDS = [
     ("WEBRTC_REALTIME_PROCESSING", "webrtc_realtime_processing", False),
     ("ENABLE_WORKFLOWS_PROFILING", "enable_workflows_profiling", True),
     ("WORKFLOWS_PROFILER_BUFFER_SIZE", "workflows_profiler_buffer_size", 12),
+    (
+        "WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS",
+        "workflows_block_close_deadline_seconds",
+        5.0,
+    ),
 ]
 
 _DUMP_CODE = (

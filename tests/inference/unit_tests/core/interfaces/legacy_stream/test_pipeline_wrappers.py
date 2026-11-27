@@ -244,6 +244,8 @@ def test_legacy_workflow_wrapper_forwards_every_argument(
     assert on_end.keywords["cancel_thread_pool_tasks_on_exit"] is False
     assert on_end.keywords["profiling_directory"] == "/tmp/some-profiles"
     assert on_end.keywords["profiler"] is engine_kwargs["profiler"]
+    # `None`: the configured default, until the host calls `set_block_close_deadline`.
+    assert on_end.keywords["block_close_deadline_seconds"] is None
     blocks_executor.shutdown()
     engine_executor.shutdown()
 
@@ -649,9 +651,12 @@ def test_core_workflow_constructor_passes_host_bindings_through_unchanged(
         "workflows_core.model_manager",
         "workflows_core.thread_pool_executor",
         "workflows_core.disable_sinks",
+        "workflows_core.host_manages_block_lifecycle",
     }
     assert init_parameters["workflows_core.model_manager"] is provider
     assert init_parameters["workflows_core.disable_sinks"] is True
+    # the pipeline closes the engine when it ends, so it says so to the blocks
+    assert init_parameters["workflows_core.host_manages_block_lifecycle"] is True
     assert type(pipeline) is CoreInferencePipeline
     assert not isinstance(pipeline, LegacyInferencePipeline)
     init_parameters["workflows_core.thread_pool_executor"].shutdown()

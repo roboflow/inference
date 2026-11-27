@@ -18,6 +18,36 @@ for contributor and maintainer responsibilities.
 
 ### Execution engine
 
+Engine version: `1.18.0` (was `1.17.3`).
+
+- **`host_manages_block_lifecycle` init parameter.** A host sets
+  `workflows_core.host_manages_block_lifecycle=True` to promise that it will call
+  `close()` on the engine. The default is `False`. A block that holds a thread, or
+  another resource garbage collection cannot free, reads the parameter and stays
+  idle without it. The Video Clip Recorder is the first such block. Only the host
+  can set it: a workflow definition or a run input cannot. A host that calls
+  `ExecutionEngine.init` directly and wants video clips must pass it and call
+  `close()`. Other workflows are unaffected.
+- **Two-phase close.** `ExecutionEngine.prepare_close(deadline_seconds=None)` calls
+  `prepare_close(deadline_seconds)` on every block that defines it, so a block can
+  stop taking work and start finishing before `close()`. Hosts call it before they
+  shut down their thread pools and still call `close()` after. Each phase runs at
+  most once, also under concurrent calls. A failing block is logged and does not
+  stop the others. Blocks without `prepare_close` and hosts that never call it
+  behave as before.
+- **`video_clip_anchor` kind.** An in-process reference to the video that a Video
+  Clip Recorder step buffers around one frame. It serializes to metadata only
+  (recorder, video identifier, frame timestamp, frame number, availability) and
+  cannot be deserialized.
+- **Compile-time checks for video clip anchors.** Compilation fails with
+  `ExecutionGraphStructureError` when an anchor is exposed as a workflow output or
+  bound into a step that runs outside the process: an inner workflow with remote
+  dispatch, remote Custom Python, or a remote Roboflow model step. Compilation
+  warns when a recorder sits under flow control, where it loses pre-roll. The
+  tracking is conservative: when a step receives an anchor through an input that
+  does not declare the anchor kind (Expression, Frame Delay, Buffer, Dimension
+  Collapse), its wildcard, `list_of_values`, `dictionary` and kind-less outputs
+  count as anchors. Workflows without a recorder are unaffected.
 - **Custom Python requests to Modal no longer follow redirects.** The syntax
   check and the HTTP execution request to the Modal `execute-block` endpoint,
   and the websocket connection to `wsapp`, used to follow a 3xx response and
@@ -26,69 +56,134 @@ for contributor and maintainer responsibilities.
   any other unexpected status does. An endpoint set with
   `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
   rather than redirect.
-  
+
 ### Added
 
-- **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
-  - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
-  - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
-  - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
-  - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
+- **Video Clip Recorder** (`roboflow_core/video_clip_recorder@v1`). Keeps a rolling
+  H.264 buffer of the frames a workflow processes, per `video_identifier`, and
+  outputs an `anchor` per frame for the Vision Events sink.
+  - A clip covers `[trigger - pre_roll_seconds, trigger + post_roll_seconds]` of
+    processed frames and starts on a keyframe up to one second earlier. Both rolls
+    default to 5 s and are capped at 60 s; a host can raise the cap to 300 s.
+  - Other settings: `label`, `playback_speed`, `clip_fps`, `max_width` and
+    `max_processing_lag_seconds`.
+  - Frames are encoded with libx264 through PyAV, or with NVENC through
+    PyNvVideoCodec when they are CUDA tensors and the library is installed.
+  - It records only on a host that sets
+    `workflows_core.host_manages_block_lifecycle`, as stream pipelines do. On any
+    other host, HTTP requests included, the anchor is
+    `unavailable:unsupported_host`. With `disable_sinks` it is
+    `unavailable:sinks_disabled`.
+  - An encoder that keeps failing (9 frames in a row, over at least 2 seconds) is
+    given up for that stream: NVENC falls back to x264, and a failing x264 stream
+    reports `unavailable:no_encoder` instead of `ok`.
+  - One recorder step records the first 16 streams it sees. A further stream is not
+    recorded and its anchor is `unavailable:too_many_streams`.
+  - The block requires engine `>=1.18.0`.
+- **Video clips on Vision Events** (`roboflow_core/roboflow_vision_events@v1`, numpy
+  and tensor-native variants).
+  - New inputs: `video_clips` (one anchor or a list of up to 4), `video_label`,
+    `confirm_ingestion` and `clip_upload_timeout_seconds` (default 55 minutes, at
+    most 60).
+  - New `videos` output with each clip's `video_id`, `label`, `video_status`,
+    `requested_window` and `available_from`.
+  - The event is posted at once with the video ids. Each clip is uploaded in the
+    background as soon as its post-roll is recorded.
+  - Each clip's final outcome is logged once as a `vision_event_clip_completed`
+    record. It carries a clip report: requested and actual window, frames, missing
+    frames by cause, and timings.
+  - Requests without `video_clips` are unchanged. Local Event Store mode sends the
+    event without video (`unavailable:unsupported_sink_mode`).
+- **Video clip settings.** The `WORKFLOWS_VIDEO_CLIP_*` environment variables set
+  the roll caps, the memory and upload limits, the temp directory and the NVENC
+  options. `docs/workflows/video_clips.md` lists them with their defaults and
+  describes the clip contract, host support and the measured performance.
+  - `WORKFLOWS_VIDEO_CLIP_BUDGET_BYTES` (1 GiB) bounds the clips of a process:
+    captured, built and being uploaded. Recording buffers are bounded per stream
+    and are not counted against it.
+- **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and
+  `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection`
+  task.
+  - Each annotation lists its `keypoints` as `[{"class": <keypoint name>, "x": ..., "y":
+    ..., "occluded": false}]`. Leave out the keypoints the instance does not show.
+    `occluded` defaults to `false`. `class_id`, counted from 0, picks between keypoints
+    that share a name. The names are checked against `keypoint_schema`.
+  - A keypoint prediction can be passed as it is, with two caveats: its `confidence` is
+    ignored, and it has no `occluded`, so each of its keypoints is drawn as visible.
+    First remove the keypoints the instance does not show and mark the hidden ones
+    `occluded`.
+  - The block draws each instance's skeleton on the examples: its edges, a filled dot
+    for a visible keypoint and a hollow ring for an occluded one. Each keypoint is
+    numbered by its position in the class skeleton, and the text before the examples
+    maps the numbers to the keypoint names. Gemini gets whole images. OpenAI gets crops
+    of the instances, 256 to 512 pixels on the long edge.
+  - Limits: the examples of one request draw at most 20,000 keypoints and skeleton edges
+    together, and a larger request is refused before any example image is loaded. An
+    example takes at most 5,000 annotations, for object detection too. An edge listed
+    more than once in `keypoint_schema` is drawn once.
+  - Object-detection examples and requests without examples are otherwise unchanged.
 
 ### Changed
 
-- Anthropic Claude block (v5) defaults `model_version` to `claude-sonnet-5-5`.
+- **Action Recognition Model: `analyzed_until_frame`.** The output reports the inclusive
+  end of the latest successful window, or null before the first success. Cosmos reports
+  the last sampled source frame. Models that use the observed window duration report the
+  source frame that triggered the call. Earlier failed or skipped windows can leave gaps
+  before the mark.
+- **Action Recognition Model: end of a video file.** The block can classify the buffered
+  samples on the last frame of a video file that reports its frame count. A clip shorter
+  than one stride can get a result if enough samples are buffered. When the file ends
+  between scheduled calls, the final window can overlap the preceding one even when the
+  configured overlap is zero. Live streams, files without a usable frame count, and
+  files whose last frame the source drops (for example with `max_fps`) behave as before.
+- **Action Recognition Model: `background_inference`.** A new option; the default is
+  unchanged. A live stream then hands each window to a worker thread, so the step
+  returns at once and the video does not wait for the model.
+  - The result reaches the timeline on the stream's next frame after the call ends, so
+    the last call of a stream that stops is not reported.
+  - One call runs per stream at a time. A call that comes due while the previous one has
+    not finished waits and takes the newest window.
+  - When a call starts late, `error_status` names the frames no window covers between it
+    and the previous call.
+  - A stream reads `background_inference` on its first frame and keeps that mode until
+    its state resets. A step has one worker, so its streams take turns. Video files
+    always classify inside the step.
+- **Anthropic Claude block (v5) defaults `model_version` to `claude-sonnet-5-5`**.
   The previous default, `claude-sonnet-4-5` (`claude-sonnet-4-5-20250929`), is
   retired by Anthropic on November 30, 2026. Workflows that set
-  `model_version` explicitly are unchanged.
-- Action Recognition Model reports the inclusive end of the latest successful
-  window in `analyzed_until_frame`, or null before the first success. Cosmos
-  reports the last sampled source frame. Models that use the observed window
-  duration report the source frame that triggered the call. Earlier failed or
-  skipped windows can leave gaps before the mark.
-- Action Recognition Model can classify the buffered samples on the last frame
-  of a video file that reports its frame count. A clip shorter than one stride
-  can get a result if enough samples are buffered.
-  When the file ends between scheduled calls, the final window can overlap
-  the preceding window even when the configured overlap is zero.
-  Live streams and files without a usable frame count behave as before, and
-  so does a file whose last frame the source drops (for example with
-  `max_fps`).
-- Action Recognition Model gains `background_inference`. A live stream then
-  hands each window to a worker thread, so the step returns at once and the
-  video does not wait for the model. The result reaches the timeline on the
-  stream's next frame after the call ends, so the last call of a stream that
-  stops is not reported. One call runs per stream at a time; a call that comes
-  due while the previous one has not finished waits and takes the newest
-  window. When a call starts late, `error_status` names the frames no window
-  covers between it and the previous call. A stream reads
-  `background_inference` on its first frame and keeps that mode until its
-  state resets. A step has one worker, so its streams take turns. Video files
-  always classify inside the step. The default is unchanged.
-
+  `model_version` explicitly are unchanged. 
+  
 ### Fixed
 
-- Action Recognition Model releases queued background windows when a stream
-  restarts, its configuration changes, its state is evicted, or the model
-  changes. A classification already running can finish. A failed call on one
-  camera no longer keeps another camera's completed window in memory.
-
-- OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
-
-- OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
-
-- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
-  tensor-native variants) no longer fails the run when an image has no QR code.
-  OpenCV returns no corners in that case, and the block now returns empty
-  predictions. Each box now covers all four corners of its code. The box used to
-  be built from two corners on the assumption that the code was upright, so a
-  code turned 45 degrees or more either way got an empty or inverted box, and a
-  smaller tilt left part of the code outside the box.
-
-- QR Code Detection (`roboflow_core/qr_code_detector@v1`): with
-  `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
-  with no QR code now reports the image `width` and `height`. They used to be
-  `null`, while the tensor-native variant already reported them.
+- **Tensor-native Vision Events** (`roboflow_core/roboflow_vision_events@v1` with
+  `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the
+  numpy variant: the shared Roboflow API headers (inference version and any
+  `ROBOFLOW_API_EXTRA_HEADERS`) plus the bearer token. A configured `Authorization`
+  header wins over the bearer token. Upload and send errors no longer show `api_key` or
+  `service_secret` from the URL. The block description now covers `cooldown_seconds`.
+  Request bodies are unchanged.
+- **Action Recognition Model** releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model changes. A
+  classification already running can finish. A failed call on one camera no longer keeps
+  another camera's completed window in memory.
+- **OpenAI Decisions Switch** (`roboflow_core/open_ai_decisions_switch@v1`). The example
+  `context` now holds the `boxes` value that the example `context_operations` reduces,
+  so the block's generated example definition validates. The description states the 0.9
+  `min_confidence` default, and that a probability that is not a number from 0 to 1 runs
+  `default_next_steps`.
+- **OpenAI Decisions** (`roboflow_core/open_ai_decisions@v1`). The description no longer
+  states how the Decisions API bills.
+- **QR Code Detection** (`roboflow_core/qr_code_detector@v1`, numpy and tensor-native
+  variants).
+  - An image with no QR code no longer fails the run. OpenCV returns no corners in that
+    case, and the block now returns empty predictions.
+  - Each box now covers all four corners of its code. The box used to be built from two
+    corners on the assumption that the code was upright. A code turned 45 degrees or
+    more either way got an empty or inverted box, and a smaller tilt left part of the
+    code outside the box.
+  - With `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
+    with no QR code now reports the image `width` and `height`. They used to be `null`,
+    while the tensor-native variant already reported them.
 
 ## `0.2.17`
 

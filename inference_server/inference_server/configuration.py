@@ -491,6 +491,12 @@ ENABLE_WORKFLOWS_PROFILING = get_boolean_from_env(
 WORKFLOWS_PROFILER_BUFFER_SIZE = get_integer_from_env(
     "WORKFLOWS_PROFILER_BUFFER_SIZE", default=64
 )
+# Seconds a pipeline gives Workflow blocks to finish in-flight work (for example
+# the video clip recorder muxing pending clips) between `prepare_close()` and
+# `close()`.
+WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS = get_float_from_env(
+    "WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS", default=30.0
+)
 WORKFLOWS_DEFINITION_CACHE_TTL_S = get_integer_from_env(
     "WORKFLOWS_DEFINITION_CACHE_EXPIRY", default=15 * 60
 )

@@ -38,6 +38,9 @@ from roboflow_workflows.execution_engine.v1.compiler.utils import (
 from roboflow_workflows.execution_engine.v1.compiler.validator import (
     validate_workflow_specification,
 )
+from roboflow_workflows.execution_engine.v1.compiler.video_clip_checks import (
+    verify_video_clip_anchors,
+)
 from roboflow_workflows.execution_engine.v1.debugger.core import dump_execution_graph
 from roboflow_workflows.execution_engine.v1.dynamic_blocks import block_scaffolding
 from roboflow_workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
@@ -240,6 +243,14 @@ def compile_workflow_graph(
     execution_graph = prepare_execution_graph(
         workflow_definition=parsed_workflow_definition,
         profiler=profiler,
+    )
+    verify_video_clip_anchors(
+        execution_graph,
+        available_blocks=available_blocks,
+        step_execution_mode=init_parameters.get(
+            "workflows_core.step_execution_mode",
+            init_parameters.get("step_execution_mode"),
+        ),
     )
     result = GraphCompilationResult(
         execution_graph=execution_graph,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from typing import Any, Dict, Optional
@@ -24,6 +25,8 @@ from roboflow_workflows.prototypes.observer import NULL_EXECUTION_OBSERVER
 
 from inference_server import configuration
 from inference_server.workflows import host
+
+logger = logging.getLogger(__name__)
 
 
 def make_profiler(enable_profiling: bool) -> WorkflowsProfiler:
@@ -81,6 +84,59 @@ def run_workflow_sync(
         workflow_id=workflow_id,
         step_error_handler=host.step_error_handler,
     )
+    try:
+        return _run_workflow_and_build_response(
+            execution_engine=execution_engine,
+            workflow_request=workflow_request,
+            profiler=profiler,
+            is_preview=is_preview,
+            debug=debug,
+        )
+    finally:
+        # after the run, so the close is queued behind the sink tasks it added
+        close_execution_engine_after_run(
+            execution_engine=execution_engine,
+            background_tasks=init_parameters.get("workflows_core.background_tasks"),
+        )
+
+
+def close_execution_engine_after_run(
+    *,
+    execution_engine: Any,
+    background_tasks: Any,
+) -> None:
+    """Close a per-request execution engine once nothing needs its blocks.
+
+    Blocks may hold resources that garbage collection cannot release (a thread, a
+    session), so every request closes its engine. With background tasks the close
+    is queued as the last one, after the fire-and-forget sink tasks the run
+    queued. Without them (Lambda, GCP serverless) sinks ran inside the run, so the
+    engine is closed right away.
+
+    Args:
+        execution_engine: The engine the request built and ran.
+        background_tasks: The request's background tasks, or None.
+    """
+    if background_tasks is not None:
+        background_tasks.add_task(execution_engine.close)
+        return None
+
+    try:
+        execution_engine.close()
+    except Exception as error:
+        # Called from a `finally`: a failed close must not replace the response
+        # or the error of the run.
+        logger.warning("Could not close the workflow execution engine: %s", error)
+
+
+def _run_workflow_and_build_response(
+    *,
+    execution_engine: Any,
+    workflow_request: WorkflowInferenceRequest,
+    profiler: WorkflowsProfiler,
+    is_preview: bool,
+    debug: bool,
+) -> WorkflowInferenceResponse:
     debug_context = register_debug_session() if debug else nullcontext()
     with debug_context as debug_session:
         try:

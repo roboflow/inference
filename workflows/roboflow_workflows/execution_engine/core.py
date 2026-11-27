@@ -100,12 +100,30 @@ class ExecutionEngine(BaseExecutionEngine):
             serialize_results=serialize_results,
         )
 
+    def prepare_close(self, deadline_seconds: Optional[float] = None) -> None:
+        """Start the first phase of closing: let blocks begin finishing their work.
+
+        Calls ``prepare_close(deadline_seconds)`` on every block that defines one,
+        for example so a video recorder stops ingesting frames and starts muxing
+        pending clips. Hosts call it before shutting down their thread pools, then
+        call ``close()`` after them. A failing block is logged and skipped. Safe to
+        call more than once and from several threads; only the first call acts.
+
+        Args:
+            deadline_seconds: Seconds the host allows, from now, for the blocks to
+                finish before ``close()``; ``None`` when the host sets no limit.
+        """
+        prepare_close = getattr(self._engine, "prepare_close", None)
+        if callable(prepare_close):
+            prepare_close(deadline_seconds)
+
     def close(self) -> None:
         """Release resources the workflow's blocks hold between runs.
 
         Calls ``close()`` on every block that defines one, such as the background
-        connections of reader blocks. Safe to call more than once; the engine must
-        not be run afterwards.
+        connections of reader blocks. Safe to call more than once and from several
+        threads: blocks are closed once, and a concurrent call returns after that
+        close has finished. The engine must not be run afterwards.
         """
         self._engine.close()
 

@@ -717,6 +717,69 @@ def test_workflow_image_video_metadata_preservation() -> None:
     assert result is metadata
 
 
+def test_workflow_image_has_video_metadata_when_metadata_is_set() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        video_metadata=metadata,
+    )
+
+    # when
+    result = image.has_video_metadata
+
+    # then
+    assert result is True
+    assert image.video_metadata is metadata
+
+
+def test_workflow_image_has_video_metadata_when_metadata_is_unset() -> None:
+    # given
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+    )
+
+    # when
+    result = image.has_video_metadata
+
+    # then
+    assert result is False
+
+
+def test_workflow_image_has_video_metadata_does_not_synthesise_default() -> None:
+    # given
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+    )
+
+    # when
+    result = image.has_video_metadata
+
+    # then
+    assert result is False
+    assert image._video_metadata is None
+    assert image._parent_metadata.origin_coordinates is None
+
+    # when
+    synthesised = image.video_metadata
+    after_synthesis = image.has_video_metadata
+
+    # then
+    assert synthesised.video_identifier == "parent"
+    assert image._parent_metadata.origin_coordinates is not None
+    assert after_synthesis is False
+    assert image._video_metadata is None
+
+
 def test_workflow_image_replace_image_operation() -> None:
     # given
     metadata = VideoMetadata(

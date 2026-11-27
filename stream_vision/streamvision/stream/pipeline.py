@@ -178,8 +178,10 @@ class InferencePipeline:
             video_reference: Reference of the source or sources to process.
             workflow_specification: The resolved workflow definition.
             workflow_init_parameters: Execution Engine init parameters built by
-                the host. The pipeline sets `workflows_core.thread_pool_executor`
-                and `workflows_core.disable_sinks` in this same dict and passes
+                the host. The pipeline sets `workflows_core.thread_pool_executor`,
+                `workflows_core.disable_sinks` and
+                `workflows_core.host_manages_block_lifecycle` (always True: the
+                pipeline closes the engine when it ends) in this same dict and passes
                 it, together with every value the host placed in it (the models
                 provider object included), to `ExecutionEngine.init` unchanged.
             step_error_handler: The effective step error handler, passed to
@@ -251,6 +253,11 @@ class InferencePipeline:
                 thread_pool_executor
             )
             workflow_init_parameters["workflows_core.disable_sinks"] = disable_sinks
+            # The pipeline closes the engine in `on_pipeline_end` (prepare_close,
+            # pool shutdown, close), so blocks may hold threads between frames.
+            workflow_init_parameters["workflows_core.host_manages_block_lifecycle"] = (
+                True
+            )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
@@ -293,6 +300,8 @@ class InferencePipeline:
             profiling_directory=profiling_directory,
             execution_engine_thread_pool_executor=execution_engine_thread_pool_executor,
             execution_engine=execution_engine,
+            # `None`: WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS; see `set_block_close_deadline`.
+            block_close_deadline_seconds=None,
         )
         return cls.init_with_custom_logic(
             video_reference=video_reference,
@@ -641,6 +650,28 @@ class InferencePipeline:
         for video_source in self._video_sources:
             if video_source.source_id == source_id or source_id is None:
                 video_source.resume()
+
+    def set_block_close_deadline(self, deadline_seconds: Optional[float]) -> None:
+        """Set how long the workflow's blocks get to finish when the pipeline ends.
+
+        `join()` passes the deadline to the Execution Engine's `prepare_close()`,
+        for example so a video clip recorder knows how long it has to mux pending
+        clips. Applies only to a pipeline built by `init_with_workflow`; for one
+        built with custom logic it does nothing. Call it before `join()`.
+
+        Args:
+            deadline_seconds: Seconds from the start of the close; `None` restores
+                `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS`.
+        """
+        on_pipeline_end = self._on_pipeline_end
+        if not isinstance(on_pipeline_end, partial):
+            return None
+        if "block_close_deadline_seconds" not in on_pipeline_end.keywords:
+            return None
+
+        self._on_pipeline_end = partial(
+            on_pipeline_end, block_close_deadline_seconds=deadline_seconds
+        )
 
     def join(self) -> None:
         if self._inference_thread is not None:

@@ -432,6 +432,10 @@ else:
     )
 
 from roboflow_workflows.core_steps.fusion.image_stack.v1 import ImageStackBlockV1
+from roboflow_workflows.core_steps.fusion.video_clip_recorder.v1 import (
+    VideoClipRecorderBlockV1,
+    serialize_video_clip_anchor,
+)
 
 if not ENABLE_TENSOR_DATA_REPRESENTATION:
     from roboflow_workflows.core_steps.fusion.overlap_analysis.v1 import (
@@ -1580,6 +1584,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     STRING_KIND,
     TIMESTAMP_KIND,
     TOP_CLASS_KIND,
+    VIDEO_CLIP_ANCHOR_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
@@ -1606,6 +1611,13 @@ REGISTERED_INITIALIZERS = {
     "inner_workflow_remote_target": WORKFLOWS_INNER_WORKFLOW_REMOTE_TARGET,
     "inner_workflow_dispatch_depth": 0,
     "disable_sinks": False,
+    # False unless the host promises to call `ExecutionEngine.close()` when it is
+    # done with the engine (a stream pipeline sets
+    # `workflows_core.host_manages_block_lifecycle`). Blocks that own threads or
+    # other resources garbage collection cannot release (the Video Clip Recorder)
+    # stay idle without it, so a host that forgets the binding loses the feature
+    # instead of leaking.
+    "host_manages_block_lifecycle": False,
     # Standalone default. The server overrides it with
     # `workflows_core.platform_client` at every composition root. An object,
     # not a function: call_if_callable() would invoke a function registered
@@ -1639,6 +1651,8 @@ KINDS_SERIALIZERS = {
     WILDCARD_KIND.name: serialize_wildcard_kind,
     DETECTIONS_OVERLAPS_KIND.name: serialize_wildcard_kind,
     TIMESTAMP_KIND.name: serialize_timestamp,
+    # Metadata only; anchors are never deserialised (see video_clip_checks).
+    VIDEO_CLIP_ANCHOR_KIND.name: serialize_video_clip_anchor,
 }
 if ENABLE_TENSOR_DATA_REPRESENTATION:
     # Tensor-native producers emit native dataclasses for these kinds, which the
@@ -1808,6 +1822,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SizeMeasurementBlockV1,
         BufferBlockV1,
         FrameDelayBlockV1,
+        VideoClipRecorderBlockV1,
         ImageStackBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
@@ -2071,6 +2086,7 @@ def load_kinds() -> List[Kind]:
         WILDCARD_KIND,
         IMAGE_KIND,
         VIDEO_METADATA_KIND,
+        VIDEO_CLIP_ANCHOR_KIND,
         ACTION_RECOGNITION_PREDICTION_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,

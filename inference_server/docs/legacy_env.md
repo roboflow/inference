@@ -254,6 +254,7 @@ definition; the last column is the new reader.
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `env.py:1095` | `configuration.py:246` | `8` |
 | `ENABLE_WORKFLOWS_PROFILING` | `env.py:1291` | `configuration.py:252` | `False` |
 | `WORKFLOWS_PROFILER_BUFFER_SIZE` | `env.py:1292` | `configuration.py:255` | `64` |
+| `WORKFLOWS_BLOCK_CLOSE_DEADLINE_SECONDS` | `env.py:1310` | `configuration.py`; `streams/configuration.py`: seconds a workflow pipeline gives blocks to finish in-flight work (the Video Clip Recorder muxing and uploading pending clips) between `prepare_close()` and `close()` when it ends | `30.0` |
 | `WORKFLOWS_DEFINITION_CACHE_EXPIRY` | `env.py:1293` | `configuration.py:258` | `900` |
 | `USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS` | `env.py:1296` | `configuration.py`; `workflows/host.py`, `workflows/definition_cache.py`: a saved Workflow definition fetched from the platform is written under `{MODEL_CACHE_DIR}/workflow/<workspace>/` in the legacy layout and served from there when the platform cannot be reached (connection error, timeout, offline mode); forced on in offline mode, where the file cache is the only source | `True` |
 | `SINGLE_TENANT_WORKFLOW_CACHE` | `env.py:1299` | `configuration.py`; `workflows/definition_cache.py`: `True` keeps definition files in the `.canonical-v2` namespace without a tenant fingerprint and reads the pre-namespace `<workspace>/<workflow>.json` files; forced on in offline mode, which also reads `.tenanted-v2` entries written online | `False` |
