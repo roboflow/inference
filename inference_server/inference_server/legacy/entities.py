@@ -1,5 +1,5 @@
 import base64
-from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import (
@@ -406,6 +406,7 @@ class ActionRecognitionInferenceRequest(BaseRequest):
     Attributes:
         model_id (str): The model to classify with.
         video (InferenceRequestVideo): The clip to classify.
+        confidence: Threshold for scored predictions before merging windows.
         class_filter (Optional[List[str]]): The subset of a fine-tuned
             model's classes to report. A zero-shot model answers in its own
             words and ignores this.
@@ -416,6 +417,17 @@ class ActionRecognitionInferenceRequest(BaseRequest):
         description="The model to classify with",
     )
     video: InferenceRequestVideo
+    confidence: Optional[
+        Union[Annotated[float, Field(ge=0, le=1)], Literal["best", "default"]]
+    ] = Field(
+        default=None,
+        examples=[0.5, "best", "default"],
+        description=(
+            "Confidence threshold for scored spans before merging. Pass a number "
+            'from 0 to 1, "best" for model-evaluation thresholds, or "default" '
+            "for the model's built-in threshold."
+        ),
+    )
     class_filter: Optional[List[str]] = Field(
         None,
         examples=[["entering", "leaving"]],

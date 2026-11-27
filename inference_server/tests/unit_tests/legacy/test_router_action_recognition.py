@@ -126,6 +126,37 @@ def test_route_stamps_the_request_id(legacy_client, fake_stat, clip):
     assert response.json()["inference_id"] == "req-7"
 
 
+@pytest.mark.parametrize(
+    ("confidence", "expected_classes"),
+    [(None, {"wave"}), (0.90, set()), (0.20, {"wave", "jump"})],
+)
+def test_vjepa_confidence_filters_each_window(
+    legacy_client, fake_stat, clip, confidence, expected_classes
+):
+    gateway = _gateway(fake_stat, model_class_name="VJepaActionRecognition")
+    fake_stat[MODEL_ID] = ("action-recognition", "infer", "vjepa2_1", "vitb-384")
+
+    def scored_predictions(image, params):
+        threshold = params.get("confidence", 0.50)
+        return [
+            ModelPrediction(0, 1, name, confidence=score)
+            for name, score in [("wave", 0.72), ("jump", 0.30)]
+            if score >= threshold
+        ]
+
+    gateway.predictions[(MODEL_ID, "infer")] = scored_predictions
+    overrides = {} if confidence is None else {"confidence": confidence}
+    response = legacy_client(gateway).post(
+        "/infer/action_recognition", json=_request(clip, **overrides)
+    )
+
+    assert response.status_code == 200, response.text
+    assert {span["class"] for span in response.json()["timeline"]} == expected_classes
+    assert [call[3].get("confidence") for call in _infer_calls(gateway)] == [
+        confidence
+    ] * len(PLANNED_WINDOWS)
+
+
 def test_route_sends_no_class_filter_as_none(legacy_client, fake_stat, clip):
     gateway = _gateway(fake_stat)
 
@@ -252,13 +283,16 @@ def test_route_without_a_body_is_422(legacy_client, fake_stat):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    ("query_confidence", "expected"), [("50", 0.5), ("0", 0.0), ("best", "best")]
+)
 def test_catch_all_dispatches_action_recognition_with_class_filter(
-    legacy_client, fake_stat, clip
+    legacy_client, fake_stat, clip, query_confidence, expected
 ):
     gateway = _gateway(fake_stat)
 
     response = legacy_client(gateway).post(
-        f"/{MODEL_ID}?api_key=k&class_filter=wave,%20jump,&confidence=50",
+        f"/{MODEL_ID}?api_key=k&class_filter=wave,%20jump,&confidence={query_confidence}",
         content=clip_base64(clip).encode("ascii"),
         headers=FORM_CONTENT_TYPE,
     )
@@ -270,7 +304,9 @@ def test_catch_all_dispatches_action_recognition_with_class_filter(
     assert body["resolved_model"]["model_id"] == MODEL_ID
     calls = _infer_calls(gateway)
     assert [call[3]["class_names"] for call in calls] == [["wave", "jump"]] * 3
-    assert all(set(call[3]) == {"frames", "class_names", "fps"} for call in calls)
+    assert [call[3]["confidence"] for call in calls] == [expected] * len(
+        PLANNED_WINDOWS
+    )
 
 
 def test_catch_all_without_class_filter_sends_none(legacy_client, fake_stat, clip):
@@ -284,6 +320,7 @@ def test_catch_all_without_class_filter_sends_none(legacy_client, fake_stat, cli
 
     assert response.status_code == 200, response.text
     assert {call[3]["class_names"] for call in _infer_calls(gateway)} == {None}
+    assert all("confidence" not in call[3] for call in _infer_calls(gateway))
 
 
 def test_catch_all_fetches_the_clip_from_the_image_url(

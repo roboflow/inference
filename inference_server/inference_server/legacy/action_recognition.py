@@ -20,6 +20,7 @@ from inference_server.legacy.bridge import Route
 from inference_server.legacy.entities import (
     ActionRecognitionInferenceResponse,
     ActionRecognitionPrediction,
+    Confidence,
 )
 from inference_server.legacy.errors import LegacyHTTPError
 from inference_server.legacy.video import (
@@ -67,6 +68,7 @@ async def classify_video(
     video_type: str,
     video_value: Any,
     class_filter: Optional[List[str]],
+    confidence: Optional[Confidence] = None,
 ) -> ActionRecognitionInferenceResponse:
     """Classify the actions in a clip with the model behind ``route``.
 
@@ -89,6 +91,7 @@ async def classify_video(
         video_value: The URL, or the base64 text of the clip.
         class_filter: Classes a fine-tuned model should report; ``None`` for
             all of them.
+        confidence: Optional prediction threshold for models that score spans.
 
     Returns:
         The classified ranges covering the clip, sorted by start frame and
@@ -127,15 +130,15 @@ async def classify_video(
                     continue
 
                 windows_classified += 1
+                params = {
+                    "frames": frames,
+                    "class_names": class_filter,
+                    "fps": window.sample_fps,
+                }
+                if confidence is not None:
+                    params["confidence"] = confidence
                 segments = await bridge.infer_params_only(
-                    route,
-                    api_key,
-                    ACTION_RECOGNITION_ACTION,
-                    {
-                        "frames": frames,
-                        "class_names": class_filter,
-                        "fps": window.sample_fps,
-                    },
+                    route, api_key, ACTION_RECOGNITION_ACTION, params
                 )
                 merge_window_segments(
                     timeline=timeline,
