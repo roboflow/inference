@@ -139,6 +139,7 @@ class ActionRecognitionModel(ABC):
     confidence_threshold = None
     supports_confidence: bool = False
     supports_observed_duration: bool = False
+    supports_prompt: bool = False
     end_exclusive_spans: bool = False
     # Package files that contract_from_package reads; nothing else is fetched.
     contract_files: Tuple[str, ...] = ()
