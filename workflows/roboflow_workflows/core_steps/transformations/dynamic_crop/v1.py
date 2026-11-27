@@ -190,6 +190,7 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class DynamicCropBlockV1(WorkflowBlock):
+    include_source = False
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -208,6 +209,7 @@ class DynamicCropBlockV1(WorkflowBlock):
                 detections=detections,
                 mask_opacity=mask_opacity,
                 background_color=background_color,
+                include_source=self.include_source,
             )
             for image, detections in zip(images, predictions)
         ]
@@ -219,6 +221,7 @@ def crop_image(
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
+    include_source: bool = False,
 ) -> List[Dict[str, any]]:
     if len(detections) == 0:
         return []
@@ -233,7 +236,10 @@ def crop_image(
     ):
         cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
         if not cropped_image.size:
-            crops.append({"crops": None, "predictions": None})
+            empty = {"crops": None, "predictions": None}
+            if include_source:
+                empty.update(source_image=None, source_prediction=None)
+            crops.append(empty)
             continue
         if mask_opacity > 0 and detections.mask is not None:
             detection_mask = detections.mask[idx]
@@ -291,6 +297,8 @@ def crop_image(
                 "predictions": translated_detection,
             }
         )
+        if include_source:
+            crops[-1].update(source_image=image, source_prediction=selected_detection)
     return crops
 
 

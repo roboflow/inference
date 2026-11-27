@@ -4,19 +4,27 @@ from typing import Tuple, Union
 import numpy as np
 import pytest
 import supervision as sv
+import torch
 from pydantic import ValidationError
 from roboflow_workflows.core_steps.transformations.dynamic_crop.v1 import (
     BlockManifest,
     convert_color_to_bgr_tuple,
     crop_image,
 )
+from roboflow_workflows.core_steps.transformations.dynamic_crop.v2 import (
+    DynamicCropBlockV2,
+)
+from roboflow_workflows.environment import ENABLE_TENSOR_DATA_REPRESENTATION
 from roboflow_workflows.execution_engine.entities.base import (
+    Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,
     VideoMetadata,
     WorkflowImageData,
 )
 from supervision.config import ORIENTED_BOX_COORDINATES
+
+from inference_models.models.base.object_detection import Detections
 
 
 @pytest.mark.parametrize(
@@ -515,3 +523,52 @@ def test_crop_image_translates_oriented_bounding_box_corners(
     translated_corners = translated.data[ORIENTED_BOX_COORDINATES][0]
     assert translated_corners.min() >= 0.0
     assert translated_corners.max() <= side
+
+
+def test_source_evidence_keeps_each_frames_original_box_and_pixels() -> None:
+    frames = []
+    predictions = []
+    boxes = [[10, 12, 28, 31], [0, 0, 0, 0], [40, 45, 60, 64]]
+    for i in range(2):
+        pixels = np.full((80, 90, 3), i + 1, dtype=np.uint8)
+        data = (
+            {"tensor_image": torch.from_numpy(pixels).permute(2, 0, 1)}
+            if ENABLE_TENSOR_DATA_REPRESENTATION
+            else {"numpy_image": pixels}
+        )
+        frames.append(
+            WorkflowImageData(
+                parent_metadata=ImageParentMetadata(parent_id=str(i)), **data
+            )
+        )
+        ids = [f"{i}-{j}" for j in range(3)]
+        predictions.append(
+            Detections(
+                xyxy=torch.tensor(boxes, dtype=torch.float32),
+                class_id=torch.zeros(3, dtype=torch.long),
+                confidence=torch.ones(3),
+                image_metadata={"class_names": {0: "person"}},
+                bboxes_metadata=[{"detection_id": identifier} for identifier in ids],
+            )
+            if ENABLE_TENSOR_DATA_REPRESENTATION
+            else sv.Detections(
+                xyxy=np.array(boxes, dtype=float), data={"detection_id": np.array(ids)}
+            )
+        )
+
+    rows = DynamicCropBlockV2().run(
+        images=Batch.init(frames, [(0,), (1,)]),
+        predictions=Batch.init(predictions, [(0,), (1,)]),
+        mask_opacity=0,
+        background_color=(0, 0, 0),
+    )
+    for i, row in enumerate(rows):
+        assert all(value is None for value in row[1].values())
+        for j in (0, 2):
+            entry = row[j]
+            assert entry["source_image"] is frames[i]
+            assert entry["source_prediction"].xyxy.tolist() == [boxes[j]]
+            assert entry["predictions"].xyxy.tolist()[0][:2] == [0, 0]
+            assert entry["crops"].parent_metadata.parent_id == f"{i}-{j}"
+        if ENABLE_TENSOR_DATA_REPRESENTATION:
+            assert frames[i]._numpy_image is None
