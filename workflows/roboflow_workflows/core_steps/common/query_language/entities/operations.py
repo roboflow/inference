@@ -236,9 +236,23 @@ class ActionRecognitionPropertyExtract(OperationDefinition):
             "input_kind": [ACTION_RECOGNITION_RESULT_KIND],
             "output_kind": [
                 ACTION_RECOGNITION_PREDICTION_KIND,
+                LIST_OF_VALUES_KIND,
                 INTEGER_KIND,
                 STRING_KIND,
             ],
+            "output_kind_by_property": {
+                ActionRecognitionProperty.TIMELINE.value: [
+                    ACTION_RECOGNITION_PREDICTION_KIND.name,
+                    LIST_OF_VALUES_KIND.name,
+                ],
+                ActionRecognitionProperty.ANALYZED_FROM_FRAME.value: [
+                    INTEGER_KIND.name
+                ],
+                ActionRecognitionProperty.ANALYZED_UNTIL_FRAME.value: [
+                    INTEGER_KIND.name
+                ],
+                ActionRecognitionProperty.ERROR_STATUS.value: [STRING_KIND.name],
+            },
         },
     )
     type: Literal["ActionRecognitionPropertyExtract"]

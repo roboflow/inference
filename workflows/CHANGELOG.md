@@ -65,7 +65,9 @@ for contributor and maintainer responsibilities.
     `$steps.actions.predictions` and set its operations to e.g.
     `[{"type": "ActionRecognitionPropertyExtract", "property_name": "analyzed_until_frame"}]`.
     A Property Definition step named `coverage_end` exposes that frame number
-    through `$steps.coverage_end.output`.
+    through `$steps.coverage_end.output`. The same operation accepts a serialized
+    result in a scalar `WorkflowParameter`, such as a **Continue If** condition.
+    To count action ranges, select **Timeline** and then **Count Items** (`SequenceLength`).
 
 ### Changed
 
