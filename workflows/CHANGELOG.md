@@ -42,7 +42,11 @@ for contributor and maintainer responsibilities.
   contains the cumulative `timeline`, the current `error_status`, and
   `analyzed_from_frame` and `analyzed_until_frame`. These inclusive bounds
   describe only the latest successful window and are null before the first
-  success. Earlier failed, skipped, or non-overlapping windows can leave gaps.
+  success. `covered_frame_ranges` records the union of successful windows,
+  including quiet windows, across the most recent 900 seconds at `source_fps`.
+  `stream_generation` identifies the current model state even when a consumer
+  skips the reset frame. Earlier failed or skipped windows can leave gaps.
+  Each output owns its editable timeline entries.
   Cosmos reports the first and last sampled source frames. Models that use the
   observed window duration report the floored intended first sample position
   and the source frame that triggered the call.
