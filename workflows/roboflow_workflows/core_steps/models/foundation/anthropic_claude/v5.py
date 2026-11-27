@@ -396,12 +396,12 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
         Literal[tuple(MODEL_VERSION_IDS)],
     ] = Field(
-        default="claude-sonnet-4-5",
+        default="claude-sonnet-5-5",
         description="Model to be used",
         examples=[
-            "claude-opus-5-5",
             "claude-sonnet-5-5",
-            "claude-sonnet-4-5",
+            "claude-opus-5-5",
+            "claude-haiku-5-5",
             "$inputs.claude_model",
         ],
         json_schema_extra={

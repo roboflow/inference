@@ -37,6 +37,10 @@ for contributor and maintainer responsibilities.
 
 ### Changed
 
+- Anthropic Claude block (v5) defaults `model_version` to `claude-sonnet-5-5`.
+  The previous default, `claude-sonnet-4-5` (`claude-sonnet-4-5-20250929`), is
+  retired by Anthropic on November 30, 2026. Workflows that set
+  `model_version` explicitly are unchanged.
 - Action Recognition Model reports the inclusive end of the latest successful
   window in `analyzed_until_frame`, or null before the first success. Cosmos
   reports the last sampled source frame. Models that use the observed window
