@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from roboflow_workflows.core_steps.common.query_language.entities.enums import (
+    ActionRecognitionProperty,
     ClassificationProperty,
     DetectionsProperty,
     DetectionsSelectionMode,
@@ -14,6 +15,8 @@ from roboflow_workflows.core_steps.common.query_language.entities.enums import (
     StatementsGroupsOperator,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    ACTION_RECOGNITION_PREDICTION_KIND,
+    ACTION_RECOGNITION_RESULT_KIND,
     BOOLEAN_KIND,
     BYTES_KIND,
     CLASSIFICATION_PREDICTION_KIND,
@@ -223,6 +226,25 @@ class DetectionsToDictionary(OperationDefinition):
         },
     )
     type: Literal["DetectionsToDictionary"]
+
+
+class ActionRecognitionPropertyExtract(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Read a field from an Action Recognition Model result.",
+            "compound": False,
+            "input_kind": [ACTION_RECOGNITION_RESULT_KIND],
+            "output_kind": [
+                ACTION_RECOGNITION_PREDICTION_KIND,
+                INTEGER_KIND,
+                STRING_KIND,
+            ],
+        },
+    )
+    type: Literal["ActionRecognitionPropertyExtract"]
+    property_name: ActionRecognitionProperty = Field(
+        description="Result field to return. Frame bounds are null before the first successful window."
+    )
 
 
 class ClassificationPropertyExtract(OperationDefinition):
@@ -641,6 +663,7 @@ AllOperationsType = Annotated[
         Divide,
         DetectionsSelection,
         SortDetections,
+        ActionRecognitionPropertyExtract,
         ClassificationPropertyExtract,
         ConvertImageToJPEG,
         ConvertImageToBase64,
