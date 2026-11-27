@@ -440,3 +440,21 @@ def test_direct_request_translates_controls_for_new_generation_model() -> None:
     assert no_thinking_kwargs["model"] == NEW_GENERATION_MODEL
     assert thinking_kwargs["thinking"] == {"type": "adaptive"}
     assert thinking_kwargs["max_tokens"] == MAX_OUTPUT_TOKENS[NEW_GENERATION_MODEL]
+
+
+def test_v5_default_model_version_is_claude_sonnet_5_5() -> None:
+    # Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) is retired on 2026-11-30;
+    # https://platform.claude.com/docs/en/about-claude/model-deprecations
+    specification = {
+        "type": "roboflow_core/anthropic_claude@v5",
+        "name": "step_1",
+        "images": "$inputs.image",
+        "task_type": "unconstrained",
+        "prompt": "This is my prompt",
+        "api_key": "$inputs.anthropic_api_key",
+    }
+
+    result = BlockManifest.model_validate(specification)
+
+    assert result.model_version == "claude-sonnet-5-5"
+    assert EXACT_MODEL_VERSIONS[result.model_version] == "claude-sonnet-5-5"
