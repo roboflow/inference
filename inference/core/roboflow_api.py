@@ -82,6 +82,7 @@ from inference.core.exceptions import (
     RoboflowAPIImageUploadUncertainError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRateLimitedError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     RoboflowAPIUsagePausedError,
@@ -231,6 +232,11 @@ DEFAULT_ERROR_HANDLERS = {
         e,
         RoboflowAPIUsagePausedError,
         "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys.",
+    ),
+    429: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPIRateLimitedError,
+        "Roboflow API rate limit or usage limit reached for this workspace. Retry later or verify your workspace billing page.",
     ),
 }
 

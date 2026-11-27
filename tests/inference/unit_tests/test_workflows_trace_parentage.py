@@ -152,7 +152,7 @@ class _FakeSession:
     def __init__(self):
         self.headers_sent = []
 
-    def post(self, url, data=None, timeout=None, headers=None):
+    def post(self, url, data=None, timeout=None, headers=None, allow_redirects=True):
         self.headers_sent.append(dict(headers or {}))
         return _FakeResponse()
 

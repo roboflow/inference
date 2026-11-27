@@ -16,6 +16,25 @@ for contributor and maintainer responsibilities.
 
 ## Unreleased
 
+### Execution engine
+
+- **Custom Python requests to Modal no longer follow redirects.** The syntax
+  check and the HTTP execution request to the Modal `execute-block` endpoint,
+  and the websocket connection to `wsapp`, used to follow a 3xx response and
+  resend the `Modal-Key` and `Modal-Secret` headers to the host it named. A
+  3xx response now fails the check or the block with `DynamicBlockError`, as
+  any other unexpected status does. An endpoint set with
+  `MODAL_WEB_ENDPOINT_URL` or `MODAL_WS_ENDPOINT_URL` must answer directly
+  rather than redirect.
+  
+### Added
+
+- **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
+  - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
+  - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
+  - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
+  - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
+
 ### Changed
 
 - Anthropic Claude block (v5) defaults `model_version` to `claude-sonnet-5-5`.
@@ -35,11 +54,41 @@ for contributor and maintainer responsibilities.
   Live streams and files without a usable frame count behave as before, and
   so does a file whose last frame the source drops (for example with
   `max_fps`).
+- Action Recognition Model gains `background_inference`. A live stream then
+  hands each window to a worker thread, so the step returns at once and the
+  video does not wait for the model. The result reaches the timeline on the
+  stream's next frame after the call ends, so the last call of a stream that
+  stops is not reported. One call runs per stream at a time; a call that comes
+  due while the previous one has not finished waits and takes the newest
+  window. When a call starts late, `error_status` names the frames no window
+  covers between it and the previous call. A stream reads
+  `background_inference` on its first frame and keeps that mode until its
+  state resets. A step has one worker, so its streams take turns. Video files
+  always classify inside the step. The default is unchanged.
 
 ### Fixed
 
+- Action Recognition Model releases queued background windows when a stream
+  restarts, its configuration changes, its state is evicted, or the model
+  changes. A classification already running can finish. A failed call on one
+  camera no longer keeps another camera's completed window in memory.
+
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
+
 - OpenAI Decisions (`roboflow_core/open_ai_decisions@v1`): the description no longer states how the Decisions API bills.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`, both the numpy and
+  tensor-native variants) no longer fails the run when an image has no QR code.
+  OpenCV returns no corners in that case, and the block now returns empty
+  predictions. Each box now covers all four corners of its code. The box used to
+  be built from two corners on the assumption that the code was upright, so a
+  code turned 45 degrees or more either way got an empty or inverted box, and a
+  smaller tilt left part of the code outside the box.
+
+- QR Code Detection (`roboflow_core/qr_code_detector@v1`): with
+  `ENABLE_TENSOR_DATA_REPRESENTATION` off, the serialized result for an image
+  with no QR code now reports the image `width` and `height`. They used to be
+  `null`, while the tensor-native variant already reported them.
 
 ## `0.2.17`
 
@@ -78,6 +127,7 @@ Bundled execution engine: `1.17.3`.
 
 ### Fixed
 
+- The tensor-native Vision Events block (`roboflow_core/roboflow_vision_events@v1` with `ENABLE_TENSOR_DATA_REPRESENTATION=True`) now sends the same request headers as the numpy variant: the platform client's shared Roboflow API headers (inference version and any `ROBOFLOW_API_EXTRA_HEADERS`, such as the batch-processing auth token) plus the bearer token, and a configured `Authorization` header wins over the bearer token built from a placeholder key. It also redacts `api_key` and `service_secret` from the URL in upload and send errors, and its block documentation now describes the `cooldown_seconds` rate limit. Request bodies are unchanged.
 - Keypoint Visualization (`roboflow_core/keypoint_visualization@v1`) no longer
   fails the run when its `edges` name a keypoint that no instance has, as when
   a model left out every keypoint, or the last keypoints of a skeleton, in every

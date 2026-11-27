@@ -75,7 +75,7 @@ from roboflow_workflows.core_steps.common.vlm_reference_examples import (
     MAX_REFERENCE_EXAMPLES,
     REFERENCE_EXAMPLES_DESCRIPTION,
     REFERENCE_EXAMPLES_EXAMPLE,
-    REFERENCE_EXAMPLES_TASK,
+    REFERENCE_EXAMPLES_TASKS,
     SHARED_REFERENCE_PARTS_CACHE,
     TARGET_IMAGE_INTRO,
     ReferenceExamples,
@@ -524,14 +524,21 @@ The two lists are paired by position. Structured-output models constrain the
 returned label to `output_classes`, and decoded predictions use those stable
 labels. Omitting `output_classes` preserves the original `classes` contract.
 
-For `object-detection`, `reference_examples` takes up to {MAX_REFERENCE_EXAMPLES}
-labeled example images. The block cuts up to {MAX_CROPS_PER_LABEL} crops per label
-from the examples' boxes (largest first) and sends them, grouped by label, before
-the image to label, so the model sees what each label looks like. Box labels are
-the output labels: `output_classes` when set, `classes` otherwise. The crops go
-with every image, so they add input tokens to each request; they come first, so
-the provider can cache them across a batch. Without examples the request is
-unchanged.
+For `object-detection` and `keypoint-detection`, `reference_examples` takes up to
+{MAX_REFERENCE_EXAMPLES} labeled example images. The block cuts up to
+{MAX_CROPS_PER_LABEL} crops per label from the examples' boxes (largest first) and
+sends them, grouped by label, before the image to label, so the model sees what
+each label looks like. Box labels are the output labels: `output_classes` when set,
+`classes` otherwise. The crops go with every image, so they add input tokens to
+each request; they come first, so the provider can cache them across a batch.
+Without examples the request is unchanged.
+
+For `keypoint-detection`, each annotation also lists its `keypoints` by name, and
+each crop shows its instance's box and skeleton: the edges, a filled dot for a
+visible keypoint and a hollow ring for an occluded one, each numbered by its
+position in the class skeleton. The text before the crops maps the numbers to the
+keypoint names, so the model sees where each keypoint goes. Leave out the
+keypoints an instance does not show.
 
 A selector can provide the whole list, such as `$inputs.reference_examples`, but
 selectors inside an example are not resolved: to build the examples from a step's
@@ -775,7 +782,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": {REFERENCE_EXAMPLES_TASK},
+                    "values": set(REFERENCE_EXAMPLES_TASKS),
                     "required": False,
                 },
             },
@@ -905,10 +912,11 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`keypoint_schema` parameter required to be set for task `{self.task_type}`"
             )
+        keypoint_skeletons = None
         if self.task_type in TASKS_REQUIRING_KEYPOINT_SCHEMA and isinstance(
             self.keypoint_schema, dict
         ):
-            resolve_keypoint_skeletons(
+            keypoint_skeletons = resolve_keypoint_skeletons(
                 self.keypoint_schema,
                 classes=self.classes if isinstance(self.classes, list) else None,
             )
@@ -920,7 +928,10 @@ class BlockManifest(WorkflowBlockManifest):
             else:
                 labels = None
             validate_reference_examples(
-                self.reference_examples, task_type=self.task_type, labels=labels
+                self.reference_examples,
+                task_type=self.task_type,
+                labels=labels,
+                keypoint_skeletons=keypoint_skeletons,
             )
         validate_reasoning_level(
             model=self.model_version,
@@ -1172,8 +1183,8 @@ def run_openai_prompting(
         temperature: Sampling temperature.
         max_concurrent_requests: Cap on concurrent OpenAI requests.
         service_tier: OpenAI service tier, omitted from the request when ``None``.
-        reference_examples: Optional labeled example images for object detection,
-            in the format ``validate_reference_examples`` accepts.
+        reference_examples: Optional labeled example images for object or keypoint
+            detection, in the format ``validate_reference_examples`` accepts.
         reference_parts_cache: Keeps the parts built for the examples, the
             process-wide cache for the block; without one they load on every call.
         keypoint_schema: The skeleton of each class, for the keypoint task.
@@ -1198,10 +1209,16 @@ def run_openai_prompting(
     if reference_examples:
         labels = validate_output_classes(classes, output_classes)
         validate_reference_examples(
-            reference_examples, task_type=task_type, labels=labels
+            reference_examples,
+            task_type=task_type,
+            labels=labels,
+            keypoint_skeletons=keypoint_skeletons,
         )
         reference_parts = openai_reference_parts_for(
-            reference_examples, labels=labels, cache=reference_parts_cache
+            reference_examples,
+            labels=labels,
+            cache=reference_parts_cache,
+            keypoint_skeletons=keypoint_skeletons,
         )
 
     openai_prompts = []

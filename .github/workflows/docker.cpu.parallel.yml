@@ -45,6 +45,14 @@ jobs:
         uses: actions/checkout@v6
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Determine image tags
+        id: tags
+        uses: ./.github/actions/determine-tags
+        with:
+          version: ${{ env.VERSION }}
+          base_image: ${{ env.BASE_IMAGE }}
+          force_push: ${{ inputs.force_push }}
+          token: ${{ github.token }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       # Publishing runs push amd64 by digest, test that exact image, then reuse
@@ -57,7 +65,7 @@ jobs:
           project: grl7ffzxd7
           context: .
           load: true
-          tags: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
+          tags: ${{ steps.tags.outputs.image_tags }}
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
       - name: Build and push CPU image by digest (amd64)
@@ -72,7 +80,7 @@ jobs:
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel
       - name: Test CPU PyTorch runtime
         env:
-          IMAGE_TAGS: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
+          IMAGE_TAGS: ${{ steps.tags.outputs.image_tags }}
           AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
         run: |
           if [ "$PUBLISH" = "true" ]; then
@@ -98,7 +106,7 @@ jobs:
       - name: Publish tested amd64 and arm64 digests
         if: ${{ env.PUBLISH == 'true' }}
         env:
-          IMAGE_TAGS: ${{ env.BASE_IMAGE }}:latest,${{ env.BASE_IMAGE }}:${{ env.VERSION }}
+          IMAGE_TAGS: ${{ steps.tags.outputs.image_tags }}
           AMD64_DIGEST: ${{ steps.amd64.outputs.digest }}
           ARM64_DIGEST: ${{ steps.arm64.outputs.digest }}
         run: |
