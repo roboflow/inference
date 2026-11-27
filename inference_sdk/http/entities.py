@@ -8,6 +8,7 @@ from PIL import Image
 
 from inference_sdk.config import (  # noqa: F401
     ALL_ROBOFLOW_API_URLS,
+    INFERENCE_SDK_REQUEST_TIMEOUT,
     WORKFLOW_RUN_RETRIES_ENABLED,
     outbound_service_secret,
     usage_source_tags,
@@ -182,6 +183,7 @@ class InferenceConfiguration:
     source_info: Optional[str] = None
     profiling_directory: str = "./inference_profiling"
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT
     response_mask_format: Optional[Literal["polygon", "rle"]] = None
     # None means "not chosen by the user" - the client resolves it to LEGACY
     # and emits a one-time recommendation to move to the header transport.

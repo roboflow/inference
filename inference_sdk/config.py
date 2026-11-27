@@ -1,5 +1,6 @@
 import contextvars
 import json
+import math
 import os
 import threading
 from typing import Dict, Iterable, Optional, Tuple
@@ -147,6 +148,58 @@ remote_processing_times = contextvars.ContextVar(
 
 WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
     os.getenv("WORKFLOW_RUN_RETRIES_ENABLED", "True")
+)
+
+
+def parse_request_timeout(raw_value: Optional[str] = None) -> Optional[float]:
+    """Parse an HTTP request timeout environment value.
+
+    Args:
+        raw_value (Optional[str]): Raw timeout value. ``None``, blank, or
+            ``"none"`` (case-insensitive) disables the timeout and returns
+            ``None``.
+
+    Returns:
+        Optional[float]: Positive finite timeout in seconds, or ``None`` when
+            unset or disabled (default ``None``, no timeout).
+
+    Raises:
+        ValueError: If ``raw_value`` is not a positive finite number or
+            ``"none"``.
+    """
+    if raw_value is None:
+        return None
+
+    normalized = str(raw_value).strip()
+    if not normalized:
+        return None
+
+    if normalized.lower() == "none":
+        return None
+
+    try:
+        timeout = float(normalized)
+    except ValueError as error:
+        raise ValueError(
+            f"Invalid INFERENCE_SDK_REQUEST_TIMEOUT value: {raw_value!r}. "
+            "Expected a positive number or 'None'."
+        ) from error
+
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(
+            f"Invalid INFERENCE_SDK_REQUEST_TIMEOUT value: {raw_value!r}. "
+            "Expected a positive number or 'None'."
+        )
+
+    return timeout
+
+
+_RAW_INFERENCE_SDK_REQUEST_TIMEOUT = os.getenv("INFERENCE_SDK_REQUEST_TIMEOUT")
+INFERENCE_SDK_REQUEST_TIMEOUT_EXPLICITLY_SET = bool(
+    _RAW_INFERENCE_SDK_REQUEST_TIMEOUT and _RAW_INFERENCE_SDK_REQUEST_TIMEOUT.strip()
+)
+INFERENCE_SDK_REQUEST_TIMEOUT = parse_request_timeout(
+    _RAW_INFERENCE_SDK_REQUEST_TIMEOUT
 )
 
 # --- URL image input hardening (mirrors inference server, GHSA-hjmm-hr52-vrp2) ---

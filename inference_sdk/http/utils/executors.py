@@ -21,6 +21,7 @@ from requests import Response, Timeout
 
 from inference_sdk.config import (
     EXECUTION_ID_HEADER,
+    INFERENCE_SDK_REQUEST_TIMEOUT,
     PROCESSING_TIME_HEADER,
     execution_id,
     remote_processing_times,
@@ -56,6 +57,7 @@ def execute_requests_packages(
     requests_data: List[RequestData],
     request_method: RequestMethod,
     max_concurrent_requests: int,
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
 ) -> List[Response]:
     """Execute a list of requests in parallel.
 
@@ -63,6 +65,8 @@ def execute_requests_packages(
         requests_data: The list of requests to execute.
         request_method: The method to use for the requests.
         max_concurrent_requests: The maximum number of concurrent requests.
+        request_timeout: Timeout in seconds for each HTTP request, or ``None``
+            to disable the timeout.
 
     Returns:
         The list of responses.
@@ -77,6 +81,7 @@ def execute_requests_packages(
         responses = make_parallel_requests(
             requests_data=requests_data_package,
             request_method=request_method,
+            request_timeout=request_timeout,
         )
         results.extend(responses)
         all_request_data.extend(requests_data_package)
@@ -265,12 +270,15 @@ def _extract_cold_start_count_from_headers(headers: Mapping[str, str]) -> int:
 def make_parallel_requests(
     requests_data: List[RequestData],
     request_method: RequestMethod,
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
 ) -> List[Response]:
     """Execute a list of requests in parallel.
 
     Args:
         requests_data: The list of requests to execute.
         request_method: The method to use for the requests.
+        request_timeout: Timeout in seconds for each HTTP request, or ``None``
+            to disable the timeout.
 
     Returns:
         The list of responses.
@@ -280,6 +288,7 @@ def make_parallel_requests(
             make_request(
                 request_data=requests_data[0],
                 request_method=request_method,
+                request_timeout=request_timeout,
             )
         ]
 
@@ -289,7 +298,11 @@ def make_parallel_requests(
     # don't inherit the caller's context.
     parent_ctx = contextvars.copy_context()
     workers = len(requests_data)
-    make_request_closure = partial(make_request, request_method=request_method)
+    make_request_closure = partial(
+        make_request,
+        request_method=request_method,
+        request_timeout=request_timeout,
+    )
 
     def _run_in_parent_context(rd: RequestData) -> Response:
         # Restore all context vars from the parent thread snapshot.
@@ -343,12 +356,18 @@ def _reset_thread_local_requests_session() -> None:
     backoff_log_level=logging.DEBUG,
     giveup_log_level=logging.DEBUG,
 )
-def make_request(request_data: RequestData, request_method: RequestMethod) -> Response:
+def make_request(
+    request_data: RequestData,
+    request_method: RequestMethod,
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
+) -> Response:
     """Make a request to the API.
 
     Args:
         request_data: The request data.
         request_method: The method to use for the request.
+        request_timeout: Timeout in seconds for the HTTP request, or ``None``
+            to disable the timeout.
 
     Returns:
         The response from the API.
@@ -365,15 +384,36 @@ def make_request(request_data: RequestData, request_method: RequestMethod) -> Re
             params=request_data.parameters,
             data=request_data.data,
             json=request_data.payload,
+            timeout=request_timeout,
         )
     finally:
         session.cookies.clear()
+
+
+def open_async_session(
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
+) -> aiohttp.ClientSession:
+    """Create an ``aiohttp.ClientSession`` with the configured total timeout.
+
+    Args:
+        request_timeout (Optional[float]): Total request timeout in seconds, or
+            ``None`` to disable the timeout. Defaults to ``None`` unless
+            configured through ``INFERENCE_SDK_REQUEST_TIMEOUT``.
+
+    Returns:
+        aiohttp.ClientSession: Session configured with the requested timeout.
+    """
+    timeout = aiohttp.ClientTimeout(total=request_timeout)
+    session = aiohttp.ClientSession(timeout=timeout)
+
+    return session
 
 
 async def execute_requests_packages_async(
     requests_data: List[RequestData],
     request_method: RequestMethod,
     max_concurrent_requests: int,
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
 ) -> List[Union[dict, bytes]]:
     """Execute a list of requests in parallel asynchronously.
 
@@ -381,6 +421,8 @@ async def execute_requests_packages_async(
         requests_data: The list of requests to execute.
         request_method: The method to use for the requests.
         max_concurrent_requests: The maximum number of concurrent requests.
+        request_timeout: Total timeout in seconds for each batch session, or
+            ``None`` to disable the timeout.
 
     Returns:
         The list of responses.
@@ -394,6 +436,7 @@ async def execute_requests_packages_async(
         responses = await make_parallel_requests_async(
             requests_data=requests_data_package,
             request_method=request_method,
+            request_timeout=request_timeout,
         )
         results.extend(responses)
     return results
@@ -402,17 +445,20 @@ async def execute_requests_packages_async(
 async def make_parallel_requests_async(
     requests_data: List[RequestData],
     request_method: RequestMethod,
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
 ) -> List[Union[dict, bytes]]:
     """Execute a list of requests in parallel asynchronously.
 
     Args:
         requests_data: The list of requests to execute.
         request_method: The method to use for the requests.
+        request_timeout: Total timeout in seconds for the async session, or
+            ``None`` to disable the timeout.
 
     Returns:
         The list of responses.
     """
-    async with aiohttp.ClientSession() as session:
+    async with open_async_session(request_timeout=request_timeout) as session:
         make_request_closure = partial(
             make_request_async,
             request_method=request_method,
@@ -531,13 +577,36 @@ def send_post_request(
     payload: dict,
     headers: dict,
     enable_retries: bool,
+    request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
 ) -> Response:
+    """Send a JSON POST request with optional retries on transient failures.
+
+    Args:
+        url (str): Target URL.
+        payload (dict): JSON request payload.
+        headers (dict): HTTP request headers.
+        enable_retries (bool): Whether to wrap retryable errors in ``RetryError``.
+        request_timeout (Optional[float]): Timeout in seconds for the HTTP
+            request, or ``None`` to disable the timeout.
+
+    Returns:
+        Response: Successful HTTP response.
+
+    Raises:
+        RetryError: If ``enable_retries`` is enabled and a retryable failure
+            occurs.
+    """
     try:
         execution_id_value = execution_id.get()
         if execution_id_value:
             headers = headers.copy()
             headers[EXECUTION_ID_HEADER] = execution_id_value
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=request_timeout,
+        )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         if enable_retries:
             raise RetryError(

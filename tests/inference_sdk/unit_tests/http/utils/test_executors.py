@@ -1,5 +1,5 @@
 import threading
-from typing import Generator
+from typing import Generator, Optional
 from unittest import mock
 from unittest.mock import MagicMock, call
 
@@ -10,7 +10,11 @@ from aioresponses import aioresponses
 from requests import HTTPError, Response
 from requests_mock import Mocker
 
-from inference_sdk.config import RemoteProcessingTimeCollector, remote_processing_times
+from inference_sdk.config import (
+    INFERENCE_SDK_REQUEST_TIMEOUT,
+    RemoteProcessingTimeCollector,
+    remote_processing_times,
+)
 from inference_sdk.http.utils import executors
 from inference_sdk.http.utils.executors import (
     RequestMethod,
@@ -271,6 +275,7 @@ def test_make_request_reuses_thread_local_session() -> None:
                 params={"a": "1"},
                 data=None,
                 json={"some": "value"},
+                timeout=INFERENCE_SDK_REQUEST_TIMEOUT,
             )
         ]
         * 2
@@ -356,7 +361,15 @@ def test_make_parallel_requests(
     # then
     assert len(result) == 4, "Number of output responses must match number of requests"
     make_request_mock.assert_has_calls(
-        [call(request_data, request_method=RequestMethod.GET)] * 4, any_order=True
+        [
+            call(
+                request_data,
+                request_method=RequestMethod.GET,
+                request_timeout=INFERENCE_SDK_REQUEST_TIMEOUT,
+            )
+        ]
+        * 4,
+        any_order=True,
     ), "Mock of request method must be invoked 4 times with proper parameters"
 
 
@@ -381,6 +394,7 @@ def test_make_parallel_requests_with_single_request_runs_on_current_thread(
     def fake_make_request(
         request_data: RequestData,
         request_method: RequestMethod,
+        request_timeout: Optional[float] = INFERENCE_SDK_REQUEST_TIMEOUT,
     ) -> Response:
         seen_threads.append(threading.get_ident())
         return response
