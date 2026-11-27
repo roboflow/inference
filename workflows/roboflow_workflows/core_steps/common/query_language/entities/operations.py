@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Union
+from typing import Any, ClassVar, Dict, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from roboflow_workflows.core_steps.common.query_language.entities.enums import (
@@ -42,6 +42,12 @@ DEFAULT_OPERAND_NAME = "_"
 
 
 class OperationDefinition(BaseModel):
+    """Define a query operation.
+
+    Set ``stop_chain_on_none_result`` to end the current chain on a ``None`` result.
+    """
+
+    stop_chain_on_none_result: ClassVar[bool] = False
     type: str
 
 
@@ -229,6 +235,7 @@ class DetectionsToDictionary(OperationDefinition):
 
 
 class ActionRecognitionPropertyExtract(OperationDefinition):
+    stop_chain_on_none_result: ClassVar[bool] = True
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Read a field from an Action Recognition Model result.",

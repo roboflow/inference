@@ -3,7 +3,6 @@ from typing import Any, Callable, Collection, Dict, List, Optional
 
 from roboflow_workflows.core_steps.common.query_language.entities.operations import (
     TYPE_PARAMETER_NAME,
-    ActionRecognitionPropertyExtract,
     DetectionsFilter,
     OperationDefinition,
     OperationsChain,
@@ -116,7 +115,7 @@ def build_operations_chain(
             execution_context=operation_context,
         )
         operations_functions.append(operation_function)
-        if isinstance(operation_definition, ActionRecognitionPropertyExtract):
+        if operation_definition.stop_chain_on_none_result:
             stop_on_none_after.add(operation_id)
 
     operations_chain = partial(
@@ -195,7 +194,7 @@ def chain(
         stop_on_none_after (Collection[int]): Indices where a null result ends the chain.
 
     Returns:
-        The final result, or None when an extracted frame bound is unavailable.
+        The final result, or None if an operation ends the chain on a null result.
     """
     for index, function in enumerate(functions):
         value = function(value, global_parameters=global_parameters)
