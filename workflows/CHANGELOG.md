@@ -36,6 +36,10 @@ for contributor and maintainer responsibilities.
   - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
   - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
   - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
+- **QR Code Detection v2** (`roboflow_core/qr_code_detector@v2`, both the numpy and tensor-native variants) adds an optional `scale_factor`, from 1.0 (the default)
+  to 4.0. The block enlarges the image by that factor with cubic interpolation before OpenCV looks for codes, so codes too small to read at the image's own
+  resolution can be read: a code drawn at 2 pixels per module is not found at 1.0  and is read at 2.0. Boxes are mapped back to the original image's coordinates.
+  At 1.0 the output matches v1. A selector can supply the factor, and a value outside 1.0 to 4.0 fails the step. v1 is unchanged.
 
 ### Changed
 
