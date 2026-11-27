@@ -393,7 +393,9 @@ FRAMES_UNTIL_ENCODER_FAILED = (
 def test_encoder_that_never_recovers_is_reported_as_failed(monkeypatch) -> None:
     # given: only the count matters here
     monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 0.0)
-    recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
+    recorder = _FailingX264Ring(
+        "camera-1", pre_roll_seconds=2.0, budget=Budget(), queue_depth=1000
+    )
     recorder.failures = 10_000
     try:
         # when: one frame short of the limit
@@ -414,21 +416,23 @@ def test_encoder_that_never_recovers_is_reported_as_failed(monkeypatch) -> None:
         recorder.close()
 
 
-def test_burst_of_encoder_failures_is_not_reported_as_failed() -> None:
+def test_burst_of_encoder_failures_is_not_reported_as_failed(monkeypatch) -> None:
     # given: queued frames are encoded back to back, so many failures can happen
-    # within milliseconds of a short hiccup
-    recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
+    # within milliseconds of a short hiccup. The time condition is set far out of
+    # reach, so the outcome does not depend on how fast this machine is. The queue
+    # holds every frame: a dropped frame would never reach the encoder.
+    monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 3600.0)
+    recorder = _FailingX264Ring(
+        "camera-1", pre_roll_seconds=2.0, budget=Budget(), queue_depth=1000
+    )
     recorder.failures = 10 * FRAMES_UNTIL_ENCODER_FAILED
     try:
-        # when: far more failed frames than the count asks for, in well under
-        # ENCODER_FAILURE_MIN_SECONDS
-        started = time.monotonic()
+        # when: ten times the failed frames the count asks for
         _feed(recorder, range(recorder.failures))
         _wait_for(lambda: recorder.stats().encode_errors == recorder.failures)
-        elapsed = time.monotonic() - started
 
-        # then
-        assert elapsed < ring_module.ENCODER_FAILURE_MIN_SECONDS
+        # then: the count alone does not write the encoder off
+        assert recorder.stats().queue_drops == 0
         assert recorder.encoder_failed is False
 
         # and: the encoder works again afterwards
@@ -442,7 +446,9 @@ def test_burst_of_encoder_failures_is_not_reported_as_failed() -> None:
 def test_encoder_that_recovers_is_not_reported_as_failed(monkeypatch) -> None:
     # given: failures up to one frame short of the limit, then a working encoder
     monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 0.0)
-    recorder = _FailingX264Ring("camera-1", pre_roll_seconds=2.0, budget=Budget())
+    recorder = _FailingX264Ring(
+        "camera-1", pre_roll_seconds=2.0, budget=Budget(), queue_depth=1000
+    )
     recorder.failures = FRAMES_UNTIL_ENCODER_FAILED - 1
     try:
         # when: a success in between, then the same number of failures again
