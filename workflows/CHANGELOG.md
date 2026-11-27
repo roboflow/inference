@@ -148,7 +148,11 @@ Engine version: `1.18.0` (was `1.17.3`).
   - A stream reads `background_inference` on its first frame and keeps that mode until
     its state resets. A step has one worker, so its streams take turns. Video files
     always classify inside the step.
-
+- **Anthropic Claude block (v5) defaults `model_version` to `claude-sonnet-5-5`**.
+  The previous default, `claude-sonnet-4-5` (`claude-sonnet-4-5-20250929`), is
+  retired by Anthropic on November 30, 2026. Workflows that set
+  `model_version` explicitly are unchanged. 
+  
 ### Fixed
 
 - **Tensor-native Vision Events** (`roboflow_core/roboflow_vision_events@v1` with
