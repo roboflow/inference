@@ -66,6 +66,7 @@ from roboflow_workflows.execution_engine.constants import (
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
+    ActionRecognitionResult,
     ParentOrigin,
     VideoMetadata,
     WorkflowImageData,
@@ -364,6 +365,12 @@ def serialize_action_recognition_prediction_kind(
     return [entry.model_dump(by_alias=True) for entry in value]
 
 
+def serialize_action_recognition_result_kind(
+    value: ActionRecognitionResult,
+) -> dict:
+    return value.model_dump(mode="json", by_alias=True)
+
+
 def serialize_wildcard_kind(value: Any) -> Any:
     if isinstance(value, WorkflowImageData):
         value = serialise_image(image=value)
@@ -377,6 +384,8 @@ def serialize_wildcard_kind(value: Any) -> Any:
         # Without this the model reaches clients by field name, so the
         # timeline arrives as "class_name" where the kind declares "class".
         value = serialize_action_recognition_prediction_kind(value=[value])[0]
+    elif isinstance(value, ActionRecognitionResult):
+        value = serialize_action_recognition_result_kind(value=value)
     elif isinstance(value, datetime):
         value = serialize_timestamp(timestamp=value)
     return value

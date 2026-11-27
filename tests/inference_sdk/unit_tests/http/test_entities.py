@@ -1,3 +1,7 @@
+import os
+import subprocess
+import sys
+
 import pytest
 
 from inference_sdk.config import outbound_service_secret, usage_source_tags
@@ -10,6 +14,7 @@ from inference_sdk.http.entities import (
     InferenceConfiguration,
     get_non_empty_attributes,
 )
+from inference_sdk.http.utils.profilling import save_workflows_profiler_trace
 
 REFERENCE_IMAGE_CONFIGURATION = InferenceConfiguration(
     confidence_threshold=0.5,
@@ -395,3 +400,53 @@ def test_mask_resolution_opt_in_defaults_to_false(client_mode):
         )["allow_reduced_mask_resolution"]
         is False
     )
+
+
+_PROFILING_DIRECTORY_SCRIPT = (
+    "from inference_sdk.http.entities import InferenceConfiguration; "
+    "print(InferenceConfiguration().profiling_directory)"
+)
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, "./inference_profiling"),
+        ({"WORKFLOWS_PROFILING_DIRECTORY": "/data/profiling"}, "/data/profiling"),
+    ],
+    ids=["omitted", "explicit-value"],
+)
+def test_inference_configuration_profiling_directory_follows_the_environment(
+    overrides, expected
+):
+    # The default is read at import, so a fresh interpreter is needed to change it.
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name != "WORKFLOWS_PROFILING_DIRECTORY"
+    }
+    environment.update(overrides)
+
+    completed = subprocess.run(
+        [sys.executable, "-c", _PROFILING_DIRECTORY_SCRIPT],
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=120,
+    )
+
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    assert completed.stdout.strip().splitlines()[-1] == expected
+
+
+def test_inference_configuration_profiling_directory_custom():
+    config = InferenceConfiguration(profiling_directory="/custom/profiling/dir")
+    assert config.profiling_directory == "/custom/profiling/dir"
+
+
+def test_save_workflows_profiler_trace_filename(empty_directory: str):
+    save_workflows_profiler_trace(empty_directory, [{"test": "trace"}])
+    files = os.listdir(empty_directory)
+    assert len(files) == 1
+    assert files[0].startswith("workflow_execution_track_")
+    assert files[0].endswith(".json")

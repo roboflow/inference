@@ -1,7 +1,8 @@
-from typing import Any, Dict, List, Literal, Union
+from typing import Any, ClassVar, Dict, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from roboflow_workflows.core_steps.common.query_language.entities.enums import (
+    ActionRecognitionProperty,
     ClassificationProperty,
     DetectionsProperty,
     DetectionsSelectionMode,
@@ -14,6 +15,8 @@ from roboflow_workflows.core_steps.common.query_language.entities.enums import (
     StatementsGroupsOperator,
 )
 from roboflow_workflows.execution_engine.entities.types import (
+    ACTION_RECOGNITION_PREDICTION_KIND,
+    ACTION_RECOGNITION_RESULT_KIND,
     BOOLEAN_KIND,
     BYTES_KIND,
     CLASSIFICATION_PREDICTION_KIND,
@@ -39,6 +42,12 @@ DEFAULT_OPERAND_NAME = "_"
 
 
 class OperationDefinition(BaseModel):
+    """Define a query operation.
+
+    Set ``stop_chain_on_none_result`` to end the current chain on a ``None`` result.
+    """
+
+    stop_chain_on_none_result: ClassVar[bool] = False
     type: str
 
 
@@ -223,6 +232,43 @@ class DetectionsToDictionary(OperationDefinition):
         },
     )
     type: Literal["DetectionsToDictionary"]
+
+
+class ActionRecognitionPropertyExtract(OperationDefinition):
+    stop_chain_on_none_result: ClassVar[bool] = True
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Read a field from an Action Recognition Model result.",
+            "compound": False,
+            "input_kind": [ACTION_RECOGNITION_RESULT_KIND],
+            "output_kind": [
+                ACTION_RECOGNITION_PREDICTION_KIND,
+                LIST_OF_VALUES_KIND,
+                INTEGER_KIND,
+                STRING_KIND,
+            ],
+            "output_kind_by_property": {
+                ActionRecognitionProperty.TIMELINE.value: [
+                    ACTION_RECOGNITION_PREDICTION_KIND.name,
+                    LIST_OF_VALUES_KIND.name,
+                ],
+                ActionRecognitionProperty.ANALYZED_FROM_FRAME.value: [
+                    INTEGER_KIND.name
+                ],
+                ActionRecognitionProperty.ANALYZED_UNTIL_FRAME.value: [
+                    INTEGER_KIND.name
+                ],
+                ActionRecognitionProperty.ERROR_STATUS.value: [STRING_KIND.name],
+            },
+        },
+    )
+    type: Literal["ActionRecognitionPropertyExtract"]
+    property_name: ActionRecognitionProperty = Field(
+        description=(
+            "Result field to return. Before the first successful window, extracting "
+            "a frame bound returns null and skips the remaining operations in the chain."
+        )
+    )
 
 
 class ClassificationPropertyExtract(OperationDefinition):
@@ -641,6 +687,7 @@ AllOperationsType = Annotated[
         Divide,
         DetectionsSelection,
         SortDetections,
+        ActionRecognitionPropertyExtract,
         ClassificationPropertyExtract,
         ConvertImageToJPEG,
         ConvertImageToBase64,

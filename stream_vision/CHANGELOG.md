@@ -4,6 +4,13 @@ This is the canonical changelog for the `streamvision` package.
 
 ## Unreleased
 
+### Added
+
+- `StreamsConfiguration.workflows_profiling_directory` (default
+  `./inference_profiling`) sets where `InferencePipeline` writes Workflow profiler
+  traces. The `inference` and `inference_server` hosts fill it from
+  `WORKFLOWS_PROFILING_DIRECTORY`.
+
 ### Fixed
 
 - The OpenCV video source treats a `file://` URI as a video file, like the
@@ -15,6 +22,9 @@ This is the canonical changelog for the `streamvision` package.
 - The OpenCV, Jetson and GStreamer-CUDA producers parse `file://` URIs the same
   way: `#` and `?` stay in the file name, the scheme is case-insensitive, and a
   remote host or invalid percent escape is not a local file.
+- Workflow profiler traces are written as
+  `inference_pipeline_workflow_execution_track_<timestamp>.json`; the file name used
+  to say `tack`.
 - Cap the WebRTC extra's aiortc dependency below 1.17 while retaining PyAV 14.2.0.
   aiortc 1.17 accesses `VideoFrame.duration`, which is unavailable in that PyAV
   version, causing video decoding workers to crash.

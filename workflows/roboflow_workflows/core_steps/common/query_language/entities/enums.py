@@ -43,6 +43,13 @@ class SequenceAggregationMode(Enum):
     LEAST_COMMON = "least_common"
 
 
+class ActionRecognitionProperty(Enum):
+    TIMELINE = "timeline"
+    ANALYZED_FROM_FRAME = "analyzed_from_frame"
+    ANALYZED_UNTIL_FRAME = "analyzed_until_frame"
+    ERROR_STATUS = "error_status"
+
+
 class ClassificationProperty(Enum):
     TOP_CLASS = "top_class"
     TOP_CLASS_CONFIDENCE = "top_class_confidence"

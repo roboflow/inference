@@ -29,11 +29,53 @@ for contributor and maintainer responsibilities.
   
 ### Added
 
+- Dynamic Crop v2 returns the source image and original prediction alongside each crop, so per-object records can retain the surrounding frame and its annotations.
+
 - **Label by example for keypoint detection.** `roboflow_core/google_gemini@v6` and `roboflow_core/open_ai@v7` accept `reference_examples` for the `keypoint-detection` task.
   - Each annotation lists its `keypoints`: `[{"class": <keypoint name>, "x": ..., "y": ..., "occluded": false}]`, leaving out the keypoints the instance does not show. `occluded` is set by you and defaults to `false`. A keypoint prediction can be passed as it is, but its `confidence` is ignored and it has no `occluded`, so each of its keypoints is drawn as visible: first remove the keypoints the instance does not show and mark the hidden ones `occluded`. `class_id`, counted from 0, picks between keypoints that share a name. The names are checked against `keypoint_schema`.
   - The block draws each instance's skeleton on the examples: its edges, a filled dot for a visible keypoint and a hollow ring for an occluded one, each numbered by its position in the class skeleton. The text before the examples maps the numbers to the keypoint names. Gemini gets whole images, OpenAI crops of the instances, 256 to 512 pixels on the long edge.
   - The examples of one request draw at most 20,000 keypoints and skeleton edges together; a larger request is refused before any example image is loaded. An edge listed more than once in `keypoint_schema` is drawn once.
   - An example takes at most 5,000 annotations, for object detection too. Object-detection examples and requests without examples are otherwise unchanged.
+
+- **Action Recognition Model v2** (`roboflow_core/roboflow_action_recognition_model@v2`)
+  exposes one `predictions` output of kind `action_recognition_result`. It
+  contains the cumulative `timeline`, the current `error_status`, and
+  `analyzed_from_frame` and `analyzed_until_frame`. These inclusive bounds
+  describe only the latest successful window and are null before the first
+  success. `covered_frame_ranges` records the union of successful windows,
+  including quiet windows, across the most recent 900 seconds at `source_fps`.
+  `stream_generation` identifies the current model state even when a consumer
+  skips the reset frame. Earlier failed or skipped windows can leave gaps.
+  Each output owns its editable timeline entries.
+  Cosmos reports the first and last sampled source frames. Models that use the
+  observed window duration report the floored intended first sample position
+  and the source frame that triggered the call.
+  - On a file with a known frame count, the last frame can trigger a call on
+    the buffered samples, even before the first full stride, if the model's
+    minimum sample count is met. This window can overlap a preceding one.
+  - Set `background_inference` to `true` for a live stream to classify windows
+    on a worker. Results arrive on a subsequent frame. A stream keeps its
+    initial mode until it resets. Late calls take the newest window and report
+    uncovered frames in the result's `error_status`. Restarting or evicting a
+    stream discards its queued work. By default calls run synchronously, and
+    files always run synchronously.
+  - **Migration:** Model `@v1` retains the Inference 1.8.6 outputs `timeline`
+    and `error_status` and its synchronous, stride-based scheduling. Workflows
+    using the development-only `background_inference` setting or
+    `analyzed_until_frame` output should select model `@v2`. For a step named
+    `actions`, connect `$steps.actions.predictions` to a typed consumer or
+    return it as a workflow output and read the fields from that object.
+    To use one field inside a workflow, connect **Property Definition** to
+    `$steps.actions.predictions` and set its operations to e.g.
+    `[{"type": "ActionRecognitionPropertyExtract", "property_name": "analyzed_until_frame"}]`.
+    A Property Definition step named `coverage_end` exposes that frame number
+    through `$steps.coverage_end.output`. The same operation accepts a serialized
+    result in a scalar `WorkflowParameter`, such as a **Continue If** condition.
+    To count action ranges, select **Timeline** and then **Count Items** (`SequenceLength`).
+    When a frame bound is still null during warm-up, its operation chain returns
+    null. Subsequent operations such as **Round** run once the bound is available.
+    Query-language operations can opt in to this behavior by setting
+    `stop_chain_on_none_result = True` on their operation definition class.
 
 ### Changed
 
@@ -41,37 +83,8 @@ for contributor and maintainer responsibilities.
   The previous default, `claude-sonnet-4-5` (`claude-sonnet-4-5-20250929`), is
   retired by Anthropic on November 30, 2026. Workflows that set
   `model_version` explicitly are unchanged.
-- Action Recognition Model reports the inclusive end of the latest successful
-  window in `analyzed_until_frame`, or null before the first success. Cosmos
-  reports the last sampled source frame. Models that use the observed window
-  duration report the source frame that triggered the call. Earlier failed or
-  skipped windows can leave gaps before the mark.
-- Action Recognition Model can classify the buffered samples on the last frame
-  of a video file that reports its frame count. A clip shorter than one stride
-  can get a result if enough samples are buffered.
-  When the file ends between scheduled calls, the final window can overlap
-  the preceding window even when the configured overlap is zero.
-  Live streams and files without a usable frame count behave as before, and
-  so does a file whose last frame the source drops (for example with
-  `max_fps`).
-- Action Recognition Model gains `background_inference`. A live stream then
-  hands each window to a worker thread, so the step returns at once and the
-  video does not wait for the model. The result reaches the timeline on the
-  stream's next frame after the call ends, so the last call of a stream that
-  stops is not reported. One call runs per stream at a time; a call that comes
-  due while the previous one has not finished waits and takes the newest
-  window. When a call starts late, `error_status` names the frames no window
-  covers between it and the previous call. A stream reads
-  `background_inference` on its first frame and keeps that mode until its
-  state resets. A step has one worker, so its streams take turns. Video files
-  always classify inside the step. The default is unchanged.
 
 ### Fixed
-
-- Action Recognition Model releases queued background windows when a stream
-  restarts, its configuration changes, its state is evicted, or the model
-  changes. A classification already running can finish. A failed call on one
-  camera no longer keeps another camera's completed window in memory.
 
 - OpenAI Decisions Switch (`roboflow_core/open_ai_decisions_switch@v1`): the example `context` now holds the `boxes` value that the example `context_operations` reduces, so the block's generated example definition validates. The description states the 0.9 `min_confidence` default and that a probability that is not a number from 0 to 1 runs `default_next_steps`.
 
@@ -124,6 +137,7 @@ Bundled execution engine: `1.17.3`.
 - The package now requires `inference-models>=0.39.10` and `inference-sdk>=1.8.6`.
 - The Embedding Model block accepts ConvNeXt classifiers: `convnext` is added to its
   `compatible_model_architectures`.
+- `filelock` 4 is allowed (`filelock>=3.20.3,<5.0.0`), matching `inference-models`.
 
 ### Fixed
 
