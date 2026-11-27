@@ -148,6 +148,9 @@ remote_processing_times = contextvars.ContextVar(
 WORKFLOW_RUN_RETRIES_ENABLED = str2bool(
     os.getenv("WORKFLOW_RUN_RETRIES_ENABLED", "True")
 )
+WORKFLOWS_PROFILING_DIRECTORY = os.getenv(
+    "WORKFLOWS_PROFILING_DIRECTORY", "./inference_profiling"
+)
 
 # --- URL image input hardening (mirrors inference server, GHSA-hjmm-hr52-vrp2) ---
 # NOTE on defaults: the server defaults ALLOW_NON_HTTPS_URL_INPUT / FQDN

@@ -395,3 +395,25 @@ def test_mask_resolution_opt_in_defaults_to_false(client_mode):
         )["allow_reduced_mask_resolution"]
         is False
     )
+
+
+def test_inference_configuration_profiling_directory_default():
+    config = InferenceConfiguration()
+    assert config.profiling_directory == "./inference_profiling"
+
+
+def test_inference_configuration_profiling_directory_custom():
+    config = InferenceConfiguration(profiling_directory="/custom/profiling/dir")
+    assert config.profiling_directory == "/custom/profiling/dir"
+
+
+def test_save_workflows_profiler_trace_filename(empty_directory: str):
+    import os
+
+    from inference_sdk.http.utils.profilling import save_workflows_profiler_trace
+
+    save_workflows_profiler_trace(empty_directory, [{"test": "trace"}])
+    files = os.listdir(empty_directory)
+    assert len(files) == 1
+    assert files[0].startswith("workflow_execution_track_")
+    assert files[0].endswith(".json")
