@@ -1,8 +1,9 @@
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Collection, Dict, List, Optional
 
 from roboflow_workflows.core_steps.common.query_language.entities.operations import (
     TYPE_PARAMETER_NAME,
+    ActionRecognitionPropertyExtract,
     DetectionsFilter,
     OperationDefinition,
     OperationsChain,
@@ -93,10 +94,21 @@ def identity(value: Any, **kwargs) -> Any:
 
 def build_operations_chain(
     operations: List[OperationDefinition], execution_context: str = "<root>"
-) -> Callable[[T, Dict[str, Any]], V]:
+) -> Callable[[T, Dict[str, Any]], Optional[V]]:
+    """Compile a sequence of query language operations.
+
+    Args:
+        operations (List[OperationDefinition]): Operations to apply in order.
+        execution_context (str): Location used when reporting operation errors.
+
+    Returns:
+        A function that transforms a value using the supplied global parameters.
+    """
     if not len(operations):
         return identity  # return identity function
+
     operations_functions = []
+    stop_on_none_after = set()
     for operation_id, operation_definition in enumerate(operations):
         operation_context = f"{execution_context}[{operation_id}]"
         operation_function = build_operation(
@@ -104,7 +116,13 @@ def build_operations_chain(
             execution_context=operation_context,
         )
         operations_functions.append(operation_function)
-    return partial(chain, functions=operations_functions)
+        if isinstance(operation_definition, ActionRecognitionPropertyExtract):
+            stop_on_none_after.add(operation_id)
+
+    operations_chain = partial(
+        chain, functions=operations_functions, stop_on_none_after=stop_on_none_after
+    )
+    return operations_chain
 
 
 def build_operation(
@@ -143,23 +161,47 @@ def build_simple_operation(
 def build_sequence_apply_operation(
     definition: SequenceApply, execution_context: str
 ) -> Callable[[T], V]:
-    operations_functions = []
-    for operation in definition.operations:
-        operation_function = build_operation(
-            operation_definition=operation, execution_context=execution_context
-        )
-        operations_functions.append(operation_function)
-    chained_function = partial(chain, functions=operations_functions)
-    return partial(
+    """Compile the operations to apply to each sequence element.
+
+    Args:
+        definition (SequenceApply): Sequence operation and its nested operations.
+        execution_context (str): Location used when reporting operation errors.
+
+    Returns:
+        A function that transforms each element of a sequence.
+    """
+    chained_function = build_operations_chain(
+        definition.operations, execution_context=execution_context
+    )
+    apply_operation = partial(
         sequence_apply, fun=chained_function, execution_context=execution_context
     )
+    return apply_operation
 
 
 def chain(
-    value: T, global_parameters: Dict[str, Any], functions: List[Callable[[T], V]]
-) -> Callable[[T, Dict[str, Any]], V]:
-    for function in functions:
+    value: T,
+    global_parameters: Dict[str, Any],
+    functions: List[Callable[[T], V]],
+    *,
+    stop_on_none_after: Collection[int] = (),
+) -> Optional[V]:
+    """Pass each operation's result to the next operation.
+
+    Args:
+        value (T): Initial input.
+        global_parameters (Dict[str, Any]): Parameters available to each operation.
+        functions (List[Callable]): Compiled operations in execution order.
+        stop_on_none_after (Collection[int]): Indices where a null result ends the chain.
+
+    Returns:
+        The final result, or None when an extracted frame bound is unavailable.
+    """
+    for index, function in enumerate(functions):
         value = function(value, global_parameters=global_parameters)
+        if value is None and index in stop_on_none_after:
+            return None
+
     return value
 
 

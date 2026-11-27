@@ -68,6 +68,8 @@ for contributor and maintainer responsibilities.
     through `$steps.coverage_end.output`. The same operation accepts a serialized
     result in a scalar `WorkflowParameter`, such as a **Continue If** condition.
     To count action ranges, select **Timeline** and then **Count Items** (`SequenceLength`).
+    When a frame bound is still null during warm-up, its operation chain returns
+    null. Subsequent operations such as **Round** run once the bound is available.
 
 ### Changed
 

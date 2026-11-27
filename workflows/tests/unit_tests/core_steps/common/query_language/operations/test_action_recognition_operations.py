@@ -8,6 +8,9 @@ from roboflow_workflows.core_steps.common.query_language.errors import (
 from roboflow_workflows.core_steps.common.query_language.operations.action_recognition.base import (
     extract_action_recognition_property,
 )
+from roboflow_workflows.core_steps.common.query_language.operations.core import (
+    execute_operations,
+)
 from roboflow_workflows.core_steps.formatters.property_definition.v1 import (
     BlockManifest,
 )
@@ -163,3 +166,21 @@ def test_scalar_extraction_validates_the_whole_result() -> None:
             property_name=ActionRecognitionProperty.ERROR_STATUS,
             execution_context="condition",
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"), [("analyzed_from_frame", 0), ("analyzed_until_frame", 20)]
+)
+def test_round_frame_bounds_during_warmup_and_after_analysis(
+    field: str, expected: int
+) -> None:
+    warmup = {"timeline": [], "analyzed_from_frame": None, "analyzed_until_frame": None}
+    completed = {"timeline": [], "analyzed_from_frame": 0, "analyzed_until_frame": 23}
+    operations = [_extract(field), {"type": "NumberRound", "decimal_digits": -1}]
+
+    assert execute_operations(value=warmup, operations=operations) is None
+    assert execute_operations(value=completed, operations=operations) == expected
+    assert execute_operations(
+        value=[warmup, completed],
+        operations=[{"type": "SequenceApply", "operations": operations}],
+    ) == [None, expected]
