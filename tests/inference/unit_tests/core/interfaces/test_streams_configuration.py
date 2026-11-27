@@ -69,6 +69,7 @@ _CONTROLLED_VARIABLES = (
     "WEBRTC_SESSION_HEARTBEAT_INTERVAL_SECONDS",
     "WEBRTC_SESSION_HEARTBEAT_URL",
     "WORKFLOWS_PROFILER_BUFFER_SIZE",
+    "WORKFLOWS_PROFILING_DIRECTORY",
     # inference_models latches OFFLINE_MODE; a child would ignore its own value.
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_AT_PROCESS_START",
     "_ROBOFLOW_INFERENCE_OFFLINE_MODE_STARTUP_ERROR",
@@ -597,6 +598,7 @@ FIELDS = [
     ("ENABLE_TENSOR_DATA_REPRESENTATION", "ENABLE_TENSOR_DATA_REPRESENTATION"),
     ("ENABLE_WORKFLOWS_PROFILING", "ENABLE_WORKFLOWS_PROFILING"),
     ("WORKFLOWS_PROFILER_BUFFER_SIZE", "WORKFLOWS_PROFILER_BUFFER_SIZE"),
+    ("WORKFLOWS_PROFILING_DIRECTORY", "WORKFLOWS_PROFILING_DIRECTORY"),
     ("PREDICTIONS_QUEUE_SIZE", "PREDICTIONS_QUEUE_SIZE"),
     ("PREDICTIONS_QUEUE_SIZE_EXPLICIT", None),
     ("STREAM_MANAGER_MAX_ACTIVE_PIPELINES", "STREAM_MANAGER_MAX_ACTIVE_PIPELINES"),
@@ -697,7 +699,7 @@ def test_the_field_table_matches_the_facade_exports() -> None:
     tabled = {name for name, _ in FIELDS}
 
     assert tabled == _facade_exports()
-    assert len(FIELDS) == 54
+    assert len(FIELDS) == 55
 
 
 def test_host_only_settings_are_not_package_configuration() -> None:
@@ -826,6 +828,50 @@ def test_standalone_defaults_equal_the_legacy_numpy_defaults() -> None:
     )
 
     assert result == {"mismatches": []}
+
+
+_PROFILING_DIRECTORY_SCRIPT = """
+import inspect
+import json
+
+from inference.core.interfaces.legacy_stream.inference_pipeline import (
+    InferencePipeline as LegacyInferencePipeline,
+)
+from inference.core.interfaces.stream import environment
+from streamvision.stream.pipeline import InferencePipeline
+
+
+def default_directory(pipeline_class):
+    signature = inspect.signature(pipeline_class.init_with_workflow)
+    return signature.parameters["profiling_directory"].default
+
+
+print(json.dumps({
+    "environment": environment.WORKFLOWS_PROFILING_DIRECTORY,
+    "pipeline": default_directory(InferencePipeline),
+    "legacy_pipeline": default_directory(LegacyInferencePipeline),
+}))
+"""
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, "./inference_profiling"),
+        ({"WORKFLOWS_PROFILING_DIRECTORY": "/data/profiling"}, "/data/profiling"),
+    ],
+    ids=["omitted", "explicit-value"],
+)
+def test_profiling_directory_reaches_the_pipeline_defaults(
+    overrides: Dict[str, str], expected: str
+) -> None:
+    result = _run_child(_PROFILING_DIRECTORY_SCRIPT, overrides)
+
+    assert result == {
+        "environment": expected,
+        "pipeline": expected,
+        "legacy_pipeline": expected,
+    }
 
 
 _PREDICTIONS_QUEUE_SCRIPT = """

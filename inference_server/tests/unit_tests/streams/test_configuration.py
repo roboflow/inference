@@ -17,6 +17,7 @@ STREAM_ENV_NAMES = (
     "ENABLE_TENSOR_DATA_REPRESENTATION",
     "ENABLE_WORKFLOWS_PROFILING",
     "WORKFLOWS_PROFILER_BUFFER_SIZE",
+    "WORKFLOWS_PROFILING_DIRECTORY",
     "OFFLINE_MODE",
     "STREAM_MANAGER_HOST",
     "STREAM_MANAGER_PORT",
@@ -70,6 +71,7 @@ EXPLICIT_VALUES = {
     "WEBRTC_REALTIME_PROCESSING": "False",
     "ENABLE_WORKFLOWS_PROFILING": "True",
     "WORKFLOWS_PROFILER_BUFFER_SIZE": "12",
+    "WORKFLOWS_PROFILING_DIRECTORY": "/data/profiling",
     "CLASS_AGNOSTIC_NMS": "True",
 }
 
@@ -134,6 +136,11 @@ EXPECTED_FIELDS = [
     ("WEBRTC_REALTIME_PROCESSING", "webrtc_realtime_processing", False),
     ("ENABLE_WORKFLOWS_PROFILING", "enable_workflows_profiling", True),
     ("WORKFLOWS_PROFILER_BUFFER_SIZE", "workflows_profiler_buffer_size", 12),
+    (
+        "WORKFLOWS_PROFILING_DIRECTORY",
+        "workflows_profiling_directory",
+        "/data/profiling",
+    ),
 ]
 
 _DUMP_CODE = (
@@ -183,6 +190,7 @@ def test_build_streams_configuration_defaults_match_legacy():
     assert built["restart_attempt_delay"] == 1
     assert built["webrtc_realtime_processing"] is True
     assert built["enable_tensor_data_representation"] is False
+    assert built["workflows_profiling_directory"] == "./inference_profiling"
     assert built["offline_mode"] is False
     assert built["model_config_defaults"] == {
         "class_agnostic_nms_env": "CLASS_AGNOSTIC_NMS",
