@@ -90,6 +90,8 @@ MAX_TRACKED_VIDEOS = 256
 # the copy and the memory grow with it. This holds each stream to a ceiling,
 # and 256 streams at the ceiling stay under a gigabyte.
 MAX_TIMELINE_ACTIONS = 5000
+# The visualizer can show 600 seconds of history at up to 300 seconds of delay.
+COVERAGE_HISTORY_SECONDS = 900
 SHORT_DESCRIPTION = "Classify actions and events over ranges of video frames."
 LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
@@ -108,7 +110,7 @@ The window length and the sample rate are part of the model, not block
 settings: a fine-tuned model declares the values its training used, and other
 models declare their defaults (a 16 second window at 4 frames per second).
 
-predictions bundles timeline, analyzed_from_frame, analyzed_until_frame, and
+predictions bundles timeline, covered_frame_ranges, analyzed_from_frame, analyzed_until_frame, and
 error_status into a single action_recognition_result output for downstream
 blocks such as Action Recognition Visualization. analyzed_from_frame and
 analyzed_until_frame are the inclusive first and last source frames for which
@@ -296,7 +298,7 @@ class _WindowWorker:
 class _ActionRecognitionBookkeeping:
     sampled: List[_SampledFrame] = field(default_factory=list)
     timeline: List[ActionRecognitionPrediction] = field(default_factory=list)
-    timeline_snapshot: List[ActionRecognitionPrediction] = field(default_factory=list)
+    covered_frame_ranges: Tuple[Tuple[int, int], ...] = ()
     dropped_history: bool = False
     last_frame_number: int = -1
     last_fire_frame_number: Optional[int] = None
@@ -311,6 +313,20 @@ class _ActionRecognitionBookkeeping:
     signature: Tuple[Tuple[str, ...], float, float, Optional[Confidence]] = field(
         default_factory=lambda: ((), 0.0, 0.0, None)
     )
+
+    def record_successful_window(self, *, start: int, end: int) -> None:
+        """Retain the union of successful windows on this stream's source clock."""
+        self.analyzed_from_frame = start
+        self.analyzed_until_frame = end
+        # The source rate is pinned before scheduling the first window.
+        assert self.source_fps is not None
+        oldest = end - math.ceil(COVERAGE_HISTORY_SECONDS * self.source_fps)
+        ranges = [pair for pair in self.covered_frame_ranges if pair[1] >= oldest]
+        # Windows complete in source order, so only the tail can overlap this one.
+        while ranges and start <= ranges[-1][1] + 1:
+            start = min(start, ranges.pop()[0])
+
+        self.covered_frame_ranges = (*ranges, (start, end))
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -1012,13 +1028,9 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                 entry.end_frame_idx,
             )
         )
-        # A fire is the only thing that changes the timeline, so the copy the
-        # output needs belongs here rather than under every frame.
-        bookkeeping.timeline_snapshot = [
-            entry.model_copy() for entry in bookkeeping.timeline
-        ]
-        bookkeeping.analyzed_from_frame = call.first_covered_frame()
-        bookkeeping.analyzed_until_frame = call.last_covered_frame()
+        bookkeeping.record_successful_window(
+            start=call.first_covered_frame(), end=call.last_covered_frame()
+        )
 
     def _collect_finished_call(self, bookkeeping: _ActionRecognitionBookkeeping) -> str:
         """Merge a finished background call on the step thread.
@@ -1167,19 +1179,17 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         bookkeeping: _ActionRecognitionBookkeeping,
         error_status: str,
     ) -> dict:
-        # Entries come from the snapshot the last fire built and validated.
-        # model_construct skips an O(N) per-frame Pydantic pass over up to
-        # MAX_TIMELINE_ACTIONS (5000) entries; it also keeps the list we pass.
-        # So list() gives each output its own list: a consumer that mutates
-        # one frame's list leaves the snapshot and later frames alone.
+        # Each output owns its mutable entries. The fields are scalar, so shallow
+        # model copies suffice and model_construct avoids revalidating the timeline.
         predictions = ActionRecognitionResult.model_construct(
-            timeline=list(bookkeeping.timeline_snapshot),
+            timeline=[entry.model_copy() for entry in bookkeeping.timeline],
+            covered_frame_ranges=bookkeeping.covered_frame_ranges,
             analyzed_from_frame=bookkeeping.analyzed_from_frame,
             analyzed_until_frame=bookkeeping.analyzed_until_frame,
             error_status=error_status,
         )
         output = {
-            "timeline": list(bookkeeping.timeline_snapshot),
+            "timeline": [entry.model_copy() for entry in bookkeeping.timeline],
             "error_status": error_status,
             "predictions": predictions,
         }

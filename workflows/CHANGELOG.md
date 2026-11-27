@@ -51,7 +51,10 @@ for contributor and maintainer responsibilities.
   sampled source frames. Models that use the observed window duration report
   the floored intended position of the first sample and the source frame that
   triggered the call. Earlier failed, skipped, or non-overlapping windows can
-  leave gaps before the mark. `close()` also clears buffered per-stream state.
+  leave gaps before the mark. `covered_frame_ranges` carries recent successful
+  coverage across skipped consumer updates, including windows without detections.
+  Bounds must be paired and ordered. Each emitted timeline owns its mutable entries.
+  `close()` also clears buffered per-stream state.
 - Action Recognition Model can classify the buffered samples on the last frame
   of a video file that reports its frame count. A clip shorter than one stride
   can get a result if enough samples are buffered.

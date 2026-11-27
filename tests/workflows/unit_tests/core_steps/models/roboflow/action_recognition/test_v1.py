@@ -1092,6 +1092,7 @@ def test_result_wire_contract_and_wildcard_round_trip():
         timeline=[entity],
         analyzed_from_frame=1,
         analyzed_until_frame=9,
+        covered_frame_ranges=((1, 9),),
         error_status="gap notice",
     )
 
@@ -1108,6 +1109,7 @@ def test_result_wire_contract_and_wildcard_round_trip():
         ],
         "analyzed_from_frame": 1,
         "analyzed_until_frame": 9,
+        "covered_frame_ranges": [[1, 9]],
         "error_status": "gap notice",
     }
     assert serialize_wildcard_kind(value=result) == serialized
@@ -1135,6 +1137,9 @@ def test_result_wire_contract_and_wildcard_round_trip():
         {"timeline": "bad"},
         {"timeline": [{"class": "walk"}]},
         {"timeline": [], "analyzed_until_frame": "not-an-int"},
+        {"timeline": [], "analyzed_from_frame": 4},
+        {"timeline": [], "analyzed_until_frame": 8},
+        {"timeline": [], "analyzed_from_frame": 9, "analyzed_until_frame": 5},
     ],
 )
 def test_result_deserializer_rejects_malformed_values(value):
@@ -1172,6 +1177,7 @@ def test_window_defining_input_change_clears_all_state(reset_kwargs):
 
     assert reset_result["timeline"] == []
     assert reset_result["error_status"] == ""
+    assert reset_result["predictions"].covered_frame_ranges == ()
     assert reset_result["predictions"].analyzed_from_frame is None
     assert reset_result["predictions"].analyzed_until_frame is None
     assert len(model.calls) == 1
@@ -1240,6 +1246,7 @@ def test_model_failure_preserves_state_and_later_success_resumes(monkeypatch):
     failed = _run(block, _make_frame(4))
 
     assert failed["error_status"] == "temporary model failure"
+    assert failed["predictions"].covered_frame_ranges == ((0, 2),)
     assert [entry.class_name for entry in failed["timeline"]] == ["walk"]
     assert block._video_bookkeeping["stream-0"].timeline[0].end_frame_idx == 0
     warning.assert_called_once()
@@ -1584,11 +1591,6 @@ def test_timeline_entries_survive_frames_that_do_not_classify():
 
     assert len(model.calls) == 1
     assert [entry.class_name for entry in idle["timeline"]] == ["walk"]
-    # Only a fire rebuilds the entries, so an idle frame reuses them rather
-    # than copying the whole timeline again.
-    assert idle["timeline"][0] is fired["timeline"][0]
-    assert idle["predictions"].timeline[0] is fired["timeline"][0]
-    # The list itself is still per frame and independent between outputs.
     assert idle["timeline"] is not fired["timeline"]
     assert idle["predictions"].timeline is not idle["timeline"]
     idle["timeline"].append(_timeline_entry(0, 0, "appended by a consumer"))
@@ -1597,20 +1599,57 @@ def test_timeline_entries_survive_frames_that_do_not_classify():
     assert [entry.class_name for entry in later["predictions"].timeline] == ["walk"]
 
 
-def test_predictions_timeline_list_is_isolated_per_frame():
-    block, _ = _make_block(responses=[[_model_segment("walk")]])
-    _run(block, _make_frame(0))
-    _run(block, _make_frame(2))
-    idle = _run(block, _make_frame(3))
-    bookkeeping = next(iter(block._video_bookkeeping.values()))
+@pytest.mark.parametrize("tensor", [False, True])
+def test_clip_exporter_cannot_change_the_recorded_fall(tensor):
+    block, _ = _make_block(responses=[[_model_segment("fall")]], tensor=tensor)
+    for number in (300, 302):
+        fired = _run(block, _make_frame(number), class_filter=("fall",))
 
-    assert idle["predictions"].timeline is not bookkeeping.timeline_snapshot
-    idle["predictions"].timeline.append(_timeline_entry(0, 0, "appended"))
-    idle["predictions"].timeline.pop(0)
-    later = _run(block, _make_frame(4))
+    clip = fired["predictions"].timeline[0]
+    clip.start_frame_idx -= 60
+    assert clip.start_frame_idx == 240
+    assert fired["timeline"][0].start_frame_idx == 300
 
-    assert [entry.class_name for entry in bookkeeping.timeline_snapshot] == ["walk"]
-    assert [entry.class_name for entry in later["predictions"].timeline] == ["walk"]
+    fired["timeline"][0].class_name = "edited"
+    idle = _run(block, _make_frame(303), class_filter=("fall",))
+    assert idle["timeline"][0].class_name == "fall"
+    assert idle["predictions"].timeline[0].start_frame_idx == 300
+
+
+@pytest.mark.parametrize(
+    "bounds", [{}, {"analyzed_from_frame": 0, "analyzed_until_frame": 0}]
+)
+def test_older_result_without_coverage_history_is_accepted(bounds):
+    parsed = deserialize_action_recognition_result_kind(
+        parameter="predictions", value={"timeline": [], **bounds}
+    )
+    assert parsed.covered_frame_ranges is None
+
+
+def test_successful_window_history_merges_overlap_and_preserves_gaps():
+    state = video_classification_module._ActionRecognitionBookkeeping(source_fps=1)
+    for start, end in ((2, 8), (9, 15), (13, 22), (25, 30)):
+        state.record_successful_window(start=start, end=end)
+    saved = state.covered_frame_ranges
+    assert saved == ((2, 22), (25, 30))
+
+    state.record_successful_window(start=920, end=923)
+    assert state.covered_frame_ranges == ((25, 30), (920, 923))
+    assert saved == ((2, 22), (25, 30))
+
+
+@pytest.mark.parametrize("ranges", [[], [[5, 3]], [[1, 4], [4, 9]], [[1, 8]], [[5, 9]]])
+def test_result_rejects_inconsistent_coverage_history(ranges):
+    with pytest.raises(RuntimeInputError):
+        deserialize_action_recognition_result_kind(
+            parameter="predictions",
+            value={
+                "timeline": [],
+                "analyzed_from_frame": 3,
+                "analyzed_until_frame": 9,
+                "covered_frame_ranges": ranges,
+            },
+        )
 
 
 @pytest.mark.parametrize("tensor", [False, True])
@@ -1622,11 +1661,12 @@ def test_constructed_predictions_serialize_like_a_validated_result(tensor):
     predictions = result["predictions"]
     validated = ActionRecognitionResult(
         timeline=[entry.model_dump() for entry in predictions.timeline],
+        covered_frame_ranges=predictions.covered_frame_ranges,
         analyzed_from_frame=predictions.analyzed_from_frame,
         analyzed_until_frame=predictions.analyzed_until_frame,
         error_status=predictions.error_status,
     )
-    expected = validated.model_dump(by_alias=True)
+    expected = validated.model_dump(mode="json", by_alias=True)
 
     assert predictions.timeline
     assert predictions.model_fields_set == validated.model_fields_set
@@ -1640,12 +1680,12 @@ def test_constructed_predictions_serialize_like_a_validated_result(tensor):
 
 def test_build_output_does_not_revalidate_timeline_entries(monkeypatch):
     bookkeeping = video_classification_module._ActionRecognitionBookkeeping()
-    bookkeeping.timeline_snapshot = [
+    bookkeeping.timeline = [
         _timeline_entry(index, index, f"action_{index}")
         for index in range(video_classification_module.MAX_TIMELINE_ACTIONS)
     ]
-    bookkeeping.analyzed_from_frame = 0
-    bookkeeping.analyzed_until_frame = 10
+    bookkeeping.source_fps = 30
+    bookkeeping.record_successful_window(start=0, end=10)
     block, _ = _make_block()
 
     # BaseModel.__init__ runs the full model validator; model_construct does not.
@@ -1656,12 +1696,10 @@ def test_build_output_does_not_revalidate_timeline_entries(monkeypatch):
     monkeypatch.setattr(ActionRecognitionResult, "model_validate", _fail_on_validation)
     output = block._build_output(bookkeeping=bookkeeping, error_status="")
 
-    assert output["predictions"].timeline == bookkeeping.timeline_snapshot
+    assert output["predictions"].timeline == bookkeeping.timeline
     assert all(
-        built is original
-        for built, original in zip(
-            output["predictions"].timeline, bookkeeping.timeline_snapshot
-        )
+        built is not original
+        for built, original in zip(output["predictions"].timeline, bookkeeping.timeline)
     )
 
 
@@ -2055,6 +2093,8 @@ def test_background_call_due_while_busy_waits_and_takes_the_newest_window():
     assert classified == [[1, 3], [5, 7]]
     assert late["predictions"].analyzed_until_frame == 3
     assert after["predictions"].analyzed_until_frame == 7
+    assert late["predictions"].covered_frame_ranges == ((1, 3),)
+    assert after["predictions"].covered_frame_ranges == ((1, 3), (5, 7))
     # The late window's first sample is frame 5, so frame 4 is in no window:
     # the skipped call on 5 was the one that covered it.
     assert "No window covers source frames 4-4." in late["error_status"]

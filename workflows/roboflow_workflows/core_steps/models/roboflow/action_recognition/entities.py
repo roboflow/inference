@@ -5,7 +5,7 @@ now re-exports it: the workflow kind, the serializers' `isinstance` dispatch and
 the HTTP `ActionRecognitionInferenceResponse` must all see ONE class object.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from pydantic import (
     BaseModel,
@@ -13,6 +13,7 @@ from pydantic import (
     Field,
     SerializerFunctionWrapHandler,
     model_serializer,
+    model_validator,
 )
 
 
@@ -82,6 +83,15 @@ class ActionRecognitionResult(BaseModel):
             "classification window, or null before the first success."
         ),
     )
+    covered_frame_ranges: Optional[Tuple[Tuple[int, int], ...]] = Field(
+        default=None,
+        description=(
+            "Ordered, coalesced inclusive source-frame ranges covered by successful "
+            "windows, including windows without actions. Tracks the last 900 seconds "
+            "of source video through analyzed_until_frame. Older producers omit this field."
+        ),
+        examples=[[[2, 15], [18, 22]]],
+    )
     error_status: str = Field(
         default="",
         description=(
@@ -89,3 +99,33 @@ class ActionRecognitionResult(BaseModel):
             "when no error occurred."
         ),
     )
+
+    @model_validator(mode="after")
+    def _validate_coverage(self) -> "ActionRecognitionResult":
+        start, end = self.analyzed_from_frame, self.analyzed_until_frame
+        if (start is None) != (end is None):
+            raise ValueError("Set both analyzed frame bounds or leave both null.")
+        if start is not None and start > end:
+            raise ValueError(
+                "analyzed_from_frame must not exceed analyzed_until_frame."
+            )
+
+        ranges = self.covered_frame_ranges
+        if ranges is None:
+            return self
+
+        if not ranges:
+            if end is not None:
+                raise ValueError("Coverage must include the latest successful window.")
+            return self
+
+        previous_end = None
+        for first, last in ranges:
+            if first > last or (previous_end is not None and first <= previous_end + 1):
+                raise ValueError("Coverage ranges must be ordered and coalesced.")
+            previous_end = last
+
+        if end != ranges[-1][1] or start is None or start < ranges[-1][0]:
+            raise ValueError("Coverage must end with the latest successful window.")
+
+        return self

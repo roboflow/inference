@@ -184,6 +184,9 @@ frame. The serialized value is a dictionary with these keys:
   successful classification window, or null before the first success.
 * `analyzed_until_frame`: Inclusive last source frame covered by the latest
   successful classification window, or null before the first success.
+* `covered_frame_ranges`: Ordered pairs of inclusive source-frame indices covering
+  successful windows in the most recent 900 seconds, including quiet windows.
+  Earlier producers may omit this field.
 * `error_status`: Error or gap message for the current frame, or an empty
   string when no error occurred.
 """
