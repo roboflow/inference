@@ -92,8 +92,12 @@ def _select(profile):
                     or step.get("conclusion")
                     not in {None, "skipped", "failure", "cancelled", "timed_out"}
                 ):
+                    # Observed after "Re-run all jobs": the earlier attempt's
+                    # artifacts are gone, so every rebuilt job stops here.
                     raise ValueError(
                         f"Retained candidate missing: {name}; do not rebuild. "
+                        "If all jobs were re-run, the earlier attempt's artifacts "
+                        "are gone; retry only with 'Re-run failed jobs'. "
                         "Restore the original artifact or start a new candidate."
                     )
     return {"name": name, "id": "", "reused": False, **extra}
