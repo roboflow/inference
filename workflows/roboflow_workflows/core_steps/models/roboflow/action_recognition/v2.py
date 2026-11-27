@@ -1,5 +1,6 @@
 """Stateful action recognition workflow block."""
 
+import contextvars
 import math
 import threading
 from collections import OrderedDict
@@ -193,11 +194,16 @@ class _WindowWorker:
             max_workers=1, thread_name_prefix="action-recognition"
         )
         self._lock = threading.Lock()
-        self._waiting: OrderedDict[Future, Callable[[], _WindowResult]] = OrderedDict()
+        self._waiting: OrderedDict[
+            Future, Tuple[contextvars.Context, Callable[[], _WindowResult]]
+        ] = OrderedDict()
         self._draining = False
         self._closed = False
 
     def submit(self, classify: Callable[[], _WindowResult]) -> Future:
+        # A remote call reads the step's billing opt-out and usage tags from
+        # context variables, which a pool thread does not inherit.
+        context = contextvars.copy_context()
         future = Future()
         with self._lock:
             if self._closed:
@@ -206,7 +212,7 @@ class _WindowWorker:
             if not self._draining:
                 self._pool.submit(self._drain)
                 self._draining = True
-            self._waiting[future] = classify
+            self._waiting[future] = (context, classify)
 
         return future
 
@@ -222,14 +228,14 @@ class _WindowWorker:
                     self._draining = False
                     return
 
-                future, classify = self._waiting.popitem(last=False)
+                future, (context, classify) = self._waiting.popitem(last=False)
                 should_run = future.set_running_or_notify_cancel()
 
             try:
                 if not should_run:
                     continue
 
-                result = classify()
+                result = context.run(classify)
             except BaseException as error:
                 future.set_exception(error)
             else:
@@ -237,7 +243,7 @@ class _WindowWorker:
             finally:
                 # A failed future keeps this loop's frame through its traceback.
                 # Drop each window's references before moving on or going idle.
-                future = classify = result = None
+                future = context = classify = result = None
 
     def close(self) -> None:
         with self._lock:
@@ -382,8 +388,6 @@ class ActionRecognitionModelBlockV2(ActionRecognitionModelBlockV1):
         Returns:
             One bundled ``predictions`` result per input frame.
         """
-        if self._step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
         block_filter = normalise_class_names(class_filter) or None
         # A filter is not a vocabulary; only the model's own class list

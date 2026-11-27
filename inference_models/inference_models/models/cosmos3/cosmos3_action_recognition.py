@@ -15,6 +15,7 @@ from inference_models.logger import LOGGER
 from inference_models.models.base.action_recognition import (
     SLIDING_WINDOW_MODE,
     WHOLE_VIDEO_MODE,
+    ActionRecognitionContract,
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,
@@ -304,6 +305,8 @@ def _read_video_sampling(model_name_or_path: str) -> VideoSampling:
 
 
 class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
+    contract_files = ("inference_config.json", "class_names.txt")
+
     def __init__(
         self,
         reasoner: Cosmos3EdgeReasoner,
@@ -368,7 +371,8 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
         carries_class_tokens = _has_class_tokens(tokenizer)
         if model_name_or_path is None:
             return cls(reasoner=reasoner)
-        class_names = _read_class_names_file(model_name_or_path)
+        contract = cls.contract_from_package(package_dir=model_name_or_path)
+        class_names = contract.class_names
         if class_names is None and carries_class_tokens:
             # Falling through would serve a fine-tune as a zero-shot model.
             raise CorruptedModelPackageError(
@@ -378,18 +382,10 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
                 ),
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
-        if class_names and any("|" in class_name for class_name in class_names):
-            raise CorruptedModelPackageError(
-                message=(
-                    f"Model package {model_name_or_path} declares a class name "
-                    f"containing '|', which the span format cannot express."
-                ),
-                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
-            )
         model = cls(
             reasoner=reasoner,
             class_names=class_names,
-            video_sampling=_read_video_sampling(model_name_or_path),
+            video_sampling=contract.video_sampling,
         )
         # carries_class_tokens without class_names already raised above, so a
         # class list is the only state left that has to resolve.
@@ -404,6 +400,48 @@ class Cosmos3EdgeActionRecognition(ActionRecognitionModel):
                 help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
             )
         return model
+
+    @classmethod
+    def contract_from_package(cls, package_dir: str) -> ActionRecognitionContract:
+        """Read the class list and the recorded sampling from a package.
+
+        A package without ``class_names.txt`` is a zero-shot model, which
+        reads a whole clip in one call. A package whose class tokens do not
+        match its class list is only detected when the tokenizer loads.
+
+        Args:
+            package_dir (str): Package directory, or a hub name with no files.
+
+        Returns:
+            ActionRecognitionContract: The fine-tune or zero-shot contract.
+
+        Raises:
+            CorruptedModelPackageError: A class name or the sampling settings
+                cannot be honoured.
+        """
+        class_names = _read_class_names_file(package_dir)
+        if class_names and any("|" in class_name for class_name in class_names):
+            raise CorruptedModelPackageError(
+                message=(
+                    f"Model package {package_dir} declares a class name "
+                    f"containing '|', which the span format cannot express."
+                ),
+                help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
+            )
+
+        video_sampling = _read_video_sampling(package_dir)
+        if class_names is None:
+            # Mirrors __init__: only a fine-tune has a trained window.
+            video_sampling = replace(video_sampling, mode=WHOLE_VIDEO_MODE)
+        contract = ActionRecognitionContract(
+            class_names=class_names,
+            video_sampling=video_sampling,
+            supports_confidence=cls.supports_confidence,
+            supports_observed_duration=cls.supports_observed_duration,
+            end_exclusive_spans=cls.end_exclusive_spans,
+        )
+
+        return contract
 
     def infer(
         self,

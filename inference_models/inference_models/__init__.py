@@ -35,6 +35,9 @@ if os.environ.get("TOKENIZERS_PARALLELISM") is None:
 
 from inference_models.entities import ColorFormat, Confidence
 from inference_models.model_pipelines.auto_loaders.core import AutoModelPipeline
+from inference_models.models.auto_loaders.action_recognition import (
+    get_action_recognition_contract,
+)
 from inference_models.models.auto_loaders.core import (
     AutoModel,
     find_cached_model_package_dir,
@@ -45,6 +48,7 @@ from inference_models.models.auto_loaders.entities import (
     PreProcessingOverrides,
 )
 from inference_models.models.base.action_recognition import (
+    ActionRecognitionContract,
     ActionRecognitionModel,
     ActionRecognitionPrediction,
     VideoSampling,

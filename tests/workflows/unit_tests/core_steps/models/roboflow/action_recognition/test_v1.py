@@ -1100,16 +1100,6 @@ def test_video_identifier_can_be_reused_after_rollback_reset():
     assert [entry.class_name for entry in result["timeline"]] == ["run"]
 
 
-def test_remote_mode_raises():
-    block = ActionRecognitionModelBlockV1(
-        api_key=None,
-        step_execution_mode=StepExecutionMode.REMOTE,
-    )
-
-    with pytest.raises(NotImplementedError, match="only supports LOCAL"):
-        _run(block, _make_frame(0))
-
-
 def test_tensor_sibling_forwards_tensor_materialised_frames():
     block, model = _make_block(tensor=True)
 
@@ -1311,6 +1301,25 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     assert any(len(call["frames"]) == 16 for call in model.calls)
     assert all(1 <= len(call["frames"]) <= 16 for call in model.calls)
     assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
+
+
+@pytest.mark.parametrize("source_fps", [30000 / 1001, 24000 / 1001])
+def test_a_model_without_a_frame_budget_gets_at_most_its_window(source_fps) -> None:
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=16.0, sample_fps=4.0, min_frames=4
+    )
+    window_frames = round(16.0 * source_fps)
+
+    # One default-stride window in about 16 holds a 65th sample.
+    for frame_number in range(20 * window_frames):
+        block.run(
+            images=[_make_frame(frame_number, fps=source_fps)],
+            model_id="cosmos-3-edge",
+        )
+
+    assert any(len(call["frames"]) == 64 for call in model.calls)
+    assert all(len(call["frames"]) <= 64 for call in model.calls)
 
 
 @pytest.mark.parametrize("supports_confidence", [False, True])

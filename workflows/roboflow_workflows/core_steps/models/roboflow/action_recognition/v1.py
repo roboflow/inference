@@ -16,8 +16,10 @@ from roboflow_workflows.core_steps.common.workload_presets import (
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     normalise_class_names,
 )
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.remote import (
+    load_remote_action_recognition_model,
+)
 from roboflow_workflows.core_steps.models.workload_presets import (
-    REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
     REQUIRES_GPU_FOR_LOCAL_EXECUTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
@@ -49,7 +51,6 @@ from roboflow_workflows.execution_engine.entities.workload import (
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
-    ModelExecutionLocation,
     ModelRequiredAction,
     Runtime,
     Severity,
@@ -253,7 +254,6 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-            REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
         ]
 
     @classmethod
@@ -265,13 +265,14 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         """Declare the action recognition model of the block's local run path.
 
-        The block supports LOCAL step execution only (its run path rejects any
-        other mode) and owns its model loading: it asks the model provider for
-        the model through `load_action_recognition_model()`, not through the
-        generic `add_model()` registration. The declared dependency describes
-        that supported execution path, so it is LOCAL and kept away from the
-        generic preloader. The configured id is returned verbatim, selector
-        included. The tensor sibling re-exports this manifest.
+        Under LOCAL step execution the block owns its model loading: it asks
+        the model provider for the model through
+        `load_action_recognition_model()`, not through the generic
+        `add_model()` registration, so the declared dependency is kept away
+        from the generic preloader. Under REMOTE step execution the model
+        runs on a server, so where it runs follows the environment. The
+        configured id is returned verbatim, selector included. The tensor
+        sibling re-exports this manifest.
 
         Returns:
             The configured action recognition model.
@@ -280,7 +281,6 @@ class BlockManifest(WorkflowBlockManifest):
             roboflow_platform_model(
                 self.model_id,
                 required_action=ModelRequiredAction.EXECUTION,
-                execution_location=ModelExecutionLocation.LOCAL,
                 preloadable=False,
             )
         ]
@@ -294,7 +294,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        """Declare the REMOTE, GPU, cross-frame state-loss and still-image caveats.
+        """Declare the GPU, cross-frame state-loss and still-image caveats.
 
         Args:
             ignore_environment_restrictions: If True, return every declaration
@@ -311,7 +311,6 @@ class BlockManifest(WorkflowBlockManifest):
                 STATEFUL_VIDEO_ACTUAL_RESTRICTION,
                 REQUIRES_GPU_FOR_LOCAL_EXECUTION,
                 STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-                REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
             ],
             node_id=f"$steps.{getattr(self, 'name', '')}",
             ignore_environment_restrictions=ignore_environment_restrictions,
@@ -320,13 +319,6 @@ class BlockManifest(WorkflowBlockManifest):
 
 class ActionRecognitionModelBlockV1(WorkflowBlock):
     """Classify temporal segments in independent video streams."""
-
-    _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
-        "Action Recognition Model only supports LOCAL workflow step "
-        "execution. Remote execution sends frames to separate processes and "
-        "breaks the per-video state. Set "
-        "WORKFLOWS_STEP_EXECUTION_MODE=local to use this block."
-    )
 
     def __init__(
         self,
@@ -354,18 +346,29 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _get_model(self, model_id: str):
         if self._model is None or self._current_model_id != model_id:
-            if self._model_manager is None:
-                raise WorkflowEnvironmentConfigurationError(
-                    public_message=(
-                        "This block loads its model through the Workflows models "
-                        "provider. Supply `workflows_core.model_manager` in the "
-                        "workflow init parameters."
-                    ),
-                    context="workflow_execution | step_execution | model_loading",
+            if self._step_execution_mode is StepExecutionMode.REMOTE:
+                # State stays here; only each window's model call goes remote.
+                self._model = load_remote_action_recognition_model(
+                    model_id, api_key=self._api_key
                 )
-            self._model = self._model_manager.load_action_recognition_model(
-                model_id=model_id, api_key=self._api_key
-            )
+            elif self._step_execution_mode is StepExecutionMode.LOCAL:
+                if self._model_manager is None:
+                    raise WorkflowEnvironmentConfigurationError(
+                        public_message=(
+                            "This block loads its model through the Workflows "
+                            "models provider. Supply `workflows_core.model_manager` "
+                            "in the workflow init parameters."
+                        ),
+                        context="workflow_execution | step_execution | model_loading",
+                    )
+
+                self._model = self._model_manager.load_action_recognition_model(
+                    model_id=model_id, api_key=self._api_key
+                )
+            else:
+                raise ValueError(
+                    f"Unknown step execution mode: {self._step_execution_mode}"
+                )
             self._current_model_id = model_id
             self._clear_streams()
         return self._model
@@ -401,8 +404,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         Returns:
             A timeline and error status for each input frame.
         """
-        if self._step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
         block_filter = normalise_class_names(class_filter) or None
         # A filter is not a vocabulary; only the model's own class list
@@ -633,10 +634,18 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             and bookkeeping.sampled[0].intended_frame_number <= cutoff_frame_number
         ):
             bookkeeping.sampled.pop(0)
-        if video_sampling.max_frames is not None:
-            # Rounded source-frame windows can contain one extra sampling timestamp.
-            while len(bookkeeping.sampled) > video_sampling.max_frames:
-                bookkeeping.sampled.pop(0)
+        # Rounded source-frame windows can contain one extra sampling timestamp.
+        # Without a trained budget the cap is the model window, so a remote call
+        # sends the same frames as a local one instead of a clip the server splits.
+        window_sample_limit = (
+            video_sampling.max_frames
+            if video_sampling.max_frames is not None
+            else max(
+                1, math.floor(requested_window_seconds * effective_sample_fps + 1e-9)
+            )
+        )
+        while len(bookkeeping.sampled) > window_sample_limit:
+            bookkeeping.sampled.pop(0)
 
         return effective_sample_fps, sampling_stride, stride_frames
 
