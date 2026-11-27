@@ -788,6 +788,9 @@ class BaseEncodedRing(abc.ABC):
         self._failed_encoder_restarts = 0
         self._encoder_failing_since: Optional[float] = None
         self._encoder_failures_in_a_row = 0
+        # Caller-thread counterpart (ring lock held): `_prepare_frame` failures.
+        self._prepare_failing_since: Optional[float] = None
+        self._prepare_failures_in_a_row = 0
         # Written by the encoder thread, read by the owner: a plain flag.
         self._encoder_failed = False
 
@@ -1027,8 +1030,9 @@ class BaseEncodedRing(abc.ABC):
 
         Set after ``MAX_ENCODER_RESTARTS`` restarts in a row that each ended in
         ``MAX_CONSECUTIVE_ENCODE_ERRORS`` failed frames, with no frame encoded in
-        between, once the failures lasted ``ENCODER_FAILURE_MIN_SECONDS``. It never
-        goes back to False.
+        between, once the failures lasted ``ENCODER_FAILURE_MIN_SECONDS``. Also
+        set when as many frames in a row, over as long, could not be prepared for
+        the encoder on the caller's thread. It never goes back to False.
         """
         return self._encoder_failed
 
@@ -1111,9 +1115,16 @@ class BaseEncodedRing(abc.ABC):
             with self._lock:
                 self._queue_items -= 1
                 self._record_queue_drop(t)
+                self._record_prepare_failure_locked()
             raise
 
         with self._lock:
+            # A refused frame (a full pool returns None) is not a failure, and it
+            # says nothing about whether staging works: only a staged frame ends
+            # a run of failures.
+            if frame is not None:
+                self._prepare_failing_since = None
+                self._prepare_failures_in_a_row = 0
             if frame is None or self._closing:
                 self._queue_items -= 1
                 self._record_queue_drop(t)
@@ -1269,7 +1280,7 @@ class BaseEncodedRing(abc.ABC):
         for state in list(self._pending):
             if packet.t > state.end_t + TIME_EPSILON:
                 self._complete(state, partial=None)
-            elif state.started or packet.is_keyframe:
+            elif state.started or self._may_start_capture(state, packet):
                 state.started = True
                 state.packets.append(packet)
                 self._store.acquire([packet])
@@ -1277,6 +1288,21 @@ class BaseEncodedRing(abc.ABC):
         for evicted in self._store.enforce_cap(self._byte_cap()):
             self._ring_drops += 1
             self._ring_drop_times.append(evicted.t)
+
+    def _may_start_capture(self, state: _CaptureState, packet: EncodedPacket) -> bool:
+        # Ring lock held. A capture whose snapshot was empty starts at the first
+        # keyframe inside its window or within the allowed lead before it (one
+        # output second, as in `PacketStore.snapshot`). Frames queued behind a
+        # slow encoder are older than the capture and reach the ring after it:
+        # without the lower bound the clip would start at their first keyframe,
+        # seconds before the requested window.
+        if not packet.is_keyframe:
+            return False
+
+        earliest_start_t = state.start_t - self.playback_speed - TIME_EPSILON
+        may_start = packet.t >= earliest_start_t
+
+        return may_start
 
     def _observe_processed(self, t: float) -> None:
         if self._in_flight:
@@ -1519,6 +1545,33 @@ class BaseEncodedRing(abc.ABC):
     def _release_packets_locked(self, packets: List[EncodedPacket]) -> None:
         self._store.release(packets)
         packets.clear()
+
+    def _record_prepare_failure_locked(self) -> None:
+        # Staging a frame (an allocation, a copy to the encoder's buffer) failed on
+        # the caller's thread. The frame never reaches the encoder thread, so the
+        # encode-error count cannot see it: a backend that can no longer stage
+        # frames would stay "recording" for ever. Same rule as for encode errors:
+        # many failures in a row that also lasted a while.
+        now = time.monotonic()
+        if self._prepare_failing_since is None:
+            self._prepare_failing_since = now
+        self._prepare_failures_in_a_row += 1
+        failing_seconds = now - self._prepare_failing_since
+        if (
+            self._prepare_failures_in_a_row
+            >= MAX_ENCODER_RESTARTS * MAX_CONSECUTIVE_ENCODE_ERRORS
+            and failing_seconds >= ENCODER_FAILURE_MIN_SECONDS
+            and not self._encoder_failed
+        ):
+            self._encoder_failed = True
+            logger.warning(
+                "Video clip ring `%s` (%s): %d frames in a row could not be "
+                "prepared for the encoder over %.1f s; the ring no longer records.",
+                self.video_identifier,
+                self.backend,
+                self._prepare_failures_in_a_row,
+                failing_seconds,
+            )
 
     def _record_queue_drop(self, t: float) -> None:
         # Ring lock held.

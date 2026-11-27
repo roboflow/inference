@@ -564,6 +564,54 @@ def test_confirm_ingestion_is_bounded_and_reports_pending() -> None:
     assert sum(clock.sleeps) >= 290.0
 
 
+def test_put_waiting_for_an_upload_slot_does_not_start_after_shutdown() -> None:
+    # given: the only upload slot of the process is taken by another uploader, so
+    # this clip waits for it
+    budget = Budget(max_upload_concurrency=1)
+    assert budget.acquire_upload_slot(timeout=1.0)
+    put = _FakePut([_Response(200)])
+    uploader = ClipUploader(budget=budget, http_put=put)
+    future = _submit(uploader, _capture(_artifact()))
+    try:
+        time.sleep(0.3)
+        assert put.calls == []
+
+        # when: the uploader is shut down, and only then the slot becomes free
+        uploader.shutdown(0)
+    finally:
+        budget.release_upload_slot()
+    completion = future.result(timeout=5)
+
+    # then: no PUT was started after the shutdown
+    assert completion.terminal_status == STATUS_SHUTDOWN_DEADLINE
+    assert put.calls == []
+
+
+def test_put_waiting_for_an_upload_slot_does_not_start_past_its_deadline() -> None:
+    # given: the slot is taken, and the clip's upload deadline passes meanwhile
+    budget = Budget(max_upload_concurrency=1)
+    assert budget.acquire_upload_slot(timeout=1.0)
+    put = _FakePut([_Response(200)])
+    clock = _FakeClock()
+    uploader = _uploader(put, clock, budget=budget)
+    future = _submit(uploader, _capture(_artifact()), upload_timeout_seconds=10.0)
+    try:
+        time.sleep(0.3)
+        assert put.calls == []
+
+        # when
+        clock.now += 11.0
+        completion = future.result(timeout=5)
+    finally:
+        budget.release_upload_slot()
+
+    # then
+    assert completion.terminal_status == STATUS_SHUTDOWN_DEADLINE
+    assert completion.error == "upload deadline passed"
+    assert put.calls == []
+    uploader.shutdown(0)
+
+
 def test_upload_concurrency_is_bounded_by_the_budget() -> None:
     # given
     put = _FakePut([_Response(200)], delay=0.05)

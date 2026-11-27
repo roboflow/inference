@@ -236,6 +236,24 @@ class Budget:
         finally:
             self._upload_slots.release()
 
+    def acquire_upload_slot(self, timeout: Optional[float] = None) -> bool:
+        """Take one of the process-wide upload slots, waiting at most ``timeout``.
+
+        Args:
+            timeout: Seconds to wait; ``None`` waits until a slot is free.
+
+        Returns:
+            True when a slot was taken; the caller must then call
+            `release_upload_slot`.
+        """
+        acquired = self._upload_slots.acquire(timeout=timeout)
+
+        return acquired
+
+    def release_upload_slot(self) -> None:
+        """Give back a slot taken with `acquire_upload_slot`."""
+        self._upload_slots.release()
+
     def _release_ticket(self, ticket: AdmissionTicket) -> None:
         with self._lock:
             ticket._released = True

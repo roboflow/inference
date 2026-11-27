@@ -243,7 +243,9 @@ The recorder picks a backend per stream at its first frame:
 **When an encoder fails.** An encoder that fails on 3 frames in a row is closed and
 reopened. After 3 such restarts in a row with no frame encoded in between (9
 frames), and once the failures have lasted at least 2 seconds, the recorder gives
-up on it for that stream. A short burst of failures does not count. A stream on NVENC switches to
+up on it for that stream. A short burst of failures does not count. The same rule
+applies when frames cannot be handed to the encoder at all, for example when a GPU
+buffer cannot be allocated. A stream on NVENC switches to
 x264 and keeps recording; this costs CPU, because every frame is then copied from
 the GPU. A stream on x264 stops recording and its anchors are
 `unavailable:no_encoder`. A clip that was in its post-roll ends as

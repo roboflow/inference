@@ -82,6 +82,7 @@ BACKOFF_MAX_SECONDS = 30.0
 PUT_TIMEOUT_SECONDS = (10.0, 300.0)
 PUT_READ_CHUNK_BYTES = 1024 * 1024
 WORKER_POLL_SECONDS = 0.5
+UPLOAD_SLOT_POLL_SECONDS = 0.1
 TRANSIENT_4XX = (408, 429)
 ERROR_BODY_CHARACTERS = 300
 ERROR_CAUSE_DEPTH = 4
@@ -518,13 +519,23 @@ class ClipUploader:
         attempt = 0
         redacted_url = redact_url(job.signed_url)
         while True:
-            if self._stop_event.is_set():
-                return STATUS_SHUTDOWN_DEADLINE, "uploader shut down during the upload"
-            if self._clock() >= job.deadline:
-                return STATUS_SHUTDOWN_DEADLINE, "upload deadline passed"
+            stopped = self._stopped_or_past_deadline(job)
+            if stopped is not None:
+                return stopped
 
-            with self._budget.upload_slot():
+            # The slots are shared by the process, so the wait can be long. It is
+            # taken in short steps, and the checks are repeated once the slot is
+            # held: a PUT must not start after shutdown or past its deadline only
+            # because it was already waiting for a slot.
+            if not self._budget.acquire_upload_slot(timeout=UPLOAD_SLOT_POLL_SECONDS):
+                continue
+            try:
+                stopped = self._stopped_or_past_deadline(job)
+                if stopped is not None:
+                    return stopped
                 status, message, transient = self._put_once(job, artifact)
+            finally:
+                self._budget.release_upload_slot()
             if not transient:
                 return status, message
 
@@ -544,6 +555,16 @@ class ClipUploader:
             if self._clock() + delay >= job.deadline:
                 return STATUS_SHUTDOWN_DEADLINE, f"upload deadline passed: {message}"
             self._sleep(delay)
+
+    def _stopped_or_past_deadline(
+        self, job: _UploadJob
+    ) -> "Optional[tuple[str, Optional[str]]]":
+        if self._stop_event.is_set():
+            return STATUS_SHUTDOWN_DEADLINE, "uploader shut down during the upload"
+        if self._clock() >= job.deadline:
+            return STATUS_SHUTDOWN_DEADLINE, "upload deadline passed"
+
+        return None
 
     def _put_once(
         self, job: _UploadJob, artifact: Any

@@ -479,6 +479,138 @@ class _SlowX264Ring(X264Ring):
         return super()._encode_frame(frame, pts=pts, force_keyframe=force_keyframe)
 
 
+class _GatedX264Ring(X264Ring):
+    """The encoder thread encodes nothing until `gate` is set."""
+
+    def __init__(self, *args, **kwargs):
+        self.gate = threading.Event()
+        super().__init__(*args, **kwargs)
+
+    def _encode_frame(self, frame, *, pts, force_keyframe):
+        self.gate.wait(timeout=30)
+        return super()._encode_frame(frame, pts=pts, force_keyframe=force_keyframe)
+
+
+def test_capture_taken_during_an_encoder_backlog_stays_within_the_lead() -> None:
+    # given: five seconds of frames wait behind a blocked encoder, so none of them
+    # is in the ring yet when the capture is taken
+    recorder = _GatedX264Ring(
+        "camera-1", pre_roll_seconds=0.0, budget=Budget(), queue_depth=1000
+    )
+    trigger = 5 * FPS
+    try:
+        for index in range(trigger + 1):
+            recorder.submit(_ts(index), index, _image(index))
+        assert recorder.stats().frames_encoded == 0
+
+        # when: zero pre-roll and zero post-roll at second 5; then the encoder
+        # catches up and the stream goes on
+        capture = recorder.capture(_ts(trigger), _ts(trigger))
+        recorder.gate.set()
+        for index in range(trigger + 1, trigger + 10):
+            recorder.submit(_ts(index), index, _image(index))
+        artifact = capture.future.result(timeout=30)
+
+        # then: the queued footage from second 0 on is not attached. The clip
+        # starts at most one output second before the window, as documented.
+        try:
+            assert artifact.report.lead_seconds <= 1.0 + 1e-6
+            assert artifact.report.frames <= FPS + 1
+        finally:
+            artifact.release()
+    finally:
+        recorder.gate.set()
+        recorder.close()
+
+
+class _UnstageableX264Ring(X264Ring):
+    """`_prepare_frame` raises for the first `failures` frames."""
+
+    failures = 0
+    prepared = 0
+
+    def _prepare_frame(self, image):
+        self.prepared += 1
+        if self.prepared <= self.failures:
+            raise RuntimeError("cannot allocate the staging buffer")
+        return super()._prepare_frame(image)
+
+
+def test_frames_that_cannot_be_prepared_are_reported_as_encoder_failed(
+    monkeypatch,
+) -> None:
+    # given: staging fails on the caller's thread, so no frame reaches the encoder
+    # and no encode error is ever counted
+    monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 0.0)
+    recorder = _UnstageableX264Ring(
+        "camera-1", pre_roll_seconds=2.0, budget=Budget(), queue_depth=1000
+    )
+    recorder.failures = 10_000
+    try:
+        # when: one frame short of the limit
+        for index in range(FRAMES_UNTIL_ENCODER_FAILED - 1):
+            recorder.submit(_ts(index), index, _image(index))
+
+        # then
+        assert recorder.encoder_failed is False
+
+        # when: the limit is reached
+        recorder.submit(
+            _ts(FRAMES_UNTIL_ENCODER_FAILED),
+            FRAMES_UNTIL_ENCODER_FAILED,
+            _image(FRAMES_UNTIL_ENCODER_FAILED),
+        )
+
+        # then: the owner can fall back or report the stream as not recorded
+        assert recorder.encoder_failed is True
+        assert recorder.stats().frames_encoded == 0
+        assert recorder.stats().encode_errors == 0
+    finally:
+        recorder.close()
+
+
+def test_frame_that_can_be_prepared_ends_a_run_of_prepare_failures(monkeypatch) -> None:
+    # given
+    monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 0.0)
+    recorder = _UnstageableX264Ring(
+        "camera-1", pre_roll_seconds=2.0, budget=Budget(), queue_depth=1000
+    )
+    recorder.failures = FRAMES_UNTIL_ENCODER_FAILED - 1
+    try:
+        # when: failures one short of the limit, a good frame, then as many again
+        _feed(recorder, range(FRAMES_UNTIL_ENCODER_FAILED))
+        recorder.prepared = 0
+        _feed(
+            recorder,
+            range(FRAMES_UNTIL_ENCODER_FAILED, 2 * FRAMES_UNTIL_ENCODER_FAILED - 1),
+        )
+
+        # then
+        assert recorder.encoder_failed is False
+    finally:
+        recorder.close()
+
+
+def test_burst_of_prepare_failures_is_not_reported_as_encoder_failed(
+    monkeypatch,
+) -> None:
+    # given: the time condition is out of reach, so only the count is met
+    monkeypatch.setattr(ring_module, "ENCODER_FAILURE_MIN_SECONDS", 3600.0)
+    recorder = _UnstageableX264Ring(
+        "camera-1", pre_roll_seconds=2.0, budget=Budget(), queue_depth=1000
+    )
+    recorder.failures = 10 * FRAMES_UNTIL_ENCODER_FAILED
+    try:
+        # when
+        for index in range(recorder.failures):
+            recorder.submit(_ts(index), index, _image(index))
+
+        # then
+        assert recorder.encoder_failed is False
+    finally:
+        recorder.close()
+
+
 def test_prepare_close_drops_queue_and_finalises_eight_captures_fast() -> None:
     # given: a slow encoder with a long queue and 8 pending captures
     recorder = _SlowX264Ring(
