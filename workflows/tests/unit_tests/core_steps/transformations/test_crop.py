@@ -529,6 +529,13 @@ def test_source_evidence_keeps_each_frames_original_box_and_pixels() -> None:
     frames = []
     predictions = []
     boxes = [[10, 12, 28, 31], [0, 0, 0, 0], [40, 45, 60, 64]]
+    corners = np.array(
+        [
+            [[left, top], [right, top], [right, bottom], [left, bottom]]
+            for left, top, right, bottom in boxes
+        ]
+    )
+    geometries = ("keypoints_xy", "polygon", ORIENTED_BOX_COORDINATES)
     for i in range(2):
         pixels = np.full((80, 90, 3), i + 1, dtype=np.uint8)
         data = (
@@ -548,11 +555,18 @@ def test_source_evidence_keeps_each_frames_original_box_and_pixels() -> None:
                 class_id=torch.zeros(3, dtype=torch.long),
                 confidence=torch.ones(3),
                 image_metadata={"class_names": {0: "person"}},
-                bboxes_metadata=[{"detection_id": identifier} for identifier in ids],
+                bboxes_metadata=[
+                    {"detection_id": identifier, **{key: points for key in geometries}}
+                    for identifier, points in zip(ids, corners)
+                ],
             )
             if ENABLE_TENSOR_DATA_REPRESENTATION
             else sv.Detections(
-                xyxy=np.array(boxes, dtype=float), data={"detection_id": np.array(ids)}
+                xyxy=np.array(boxes, dtype=float),
+                data={
+                    "detection_id": np.array(ids),
+                    **{key: corners for key in geometries},
+                },
             )
         )
 
@@ -570,5 +584,17 @@ def test_source_evidence_keeps_each_frames_original_box_and_pixels() -> None:
             assert entry["source_prediction"].xyxy.tolist() == [boxes[j]]
             assert entry["predictions"].xyxy.tolist()[0][:2] == [0, 0]
             assert entry["crops"].parent_metadata.parent_id == f"{i}-{j}"
+            for output, expected in [
+                ("source_prediction", corners[j]),
+                ("predictions", corners[j] - boxes[j][:2]),
+            ]:
+                prediction = entry[output]
+                for key in geometries:
+                    points = (
+                        prediction.bboxes_metadata[0][key]
+                        if ENABLE_TENSOR_DATA_REPRESENTATION
+                        else prediction.data[key][0]
+                    )
+                    np.testing.assert_array_equal(points, expected)
         if ENABLE_TENSOR_DATA_REPRESENTATION:
             assert frames[i]._numpy_image is None

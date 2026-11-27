@@ -264,6 +264,7 @@ def crop_image(
 
         translated_detection = replace(
             selected_detection,
+            data=selected_detection.data.copy(),
             xyxy=sv.move_boxes(xyxy=selected_detection.xyxy, offset=(-x_min, -y_min)),
             mask=(
                 selected_detection.mask[:, y_min:y_max, x_min:x_max]
