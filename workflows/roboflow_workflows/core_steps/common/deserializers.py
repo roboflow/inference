@@ -58,6 +58,7 @@ from roboflow_workflows.execution_engine.constants import (
 )
 from roboflow_workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
+    ActionRecognitionResult,
     ImageParentMetadata,
     ParentOrigin,
     VideoMetadata,
@@ -241,6 +242,31 @@ def deserialize_action_recognition_prediction_kind(
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
             "a list of action recognitions, but the provided value "
+            "is malformed. See details in inner error.",
+            context="workflow_execution | runtime_input_validation",
+            inner_error=error,
+        )
+
+
+def deserialize_action_recognition_result_kind(
+    parameter: str,
+    value: Any,
+) -> ActionRecognitionResult:
+    if isinstance(value, ActionRecognitionResult):
+        return value
+    if not isinstance(value, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"an action recognition result, but invalid type of data found "
+            f"(`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return ActionRecognitionResult.model_validate(value)
+    except ValidationError as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            "an action recognition result, but the provided value "
             "is malformed. See details in inner error.",
             context="workflow_execution | runtime_input_validation",
             inner_error=error,
