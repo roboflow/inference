@@ -22,7 +22,6 @@ async def handle_object_detection(
             model_id=common.model_id,
             image=images[0],
             action=dispatch_action,
-            instance=common.instance,
             params=params,
             request=hooks.request,
         )
@@ -33,7 +32,6 @@ async def handle_object_detection(
                 model_id=common.model_id,
                 image=img,
                 action=dispatch_action,
-                instance=common.instance,
                 params=params,
                 request=hooks.request,
             )

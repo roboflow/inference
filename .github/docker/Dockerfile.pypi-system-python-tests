@@ -1,0 +1,15 @@
+# Reuse the offline wheelhouse built by the release-contract job.
+FROM inference-pypi-tests AS build-tools
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip make git \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/python3 /usr/local/bin/python
+# Match Jetson's upgraded pip without removing Ubuntu's protection marker.
+RUN python -m pip install --break-system-packages --ignore-installed --no-cache-dir pip==26.3 pytest==8.3.5
+COPY --from=build-tools /build-wheels /build-wheels
+# Jetson already has a standalone uv, which used to bypass pip bootstrap.
+COPY --from=build-tools /usr/local/bin/uv /usr/local/bin/uv
+ENV PIP_NO_INDEX=1 PIP_FIND_LINKS=/build-wheels PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_OFFLINE=1 UV_NO_INDEX=1 UV_FIND_LINKS=/build-wheels UV_PYTHON_DOWNLOADS=never
+WORKDIR /work

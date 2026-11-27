@@ -1,6 +1,5 @@
 """Stateful action recognition workflow block."""
 
-import logging
 import math
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -17,8 +16,10 @@ from roboflow_workflows.core_steps.common.workload_presets import (
 from roboflow_workflows.core_steps.models.foundation.segment_anything_common.streaming_video import (
     normalise_class_names,
 )
+from roboflow_workflows.core_steps.models.roboflow.action_recognition.remote import (
+    load_remote_action_recognition_model,
+)
 from roboflow_workflows.core_steps.models.workload_presets import (
-    REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
     REQUIRES_GPU_FOR_LOCAL_EXECUTION,
     STATEFUL_VIDEO_HTTP_SOFT_RESTRICTION,
     STILL_IMAGE_INPUT_SOFT_RESTRICTION,
@@ -50,7 +51,6 @@ from roboflow_workflows.execution_engine.entities.workload import (
 from roboflow_workflows.prototypes.block import (
     BlockResult,
     DependentResource,
-    ModelExecutionLocation,
     ModelRequiredAction,
     Runtime,
     Severity,
@@ -88,10 +88,9 @@ LONG_DESCRIPTION = """
 Classify actions and events in a video stream. The block continuously samples
 each stream into a sliding window and adds each model result to a cumulative
 timeline. The first classification runs one stride after the stream starts.
-Later classifications run at each stride. By default, the stride equals the
-window, so consecutive windows tile the stream without overlap. Set a smaller
-stride to slide overlapping windows for finer range boundaries. Ranges can
-overlap. Timeline ranges only grow when the block merges model evidence. The
+Later classifications run at each stride. By default, scheduled windows use the
+overlap recorded by the model. Set a smaller stride to increase overlap for
+finer range boundaries. Ranges can overlap. Timeline ranges only grow when the block merges model evidence. The
 block does not extend ranges provisionally. The timeline holds at most 5000
 ranges per stream. A stream that passes that ceiling loses the ranges that
 ended earliest, so its timeline covers recent history rather than all of it. When a stream provides no source
@@ -104,8 +103,8 @@ models declare their defaults (a 16 second window at 4 frames per second).
 The block does not run an extra classification when a stream ends, so frames
 after the final scheduled call do not receive a result. On a finite clip, keep
 the stride shorter than the clip: the first classification waits one full
-stride, so a longer stride never runs. Tail classification requires an
-end-of-stream signal and is planned separately.
+stride, so a longer stride never runs. Model v2 can classify the buffered
+samples on the final frame of a file with a known frame count.
 
 Use this block with InferencePipeline for full temporal behavior. Still-image
 and HTTP execution do not provide a continuous stream. A single frame has no
@@ -255,7 +254,6 @@ class BlockManifest(WorkflowBlockManifest):
                 applies_to_step_execution_modes=[StepExecutionMode.LOCAL],
             ),
             STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-            REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
         ]
 
     @classmethod
@@ -267,13 +265,14 @@ class BlockManifest(WorkflowBlockManifest):
     def discover_dependent_resources(self) -> Optional[List[DependentResource]]:
         """Declare the action recognition model of the block's local run path.
 
-        The block supports LOCAL step execution only (its run path rejects any
-        other mode) and owns its model loading: it asks the model provider for
-        the model through `load_action_recognition_model()`, not through the
-        generic `add_model()` registration. The declared dependency describes
-        that supported execution path, so it is LOCAL and kept away from the
-        generic preloader. The configured id is returned verbatim, selector
-        included. The tensor sibling re-exports this manifest.
+        Under LOCAL step execution the block owns its model loading: it asks
+        the model provider for the model through
+        `load_action_recognition_model()`, not through the generic
+        `add_model()` registration, so the declared dependency is kept away
+        from the generic preloader. Under REMOTE step execution the model
+        runs on a server, so where it runs follows the environment. The
+        configured id is returned verbatim, selector included. The tensor
+        sibling re-exports this manifest.
 
         Returns:
             The configured action recognition model.
@@ -282,7 +281,6 @@ class BlockManifest(WorkflowBlockManifest):
             roboflow_platform_model(
                 self.model_id,
                 required_action=ModelRequiredAction.EXECUTION,
-                execution_location=ModelExecutionLocation.LOCAL,
                 preloadable=False,
             )
         ]
@@ -296,7 +294,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_actual_restrictions(
         self, *, ignore_environment_restrictions: bool = False
     ) -> Discovery[RuntimeRestriction]:
-        """Declare the REMOTE, GPU, cross-frame state-loss and still-image caveats.
+        """Declare the GPU, cross-frame state-loss and still-image caveats.
 
         Args:
             ignore_environment_restrictions: If True, return every declaration
@@ -313,7 +311,6 @@ class BlockManifest(WorkflowBlockManifest):
                 STATEFUL_VIDEO_ACTUAL_RESTRICTION,
                 REQUIRES_GPU_FOR_LOCAL_EXECUTION,
                 STILL_IMAGE_INPUT_SOFT_RESTRICTION,
-                REMOTE_STEP_EXECUTION_NOT_SUPPORTED,
             ],
             node_id=f"$steps.{getattr(self, 'name', '')}",
             ignore_environment_restrictions=ignore_environment_restrictions,
@@ -322,13 +319,6 @@ class BlockManifest(WorkflowBlockManifest):
 
 class ActionRecognitionModelBlockV1(WorkflowBlock):
     """Classify temporal segments in independent video streams."""
-
-    _REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE = (
-        "Action Recognition Model only supports LOCAL workflow step "
-        "execution. Remote execution sends frames to separate processes and "
-        "breaks the per-video state. Set "
-        "WORKFLOWS_STEP_EXECUTION_MODE=local to use this block."
-    )
 
     def __init__(
         self,
@@ -356,21 +346,39 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _get_model(self, model_id: str):
         if self._model is None or self._current_model_id != model_id:
-            if self._model_manager is None:
-                raise WorkflowEnvironmentConfigurationError(
-                    public_message=(
-                        "This block loads its model through the Workflows models "
-                        "provider. Supply `workflows_core.model_manager` in the "
-                        "workflow init parameters."
-                    ),
-                    context="workflow_execution | step_execution | model_loading",
+            if self._step_execution_mode is StepExecutionMode.REMOTE:
+                # State stays here; only each window's model call goes remote.
+                self._model = load_remote_action_recognition_model(
+                    model_id, api_key=self._api_key
                 )
-            self._model = self._model_manager.load_action_recognition_model(
-                model_id=model_id, api_key=self._api_key
-            )
+            elif self._step_execution_mode is StepExecutionMode.LOCAL:
+                if self._model_manager is None:
+                    raise WorkflowEnvironmentConfigurationError(
+                        public_message=(
+                            "This block loads its model through the Workflows "
+                            "models provider. Supply `workflows_core.model_manager` "
+                            "in the workflow init parameters."
+                        ),
+                        context="workflow_execution | step_execution | model_loading",
+                    )
+
+                self._model = self._model_manager.load_action_recognition_model(
+                    model_id=model_id, api_key=self._api_key
+                )
+            else:
+                raise ValueError(
+                    f"Unknown step execution mode: {self._step_execution_mode}"
+                )
             self._current_model_id = model_id
-            self._video_bookkeeping.clear()
+            self._clear_streams()
         return self._model
+
+    def _clear_streams(self) -> None:
+        self._video_bookkeeping.clear()
+
+    def close(self) -> None:
+        """Release the sampled frames and timelines for all streams."""
+        self._clear_streams()
 
     def _extract_frame(self, image: WorkflowImageData):
         return _extract_rgb_frame(image=image)
@@ -396,8 +404,6 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         Returns:
             A timeline and error status for each input frame.
         """
-        if self._step_execution_mode is not StepExecutionMode.LOCAL:
-            raise NotImplementedError(self._REMOTE_EXECUTION_NOT_SUPPORTED_MESSAGE)
         model = self._get_model(model_id=model_id)
         block_filter = normalise_class_names(class_filter) or None
         # A filter is not a vocabulary; only the model's own class list
@@ -481,6 +487,56 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
                     evicted_video_id,
                 )
 
+        effective_sample_fps, sampling_stride, stride_frames = self._sample_frame(
+            image=image,
+            model=model,
+            video_sampling=video_sampling,
+            bookkeeping=bookkeeping,
+            requested_window_seconds=requested_window_seconds,
+            requested_stride_seconds=requested_stride_seconds,
+        )
+
+        error_status = ""
+        if bookkeeping.last_fire_frame_number is None:
+            # A single frame has no temporal content to classify; anchor the
+            # fire cadence at stream start and wait for a full stride.
+            bookkeeping.last_fire_frame_number = frame_number
+        # The model declares the fewest frames worth classifying; a fire
+        # waits until the buffer reaches it.
+        next_fire_frame_number = bookkeeping.last_fire_frame_number + stride_frames
+        should_classify = (
+            len(bookkeeping.sampled) >= max(1, int(video_sampling.min_frames))
+            and frame_number >= next_fire_frame_number
+        )
+        if should_classify:
+            bookkeeping.last_fire_frame_number = frame_number
+            error_status = self._classify_buffer(
+                model=model,
+                bookkeeping=bookkeeping,
+                block_filter=block_filter,
+                id_vocabulary=id_vocabulary,
+                effective_sample_fps=effective_sample_fps,
+                sampling_stride=sampling_stride,
+                confidence=confidence,
+                frame_limit=frame_number + 1,
+            )
+
+        bookkeeping.last_frame_number = frame_number
+        return self._build_output(bookkeeping=bookkeeping, error_status=error_status)
+
+    def _sample_frame(
+        self,
+        *,
+        image: WorkflowImageData,
+        model,
+        video_sampling: VideoSampling,
+        bookkeeping: _ActionRecognitionBookkeeping,
+        requested_window_seconds: float,
+        requested_stride_seconds: float,
+    ) -> Tuple[float, float, int]:
+        """Advance the sampling clock and retain the frames for a model window."""
+        metadata = image.video_metadata
+        frame_number = metadata.frame_number
         # The fps pin holds for the video's life; per-frame re-resolution
         # would let estimator jitter reshuffle the frame math mid-stream.
         if bookkeeping.source_fps is None:
@@ -578,38 +634,20 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
             and bookkeeping.sampled[0].intended_frame_number <= cutoff_frame_number
         ):
             bookkeeping.sampled.pop(0)
-        if video_sampling.max_frames is not None:
-            # Rounded source-frame windows can contain one extra sampling timestamp.
-            while len(bookkeeping.sampled) > video_sampling.max_frames:
-                bookkeeping.sampled.pop(0)
-
-        error_status = ""
-        if bookkeeping.last_fire_frame_number is None:
-            # A single frame has no temporal content to classify; anchor the
-            # fire cadence at stream start and wait for a full stride.
-            bookkeeping.last_fire_frame_number = frame_number
-        # The model declares the fewest frames worth classifying; a fire
-        # waits until the buffer reaches it.
-        next_fire_frame_number = bookkeeping.last_fire_frame_number + stride_frames
-        should_classify = (
-            len(bookkeeping.sampled) >= max(1, int(video_sampling.min_frames))
-            and frame_number >= next_fire_frame_number
-        )
-        if should_classify:
-            bookkeeping.last_fire_frame_number = frame_number
-            error_status = self._classify_buffer(
-                model=model,
-                bookkeeping=bookkeeping,
-                block_filter=block_filter,
-                id_vocabulary=id_vocabulary,
-                effective_sample_fps=effective_sample_fps,
-                sampling_stride=sampling_stride,
-                confidence=confidence,
-                frame_limit=frame_number + 1,
+        # Rounded source-frame windows can contain one extra sampling timestamp.
+        # Without a trained budget the cap is the model window, so a remote call
+        # sends the same frames as a local one instead of a clip the server splits.
+        window_sample_limit = (
+            video_sampling.max_frames
+            if video_sampling.max_frames is not None
+            else max(
+                1, math.floor(requested_window_seconds * effective_sample_fps + 1e-9)
             )
+        )
+        while len(bookkeeping.sampled) > window_sample_limit:
+            bookkeeping.sampled.pop(0)
 
-        bookkeeping.last_frame_number = frame_number
-        return self._build_output(bookkeeping=bookkeeping, error_status=error_status)
+        return effective_sample_fps, sampling_stride, stride_frames
 
     def _resolve_source_fps(
         self,
@@ -712,6 +750,7 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
         # gap. ceil(stride) is that rule exactly: consecutive samples sit
         # floor/ceil(stride) apart; the next sampled gap is ~2x the stride.
         self._merge_segments(
+            sampled=bookkeeping.sampled,
             bookkeeping=bookkeeping,
             segments=segments,
             block_filter=block_filter,
@@ -764,6 +803,8 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
 
     def _merge_segments(
         self,
+        *,
+        sampled: List[_SampledFrame],
         bookkeeping: _ActionRecognitionBookkeeping,
         segments: List[ModelActionRecognitionPrediction],
         block_filter: Optional[List[str]],
@@ -774,16 +815,14 @@ class ActionRecognitionModelBlockV1(WorkflowBlock):
     ) -> None:
         merge_window_segments(
             timeline=bookkeeping.timeline,
-            frame_numbers=[
-                sample.source_frame_number for sample in bookkeeping.sampled
-            ],
+            frame_numbers=[sample.source_frame_number for sample in sampled],
             segments=segments,
             id_vocabulary=id_vocabulary,
             stride=stride,
             class_filter=block_filter,
             sample_stride=sample_stride,
             frame_limit=frame_limit,
-            sample_start_frame=bookkeeping.sampled[0].intended_frame_number,
+            sample_start_frame=sampled[0].intended_frame_number,
         )
         self._evict_oldest_actions(bookkeeping=bookkeeping)
         bookkeeping.timeline.sort(

@@ -9,6 +9,7 @@ from PIL import Image
 from inference_sdk.config import (  # noqa: F401
     ALL_ROBOFLOW_API_URLS,
     WORKFLOW_RUN_RETRIES_ENABLED,
+    WORKFLOWS_PROFILING_DIRECTORY,
     outbound_service_secret,
     usage_source_tags,
 )
@@ -180,7 +181,7 @@ class InferenceConfiguration:
     max_batch_size: int = 1
     source: Optional[str] = None
     source_info: Optional[str] = None
-    profiling_directory: str = "./inference_profiling"
+    profiling_directory: str = WORKFLOWS_PROFILING_DIRECTORY
     workflow_run_retries_enabled: bool = WORKFLOW_RUN_RETRIES_ENABLED
     response_mask_format: Optional[Literal["polygon", "rle"]] = None
     # None means "not chosen by the user" - the client resolves it to LEGACY

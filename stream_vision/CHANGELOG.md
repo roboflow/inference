@@ -6,8 +6,31 @@ This is the canonical changelog for the `streamvision` package.
 
 ### Added
 
+- `StreamsConfiguration.workflows_profiling_directory` (default
+  `./inference_profiling`) sets where `InferencePipeline` writes Workflow profiler
+  traces. The `inference` and `inference_server` hosts fill it from
+  `WORKFLOWS_PROFILING_DIRECTORY`.
+
+### Fixed
+
+- Workflow profiler traces are written as
+  `inference_pipeline_workflow_execution_track_<timestamp>.json`; the file name used
+  to say `tack`.
+
+- Cap the WebRTC extra's aiortc dependency below 1.17 while retaining PyAV 14.2.0.
+  aiortc 1.17 accesses `VideoFrame.duration`, which is unavailable in that PyAV
+  version, causing video decoding workers to crash.
+
+## `0.1.7`
+
+### Added
+
 - The GStreamer CUDA producer supports VP8 over RTSP with
   `ROBOFLOW_RTSP_VIDEO_CODEC=vp8` on GPUs with a VP8 decoder.
+
+### Changed
+
+- The `workflows` extra now requires `roboflow-workflows>=0.2.17`.
 
 ### Fixed
 

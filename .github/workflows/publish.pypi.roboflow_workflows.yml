@@ -1,7 +1,12 @@
 name: Publish roboflow-workflows to PyPI
+run-name: pypi-roboflow-workflows-${{ inputs.coordinator_run_id != '' && format('parent-{0}', inputs.coordinator_run_id) || format('manual-{0}', github.run_id) }}
 on:
   workflow_dispatch:
     inputs:
+      coordinator_run_id:
+        description: Parent release run (empty for standalone manual publication)
+        type: string
+        default: ""
       expected_version:
         description: Expected package version (set by the release coordinator)
         type: string
@@ -24,6 +29,10 @@ permissions:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     if: ${{ github.repository == 'roboflow/inference' }}
     env:
       EXPECTED_VERSION: ${{ inputs.expected_version }}
@@ -42,18 +51,44 @@ jobs:
           persist-credentials: false
       - name: Verify the requested candidate revision and version
         run: bash .release/pypi/dependencies.sh guard --package roboflow-workflows
+      - name: Select retained candidate roboflow-workflows
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash .release/pypi/candidate.sh select --profile roboflow-workflows
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' release-evidence/selection-roboflow-workflows.json >> "$GITHUB_OUTPUT"
+      - name: Download retained candidate roboflow-workflows
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.candidate.outputs.id }}
+          merge-multiple: true
+          path: release-candidate/roboflow-workflows
+      - name: Restore retained candidate roboflow-workflows
+        if: ${{ steps.candidate.outputs.reused == 'true' }}
+        run: bash .release/pypi/candidate.sh restore --profile roboflow-workflows
       - name: 🐍 Set up Python 3.12
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: 🛞 Build roboflow-workflows wheel
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         run: make create_workflows_wheel
-      - name: 📤 Upload built wheel as artifact
+      - name: Seal candidate roboflow-workflows
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
+        run: bash .release/pypi/candidate.sh seal --profile roboflow-workflows
+      - name: Retain candidate roboflow-workflows
+        if: ${{ steps.candidate.outputs.reused != 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: roboflow-workflows-wheel
-          path: dist/
+          name: candidate-roboflow-workflows
+          retention-days: 90
           if-no-files-found: error
+          path: release-candidate/roboflow-workflows/
+      - name: Verify retained candidate roboflow-workflows
+        run: bash .release/pypi/candidate.sh verify --profile roboflow-workflows
       - name: Verify published dependencies before upload
         if: ${{ github.event.inputs.publish == 'true' }}
         run: bash .release/pypi/dependencies.sh gate --directory dist --plan-file release-evidence/dependency-plan.json --wait-seconds 600

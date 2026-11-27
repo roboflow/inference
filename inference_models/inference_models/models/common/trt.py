@@ -1,3 +1,4 @@
+import functools
 import inspect
 import threading
 from collections import OrderedDict
@@ -92,6 +93,14 @@ class InferenceTRTLogger(trt.ILogger):
 
     def get_memory(self) -> List[Tuple[trt.ILogger.Severity, str]]:
         return self._memory
+
+
+@functools.lru_cache(maxsize=None)
+def _trt_runtime_logger():
+    # A Python ILogger here can deadlock against the GIL.
+    logger = trt.Logger(trt.Logger.WARNING)
+
+    return logger
 
 
 @dataclass
@@ -1033,23 +1042,18 @@ def load_trt_model(
         - `infer_from_trt_engine()`: Run inference with loaded engine
     """
     try:
-        local_logger = InferenceTRTLogger(with_memory=True)
-        with open(model_path, "rb") as f, trt.Runtime(local_logger) as runtime:
+        with open(model_path, "rb") as f, trt.Runtime(_trt_runtime_logger()) as runtime:
             runtime.engine_host_code_allowed = engine_host_code_allowed
             engine = runtime.deserialize_cuda_engine(f.read())
             if engine is None:
-                logger_traces = local_logger.get_memory()
-                logger_traces_str = "\n".join(
-                    f"[{severity}] {msg}" for severity, msg in logger_traces
-                )
                 raise CorruptedModelPackageError(
                     message="Could not load TRT engine due to runtime error. This error is usually caused "
                     "by model package incompatibility with runtime environment. If you selected model with "
                     "specific model package to be run - verify that your environment is compatible with your "
                     "package. If the package was selected automatically by the library - this error indicate bug. "
                     "You can help us solving this problem describing the issue: "
-                    "https://github.com/roboflow/inference/issues\nBelow you can find debug information provided "
-                    f"by TRT runtime, which may be helpful:\n{logger_traces_str}",
+                    "https://github.com/roboflow/inference/issues\nTensorRT runtime messages are "
+                    "available in the server process output.",
                     help_url="https://inference-models.roboflow.com/errors/model-loading/#corruptedmodelpackageerror",
                 )
             return engine

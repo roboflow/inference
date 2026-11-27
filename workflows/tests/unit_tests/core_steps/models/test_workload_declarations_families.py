@@ -390,7 +390,7 @@ def test_streaming_video_block_declares_the_shared_presets_and_gpu() -> None:
     assert restrictions[3].when.input_modes == [RuntimeInputMode.IMAGE]
 
 
-def test_action_recognition_declares_the_same_restriction_shape() -> None:
+def test_action_recognition_declares_no_remote_prohibition() -> None:
     # given
     manifest = _build(ActionRecognitionV1Manifest, model_id="my-action-model/1")
 
@@ -398,8 +398,8 @@ def test_action_recognition_declares_the_same_restriction_shape() -> None:
     restrictions = portable_restrictions(manifest)
 
     # then
+    # REMOTE sends only window calls out, so the block keeps no REMOTE ban.
     assert restrictions == [
-        restriction_metadata_of(REMOTE_STEP_EXECUTION_NOT_SUPPORTED),
         restriction_metadata_of(REQUIRES_GPU_FOR_LOCAL_EXECUTION),
         restriction_metadata_of(STATEFUL_VIDEO_ACTUAL_RESTRICTION),
         restriction_metadata_of(STILL_IMAGE_INPUT_SOFT_RESTRICTION),

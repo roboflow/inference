@@ -54,7 +54,7 @@ def prepare_video_sources(
     video_source_properties = broadcast_elements(
         elements=video_source_properties,
         desired_length=len(video_reference),
-        error_description="Cannot apply `video_source_properties` to video sources due to missmatch in "
+        error_description="Cannot apply `video_source_properties` to video sources due to mismatch in "
         "number of entries in properties configuration.",
     )
     return initialise_video_sources(
@@ -214,7 +214,7 @@ def save_workflows_profiler_trace(
     os.makedirs(directory, exist_ok=True)
     formatted_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     track_path = os.path.join(
-        directory, f"inference_pipeline_workflow_execution_tack_{formatted_time}.json"
+        directory, f"inference_pipeline_workflow_execution_track_{formatted_time}.json"
     )
     with open(track_path, "w") as f:
         json.dump(profiler_trace, f)

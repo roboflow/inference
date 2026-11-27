@@ -71,6 +71,7 @@ from streamvision.stream.environment import (
     PREDICTIONS_QUEUE_SIZE,
     PREDICTIONS_QUEUE_SIZE_EXPLICIT,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
+    WORKFLOWS_PROFILING_DIRECTORY,
 )
 from streamvision.stream.exceptions import CannotInitialiseModelError
 from streamvision.stream.session import mint_stream_session_id, stream_session_id
@@ -155,7 +156,7 @@ class InferencePipeline:
         batch_collection_timeout: Optional[float] = None,
         video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
         max_staleness: Optional[float] = None,
-        profiling_directory: str = "./inference_profiling",
+        profiling_directory: str = WORKFLOWS_PROFILING_DIRECTORY,
         serialize_results: bool = False,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
         decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,

@@ -9,16 +9,27 @@ the block from Gemini's native ``yxyx_0_1000`` boxes.
 import base64
 import json
 from typing import List, Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
 import pytest
 from roboflow_workflows.core_steps.common import vlm_reference_examples
+from roboflow_workflows.core_steps.common.entities import StepExecutionMode
+from roboflow_workflows.core_steps.common.vlm_decoding.keypoint_detection import (
+    OCCLUDED_KEYPOINT_CONFIDENCE,
+    VISIBLE_KEYPOINT_CONFIDENCE,
+    build_keypoint_detection_prompt,
+    resolve_keypoint_skeletons,
+)
 from roboflow_workflows.core_steps.common.vlm_reference_examples import (
+    REFERENCE_SKELETONS_INTRO,
     SHARED_REFERENCE_PARTS_CACHE,
+    TARGET_IMAGE_INTRO,
+    TARGET_ONLY_RULE,
     ReferenceExample,
 )
+from roboflow_workflows.core_steps.loader import KINDS_SERIALIZERS
 from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     DETECTION_BOX_FORMAT,
     GEMINI_MODELS,
@@ -33,6 +44,7 @@ from roboflow_workflows.core_steps.models.foundation.google_gemini.v6 import (
     prepare_object_detection_prompt,
     run_gemini_prompting,
 )
+from roboflow_workflows.execution_engine.core import ExecutionEngine
 from roboflow_workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
@@ -43,6 +55,7 @@ from roboflow_workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
 )
@@ -96,6 +109,7 @@ def _run_block(
     classes: Optional[List[str]] = None,
     prompt: Optional[str] = None,
     model_version: str = "gemini-2.5-pro",
+    keypoint_schema: Optional[dict] = None,
 ) -> dict:
     block = GoogleGeminiBlockV6(api_key="rf-key")
     with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
@@ -113,6 +127,7 @@ def _run_block(
             google_code_execution=None,
             max_concurrent_requests=None,
             api_key="google-key",
+            keypoint_schema=keypoint_schema,
         )
     assert len(results) == 1
     return results[0]
@@ -147,6 +162,7 @@ def test_describe_outputs_declares_prediction_outputs() -> None:
         OBJECT_DETECTION_PREDICTION_KIND,
         RLE_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        KEYPOINT_DETECTION_PREDICTION_KIND,
         CLASSIFICATION_PREDICTION_KIND,
     ]
     assert outputs["error_status"] == [BOOLEAN_KIND]
@@ -339,7 +355,7 @@ def test_manifest_accepts_gemini_3_8_flash() -> None:
 def test_segmentation_rejects_other_gemini_models(model: str) -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+        match="Instance segmentation is not supported for this model",
     ):
         BlockManifest.model_validate(
             {
@@ -510,7 +526,7 @@ def test_argon_segmentation_block_and_empty_output() -> None:
 def test_segmentation_runtime_rejects_resolved_other_model() -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+        match="Instance segmentation is not supported for this model",
     ):
         _run_block(
             task_type="instance-segmentation",
@@ -574,11 +590,12 @@ def test_carbon_is_second_listed_model() -> None:
     assert MODEL_VERSION_METADATA["gemini-4-carbon"]["name"] == "Gemini 4 Carbon"
 
 
-def test_segmentation_models_are_argon_carbon_and_hydrogen() -> None:
+def test_segmentation_models_are_gemini_4() -> None:
     assert SEGMENTATION_MODEL_IDS == {
         "gemini-4-argon",
         "gemini-4-carbon",
         "gemini-4-hydrogen",
+        "gemini-4-neon",
     }
 
 
@@ -657,7 +674,8 @@ def test_carbon_segmentation_prompt_accepts_model() -> None:
 
 def test_segmentation_prompt_rejects_other_model() -> None:
     with pytest.raises(
-        ValueError, match="gemini-4-argon, gemini-4-carbon or gemini-4-hydrogen"
+        ValueError,
+        match="Segmentation requires a supported model and classes",
     ):
         prepare_instance_segmentation_prompt(
             base64_image="aW1hZ2U=",
@@ -672,7 +690,7 @@ def test_segmentation_prompt_rejects_other_model() -> None:
 def test_run_gemini_prompting_rejects_segmentation_for_other_model() -> None:
     with pytest.raises(
         ValueError,
-        match="only for gemini-4-argon, gemini-4-carbon and gemini-4-hydrogen",
+        match="Instance segmentation is not supported for this model",
     ):
         _run_segmentation("gemini-3.8-flash")
 
@@ -917,3 +935,375 @@ def test_run_rejects_resolved_reference_examples_for_other_tasks() -> None:
                 max_concurrent_requests=None,
                 reference_examples=[_reference_example()],
             )
+
+
+KEYPOINT_SCHEMA = {
+    "plate": {
+        "keypoints": ["TL", "TR", "BR", "BL"],
+        "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
+        "template": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+    }
+}
+# The plate box is DETECTION_OUTPUT's box; BR could not be placed and TR is occluded.
+KEYPOINT_OUTPUT = json.dumps(
+    {
+        "plate": [
+            {
+                "box_2d": [250, 100, 750, 500],
+                "keypoints": {
+                    "TL": {"point": [250, 100], "occluded": False},
+                    "TR": {"point": [250, 500], "occluded": True},
+                    "BR": None,
+                    "BL": {"point": [750, 100], "occluded": False},
+                },
+            }
+        ]
+    }
+)
+EXPECTED_KEYPOINTS = [
+    {
+        "class_id": 0,
+        "class": "TL",
+        "confidence": VISIBLE_KEYPOINT_CONFIDENCE,
+        "x": 80.0,
+        "y": 100.0,
+    },
+    {
+        "class_id": 1,
+        "class": "TR",
+        "confidence": OCCLUDED_KEYPOINT_CONFIDENCE,
+        "x": 400.0,
+        "y": 100.0,
+    },
+    {
+        "class_id": 3,
+        "class": "BL",
+        "confidence": VISIBLE_KEYPOINT_CONFIDENCE,
+        "x": 80.0,
+        "y": 300.0,
+    },
+]
+
+
+def _keypoint_manifest_data(**overrides) -> dict:
+    return {
+        "type": "roboflow_core/google_gemini@v6",
+        "name": "keypoints",
+        "images": "$inputs.image",
+        "task_type": "keypoint-detection",
+        "model_version": "gemini-4-argon",
+        "classes": ["plate"],
+        "keypoint_schema": KEYPOINT_SCHEMA,
+        **overrides,
+    }
+
+
+def _run_keypoint_prompting(**overrides) -> dict:
+    arguments = {
+        "roboflow_api_key": None,
+        "platform_client": None,
+        "images": [_build_image().to_inference_format()],
+        "task_type": "keypoint-detection",
+        "prompt": None,
+        "output_structure": None,
+        "classes": ["plate"],
+        "google_api_key": "key",
+        "model_version": "gemini-4-argon",
+        "max_tokens": 16384,
+        "temperature": None,
+        "thinking_level": "low",
+        "google_code_execution": None,
+        "max_concurrent_requests": 1,
+        "keypoint_schema": KEYPOINT_SCHEMA,
+        **overrides,
+    }
+    with patch(EXECUTE_REQUESTS_SEAM, return_value=[]) as execute:
+        run_gemini_prompting(**arguments)
+
+    return execute.call_args.kwargs["gemini_prompts"][0]
+
+
+def _serialized_keypoint_predictions(predictions) -> List[dict]:
+    serializer = KINDS_SERIALIZERS[KEYPOINT_DETECTION_PREDICTION_KIND.name]
+
+    return serializer(predictions)["predictions"]
+
+
+def test_keypoint_detection_manifest_narrows_predictions() -> None:
+    # when
+    manifest = BlockManifest.model_validate(_keypoint_manifest_data())
+
+    # then
+    outputs = {output.name: output.kind for output in manifest.get_actual_outputs()}
+    assert outputs["predictions"] == [KEYPOINT_DETECTION_PREDICTION_KIND]
+    assert manifest.keypoint_schema["plate"].keypoints == ["TL", "TR", "BR", "BL"]
+
+
+def test_keypoint_detection_manifest_accepts_selectors() -> None:
+    # when
+    manifest = BlockManifest.model_validate(
+        _keypoint_manifest_data(
+            classes="$inputs.classes",
+            keypoint_schema="$inputs.keypoint_schema",
+        )
+    )
+
+    # then
+    assert manifest.keypoint_schema == "$inputs.keypoint_schema"
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"keypoint_schema": None}, "`keypoint_schema` parameter required"),
+        ({"classes": ["plate", "dog"]}, r"no skeleton for classes: \['dog'\]"),
+        (
+            {"keypoint_schema": {"plate": {"keypoints": ["TL"], "edges": [[0, 1]]}}},
+            "points outside the 1 keypoints",
+        ),
+        ({"google_code_execution": True}, "`google_code_execution` is not supported"),
+    ],
+)
+def test_keypoint_detection_manifest_rejects_an_unusable_setup(
+    overrides: dict, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        BlockManifest.model_validate(_keypoint_manifest_data(**overrides))
+
+
+def test_keypoint_detection_request_constrains_the_answer() -> None:
+    # when
+    payload = _run_keypoint_prompting()
+
+    # then
+    parts = payload["contents"]["parts"]
+    assert parts[0]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[1]["text"] == build_keypoint_detection_prompt(
+        resolve_keypoint_skeletons(KEYPOINT_SCHEMA, classes=["plate"])
+    )
+    config = payload["generationConfig"]
+    assert config["response_mime_type"] == "application/json"
+    assert config["thinking_config"] == {"thinking_level": "low"}
+    assert config["max_output_tokens"] == 16384
+    schema = config["response_schema"]
+    assert schema["required"] == ["plate"]
+    keypoints = schema["properties"]["plate"]["items"]["properties"]["keypoints"]
+    assert keypoints["required"] == ["TL", "TR", "BR", "BL"]
+    assert "tools" not in payload
+
+
+def _keypoint_reference_example(keypoints: Optional[List[dict]] = None) -> dict:
+    example = _reference_example(box_class="plate")
+    example["annotations"][0]["keypoints"] = (
+        keypoints
+        if keypoints is not None
+        else [
+            {"class": "TL", "x": 30, "y": 40},
+            {"class": "TR", "x": 70, "y": 40},
+            {"class": "BR", "x": 70, "y": 60, "occluded": True},
+        ]
+    )
+    return example
+
+
+def test_keypoint_detection_manifest_checks_reference_keypoints_against_the_schema() -> (
+    None
+):
+    with pytest.raises(ValueError, match="'center' is not a keypoint of the skeleton"):
+        BlockManifest.model_validate(
+            _keypoint_manifest_data(
+                reference_examples=[
+                    _keypoint_reference_example([{"class": "center", "x": 50, "y": 50}])
+                ]
+            )
+        )
+
+
+def test_keypoint_detection_manifest_leaves_keypoint_names_to_a_schema_selector() -> (
+    None
+):
+    # when
+    manifest = BlockManifest.model_validate(
+        _keypoint_manifest_data(
+            keypoint_schema="$inputs.keypoint_schema",
+            reference_examples=[
+                _keypoint_reference_example([{"class": "center", "x": 50, "y": 50}])
+            ],
+        )
+    )
+
+    # then
+    keypoints = manifest.reference_examples[0].annotations[0].keypoints
+    assert keypoints[0].class_name == "center"
+
+
+def test_keypoint_detection_manifest_rejects_reference_boxes_without_keypoints() -> (
+    None
+):
+    with pytest.raises(ValueError, match="has no `keypoints`"):
+        BlockManifest.model_validate(
+            _keypoint_manifest_data(
+                reference_examples=[_reference_example(box_class="plate")]
+            )
+        )
+
+
+def test_keypoint_detection_request_sends_skeleton_references_before_the_target() -> (
+    None
+):
+    # when
+    payload = _run_keypoint_prompting(
+        reference_examples=[_keypoint_reference_example()]
+    )
+
+    # then
+    parts = payload["contents"]["parts"]
+    assert parts[0]["text"].startswith(REFERENCE_SKELETONS_INTRO)
+    assert parts[0]["text"].endswith(
+        'Keypoints of "plate" by number: 1 TL, 2 TR, 3 BR, 4 BL.'
+    )
+    assert parts[1] == {"text": "Reference image 1:"}
+    assert parts[2]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[3] == {"text": TARGET_IMAGE_INTRO}
+    assert parts[4]["inline_data"]["mime_type"] == "image/jpeg"
+    assert parts[5]["text"].startswith(
+        "Find every instance of these classes in the target image"
+    )
+    assert parts[5]["text"].endswith(TARGET_ONLY_RULE)
+    assert len(parts) == 6
+
+
+def test_keypoint_detection_request_rejects_reference_keypoints_off_the_skeleton() -> (
+    None
+):
+    # given
+    keypoints = [{"class": "TL", "x": 30, "y": 40}, {"class": "TL", "x": 31, "y": 41}]
+
+    # when / then
+    with pytest.raises(ValueError, match="'TL' is given more times"):
+        _run_keypoint_prompting(
+            reference_examples=[_keypoint_reference_example(keypoints)]
+        )
+
+
+def test_keypoint_detection_request_rejects_code_execution() -> None:
+    with pytest.raises(ValueError, match="Code execution is not supported"):
+        _run_keypoint_prompting(google_code_execution=True)
+
+
+def test_run_decodes_keypoint_detection_into_original_image_pixels() -> None:
+    # when
+    result = _run_block(
+        task_type="keypoint-detection",
+        raw_output=KEYPOINT_OUTPUT,
+        image=_build_image(),
+        classes=["plate"],
+        model_version="gemini-4-argon",
+        keypoint_schema=KEYPOINT_SCHEMA,
+    )
+
+    # then
+    assert result["error_status"] is False
+    assert result["inference_id"] is not None
+    predictions = _serialized_keypoint_predictions(result["predictions"])
+    assert len(predictions) == 1
+    assert predictions[0]["class"] == "plate"
+    assert [
+        predictions[0]["x"],
+        predictions[0]["y"],
+        predictions[0]["width"],
+        predictions[0]["height"],
+    ] == [240.0, 200.0, 320.0, 200.0]
+    assert predictions[0]["keypoints"] == EXPECTED_KEYPOINTS
+
+
+def test_run_reports_error_status_for_unparsable_keypoint_output() -> None:
+    # when
+    result = _run_block(
+        task_type="keypoint-detection",
+        raw_output="not json",
+        image=_build_image(),
+        classes=["plate"],
+        model_version="gemini-4-argon",
+        keypoint_schema=KEYPOINT_SCHEMA,
+    )
+
+    # then
+    assert result["error_status"] is True
+    assert result["predictions"] is None
+
+
+def test_run_rejects_a_resolved_keypoint_schema_without_the_class() -> None:
+    with pytest.raises(ValueError, match=r"no skeleton for classes: \['dog'\]"):
+        _run_block(
+            task_type="keypoint-detection",
+            raw_output="{}",
+            image=_build_image(),
+            classes=["dog"],
+            model_version="gemini-4-argon",
+            keypoint_schema=KEYPOINT_SCHEMA,
+        )
+
+
+def test_keypoint_workflow_feeds_a_keypoint_consumer() -> None:
+    # given
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "keypoint_schema"},
+        ],
+        "steps": [
+            {
+                **_keypoint_manifest_data(keypoint_schema="$inputs.keypoint_schema"),
+                "api_key": "google-key",
+            },
+            {
+                "type": "roboflow_core/keypoint_visualization@v1",
+                "name": "visualization",
+                "image": "$inputs.image",
+                "predictions": "$steps.keypoints.predictions",
+                "annotator_type": "vertex",
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "predictions",
+                "selector": "$steps.keypoints.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "visualization",
+                "selector": "$steps.visualization.image",
+            },
+        ],
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=definition,
+        init_parameters={
+            "workflows_core.model_manager": MagicMock(),
+            "workflows_core.api_key": None,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        },
+        max_concurrent_steps=1,
+    )
+
+    # when
+    with patch(EXECUTE_REQUESTS_SEAM) as mock_execute:
+        mock_execute.return_value = [(KEYPOINT_OUTPUT, 11, 3)]
+        result = execution_engine.run(
+            runtime_parameters={
+                "image": [np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=np.uint8)],
+                "keypoint_schema": KEYPOINT_SCHEMA,
+            },
+            serialize_results=True,
+        )
+
+    # then
+    assert len(result) == 1
+    predictions = result[0]["predictions"]["predictions"]
+    assert [prediction["keypoints"] for prediction in predictions] == [
+        EXPECTED_KEYPOINTS
+    ]
+    assert result[0]["visualization"]["type"] == "base64"

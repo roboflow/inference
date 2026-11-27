@@ -1,4 +1,4 @@
-aiortc>=1.9.0
+aiortc>=1.9.0,<1.17 # 1.17 uses VideoFrame.duration, unavailable in av==14.2.0.
 av==14.2.0 # pinning due to: https://github.com/PyAV-Org/PyAV/issues/2082
 APScheduler>=3.10.1,<4.0.0
 cachetools<6.0.0
@@ -52,7 +52,7 @@ msgpack
 # which made an opt-in transport depend on an unrelated package's dependency.
 websocket-client~=1.9.0
 backoff~=2.2.0
-filelock>=3.20.3,<=4.0.0
+filelock>=3.20.3,<5.0.0
 onvif-zeep-async==2.0.0 # versions > 2.0.0 will not work with Python 3.9 despite docs
 simple-pid~=2.0.1
 qrcode~=8.0.0

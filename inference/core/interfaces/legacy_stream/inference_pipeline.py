@@ -105,6 +105,7 @@ from inference.core.env import (
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
+    WORKFLOWS_PROFILING_DIRECTORY,
 )
 from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
 from inference.core.interfaces.legacy_stream.model_handlers.roboflow_models import (
@@ -715,7 +716,7 @@ class InferencePipeline(HostNeutralInferencePipeline):
         batch_collection_timeout: Optional[float] = None,
         video_processing_mode: Optional[Union[str, VideoProcessingMode]] = None,
         max_staleness: Optional[float] = None,
-        profiling_directory: str = "./inference_profiling",
+        profiling_directory: str = WORKFLOWS_PROFILING_DIRECTORY,
         use_workflow_definition_cache: bool = True,
         serialize_results: bool = False,
         predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,

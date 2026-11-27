@@ -54,6 +54,7 @@ from inference.core.env import (
     OFFLINE_MODE,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
+    ROBOFLOW_API_PROXY_REQUEST_TIMEOUT,
     ROBOFLOW_API_REQUEST_TIMEOUT,
     ROBOFLOW_API_VERIFY_SSL,
     ROBOFLOW_ASSUME_IDENTITY_SERVICE_ACCESS_TOKEN,
@@ -81,6 +82,7 @@ from inference.core.exceptions import (
     RoboflowAPIImageUploadUncertainError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPIRateLimitedError,
     RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     RoboflowAPIUsagePausedError,
@@ -183,6 +185,10 @@ NOT_FOUND_ERROR_MESSAGE = (
 
 ROBOFLOW_INFERENCE_VERSION_HEADER = "X-Roboflow-Inference-Version"
 ALLOW_CHUNKED_RESPONSE_HEADER = "X-Allow-Chunked"
+# Seconds this client waits for an API proxy call. The proxy keeps waiting on the
+# model provider for up to a little less than that, so a deployment that waits
+# longer (ROBOFLOW_API_PROXY_REQUEST_TIMEOUT) gets answers that take longer.
+ROBOFLOW_CLIENT_TIMEOUT_HEADER = "X-Roboflow-Client-Timeout"
 API_PROXY_ENDPOINT_PREFIXES = ("apiproxy", "api-proxy")
 
 
@@ -226,6 +232,11 @@ DEFAULT_ERROR_HANDLERS = {
         e,
         RoboflowAPIUsagePausedError,
         "Roboflow API usage is paused. Please contact your workspace administrator to re-enable api keys.",
+    ),
+    429: lambda e: raise_from_lambda(
+        e,
+        RoboflowAPIRateLimitedError,
+        "Roboflow API rate limit or usage limit reached for this workspace. Retry later or verify your workspace billing page.",
     ),
 }
 
@@ -2157,12 +2168,17 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     return f"{url}?{parameters_string}"
 
 
-def _api_base_url_for_endpoint(endpoint: str) -> str:
+def _is_api_proxy_endpoint(endpoint: str) -> bool:
     endpoint_path = endpoint.strip("/")
-    if any(
+    is_api_proxy_endpoint = any(
         endpoint_path == prefix or endpoint_path.startswith(f"{prefix}/")
         for prefix in API_PROXY_ENDPOINT_PREFIXES
-    ):
+    )
+    return is_api_proxy_endpoint
+
+
+def _api_base_url_for_endpoint(endpoint: str) -> str:
+    if _is_api_proxy_endpoint(endpoint=endpoint):
         return API_PROXY_BASE_URL
     return API_BASE_URL
 
@@ -2221,8 +2237,15 @@ def build_roboflow_api_headers(
         return explicit_headers
     try:
         extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
-        if explicit_headers:
-            extra_headers.update(explicit_headers)
+        # Header names are case-insensitive: drop every spelling an explicit
+        # header replaces, or requests could send the extra one instead.
+        explicit_names = {name.lower() for name in explicit_headers}
+        extra_headers = {
+            name: value
+            for name, value in extra_headers.items()
+            if name.lower() not in explicit_names
+        }
+        extra_headers.update(explicit_headers)
         return extra_headers
     except ValueError:
         logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
@@ -2242,6 +2265,10 @@ def post_to_roboflow_api(
 
     The OCR proxy retries HTTP 502, 503, and 504 up to three total attempts,
     waiting one and then two seconds. Other endpoints make one attempt.
+    An attempt on an API proxy endpoint (``apiproxy/...``, ``api-proxy/...``)
+    waits ``ROBOFLOW_API_PROXY_REQUEST_TIMEOUT`` seconds and sends that wait
+    in ``X-Roboflow-Client-Timeout``; any other one waits
+    ``ROBOFLOW_API_REQUEST_TIMEOUT``.
 
     Args:
         endpoint: API endpoint path
@@ -2276,14 +2303,26 @@ def post_to_roboflow_api(
         )
         wrapped_url = wrap_url(full_url)
 
-        headers = build_roboflow_api_headers()
+        is_api_proxy_endpoint = _is_api_proxy_endpoint(endpoint=endpoint)
+        timeout = (
+            ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
+            if is_api_proxy_endpoint
+            else ROBOFLOW_API_REQUEST_TIMEOUT
+        )
+        headers = build_roboflow_api_headers(
+            explicit_headers=(
+                {ROBOFLOW_CLIENT_TIMEOUT_HEADER: str(timeout)}
+                if is_api_proxy_endpoint
+                else None
+            )
+        )
 
         for attempt in range(3):
             response = requests.post(
                 url=wrapped_url,
                 json=payload,
                 headers=headers,
-                timeout=ROBOFLOW_API_REQUEST_TIMEOUT,
+                timeout=timeout,
                 verify=ROBOFLOW_API_VERIFY_SSL,
             )
             if (

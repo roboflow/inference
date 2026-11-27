@@ -42,6 +42,14 @@ jobs:
         uses: actions/checkout@v6
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Determine image tags
+        id: tags
+        uses: ./.github/actions/determine-tags
+        with:
+          version: ${{ env.VERSION }}
+          base_image: roboflow/roboflow-inference-server-trt
+          force_push: ${{ inputs.force_push }}
+          token: ${{ github.token }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Build and Push
@@ -49,6 +57,6 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           project: grl7ffzxd7
-          tags: roboflow/roboflow-inference-server-trt:latest,roboflow/roboflow-inference-server-trt:${{env.VERSION}}
+          tags: ${{ steps.tags.outputs.image_tags }}
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.trt

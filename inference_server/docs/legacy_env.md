@@ -254,6 +254,7 @@ definition; the last column is the new reader.
 | `WORKFLOWS_MAX_CONCURRENT_STEPS` | `env.py:1095` | `configuration.py:246` | `8` |
 | `ENABLE_WORKFLOWS_PROFILING` | `env.py:1291` | `configuration.py:252` | `False` |
 | `WORKFLOWS_PROFILER_BUFFER_SIZE` | `env.py:1292` | `configuration.py:255` | `64` |
+| `WORKFLOWS_PROFILING_DIRECTORY` | `env.py:1308` | `configuration.py:494`; directory where a stream pipeline writes its Workflow profiler trace | `./inference_profiling` |
 | `WORKFLOWS_DEFINITION_CACHE_EXPIRY` | `env.py:1293` | `configuration.py:258` | `900` |
 | `USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS` | `env.py:1296` | `configuration.py`; `workflows/host.py`, `workflows/definition_cache.py`: a saved Workflow definition fetched from the platform is written under `{MODEL_CACHE_DIR}/workflow/<workspace>/` in the legacy layout and served from there when the platform cannot be reached (connection error, timeout, offline mode); forced on in offline mode, where the file cache is the only source | `True` |
 | `SINGLE_TENANT_WORKFLOW_CACHE` | `env.py:1299` | `configuration.py`; `workflows/definition_cache.py`: `True` keeps definition files in the `.canonical-v2` namespace without a tenant fingerprint and reads the pre-namespace `<workspace>/<workflow>.json` files; forced on in offline mode, which also reads `.tenanted-v2` entries written online | `False` |
@@ -372,6 +373,7 @@ definition; the last column is the new reader.
 | `ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES` | `env.py:1316` | `host.py:164` | `True` |
 | `WORKFLOW_BLOCKS_WRITE_DIRECTORY` | `env.py:1327` | `host.py:167` | unset |
 | `ROBOFLOW_API_REQUEST_TIMEOUT` | `env.py:1415-1417` | `host.py:420-421` | `120` |
+| `ROBOFLOW_API_PROXY_REQUEST_TIMEOUT` | `env.py:1423-1428` | `platform_http.py:28-32`; `workflows/host.py`: timeout of the platform POSTs whose endpoint is under `apiproxy/` or `api-proxy/` | `ROBOFLOW_API_REQUEST_TIMEOUT` (also when empty) |
 | `WORKFLOWS_ASYNC_FUTURE_RESULT_TIMEOUT` | `env.py:1473` | `host.py:148` | `60.0` |
 | `OPENAI_COMPATIBLE_ALLOWED_BASE_URLS` | `env.py:1665-1670` | `host.py:268-277` | `*` |
 | `WORKFLOW_DISABLED_BLOCK_TYPES` | `env.py:1674-1680` | `host.py:168` | empty |
@@ -468,7 +470,8 @@ definitions.
 Also carried onto `StreamsConfiguration` from settings the server already
 reads: `ENABLE_TENSOR_DATA_REPRESENTATION` (`workflows/host.py`, through
 `SERVER_WORKFLOWS_CONFIGURATION.tensor.representation_enabled`),
-`ENABLE_WORKFLOWS_PROFILING`, `WORKFLOWS_PROFILER_BUFFER_SIZE`, `OFFLINE_MODE`
+`ENABLE_WORKFLOWS_PROFILING`, `WORKFLOWS_PROFILER_BUFFER_SIZE`,
+`WORKFLOWS_PROFILING_DIRECTORY`, `OFFLINE_MODE`
 and, for `ModelConfigDefaults`, `CLASS_AGNOSTIC_NMS` plus the
 `DEFAULT_CONFIDENCE` / `DEFAULT_IOU_THRESHOLD` / `DEFAULT_MAX_CANDIDATES` /
 `DEFAULT_MAX_DETECTIONS` fallbacks (`configuration.py:360-364`); the

@@ -1,9 +1,6 @@
 """Tests for the stateful Action Recognition Model workflow block."""
 
-import importlib
 import math
-from datetime import datetime
-from typing import List, Optional, Union
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -13,10 +10,12 @@ import torch
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_action_recognition_prediction_kind,
+    deserialize_action_recognition_result_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialize_action_recognition_prediction_kind,
+    serialize_action_recognition_result_kind,
 )
 from inference.core.workflows.core_steps.models.roboflow.action_recognition import (
     v1 as video_classification_module,
@@ -34,15 +33,12 @@ from inference.core.workflows.core_steps.models.roboflow.action_recognition.v1_t
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     ActionRecognitionPrediction,
-    ImageParentMetadata,
-    VideoMetadata,
-    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     ACTION_RECOGNITION_PREDICTION_KIND,
+    ACTION_RECOGNITION_RESULT_KIND,
     STRING_KIND,
 )
-from inference_models import ActionRecognitionModel
 from inference_models import (
     ActionRecognitionPrediction as ModelActionRecognitionPrediction,
 )
@@ -53,129 +49,23 @@ from inference_models.models.cosmos3.cosmos3_action_recognition import (
 )
 from inference_models.models.cosmos3.cosmos3_reasoner_hf import Cosmos3EdgeReasoner
 
-
-class _FakeActionRecognitionModel(ActionRecognitionModel):
-    # A plain class attribute overrides the ABC property so tests can set
-    # per-instance temporal contracts.
-    video_sampling = VideoSampling()
-
-    def __init__(
-        self,
-        responses: Optional[
-            List[Union[List[ModelActionRecognitionPrediction], Exception]]
-        ] = None,
-        class_names: Optional[List[str]] = None,
-    ):
-        self.responses = list(responses or [])
-        self.calls = []
-        self._class_names = class_names
-
-    @property
-    def class_names(self) -> Optional[List[str]]:
-        return self._class_names
-
-    @classmethod
-    def from_pretrained(cls, model_name_or_path: str, **kwargs):
-        raise NotImplementedError
-
-    def infer(
-        self,
-        frames,
-        class_names=None,
-        fps=None,
-        **kwargs,
-    ):
-        recorded_frames = [
-            frame.clone() if isinstance(frame, torch.Tensor) else frame.copy()
-            for frame in frames
-        ]
-        self.calls.append(
-            {
-                "frames": recorded_frames,
-                "class_names": (list(class_names) if class_names is not None else None),
-                "fps": fps,
-                "duration_seconds": kwargs.get("duration_seconds"),
-                "confidence": kwargs.get("confidence"),
-            }
-        )
-        if not self.responses:
-            return []
-        response = self.responses.pop(0)
-        if isinstance(response, Exception):
-            raise response
-        return response
+from .helpers import (
+    _FakeActionRecognitionModel,
+    _make_frame,
+    _model_segment,
+    _run,
+    _timeline_entry,
+    make_block,
+)
 
 
-def _model_segment(
-    class_name: str,
-    start_frame_idx: int = 0,
-    end_frame_idx: int = 0,
-) -> ModelActionRecognitionPrediction:
-    return ModelActionRecognitionPrediction(
-        start_frame_idx=start_frame_idx,
-        end_frame_idx=end_frame_idx,
-        class_name=class_name,
-    )
-
-
-def _make_frame(
-    frame_number: int,
-    video_id: str = "stream-0",
-    fps: Optional[float] = 4.0,
-    measured_fps: Optional[float] = None,
-    frame_timestamp: datetime = datetime(2024, 1, 1),
-    bgr_color: Optional[List[int]] = None,
-    tensor_rgb_color: Optional[List[int]] = None,
-) -> WorkflowImageData:
-    metadata = VideoMetadata(
-        video_identifier=video_id,
-        frame_number=frame_number,
-        fps=fps,
-        measured_fps=measured_fps,
-        frame_timestamp=frame_timestamp,
-    )
-    image_kwargs = {}
-    if tensor_rgb_color is not None:
-        image_kwargs["tensor_image"] = (
-            torch.tensor(tensor_rgb_color, dtype=torch.uint8)
-            .view(3, 1, 1)
-            .expand(3, 2, 2)
-            .clone()
-        )
-    else:
-        color = bgr_color or [frame_number % 255, 10, 20]
-        image_kwargs["numpy_image"] = np.full((2, 2, 3), color, dtype=np.uint8)
-    return WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id=f"{video_id}:{frame_number}"),
-        workflow_root_ancestor_metadata=ImageParentMetadata(
-            parent_id=f"{video_id}:root"
-        ),
-        video_metadata=metadata,
-        **image_kwargs,
-    )
-
-
-def _make_block(
-    responses: Optional[
-        List[Union[List[ModelActionRecognitionPrediction], Exception]]
-    ] = None,
-    tensor: bool = False,
-    model_class_names: Optional[List[str]] = None,
-):
+def _make_block(responses=None, tensor=False, model_class_names=None):
     block_type = (
         TensorActionRecognitionModelBlockV1 if tensor else ActionRecognitionModelBlockV1
     )
-    block = block_type(
-        api_key=None,
-        step_execution_mode=StepExecutionMode.LOCAL,
+    return make_block(
+        block_type, responses=responses, model_class_names=model_class_names
     )
-    model = _FakeActionRecognitionModel(
-        responses=responses,
-        class_names=model_class_names,
-    )
-    block._model = model
-    block._current_model_id = "cosmos-3-edge"
-    return block, model
 
 
 def _make_cosmos3_reasoner() -> Cosmos3EdgeReasoner:
@@ -186,34 +76,6 @@ def _make_cosmos3_reasoner() -> Cosmos3EdgeReasoner:
         processor=MagicMock(),
         device=torch.device("cpu"),
     )
-
-
-def _run(
-    block,
-    frame: WorkflowImageData,
-    class_filter=("walk", "run"),
-    window_seconds=1.0,
-    stride_seconds=0.5,
-    sample_fps=2.0,
-    min_frames=1,
-    requires_regular_sampling=False,
-    max_sample_lateness_seconds=0.0,
-):
-    # The temporal contract travels with the model.
-    if block._model is not None:
-        block._model.video_sampling = VideoSampling(
-            window_seconds=window_seconds,
-            sample_fps=sample_fps,
-            min_frames=min_frames,
-            requires_regular_sampling=requires_regular_sampling,
-            max_sample_lateness_seconds=max_sample_lateness_seconds,
-        )
-    return block.run(
-        images=[frame],
-        class_filter=list(class_filter) if class_filter is not None else None,
-        model_id="cosmos-3-edge",
-        stride_seconds=stride_seconds,
-    )[0]
 
 
 def _timeline_as_dicts(result):
@@ -274,6 +136,7 @@ def test_manifest_parses_class_filter_and_declares_outputs(manifest_type):
     assert manifest.class_filter == ["walk", "run"]
     assert manifest.model_id == "cosmos-3-edge"
     assert manifest.stride_seconds is None
+    assert "background_inference" not in manifest_type.model_fields
     assert manifest_type.get_parameters_accepting_batches() == ["images"]
     outputs = manifest_type.describe_outputs()
     assert [output.name for output in outputs] == ["timeline", "error_status"]
@@ -1237,16 +1100,6 @@ def test_video_identifier_can_be_reused_after_rollback_reset():
     assert [entry.class_name for entry in result["timeline"]] == ["run"]
 
 
-def test_remote_mode_raises():
-    block = ActionRecognitionModelBlockV1(
-        api_key=None,
-        step_execution_mode=StepExecutionMode.REMOTE,
-    )
-
-    with pytest.raises(NotImplementedError, match="only supports LOCAL"):
-        _run(block, _make_frame(0))
-
-
 def test_tensor_sibling_forwards_tensor_materialised_frames():
     block, model = _make_block(tensor=True)
 
@@ -1329,6 +1182,16 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(tensor_enabled):
             )
             is tensor_enabled
         )
+        assert (
+            reloaded_loader.ActionRecognitionModelBlockV2
+            in reloaded_loader.load_blocks()
+        )
+        assert (
+            reloaded_loader.ActionRecognitionModelBlockV2.__module__.endswith(
+                "v2_tensor"
+            )
+            is tensor_enabled
+        )
         assert ACTION_RECOGNITION_PREDICTION_KIND in (reloaded_loader.load_kinds())
         kind_name = ACTION_RECOGNITION_PREDICTION_KIND.name
         assert (
@@ -1338,6 +1201,16 @@ def test_loader_registers_block_kind_and_codecs_for_both_modes(tensor_enabled):
         assert (
             reloaded_loader.KINDS_DESERIALIZERS[kind_name]
             is deserialize_action_recognition_prediction_kind
+        )
+        assert ACTION_RECOGNITION_RESULT_KIND in (reloaded_loader.load_kinds())
+        result_kind_name = ACTION_RECOGNITION_RESULT_KIND.name
+        assert (
+            reloaded_loader.KINDS_SERIALIZERS[result_kind_name]
+            is serialize_action_recognition_result_kind
+        )
+        assert (
+            reloaded_loader.KINDS_DESERIALIZERS[result_kind_name]
+            is deserialize_action_recognition_result_kind
         )
     finally:
         with workflows_configuration._INSTALL_LOCK:
@@ -1430,6 +1303,25 @@ def test_fractional_fps_stays_within_the_recorded_window(source_fps) -> None:
     assert all(0 < call["duration_seconds"] <= 4.0 for call in model.calls)
 
 
+@pytest.mark.parametrize("source_fps", [30000 / 1001, 24000 / 1001])
+def test_a_model_without_a_frame_budget_gets_at_most_its_window(source_fps) -> None:
+    block, model = _make_block()
+    model.video_sampling = VideoSampling(
+        window_seconds=16.0, sample_fps=4.0, min_frames=4
+    )
+    window_frames = round(16.0 * source_fps)
+
+    # One default-stride window in about 16 holds a 65th sample.
+    for frame_number in range(20 * window_frames):
+        block.run(
+            images=[_make_frame(frame_number, fps=source_fps)],
+            model_id="cosmos-3-edge",
+        )
+
+    assert any(len(call["frames"]) == 64 for call in model.calls)
+    assert all(len(call["frames"]) <= 64 for call in model.calls)
+
+
 @pytest.mark.parametrize("supports_confidence", [False, True])
 def test_confidence_option_uses_declared_capability(supports_confidence):
     block, model = _make_block()
@@ -1462,19 +1354,6 @@ def test_unscored_streaming_model_ignores_confidence() -> None:
 
     assert model.calls
     assert all(call["confidence"] is None for call in model.calls)
-
-
-def _timeline_entry(
-    start_frame_idx: int,
-    end_frame_idx: int,
-    class_name: str,
-) -> ActionRecognitionPrediction:
-    return ActionRecognitionPrediction(
-        start_frame_idx=start_frame_idx,
-        end_frame_idx=end_frame_idx,
-        class_name=class_name,
-        class_id=0,
-    )
 
 
 def test_timeline_entries_survive_frames_that_do_not_classify():
@@ -1609,3 +1488,14 @@ def test_tensor_block_caps_on_device_without_leaving_the_tensor():
     assert result.dtype == torch.uint8
     assert result.device == frame.device
     assert result.shape == (3, 11, 16)
+
+
+def test_file_shorter_than_one_stride_keeps_released_v1_behavior():
+    block, model = _make_block(responses=[[_model_segment("run")]])
+
+    for number in range(1, 7):
+        frame = _make_frame(number, comes_from_video_file=True, total_frames=6)
+        result = _run(block, frame, stride_seconds=10.0)
+
+    assert model.calls == []
+    assert result == {"timeline": [], "error_status": ""}

@@ -1305,6 +1305,9 @@ DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
 
 ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))
 WORKFLOWS_PROFILER_BUFFER_SIZE = int(os.getenv("WORKFLOWS_PROFILER_BUFFER_SIZE", "64"))
+WORKFLOWS_PROFILING_DIRECTORY = os.getenv(
+    "WORKFLOWS_PROFILING_DIRECTORY", "./inference_profiling"
+)
 WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
     os.getenv("WORKFLOWS_DEFINITION_CACHE_EXPIRY", 15 * 60)
 )
@@ -1416,6 +1419,19 @@ TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL = int(
 ROBOFLOW_API_REQUEST_TIMEOUT = os.getenv("ROBOFLOW_API_REQUEST_TIMEOUT", "120")
 if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
+# Timeout (seconds) of a POST to the Roboflow API proxy (`apiproxy/...`,
+# `api-proxy/...`), which waits on a third-party model's answer. Unset, it is
+# ROBOFLOW_API_REQUEST_TIMEOUT. A deployment that runs batch jobs on large models
+# can wait longer for those answers than for the rest of the Roboflow API.
+# Empty or blank, it is unset.
+ROBOFLOW_API_PROXY_REQUEST_TIMEOUT = os.getenv(
+    "ROBOFLOW_API_PROXY_REQUEST_TIMEOUT", ""
+).strip()
+ROBOFLOW_API_PROXY_REQUEST_TIMEOUT = (
+    int(ROBOFLOW_API_PROXY_REQUEST_TIMEOUT)
+    if ROBOFLOW_API_PROXY_REQUEST_TIMEOUT
+    else ROBOFLOW_API_REQUEST_TIMEOUT
+)
 
 
 # Control SSL certificate verification for requests to the Roboflow API
