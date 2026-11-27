@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1.7
+# Keep in sync with Dockerfile.onnx.gpu.ubuntu24 (same image on Ubuntu 24.04 + CUDA 12.6.3,
+# published as roboflow/roboflow-inference-server-gpu:<version>-ubuntu24.04).
 ARG FFMPEG_VERSION=7.1.3
 ARG FFMPEG_SHA256=f0bf043299db9e3caacb435a712fc541fbb07df613c4b893e8b77e67baf3adbe
 ARG GSTREAMER_VERSION=1.24.12

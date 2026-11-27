@@ -1,0 +1,129 @@
+name: Build and Push GPU Container (Ubuntu 24.04)
+permissions:
+  contents: read
+on:
+  release:
+    types: [created]
+  push:
+    branches: [ubuntu-24-04] # TEMP: build-only test run, remove before merge
+  workflow_dispatch:
+    inputs:
+      force_push:
+        type: boolean
+        description: "Do you want to push image after build?"
+        default: false
+      custom_tag:
+        type: string
+        description: "Custom tag to use for the image (overrides VERSION); -ubuntu24.04 is appended"
+        default: ""
+
+concurrency:
+  # One live run per workflow per ref. Manual dispatches get their own group
+  # (keyed by run id) so they never cancel, or get cancelled by, other runs.
+  # Release runs are keyed by the tag ref and are never cancelled.
+  group: ${{ github.workflow }}-docker_gpu_ubuntu24-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: false
+
+env:
+  VERSION: "0.0.0" # Default version, will be overwritten
+  BASE_IMAGE: "roboflow/roboflow-inference-server-gpu"
+  # Same repository as Dockerfile.onnx.gpu; this suffix keeps the tags apart.
+  TAG_SUFFIX: "-ubuntu24.04"
+  DOCKERFILE: "./docker/dockerfiles/Dockerfile.onnx.gpu.ubuntu24"
+
+jobs:
+  docker:
+    if: ${{ github.repository == 'roboflow/inference' && (github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'push') }}
+    runs-on:
+      labels: depot-ubuntu-24.04
+      group: public-depot
+    timeout-minutes: 120
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Read version from file
+        run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python3 ./inference/core/version.py)" >> "$GITHUB_ENV"
+      - name: Determine Image Tags
+        id: tags
+        uses: ./.github/actions/determine-tags
+        with:
+          custom_tag: ${{ inputs.custom_tag }}
+          version: ${{ env.VERSION }}
+          base_image: ${{ env.BASE_IMAGE }}
+          force_push: ${{ inputs.force_push }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Add the Ubuntu 24.04 tag suffix
+        id: suffixed_tags
+        env:
+          IMAGE_TAGS: ${{ steps.tags.outputs.image_tags }}
+        run: |
+          set -euo pipefail
+          SUFFIXED=""
+          IFS=',' read -ra TAG_ARRAY <<< "$IMAGE_TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            [ -z "$tag" ] && continue
+            # latest -> latest-ubuntu24.04, 1.8.6 -> 1.8.6-ubuntu24.04
+            SUFFIXED="${SUFFIXED:+${SUFFIXED},}${tag}${TAG_SUFFIX}"
+          done
+          if [ -z "$SUFFIXED" ]; then
+            echo "::error::No image tags to suffix"
+            exit 1
+          fi
+          echo "image_tags=${SUFFIXED}" >> "$GITHUB_OUTPUT"
+          echo "Tags: ${SUFFIXED}"
+      - name: Set up Depot CLI
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
+      - name: Login to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Authenticate gcloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        id: auth
+        with:
+          workload_identity_provider: "projects/878913763597/locations/global/workloadIdentityPools/github-actions/providers/github"
+          service_account: "gha-inference@roboflow-staging.iam.gserviceaccount.com"
+          token_format: access_token
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Combine Docker Hub and Artifact Registry tags
+        id: all_tags
+        env:
+          DH_TAGS: ${{ steps.suffixed_tags.outputs.image_tags }}
+        run: |
+          set -euo pipefail
+          # TEMP: on a push to this branch, push only one fixed test tag to
+          # Artifact Registry (no Docker Hub). Remove before merge.
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            TEST_TAG="us-docker.pkg.dev/roboflow-artifacts/roboflow/roboflow-inference-server-gpu:ubuntu-24-04-test-ubuntu24.04"
+            echo "all_tags=${TEST_TAG}" >> "$GITHUB_OUTPUT"
+            echo "TEMP test run will push only: ${TEST_TAG}"
+            exit 0
+          fi
+          GCP_PREFIX="us-docker.pkg.dev/roboflow-artifacts/"
+          GCP_TAGS=""
+          IFS=',' read -ra TAG_ARRAY <<< "$DH_TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            [ -z "$tag" ] && continue
+            GCP_TAGS="${GCP_TAGS:+${GCP_TAGS},}${GCP_PREFIX}${tag}"
+          done
+          echo "all_tags=${DH_TAGS},${GCP_TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Single build will push to Docker Hub and Artifact Registry:"
+          echo "${DH_TAGS},${GCP_TAGS}"
+      - name: Build and push (Docker Hub and GCP from one build)
+        uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
+        with:
+          # TEMP: `|| github.event_name == 'push'` pushes the test tag above. Remove before merge.
+          push: ${{ github.event_name == 'release' || inputs.force_push == true || github.event_name == 'push' }}
+          project: grl7ffzxd7
+          tags: ${{ steps.all_tags.outputs.all_tags }}
+          platforms: linux/amd64
+          file: ${{ env.DOCKERFILE }}

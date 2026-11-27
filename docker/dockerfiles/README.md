@@ -26,6 +26,12 @@ The four images below run Python 3.10 and stay on Pillow 12.3 without the Pillow
 | `roboflow/roboflow-inference-server-trt` | `roboflow/roboflow-inference-server-gpu` |
 | `roboflow/roboflow-inference-server-udp-gpu` | `roboflow/roboflow-inference-server-gpu` |
 
+## GPU image on Ubuntu 24.04
+
+`Dockerfile.onnx.gpu.ubuntu24` builds the same image as `Dockerfile.onnx.gpu` on Ubuntu 24.04 and CUDA 12.6.3. It is published to the same repository with an `-ubuntu24.04` tag suffix, for example `roboflow/roboflow-inference-server-gpu:<version>-ubuntu24.04` and `roboflow/roboflow-inference-server-gpu:latest-ubuntu24.04`.
+
+It needs NVIDIA driver 560 or newer. The default image (Ubuntu 22.04, CUDA 12.4.1) is unchanged. Keep the two Dockerfiles in sync: only the base images and the Ubuntu 24.04 package names differ.
+
 ## Base image
 
 The `roboflow/l46-ml` image is based on the `l4t-ml` image from the [jetson-containers](https://github.com/dusty-nv/jetson-containers/tree/master/packages/l4t/l4t-ml) repository. The image is built on a Jetson with support for GPU acceleration using common ML tools.
