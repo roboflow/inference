@@ -64,6 +64,9 @@ for contributor and maintainer responsibilities.
 
 ### Fixed
 
+- Tensor-native Detections Difference v1 uses per-detection labels for class
+  matching when they are present, including labels that share a class ID.
+
 - Action Recognition Model releases queued background windows when a stream
   restarts, its configuration changes, its state is evicted, or the model
   changes. A classification already running can finish. A failed call on one

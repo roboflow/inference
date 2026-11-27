@@ -6,9 +6,8 @@ Tensor-native parity tests for `DetectionsDifferenceBlockV1`
 
 Carrier notes:
 
-- per-row class names have no direct native representation: the tensor-native
-  carrier resolves names through the per-image `image_metadata` class-names map
-  keyed by `class_id`, so the fixtures assign one class id per distinct name,
+- per-row class names in `bboxes_metadata` override the per-image
+  `image_metadata` class-names map keyed by `class_id`,
 - `class_id` is a mandatory tensor on the native carrier, so the numpy suite's
   "no class information at all" scenario becomes "no class-names map" here
   (the id fallback then applies),
@@ -33,6 +32,7 @@ from roboflow_workflows.core_steps.fusion.detections_difference.v1_tensor import
     greedy_match,
 )
 from roboflow_workflows.execution_engine.constants import (
+    CLASS_NAME_KEY,
     CLASS_NAMES_KEY,
     DETECTION_ID_KEY,
 )
@@ -478,6 +478,103 @@ def test_class_strict_forbids_cross_class_matches_regardless_of_cost() -> None:
     assert result["removed_count"] == 1
     assert result["new_count"] == 1
     assert len(result["persisted_detections"]) == 0
+
+
+@pytest.mark.parametrize("class_strict", [False, True])
+@pytest.mark.parametrize(
+    (
+        "reference_map",
+        "candidate_map",
+        "reference_name",
+        "candidate_name",
+        "candidate_id",
+        "matches",
+    ),
+    [
+        ("default", "default", "left", "right", 0, False),
+        ("from-a", "from-b", "same", "same", 7, True),
+        (None, None, "left", "right", 0, False),
+        ("left", "default", None, "left", 0, True),
+        ("from-a", "from-b", "", "", 7, True),
+    ],
+)
+def test_class_matching_prefers_per_box_name(
+    class_strict: bool,
+    reference_map: Optional[str],
+    candidate_map: Optional[str],
+    reference_name: Optional[str],
+    candidate_name: Optional[str],
+    candidate_id: int,
+    matches: bool,
+) -> None:
+    box = np.array([[0, 0, 100, 100]])
+    reference = _native_detections_from_xyxy(
+        box,
+        class_names=[reference_map] if reference_map is not None else None,
+        detection_ids=["r0"],
+    )
+    candidate = _native_detections_from_xyxy(
+        box,
+        class_names=[candidate_map] if candidate_map is not None else None,
+        detection_ids=["c0"],
+    )
+    if reference_name is not None:
+        reference.bboxes_metadata[0][CLASS_NAME_KEY] = reference_name
+    if candidate_name is not None:
+        candidate.bboxes_metadata[0][CLASS_NAME_KEY] = candidate_name
+    candidate.class_id[0] = candidate_id
+    if candidate_map is not None:
+        candidate.image_metadata[CLASS_NAMES_KEY] = {candidate_id: candidate_map}
+
+    result = _run_block(
+        reference, candidate, class_strict=class_strict, reject_cost=0.1
+    )
+
+    assert _detection_ids(result["persisted_detections"]) == (
+        {"c0"} if matches else set()
+    )
+    assert result["removed_count"] == result["new_count"] == int(not matches)
+
+
+def test_class_matching_combines_row_overrides_and_image_map() -> None:
+    boxes = np.array([[0, 0, 100, 100], [200, 0, 300, 100]])
+    reference = _native_detections_from_xyxy(
+        boxes,
+        class_names=["default", "ordinary"],
+        detection_ids=["r0", "r1"],
+    )
+    candidate = _native_detections_from_xyxy(
+        boxes,
+        class_names=["default", "ordinary"],
+        detection_ids=["c0", "c1"],
+    )
+    reference.bboxes_metadata[0][CLASS_NAME_KEY] = "left"
+    candidate.bboxes_metadata[0][CLASS_NAME_KEY] = "right"
+
+    result = _run_block(reference, candidate, class_strict=True, reject_cost=0.1)
+
+    assert _detection_ids(result["removed_detections"]) == {"r0"}
+    assert _detection_ids(result["new_detections"]) == {"c0"}
+    assert _detection_ids(result["persisted_detections"]) == {"c1"}
+
+
+def test_incomplete_row_names_without_map_fall_back_to_ids() -> None:
+    boxes = np.array([[0, 0, 100, 100], [200, 0, 300, 100]])
+    reference = _native_detections_from_xyxy(boxes, detection_ids=["r0", "r1"])
+    reference.bboxes_metadata[0][CLASS_NAME_KEY] = "left"
+    candidate = _native_detections_from_xyxy(
+        boxes,
+        class_names=["ordinary", "ordinary"],
+        detection_ids=["c0", "c1"],
+    )
+
+    candidate.class_id[1] = 1
+
+    result = _run_block(reference, candidate, class_strict=True, reject_cost=0.1)
+
+    assert _detection_ids(result["persisted_detections"]) == {"c0"}
+    assert _detection_ids(result["removed_detections"]) == {"r1"}
+    assert _detection_ids(result["new_detections"]) == {"c1"}
 
 
 def test_detections_without_class_names_map_fall_back_to_class_id() -> None:
