@@ -106,6 +106,11 @@ GENERIC_MODELS = {
     "depth-anything-v3": ("depth-estimation", "depth-anything-v3"),
     "moondream2": ("lmm", "moondream2"),
     "perception_encoder": ("embed", "perception_encoder"),
+    # Full IDs only: a bare `dinov3` key would also match the dataset ID of a
+    # user project named `dinov3`.
+    "dinov2/small": ("embed", "dinov2"),
+    "dinov3/vits16": ("embed", "dinov3"),
+    "siglip2/base-patch16-224": ("embed", "siglip2"),
     "qwen3_5-0.8b": ("lmm", "qwen3_5-0.8b"),
     "qwen3_5-2b": ("lmm", "qwen3_5-2b"),
     "qwen3_5-4b": ("lmm", "qwen3_5-4b"),

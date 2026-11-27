@@ -2192,6 +2192,20 @@
           "clip"
         ]
       ],
+      "inference.models.pretrained_image_embeddings.pretrained_image_embeddings_inference_models:InferenceModelsPretrainedImageEmbeddingAdapter": [
+        [
+          "embed",
+          "dinov2"
+        ],
+        [
+          "embed",
+          "dinov3"
+        ],
+        [
+          "embed",
+          "siglip2"
+        ]
+      ],
       "inference.models.perception_encoder.perception_encoder_inference_models:InferenceModelsPerceptionEncoderAdapter": [
         [
           "embed",
@@ -3528,6 +3542,20 @@
           "clip"
         ]
       ],
+      "inference.models.pretrained_image_embeddings.pretrained_image_embeddings_inference_models:InferenceModelsPretrainedImageEmbeddingAdapter": [
+        [
+          "embed",
+          "dinov2"
+        ],
+        [
+          "embed",
+          "dinov3"
+        ],
+        [
+          "embed",
+          "siglip2"
+        ]
+      ],
       "inference.models.perception_encoder.perception_encoder_inference_models:InferenceModelsPerceptionEncoderAdapter": [
         [
           "embed",
@@ -4685,6 +4713,7 @@
     "CORE_MODEL_OWLV2_ENABLED": false,
     "CORE_MODEL_PE_ENABLED": true,
     "CORE_MODEL_PPOCR_ENABLED": true,
+    "CORE_MODEL_PRETRAINED_IMAGE_EMBEDDINGS_ENABLED": true,
     "CORE_MODEL_SAM2_ENABLED": true,
     "CORE_MODEL_SAM3_ENABLED": true,
     "CORE_MODEL_SAM_ENABLED": true,
