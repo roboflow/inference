@@ -1,9 +1,21 @@
+from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Type
 from uuid import uuid4
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
+from roboflow_workflows.execution_engine.constants import (
+    IMAGE_DIMENSIONS_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
+)
 from roboflow_workflows.execution_engine.entities.base import OutputDefinition
 from roboflow_workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -24,6 +36,18 @@ from roboflow_workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "predictions"
+
+_FRAME_METADATA_KEYS = (
+    IMAGE_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    PARENT_COORDINATES_KEY,
+    PARENT_DIMENSIONS_KEY,
+    ROOT_PARENT_ID_KEY,
+    ROOT_PARENT_COORDINATES_KEY,
+    ROOT_PARENT_DIMENSIONS_KEY,
+    SCALING_RELATIVE_TO_PARENT_KEY,
+    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
+)
 
 SHORT_DESCRIPTION = "Merge multiple detections into a single bounding box."
 LONG_DESCRIPTION = """
@@ -156,6 +180,30 @@ def get_lowest_confidence_index(detections: sv.Detections) -> int:
     return int(np.argmin(detections.confidence))
 
 
+def _copy_shared_frame_data(detections: sv.Detections) -> Dict[str, np.ndarray]:
+    """Copy frame metadata shared by every row of a non-empty prediction."""
+    frame_data = {}
+    for key in _FRAME_METADATA_KEYS:
+        if key not in detections.data:
+            continue
+
+        try:
+            values = np.asarray(detections.data[key])
+            shared_frame_value = np.all(values == values[0])
+        except ValueError:
+            # Partially populated frame columns can have ragged rows.
+            return {}
+
+        if not shared_frame_value:
+            # A combined set can contain detections from different crops.
+            return {}
+
+        if not np.any(np.equal(values[0], None)):
+            frame_data[key] = values[:1].copy()
+
+    return frame_data
+
+
 class DetectionsMergeBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -167,14 +215,27 @@ class DetectionsMergeBlockV1(WorkflowBlock):
         class_name: str = "merged_detection",
     ) -> BlockResult:
         if predictions is None or len(predictions) == 0:
+            source_metadata = {} if predictions is None else predictions.metadata
             return {
                 OUTPUT_KEY: sv.Detections(
-                    xyxy=np.array([], dtype=np.float32).reshape(0, 4)
+                    xyxy=np.empty((0, 4), dtype=np.float32),
+                    metadata={
+                        key: deepcopy(source_metadata[key])
+                        for key in _FRAME_METADATA_KEYS
+                        if key in source_metadata
+                        and not np.any(np.equal(source_metadata[key], None))
+                    },
                 )
             }
 
         # Calculate the union bounding box
         union_bbox = calculate_union_bbox(predictions)
+        frame_data = _copy_shared_frame_data(predictions)
+        if ROOT_PARENT_COORDINATES_KEY in frame_data and np.issubdtype(
+            union_bbox.dtype, np.integer
+        ):
+            # Root projection adds the crop origin to these coordinates in place.
+            union_bbox = union_bbox.astype(np.float64)
 
         # Get the index of the detection with lowest confidence
         lowest_conf_idx = get_lowest_confidence_index(predictions)
@@ -191,6 +252,7 @@ class DetectionsMergeBlockV1(WorkflowBlock):
                 [0], dtype=np.int32
             ),  # Fixed class_id of 0 for merged detection
             data={
+                **frame_data,
                 "class_name": np.array([class_name]),
                 "detection_id": np.array([str(uuid4())]),
             },
