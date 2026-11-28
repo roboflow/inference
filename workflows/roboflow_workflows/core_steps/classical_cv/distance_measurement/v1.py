@@ -471,17 +471,27 @@ def measure_distance_pixels(
     reference_axis: str,
     reference_bbox_1: Tuple[int, int, int, int],
     reference_bbox_2: Tuple[int, int, int, int],
-):
+) -> int:
+    """Measure the edge gap between separated or touching projections.
+
+    Args:
+        reference_axis (str): Horizontal or vertical axis of measurement.
+        reference_bbox_1 (Tuple[int, int, int, int]): First box in xyxy order.
+        reference_bbox_2 (Tuple[int, int, int, int]): Second box in xyxy order.
+
+    Returns:
+        int: The edge gap in pixels, or zero for touching projections.
+    """
     if reference_axis == "vertical":
         distance_pixels = (
             abs(reference_bbox_2[1] - reference_bbox_1[3])
-            if reference_bbox_2[1] > reference_bbox_1[3]
+            if reference_bbox_2[1] >= reference_bbox_1[3]
             else abs(reference_bbox_1[1] - reference_bbox_2[3])
         )
     else:
         distance_pixels = (
             abs(reference_bbox_2[0] - reference_bbox_1[2])
-            if reference_bbox_2[0] > reference_bbox_1[2]
+            if reference_bbox_2[0] >= reference_bbox_1[2]
             else abs(reference_bbox_1[0] - reference_bbox_2[2])
         )
     return distance_pixels
