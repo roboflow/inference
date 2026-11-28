@@ -355,8 +355,6 @@ class TimeInZoneBlockV3(WorkflowBlock):
             if is_in_zone:
                 ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end)
                 time_in_zone = ts_end - ts_start
-            elif tracker_id in tracked_ids_in_zone:
-                del tracked_ids_in_zone[tracker_id]
             surviving_mask[i] = True
             surviving_times[i] = time_in_zone
         result_detections = (
