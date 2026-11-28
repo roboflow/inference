@@ -42,15 +42,18 @@ def resize_pillow_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[Image.Image, Optional[float]]:
-    """Resize a Pillow image.
+    """Resize a Pillow image while preserving palette colors and alpha.
 
     Args:
-        image: The image to resize.
-        max_height: The maximum height of the image.
-        max_width: The maximum width of the image.
+        image (Image.Image): The image to resize.
+        max_height (Optional[int]): The maximum height of the image.
+        max_width (Optional[int]): The maximum width of the image.
 
     Returns:
-        The resized image and the scaling factor.
+        Tuple[Image.Image, Optional[float]]: The resized image and scaling factor,
+            or the original image and None when downsizing is unnecessary.
+            Resized PA images use RGBA so resampling operates on colors rather
+            than palette indices.
     """
     if max_width is None or max_height is None:
         return image, None
@@ -65,7 +68,13 @@ def resize_pillow_image(
         return image, None
     new_width = round(scaling_ratio * width)
     new_height = round(scaling_ratio * height)
-    return image.resize(size=(new_width, new_height)), scaling_ratio
+    if image.mode == "PA":
+        # Expand the palette before resampling; RGBA also preserves alpha handling.
+        image = image.convert("RGBA")
+
+    resized_image = image.resize(size=(new_width, new_height))
+
+    return resized_image, scaling_ratio
 
 
 def determine_scaling_aspect_ratio(
