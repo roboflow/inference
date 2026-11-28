@@ -335,3 +335,57 @@ def test_per_class_confidence_filter_handles_batch_of_images_tensor_native(
     assert len(result) == 2
     assert _native_class_names(result[0]["filtered"]) == ["person"]
     assert _native_class_names(result[1]["filtered"]) == ["car"]
+
+
+@pytest.mark.parametrize(
+    ("score_dtype", "threshold", "expected_ids"),
+    [
+        (np.float16, 0.9, ["d2", "d4", "d5"]),
+        (np.float32, 0.7, ["d2", "d4", "d5"]),
+        (np.float32, 0.5, ["d1", "d2", "d4", "d5"]),
+    ],
+)
+def test_per_class_confidence_filter_preserves_configured_threshold(
+    score_dtype: type, threshold: float, expected_ids: list[str]
+) -> None:
+    rounded = score_dtype(threshold)
+    scores = np.array(
+        [
+            np.nextafter(rounded, score_dtype(0)),
+            rounded,
+            np.nextafter(rounded, score_dtype(1)),
+            0.25,
+            0.5,
+            0.75,
+        ],
+        dtype=score_dtype,
+    )
+    names = ["person"] * 3 + ["dog"] * 3
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        prediction = _make_native_detections(names, scores.tolist())
+        prediction.confidence = torch.from_numpy(scores)
+    else:
+        prediction = _make_detections(names, scores.tolist())
+        prediction.confidence = scores
+
+    engine = ExecutionEngine.init(
+        workflow_definition=PER_CLASS_CONFIDENCE_FILTER_WORKFLOW, init_parameters={}
+    )
+    try:
+        (result,) = engine.run(
+            runtime_parameters={
+                "predictions": [prediction],
+                "class_thresholds": {"person": threshold},
+                "default_threshold": 0.5,
+            },
+            serialize_results=False,
+        )
+    finally:
+        engine.close()
+
+    filtered = result["filtered"]
+    if ENABLE_TENSOR_DATA_REPRESENTATION:
+        selected_ids = [row[DETECTION_ID_KEY] for row in filtered.bboxes_metadata]
+    else:
+        selected_ids = filtered.data[DETECTION_ID_KEY].tolist()
+    assert selected_ids == expected_ids
