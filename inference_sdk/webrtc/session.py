@@ -6,10 +6,12 @@ import functools
 import gzip
 import inspect
 import json
+import math
 import queue
 import struct
 import threading
 import time
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -24,10 +26,16 @@ from aiortc import RTCConfiguration, RTCIceServer
 from inference_sdk.config import (
     ALL_ROBOFLOW_API_URLS,
     RF_API_BASE_URL,
+    WEBRTC_CLEANUP_TIMEOUT,
     WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT,
     WEBRTC_VIDEO_QUEUE_MAX_SIZE,
 )
 from inference_sdk.utils.logging import get_logger
+from inference_sdk.webrtc._cleanup import (
+    _abort_peer_transports,
+    _await_cleanup,
+    _remember_cleanup_error,
+)
 from inference_sdk.webrtc.config import StreamConfig
 from inference_sdk.webrtc.datachannel import ChunkReassembler
 from inference_sdk.webrtc.sources import StreamSource, VideoFileSource
@@ -206,6 +214,20 @@ class WebRTCSession:
                 name emitted by ``model_workflows.build_model_workflow``.
         """
 
+        for name, value in (
+            ("WEBRTC_CLEANUP_TIMEOUT", WEBRTC_CLEANUP_TIMEOUT),
+            ("WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT", WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT),
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and greater than zero")
+
+        self._cleanup_timeout = WEBRTC_CLEANUP_TIMEOUT
+        self._cancel_timeout = WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT
+        self._cleanup_wait_timeout = (
+            3 * self._cleanup_timeout + 4 * self._cancel_timeout + 1
+        )
+        self._close_error: Optional[BaseException] = None
+        self._loop_shutdown_error: Optional[BaseException] = None
         self._state: SessionState = SessionState.NOT_STARTED
         self._state_lock: threading.Lock = threading.Lock()
         self._close_lock: threading.Lock = threading.Lock()
@@ -283,16 +305,75 @@ class WebRTCSession:
                         for task in pending_tasks:
                             task.cancel()
                         if pending_tasks:
-                            loop.run_until_complete(
-                                asyncio.gather(*pending_tasks, return_exceptions=True)
+                            done, pending = loop.run_until_complete(
+                                asyncio.wait(
+                                    pending_tasks, timeout=self._cancel_timeout / 4
+                                )
                             )
-                    except Exception:
+                            for task in done:
+                                if not task.cancelled():
+                                    error = task.exception()
+                                    if error is not None:
+                                        self._loop_shutdown_error = (
+                                            _remember_cleanup_error(
+                                                self._loop_shutdown_error,
+                                                error,
+                                                phase="event-loop task cancellation",
+                                            )
+                                        )
+                            if pending:
+                                self._loop_shutdown_error = _remember_cleanup_error(
+                                    self._loop_shutdown_error,
+                                    TimeoutError(
+                                        "WebRTC event-loop tasks did not cancel"
+                                    ),
+                                    phase="event-loop task cancellation",
+                                )
+                                logger.error("WebRTC event-loop tasks did not cancel")
+                    except Exception as error:
+                        self._loop_shutdown_error = _remember_cleanup_error(
+                            self._loop_shutdown_error,
+                            error,
+                            phase="event-loop task drain",
+                        )
                         logger.exception("Failed to drain WebRTC event-loop tasks")
 
+                    previous_handler = loop.get_exception_handler()
+
+                    def capture_asyncgen_error(loop, context):
+                        # shutdown_asyncgens logs aclose exceptions internally
+                        # instead of propagating them through its awaitable.
+                        error = context.get("exception")
+                        if context.get("asyncgen") is not None and isinstance(
+                            error, BaseException
+                        ):
+                            self._loop_shutdown_error = _remember_cleanup_error(
+                                self._loop_shutdown_error,
+                                error,
+                                phase="async generators",
+                            )
+                        if previous_handler is None:
+                            loop.default_exception_handler(context)
+                        else:
+                            previous_handler(loop, context)
+
                     try:
-                        loop.run_until_complete(loop.shutdown_asyncgens())
-                    except Exception:
+                        loop.set_exception_handler(capture_asyncgen_error)
+                        loop.run_until_complete(
+                            _await_cleanup(
+                                loop.shutdown_asyncgens(),
+                                timeout=self._cancel_timeout / 4,
+                                cancel_timeout=self._cancel_timeout / 4,
+                                phase="async generators",
+                            )
+                        )
+                    except Exception as error:
+                        self._loop_shutdown_error = _remember_cleanup_error(
+                            self._loop_shutdown_error, error, phase="async generators"
+                        )
                         logger.exception("Failed to shut down WebRTC async generators")
+                    finally:
+                        loop.set_exception_handler(previous_handler)
                 finally:
                     try:
                         loop.close()
@@ -424,6 +505,19 @@ class WebRTCSession:
         loop remains available to finish its asynchronous cleanup. Other callers
         block until that cleanup completes.
 
+        Each asynchronous resource-cleanup phase receives
+        ``WEBRTC_CLEANUP_TIMEOUT`` seconds of grace (default 10). A peer that
+        exceeds grace has its own ICE transports aborted before cancellation is
+        attempted. Callback calls remain nonblocking; a later external call
+        waits for their result. These bounds require responsive asynchronous
+        code; synchronous startup HTTP and arbitrary blocking user code have
+        their own limits.
+
+        Raises:
+            TimeoutError: A resource, cancellation, or loop shutdown did not
+                complete within its budget. Later external calls observe the
+                same failure instead of silently reporting successful cleanup.
+
         Example:
             session = client.webrtc.stream(source=source, workflow=workflow)
             session.run()  # Auto-starts and auto-closes on exception
@@ -443,7 +537,12 @@ class WebRTCSession:
         if close_owner:
             self._close_resources()
         else:
-            self._close_done.wait()
+            if not self._close_done.wait(
+                timeout=self._cleanup_wait_timeout + self._cancel_timeout + 1
+            ):
+                raise TimeoutError("WebRTC cleanup owner did not finish")
+            if self._close_error is not None:
+                raise self._close_error
 
     def _close_from_event_loop(self) -> None:
         """Dispatch cleanup without blocking the WebRTC event loop."""
@@ -472,28 +571,76 @@ class WebRTCSession:
     async def _cleanup_async_resources(self) -> None:
         """Wait for startup to stop before reading and closing its resources."""
         startup_task = self._startup_task
+        error: Optional[BaseException] = None
         try:
             if startup_task is not None and startup_task is not asyncio.current_task():
                 if not startup_task.done():
                     startup_task.cancel()
                 try:
-                    await startup_task
+                    await _await_cleanup(
+                        startup_task,
+                        timeout=self._cleanup_timeout,
+                        cancel_timeout=self._cancel_timeout,
+                        phase="startup cancellation",
+                    )
                 except asyncio.CancelledError:
                     pass
+                except TimeoutError:
+                    raise
                 except Exception:
                     # The startup caller owns reporting its original exception.
                     pass
+        except BaseException as startup_error:
+            error = startup_error
         finally:
             self._startup_task = None
+
+        try:
+            if self._pc is not None:
+                abort_attempted = False
+
+                def abort_owned_transports() -> None:
+                    nonlocal abort_attempted
+                    if not abort_attempted:
+                        abort_attempted = True
+                        _abort_peer_transports(self._pc)
+
+                try:
+                    await _await_cleanup(
+                        self._pc.close(),
+                        timeout=self._cleanup_timeout,
+                        cancel_timeout=self._cancel_timeout,
+                        phase="peer connection",
+                        on_timeout=abort_owned_transports,
+                    )
+                except BaseException as peer_error:
+                    try:
+                        abort_owned_transports()
+                    except Exception as abort_error:
+                        _remember_cleanup_error(
+                            peer_error, abort_error, phase="transport abort"
+                        )
+                    raise
+        except BaseException as peer_error:
+            error = _remember_cleanup_error(error, peer_error, phase="peer connection")
+
+        if self._source is not None:
             try:
-                if self._pc is not None:
-                    await self._pc.close()
-            finally:
-                if self._source is not None:
-                    await self._source.cleanup()
+                await _await_cleanup(
+                    self._source.cleanup(),
+                    timeout=self._cleanup_timeout,
+                    cancel_timeout=self._cancel_timeout,
+                    phase="source",
+                )
+            except BaseException as source_error:
+                error = _remember_cleanup_error(error, source_error, phase="source")
+
+        if error is not None:
+            raise error
 
     def _close_resources(self) -> None:
         """Close session resources once and signal waiting callers."""
+        error: Optional[BaseException] = None
         try:
             with self._state_lock:
                 self._state = SessionState.CLOSED
@@ -527,8 +674,21 @@ class WebRTCSession:
                     except BaseException:
                         cleanup_coro.close()
                         raise
-                    cleanup_future.result()
-            finally:
+                    try:
+                        cleanup_future.result(timeout=self._cleanup_wait_timeout)
+                    except FutureTimeoutError:
+                        if cleanup_future.done():
+                            # Preserve an actual cleanup TimeoutError.
+                            cleanup_future.result()
+                        else:
+                            cleanup_future.cancel()
+                            raise TimeoutError(
+                                "WebRTC cleanup event loop did not respond"
+                            ) from None
+            except BaseException as cleanup_error:
+                error = cleanup_error
+
+            try:
                 # Stop event loop and join thread
                 try:
                     if loop is not None and not loop.is_closed():
@@ -548,6 +708,17 @@ class WebRTCSession:
                                 "WebRTC event loop thread did not stop "
                                 f"within {WEBRTC_EVENT_LOOP_SHUTDOWN_TIMEOUT}s"
                             )
+                            raise TimeoutError("WebRTC event-loop thread did not stop")
+                        if self._loop_shutdown_error is not None:
+                            raise self._loop_shutdown_error
+            except BaseException as loop_error:
+                error = _remember_cleanup_error(error, loop_error, phase="event loop")
+
+            if error is not None:
+                raise error
+        except BaseException as error:
+            self._close_error = error
+            raise
         finally:
             self._close_done.set()
 
@@ -1082,6 +1253,11 @@ class WebRTCSession:
         turn_config = await self._get_turn_config()
         # aiortc uses only the first TURN URL; the server still gets the full list
         local_config = await prefer_reachable_turn(turn_config)
+
+        # A cancellation-resistant negotiation must not publish a peer after
+        # teardown has already checked its resources and cleaned the source.
+        if self._state is SessionState.CLOSED:
+            raise asyncio.CancelledError()
 
         pc = RTCPeerConnection(configuration=local_config)
         self._pc = pc
