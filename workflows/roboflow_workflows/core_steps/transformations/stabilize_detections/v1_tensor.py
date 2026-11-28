@@ -266,9 +266,9 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
             if tracker_id not in cached_detections:
                 continue
             x1, y1, x2, y2 = xyxy_rows[i]
-            this_frame_center_xy = [x1 + abs(x2 - x1), y1 + abs(y2 - y1)]
+            this_frame_center_xy = (x1 * 0.5 + x2 * 0.5, y1 * 0.5 + y2 * 0.5)
             px1, py1, px2, py2 = cached_xyxy[tracker_id]
-            prev_frame_center_xy = [px1 + abs(px2 - px1), py1 + abs(py2 - py1)]
+            prev_frame_center_xy = (px1 * 0.5 + px2 * 0.5, py1 * 0.5 + py2 * 0.5)
             measured_velocities[tracker_id] = (
                 this_frame_center_xy[0] - prev_frame_center_xy[0],
                 this_frame_center_xy[1] - prev_frame_center_xy[1],
