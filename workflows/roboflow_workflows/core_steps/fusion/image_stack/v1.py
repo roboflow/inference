@@ -1,4 +1,5 @@
 from collections import deque
+from itertools import islice
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import cv2
@@ -57,7 +58,7 @@ out-of-memory conditions.
 4. Maintains a per-camera FIFO buffer (deque) of up to `stack_size` compressed frames.
    When the buffer is full the oldest frame is automatically evicted.
 5. If `stack_size` changes between calls (e.g. via a dynamic selector), the buffer is
-   resized and existing frames are preserved up to the new limit.
+   resized and the newest frames are preserved up to the new limit.
 6. If the `clear` input is True the buffer is flushed before the current frame is added.
 7. Outputs the list of JPEG byte blobs (newest first) and the current frame count.
 
@@ -247,6 +248,18 @@ class ImageStackBlockV1(WorkflowBlock):
         resolution_height: int,
         clear: bool,
     ) -> BlockResult:
+        """Append a frame to its video stack and return the newest frames first.
+
+        Args:
+            image (WorkflowImageData): Video frame to compress and store.
+            stack_size (int): Maximum number of frames to keep.
+            resolution_width (int): Maximum width of a compressed frame.
+            resolution_height (int): Maximum height of a compressed frame.
+            clear (bool): Whether to discard previous frames before appending.
+
+        Returns:
+            BlockResult: Newest-first JPEG frames and their count.
+        """
         stack_size = max(1, min(stack_size, MAX_STACK_SIZE))
         resolution_width = max(64, min(resolution_width, MAX_RESOLUTION_WIDTH))
         resolution_height = max(64, min(resolution_height, MAX_RESOLUTION_HEIGHT))
@@ -258,8 +271,8 @@ class ImageStackBlockV1(WorkflowBlock):
             buf = deque(maxlen=stack_size)
             self._buffers[video_id] = buf
         elif buf.maxlen != stack_size:
-            new_buf = deque(buf, maxlen=stack_size)
-            buf = new_buf
+            # The leftmost frames are the newest and must survive a shrink.
+            buf = deque(islice(buf, stack_size), maxlen=stack_size)
             self._buffers[video_id] = buf
 
         if clear:
