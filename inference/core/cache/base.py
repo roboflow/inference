@@ -64,8 +64,8 @@ class BaseCache:
 
         Args:
             key (str): The key of the sorted set.
-            start (int, optional): The starting index of the range. Defaults to -1.
-            stop (int, optional): The ending index of the range. Defaults to float("inf").
+            min (float, optional): The lowest score to include. Defaults to -1.
+            max (float, optional): The highest score to include. Defaults to float("inf").
             withscores (bool, optional): Whether to return the scores along with the values. Defaults to False.
 
         Raises:
@@ -76,16 +76,16 @@ class BaseCache:
     def zremrangebyscore(
         self,
         key: str,
-        start: Optional[int] = -1,
-        stop: Optional[int] = float("inf"),
+        min: Optional[float] = -1,
+        max: Optional[float] = float("inf"),
     ):
         """
         Removes all members in a sorted set within the given scores.
 
         Args:
             key (str): The key of the sorted set.
-            start (int, optional): The minimum score of the range. Defaults to -1.
-            stop (int, optional): The maximum score of the range. Defaults to float("inf").
+            min (float, optional): The lowest score to remove. Defaults to -1.
+            max (float, optional): The highest score to remove. Defaults to float("inf").
 
         Raises:
             NotImplementedError: This method must be implemented by subclasses.

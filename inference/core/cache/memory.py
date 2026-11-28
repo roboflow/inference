@@ -128,8 +128,8 @@ class MemoryCache(BaseCache):
 
         Args:
             key (str): The key of the sorted set.
-            start (int, optional): The starting score of the range. Defaults to -1.
-            stop (int, optional): The ending score of the range. Defaults to float("inf").
+            min (float, optional): The lowest score to include. Defaults to -1.
+            max (float, optional): The highest score to include. Defaults to float("inf").
             withscores (bool, optional): Whether to return the scores along with the values. Defaults to False.
 
         Returns:
@@ -154,8 +154,8 @@ class MemoryCache(BaseCache):
 
         Args:
             key (str): The key of the sorted set.
-            start (int, optional): The minimum score of the range. Defaults to -1.
-            stop (int, optional): The maximum score of the range. Defaults to float("inf").
+            min (float, optional): The lowest score to remove. Defaults to -1.
+            max (float, optional): The highest score to remove. Defaults to float("inf").
 
         Returns:
             int: The number of members removed from the sorted set.
