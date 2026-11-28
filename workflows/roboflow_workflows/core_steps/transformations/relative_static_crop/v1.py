@@ -171,17 +171,41 @@ def take_static_crop(
     width: float,
     height: float,
 ) -> Optional[WorkflowImageData]:
-    x_center = round(image.numpy_image.shape[1] * x_center)
-    y_center = round(image.numpy_image.shape[0] * y_center)
-    width = round(image.numpy_image.shape[1] * width)
-    height = round(image.numpy_image.shape[0] * height)
+    """Extract a relative region's intersection with the source image.
+
+    Preserve the existing conversion and rounding of relative parameters to
+    pixels before clipping the region. Crop origin and video identity describe
+    the visible intersection rather than the out-of-image requested corners.
+
+    Args:
+        image (WorkflowImageData): Source image and its coordinate/video metadata.
+        x_center (float): Horizontal center as a fraction of image width.
+        y_center (float): Vertical center as a fraction of image height.
+        width (float): Requested width as a fraction of image width.
+        height (float): Requested height as a fraction of image height.
+
+    Returns:
+        Optional[WorkflowImageData]: Crop with parent/root origin and video
+        metadata preserved, or None when the rounded intersection is empty.
+    """
+    source_image = image.numpy_image
+    image_height, image_width = source_image.shape[:2]
+    x_center = round(image_width * x_center)
+    y_center = round(image_height * y_center)
+    width = round(image_width * width)
+    height = round(image_height * height)
     x_min = round(x_center - width / 2)
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
-    cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
+    x_min = max(0, min(x_min, image_width))
+    y_min = max(0, min(y_min, image_height))
+    x_max = max(0, min(x_max, image_width))
+    y_max = max(0, min(y_max, image_height))
+    cropped_image = source_image[y_min:y_max, x_min:x_max]
     if not cropped_image.size:
         return None
+
     return WorkflowImageData.create_crop(
         origin_image_data=image,
         crop_identifier=f"relative_static_crop.{uuid4()}",
