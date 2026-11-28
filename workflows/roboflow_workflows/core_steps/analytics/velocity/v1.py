@@ -218,10 +218,30 @@ class VelocityBlockV1(WorkflowBlock):
         smoothing_alpha: float,
         pixels_per_meter: float,
     ) -> BlockResult:
-        if detections.tracker_id is None:
-            raise ValueError(
-                "tracker_id not initialized, VelocityBlock requires detections to be tracked"
-            )
+        """Attach velocity metrics to a tracked frame, including an empty frame.
+
+        Args:
+            image (WorkflowImageData): Frame and its video timing metadata.
+            detections (sv.Detections): Detections with tracker IDs when nonempty.
+            smoothing_alpha (float): Exponential moving average weight.
+            pixels_per_meter (float): Pixel-to-meter conversion factor.
+
+        Returns:
+            BlockResult: Detections with raw and smoothed velocity metrics.
+
+        Raises:
+            ValueError: If nonempty detections lack tracker IDs or a numeric
+                setting is out of range.
+        """
+        num_detections = len(detections)
+        tracker_ids = detections.tracker_id
+        if tracker_ids is None:
+            if num_detections:
+                raise ValueError(
+                    "tracker_id not initialized, VelocityBlock requires detections to be tracked"
+                )
+            tracker_ids = np.empty(0, dtype=int)
+
         if not (0 < smoothing_alpha <= 1):
             raise ValueError(
                 "smoothing_alpha must be between 0 (exclusive) and 1 (inclusive)"
@@ -238,8 +258,6 @@ class VelocityBlockV1(WorkflowBlock):
         previous_positions = self._previous_positions.setdefault(video_id, {})
         smoothed_velocities = self._smoothed_velocities.setdefault(video_id, {})
 
-        num_detections = len(detections)
-
         # Compute current positions (center of bounding boxes)
         bbox_xyxy = detections.xyxy  # Shape (num_detections, 4)
         x_centers = (bbox_xyxy[:, 0] + bbox_xyxy[:, 2]) / 2
@@ -253,7 +271,7 @@ class VelocityBlockV1(WorkflowBlock):
         smoothed_velocities_arr = np.zeros_like(current_positions)
         smoothed_speeds = np.zeros(num_detections)
 
-        for i, tracker_id in enumerate(detections.tracker_id):
+        for i, tracker_id in enumerate(tracker_ids):
             current_position = current_positions[i]
 
             # Ensure tracker_id is of type int or str
